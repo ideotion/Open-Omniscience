@@ -3004,5 +3004,10 @@
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} جديدة · {updated} محدَّثة · {unchanged} محدَّثة سلفًا — توقّف قبل النهاية؛ اضغط مرة أخرى للمتابعة من حيث توقّف.",
   "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} جديدة · {updated} محدَّثة · {unchanged} محدَّثة سلفًا — كل السلاسل المخزَّنة أصبحت الآن في المجموعة.",
   "Limited memory: {available} MB free of {total} MB.": "ذاكرة محدودة: {available} ميجابايت متاحة من أصل {total} ميجابايت.",
-  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "توقفت عمليات المسح الخلفي لكامل المدوّنة (تأهيل المصادر) مؤقتًا، وتم تحديد عدد عمليات الجمع المتزامنة. في مدوّنة كبيرة قد لا يُنفّذ التأهيل هنا أبدًا — وهذا هو ثمن هذا الإعداد، وليس عطلًا. اضبط OO_ALLOW_BIG_SCANS=1 لتشغيلها على أي حال."
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "توقفت عمليات المسح الخلفي لكامل المدوّنة (تأهيل المصادر) مؤقتًا، وتم تحديد عدد عمليات الجمع المتزامنة. في مدوّنة كبيرة قد لا يُنفّذ التأهيل هنا أبدًا — وهذا هو ثمن هذا الإعداد، وليس عطلًا. اضبط OO_ALLOW_BIG_SCANS=1 لتشغيلها على أي حال.",
+  "Showing only the words you typed.": "يتم عرض الكلمات التي كتبتها فقط.",
+  "Search the concept in every language": "البحث عن المفهوم بكل اللغات",
+  "Show only the words I typed": "عرض الكلمات التي كتبتها فقط",
+  "{term} also matched as the concept “{concept}”": "طوبق {term} أيضًا بوصفه المفهوم «{concept}»",
+  "{term} denotes several concepts, so it was not expanded": "يدل {term} على عدة مفاهيم، لذلك لم يجرِ توسيع البحث"
 }

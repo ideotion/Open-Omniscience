@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import os as _os
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
@@ -166,19 +167,46 @@ def _quote(value: str) -> str:
     return f'"{escaped}"'
 
 
-def _render(node) -> str | None:
+#: The cross-language expansion seam: a query term -> extra literals to OR in beside it.
+#: Deliberately a bare callable rather than an import of the ring module -- this file is
+#: the Boolean parser and must stay pure and dependency-free; see ``build_match``.
+ExpandTerms = Callable[[str], Sequence[str]]
+
+
+def _render_term(node: _Term, expand: ExpandTerms | None) -> str:
+    """One parsed term, optionally widened to its cross-language siblings.
+
+    Expansion applies to EXCLUDES as well as includes, and that is deliberate: the unit
+    the reader is asking about is the CONCEPT, so ``NOT climate`` means "not this
+    concept", in every language the ring covers. Expanding only the positive half would
+    make an exclusion mean something narrower than the inclusion beside it, silently.
+
+    Every literal goes through ``_quote``, so a multi-word ring member (fr ``migration
+    humaine``) is emitted as an FTS5 phrase rather than two loose words.
+    """
+    literals = [node.value]
+    if expand is not None:
+        for extra in expand(node.value):
+            if extra and extra not in literals:
+                literals.append(extra)
+    if len(literals) == 1:
+        return _quote(literals[0])
+    return "(" + " OR ".join(_quote(v) for v in literals) + ")"
+
+
+def _render(node, expand: ExpandTerms | None = None) -> str | None:
     if node is None:
         return None
     if isinstance(node, _Term):
-        return _quote(node.value)
+        return _render_term(node, expand)
     if isinstance(node, _Or):
-        parts = [p for p in (_render(c) for c in node.children) if p]
+        parts = [p for p in (_render(c, expand) for c in node.children) if p]
         if not parts:
             return None
         return "(" + " OR ".join(parts) + ")"
     if isinstance(node, _AndGroup):
-        inc = [p for p in (_render(c) for c in node.includes) if p]
-        exc = [p for p in (_render(c) for c in node.excludes) if p]
+        inc = [p for p in (_render(c, expand) for c in node.includes) if p]
+        exc = [p for p in (_render(c, expand) for c in node.excludes) if p]
         if not inc:
             # FTS5 MATCH cannot express a purely-negative query; ignore the
             # exclusions rather than error. (Caller may treat None as "no match".)
@@ -190,12 +218,18 @@ def _render(node) -> str | None:
     raise AssertionError(f"unknown node type: {type(node)!r}")
 
 
-def build_match(query: str | None) -> str | None:
+def build_match(query: str | None, *, expand: ExpandTerms | None = None) -> str | None:
     """Translate a user Boolean query into a safe FTS5 MATCH expression.
 
     Returns ``None`` when the query has no searchable positive content (empty,
     whitespace, punctuation-only, or purely negative). Raises ``SearchQueryError``
     on structurally invalid input (e.g. unbalanced parentheses).
+
+    ``expand`` is the cross-language hook (R1, 2026-09-05). It is a plain callable
+    ``term -> extra literals``, so this module stays ring-unaware and pure -- the ring
+    knowledge lives in ``src/analytics/equivalence.py`` and is injected, which is also
+    what lets the caller read back WHICH terms were expanded and publish it. ``None``
+    (the default) leaves the emitted MATCH byte-identical to before the hook existed.
     """
     if not query or not query.strip():
         return None
@@ -203,7 +237,7 @@ def build_match(query: str | None) -> str | None:
     if not tokens:
         return None
     ast = _Parser(tokens).parse()
-    return _render(ast)
+    return _render(ast, expand)
 
 
 # --------------------------------------------------------------------------- #
@@ -542,6 +576,7 @@ def search_ids(
     *,
     weights: tuple[float, float] | None = None,
     exclude_quarantined: bool = False,
+    expand: ExpandTerms | None = None,
 ) -> list[int] | None:
     """Return article ids matching ``query``, ranked best-first (BM25F).
 
@@ -567,8 +602,11 @@ def search_ids(
     FTS5 table — leaves the bm25 ordering byte-identical. ``IS NOT 1`` keeps a
     NULL (never judged) row, exactly like ``Article.quarantined.isnot(True)``
     everywhere else.
+
+    ``expand`` is the cross-language hook (see :func:`build_match`); ``None`` leaves the
+    emitted MATCH and therefore the returned ids byte-identical to before it existed.
     """
-    match = build_match(query)
+    match = build_match(query, expand=expand)
     if match is None:
         return None
     wt, wb = weights if weights is not None else _bm25_weights()
@@ -594,6 +632,7 @@ def search_total(
     query: str | None,
     *,
     exclude_quarantined: bool = False,
+    expand: ExpandTerms | None = None,
 ) -> int | None:
     """The EXACT number of articles matching ``query`` — no cap, no ranking.
 

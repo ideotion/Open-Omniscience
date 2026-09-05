@@ -3004,5 +3004,10 @@
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} 篇新增 · {updated} 篇更新 · {unchanged} 篇已是最新 — 在结束前停止；再按一次可从中断处继续。",
   "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} 篇新增 · {updated} 篇更新 · {unchanged} 篇已是最新 — 所有已存储的序列现已进入语料库。",
   "Limited memory: {available} MB free of {total} MB.": "内存有限：{total} MB 中剩余 {available} MB。",
-  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "全语料库后台扫描（来源资格审核）已暂停，并限制了并发采集数量。在大型语料库上，资格审核可能永远不会在此运行——这是该设置的代价，而非故障。设置 OO_ALLOW_BIG_SCANS=1 可仍然运行。"
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "全语料库后台扫描（来源资格审核）已暂停，并限制了并发采集数量。在大型语料库上，资格审核可能永远不会在此运行——这是该设置的代价，而非故障。设置 OO_ALLOW_BIG_SCANS=1 可仍然运行。",
+  "Showing only the words you typed.": "仅显示你输入的词。",
+  "Search the concept in every language": "在所有语言中搜索该概念",
+  "Show only the words I typed": "仅显示我输入的词",
+  "{term} also matched as the concept “{concept}”": "{term} 也作为概念“{concept}”被匹配",
+  "{term} denotes several concepts, so it was not expanded": "{term} 指代多个概念，因此未做扩展"
 }

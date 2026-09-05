@@ -324,3 +324,290 @@ def candidate_languages(
         else:
             out[norm] = None
     return out
+
+
+# --------------------------------------------------------------------------- #
+# R1 — cross-language query expansion (2026-09-05 keyword-translation plan, slice 1)
+# --------------------------------------------------------------------------- #
+#
+# The rings above are read by every analytics surface and by NOTHING in the search
+# path, so a corpus that holds `climat`, `Klima` and `клима́т` answers a search for
+# `climate` with the English articles only. This section is the missing consumer.
+#
+# It is deliberately NOT built on ``ring_of``. That function maps one (language, term)
+# to ONE ring id, and the index behind it is a plain dict — so where a (language, term)
+# sits in SEVERAL rings the dict silently keeps whichever was parsed last. Measured on
+# the shipped table: **91 such (language, term) pairs**, including de `wahl`
+# (election / public-election / voting) and de `strom` (electricity / river). Resolving
+# those by dict order would expand a search for German *Strom* into river vocabulary and
+# say nothing about it. So expansion reads the ring MEMBERS directly, keeps every
+# candidate, and REFUSES to choose between them — which is the R2a query-time-choice
+# grammar arriving one slice early, on a real and measured population rather than a
+# hypothetical one.
+
+_IDEOGRAPHIC_RANGES = (
+    (0x3040, 0x30FF),  # Hiragana + Katakana
+    (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+    (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+    (0xAC00, 0xD7AF),  # Hangul syllables
+    (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
+)
+
+
+def _is_ideographic(ch: str) -> bool:
+    cp = ord(ch)
+    return any(lo <= cp <= hi for lo, hi in _IDEOGRAPHIC_RANGES)
+
+
+def _too_short_to_expand(normalized: str) -> bool:
+    """A single ALPHABETIC character never expands; a single IDEOGRAPH does.
+
+    The generated ring table carries 139 one-character members. In CJK a single
+    character is a whole word -- ja ``軍`` (military), ja ``票`` (vote), zh ``債``
+    (debt) -- and refusing those would disable expansion for zh/ja outright, the
+    recorded CJK-segmentation trap. In Latin script the one-character members are
+    generator noise (en ``d`` and ``q`` both sit in the drone ring), and expanding a
+    search for ``d`` into unmanned-aerial-vehicle vocabulary is absurd. Two characters
+    is the floor for alphabetic scripts because real acronyms live there: ``ai``,
+    ``un``, ``eu``, ``pm`` all resolve to sensible rings.
+    """
+    return len(normalized) == 1 and not _is_ideographic(normalized)
+
+
+@lru_cache(maxsize=1)
+def _multi_index() -> dict[tuple[str, str], tuple[str, ...]]:
+    """(language, normalized) -> EVERY ring id containing it, collision-preserving.
+
+    The counterpart of ``_index()[1]``, which keeps only one. Order follows the parse
+    order so the result is deterministic.
+    """
+    out: dict[tuple[str, str], list[str]] = {}
+    for ring in load_rings():
+        for lang, term in ring.members:
+            bucket = out.setdefault((lang, term), [])
+            if ring.id not in bucket:
+                bucket.append(ring.id)
+    return {k: tuple(v) for k, v in out.items()}
+
+
+@dataclass(frozen=True)
+class RingMatch:
+    """One ring the typed term could belong to, with the language that matched it."""
+
+    ring_id: str
+    language: str
+    label: str
+    members: tuple[tuple[str, str], ...]  # (language, term), every member of the ring
+
+    def siblings(self, normalized: str) -> tuple[str, ...]:
+        """The ring's other member terms — what expansion actually adds to the query."""
+        seen: list[str] = []
+        for _lang, term in self.members:
+            if term != normalized and term not in seen:
+                seen.append(term)
+        return tuple(seen)
+
+    def by_language(self) -> dict[str, tuple[str, ...]]:
+        """{language: its member terms} — the per-language breakdown R1 requires shown."""
+        out: dict[str, list[str]] = {}
+        for lang, term in self.members:
+            bucket = out.setdefault(lang, [])
+            if term not in bucket:
+                bucket.append(term)
+        return {k: tuple(v) for k, v in out.items()}
+
+
+#: Why a term that IS in the table was nevertheless not expanded. These are disclosures,
+#: not errors: each one is a thing the reader can act on.
+DECLINE_SEVERAL_SENSES = "several-senses"  # the term denotes >1 concept; the reader picks
+DECLINE_TOO_SHORT = "too-short"  # a lone alphabetic character; see _too_short_to_expand
+
+
+@dataclass(frozen=True)
+class TermExpansion:
+    """What expansion did to ONE query term, and why — the unit of the disclosure."""
+
+    term: str  # exactly as typed
+    normalized: str
+    matches: tuple[RingMatch, ...]  # every candidate ring, never narrowed silently
+    applied: RingMatch | None  # the one expanded through, or None
+    declined: str | None  # a DECLINE_* reason when matches exist but none was applied
+
+    @property
+    def siblings(self) -> tuple[str, ...]:
+        return self.applied.siblings(self.normalized) if self.applied else ()
+
+    @property
+    def expanded(self) -> bool:
+        return bool(self.siblings)
+
+    def to_dict(self) -> dict:
+        """The payload shape. Counts only, no score, and the method is stated."""
+        out: dict = {"term": self.term, "normalized": self.normalized, "expanded": self.expanded}
+        if self.applied is not None:
+            out["ring_id"] = self.applied.ring_id
+            out["concept"] = self.applied.label
+            out["matched_language"] = self.applied.language
+            out["added_terms"] = list(self.siblings)
+            out["by_language"] = {k: list(v) for k, v in self.applied.by_language().items()}
+        if self.declined:
+            out["declined"] = self.declined
+            out["senses"] = [
+                {
+                    "ring_id": m.ring_id,
+                    "concept": m.label,
+                    "matched_language": m.language,
+                    "by_language": {k: list(v) for k, v in m.by_language().items()},
+                }
+                for m in self.matches
+            ]
+        return out
+
+
+def ring_matches(term: str, *, languages: Iterable[str] | None = None) -> tuple[RingMatch, ...]:
+    """Every ring the term belongs to, under any of ``languages`` (default: all).
+
+    Collision-preserving: a (language, term) sitting in several rings yields several
+    matches, and a term that is a member under several languages yields one match per
+    (ring, language). Deterministic order.
+    """
+    normalized = _norm(term)
+    if not normalized:
+        return ()
+    index = _multi_index()
+    wanted = None if languages is None else {str(x).casefold() for x in languages if x}
+    out: list[RingMatch] = []
+    seen: set[tuple[str, str]] = set()
+    for (lang, tok), ring_ids in index.items():
+        if tok != normalized or (wanted is not None and lang not in wanted):
+            continue
+        for rid in ring_ids:
+            if (rid, lang) in seen:
+                continue
+            meta = ring_meta(rid)
+            if meta is None:
+                continue
+            seen.add((rid, lang))
+            out.append(RingMatch(ring_id=rid, language=lang, label=meta.label, members=meta.members))
+    out.sort(key=lambda m: (m.ring_id, m.language))
+    return tuple(out)
+
+
+def expand_term(
+    term: str,
+    *,
+    prefer_language: str | None = None,
+    languages: Iterable[str] | None = None,
+) -> TermExpansion:
+    """Resolve ONE query term to at most one ring, keeping every candidate visible.
+
+    ``prefer_language`` is the reader's own language (the UI locale). It NARROWS the
+    candidates when it matches any of them, and is otherwise ignored -- a French reader
+    typing an English word still gets the English ring, and an English reader typing
+    ``climat`` still gets one, because nothing else could have been meant.
+
+    The refusal is the load-bearing half. When the candidates still name several
+    concepts after that narrowing, this expands NOTHING and reports the choice. de
+    ``strom`` is electricity AND river; de ``wahl`` is election, public-election AND
+    voting. Picking one would change which articles match on a coin flip and say
+    nothing about it -- and picking the UNION would drag river vocabulary into a search
+    about the power grid, just as silently.
+    """
+    normalized = _norm(term)
+    if not normalized or not _enabled():
+        return TermExpansion(term=term, normalized=normalized, matches=(), applied=None, declined=None)
+
+    matches = ring_matches(normalized, languages=languages)
+    if not matches:
+        return TermExpansion(term=term, normalized=normalized, matches=(), applied=None, declined=None)
+    if _too_short_to_expand(normalized):
+        return TermExpansion(
+            term=term, normalized=normalized, matches=matches, applied=None,
+            declined=DECLINE_TOO_SHORT,
+        )
+
+    candidates = matches
+    if prefer_language:
+        preferred = tuple(m for m in matches if m.language == str(prefer_language).casefold())
+        if preferred:
+            candidates = preferred
+
+    distinct = {m.ring_id for m in candidates}
+    if len(distinct) == 1:
+        return TermExpansion(
+            term=term, normalized=normalized, matches=matches, applied=candidates[0], declined=None
+        )
+    return TermExpansion(
+        term=term, normalized=normalized, matches=matches, applied=None,
+        declined=DECLINE_SEVERAL_SENSES,
+    )
+
+
+class QueryExpander:
+    """A ``build_match`` expansion hook that RECORDS what it did.
+
+    ``build_match`` stays pure and ring-unaware: it calls this for each parsed term and
+    ORs in whatever literals come back. The disclosure the surfaces publish is read off
+    ``expansions`` afterwards, so the two can never disagree about what was expanded --
+    the search and the sentence describing it come from one object.
+    """
+
+    def __init__(
+        self,
+        *,
+        prefer_language: str | None = None,
+        languages: Iterable[str] | None = None,
+    ) -> None:
+        self.prefer_language = prefer_language
+        self.languages = tuple(languages) if languages is not None else None
+        self.expansions: list[TermExpansion] = []
+        self._by_term: dict[str, TermExpansion] = {}
+
+    def __call__(self, term: str) -> tuple[str, ...]:
+        """Expand one term, recording it ONCE however many times it is asked for.
+
+        One request runs the hook several times by design: the omnibar retries a
+        half-typed Boolean as a phrase, and a capped result set is re-counted through
+        ``search_total`` with the SAME hook so the count and the rows describe one set.
+        Appending per call would make the disclosure say a term was expanded twice, which
+        is a statement about our plumbing rather than about the reader's query. The
+        memo also means the ring lookup runs once per distinct term per request.
+        """
+        cached = self._by_term.get(term)
+        if cached is not None:
+            return cached.siblings
+        result = expand_term(
+            term, prefer_language=self.prefer_language, languages=self.languages
+        )
+        self._by_term[term] = result
+        self.expansions.append(result)
+        return result.siblings
+
+    @property
+    def any_expanded(self) -> bool:
+        return any(e.expanded for e in self.expansions)
+
+    def disclosure(self) -> dict | None:
+        """The payload block, or None when there is nothing to disclose.
+
+        Present whenever a term was expanded OR a term was declined with a choice to
+        offer -- a decline is information the reader can act on, not silence. Absent
+        when no query term touched a ring at all, so an ordinary search carries no
+        extra weight.
+        """
+        interesting = [e for e in self.expansions if e.expanded or e.declined]
+        if not interesting:
+            return None
+        return {
+            "expanded": self.any_expanded,
+            "terms": [e.to_dict() for e in interesting],
+            "method": (
+                "cross-language expansion through the hand-vetted Wikidata concept rings "
+                "(configs/keyword_rings_generated.yml); a term denoting several concepts is "
+                "NOT expanded and its senses are listed instead"
+            ),
+            "caveat": (
+                "This search matched the concept in every language the ring covers, not only "
+                "the words you typed. Rings cover 698 concepts, so most terms are unaffected."
+            ),
+        }

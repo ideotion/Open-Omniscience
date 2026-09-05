@@ -3004,5 +3004,10 @@
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} baru · {updated} diperbarui · {unchanged} sudah mutakhir — berhenti sebelum selesai; tekan lagi untuk melanjutkan dari titik terakhir.",
   "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} baru · {updated} diperbarui · {unchanged} sudah mutakhir — semua seri tersimpan kini ada dalam korpus.",
   "Limited memory: {available} MB free of {total} MB.": "Memori terbatas: {available} MB kosong dari {total} MB.",
-  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Pemindaian latar seluruh korpus (kualifikasi sumber) dijeda, dan jumlah pengambilan serentak dibatasi. Pada korpus besar, kualifikasi mungkin tidak pernah berjalan di sini — itu konsekuensi pengaturan ini, bukan kegagalan. Setel OO_ALLOW_BIG_SCANS=1 untuk tetap menjalankannya."
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Pemindaian latar seluruh korpus (kualifikasi sumber) dijeda, dan jumlah pengambilan serentak dibatasi. Pada korpus besar, kualifikasi mungkin tidak pernah berjalan di sini — itu konsekuensi pengaturan ini, bukan kegagalan. Setel OO_ALLOW_BIG_SCANS=1 untuk tetap menjalankannya.",
+  "Showing only the words you typed.": "Hanya menampilkan kata yang Anda ketik.",
+  "Search the concept in every language": "Cari konsep ini dalam semua bahasa",
+  "Show only the words I typed": "Tampilkan hanya kata yang saya ketik",
+  "{term} also matched as the concept “{concept}”": "{term} juga cocok sebagai konsep “{concept}”",
+  "{term} denotes several concepts, so it was not expanded": "{term} menunjuk beberapa konsep, jadi tidak diperluas"
 }

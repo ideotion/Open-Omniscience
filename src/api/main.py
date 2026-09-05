@@ -1142,6 +1142,25 @@ def _record_search_timing(timer) -> None:
         pass
 
 
+def _query_expander(query: str | None, *, enabled: bool, ui_lang: str | None):
+    """Build the R1 cross-language hook for one request, or ``None``.
+
+    ``None`` whenever there is no text query or the reader turned expansion off, and in
+    that case every downstream call is byte-identical to before R1 existed -- which is
+    what makes ``expand=false`` a real "show me exactly what I typed" and not an
+    approximation of one.
+
+    ``ui_lang`` is the reader's own locale. It only ever NARROWS an ambiguous term to the
+    ring that matches under that language; it never adds a match, so a reader searching
+    outside their UI language is not penalised for it.
+    """
+    if not query or not enabled:
+        return None
+    from src.analytics.equivalence import QueryExpander
+
+    return QueryExpander(prefer_language=(ui_lang or "").strip().casefold() or None)
+
+
 def _query_articles(
     session,
     *,
@@ -1158,6 +1177,7 @@ def _query_articles(
     provenance: str | None = None,
     source_type: str | None = None,
     keyword_id: int | None = None,
+    expand: object | None = None,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
 
@@ -1168,6 +1188,11 @@ def _query_articles(
     to one content-provenance class; ``source_type`` narrows to one raw source channel.
     ``keyword_id`` enables the ``keyword_count`` sort (the resolved keyword's per-article
     mentions). ``limit=None`` returns every match.
+
+    ``expand`` is the R1 cross-language hook handed to :func:`search_ids` (a
+    ``QueryExpander``); ``None`` leaves the matched set byte-identical to before it
+    existed. The caller keeps the object so it can publish WHAT was expanded -- the
+    search and the sentence describing it then come from one place and cannot disagree.
     """
     from sqlalchemy import and_
 
@@ -1187,7 +1212,7 @@ def _query_articles(
     _timer = _new_search_timer(query)  # S5: per-phase search timing (best-effort, near-zero)
     if query:
         try:
-            fts_ids = search_ids(session, query)
+            fts_ids = search_ids(session, query, expand=expand)  # type: ignore[arg-type]
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
         if _timer is not None:
@@ -1326,6 +1351,8 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     source_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    expand: bool = True,
+    ui_lang: str | None = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -1441,6 +1468,11 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
             "keyword_for_count": kw_term,
         }
 
+    # R1 (2026-09-05): cross-language expansion, ON by default per the ruling and
+    # DISCLOSED in the payload below. `expand=false` is the "narrow to the literal term"
+    # click -- the same request with the hook off, so the two readings are one parameter
+    # apart and the reader can always get back to exactly what they typed.
+    expander = _query_expander(query, enabled=expand, ui_lang=ui_lang)
     articles, total = _query_articles(
         db,
         query=query,
@@ -1456,6 +1488,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         provenance=provenance,
         source_type=source_type,
         keyword_id=kw_id,
+        expand=expander,
     )
 
     # Per-article keyword count for the displayed page only (a cheap mentions-only
@@ -1466,13 +1499,20 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
         _article_row(a, keyword_count=cmap.get(a.id), top_terms=tmap) for a in articles
     ]
 
-    return {
+    payload = {
         "total": total,
         "limit": limit,
         "offset": offset,
         "results": results,
         "keyword_for_count": kw_term,
     }
+    # R1 honesty rail: expansion changed WHICH articles matched, so it is stated here and
+    # rendered by default. Absent when no query term touched a ring -- an ordinary search
+    # carries no extra weight.
+    disclosure = expander.disclosure() if expander is not None else None
+    if disclosure is not None:
+        payload["cross_language"] = disclosure
+    return payload
 
 
 @app.get("/api/articles/export")

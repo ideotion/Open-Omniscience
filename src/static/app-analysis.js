@@ -1064,11 +1064,67 @@
     //
     // ONE translation, used by every /api/articles caller, so the next one cannot forget.
     // synthesizeResults already carried this fix inline; it now shares this.
+    // R1 (2026-09-05): cross-language expansion is ON by default (the ruling) and the
+    // reader can narrow to exactly what they typed. The flag lives here rather than in the
+    // captured params because it is a LENS on the current corpus, like the sort — flipping
+    // it must not re-run the whole analysis.
+    let _anExpand = true;
     function _articleQuery(p) {
       const q = new URLSearchParams(p);
       const seeded = q.get("article_ids");
       if (seeded) { q.set("ids", seeded); q.delete("article_ids"); }
+      // Only ever sent for a TEXT query: an id-seeded corpus is an exact set and there is
+      // no term to widen, so sending it would suggest a choice that does not exist.
+      if (q.get("query")) {
+        if (!_anExpand) q.set("expand", "false");
+        const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
+        if (lang) q.set("ui_lang", lang);
+      }
       return q;
+    }
+
+    // The R1 honesty rail, rendered by default: expansion changed WHICH articles matched,
+    // so the surface says so, names the concept and its per-language members, and offers
+    // one click back to the literal term. PURE (payload -> html) so it can be driven in
+    // node without a browser — the render is the disclosure, so it is worth testing.
+    function _crossLangNotice(cross, narrowed) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (narrowed) {
+        return `<div class="hint" id="an-xlang">${esc(t("Showing only the words you typed."))} `
+          + `<button type="button" class="linkish" onclick="_anSetExpand(true)">`
+          + `${esc(t("Search the concept in every language"))}</button></div>`;
+      }
+      if (!cross) return "";
+      // A sentence carrying a VALUE cannot be keyed as a whole (the term and the concept
+      // vary), so the FRAME is a keyable {placeholder} template and the data is
+      // interpolated after translation — OOI18N.tf, the composite-string discipline.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      const parts = [];
+      for (const term of (cross.terms || [])) {
+        if (term.expanded) {
+          const langs = Object.entries(term.by_language || {})
+            .map(([lg, words]) => `${esc(lg)}: ${esc((words || []).join(", "))}`)
+            .join(" · ");
+          parts.push(`<div>${esc(tf("{term} also matched as the concept “{concept}”",
+            { term: term.term, concept: term.concept }))} — <span class="muted">${langs}</span></div>`);
+        } else if (term.declined === "several-senses") {
+          const senses = (term.senses || []).map((s2) => `“${esc(s2.concept)}”`).join(", ");
+          parts.push(`<div>${esc(tf("{term} denotes several concepts, so it was not expanded",
+            { term: term.term }))}: <span class="muted">${senses}</span></div>`);
+        }
+      }
+      if (!parts.length) return "";
+      const back = cross.expanded
+        ? ` <button type="button" class="linkish" onclick="_anSetExpand(false)">`
+          + `${esc(t("Show only the words I typed"))}</button>`
+        : "";
+      return `<div class="hint" id="an-xlang" title="${esc(cross.caveat || "")}">`
+        + parts.join("") + `<div class="muted">${esc(cross.caveat || "")}${back}</div></div>`;
+    }
+    function _anSetExpand(on) {
+      _anExpand = !!on;
+      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
     }
 
     // A sortable column header. `field` is the /api/articles sort_by value; the arrow
@@ -1142,6 +1198,7 @@
         // article), so this is an absorption, not a removal. Nothing was lost: the bulk
         // Summarize all / Translate all actions are untouched in the export bar below.
         arts.innerHTML = _anArtControls(d)
+          + _crossLangNotice(d.cross_language, !_anExpand && !!q.get("query"))
           + `<div id="an-art-facets"></div>`
           + `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
           + pager
