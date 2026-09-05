@@ -396,22 +396,83 @@ def test_a_disabled_language_extracts_nothing_and_is_recorded_gated(db, tmp_path
     assert batch_recs[0]["gated_detail"] == {"never evaluated": 3}
 
 
-def test_no_live_eval_ever_run_gates_every_article_honestly(db, tmp_path):
-    """gate_report=None resolves via last_perception_eval_live_report(); with no
-    saved artifact, EVERY language reads 'never evaluated' -- the whole sweep
-    honestly extracts nothing, never a fabricated pass."""
+def test_no_live_eval_ever_run_refuses_to_start_instead_of_sweeping(db, tmp_path):
+    """With no saved eval artifact every language reads 'never evaluated', so the sweep
+    REFUSES rather than walking the corpus to learn that once per article.
+
+    SUPERSEDES this test's own earlier assertion (complete=True, gated=3), deliberately
+    and not by reflex: that behaviour is what the field ran into -- 31,762 batches over
+    33 days, 794,029 articles gated, ZERO calls attempted, footer `state: "done"`. The
+    honesty claim it was making (never a fabricated pass) is unchanged and stronger: a
+    refusal states the same fact once and names the fix.
+
+    The refusal is NOT a completion and NOT an error: no cursor moves, no log file is
+    written, so the next call after an eval lands resumes normally.
+    """
     _seed(db, n=3)
+    scope = _session_factory(db)
+    state_path = tmp_path / "state.json"
+
+    class _NeverCallMe:
+        def generate(self, *a, **kw):
+            raise AssertionError("a refused sweep must never reach the model")
+
+    ctx = FakeCtx()
+    res = J.run_progressive_perception_extract_job(
+        ctx, model="stub:test", batch_size=3,
+        session_factory=scope, client=_NeverCallMe(), state_path=state_path,
+        gate_report={"available": False},
+    )
+    assert res["refused"] is True
+    assert res["state"] == "refused"
+    assert res["active_languages"] == []
+    assert "run the live perception eval first" in res["reason"]
+    # Nothing was swept and nothing was claimed: no cursor, no log, no footer.
+    assert "complete" not in res and "totals" not in res
+    assert not state_path.exists()
+    assert not list(tmp_path.glob("oo-perception-extract-*.jsonl"))
+    assert db.query(AiKeyword).count() == 0
+
+
+def test_negative_space_a_gate_with_one_active_language_still_sweeps(db, tmp_path):
+    """The twin of the refusal: the guard must fire on 'nothing is active', never on
+    'this article's language is not active'. A gate clearing only `en`, over a corpus
+    of `ar` articles, still RUNS -- gating each article honestly per batch -- because
+    an `en` article could arrive at any point in the id range."""
+    _seed(db, n=3, language="ar")
     scope = _session_factory(db)
 
     ctx = FakeCtx()
     res = J.run_progressive_perception_extract_job(
         ctx, model="stub:test", batch_size=3,
         session_factory=scope, client=FakeClient(), state_path=tmp_path / "state.json",
-        gate_report={"available": False},
+        gate_report=_CLEAR_EN_REPORT,
     )
+    assert res.get("refused") is None
     assert res["complete"] is True
     assert res["totals"]["gated"] == 3
-    assert res["totals"]["stored"] == 0
+
+
+def test_a_region_tagged_corpus_is_swept_not_gated(db, tmp_path):
+    """FIELD DEFECT 1 end to end: a corpus stored as `en-US` against an `en` gate.
+
+    Before the normalisation fix this whole sweep reported gated=7 / stored=0 with
+    `gated_detail == {"never evaluated": 7}` -- which is what a month of field running
+    produced across 794,029 articles."""
+    _seed(db, n=7, language="en-US")
+    scope = _session_factory(db)
+
+    ctx = FakeCtx()
+    res = J.run_progressive_perception_extract_job(
+        ctx, model="stub:test", batch_size=3, session_factory=scope, client=FakeClient(),
+        state_path=tmp_path / "state.json", gate_report=_CLEAR_EN_REPORT,
+    )
+    assert res["complete"] is True
+    assert res["totals"]["gated"] == 0
+    assert res["totals"]["stored"] == 7
+    recs = _read_jsonl(res["path"])
+    batch_recs = [r for r in recs if r["schema"] == J.PERCEPTION_EXTRACT_BATCH_SCHEMA]
+    assert all(r["gated_detail"] == {} for r in batch_recs)
 
 
 def test_export_only_zero_trusted_index_writes_across_the_whole_sweep(db, tmp_path):

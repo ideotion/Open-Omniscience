@@ -83,6 +83,40 @@ _KIND_OF_FIELD = {"who": "ai-who", "where": "ai-place", "when": "ai-date"}
 PERCEPTION_KINDS = tuple(_KIND_OF_FIELD.values())
 
 
+def _norm(lang: str | None) -> str:
+    """The house bare-ISO-639-1 form: ``en-US`` -> ``en``, ``ZH_hans`` -> ``zh``.
+
+    THIS IS THE WHOLE OF FIELD DEFECT 1 (2026-09-05). ``Article.language`` is stored
+    RAW from trafilatura's ``<html lang>`` read and ``models.py`` documents its value
+    space as *e.g. "en", "fr", "en-US"*, while the harness report is keyed on BARE
+    codes -- so :func:`language_gate`'s plain ``gate.get(language)`` missed on every
+    region-tagged article and reported it as "never evaluated". A month-long field
+    sweep (``oo-perception-extract-20260802``: 31,762 batches, 14,135 resumes, 33 days)
+    gated 794,029 articles and attempted ZERO calls, 23 days of that AFTER the harness
+    had cleared 13 languages -- 725,791 of them under exactly that reason string.
+
+    It is the 2026-07-29 lesson recurring one module over: *normalise a language code
+    before gating on it -- refusing to measure is not the safe direction*, fixed then
+    in ``awareness/framing.py`` and never propagated here. ``analytics.managed.
+    normalize_lang`` is the convention, at 24 call sites; this delegates to it rather
+    than re-implementing the split, and falls back to the same rule only if that
+    module cannot be imported (a core install must never lose the gate to an
+    ImportError).
+
+    NORMALISED ON BOTH SIDES, per that lesson's own second half: the gate's KEYS are
+    normalised where it is built and the needle is normalised here, because
+    normalising only the corpus would leave a report keyed ``en-US`` targeting a
+    bucket that can no longer exist.
+    """
+    try:
+        from src.analytics.managed import normalize_lang
+    except Exception:  # noqa: BLE001 - the gate must survive a core install
+        if not lang:
+            return ""
+        return str(lang).strip().lower().replace("_", "-").split("-")[0]
+    return normalize_lang(lang)
+
+
 def _gold_n(metrics: dict) -> int:
     """Gold items for this language/field. Prefers the harness's own ``n_gold`` and falls
     back to ``tp + fn`` so a hand-written/legacy report still states an honest
@@ -230,7 +264,15 @@ def gate_languages_from_report(report: dict | None) -> dict[str, dict]:
             }
         entry["n_cases"] = n_cases
         entry["fields"] = per_field
-        out[lang] = entry
+        # KEYED ON THE BARE CODE (2026-09-05), so the lookup can normalise both sides.
+        # A no-op for the harness's own output -- ``evaluate_perception`` emits bare
+        # codes, so every existing consumer (``ai_check``'s cleared/refused lists, the
+        # run header's language lists) is byte-unchanged. FIRST WINS on a collision:
+        # the harness cannot produce two rows for one language, and blending two
+        # verdicts would invent a third that neither row states.
+        key = _norm(lang) or lang
+        if key not in out:
+            out[key] = entry
     return out
 
 
@@ -249,10 +291,15 @@ def language_gate(language: str | None, gate: dict[str, dict]) -> tuple[bool, st
     Since the per-field gate (E-S3), this answers "is this article worth a call at all?"
     -- True when at least ONE field cleared. WHAT gets stored is then decided field by
     field by :func:`field_gate`; a language active for `where` alone must never be read
-    as licensed for `who`."""
-    if not language:
+    as licensed for `who`.
+
+    ``language`` is NORMALISED before the lookup (:func:`_norm`) -- ``en-US`` is an
+    English article, not an unevaluated one. See :func:`_norm` for what that cost in
+    the field."""
+    norm = _norm(language)
+    if not norm:
         return False, "article has no known language"
-    entry = gate.get(language)
+    entry = gate.get(norm)
     if entry is None:
         return False, "never evaluated"
     active = entry.get("active")
@@ -276,10 +323,15 @@ def field_gate(language: str | None, field: str, gate: dict[str, dict]) -> tuple
     refuses for every field. A gate produced before per-field verdicts existed (an old
     persisted report) has no ``fields`` key -- it falls back to the language verdict,
     which is exactly the pre-E-S3 behaviour rather than an invented per-field one.
+
+    Normalised on the same rule as :func:`language_gate` -- a storage gate that read
+    ``en-US`` as unevaluated while the call gate read it as English would discard
+    every field of a call it had just paid for.
     """
-    if not language:
+    norm = _norm(language)
+    if not norm:
         return False, "article has no known language"
-    entry = gate.get(language)
+    entry = gate.get(norm)
     if entry is None:
         return False, "never evaluated"
     fields = entry.get("fields")
