@@ -5783,6 +5783,80 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a test that counts CALL SITES is asserting a coupling, so any extra call — however
     innocuous — is a claim about the code it will make on your behalf; read the failing
     guard's docstring before deciding whether it or the code is wrong.
+  - **A LESSON DOES NOT APPLY ITSELF TO THE CODE YOU ARE WRITING — grep for the READERS of
+    every field you just published, and know which kind of field it is (2026-09-05, the
+    omnibar cross-language block):** slice 1 taught `search_omni` to publish a
+    `cross_language` block, a per-row `via_ring` flag and a separate `cross_language_items`
+    count, and its own commit message cites the standing "a machine-readable refusal whose
+    flag no caller ever sends is a DEAD END" lesson — about a different subsystem. Nothing
+    in the frontend read any of the three. The ledger already carries that shape at least
+    five times (the 409's `acknowledgeable`, `start_outcome()`, `ai_worklist`, the tri-state
+    read in four places, `propose_stoplist_additions`) and it recurred anyway, in the slice
+    that quoted it, because the rule was being applied to the code being CALLED and never to
+    the code being WRITTEN. The check is one grep of the CONSUMING surface for the FIELD
+    NAME (not for the endpoint, which is called either way), and it belongs at the end of
+    any slice that adds a field to a payload. **THE DISCRIMINATOR MATTERS AS MUCH AS THE
+    GREP, or the rule turns into "delete every unread field":** running it over all fourteen
+    keys of this payload found two more unread by both the frontend and the tests
+    (`matched_language`, `normalized`) and they are NOT the same defect — the question is
+    whether an unread field is the only route to a CAPABILITY or is EVIDENCE inside a
+    payload whose summary is already rendered. The disclosure block was the former: unread,
+    the reader lost the whole honesty layer on that surface. The two provenance fields are
+    the latter, sitting beside a `method` and a `caveat` the house convention puts in every
+    payload precisely so a number can be checked by a reader the UI does not know about.
+    Kept, deliberately, and now measured rather than assumed. Same read found the display
+    bug below, which is the argument for doing this as a step rather than as a habit: the
+    consumers you go looking for are also where the consumers you already had went wrong.
+  - **A "N MORE" DISCLOSURE COMPUTED FROM `len(items)` IS DELETED BY PADDING THE LIST FROM A
+    DIFFERENT POPULATION (2026-09-05, the same read):** the omnibar states a group's true
+    size with `g.total > (g.items || []).length`, which was exact while every row came from
+    the same query. Slice 1 then APPENDED cross-language sibling rows to the keywords group
+    while its `total` stayed deliberately the PREFIX total (two populations; one number
+    would describe neither) — so the padded row count could exceed a total that was still
+    larger than the rows the reader typed for, and the "N matches in total" note vanished
+    exactly when siblings were present, i.e. exactly when the group was least
+    self-explanatory. GENERAL FORM: a disclosure derived from a collection's LENGTH is a
+    claim about the population that collection holds, so adding members from another
+    population silently changes what the disclosure means — count the rows the total
+    actually describes, not the rows on screen. Same family as the recorded "two surfaces
+    computing the same-sounding quantity by different rules", one layer down: here the two
+    rules met inside one expression.
+  - **A SURVIVING MUTANT CAN BE A FINDING ABOUT THE CODE — measure for EQUIVALENCE before
+    writing a test to kill it (2026-09-05, same slice):** the mutation matrix left three
+    survivors. Two were the recorded "a test of a helper is not a test of its wiring" gap
+    (the node suite drove the helpers and never the row builder, so blanking the header note
+    and dropping the per-row label both passed) and were closed with a wiring test. The
+    third was not a gap at all: dropping `!terms.length` from a two-clause guard is
+    BYTE-IDENTICAL over 11 payload shapes, because an empty list adds nothing in the loop
+    and the tail already returns `""` when nothing was pushed. The reflex — write a fixture
+    until something fails — would have pinned a redundancy forever and read as coverage.
+    Measure the two versions against each other first; when they agree, DELETE the redundant
+    clause with the measurement in a comment (so the next reader does not restore it as a
+    missing guard) and replace the mutation with one that can actually fail. The standing
+    rule "a mutation that reddens nothing is a finding" is right about the finding and
+    silent about its subject, which can be the test, the fixture, or the code.
+    RIDER, a node-harness fact worth not re-deriving: `app-*.js` modules share ONE global
+    scope, and a guard written `window.OOI18N && OOI18N.tf` reads BOTH the property and the
+    bare global — so a sandbox defining only `window.OOI18N` raises `ReferenceError` on the
+    second half. Define the alias, and put every function under test in ONE sandbox: two
+    `runInNewContext` blocks each defining that global throw `Cannot redefine property`, and
+    the near-miss version (both merely assigning it) is worse — last-one-wins leaves the
+    earlier block silently reading the later block's state.
+  - **A TREE-SCANNING GUARD IS NOT IN THE SUITE YOU RUN FOR YOUR OWN FILES (2026-09-05, the
+    omnibar guard's unencoded locale read):** before pushing I ran the four suites the change
+    touched — 290 passed — and the full run then failed one test I had not thought to run:
+    `test_utf8_file_io`, which walks the WHOLE tree for a text read or write with no
+    `encoding=`, and my new guard read `en.json` with the platform default. On Windows that
+    is cp1252 and it CRASHES rather than failing an assertion, on this file in particular,
+    because the keys being asserted carry curly quotes. The general point is about which
+    tests a new FILE can break: not only the tests of that file, but every guard that reads
+    the tree — and this repo has four
+    (`test_utf8_file_io` · `test_source_slicing_discipline` · `test_repo_invariants` ·
+    `test_import_conclusion::test_every_node_suite_has_a_driver`). I ran the one I remembered
+    and got lucky on the other two that were live for this change (the commit added a node
+    suite AND touched source slicing). Run them as a NAMED SET after adding or editing any
+    file; they cost seven seconds together, against the sixteen minutes of the full suite
+    that is the only other thing that would have caught it.
 
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
@@ -5979,7 +6053,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **Slices 1, 2, 3b and 4 need no network, no new dependency and no ruling** — and after BOTH
   research passes NOTHING in slices 1-4 is gated on anything. Slice 3 is now cheaper (cross-check
   (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the inventory half (R2a).
-  **EXECUTED 2026-09-05 (branch `claude/pr-1004-review-9ukgly`, draft PR #1010 onto `main`; four
+  **EXECUTED 2026-09-05 (branch `claude/pr-1004-review-9ukgly`, draft PR #1010 onto `main`; five
   `docs/ledger/shipped.csv` rows): SLICES 1, 2 AND 3b ARE BUILT, plus the slice-3 ride-along.**
   Slice 1 = the ring dictionary finally read by search (R1 expansion on by default, disclosed, with
   a REFUSAL for the 91 measured within-language collisions — R2a's grammar arriving one slice early
@@ -6002,6 +6076,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   because correcting either needs a number nobody has. `by_language` is where the decision lives and
   `by_token` makes a PARTIAL fix decidable (drop the block for the worst handful rather than all 82).
   Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running).
+  A FIFTH commit closes a gap slice 1 opened in itself: `search_omni` published a `cross_language`
+  block, a per-row `via_ring` and a `cross_language_items` count that NO frontend read — the
+  dead-end shape, in the slice whose own message cites that lesson — and rendering it exposed a real
+  display bug, because the group header's "N more" test compares the true total against a row count
+  slice 1 had begun PADDING with sibling rows, so the disclosure vanished exactly when siblings were
+  present. **WHAT SLICE 1 STILL OWES THE READER, and it is the same shape one level up:** the
+  several-senses REFUSAL names the concepts and offers no way to pick one, while R2a rules that *the
+  reader picks the sense and expansion runs per-sense from the chosen QID*. By this project's own
+  recorded rule — grep for the caller that sends the proceed flag before shipping an endpoint that
+  says "here is why, and here is how to proceed" — a refusal with no proceed path is unfinished, so
+  the pick is being built on the 91 ring-covered collisions now. The broader sense INVENTORY (slice
+  6) stays gated on the dump; what is buildable is the CHOICE mechanism over the senses the rings
+  already know.
   **RESEARCH PASS 2 — SENSE DISAMBIGUATION: RUN + REPORTED (operator, 2026-09-05; full record =
   design doc §6c). FOUR VERDICTS:** (1) **the obvious route is a DEAD END** — Wikidata
   *disambiguation items* (`P31 = Q4167410`, ~1.4M) exist only to carry interlanguage links; they
