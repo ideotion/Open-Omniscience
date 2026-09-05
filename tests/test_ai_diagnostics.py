@@ -9,6 +9,9 @@ needed to prove the degrade-never-crash contract).
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
+
+import pytest
 
 from src.api import diagnostics as d
 from src.monitoring import ai_diagnostics as AID
@@ -149,6 +152,75 @@ def test_context_settings_report_both_backends_honestly():
         "propose a number rather than invent one"
     )
     assert "governs" in ctx["ollama"]["note"], "the configured setting still wins"
+
+
+def test_the_vllm_context_block_reports_the_models_own_facts():
+    """FIELD DEFECT 2026-09-04, the reporting half.
+
+    This block called ``compute_server_args`` with neither the checkpoint's KV cost nor
+    its measured weight footprint, so it always described the FALLBACK derivation -- a
+    start no machine performs, since ``start()`` reads both. The export therefore
+    reported "this model's own shape could not be read" about a machine whose shape had
+    never been looked at, and the running server's real ``max_model_len`` differed from
+    the published one with nothing on the page to explain it.
+    """
+    import src.monitoring.ai_diagnostics as M
+
+    facts = {
+        "gpu": {"available": True, "vram_mb": 8188, "vram_free_mb": 7841},
+        "vllm": {"installed": True},
+    }
+    seen: dict = {}
+
+    def _fake_compute(vram_mb, **kw):
+        seen.update(kw)
+        return {"max_model_len": 18432, "gpu_memory_utilization": 0.89,
+                "enforce_eager": True, "method": "m", "caveat": "c"}
+
+    with (
+        patch("src.llm.vllm_lifecycle.compute_server_args", _fake_compute),
+        patch("src.llm.vllm_lifecycle.kv_basis", lambda m: {
+            "measured": True, "mb_per_token": 0.1015625, "max_position_embeddings": 262144,
+            "config_file": "params.json",
+        }),
+        patch("src.llm.vllm_lifecycle.measured_weight_gb", lambda m: 3.3),
+    ):
+        ctx = M._context_settings(facts)
+
+    # The derivation was handed the MODEL's numbers, not the class defaults.
+    assert seen["kv_mb_per_token"] == 0.1015625
+    assert seen["model_max_tokens"] == 262144
+    assert seen["weight_footprint_gb"] == pytest.approx(3.8)  # 3.3 measured + load margin
+    # ...and the inputs are published beside the outputs, so a machine still on the
+    # fallback constant says WHICH file it could not read rather than only that it
+    # could not -- the omission that cost a whole round trip.
+    assert ctx["vllm"]["kv_per_token"]["measured"] is True
+    assert ctx["vllm"]["weights_gb"]["measured"] == 3.3
+    assert "checkpoint" in ctx["vllm"]["weights_gb"]["source"]
+
+
+def test_an_unreadable_checkpoint_says_so_in_the_context_block():
+    """The negative-space twin: the fallback path must still be REACHED and must state
+    its own reason, never silently look like a measurement."""
+    import src.monitoring.ai_diagnostics as M
+
+    facts = {
+        "gpu": {"available": True, "vram_mb": 8188, "vram_free_mb": 7841},
+        "vllm": {"installed": True},
+    }
+    with (
+        patch("src.llm.vllm_lifecycle.kv_basis", lambda m: {
+            "measured": False, "reason": "no loadable snapshot revision",
+            "fallback_mb_per_token": 0.5,
+        }),
+        patch("src.llm.vllm_lifecycle.measured_weight_gb", lambda m: None),
+    ):
+        ctx = M._context_settings(facts)
+
+    assert ctx["vllm"]["kv_per_token"]["measured"] is False
+    assert "no loadable snapshot revision" in ctx["vllm"]["kv_per_token"]["reason"]
+    assert ctx["vllm"]["weights_gb"]["measured"] is None
+    assert "class default" in ctx["vllm"]["weights_gb"]["source"]
 
 
 def test_no_secret_looking_field_names_anywhere_in_the_payload():
