@@ -5714,6 +5714,47 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     rather than live (2 non-topical proposals in 921 assignments), and the fix is a
     reported finding rather than a silent filter, because deciding `independent` is
     not a topic is a taxonomy ruling a human makes.
+  - **A ROLLUP THAT IS CORRECT AT ITS OWN LEVEL IS THE HARDEST RENDER-BOUNDARY LOSS TO
+    SEE — nothing in the payload is wrong, and the reading it produces is the opposite
+    of the truth (2026-09-05, the one-button AI check's extraction gate):** the recorded
+    lesson says a distinction dies at a render boundary unless the renderer is part of
+    the change. Every earlier instance had something visibly missing or visibly wrong.
+    Here `_gate_lines` read `v["active"]` — the language-level rollup, which is `True`
+    when ANY field clears and is documented as meaning exactly that, so it was right —
+    and published `cleared: 13, refused: 0, unmeasured: 0`. Running the same gate over
+    the same report: **20 of 39 FIELD verdicts cleared, 2 refused, 17 never measured**,
+    with `hi`'s `who` refused for INVENTION (hallucination 1.0 past the 0.5 floor) and
+    `fr`'s `who` for SILENCE (recall 0.0) — the two different failures the two floors
+    exist to tell apart — while eleven of the thirteen "cleared" languages cleared on
+    `where` ALONE. The earlier 08-12 report in the same bundle is worse: `who` refused in
+    **all 13 languages**, 30 of 39 verdicts refused, rendered as "cleared: 7". So the one
+    surface that answers *does my local model invent things* said no while the gate it
+    reads was refusing that exact field everywhere. FOUR RULES. (a) When a payload carries
+    a ROLLUP, ask what it is a rollup OF and whether the renderer publishes that too — a
+    correct summary is not evidence that the detail survived, and `active: True` meaning
+    "worth a call" is not `active: True` meaning "cleared for everything". (b) Do NOT fix
+    it by redefining the rollup: the key had readers and its own documented meaning, so the
+    level BELOW is added beside it and the note is what stops `cleared` over-reading (the
+    recorded "the name is the part you are allowed to change" rule). (c) **There were TWO
+    boundaries, and publishing without rendering moves the silence one function along** —
+    `ai_check._gate_lines` dropped it from the payload and `_renderAiCheck` would have
+    dropped it from the panel, so the fix is only a fix when both are in the same change;
+    the renderer half is guarded BEHAVIOURALLY, because asserting `refused_fields` appears
+    in the slice passes with the loop that draws it neutered (the `d.other` shape).
+    (d) The RUN was correct throughout — `field_gate` discarded both refused fields and
+    the sweep tallies `field_gated` per field — which is what made this invisible: there
+    was no failure to investigate, only a report that could not be read. **AND THE
+    MUTATION-MATRIX HALF, worth as much: a mutant that survives may be a finding about the
+    MUTANT.** My first "treat an old fields-less report as a measurement gap" mutation
+    passed everything, and the survival was correct — the legacy branch skips those entries
+    in both loops, so the field list is empty and the fabricated-gap outcome is unreachable
+    BY CONSTRUCTION rather than by a guard. Nothing can produce it, so no test can catch it,
+    and a test written for it would assert a property nothing can break. Re-target the
+    mutant at a mechanism that CAN be removed (here the disclosure itself) and record WHY
+    the first one was rejected, or the next session re-adds the vacuous test. Sibling trap
+    from the same run: a shell-quoted `str.replace` mutation whose needle never matched
+    reported 42-passed twelve times over, which reads exactly like twelve dead guards —
+    every mutation must `assert new != old` before its run is allowed to mean anything.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS

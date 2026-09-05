@@ -476,3 +476,203 @@ def test_context_is_measured_in_every_run_not_only_the_deep_one():
         assert names.index("context") > names.index("throughput"), (
             "after throughput: both sweep the same client, and the cheap ones come first"
         )
+
+
+# --------------------------------------------------------------------------- #
+#  the extraction gate, at BOTH levels (2026-09-05 field defect 4)
+#
+#  The 09-04 check on the maintainer's machine rendered "cleared: 13, refused: 0,
+#  unmeasured: 0" while the very same gate refused `hi`'s `who` for inventing people
+#  (hallucination 1.0) and `fr`'s `who` for recovering nothing (recall 0.0) -- two
+#  refusals, of the two different kinds the floors exist to catch, and eleven of the
+#  thirteen "cleared" languages cleared on `where` ALONE. The run was correct
+#  throughout; `_gate_lines` read only the language-level rollup and the distinction
+#  died at the render boundary. `_gate_lines` had NO test at all before this.
+#
+#  Every guard below has its negative-space twin, because an over-eager renderer that
+#  invents a refusal is exactly as dishonest as one that hides a real one.
+# --------------------------------------------------------------------------- #
+def _harness(by_language: dict) -> dict:
+    """The live-eval ENVELOPE `_gate_lines` is handed: metadata wrapping the S6.5
+    harness's own report one level in. Built in the shape the real
+    ``run_perception_eval_against_model`` writes, since reading it at the wrong level
+    is a defect this module has shipped before."""
+    return {"status": "ok", "model": "m", "report": {"n_cases": 4, "by_language": by_language}}
+
+
+def _metrics(*, hallucination=None, recall=None, n_gold=0, n_pred=0) -> dict:
+    return {
+        "hallucination_rate": hallucination,
+        "recall": recall,
+        "n_gold": n_gold,
+        "n_pred": n_pred,
+    }
+
+
+def test_a_field_refused_inside_a_cleared_language_is_published() -> None:
+    """THE FIELD DEFECT. `hi` rolls up active because `where` cleared; `who` was
+    refused for invention. Reporting only the rollup tells the reader the model
+    invents nothing anywhere."""
+    out = AC._gate_lines(_harness({
+        "hi": {
+            "n_cases": 1,
+            "who": _metrics(hallucination=1.0, n_pred=2),
+            "where": _metrics(recall=1.0, n_gold=1),
+        },
+    }))
+    assert out["cleared"] == ["hi"], "the language rollup keeps its own meaning"
+    assert out["refused"] == [], "and it is still not refused AT THE LANGUAGE LEVEL"
+    assert [(r["language"], r["field"]) for r in out["refused_fields"]] == [("hi", "who")]
+    assert "hallucination" in out["refused_fields"][0]["reason"], (
+        "the reason names WHICH floor it hit -- invention and silence are different failures"
+    )
+    assert out["by_field"]["who"]["refused"] == ["hi"]
+    assert out["by_field"]["where"]["cleared"] == ["hi"]
+
+
+def test_the_two_kinds_of_refusal_are_both_reported_and_told_apart() -> None:
+    """Invention (hallucination above the floor) and silence (recall at zero) are the
+    two floors; the field export carried one of each and neither reached the reader."""
+    out = AC._gate_lines(_harness({
+        "hi": {"n_cases": 1, "who": _metrics(hallucination=1.0, n_pred=2),
+               "where": _metrics(recall=1.0, n_gold=1)},
+        "fr": {"n_cases": 1, "who": _metrics(recall=0.0, n_gold=1),
+               "where": _metrics(recall=1.0, n_gold=1)},
+    }))
+    reasons = {r["language"]: r["reason"] for r in out["refused_fields"]}
+    assert set(reasons) == {"hi", "fr"}
+    assert "hallucination" in reasons["hi"]
+    assert "recall" in reasons["fr"] and "recovered nothing" in reasons["fr"]
+
+
+def test_a_gate_with_nothing_refused_reports_no_refusals() -> None:
+    """The negative-space twin: an over-eager renderer inventing a refusal would be
+    exactly as dishonest as one hiding it."""
+    out = AC._gate_lines(_harness({
+        "en": {"n_cases": 2, "who": _metrics(hallucination=0.0, recall=1.0, n_gold=2, n_pred=2),
+               "where": _metrics(recall=1.0, n_gold=2), "when": _metrics(recall=1.0, n_gold=2)},
+    }))
+    assert out["refused_fields"] == []
+    assert out["partly_cleared"] == [], "cleared for all three is not 'partly cleared'"
+    assert out["field_counts"] == {"cleared": 3, "refused": 0, "unmeasured": 0, "total": 3}
+
+
+def test_a_language_cleared_on_one_field_says_which_fields_it_was_not() -> None:
+    """Eleven of the thirteen "cleared" languages in the field report cleared on
+    `where` alone. "Cleared" over-reads badly without this."""
+    out = AC._gate_lines(_harness({
+        "zh": {"n_cases": 1, "where": _metrics(recall=1.0, n_gold=1)},
+    }))
+    assert out["cleared"] == ["zh"]
+    assert out["partly_cleared"] == [{"language": "zh", "not_cleared": ["who", "when"]}]
+    assert out["by_field"]["who"]["unmeasured"] == ["zh"]
+
+
+def test_a_language_refused_outright_is_not_called_partly_cleared() -> None:
+    """A language that cleared NOTHING belongs in `refused`, and calling it "cleared for
+    some fields only" would be a fabricated partial pass. The guard on `partly_cleared`
+    is what keeps the two apart, and only a fully-refused language can discriminate it."""
+    out = AC._gate_lines(_harness({
+        "ar": {"n_cases": 1, "who": _metrics(hallucination=1.0, n_pred=1),
+               "where": _metrics(recall=0.0, n_gold=1)},
+    }))
+    assert out["refused"] == ["ar"], "no field cleared, so the language is refused"
+    assert out["cleared"] == []
+    assert out["partly_cleared"] == [], "nothing was cleared, so nothing is PARTLY cleared"
+    assert len(out["refused_fields"]) == 2, "both refusals are still named"
+
+
+def test_an_unmeasured_field_is_never_counted_as_a_refusal() -> None:
+    """Three states, one level down: "never evaluated" is not "failed" for a FIELD
+    either, and a report that blended them would send the operator to fix a model
+    that was simply never asked."""
+    out = AC._gate_lines(_harness({
+        "ja": {"n_cases": 1, "where": _metrics(recall=1.0, n_gold=1)},
+    }))
+    assert out["refused_fields"] == []
+    assert out["field_counts"]["unmeasured"] == 2
+    assert out["field_counts"]["refused"] == 0
+
+
+def test_the_counts_carry_their_own_denominator() -> None:
+    """A count of refusals with no total cannot be read: 2 refused out of 39 verdicts
+    and 2 out of 4 are different machines."""
+    out = AC._gate_lines(_harness({
+        "en": {"n_cases": 1, "who": _metrics(hallucination=0.0, recall=1.0, n_gold=1, n_pred=1),
+               "where": _metrics(recall=1.0, n_gold=1), "when": _metrics(recall=1.0, n_gold=1)},
+        "hi": {"n_cases": 1, "who": _metrics(hallucination=1.0, n_pred=2),
+               "where": _metrics(recall=1.0, n_gold=1)},
+    }))
+    c = out["field_counts"]
+    assert c["total"] == c["cleared"] + c["refused"] + c["unmeasured"] == 6
+    assert (c["cleared"], c["refused"], c["unmeasured"]) == (4, 1, 1)
+
+
+def test_the_note_says_cleared_does_not_mean_cleared_for_everything() -> None:
+    """The headline list is the thing that over-read; the note is what stops it."""
+    out = AC._gate_lines(_harness({"en": {"n_cases": 1, "where": _metrics(recall=1.0, n_gold=1)}}))
+    assert "at least one field" in out["note"].lower()
+
+
+def test_a_report_predating_per_field_verdicts_is_named_not_counted_as_a_gap(monkeypatch) -> None:
+    """A SCHEMA gap is not a MEASUREMENT gap. Reporting an old report's languages as
+    "unmeasured for every field" would claim a harness result that was never absent."""
+    import src.ai_layer.perception_extract as PE
+
+    def _legacy(_report):
+        return {"en": {"active": True, "reason": "cleared", "checks": ["x"]}}
+
+    monkeypatch.setattr(PE, "gate_languages_from_report", _legacy)
+    out = AC._gate_lines(_harness({"en": {}}))
+    assert out["cleared"] == ["en"]
+    assert out["field_counts"]["unmeasured"] == 0, "no field was measured OR left unmeasured"
+    assert out["no_field_verdicts"]["languages"] == ["en"]
+    assert "before per-field gating existed" in out["no_field_verdicts"]["reason"]
+
+
+def test_an_empty_fields_dict_is_an_absence_of_verdicts_not_three_unmeasured_ones(
+    monkeypatch,
+) -> None:
+    """``{}`` and a missing key are the same absence, and neither is a measurement.
+
+    Counting an empty ``fields`` as "unmeasured for who, where and when" would publish
+    three gaps the harness never left -- the same fabrication the legacy branch exists
+    to avoid, reached by a shape one character away from it."""
+    import src.ai_layer.perception_extract as PE
+
+    monkeypatch.setattr(
+        PE,
+        "gate_languages_from_report",
+        lambda _r: {"en": {"active": True, "reason": "c", "checks": ["x"], "fields": {}}},
+    )
+    out = AC._gate_lines(_harness({"en": {}}))
+    assert out["field_counts"]["total"] == 0, "no verdicts is not three unmeasured ones"
+    assert out["no_field_verdicts"]["languages"] == ["en"]
+
+
+def test_the_field_order_follows_the_extractor_not_a_copy_of_it() -> None:
+    """Lockstep: a field added to the sweep must not need a second edit here to become
+    visible, and one it does not have must never be invented."""
+    from src.ai_layer.perception_extract import _FIELDS
+
+    out = AC._gate_lines(_harness({
+        "en": {"n_cases": 1, "where": _metrics(recall=1.0, n_gold=1)},
+    }))
+    assert list(out["by_field"]) == list(_FIELDS)
+
+
+def test_a_field_the_gate_carries_beyond_the_known_order_is_appended_not_dropped() -> None:
+    """The report may never be SHORTER than the evidence it was handed."""
+    assert AC._field_order(["where", "who", "why"]) == ["who", "where", "why"]
+
+
+def test_no_gate_at_all_is_still_no_line() -> None:
+    """A core install has no gate to read; an unavailable eval has no verdict. Neither
+    is a refusal."""
+    assert AC._gate_lines(None) is None
+    assert AC._gate_lines({"status": "unavailable"}) is None
+
+
+def test_a_raising_gate_reports_the_gap_rather_than_guessing_a_verdict() -> None:
+    out = AC._gate_lines({"status": "ok", "report": "not-a-dict"})
+    assert "error" in out and "refused_fields" not in out

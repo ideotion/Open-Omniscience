@@ -5571,3 +5571,54 @@ is a silent NO-OP (None means "leave unchanged"), and BOTH reset tokens — the 
     Same family as the recorded `cmd | tail` lesson: a check you expect to be
     interesting that says nothing interesting has usually not run. Assert the selector
     matches FIRST (`1 passed, N deselected`), then mutate.
+
+### 2026-09-05 — monitoring/ai-check — the extraction gate reports its FIELDS, not only its languages
+
+Field defect 4 of the 2026-09-05 AI-diagnostics export. The one-button check's gate line
+rendered `cleared: 13, refused: 0, unmeasured: 0`, from which the only available reading is
+that the model invents nothing anywhere. Running the same gate over the same persisted
+report says otherwise: of **39 field verdicts, 20 cleared, 2 were refused and 17 were never
+measured**. `hi`'s `who` was refused for INVENTION (hallucination 1.0, above the 0.5 floor)
+and `fr`'s `who` for SILENCE (recall 0.0 on its one gold item) — two failures of the two
+different kinds the floors exist to separate — and eleven of the thirteen "cleared"
+languages had cleared on `where` ALONE, with `who` and `when` untested. The 08-12 report in
+the same bundle is worse: `who` refused in **all 13 languages**, 30 of 39 verdicts refused,
+rendered as `cleared: 7`.
+
+Nothing was wrong in the RUN. `field_gate` correctly discarded both refused fields and the
+sweep tallies `field_gated` per field; the language-level `active` is documented as `True`
+when ANY field clears, and it was. The loss was entirely at the render boundary:
+`_gate_lines` read only that rollup and dropped `v["fields"]`, which is the hardest form of
+this defect to see, because no value in the payload is incorrect and the summary is a true
+statement about a different question.
+
+FIXED at both boundaries, because there were two. The payload gains `by_field` (the same
+three states one level down), `refused_fields` (named, with the harness's own reason, so a
+reader learns WHICH floor was hit), `partly_cleared` (the case `cleared` cannot express) and
+`field_counts` with its denominator; the language lists keep their names and their meaning,
+and the note is what stops `cleared` over-reading. The Settings panel renders all of it —
+publishing without rendering would have moved the silence one function along — and that half
+is guarded behaviourally by a node suite driving the real `_renderAiCheck`, since asserting
+`refused_fields` appears in the slice passes with the loop that draws it neutered. An old
+report predating per-field verdicts is a SCHEMA gap, not a measurement gap, so its languages
+are named apart rather than counted as 39 unmeasured fields.
+
+Three UI strings were keyed ×12 rather than left English (`unmeasured` had never been keyed
+either, in the same rendered line), taking the unkeyed-`t()` ratchet 300 → 297 and lowering
+the CI bar to match.
+
+**Mutation matrix — 14 mutants, all reddening by name, no survivors.** Payload:
+drop the per-field block → 7; unmeasured folded into refused → 3; refusal without its reason
+→ 2; `partly_cleared` without its guard → 1; the legacy disclosure deleted → 2; an unknown
+field dropped rather than appended → 1; the note's qualifier removed → 1; counts without a
+total → 3; an empty `fields` dict read as three unmeasured verdicts → 1. Renderer: the
+refusal loop deleted → red; the per-field counts not drawn → red; "cleared for some fields
+only" not drawn → red; the reason injected rather than escaped → red; a refusal banner drawn
+unconditionally (the fabricated-red twin) → red.
+
+**A REJECTED MUTANT, recorded so it is not re-added.** The first "treat an old fields-less
+report as a measurement gap" mutation survived everything, and correctly: the legacy branch
+skips those entries in both loops, so the field list is empty and that outcome is unreachable
+by construction rather than by a guard. A test for it would assert a property nothing can
+break. It was re-targeted at the disclosure, which a mutation CAN remove.
+
