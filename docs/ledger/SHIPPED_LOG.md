@@ -5622,3 +5622,173 @@ skips those entries in both loops, so the field list is empty and that outcome i
 by construction rather than by a guard. A test for it would assert a property nothing can
 break. It was re-targeted at the disclosure, which a mutation CAN remove.
 
+
+## 2026-09-05 — analytics/stopwords: the first reviewed batch from the keyword-triage proposal
+
+PR 5 of 5 from the 2026-09-05 AI-diagnostics export. The maintainer's operator step landed:
+`oo-keyword-triage-proposal-20260905.json` (20,175 batch records, Ministral-3-3B,
+`canary_ok_overall: true`) proposing **20,611 terms** as junk across 54 language buckets.
+**Twenty were taken.**
+
+**What the other 20,591 are — measured, not asserted.** A seeded random sample of 60 terms
+across de/nl/sv, the three proposal languages the reviewer reads well enough to defend a
+judgement in, hand-classified and committed at
+`docs/audit/keyword-triage-2026-09-05-sample.csv` (reproducible from
+`random.Random(20260905)`; the labels are the reviewer's, the model called all 60 junk):
+**10% site chrome · 26.7% inflected verbs · 13.3% adjectives · 21.7% content nouns · 5%
+proper nouns · 20% phrase fragments · 3.3% genuine function-word gaps.** The verbs and
+adjectives are the recorded lemmatization territory; the content nouns are the recorded
+open-class trap, and the offered terms include nl `spanje`, `wereld`, `parijs`, `brandweer`
+and sv `poliser`, `konst`, `fotbolls-vm`. Stoplisting the model's verdict as given would
+have deleted Spain from Dutch analytics.
+
+**And even inside the 10%, only a third survived a second bar: furniture in a LANGUAGE, not
+furniture on one SITE.** nl `lang gratis` (63m/63a) and de `klick online` (46m/46a) are one
+publisher's subscription copy; a language-scoped entry for them would hide those words for
+every other publisher that uses them meaningfully. That is the source auditor's
+`furniture_share`, not the stoplist's job.
+
+**The batch** (merged into `PUBLISHING_BOILERPLATE_SCOPED`, with sv/da/tr new to it; counts
+are the export's own mentions/articles on the live corpus):
+
+- de — `inhaltsverzeichnis` 299m/7a · `originalpreis` 92m/46a · `aufklappen` 74m/24a ·
+  `herunterladen` 21m/8a · `weiterlesen` 19m/12a
+- nl — `wachtwoord` 45m/15a · `rubriek` 25m/18a · `downloaden` 25m/11a · `rubrieken` 22m/7a ·
+  `colofon` 18m/18a · `cookiebeleid` 12m/3a
+- sv — `inloggad` **1058m/570a** (the single largest chrome term in the export) ·
+  `webbplatsen` 49m/3a · `webbplats` 35m/16a · `a-ö` 26m/9a · `användarvillkor` 10m/10a
+- da — `hjemmeside` 81m/28a · `nyhedsbreve` 25m/11a
+- tr — `haberi paylaş` 35m/35a · `devamını oku` 22m/2a, both as PHRASES; the component
+  unigrams (`paylaş`, `oku`) are ordinary Turkish verbs and are deliberately not stoplisted
+
+**Named refusals, pinned by a test so a later sweep argues with the reason instead of
+rediscovering it:** sv `bindningstid` (725m/363a) and `nyhetssajter` (598m/299a) read as pure
+paywall furniture by document frequency and are real Swedish consumer-affairs and
+media-industry topics; sv `kakor` is also biscuits; tr `günaydın` (145m/49a) is a greeting and
+a proper-noun collision; de `abmelden` and nl `abonnementen` are dual use.
+
+**FOUR STRUCTURAL FINDINGS, each verified live rather than read off a comment.**
+
+1. **The loader's `setdefault` makes a new key a REPLACEMENT, not an addition.**
+   `scoped_stopwords.setdefault(lang, set()).update(curated)` means a curated entry for a
+   language with no vendored `configs/stopwords_iso/<lang>.txt` CREATES the key, and
+   `get_stopwords` then stops falling back to the English default and returns the curated
+   words alone — one word for `sr` takes its stopset **128 → 1**. Invisible in every existing
+   test because every existing key has a file. Now a guard that PROVES the hazard (and so
+   fails loudly if the mechanism ever changes) rather than asserting the rule.
+2. **The channel the proposal NAMES is not the channel its caveat DESCRIBES.** The artifact is
+   `kind: scoped_stoplist_additions` and its caveat says an entry "hides every existing mention
+   at query time" — true of the GLOBAL channel (`filters.hidden_set` unions
+   `global_stopwords()`) and false of the scoped one, which never reaches it. A scoped entry is
+   index-time only; the existing mentions go on the next re-index.
+3. **`en` and `fr` cannot use the scoped channel at all.** `get_stopwords` checks
+   `language_stopwords` first and those are its only two keys, so an English or French addition
+   is necessarily globalised and owes cross-language review (the recorded fr `content` = happy
+   trap). That is one structural reason and it subsumes the separate worry about
+   `Keyword.language` being first-write-wins. English is 11,263 of the 20,611 offered.
+4. **A stoplist entry derived from unsegmented text is pinned to the tokenizer's failure
+   mode.** With the `[segmentation]` extra absent, `th` terms are 3-character MARK FRAGMENTS
+   (median 3.0 chars — `งหว`, `ทำให`, `อให`) while `zh`/`ja` are whole unsegmented RUN-ONS
+   (median 8 and 7.5 — `保證天天中獎 點我下載app`, `会員限定記事`, `エンタメ ライフ オピニオン`). Both are
+   genuinely junk and neither is a WORD; an entry for either would be dead weight the day a
+   segmenter is installed and the token shape changes. Two different artifacts, one exclusion,
+   611 terms.
+
+**A LEDGER CORRECTION shipped with it.** The open-queue ruling text named
+`configs/stopwords_extra/<lang>.yml` as the language-SCOPED channel. It is the opposite —
+those files' own headers say `global_stopwords()` unions every one of them regardless of
+language, so the split is a readability convenience. Following that line would have put words
+in the collision-prone channel believing them collision-free.
+
+**Verification.** Behavioural throughout: the real `BaselineExtractor` over real sentences,
+because a membership assertion passes even for a word that could never have been tokenised
+(sv `a-ö` is exactly that shape). The scoping twin uses a pair where the guarantee does real
+work rather than a hypothetical one — nl `downloaden` and da `hjemmeside` are ordinary words
+in de and nb, and both must survive there. **Mutation matrix, 5 mutants, all reddening by
+name, no survivors, restore verified green:** the whole batch reverted → 3 tests; a batch word
+globalised instead of scoped → 1; the Turkish CTA's component verbs stoplisted with the phrase
+→ 1; a refused term admitted → 1; a curated key for a language with no vendored file → 1. Every
+mutation asserts `new != old` before its run is allowed to mean anything.
+
+**Stated limit.** A phrase entry matches only the exact joined n-gram, so a longer overlapping
+one still leaks (`devamını oku sayfasında`). In this export the CTAs occur only as the bare
+bigrams, with no overlapping trigram extracted, so it covers what the corpus actually contains.
+
+## 2026-09-05 — catalog/source-tags: the reviewed batch, and the mirror defect in my own review
+
+PR 6 of the 2026-09-05 AI-diagnostics export, following PR3's re-specification of the
+source-tag canary. The funnel, measured: the sweep emitted **422 proposal rows over 270
+distinct domains** (921 tag mentions); the canary gate dropped **47 domains**, leaving 223; and
+a **≥20-collected-article floor** dropped **59 more**, leaving a **164-domain REVIEW WORKLIST**
+with **449 tag proposals, 381 of them new to the entry**. It was reviewed rather than merged —
+the ai-proposed → claude-verified → maintainer-merged chain — and **49 entries and 75 tags are
+taken**, a **20% acceptance rate** on the new proposals. The two dropped populations wait on
+different things: the 59 on more collection, the 47 on a re-run after the canary
+re-specification.
+
+**THE SYSTEMATIC DEFECT in the model's half: a keyword-derived tag describes the SCRAPE
+WINDOW, not the source.** The model reads a source's top keywords, which are whatever that
+source published while we were collecting, and states them as the outlet's beat. Fourteen
+refusals are named individually because each is a WRONG tag rather than merely an unsupported
+one: nawaat.org `east-africa` (Nawaat is Tunisian, and Tunisia is North Africa),
+medievalists.net `ancient-history` (medieval is not ancient), thecable.ng `north-america` (a
+Nigerian outlet), nypost.com `california`, clarin.com `climate` as the ONLY tag for
+Argentina's largest general daily, vg.no `sport`, heise.de `energy`, infolibre.es `crude-oil`,
+urdupoint.com `commodities`/`crypto`, blog.roboflow.com `industrial-silicon`, hromadske.ua
+`official-statistics` — and three fact-checkers offered topical tags but not `fact-checking`.
+
+**THE MIRROR DEFECT, in my own review, and it is the reusable half.** Four entries were
+dropped on a SECOND pass, after checking each proposal against the tags the entry ALREADY
+CARRIES rather than against the domain: `finance` beside an existing `financial` (the
+catalog's dominant form — 178 uses against 9), `health` beside `healthcare` (86), `academic`
+beside `education`, and `academic` beside `philosophy`, which already names Daily Nous's beat
+exactly. **Then six more, through the channel the guard explicitly cannot see**: `disinformation`
+was offered to six fact-checkers, and every one of them already carries `fake-news` — the
+catalog's form for that subject at **210 uses against 14**, with only two entries carrying both.
+`fact-checking` was kept for all eight because it is a different fact, the ACTIVITY rather than
+the subject. That set was found by MEASURING the added tag's frequency and its co-occurrence with
+the tags the entry carries, which is the review step no stem check can perform. **A near-synonym is not a new tag — it splits one collection stratum in two**, which
+is the same fragmentation PR3 addresses in the model's own vocabulary, arriving one level over
+in the hand-vetted batch that was supposed to be the careful half. The apply step already drops
+an EXACT duplicate; only a synonym check finds these.
+
+Pinned by `test_no_entry_carries_two_morphological_variants_of_one_tag`, which passes over all
+four seeded catalogs today (**0 collisions**, so it is a real ratchet rather than a wish) and
+**states its own honest limit in its body**: it finds MORPHOLOGICAL variants only. The semantic
+pair (`academic` beside `education`) shares no stem and is invisible to it — that one still
+needs a human reading the entry, and the guard must never be read as covering it. Its
+anti-vacuity companion asserts the predicate discriminates (`finance`/`financial` collide,
+`politics`/`policy` and `law`/`case-law` do not) — and it is what the mutation matrix catches
+when the stem function is neutered, since the main guard passes over a clean catalog whatever
+that function does.
+
+**TWO STRUCTURAL FINDINGS.** (1) `microsoft.com` carries TWO catalog entries (Research Blog,
+tags `[ai]`; Security Blog, tags `[cybersecurity]`), so a domain-keyed proposal cannot be
+attributed to either and `technology` was refused for that reason alone — and more broadly **54
+domains have more than one entry, meaning 227 of the 3,429 entries in `configs/sources.yml`
+are unreachable by the create-only seeder**, since it dedupes by domain both against the DB and
+within the input list. (2) Six worklist domains are absent from `configs/sources.yml` because
+they live in a SIBLING catalog the seeder also reads (markets → spectrum → wikidata → legal,
+in that order, after sources.yml). Checking the entry the seeder actually REACHES — not the
+first file the domain appears in — showed four of the six proposals already satisfied
+(`kipo.go.kr` has `[ip, patents]`; `avvenire.it` has `religion`) or redundant beside better
+tags, leaving one both new and defensible: `jeuneafrique.com` `politics`, which had no topical
+tag at all.
+
+**Six previously-untagged sources gain a collection stratum for the first time** (cnet.com,
+edweek.org, engadget.com, fortune.com, rollcall.com, zdnet.com — each carried `tags: []`). The
+seeder is create-only, so every edit here reaches FRESH INSTALLS only; an existing corpus keeps
+the tags its Source rows were created with. The one worklist row absent from every committed
+catalog is the synthetic `hazard.usgs.local`, and the model's `hazard` proposal for it is
+correct and already stamped by `CLASS_IMPLIED_TAGS` — nothing to do.
+
+**Verification.** The splice is textual and in-place — never a YAML round-trip, which would
+rewrite all 3,429 curated entries and bury the real diff — and verifies itself by parsing both
+sides and asserting that nothing but the intended tag lists differs, that no existing tag was
+reordered or dropped, and that the changed set equals the applied set exactly. The only inline
+form in these catalogs is the EMPTY list (0 of 191 inline occurrences carry a value, checked),
+so expanding six of them to block form cannot drop a tag; 80 insertions against 6 deletions
+reconciles as 74 tag lines plus 6 opened headers. A separate check asserts every taken tag was
+PROPOSED for that exact domain: its only two hits are the two rendered into the catalog's own
+vocabulary (fortune.com `finance` → `financial`, labiotech.eu `health` → `healthcare`). Mutation matrix: a reintroduced synonym pair
+and a neutered stem predicate each redden by name, restore verified green.

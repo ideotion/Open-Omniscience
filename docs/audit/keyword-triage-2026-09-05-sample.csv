@@ -1,0 +1,70 @@
+language,term,mentions,articles,class,in_batch,note
+# Hand-classified stratified sample behind the 2026-09-05 scoped-stoplist batch.
+# Source: oo-keyword-triage-proposal-20260905.json (2026-09-05 AI-diagnostics export),
+#   stoplist_additions.by_language, Ministral-3-3B / keyword-triage-v1.
+# Draw: random.Random(20260905).sample(rows, 20) over each of de/nl/sv, the three
+#   proposal languages the reviewer reads well enough to defend a judgement in.
+#   Reproducible: rows sorted by (-mentions, -articles, term) before sampling.
+# Labels are the REVIEWER's judgement, not the model's -- the model called all 60 "junk".
+# classes: chrome (site furniture) · content-noun · inflected-verb · adjective ·
+#   proper-noun · fragment (phrase/interjection/tokenizer artifact) · function-word
+de,YAY,5,5,fragment,no,interjection in caps; a token artifact rather than a word
+de,beine,13,11,content-noun,no,legs
+de,antrieb,33,6,content-noun,no,drive/propulsion
+de,fahndete,4,4,inflected-verb,no,searched for (police)
+de,paramount setzt,6,3,fragment,no,proper noun + verb
+de,fachliche,7,3,adjective,no,professional
+de,durchschnittliche,12,7,adjective,no,average
+de,regierender,3,3,adjective,no,governing
+de,pro woche,8,3,fragment,no,generic time phrase
+de,steinhuder,29,9,proper-noun,no,Steinhuder Meer (a place)
+de,schleichende,4,3,adjective,no,creeping
+de,hühner,4,4,content-noun,no,chickens
+de,ziehe,5,4,inflected-verb,no,I pull
+de,absichern,15,6,inflected-verb,no,to secure
+de,bäume,53,26,content-noun,no,trees
+de,zweistellige zahl,13,3,fragment,no,double-digit number
+de,testspiel sorgt,3,3,fragment,no,content noun + verb
+de,warnungen,16,12,content-noun,no,warnings
+de,beratung,25,8,content-noun,no,consultation/advice
+de,klick online,46,46,chrome,no,"""1 Klick online kündbar"" — one publisher's cancellation blurb"
+nl,productie rhea,12,12,fragment,no,proper-noun fragment
+nl,einde,87,42,content-noun,no,end
+nl,wedstrijd,200,36,content-noun,no,match
+nl,misgaan,13,6,inflected-verb,no,to go wrong
+nl,colofon,18,18,chrome,YES,masthead/colophon
+nl,volgde,13,10,inflected-verb,no,followed
+nl,getale,8,4,fragment,no,"fragment of the idiom ""in groten getale"""
+nl,regels,81,35,content-noun,no,rules/lines
+nl,hoopt,33,21,inflected-verb,no,hopes
+nl,klaagt,6,4,inflected-verb,no,complains
+nl,schreef,66,33,inflected-verb,no,wrote
+nl,colofon gast,9,9,chrome,no,covered by the colofon unigram
+nl,rubriek,25,18,chrome,YES,section/column
+nl,pal naast,6,3,fragment,no,adverbial phrase
+nl,grond,93,46,content-noun,no,ground
+nl,zo'n,89,41,function-word,no,"determiner (""such a"") — a real stoplist gap, not chrome"
+nl,wéér,3,3,function-word,no,stressed spelling of the adverb weer
+nl,oudste,6,5,adjective,no,oldest
+nl,reality awaits,30,8,fragment,no,English fragment inside a Dutch article
+nl,lang gratis,63,63,chrome,no,one publisher's subscription pitch
+sv,nyaste versionen,19,19,fragment,no,generic phrase; could be a software-release topic
+sv,släpper,7,5,inflected-verb,no,releases
+sv,grönt,18,11,adjective,no,green
+sv,osse odihr,6,3,proper-noun,no,OSCE/ODIHR
+sv,soligt,6,6,adjective,no,sunny
+sv,uppgav,34,21,inflected-verb,no,stated (attribution verb)
+sv,kebabsås tilltalar,14,7,fragment,no,content noun + verb
+sv,irrfärder,9,5,content-noun,no,wanderings
+sv,riktad,6,6,adjective,no,directed
+sv,älg,18,10,content-noun,no,moose
+sv,köper,42,34,inflected-verb,no,buys
+sv,hoppas,58,48,inflected-verb,no,hopes
+sv,följ följer,16,8,chrome,no,follow button; also a repeated-token n-gram
+sv,spås,9,9,inflected-verb,no,is predicted
+sv,pryda,6,6,inflected-verb,no,to adorn
+sv,slippa,3,3,inflected-verb,no,to avoid
+sv,bästa verk hittills,12,6,fragment,no,best work so far
+sv,inés lorenius fixade,12,6,proper-noun,no,person + verb
+sv,fadern,3,3,content-noun,no,the father
+sv,avgjordes,3,3,inflected-verb,no,was decided

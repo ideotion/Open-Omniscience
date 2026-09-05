@@ -460,6 +460,9 @@ sources:
   tags:
   - financial
   - news
+  - business
+  - equities
+  - stock-exchange
   priority: 2
 - name: Science Magazine (AAAS)
   domain: science.org
@@ -602,6 +605,9 @@ sources:
   - technology
   - science
   - analysis
+  - ai
+  - cybersecurity
+  - space
   priority: 2
 - name: Popular Science
   domain: popsci.com
@@ -725,6 +731,7 @@ sources:
   tags:
   - geopolitical
   - analysis
+  - defense
   priority: 2
 - name: International Crisis Group
   domain: crisisgroup.org
@@ -2025,6 +2032,7 @@ sources:
   verified: false
   tags:
   - legal
+  - case-law
   priority: 2
 - name: Kyodo News (English)
   domain: english.kyodonews.net
@@ -2489,6 +2497,7 @@ sources:
   verified: false
   tags:
   - investigative
+  - politics
   priority: 2
 - name: Truthout
   domain: truthout.org
@@ -2539,6 +2548,8 @@ sources:
   verified: false
   tags:
   - analysis
+  - labor
+  - politics
   priority: 3
 - name: The Nation
   domain: thenation.com
@@ -3179,6 +3190,8 @@ sources:
   verified: false
   tags:
   - investigative
+  - journalism
+  - nonprofit
   priority: 2
 - name: Investigative Reporters and Editors (IRE)
   domain: ire.org
@@ -3555,6 +3568,8 @@ sources:
   verified: false
   tags:
   - financial
+  - crypto
+  - markets
   priority: 2
 - name: Bitcoin Magazine
   domain: bitcoinmagazine.com
@@ -3765,6 +3780,8 @@ sources:
   verified: false
   tags:
   - analysis
+  - labor
+  - politics
   priority: 3
 - name: Liberation News
   domain: liberationnews.org
@@ -4259,6 +4276,7 @@ sources:
   verified: false
   tags:
   - science
+  - space
   priority: 2
 - name: Universe Today
   domain: universetoday.com
@@ -4299,6 +4317,9 @@ sources:
   verified: false
   tags:
   - science
+  - space
+  - defense
+  - technology
   priority: 2
 - name: NASA News
   domain: nasa.gov
@@ -4469,6 +4490,8 @@ sources:
   verified: false
   tags:
   - science
+  - climate
+  - environment
   priority: 2
 - name: PNAS (Proceedings of the National Academy of Sciences)
   domain: pnas.org
@@ -5292,6 +5315,7 @@ sources:
   verified: false
   tags:
   - financial
+  - business
   priority: 2
 - name: The Drum
   domain: thedrum.com
@@ -5937,6 +5961,8 @@ sources:
   verified: false
   tags:
   - agriculture
+  - business
+  - technology
   priority: 2
 - name: AgriTech Tomorrow
   domain: agritechtomorrow.com
@@ -5967,6 +5993,7 @@ sources:
   verified: false
   tags:
   - agriculture
+  - biotech
   priority: 2
 - name: Precision Agriculture News
   domain: precisionag.com
@@ -6348,6 +6375,7 @@ sources:
   verified: false
   tags:
   - climate
+  - energy
   priority: 2
 - name: Climate Analytics
   domain: climateanalytics.org
@@ -6963,6 +6991,7 @@ sources:
   verified: false
   tags:
   - ai
+  - technology
   priority: 2
 - name: CVPR News
   domain: cvpr.thecvf.com
@@ -7133,6 +7162,7 @@ sources:
   verified: false
   tags:
   - quantum
+  - technology
   priority: 1
 - name: The Quantum Insider
   domain: thequantuminsider.com
@@ -7183,6 +7213,7 @@ sources:
   verified: false
   tags:
   - quantum
+  - science
   priority: 2
 - name: IBM Quantum News
   domain: newsroom.ibm.com
@@ -7203,6 +7234,8 @@ sources:
   verified: false
   tags:
   - quantum
+  - ai
+  - technology
   priority: 1
 - name: Microsoft Azure Quantum
   domain: azure.microsoft.com
@@ -7464,6 +7497,8 @@ sources:
   verified: false
   tags:
   - quantum
+  - science
+  - technology
   priority: 1
   country: nl
 - name: Quantum Science Center
@@ -7506,6 +7541,7 @@ sources:
   verified: false
   tags:
   - water
+  - environment
   priority: 1
 - name: World Water Council
   domain: worldwatercouncil.org
@@ -9946,7 +9982,8 @@ sources:
   rate_limit_ms: 2000
   enabled: true
   verified: false
-  tags: []
+  tags:
+  - politics
   priority: 1
 - name: Federal News Network
   domain: federalnewsnetwork.com
@@ -10003,7 +10040,10 @@ sources:
   enabled: true
   verified: true
   last_verified: 2026-06-09
-  tags: []
+  tags:
+  - business
+  - financial
+  - markets
   priority: 1
 - name: Fox Business
   domain: foxbusiness.com
@@ -10047,7 +10087,10 @@ sources:
   rate_limit_ms: 2000
   enabled: true
   verified: false
-  tags: []
+  tags:
+  - technology
+  - ai
+  - business
   priority: 2
 - name: The Register
   domain: theregister.com
@@ -10070,7 +10113,9 @@ sources:
   enabled: true
   verified: true
   last_verified: 2026-06-09
-  tags: []
+  tags:
+  - technology
+  - ai
   priority: 2
 - name: Engadget
   domain: engadget.com
@@ -10081,7 +10126,9 @@ sources:
   rate_limit_ms: 2000
   enabled: true
   verified: true
-  tags: []
+  tags:
+  - technology
+  - ai
   priority: 2
   last_verified: '2026-06-09'
 - name: National Geographic
@@ -10412,7 +10459,8 @@ sources:
   rate_limit_ms: 2000
   enabled: true
   verified: false
-  tags: []
+  tags:
+  - education
   priority: 1
 - name: The Chronicle of Higher Education
   domain: chronicle.com
@@ -10982,6 +11030,9 @@ sources:
   verified: false
   tags:
   - brics
+  - environment
+  - climate
+  - agriculture
   priority: 2
   country: in
 - name: India Science Wire
@@ -11775,6 +11826,7 @@ sources:
   verified: false
   tags:
   - healthcare
+  - policy
   priority: 2
 - name: Fierce Healthcare
   domain: fiercehealthcare.com
@@ -11835,6 +11887,8 @@ sources:
   verified: false
   tags:
   - healthcare
+  - biotech
+  - pharma
   priority: 2
 - name: PharmaTimes
   domain: pharmatimes.com
@@ -12297,6 +12351,7 @@ sources:
   verified: false
   tags:
   - biotech
+  - science
   priority: 2
 - name: Bioscience Technology
   domain: biosciencetechnology.com
@@ -12758,6 +12813,7 @@ sources:
   verified: false
   tags:
   - biotech
+  - healthcare
   priority: 2
 - name: Biotech Patent News
   domain: biotechpatentnews.com
@@ -13049,6 +13105,7 @@ sources:
   verified: false
   tags:
   - history
+  - ancient-history
   priority: 1
 - name: HeritageDaily
   domain: heritagedaily.com
@@ -14404,6 +14461,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 1
 - name: Media Bias/Fact Check (MBFC)
   domain: mediabiasfactcheck.com
@@ -14775,6 +14833,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 1
   country: at
 - name: Faktencheck der Tagesschau
@@ -15003,6 +15062,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 1
 - name: Al-Ahram Fact Check
   domain: ahram.org.eg
@@ -15240,6 +15300,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 1
 - name: TurnBackHoax
   domain: turnbackhoax.id
@@ -15261,6 +15322,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 1
   country: pl
 - name: Telex - Fact Check
@@ -15440,6 +15502,8 @@ sources:
   verified: false
   tags:
   - financial
+  - business
+  - economy
   priority: 1
 - name: TheCable (Nigeria)
   domain: thecable.ng
@@ -23142,6 +23206,8 @@ sources:
   last_verified: 2026-06-09
   tags:
   - technology
+  - ai
+  - cybersecurity
   priority: 2
 - name: Linux Weekly (9to5Linux)
   domain: 9to5linux.com
@@ -24000,6 +24066,7 @@ sources:
   verified: false
   tags:
   - financial
+  - economy
   priority: 2
 - name: Altinget (Denmark)
   domain: altinget.dk
@@ -25784,6 +25851,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 2
 - name: SFGATE (San Francisco)
   domain: sfgate.com
@@ -26757,6 +26825,7 @@ sources:
   verified: false
   tags:
   - privacy
+  - law
   priority: 1
 - name: European Digital Rights (EDRi)
   domain: edri.org
@@ -28956,6 +29025,8 @@ sources:
   verified: false
   tags:
   - financial
+  - business
+  - economy
   priority: 2
 - name: Inquirer (Philippines)
   domain: newsinfo.inquirer.net
@@ -29339,6 +29410,7 @@ sources:
   tags:
   - fake-news
   - disinformation
+  - fact-checking
   priority: 2
 - name: Tempo Cek Fakta (Indonesia)
   domain: cekfakta.tempo.co
@@ -30266,6 +30338,7 @@ sources:
   verified: false
   tags:
   - fake-news
+  - fact-checking
   priority: 2
 - name: Demagog (Czechia)
   domain: demagog.cz
@@ -32150,6 +32223,7 @@ sources:
   verified: false
   tags:
   - permaculture
+  - agriculture
   priority: 2
 - name: Permaculture Spain
   domain: permacultura.es

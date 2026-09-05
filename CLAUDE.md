@@ -5920,6 +5920,83 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     from the same run: a shell-quoted `str.replace` mutation whose needle never matched
     reported 42-passed twelve times over, which reads exactly like twelve dead guards —
     every mutation must `assert new != old` before its run is allowed to mean anything.
+  - **A MODEL'S "JUNK" VERDICT IS ABOUT A TOKEN; A STOPLIST ENTRY IS ABOUT A LANGUAGE —
+    and the gap between the two is 90% (2026-09-05, the keyword-triage batch):** the
+    proposal offered 20,611 terms the model called junk. Hand-classifying a seeded random
+    sample of 60 across the three languages the reviewer reads well
+    (`docs/audit/keyword-triage-2026-09-05-sample.csv`, reproducible from
+    `random.Random(20260905)`): **10% site chrome · 40% inflected verbs and adjectives ·
+    27% real content nouns and proper nouns · 20% phrase fragments · 3% genuine
+    function-word gaps.** The verbs and adjectives are the recorded lemmatization
+    territory, the content nouns are the recorded open-class trap (nl `spanje`, `wereld`,
+    `brandweer` were all offered), and even inside the 10% only a third survived a second
+    bar — **furniture in a LANGUAGE, not furniture on one SITE**: nl `lang gratis` and de
+    `klick online` are one publisher's subscription copy, and stoplisting them per-language
+    would hide those words for every other publisher that uses them meaningfully (that is
+    the source-auditor's `furniture_share`, not the stoplist's job). Twenty words shipped
+    of 20,611 offered. FOUR RIDERS, each measured rather than reasoned. (a) **The
+    `setdefault` in the loader makes a NEW key a REPLACEMENT, not an addition**:
+    `scoped_stopwords.setdefault(lang, set()).update(curated)` means a curated entry for a
+    language with no vendored `configs/stopwords_iso/<lang>.txt` CREATES the key, and
+    `get_stopwords` then stops falling back to the English default — one word for `sr` takes
+    its stopset **128 → 1**. Invisible in every existing test, because every existing key
+    has a file; now a guard that proves the hazard rather than asserting it. (b) **The
+    channel a proposal NAMES is not the channel its caveat DESCRIBES**: the artifact is
+    `kind: scoped_stoplist_additions` and its caveat says an entry "hides every existing
+    mention at query time" — true of the global channel (`hidden_set` unions
+    `global_stopwords()`) and FALSE of the scoped one, which never reaches it. A scoped
+    entry is index-time only; the existing mentions go on the next re-index. Read what the
+    consumer does, not what the producer's prose says. (c) **`en` and `fr` cannot use the
+    scoped channel at all** — `get_stopwords` checks `language_stopwords` first and those
+    are its only two keys, so an English or French addition is necessarily GLOBALISED and
+    owes cross-language review; that is one structural reason, and it subsumes the separate
+    worry about `Keyword.language` being first-write-wins. (d) **A stoplist entry derived
+    from unsegmented text is pinned to the tokenizer's failure mode**: with the
+    `[segmentation]` extra absent, `th` terms are 3-character MARK FRAGMENTS (median 3.0
+    chars — `งหว`, `ทำให`) while `zh`/`ja` are whole unsegmented RUN-ONS (median 8 and 7.5 —
+    `保證天天中獎 點我下載app`, `会員限定記事`). Both are genuinely junk and neither is a WORD, so
+    an entry for either would be dead weight the day a segmenter is installed and the token
+    shape changes. Two different artifacts, one exclusion. **AND THE LABEL ONLY SELECTS THE
+    CANDIDATE**: `Keyword.language` is first-write-wins (`reconcile_keyword_language` is the
+    documented repair and runs only in the re-index cleanup), so the language a term is
+    filed under is a hint, not a finding — every word in the batch was assigned by READING
+    it, which is the only step that makes a language-scoped entry safe.
+  - **A NEAR-SYNONYM IS NOT A NEW TAG — check a proposal against the tags the ENTRY
+    ALREADY CARRIES and against the catalog's DOMINANT FORM, never against the domain
+    (2026-09-05, the source-tag batch; the mistake is mine, not the model's):** the same
+    sweep proposed tags for 223 sources, and the 164 with ≥20 collected articles were
+    hand-reviewed rather than merged. The model's systematic defect is easy to state — **a
+    keyword-derived tag describes the SCRAPE WINDOW, not the source**, which is how
+    nawaat.org (Tunisian) was offered `east-africa`, medievalists.net `ancient-history`,
+    and Argentina's largest general daily `climate` as its ONLY tag. The interesting half
+    is that the careful review then made the mirror mistake: four entries were dropped on a
+    SECOND pass because each proposal had been judged against the DOMAIN, and against the
+    entry's own tags they were synonyms — `finance` beside an existing `financial` (the
+    catalog's dominant form, **178 uses against 9**), `health` beside `healthcare` (86),
+    `academic` beside `education`, `academic` beside `philosophy`, which already named the
+    beat exactly — **and then six more through the channel the guard cannot see**:
+    `disinformation` offered to six fact-checkers that every one of them already answers with
+    `fake-news`, the catalog's form for that subject at **210 uses against 14**. That last set
+    was found by MEASURING the added tag's frequency and its co-occurrence with the tags the
+    entry carries, which is the step the stem guard cannot perform for you. A synonym does not add a fact; **it splits one collection stratum in
+    two**, which is the fragmentation the canary work addresses in the model's vocabulary,
+    recurring one level over in the batch that was supposed to be the careful one. The
+    apply step already dropped EXACT duplicates, so nothing loud ever fired. THREE RIDERS.
+    (a) The guard that pins it must **state what it cannot see**: a stem check finds
+    MORPHOLOGICAL variants (`finance`/`financial`) and is blind to the SEMANTIC pair
+    (`academic`/`education`), which shares no stem — so the docstring says so, or the next
+    reader takes a passing guard as coverage. (b) A guard that passes over four clean
+    catalogs **cannot fail when its own predicate is neutered**, so it owes an anti-vacuity
+    companion asserting the predicate discriminates (`finance`/`financial` collide;
+    `politics`/`policy` and `law`/`case-law` must not) — that companion, not the guard, is
+    what the mutation matrix catches. (c) **A domain-keyed proposal cannot be attributed
+    where a domain has several entries**: `microsoft.com` carries two (Research Blog `[ai]`,
+    Security Blog `[cybersecurity]`), which refused one tag on its own — and the same check
+    found **54 duplicate domains, i.e. 227 of the 3,429 entries in `configs/sources.yml`
+    unreachable by the create-only seeder**. Corollary when a worklist row is missing from
+    the file you expect: it may live in a SIBLING catalog the seeder also reads, and the
+    entry that matters is the one the seeding ORDER actually reaches — checking that turned
+    six "absent" proposals into four already-satisfied and one worth taking.
   - **THE DEAD-END SHAPE HAS A VERSION WITH A READER INSTEAD OF A CALLER — a refusal that
     names the choice and offers no way to make it (2026-09-05, the several-senses pick):**
     the recorded rule is about a machine-readable answer whose flag no caller sends, and
@@ -6371,9 +6448,54 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   dissolves the maintainer's own transfer worry: the work lives in the repo, not in the
   database, so it travels to every install. Caveat to state when ruling: a stoplist derived
   from ONE corpus reflects that corpus's language and source mix — mitigated by putting
-  additions in the language-SCOPED channel (`configs/stopwords_extra/<lang>.yml`, collision-free
-  by construction) and reserving the global channel for words that survive cross-language
-  review.
+  additions in the language-SCOPED channel and reserving the global channel for words that
+  survive cross-language review.
+  **⚠ CORRECTION 2026-09-05 (this line previously named `configs/stopwords_extra/<lang>.yml` as
+  the language-SCOPED channel — it is the opposite, and following it would have put words in
+  the collision-prone channel believing them collision-free).** Those files' own headers say
+  it: `global_stopwords()` unions EVERY `stopwords_extra/*.yml` regardless of language, so the
+  split is a readability convenience, not scoping. The SCOPED channel is the vendored
+  `configs/stopwords_iso/<lang>.txt` (regenerated by `build_stopwords.py`, so hand edits there
+  are overwritten) plus the in-code `CURATED_SCOPED_STOPWORDS` / `PUBLISHING_BOILERPLATE_SCOPED`
+  in `src/services/stopwords.py`, which is where a curated word belongs. Two consequences the
+  ruling text should carry: (a) `en` and `fr` cannot reach the scoped channel at all
+  (`get_stopwords` checks `language_stopwords` first and they are its only two keys), so any
+  English or French addition IS a global one; (b) the "applied at BOTH ends" framing above is
+  the GLOBAL channel's — a scoped entry is index-time only and does not hide existing mentions
+  at query time, so it lands on the next re-index.
+  **PROPOSAL RECEIVED + FIRST REVIEWED BATCH SHIPPED 2026-09-05 (PR 5 of 5 from the
+  2026-09-05 AI-diagnostics export; shipped.csv row "analytics/stopwords"):** the operator
+  step above is DONE — `oo-keyword-triage-proposal-20260905.json` (20,175 batch records,
+  Ministral-3-3B, `canary_ok_overall: true`; 20,611 terms actually proposed, 59,206 held back
+  for ambiguous language). **NOTE the `judged` counts are AT the reader's cap:** 25,750 junk +
+  221,601 content + 2,649 unsure = **exactly 250,000** = `distinct_terms` = `_MAX_TERMS`. The
+  cap itself is correct (a bounded reader over a log whose size tracks how much there was to
+  judge) and `terms_truncated: true` sits in the SAME block, so this is disclosed, not hidden —
+  the nicety is that the block does not carry the cap's VALUE, so a reader cannot tell the
+  round number is a ceiling without reading the source. Not changed here; recorded so the
+  figure is never quoted as a corpus total. Twenty words across
+  de/nl/sv/da/tr merged into `PUBLISHING_BOILERPLATE_SCOPED` (sv/da/tr new to it), each
+  hand-verified, with the named refusals pinned so a later sweep argues with the reason. The
+  measured composition of what was NOT taken is the Lessons entry above. **STILL OPEN:** the
+  formal (1)-vs-(2) ruling; English (11,263 terms) and French (881) as a GLOBAL-channel batch
+  needing cross-language review; zh/ja/th (611) until the `[segmentation]` extra is installed
+  and those articles are re-indexed; and the 64,910 `kind_overrides` proposals, untouched here.
+  **THE SOURCE-TAG HALF OF THE SAME EXPORT IS ALSO REVIEWED (PR 6, 2026-09-05; shipped.csv row
+  "catalog/source-tags"; maintainer ruled "go with your recommendation" on the question of what
+  to do with the proposed tags):** they are NOT merged. The funnel, measured: the sweep emitted
+  **422 proposal rows over 270 distinct domains** (921 tag mentions) — that is the "422" — the
+  canary gate dropped **47 domains**, leaving **223 domains / 591 tag mentions**, and a
+  ≥20-collected-article floor dropped **59 more**, leaving the **164-domain review worklist**
+  with **449 tag proposals, 381 of them new to the entry**. Of those, **49 entries / 75 tags**
+  were taken — a **20% acceptance rate**, with fourteen refusals named individually because each
+  is a WRONG tag rather than an unsupported one. The systematic defect and the mirror defect in
+  the review itself are the Lessons entry above. **STILL OPEN on this half:** the **59 domains
+  below the article floor** (too little evidence to judge a beat) and the **47 whose batch
+  failed the canary** (never eligible) — the first waits on collection, the second on a re-run
+  after PR3's canary re-specification, and neither on a decision. The seeder is create-only, so
+  these tag edits reach FRESH INSTALLS
+  only — an existing corpus keeps the tags its `Source` rows were created with, and a
+  retroactive apply would be its own reviewed slice.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
   reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
