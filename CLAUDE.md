@@ -5714,6 +5714,75 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     rather than live (2 non-topical proposals in 921 assignments), and the fix is a
     reported finding rather than a silent filter, because deciding `independent` is
     not a topic is a taxonomy ruling a human makes.
+  - **A RELEVANCE-RANKED ID LIST IS NOT A SAMPLE FRAME — and for this question its bias
+    ran the way that would have decided the ruling (2026-09-05, the month-occupancy
+    diagnostic):** the cheap way to find articles containing a month name is
+    `search_ids`, and it is the wrong way, because it is `ORDER BY bm25(...)`: the
+    top-ranked documents for `march OR mai OR …` are the ones where a month token is
+    DENSEST, which is a near-definition of a dateline-heavy page. Sampling from it would
+    have over-counted the consumed side and under-counted the free one, i.e. produced a
+    number saying "the ban is nearly free" for a reason that is entirely an artifact of
+    the ranking. Drawn uniformly over the id range instead, with the one bias that
+    substitutes STATED (an article just after a large id gap is over-represented, because
+    each draw takes the first article at or above it) — a stated bias is a different
+    object from an unexamined one. GENERAL FORM: whenever a search API is the convenient
+    way to enumerate candidates, read its ORDER BY before treating the result as a
+    population, and ask which direction its ordering pushes the specific quantity being
+    measured. Two riders. Scanning uniformly costs a decrypt per article, most of which
+    contain nothing of interest — recovered by running the cheap regex FIRST and paying
+    for the expensive extraction only on a hit, so the sample size is bounded by hits
+    rather than by draws. And the draw is SEEDED, because a diagnostic a maintainer may
+    run twice owes the same answer twice; the seed and a bounded list of the ids drawn
+    both ride in the payload, which is also what makes the determinism assertable rather
+    than inferred.
+  - **WHEN A MUTATION OF AN ARGUMENT SURVIVES, MEASURE WHETHER THAT ARGUMENT CAN CHANGE
+    THE ANSWER AT ALL BEFORE INVENTING A TEST FOR IT (2026-09-05, same slice):** dropping
+    the article's `language` from the diagnostic's call reddened nothing, and there are
+    two wrong responses — write a contrived fixture until something fails, or conclude the
+    argument is dead and delete it. The measurement settles it: over the 82 banned month
+    names crossed with 12 languages and 7 sentence templates, `language` changes the
+    outcome in exactly one shape — Hungarian's year-first `2024. december`, which the
+    extractor reads only under a `hu` hint. Every other banned token sits in the
+    language-agnostic table, and NO banned token is in the gated map at all. So the
+    argument is (a) genuinely load-bearing, for one real and realistic case, and (b)
+    nearly unfalsifiable on any other fixture — which is precisely why the test has to
+    use that case and say so, or the next person to read it will "simplify" the fixture
+    and silently restore the gap. The general rule: a surviving mutant is a finding about
+    the test, and the first step is to find out what the argument DOES on the live data,
+    not to keep guessing at fixtures. A currently-inert argument may still be right to
+    pass — the banned set can grow into the gated vocabulary tomorrow — but that is a
+    claim to write down, not one to leave implied by an untestable line of code.
+  - **THE MEASUREMENT YOU NEED MAY ALREADY BE COMPUTED INSIDE A FUNCTION AND DISCARDED AT
+    ITS RETURN (2026-09-05, the claimed-span seam):** the standing lesson says to check
+    whether an instrument exists before building one; a level below it, check whether the
+    thing exists as a LOCAL. `extract_dates` resolves overlapping matches most-specific-
+    first by claiming character ranges, so it has always known exactly which text it
+    consumed as a date — and returned only the dates. The month question is a question
+    about those ranges, and the honest answer was a seam (share the body, return the pair,
+    keep the public wrapper byte-identical) rather than a re-implementation that would
+    have drifted from the extractor the moment either changed. Two details worth keeping.
+    The exposed spans are deliberately a SUPERSET of "a date was stored" — the Jalali
+    router claims on route, so an ambiguous Persian date is claimed and then refused — and
+    for "was this token read as part of a date?" the superset is the right answer, so the
+    docstring states which direction it errs in rather than leaving a caller to assume
+    equality. And the spans index the text the pass actually SCANNED, so a caller reading
+    an offset past `_MAX_SCAN` as "not claimed" would fabricate an absence out of a bound;
+    that is a property of the seam, so it belongs in the seam's contract and in a test,
+    not in each caller's memory.
+  - **BEFORE CALLING A HELPER FOR A SIDE VALUE, CHECK WHETHER IT IS ALREADY IN SCOPE — AND
+    WHETHER THE HELPER'S CALL COUNT IS ITSELF AN INVARIANT (2026-09-05, `_articleQuery`):**
+    the R1 notice needed to know whether the current view has a text query, and I wrote
+    `_articleQuery(p).get("query")` three lines below `const q = _articleQuery(p)`, which
+    already held it. Harmless as waste; not harmless as a guard breach, because
+    `test_every_api_articles_caller_goes_through_the_translation` deliberately counts
+    `_articleQuery(` uses against `/api/articles` URL sites rather than checking variable
+    names — its own docstring says naming would pass for a caller that picked the same
+    name without using the helper. A convenience call is indistinguishable from a caller
+    that skipped the translation, so the count broke on correct code. The repair is not to
+    relax the guard: it is the change that should have been written anyway. GENERAL FORM:
+    a test that counts CALL SITES is asserting a coupling, so any extra call — however
+    innocuous — is a claim about the code it will make on your behalf; read the failing
+    guard's docstring before deciding whether it or the code is wrong.
 
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
@@ -5910,6 +5979,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **Slices 1, 2, 3b and 4 need no network, no new dependency and no ruling** — and after BOTH
   research passes NOTHING in slices 1-4 is gated on anything. Slice 3 is now cheaper (cross-check
   (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the inventory half (R2a).
+  **EXECUTED 2026-09-05 (branch `claude/pr-1004-review-9ukgly`, draft PR #1010 onto `main`; four
+  `docs/ledger/shipped.csv` rows): SLICES 1, 2 AND 3b ARE BUILT, plus the slice-3 ride-along.**
+  Slice 1 = the ring dictionary finally read by search (R1 expansion on by default, disclosed, with
+  a REFUSAL for the 91 measured within-language collisions — R2a's grammar arriving one slice early
+  on a real population). Slice 3b = both misfiled blocks re-filed (`ru.yml` carried 61 Latin entries
+  the plan had not seen) with a script guard. The ride-along = the Maghrebi calendar 1/8 → 7/8 and the
+  four multi-word Levantine names, with `ماي` deliberately WITHHELD (a within-Arabic collision a
+  language gate cannot separate) — and both of the design doc's Arabic claims corrected there, in
+  opposite directions. Slice 2 = the instrument, not the number:
+  `src/analytics/month_occupancy.py` + `GET /api/diagnostics/month-occupancy`, riding the
+  all-diagnostics bundle (no new button, per the one-button ruling), built on a new
+  `extract_dates_with_spans` seam that exposes the spans the extractor already claimed internally.
+  **⚠ THE ONE OPERATOR STEP, and slice 3 is gated on it: RUN THE DIAGNOSTIC ON A REAL CORPUS.** No
+  occupancy figure exists anywhere — the sandbox has no corpus, and a number from a fixture would be
+  a measurement of the fixture. One call (`GET /api/diagnostics/month-occupancy?sample=400&download=1`),
+  or read `month-occupancy.json` out of any bundle taken after this lands. **HOW TO READ IT is design
+  doc §8b, and it matters more than the headline**: two bounds point in OPPOSITE directions —
+  the denominator is unigram occurrences while the ban also kills every n-gram containing a banned
+  token (so the figure is a FLOOR on what is deleted), and a dateline the extractor MISSES counts as
+  outside (so it over-states what a date-aware block would newly admit). Neither is corrected,
+  because correcting either needs a number nobody has. `by_language` is where the decision lives and
+  `by_token` makes a PARTIAL fix decidable (drop the block for the worst handful rather than all 82).
+  Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running).
   **RESEARCH PASS 2 — SENSE DISAMBIGUATION: RUN + REPORTED (operator, 2026-09-05; full record =
   design doc §6c). FOUR VERDICTS:** (1) **the obvious route is a DEAD END** — Wikidata
   *disambiguation items* (`P31 = Q4167410`, ~1.4M) exist only to carry interlanguage links; they
