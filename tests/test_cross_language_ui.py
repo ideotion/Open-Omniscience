@@ -16,6 +16,7 @@ like a passing one.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -70,3 +71,43 @@ def test_cross_language_notice_node_suite() -> None:
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "all assertions passed" in proc.stdout
+
+
+def test_the_omnibar_renders_the_disclosure_it_publishes():
+    """`search_omni` publishes `cross_language`, a per-row `via_ring` and a separate
+    `cross_language_items` count. Until this landed nothing in the frontend read any of
+    them -- the "machine-readable answer with no caller" dead end, in the very feature
+    whose own commit message names that trap. The BEHAVIOUR is driven in node (the
+    renderer, extracted from the shipped module); this pins that the wiring exists at
+    all, so a deletion cannot pass by removing the node suite's subject."""
+    shell = strip_comments(read_static("app-shell.js"))
+    body = function_body(shell, "_omniItems")
+    assert "_omniCrossNote(_omniLive.cross_language)" in body, (
+        "the omnibar fetches a disclosure and never renders it"
+    )
+    assert "_omniTypedRows(g)" in body, (
+        "the group total must be compared against the rows the reader TYPED, not the "
+        "count padded by cross-language sibling rows"
+    )
+    assert "it.via_ring" in body, "a sibling row must say which concept put it there"
+
+
+def test_the_omnibar_disclosure_uses_keyed_templates_not_a_built_sentence():
+    """A value-bearing sentence is only translatable if its KEY is a fixed template: the
+    frame is keyed x12 and the term and the concept are DATA interpolated after."""
+    shell = strip_comments(read_static("app-shell.js"))
+    body = function_body(shell, "_omniCrossNote")
+    assert "tf(" in body and 'OOI18N.tf' in body
+    for frame in (
+        "{term} also matched as the concept",
+        "{term} denotes several concepts, so it was not expanded",
+    ):
+        assert frame in body, frame
+    en = json.loads(
+        (Path(__file__).resolve().parents[1] / "src/static/locales/en.json").read_text()
+    )
+    for key in (
+        "{term} also matched as the concept “{concept}”",
+        "{term} denotes several concepts, so it was not expanded",
+    ):
+        assert key in en, f"the omnibar renders {key!r} with no key behind it"
