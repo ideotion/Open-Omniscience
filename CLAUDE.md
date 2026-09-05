@@ -5699,15 +5699,87 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   compatibility"): WIKIDATA FIRST, AND TWICE OVER** — it is CC0, already in the pipeline, and needs
   no new licence decision: (a) more seeds -> more rings (coverage), and (b) **harvest the AMBIGUITY
   MAP from the SAME fetch** (which OTHER QIDs carry this surface form as a label) = the homonym
-  dictionary, free, from data already retrieved. Beyond it, PanLex (believed CC0 — VERIFY), Wikidata
-  Lexemes (CC0), OMW (licences vary PER language pack), Wiktextract (CC BY-SA — needs the
-  maintainer's share-alike ruling, already flagged open in this ledger); BabelNet EXCLUDED (not
-  open). Everything bundles as a static file generated on a networked machine and committed, under
+  dictionary, free, from data already retrieved. Beyond it (**all four now MEASURED by research pass
+  1 — see the RESEARCH PASS 1 block below; this sentence's earlier "PanLex (believed CC0 — VERIFY)"
+  was WRONG**): ~~PanLex~~ **DISQUALIFIED, CC BY-NC-SA 4.0**, Wikidata Lexemes (CC0, **refuted for
+  ring growth**), OMW (licences vary PER pack — **seed generator only, and no ru/hi/bn pack exists**),
+  Wiktextract (CC BY-SA — needs the maintainer's share-alike ruling, **reframed as the 3.0/4.0
+  revision mixture**); BabelNet EXCLUDED (not open). Everything bundles as a static file generated on a networked machine and committed, under
   the 100 MB/file limit — the shipped pattern. **SYNONYM CAUTION recorded before anyone ships one:**
   cross-language equivalence is near-identity and low-risk, but within-language synonymy is not —
   synsets and dictionary "synonyms" sections routinely mix true synonyms with HYPERNYMS
   (`car`↔`automobile` fine; `car`↔`vehicle` loses precision), so synonyms are a SEPARATE, separately-
   disclosed expansion tier, never merged silently into rings.
+  **RESEARCH PASS 1 — SOURCES: RUN + REPORTED (operator, networked machine, 2026-09-05; full record
+  = design doc §6b, which carries the measured byte counts, per-pack licences and tiers). FOUR
+  DECISIVE VERDICTS:** (1) **PanLex is DISQUALIFIED — `panlex.org/license/` fetched 2026-09-05 says
+  CC BY-NC-SA 4.0**, commercial use by written permission only; the CC0 belief traces to a CACHED
+  2019-dated snippet of that same URL (two HuggingFace mirrors still tag it cc0-1.0 in metadata —
+  the publisher's live licence page outranks both). NC is not GPL-3.0-compatible, so it cannot be
+  bundled; the home page's "free and open" links TO the NC page — take the licence, not the
+  marketing copy. (2) **THE SYNONYM-TIER QUESTION IS ANSWERED, AND THE ANSWER IS NOT FROM OMW** —
+  the distinction is real and machine-readable (synonymy = synset MEMBERSHIP; hypernymy = a typed
+  `SynsetRelation`; omw-en carries 285,348 relations, hypernym/hyponym 89,089 each) **but only
+  omw-en carries relations at all — fr/es/pt/arb/cmn/ja/id are 0 each**, and the translated synsets
+  have ALREADY LEAKED the hypernym in: Spanish `02958343-n` (`car`) contains `vehículo`, Indonesian
+  contains `kendaraan bermotor` + `mesin`, while English correctly keeps `motor vehicle` OUTSIDE.
+  So an OMW synonym tier ships precisely the `car`↔`vehicle` failure the caution above was written
+  about — unevenly, silently, and only in the non-English languages. (3) **OMW CANNOT COVER ru, hi
+  OR bn** (absent from the whole `wn` index, not just OMW 2.0) — 8/12 direct (en fr es pt ar zh ja
+  id) + de only via odenet; per-pack licences are genuinely mixed (fr WOLF = **CeCILL-C**, a copyleft
+  SOFTWARE licence; es MCR = mixed engWN-Princeton + CC BY 3.0; pt CC BY-SA 3.0 Unported; id MIT),
+  and the umbrella "[omw] all packs permit redistribution" is a convenience assertion, NOT a licence
+  ⇒ OMW is a SEED GENERATOR for the existing hand-vetting pipeline (~35 MiB filtered estimate),
+  never a shipped tier, and ring expansion structurally needs a SECOND source regardless. (4) **CLDR
+  IS THE CLEAN WIN: `cldr-dates-full` 48.2.0, licence `Unicode-3.0`, and the 12-language month table
+  (wide/abbr/stand-alone) MEASURED AT 5,205 BYTES** — with two traps a hand-built list misses:
+  **Russian has TWO paradigms** (format/genitive `января февраля марта` in dates vs stand-alone
+  `январь февраль март`) and **Arabic has THREE regional systems** (`ar`/EG/MA يناير فبراير مارس ·
+  SY/IQ/LB كانون الثاني شباط آذار · **DZ/TN جانفي فيفري**), against a legal-source catalog covering
+  ma dz tn sy iq lb.
+  **FOUR CROSS-CHECKS MEASURED AGAINST THE TREE THE SAME DAY (the research pass could not know
+  these, and they MOVE the plan):** (a) **the month stoplist covers exactly TWO of the twelve UI
+  languages** — `configs/stopwords_extra/_multilingual.yml` has 216 entries of which only 15 are
+  non-Latin and **every one of those is a WEEKDAY** (7 ru + 8 ar); months measured en 12/12 · fr
+  12/12 · de 5/12 · id 3/12 · es 0 · pt 0 · ru 0 · ar 0, zh/ja/hi/bn nothing at all, and the de/id
+  hits are ACCIDENTAL (only the spellings colliding with en/fr: april mai august september
+  november). So today is the worst of both directions — **over-deleting in en/fr** (the Mars/March
+  regression) and **not filtering datelines AT ALL** in the other ten. (b) **That makes a
+  string-level CLDR extension actively HARMFUL** — pasting the missing month names into the
+  stoplist would extend the deletion regression to six more languages; **CLDR must feed the DATE
+  EXTRACTOR, not the stoplist.** (c) **`dateextract` ALREADY carries most of what the stoplist
+  lacks** — ru BOTH paradigms, ar Gulf/Egyptian AND Levantine, hi, bn, th, fa, a documented
+  `_MONTH_LANG_OVERRIDES` ambiguity policy, and CJK handled NUMERICALLY (年月日 — the absent `一月`
+  is by design, not a gap) ⇒ **slice 3 is cheaper than it looked and does not need CLDR to start.**
+  (d) **the ONE real CLDR gap is the Maghrebi system** — `جانفي`/`فيفري`/`أفريل` appear ZERO times
+  in `dateextract.py`, a precisely-located live recall gap against dz/tn; a handful of table entries.
+  **REFUTED / SHARPENED / NEW:** Wikidata Lexemes are a MORPHOLOGY resource, not a translation one
+  (2020 senses: eu 20,272 · en 12,911 · ru 2,292 against ru's 101,137 lexemes ≈ 2%; only en+ru of
+  our 12 appear) — useful someday for matching inflected ru surface forms, NOT for growing rings;
+  two candidate dump URLs disagree, **hardcode neither**. Wiktextract's share-alike question is
+  REFRAMED: kaikki's data page carries NO licence statement at all, the tool is MIT, and the data is
+  CC BY-SA 4.0+GFDL only for revisions after ~2023-06-01 — **CC declared GPLv3 compatible with 4.0
+  ONLY (one-way, source-provision required)**, so a 2026 extract is a 3.0/4.0 MIXTURE and the 3.0
+  half has no path into GPLv3; also **no ar/hi/bn edition extract exists** (reachable only inside
+  the 22.9 GB English one). ConceptNet's per-component licences are UNSATISFIABLE (`DATA-CREDITS.txt`
+  404s at the path its own LICENSE.txt names) and its reader maps BOTH `synonym` AND `translation`
+  onto `/r/Synonym` (`wiktionary.py:126`/`:142`) — separable only by endpoint language tag.
+  **NEW FAMILY WORTH THE NEXT LOOK: multilingual SKOS thesauri** — the UNESCO Thesaurus (~4,500
+  concepts, ar/en/fr/ru/es, ISO 25964, prefLabel+altLabel with `skos:broader` keeping hierarchy
+  OUTSIDE the synonym set = structurally already ring-shaped, and it has BY CONSTRUCTION the exact
+  property OMW was found to lack) covers **ru and ar, which OMW cannot supply at all**; its licence
+  is described as "open access" and the **IDENTIFIER IS NOT VERIFIED** ("open access" is not a
+  licence). Leads, uninvestigated: EuroVoc (24+ langs), AGROVOC (40+), **IPTC Media Topics (built
+  for news — the most interesting here)**. PRIOR ART: dictionary-based QUERY translation is the
+  dominant non-neural CLIR technique (= what rings already do), and the honest ceiling is worth
+  holding R1 against — arXiv 1608.01561's plain dictionary baseline did NOT beat the monolingual
+  baseline. PROCESS: the host probe ran FIRST and found a policy gateway (7/9 targets
+  `x-deny-reason: host_not_allowed`, control 200; **both channels fail on wikidata.org**, so every
+  Wikidata claim is capped `search-verified`) — the fourth consecutive session to hit a host
+  allowlist on a reach-named-publishers task, and the probe is what made it a STATED LIMIT rather
+  than a fourth silent failure; and ONE served-URL mismatch occurred and was CAUGHT (a request for
+  `panlex.org/snapshot/` was served the PanLex HOME page), with no snapshot facts attributed — the
+  recorded "read the URL you were SERVED" rule working.
   **TRIAGE VERIFICATION (`oo-keyword-triage-proposal-20260905.json`, Ministral-3-3B,
   `keyword-triage-v1`, run_state=error, canaries OK, 250k terms judged/truncated, 200 repeat
   disagreements) — the ai-proposed -> claude-verified half of the ruled chain, sampled and MEASURED
@@ -5736,12 +5808,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   2 the month-occupancy diagnostic · 3 date-aware months + re-index (gated on 2) · 4 the ambiguity
   map · 5 ring-coverage expansion (operator: networked run) · 6 the sense layer + linker + eval (R2)
   · 7 the synonym tier (gated on the source ruling). **Slices 1, 2 and 4 need no network, no new
-  dependency and no ruling.** OPERATOR STEP: run the two research prompts
-  (translation/synonym SOURCES; sense/homonym DISAMBIGUATION — two self-contained prompts handed
-  over in-session, each carrying a mandatory host-probe-first rule and a fetched/search-verified/lead
-  verification tier per claim) on a genuinely networked machine —
-  the recorded three-consecutive-failures lesson says a sandboxed session is NOT one of the two
-  routes that work.
+  dependency and no ruling** — and after research pass 1 NOTHING in slices 1-4 is gated on anything.
+  Slice 3 is now cheaper (cross-check (c)) and slice 7 is answered negative for OMW. **OPERATOR STEP
+  — HALF DONE:** research prompt 1 (translation/synonym SOURCES) was RUN 2026-09-05 and its report
+  is recorded above + in design doc §6b; **research prompt 2 (sense/homonym DISAMBIGUATION) is still
+  OUTSTANDING** and bears on slices 4 and 6. Both prompts were handed over in-session, each carrying
+  a mandatory host-probe-first rule and a fetched/search-verified/lead verification tier per claim;
+  run pass 2 on a genuinely networked machine — the recorded three-consecutive-failures lesson says
+  a sandboxed session is NOT one of the two routes that work, and pass 1's own probe (7/9 hosts
+  refused, wikidata.org unreachable in BOTH channels) is the fourth data point. **THE ONE MAINTAINER
+  RULING STILL OWED anywhere in this plan is the Wiktextract 3.0/4.0 mixture, and it gates nothing
+  in slices 1-4.**
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing
   built — the maintainer asked to record and defer):** upstream `pqcrypto` 1.0.0 (2026-08-15)
