@@ -807,10 +807,10 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 
 | # | Slice | Gate |
 |---|---|---|
-| 1 | `expand_query` + search/omnibar wiring + disclosure (**R1**) | none — buildable now |
-| 2 | Month-occupancy diagnostic (§5) — how often is a month token outside a claimed date span? | none — read-only |
+| 1 | `expand_query` + search/omnibar wiring + disclosure (**R1**) | **✅ BUILT 2026-09-05** — `equivalence.expand_term` / `QueryExpander`, the `build_match` hook, both search surfaces, the disclosure |
+| 2 | Month-occupancy diagnostic (§5) — how often is a month token outside a claimed date span? | **✅ BUILT 2026-09-05** — `analytics/month_occupancy.py`, `GET /api/diagnostics/month-occupancy`, rides the all-diagnostics bundle. **The number itself is an OPERATOR step**: it needs a real corpus (§8b) |
 | 3 | Date-aware month handling + re-index | slice 2's number. **Cheaper than it looked** — `dateextract` already carries ru (all three cases tested, incl. the prepositional CLDR omits), ar Gulf + *part of* Levantine, hi, bn, th, fa; §6b.2(c). Ride-alongs: the 7-form Maghrebi gap and the 4 missing Levantine forms, §6b.2(d) |
-| 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | none — a pure move, set-identical, byte-identity test proves it (§6b.2(a)) |
+| 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | **✅ BUILT 2026-09-05** — and `ru.yml` carried a 61-entry Latin block the plan had not seen; both moved, set-identity proved by digest, a script guard added |
 | 4 | Ambiguity map from the existing Wikidata fetch + the triage's `ambiguous_language` | none. Mechanism + prior art confirmed by pass 2 (§6c.1(2)); **size unmeasured** — the one open number (§6c.5) |
 | 5 | Ring coverage expansion (more seeds) | operator: networked run. ru/hi/bn need a source OMW structurally cannot provide (§6b.1(3)) — the SKOS family covers ru+ar (§6b.3) |
 | 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4 |
@@ -819,6 +819,43 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 | — | Per-language month scoping | **not free here**: a stopwords-architecture change, not a data file (§6c.2(a)), and it recovers 3 of 7 named losses (§6c.2(b)). Complement to slice 3, not a substitute |
 
 Slices 1, 2, 3b and 4 need no network, no new dependency, and no ruling.
+
+### 8b. What slice 2 does and does not settle — read this before quoting its number
+
+The instrument is built and it has **not been run on a corpus**. Nothing in this document
+carries an occupancy figure, and none should be invented: the sandbox has no corpus, and a
+number produced from a fixture would be a measurement of the fixture.
+
+**The operator step is one call**, and it also rides the all-diagnostics bundle, so a
+bundle already taken after this lands contains it as `month-occupancy.json`:
+
+```
+GET /api/diagnostics/month-occupancy?sample=400&download=1
+```
+
+**How to read what comes back**, because two of its bounds point in opposite directions and
+the ruling turns on both:
+
+* `totals.outside_share` is the headline — the share of banned-month-token occurrences the
+  date extractor did **not** consume. Its denominator is UNIGRAM occurrences only, and the
+  ban additionally kills every n-gram containing a banned token (`march on washington`,
+  `april ryan`), so the deletion it measures is a **floor**;
+* pointing the other way, a dateline the extractor MISSES is counted as outside, and its
+  field recall was measured at 36–52%. So the figure **over-states** what a date-aware block
+  would newly admit. Neither bound is corrected, because correcting either would require a
+  number nobody has;
+* `by_language` is where the decision actually lives. The ban is language-agnostic while
+  the collision is not: `mars` is a French dateline and an English planet, `sept` is a French
+  numeral, `march`/`may`/`april`/`august` collide inside English. A high outside share
+  concentrated in the languages a corpus actually carries is the case for slice 3;
+* `by_token` names which bans cost the most, so a partial fix (drop the block for the worst
+  handful rather than all 82) is a decidable option rather than an assertion.
+
+**A number to expect and not to over-read.** The Hungarian year-first form is the only gate
+the current banned set can reach — measured, every other banned month name sits in the
+language-agnostic table — so `by_language` differences will be driven by what each language's
+prose contains, not by the extractor treating the languages differently.
+
 
 **After both research passes, nothing in slices 1–4 is gated on anything.** Two decisions
 were owed; one has been taken and one remains, and neither blocks those slices:

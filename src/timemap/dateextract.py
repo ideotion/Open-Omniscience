@@ -1049,15 +1049,20 @@ def _snippet(text: str, start: int, end: int, pad: int = 24) -> str:
     return re.sub(r"\s+", " ", s)
 
 
-def extract_dates(
+def _extract(
     text: str,
     *,
     today: date | None = None,
     limit: int = 8,
     anchor: date | None = None,
     language: str | None = None,
-) -> list[dict]:
-    """Calendar dates mentioned in ``text``, as candidates with provenance.
+) -> tuple[list[dict], list[tuple[int, int]]]:
+    """The shared body of :func:`extract_dates` and :func:`extract_dates_with_spans`.
+
+    Returns the candidates AND the spans this pass CLAIMED. See
+    :func:`extract_dates_with_spans` for what a claimed span does and does not mean.
+
+    Calendar dates mentioned in ``text``, as candidates with provenance.
 
     Returns up to ``limit`` de-duplicated ``{date, precision, text}`` dicts, ordered by
     first appearance. ``precision`` is ``"day"`` or ``"month"``. Overlapping matches are
@@ -1093,7 +1098,7 @@ def extract_dates(
     every candidate from a body that was cut.
     """
     if not text:
-        return []
+        return [], []
     truncated = len(text) > _MAX_SCAN
     if truncated:
         text = text[:_MAX_SCAN]
@@ -1537,4 +1542,53 @@ def extract_dates(
         # can tell "no later dates in this article" from "we stopped looking".
         if truncated:
             c["scan_truncated"] = _MAX_SCAN
-    return out[:limit]
+    return out[:limit], sorted(consumed)
+
+
+def extract_dates(
+    text: str,
+    *,
+    today: date | None = None,
+    limit: int = 8,
+    anchor: date | None = None,
+    language: str | None = None,
+) -> list[dict]:
+    """Calendar dates mentioned in ``text``, as candidates with provenance.
+
+    The public entry point, unchanged: see :func:`_extract` for the full contract.
+    """
+    return _extract(text, today=today, limit=limit, anchor=anchor, language=language)[0]
+
+
+def extract_dates_with_spans(
+    text: str,
+    *,
+    today: date | None = None,
+    limit: int = 8,
+    anchor: date | None = None,
+    language: str | None = None,
+) -> tuple[list[dict], list[tuple[int, int]]]:
+    """:func:`extract_dates`, plus every ``(start, end)`` span this pass CLAIMED.
+
+    WHAT A CLAIMED SPAN MEANS, precisely, because the whole value of this seam is
+    that a caller can trust it: the extractor resolves overlapping matches
+    most-specific-first by CLAIMING a character range the moment it decides that
+    range is date territory, so a claim records "this text was consumed as a date",
+    which is a different and larger fact than "a date was stored from it".
+
+    It is deliberately larger in one direction. A span can be claimed and yield NO
+    candidate -- the Jalali router claims on ROUTE, so an invalid or field-order-
+    ambiguous Persian date is claimed and then refused rather than converted (the
+    2026-07-09 fabrication repro). For the question this seam exists to answer --
+    was this month token read as part of a date? -- a refusal is still a yes, so the
+    superset is the honest answer and not a leak.
+
+    Two bounds a caller must carry rather than assume away:
+
+    * spans index the text the pass actually scanned, i.e. the first ``_MAX_SCAN``
+      characters. Offsets beyond that were never looked at, and reading them as
+      "not claimed" would fabricate an absence out of a bound;
+    * ``limit`` truncates the CANDIDATES only. The spans are complete for the
+      scanned text however few candidates come back.
+    """
+    return _extract(text, today=today, limit=limit, anchor=anchor, language=language)
