@@ -238,3 +238,48 @@ absence. The rejections above rest on linguistic review, not on the export.
 (`src/analytics/filters.py:121`), so this batch is retroactive with no re-index;
 `extract.py:436` also filters at EXTRACTION time, so applying it BEFORE a large
 re-index additionally stops the rows being written at all.
+
+---
+
+## Re-filing the two misfiled blocks (2026-09-05)
+
+The Phase 4.1 split (PR #740/#744) turned one flat blob into per-language files. Two
+blocks landed under the wrong filename, and **both were behaviourally invisible** because
+`global_stopwords()` unions every file here language-agnostically — the union is what the
+engine reads, so a word in the wrong file is filtered exactly as if it were in the right
+one. The cost is not behavioural; it is that a **filename became false about its
+contents**, and a reader who trusts one measures the wrong thing:
+
+* `hi.yml` ("Hindi") held **63 non-Devanagari entries** — 39 Latin and 24 Cyrillic month
+  names (`abril`, `märz`, `января`, …) beside its 72 genuine Devanagari words. This is
+  the block the 2026-09-05 keyword-translation research pass read past: pass 1 reported
+  the month stoplist covered "exactly two of twelve UI languages" because it read
+  `_multilingual.yml` alone; the corrected figure over the whole union is **seven**
+  (en/fr/de/es/ru 12/12, id 9/12, pt 2/12; ar/hi/bn 0/12).
+* `ru.yml` ("Russian") held **61 Latin entries** — Polish (`aby`, `oraz`, `może`,
+  `roku`, `które`, `również`), Hungarian (`ahogy`, `kell`, `mondta`, `szerint`, `után`,
+  `így`), Danish/Norwegian (`ikke`, `ingen`, `læs`, `første`, `dagens`), and BCS
+  (`ili`, `kao`, `nakon`, `nije`, `pročitajte`, `što`) function words beside its 115
+  genuine Cyrillic ones. **This one was not in the research pass's findings** — it was
+  found by auditing every file's script composition while fixing the first.
+
+**Both blocks moved to `_multilingual.yml`.** That destination is deliberate and is the
+conservative choice, not the tidy one: files exist for `pl`, `hu`, `da`, `nb`, `sl` and
+`sr`, but several of the 61 words are genuinely ambiguous between them (`ili`/`tako` are
+BCS *and* Slovene shapes; `kun`/`vil`/`ikke` are Danish *and* Norwegian), so a per-language
+re-filing would have to **assert 61 language attributions we cannot check** — inventing
+provenance to make a filename prettier. `_multilingual.yml` is the one filename that is
+*true* of a mixed block. A finer per-word attribution stays available later, on evidence.
+
+**The move is set-identical, and that is provable rather than asserted:**
+`tests/test_analytics_extract.py::test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob`
+hashes the whole union against the pre-migration digest and is untouched by this change
+(`git diff --numstat` shows 118 added / 124 removed / **0 modified** — 118 rather than 124
+because six month names already existed in `_multilingual.yml`).
+
+**The durable half is the guard, not the move.** `tests/test_stopword_file_scripts.py`
+asserts that every file named for a language written in a NON-LATIN script contains only
+that script, so this class cannot regrow silently. It is honest about its own reach: it
+can say nothing about the Latin-script files, because Polish in `pl.yml` and Polish in
+`en.yml` look identical to a script check. That half of the class stays uncaught, and the
+test says so rather than implying whole coverage.

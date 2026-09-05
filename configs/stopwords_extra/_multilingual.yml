@@ -1,4 +1,8 @@
-# Curated EXTRA stopwords -- Multi-language (contractions, month/weekday names, web-markup junk).
+# Curated EXTRA stopwords -- Multi-language: contractions, month/weekday names,
+# web-markup junk, AND the mixed-language function-word block re-filed here on
+# 2026-09-05 (pl/hu/da-nb/BCS words that the Phase 4.1 split had put in ru.yml).
+# A word lands here when it belongs to no ONE language file -- see PROVENANCE.md
+# ('Re-filing the two misfiled blocks').
 # Migrated from src/analytics/extract.py::_EXTRA_STOPWORD_TEXT (Phase 4.1, PR #740/#744
 # remediation). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
 # regardless of which one a word lives in -- this split is a readability/maintenance
@@ -7,12 +11,22 @@
 # full evidence trail (field-log dates, mention counts, collision-safety reasoning)
 # that justified each addition -- preserved verbatim from the original inline comments.
 stopwords:
+  - abril
+  - aby
+  - adgang
+  - agosto
+  - ahogy
+  - akkor
   - août
   - april
+  - aprile
   - aren't
   - arent
+  - arra
   - august
+  - augustus
   - avril
+  - azt
   - can't
   - cannot
   - cant
@@ -24,11 +38,16 @@ stopwords:
   - csutortok
   - csütörtök
   - czwartek
+  - dagens
   - december
+  - dezember
+  - dicembre
+  - diciembre
   - didn't
   - didnt
   - dienstag
   - dinsdag
+  - diskusiji
   - div
   - doesn't
   - doesnt
@@ -39,15 +58,30 @@ stopwords:
   - donnerstag
   - dont
   - décembre
+  - efter
+  - egyik
+  - első
+  - enero
+  - ezt
+  - febbraio
+  - febrero
+  - februar
+  - februari
   - february
+  - fel
   - font-family
   - font-size
   - fredag
   - freitag
   - friday
   - février
+  - første
+  - gennaio
   - giovedi
   - giovedì
+  - giugno
+  - godine
+  - godt
   - hadn't
   - hadnt
   - hasn't
@@ -55,6 +89,7 @@ stopwords:
   - haven't
   - havent
   - he's
+  - hele
   - hetfo
   - href
   - http
@@ -63,30 +98,55 @@ stopwords:
   - i'll
   - i'm
   - i've
+  - ikke
+  - ili
   - img
+  - ingen
   - isn't
   - isnt
   - it's
   - ive
+  - januar
+  - januari
   - january
   - janvier
+  - jednak
+  - jego
+  - jej
   - jueves
   - juillet
   - juin
+  - juli
+  - julio
   - july
   - jumat
   - june
+  - juni
+  - junio
   - kamis
+  - kao
   - kedd
+  - kell
+  - koja
+  - komentare
+  - które
+  - kun
+  - két
+  - lehet
   - let's
   - lets
   - lordag
+  - luglio
   - lunedi
   - lunedì
   - lunes
+  - læs
   - lørdag
   - maandag
+  - maart
+  - maggio
   - mai
+  - majd
   - mandag
   - march
   - margin-left
@@ -95,26 +155,49 @@ stopwords:
   - martedi
   - martedì
   - martes
+  - marzo
   - max-width
   - may
+  - mayo
+  - meg
+  - mei
   - mercoledi
   - mercoledì
+  - miatt
   - miercoles
   - minggu
   - mittwoch
   - miércoles
+  - mišljenje
   - monday
+  - mondta
   - montag
+  - może
+  - można
+  - märz
+  - nakon
   - nbsp
   - nedelja
   - nedjelja
+  - nich
   - niedziela
+  - nije
   - november
   - novembre
+  - noviembre
   - october
   - octobre
+  - octubre
+  - oglas
+  - oktober
+  - olyan
   - onsdag
+  - oraz
+  - ottobre
+  - ovoj
+  - pedig
   - pentek
+  - perc
   - petak
   - petek
   - piatek
@@ -123,12 +206,15 @@ stopwords:
   - ponedeljek
   - poniedzialek
   - poniedziałek
+  - pročitajte
   - px
   - péntek
   - quarta
   - quinta
   - rabu
+  - roku
   - rowspan
+  - również
   - sabado
   - sabato
   - sabtu
@@ -139,6 +225,8 @@ stopwords:
   - senin
   - september
   - septembre
+  - septiembre
+  - settembre
   - sexta
   - she's
   - shouldn't
@@ -153,10 +241,13 @@ stopwords:
   - subota
   - sunday
   - szerda
+  - szerint
   - szombat
   - sábado
   - søndag
+  - tako
   - tbody
+  - temi
   - terca
   - terça
   - that's
@@ -173,13 +264,18 @@ stopwords:
   - torek
   - torsdag
   - tuesday
+  - tym
   - utf
   - utorak
+  - után
   - vasarnap
   - vasárnap
+  - vaše
   - venerdi
   - venerdì
   - viernes
+  - vil
+  - volna
   - vrijdag
   - wasn't
   - wasnt
@@ -205,16 +301,42 @@ stopwords:
   - youve
   - zaterdag
   - zondag
+  - így
   - četrtek
   - četvrtak
   - środa
+  - što
+  - август
+  - августа
+  - апрель
+  - апреля
   - воскресенье
   - вторник
+  - декабрь
+  - декабря
+  - июль
+  - июля
+  - июнь
+  - июня
+  - май
+  - март
+  - марта
+  - мая
+  - ноябрь
+  - ноября
+  - октябрь
+  - октября
   - понедельник
   - пятница
+  - сентябрь
+  - сентября
   - среда
   - суббота
+  - февраль
+  - февраля
   - четверг
+  - январь
+  - января
   - الأحد
   - الأربعاء
   - الإثنين
