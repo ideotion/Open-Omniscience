@@ -5738,21 +5738,37 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   SY/IQ/LB كانون الثاني شباط آذار · **DZ/TN جانفي فيفري**), against a legal-source catalog covering
   ma dz tn sy iq lb.
   **FOUR CROSS-CHECKS MEASURED AGAINST THE TREE THE SAME DAY (the research pass could not know
-  these, and they MOVE the plan):** (a) **the month stoplist covers exactly TWO of the twelve UI
-  languages** — `configs/stopwords_extra/_multilingual.yml` has 216 entries of which only 15 are
-  non-Latin and **every one of those is a WEEKDAY** (7 ru + 8 ar); months measured en 12/12 · fr
-  12/12 · de 5/12 · id 3/12 · es 0 · pt 0 · ru 0 · ar 0, zh/ja/hi/bn nothing at all, and the de/id
-  hits are ACCIDENTAL (only the spellings colliding with en/fr: april mai august september
-  november). So today is the worst of both directions — **over-deleting in en/fr** (the Mars/March
-  regression) and **not filtering datelines AT ALL** in the other ten. (b) **That makes a
+  these, and they MOVE the plan):** (a) ~~the month stoplist covers exactly TWO of the twelve UI
+  languages~~ **CORRECTED 2026-09-05 by pass 2 — it covers SEVEN, and the error is the instructive
+  part: this cross-check read `_multilingual.yml` ALONE while `_load_extra_stopwords()`
+  (`extract.py:397`) unions EVERY `*.yml` in the directory — the sentence this ledger quoted from
+  that file's own header at the time ("global_stopwords() unions every file here regardless of
+  which one a word lives in"). I quoted the warning and measured as if it did not apply.** Measured
+  over the union of all 34 files (2,343 entries): **en 12/12 · fr 12/12 · de 12/12 · es 12/12 · ru
+  12/12 in BOTH paradigms · id 9/12 · pt 2/12 · ar 0 · hi 0 · bn 0**; zh/ja have no `一月`-style
+  entries and need none. 82 month forms are globally banned, 13 of them for languages we ship no UI
+  in (it `maggio`, nl `maart`). **The es/de/ru months are banned from a file named `hi.yml`** —
+  headed "Hindi", holding 135 entries of which 39 are LATIN and 24 CYRILLIC: the PR #740/#744
+  Phase-4.1 blob→per-file migration put a multilingual month block there. Behaviourally a no-op (the
+  union is language-agnostic and a test pins the set byte-identical, exactly as that migration
+  promised) but the FILENAME is now false about its contents, and it is what made this measurement
+  go wrong — re-filing it into `_multilingual.yml` is a pure set-identical move (slice 3b). So today
+  is still the worst of both directions on a WIDER footing: **over-deleting in seven languages** and
+  **not filtering datelines at all** in ar/hi/bn (+ pt for ten of twelve). A ru `15 января` IS
+  filtered today — the earlier claim otherwise is withdrawn — while an ar `15 يناير` is not. (b) **That makes a
   string-level CLDR extension actively HARMFUL** — pasting the missing month names into the
   stoplist would extend the deletion regression to six more languages; **CLDR must feed the DATE
   EXTRACTOR, not the stoplist.** (c) **`dateextract` ALREADY carries most of what the stoplist
-  lacks** — ru BOTH paradigms, ar Gulf/Egyptian AND Levantine, hi, bn, th, fa, a documented
+  lacks** — ru ALL THREE cases tested incl. the prepositional `январе` that CLDR
+  OMITS (so for ru the extractor is strictly AHEAD of CLDR — pass 2 recommends a stemmer we do not
+  need), ar Gulf/Egyptian AND **part of** Levantine (3 of 7 forms — `كانون الثاني`/`نيسان`/`تموز`/
+  `آب` are MISSING; the "AND Levantine" claim was too generous), hi, bn, th, fa, a documented
   `_MONTH_LANG_OVERRIDES` ambiguity policy, and CJK handled NUMERICALLY (年月日 — the absent `一月`
   is by design, not a gap) ⇒ **slice 3 is cheaper than it looked and does not need CLDR to start.**
-  (d) **the ONE real CLDR gap is the Maghrebi system** — `جانفي`/`فيفري`/`أفريل` appear ZERO times
-  in `dateextract.py`, a precisely-located live recall gap against dz/tn; a handful of table entries.
+  (d) **the ONE real CLDR gap is the Maghrebi system** — WIDENED by pass 2, which surfaced it
+  INDEPENDENTLY (as close to corroboration as this exercise gets): the extractor knows **0 of 7** —
+  `جانفي`/`فيفري`/`أفريل` plus `ماي`/`جوان`/`جويلية`/`أوت` — a precisely-located live recall gap
+  against dz/tn; still a table entry each, now fully enumerated rather than sampled.
   **REFUTED / SHARPENED / NEW:** Wikidata Lexemes are a MORPHOLOGY resource, not a translation one
   (2020 senses: eu 20,272 · en 12,911 · ru 2,292 against ru's 101,137 lexemes ≈ 2%; only en+ru of
   our 12 appear) — useful someday for matching inflected ru surface forms, NOT for growing rings;
@@ -5807,18 +5823,93 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **SEQUENCING (design doc §8):** 1 `expand_query` + search/omnibar wiring + disclosure (R1) ·
   2 the month-occupancy diagnostic · 3 date-aware months + re-index (gated on 2) · 4 the ambiguity
   map · 5 ring-coverage expansion (operator: networked run) · 6 the sense layer + linker + eval (R2)
-  · 7 the synonym tier (gated on the source ruling). **Slices 1, 2 and 4 need no network, no new
-  dependency and no ruling** — and after research pass 1 NOTHING in slices 1-4 is gated on anything.
-  Slice 3 is now cheaper (cross-check (c)) and slice 7 is answered negative for OMW. **OPERATOR STEP
-  — HALF DONE:** research prompt 1 (translation/synonym SOURCES) was RUN 2026-09-05 and its report
-  is recorded above + in design doc §6b; **research prompt 2 (sense/homonym DISAMBIGUATION) is still
-  OUTSTANDING** and bears on slices 4 and 6. Both prompts were handed over in-session, each carrying
-  a mandatory host-probe-first rule and a fetched/search-verified/lead verification tier per claim;
-  run pass 2 on a genuinely networked machine — the recorded three-consecutive-failures lesson says
-  a sandboxed session is NOT one of the two routes that work, and pass 1's own probe (7/9 hosts
-  refused, wikidata.org unreachable in BOTH channels) is the fourth data point. **THE ONE MAINTAINER
-  RULING STILL OWED anywhere in this plan is the Wiktextract 3.0/4.0 mixture, and it gates nothing
-  in slices 1-4.**
+  · 7 the synonym tier (gated on the source ruling). **Slices 1, 2, 3b and 4 need no network, no new
+  dependency and no ruling** — and after BOTH research passes NOTHING in slices 1-4 is gated on
+  anything. Slice 3 is now cheaper (cross-check (c)), slice 7 is answered negative for OMW, and
+  slice 6 is SPLIT (below).
+  **RESEARCH PASS 2 — SENSE DISAMBIGUATION: RUN + REPORTED (operator, 2026-09-05; full record =
+  design doc §6c). FOUR VERDICTS:** (1) **the obvious route is a DEAD END** — Wikidata
+  *disambiguation items* (`P31 = Q4167410`, ~1.4M) exist only to carry interlanguage links; they
+  model no concept and list SITELINKS, not senses. This is the structural difference from Wikipedia,
+  whose disambiguation PAGE *is* a surface-form→sense index while the Wikidata item representing it
+  carries none of them. Anyone building the homonym dictionary reaches for that QID first (this
+  ledger already carries it — as a meta-class FILTER for the ring generator) and gets nothing.
+  (2) **the mechanism that works is the one this plan already proposed** — two items may carry the
+  SAME label in the SAME language (`Curry` = Q2368856 the language and Q5195194 an Alaskan village,
+  separated only by the description), so the index is: group labels+aliases by (normalized string,
+  language), keep groups ≥2, attach `P31`. That is verbatim the §6 SOURCES line *"harvest the
+  AMBIGUITY MAP from the SAME fetch"*, independently arrived at, now with named prior art shipping
+  it (OpenTapioca, Apache-2.0) — CC0, no runtime API, and `P31` gives the month/person/org
+  distinction AS A STRUCTURED FIELD. (3) **RESOLUTION is NOT shippable and this is the decisive
+  negative** — on the one apples-to-apples news comparison (RSS-500, InKB micro F1): best system
+  **0.455**, DBpedia Spotlight 0.281, the Wikidata-native non-neural linker **0.335**; non-neural
+  WSD sits in a 65-68 F1 band whose FLOOR IS A LOOKUP TABLE (most-frequent-sense), against neural
+  in the 80s — all the graph machinery buys under three points. And the numbers are GENEROUS in
+  exactly our direction: **the InKB metric everyone reports EXCLUDES out-of-KB mentions**, which is
+  precisely the case our requirement makes first-class (of 476 out-of-KB entities in that news set,
+  human review recovered 63 — in news, unlinkable is the MAJORITY of out-of-KB). (4) **two coverage
+  problems from the people who shipped it** — aliases are curated for the auto-suggest box, not text
+  (`Trump`→Q22686 yes, `Cameron`→Q192 NO; misspellings explicitly discouraged), so surname-only
+  mentions miss; and **Wikidata carries NO occurrence counts**, killing the cheap prior (the
+  published substitute is statement+sitelink counts + Wikidata PageRank, all CC0 from the same dump).
+  **THE TREE REFUTES PASS 2's FIRST RECOMMENDATION** (it advises un-banning months PER LANGUAGE,
+  first, as "a scoping fix… no accuracy question", claiming it recovers "every one of the losses in
+  your table"): (a) **per-language scoping is STRUCTURALLY IMPOSSIBLE here for exactly the two
+  languages whose months are banned** — `stopwords_extra/*.yml` is a language-agnostic union BY
+  CONSTRUCTION (the loader's own docstring: "NOT a per-language scoping guarantee"), and the real
+  scoped channel is unreachable for en/fr because `get_stopwords()` tests `language_stopwords`
+  FIRST and the scoped set only in the `elif`, with `LANGUAGE_STOPWORDS` holding exactly `en`+`fr`
+  (the recorded stoplist-architecture lesson, decisive here). So it is a stopwords-ARCHITECTURE
+  change, not a data file — not wrong, but not free, and it must not be sequenced as though it were.
+  (b) **and it recovers 3 of the 7 named losses**: `mars`/`avril`/`mayo` (cross-language) yes;
+  `march`/`may`/`april`/`august` still banned because they are ENGLISH months in an English document
+  — **the March on Washington is the case pass 2 names as recovered and exactly the case scoping
+  cannot touch**. Of 69 banned forms belonging to a UI language, 59 are a month in exactly one and
+  10 in several. Scoping and the date-aware drop are COMPLEMENTS, not alternatives; §5's
+  recommendation stands and slice 2's diagnostic still decides it. (c) **the unlinked case already
+  has a shape in this tree** — pass 2 recommends GERBIL epsilon / TAC KBP NIL; `ArticleMentionedDate`
+  already stores `status="candidate"` and filters `status != "rejected"` (`datestore.py:90,233`), a
+  human-confirmable three-state candidate model, with the `ai-who`/`ai-place`/`ai-date` kinds as the
+  second precedent. NIL GRANULARITY (one per surface string vs one per occurrence) stays open.
+  **CORROBORATED BY BOTH PASSES INDEPENDENTLY:** Arabic is NOT one list (split by REGION, not by the
+  `ar` tag — scoping by language tag silently fails on lb/sy/iq/dz sources); CLDR is `Unicode-3.0`
+  and tiny; and **the month-homonymy problem DOES NOT EXIST in zh/ja** (numeric + 月 cannot collide
+  with a name; tree-confirmed 0/12 known, 0 banned) — so a language-agnostic stoplist costs two of
+  twelve languages in exchange for nothing. They DISAGREE on the table size (pass 1: 5,205 bytes;
+  pass 2: 3,843 months-only, 216 of 384 forms usable once the narrow width — single letters, bare
+  CJK digits — is excluded); reported, not reconciled, nothing turns on it.
+  **WHAT THIS DOES TO R2 — A MAINTAINER DECISION IS OWED (design doc §6c.4).** Pass 2 leaves R2's
+  IDENTITY MODEL intact (QID is the right key, `P31` the right kind field, CC0 the right licence)
+  and refutes the step that would make a mention CARRY a sense automatically. Slice 6 splits: the
+  **inventory** (surface form → candidate QIDs + kinds) is a committed lookup whose failure mode is
+  under-coverage, SUPPORTED; the **linker** is 0.335 on news, NOT supported — and the standing
+  preference (*rather ship no disambiguation than a silently wrong one*) settles it. So R1×R2's
+  "once a mention carries a sense" needs another source, and one costs nothing: **THE READER
+  CHOOSES** — searching `April` surfaces "this term denotes one of three things", each with its kind
+  and description, and expansion runs per-sense from the chosen QID. Same disclosure grammar R1
+  already requires, no schema change, no linker, no per-mention storage. THE OPTIONS, maintainer's
+  call: (i) sense identity as a QUERY-TIME USER CHOICE (recommended — fully evidenced); (ii) STORED
+  PER MENTION (needs the refuted linker + the `Keyword` identity change); (iii) both, sequenced.
+  Until taken, **slice 6 is scoped to the inventory half**; slice 4 is unaffected (always a lookup).
+  **THE ONE OPEN NUMBER in the whole plan** is slice 4's: whether an ambiguous-only 12-language
+  surface-form index fits under 100 MB. Pass 2 could not download a dump, so it measured COST PER ROW
+  instead — **35.8 bytes/row gzipped** (sorted TSV) ⇒ ~**2.8M ambiguous forms per 100 MB**, a FLOOR
+  (synthetic random QIDs are the worst case for compression). The leverage is "ambiguous-ONLY":
+  unambiguous forms need no sense identity, the existing one-row-per-string model already handles
+  them. **OPERATOR STEP — BOTH PASSES DONE (2026-09-05), ONE STEP REMAINS AND IT IS AN ALLOWLIST
+  ENTRY, NOT A PROMPT:** pass 2's mandatory probe found wikidata/query.wikidata/en-word.net/kaikki/
+  cldr.unicode/aclanthology ALL 403 `x-deny-reason: host_not_allowed` with the `pypi.org` control at
+  200 and DNS resolving normally — **the FIFTH consecutive session to hit this allowlist on a
+  reach-named-publishers task**, and the second to characterise it rather than retry (its second
+  channel reached ceur-ws/arXiv but reports Wikimedia as cache-only, which is why every Wikidata
+  claim in both reports is capped `search-verified`). Opening `dumps.wikimedia.org` is the single
+  highest-value remaining step: it settles the one open number above. **RULINGS STILL OWED: (1) what
+  R2 promises (above); (2) the Wiktextract 3.0/4.0 mixture — unchanged, and still gating nothing in
+  slices 1-4.** NOT re-derivable, recorded so nobody re-chases it: CrossWikis (the canonical prior
+  table, 297M pairs) has a download REPORTED BROKEN and **no licence identifier anyone could find**
+  (not guessed); UKB's licence 404s on three standard filenames, which matters because it is the
+  strongest non-neural WSD system in the comparison; the WordNet supersense list could not be
+  fetched; BabelNet's terms were deliberately not asserted.
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing
   built — the maintainer asked to record and defer):** upstream `pqcrypto` 1.0.0 (2026-08-15)
