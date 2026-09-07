@@ -6110,3 +6110,35 @@
   whole thing. This is the inverse of the stale-PENDING-banner failure the 2026-09-06 analysis
   named: there a doc claimed less than the tree held; here a commit claimed a slice id and
   delivered half of it.
+
+- **A TEST NAMED FOR A MODE IS NOT COVERAGE OF THAT MODE — CHECK THE FIXTURE AGAINST THE SHAPE
+  THE MODE EMITS, NOT AGAINST THE CODE PATH YOU JUST CHANGED (2026-09-07, `parse_sdmx_json`
+  and `dimensionAtObservation=AllDimensions`):** the 2026-08-13 session fixed the
+  observation-level LOOKUP for that mode, wrote
+  `test_ref_area_is_read_at_observation_level_too_for_dimensionAtObservation_all`, and recorded
+  the lesson *"run the parser; do not reason about it."* It followed its own lesson — and the
+  fixture it ran the parser against kept `dataSets[].series[""]`, a container `AllDimensions`
+  never emits. So the test exercised the lookup, never the container, and stayed green for
+  three weeks while the mode returned **nothing**: `AllDimensions` hangs its observations
+  straight off the dataSet (`dataSets[].observations`, no `series` key at all), the parser read
+  them only out of `dataSets[].series[<key>].observations`, and a well-formed message parsed to
+  zero rows. **THE SHARP EDGE: "run the parser" bounds only as much as the INPUT is real.** A
+  fixture written by the same reasoning that wrote the fix inherits the same blind spot, and a
+  green test then certifies the blind spot. When a fixture stands in for someone else's wire
+  format, the thing to verify is the fixture against the format's own documented shape — a
+  fixture derived from your code's expectations tests your code against itself. The tell here
+  was cheap and general: the fixture had a `series` container in the one mode whose defining
+  property is that it has none.
+- **`[]` WITH NO LOG IS THE IDENTITY-LESS ROW INVERTED, AND THE ALARM MUST BE SCOPED TO A
+  MISSING CONTAINER RATHER THAN TO ZERO ROWS (same session, the honesty half):** the 2026-08-13
+  fix stopped a real number being emitted with no country, indicator or year. The mirror defect
+  survived it — an unreadable message returning an empty list without a word, so *"this parser
+  could not read the message"* and *"the publisher has no data for this query"* reached the
+  caller as the same fact. Both are a gap published as something else; only the direction
+  differs, and the silent one is harder to find precisely because nothing looks wrong. **AND
+  THE OBVIOUS GUARD IS THE WRONG ONE:** warning whenever a dataSet yields zero rows would fire
+  on `"series": {}` — a publisher honestly answering "nothing matches" — so the alarm has to
+  key on a container that is ABSENT, never on one that is present and empty. An over-eager
+  alarm is its own dishonesty: it trains a reader to ignore the real one. Both directions are
+  pinned by mutation-checked tests, because the guard that cries wolf and the guard that stays
+  silent fail in opposite directions and one test cannot see both.
