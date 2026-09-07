@@ -75,6 +75,30 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   50 ms → 11 ms warm at 1,776 matches; the win grows with match count).
 
 ## Reliability
+- **The `main` CI gate is starved by an advisory job with no timeout** (found 2026-09-07, while
+  checking whether CI had reported on a merge). The blocking verdict exists in ~20 minutes and then
+  waits hours on a lane that cannot fail the build. MEASURED over the last 100 `main` push runs
+  (2026-08-11 -> 2026-09-07): **90 cancelled, 5 failure, 3 success**; 68 of the 90 ended within 15 s
+  of the *next* `main` push starting, median offset **1.0 s**. PR #1038's merge commit
+  (`ddb60454`, run 4948) was cancelled 69 s in having **allocated zero jobs** -- it never executed.
+  **The A18-CI-01 exemption is NOT the bug and must not be "fixed".** `cancel-in-progress` is
+  correctly false on the default branch, so an *in-progress* `main` run is never cancelled; what
+  GitHub cancels is the *pending* one, because a concurrency group holds at most one queued run and
+  each new merge supersedes it. The bug is that the slot is held for hours: `Portability observation
+  (windows-latest)` is `continue-on-error: true` -- advisory, its verdict cannot fail the run -- and
+  `timeout-minutes` appears **nowhere** in `ci.yml`, so every job inherits GitHub's 360-minute
+  default. Run 4496 (2026-08-14): that job ran **00:48:57 -> 04:10:05 = 3 h 21 m** and ended
+  `failure` with no steps recorded, while the blocking `test` job was green at **19.5 min**. Run
+  4814 (2026-09-07) repeated it: `test` green in 20.5 min, the Windows lane still running **5 h
+  24 m** later, holding the slot across eleven consecutive merges.
+  The fix direction is a `timeout-minutes` on the observation lane, **but the number is a ruling and
+  the measurement for it does not exist**: no Windows portability run in the sampled window ever
+  finished its pytest step, so what a *healthy* Windows suite costs here is unknown. The honest
+  comparables are the same suite elsewhere in run 4496 -- macOS **16.5 min**, ubuntu core-only
+  **15.6 min**, ubuntu `test` **17.2 min**. Whether to cap the lane, fix the hang, or drop Windows
+  from the matrix is a maintainer call; capping is the one that restores the gate today.
+  CONSEQUENCE worth stating plainly: for most merges in this window `main` carries **no CI verdict
+  at all**, and the five concluded `failure` runs are unreviewed red on the protected branch.
 - **SSRF TOCTOU** (TEST-03 residual): the SSRF guard resolves-and-checks, but `requests` re-resolves
   at connect time, leaving a DNS-rebinding TOCTOU window. Closing it needs connect-time IP pinning
   (a custom `requests` transport adapter). Exotic; hardening, not a known exploit path.
