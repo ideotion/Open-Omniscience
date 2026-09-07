@@ -76,7 +76,14 @@ dependencies = [
     # target); fixed in 12.3.0.
     "pillow>=12.3.0",
     # Utilities
-    "structlog>=24.1",
+    # structlog REMOVED 2026-09-07 (J2, ruled on the recommended default "drop"): it
+    # was a CORE dependency with ZERO call sites -- every install downloaded it and
+    # nothing imported it, while the codebase logs through stdlib `logging` at ~612
+    # sites. PARKED.md's MAINT-04 entry had it as the migration TARGET for the
+    # remaining print() calls, which is how an orphan survives: it reads as a plan
+    # rather than as an omission. Same shape as the nltk removal below.
+    # tests/test_dependency_hygiene.py holds both halves (not declared, not imported)
+    # and is written to be superseded if it is ever genuinely adopted.
     "python-dateutil>=2.9",
     "tenacity>=8.2",
     "cachetools>=5.3",
@@ -246,7 +253,12 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-mock>=3.14",
     "hypothesis>=6.100",
-    "ruff>=0.4.0",
+    # Bounded to one minor series for the same reason mypy is pinned two lines down:
+    # scripts/ruff_ratchet.py holds the advisory style lane to a non-growth ceiling,
+    # and a count-over-a-tool ratchet is only meaningful while the rule set is fixed.
+    # An unbounded floor lets a new release add rules and redden every PR through no
+    # code change. Bump deliberately, re-measuring the ceiling in the same PR.
+    "ruff>=0.16.6,<0.17",
     # Pinned: the type-check ratchet count must be deterministic. An unpinned
     # floor let a newer mypy report one extra error (129 > 128) and redden every
     # PR with no code change. Bump deliberately, re-measuring the baseline.

@@ -528,7 +528,6 @@ inclusion requirement (see the FOSS-only invariant in `docs/DESIGN.md`).
 | defusedxml | PSF-2.0 | Untrusted-XML hardening (Wikipedia dumps) |
 | cryptography | Apache-2.0 OR BSD-3-Clause | Ed25519 signatures + Merkle trees |
 | Pillow | HPND (MIT-CMU) | EXIF / image metadata |
-| structlog | MIT OR Apache-2.0 | Structured logging |
 | python-dateutil | Apache-2.0 / BSD | Date parsing |
 | tenacity | Apache-2.0 | Retry / backoff |
 | cachetools | MIT | In-memory caching |
