@@ -87,6 +87,22 @@ the encrypted round trip — that in-lane checksum is **never** written back int
 - **Vendored Alpine** — re-vendor only on a security release; update the file + its sha256.
   When a review clears an upstream release *without* re-vendoring, record it with
   `reviewed_through` (below) — do **not** leave the watch flagging forever.
+- **Model weights** (`model-weights-revision`, D6) — the *bytes*, as distinct from the
+  identifiers in `ministral-model-identifiers`. `src/llm/weights_pin.py` holds the pins;
+  both ship **blank**, because resolving either value needs `huggingface.co` /
+  `ollama.com` and both 403 from the build sandbox, and a digest nobody fetched is a
+  fabricated one. To pin, on a connected machine:
+  1. Read the publisher's current revision — `HfApi().model_info(repo).sha` for the HF
+     repo, the tag's digest on `ollama.com/library` (or `/api/tags` after a pull) for
+     Ollama. **Read it from the publisher, never from your own cache**: a cached value
+     re-pins whatever you already have, which verifies nothing.
+  2. Review what changed since the bytes you trust. A pin is a statement that *these*
+     bytes were looked at.
+  3. Set `OO_MODEL_REVISION` (a full 40-character commit SHA — a branch or short SHA is
+     **refused as a pin**, because it still moves) and/or `OO_OLLAMA_MODEL_DIGEST`.
+  A mismatch **refuses the download** and deletes nothing; re-pinning is the deliberate
+  way through. The refusal is at the download only — the serve side discloses the cached
+  revision and never blocks a start, so an install that predates the pin keeps working.
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
   Dependabot bump; re-pin to the new SHA with its tag comment.

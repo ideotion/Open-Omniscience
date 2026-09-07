@@ -231,9 +231,20 @@ never the way to make room for something rules (5)/(5a) would have sent to
    IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
    public-IP wording. Scheduler responses carry `online` → immediate repaint,
    never the 5 s poll. Gated: toggle, collect (start/run-now/first-run),
-   markets/indices imports, wiki page add, dump start. Enforced in
+   markets/indices imports, wiki page add, dump start, dump size read. Enforced in
    test_ui_invariants + tests/test_network_consent.py (incl. the
    socket-importer RATCHET: no new module may import requests/httpx).
+   **EXTENDED #14e (2026-09-07, from a measured breach): THE GATE COVERS WHAT THE
+   UI DOES TO HELP YOU DECIDE, NOT ONLY THE ACTION.** "dump size read" joins the
+   list because the "Estimate size" button egressed a live HEAD to
+   dumps.wikimedia.org with NO `ensureOnline`, for years, beside a "Download"
+   button that had one — a preview reads as *looking*, not as *doing*, which is
+   exactly where a gate gets forgotten. So the RULE, not just the list: after
+   gating an action, gate every estimate, preview, validation, reachability check
+   or autocomplete that runs BEFORE it, because those egress first. COROLLARY,
+   from the same breach: a refusal BY THE KILL SWITCH must be named as such
+   wherever it can surface — that probe reported airplane mode as "size check
+   failed", pointing an operator at someone else's server for their own setting.
    **REFINED #14c (UI_SHELL §3, SHIPPED #133):** the transition flash is now
    DIRECTION-AWARE — go-on = live accent, go-off = calm/grounded (never the old
    single red wash that conflated both meanings); consent/semantics unchanged.
@@ -415,6 +426,32 @@ never the way to make room for something rules (5)/(5a) would have sent to
    py3.13; container is 3.11) → CI covers it. REMAINING: human click-through across
    themes/breakpoints (fork-3); optional real-screenshot thumbnails; translate the per-UI
    "why" essays if promoted past experimental.
+31. **THE OBSERVATORY IS A LENS, NEVER A SECOND SOURCE OF TRUTH (ruled 2026-07-18;
+   BUILT 2026-09-07, Chromium-verified in the remote sandbox, awaiting the human UX
+   pass):** the corpus as a deterministic night sky — a DEDICATED main tab (the #2
+   roster grows by one), whole-corpus v1, hand-rolled canvas 2D (no WebGL, no
+   Three.js, no CDN). `src/static/oosky.js` owns the pure polar geometry;
+   `app-observatory.js` the wiring. THE FIVE THINGS THAT MAY NOT REGRESS: (a) ONE
+   measure per channel, never a blend — ANGLE = the domain wedge (labelled, with
+   stable-hash jitter inside it disclosed as meaningless), RADIUS = one chosen
+   measure with LABELLED orbit gridlines, SIZE = mentions via `sqrtAreaScale` (AREA
+   ∝ value) with a reference-star legend, COLOUR = language or the trend lens and
+   NEVER the only signal. (b) THE TWO REFUSALS: `radialScale` refuses the log mode
+   below one full decade and says which scale it drew instead (the recorded `logY`
+   defect — `distinct_sources` tops out at 7 on a real corpus, so this is the common
+   path); a galaxy whose measure is ZERO gets no coordinate at all and goes to a
+   labelled outer band (52 of 77 on a young corpus). (c) The RANKED TABLE renders in
+   FULL beside the sky — it is the canonical view (#8), never truncated, and both
+   orders come from the one `rankedGalaxies`. (d) The anti-capping line names every
+   population the picture omits ("N plotted · N not observed yet · M in the
+   nebula"). (e) Constellation edges are DRAWN from a measured shared member, never
+   from proximity; the trend lens leaves `growth_is_ratio:false` uncoloured, because
+   that `growth` is the recent COUNT and painting it would fabricate a decline.
+   Deterministic by construction (`ooViz.mulberry32`, never `Math.random`): same
+   corpus → same sky, so CHANGE is signal. Static when idle; depth is navigational
+   only and marks are screen-space sized. Enforced by
+   tests/test_observatory_ui.py + tests/oosky_node_test.js (20 checks, mostly
+   negative space) + test_ui_invariants (#31).
 8. **The UI shows DATA, never plumbing (ruled 2026-06-11, stated GENERALLY):**
    data tabs present the aggregated data itself — "that's the added value of
    this app"; acquisition/configuration surfaces live in Settings. First

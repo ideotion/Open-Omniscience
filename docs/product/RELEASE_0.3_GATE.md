@@ -608,6 +608,7 @@ human UX pass".
 | 2026-09-07 | **Board reconciled with the tree.** Row 3's cost paragraph read `~1M` three lines below the sentence that moved its bar to the corpus `0.3` ships against — corrected to the **40,260 articles** that run actually measured. The two ledger claims this pass was asked to check were re-derived and are already correct: the `100 GB` acceptance strings were fixed on 2026-08-03 (`p0_validation.py` names a property, not a size; `kpi.py`'s K1 correctly still names 100 GB+ as a *target* with an `nm` reason), and row 4's multiple is 8.3×, not the *"roughly 2×"* CLAUDE.md carried. §7.1's four endpoints and every parameter in them verified against the routers | session |
 | 2026-09-07 | **The calibration prose arm can now finish, and aims at the population under decision.** It had a cursor by design and no way to carry it: the bundle passed `after_id=0, limit=500` literally, so every export re-measured the same lowest-id 500 and both field reports stopped at `last_id: 695`. It also walked by ascending id rather than by the index pages Tier B is about. Now: a persisted per-scope cursor (invalidated by a `CRITERIA_VERSION` change, so two detectors' verdicts are never summed), a `prose_gate_scope` of `all` or `index_pages`, an exact `remaining`, and the population named in the report. Eleven tests | session |
 | 2026-09-07 | **Row 7b's missing instrument built** — `GET /api/diagnostics/soak-window`, bundle member `soak-window.json`. Six instruments held the soak's answer across six different windows, several far shorter than the bar; this composes them and states per block the window it read, with a not-measurable state wherever the window does not reach. Three counters became durable to make it possible (write-gate `total_held_s`, memory-guard `engagements`/`total_engaged_s`, both shapes of an aborted statement) and the error log now publishes its own `records_cap` beside every count. Verdict-free: `reaches_bar` is a fact about the window's length. 29 tests, 17 mutations each reddening by name | session |
+| 2026-09-07 | **§4's Observatory line corrected.** It read "designed, browser-gated, prerequisites unmet" — written when the surface was design-only and stale on all three counts by the time it was read: the prerequisites had been met (the S1 stats core; the `domain:` field, 2026-07-20), and PR #1033 shipped the `ooSky` renderer + the tab, Chromium-verified. It stays OUT of this gate, which is what the section is for — the remaining tiers are backlog (`PARKED.md`) and the UX pass is 0.4 row F | session |
 
 ---
 
@@ -618,7 +619,14 @@ Recorded so a future reader does not mistake absence for oversight:
 - **The 146-entry Open queue** in `CLAUDE.md` — the deeper backlog. None of it blocks a tag.
 - **The five new verticals** (IP/patents · PubMed · climate · war/defense · elections) — the
   `0.5`–`0.8` steps of the [V1 pathway](../design/V1_PATHWAY_2026-07-14.md) §3.
-- **The Observatory** — designed, browser-gated, prerequisites unmet.
+- **The Observatory** — ~~designed, browser-gated, prerequisites unmet~~ **PARTLY SHIPPED
+  2026-09-07 (PR #1033), and still not a gate row.** The line above was written when the surface
+  was design-only; both its stated prerequisites were in fact met (the super-groups S1 stats core,
+  and the `domain:` scaffold field on 2026-07-20), and question H1 answered *build now*. Shipped:
+  the `ooSky` renderer, the Observatory tab, UI invariant #31. The remaining tiers — arms, star
+  systems, planets, novae, the time scrub — are backlog, not gate, and are itemised in
+  [`PARKED.md`](../../PARKED.md); the human UX pass the surface awaits is
+  [`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md) row F, not a row here.
 - **Windows / macOS install paths** — Debian is the target (ruled 2026-06-17); the macOS CI
   lane stays observation-only.
 - **Tor-exit-resolve** — assessed, zero code, ruling-gated.

@@ -6110,7 +6110,202 @@
   whole thing. This is the inverse of the stale-PENDING-banner failure the 2026-09-06 analysis
   named: there a doc claimed less than the tree held; here a commit claimed a slice id and
   delivered half of it.
+  - **A LIST BOUND THAT THE RULING'S OWN LOAD-BEARING ROW RIDES ALONG WITH IS SAFE ONLY BY
+    ACCIDENT — and the ordering that saves it is a property of the data, not of the code
+    (2026-09-07, the concept map's country cap):** `ring_country_split` ended with a bare
+    `rows[:limit]` over a GROUP BY ordered by article count, `limit` defaulting to 40. The
+    unlocated ("not mapped") bucket is one of those rows — and it is the row the 2026-07-18 §D
+    ruling names BY HAND as "often the largest, and it must be investigable, never a dead end".
+    It survived every field run because it HAPPENED to be the biggest; on any concept carried by
+    more than 40 countries with a smaller unlocated share it falls outside the window and the
+    ruled-clickable drill simply is not in the payload. The shipped catalog carries **189 distinct
+    source countries**, so the bound is reachable rather than theoretical — which is the number
+    that turned "could this happen" into "this happens". TWO GENERAL RULES. (a) When a ruling
+    singles out one row as load-bearing, check whether it travels through the same bound as the
+    ordinary rows; if it does, split it out BEFORE the bound so the guarantee is structural, and
+    the fixture that proves it must make that row the SMALLEST — a fixture using the field's usual
+    shape (largest) survives any limit and the guard passes for free. (b) The same call had the
+    anti-capping defect in its purest form: no exact total was published, so the only figure a
+    reader could count — the polygons, which the frontend announced as "N countries" — WAS the cap.
+    The fix cost nothing, because a GROUP BY has already materialised every bucket: `len(located)`
+    is exact and free, and only the LIST needed bounding. Before adding a `[:limit]` to a
+    fully-materialised aggregate, ask what the caller will count, and publish the number beside the
+    list rather than leaving the list to stand in for it.
+  - **A MIN GATE EXPRESSED AS A ROUNDED PERCENTAGE GROWS SLACK AS ITS DENOMINATOR GROWS — at 3040
+    keys, exactly one missing translation is invisible (2026-09-07, measured while adding one
+    key):** `scripts/i18n_report.py --min 100` is one of the three blocking i18n gates and computes
+    `pct = round(100 * covered / n, 1)`. At today's n = 3040, a locale missing ONE key scores
+    99.967 → **100.0**, prints "complete 3039/3040 (100.0%)" and exits 0. Measured, not reasoned:
+    deleting the newly-added key from `fr.json` alone left the gate green. This is the recorded
+    "a gate you expect to be interesting never says anything interesting" family with a new
+    mechanism — the gate is not blind, it is ROUNDED, and its blind spot WIDENS with every key the
+    project adds, so a check that was exact at 500 keys silently stopped being exact. GENERAL FORM:
+    any threshold applied to a rounded ratio has a tolerance equal to half the rounding step times
+    the denominator, so state it in ITEMS ("this gate cannot see 1 missing key") rather than in
+    percent, and prefer comparing the counts. Not fixed in the slice that found it, deliberately:
+    it changes a shared blocking gate and belongs to its own reviewed change — but measure the
+    cost of tightening before deferring it, because all 11 non-English locales are currently at the
+    full count, so today it would redden nothing.
+  - **`grep --include` IS A WHOLE-INVOCATION FILTER, NOT A POSITIONAL ONE — naming files of another
+    type beside it searches NONE of them, and reports a confident nothing (2026-09-07):**
+    `grep -rn "<needle>" src/static/*.js src/static/*.html src/ --include=*.py` looks like "search
+    these JS and HTML files, plus the Python under src/". It is not: `--include` applies to every
+    path in the call, so the JS and HTML files were filtered out and the command searched only
+    `*.py`. It printed nothing, and I concluded from that silence that a translated honesty string
+    was keyed in twelve locales and rendered NOWHERE — a finding about an orphaned translation,
+    written up as such, when the sentence is sitting in `index.html` and guarded by a test. The
+    tell was available and I walked past it: the same run reported the string missing from files I
+    had just been told it was in. Same family as the recorded `cmd | tail` exit-code trap and the
+    `pytest -k` selector matching zero tests — a check that reports success (or emptiness) without
+    having examined what it claims to. RULE: put `--include`/`--exclude` only on a bare recursive
+    search, and when a grep over explicitly-named files returns nothing, re-run it on ONE of those
+    files alone before believing the absence.
+  - **A GUARD ANCHORED ON A LITERAL OPERAND LIST REDDENS WHEN YOU ADD AN OPERAND BESIDE THE
+    ONE IT IS ABOUT — and the tell is that it fails against code where its own named property
+    is untouched (2026-09-07, the ring-map dumbbell):** `test_dumbbell_wired_into_ring_map_detail`
+    asserted the string `"langs + langBd + unlocNote + dumb + tbl"`. Inserting a SIXTH,
+    unrelated operand (a truncation disclosure) between two of them reddened it — while the
+    dumbbell it is named for was wired exactly as before. That is the recorded
+    "anchored on a landmark that merely coincided with the property" class, in the cheapest
+    possible form: a concatenation's operand ORDER is not the claim, membership is. Re-anchor
+    STRUCTURALLY — select the composed render assignment (not the `= ""` resets that clear the
+    block) and assert the term is one of its operands — which is strictly stronger, since it
+    still fails when the term is dropped and stops failing when a neighbour is added; pin BOTH
+    directions, because a re-anchor that only relaxes is indistinguishable from deleting the
+    guard. **THE ROOT CAUSE IS THE CHEAP HABIT I SKIPPED:** before changing any string in
+    `src/static/`, grep the TEST tree for it. The ledger already carries that rule twice (the
+    `async def view_article` rename, the `did not grow` reason string) and I paid for it again
+    by running only the suites I had touched; the full run is what caught it, ~20 minutes after
+    it could have been caught in seconds. The grep is not "which tests are about this file" —
+    it is the literal string, because the file that anchors on it will be named for something
+    else entirely (here: a dumbbell chart).
 
+  - **A PREMISE COPIED THREE TIMES IS STILL UNVERIFIED, AND EACH COPY MAKES IT READ AS BETTER
+    SOURCED (2026-09-07, the dump-size endpoint):** "the dump date's `dumpstatus.json` lists
+    every edition at once, so it is ONE request, not N HEADs" was written into an
+    assistant-authored docstring in `src/wiki/dump_sizes.py`, copied verbatim into the Open
+    queue as the ruled REMAINING work, and copied again into the prompt derived from the
+    queue. By the third copy it had the shape of a settled fact with three citations, and
+    **nobody had read the endpoint** — the sentence has one origin and two echoes. The
+    recorded lesson that "an agreement between two methods that share a defect is not
+    corroboration" is the same shape one level up, in prose: agreement between two DOCUMENTS
+    that share an origin is not corroboration either, and the tell is that none of them says
+    who looked. Two cheap checks settle it without the network. **Ask what the codebase's own
+    behaviour implies:** every `dumps.wikimedia.org` URL this repo builds is per-edition
+    (`/<code>wiki/latest/…`), which is evidence AGAINST a single cross-edition document.
+    **And probe the host before planning around it:** `curl -o /dev/null -w '%{http_code}'`
+    returns `000` here against `200` for `pypi.org`, so the shape was not checkable in this
+    sandbox at all. The honest outcome is to ship the part that does not depend on the
+    premise (one CONSENTED, bounded, politeness-spaced read over the operator's actual
+    selection), park the optimisation with the evidence, and correct all three copies —
+    building on the premise would have shipped a fabricated endpoint, and a 404 degrading to
+    "sizes unavailable" is the kind of failure nobody ever traces back to a docstring.
+    GENERAL FORM: when a plan states a fact about a THIRD PARTY's endpoint, file format or
+    API shape, find where the sentence was FIRST written and whether that author read it; a
+    fact with no reader is a guess with a citation trail.
+  - **A CONSENT GATE ON THE ACTION IS NOT A CONSENT GATE ON WHAT THE UI DOES TO HELP YOU
+    DECIDE (2026-09-07, same slice):** UI invariant #14 lists "dump start" among the gated
+    actions, and `startDump` duly passes `ensureOnline`. The button beside it — "Estimate
+    size" — fired a live HEAD to the same host with no gate at all, because it reads as
+    *looking*, not as *doing*. Every sibling action on that surface (watched-page add, OSM
+    region download, statistics fetch) has the popup; the preview did not, and it is the one
+    that runs FIRST. GENERAL FORM: after gating an action, enumerate what the surface does
+    BEFORE it — a size estimate, a preview, a validation, a reachability check, an
+    autocomplete — because those egress too and are exactly where a gate gets forgotten. THE
+    SECOND HALF, found in the same read: the ungated probe swallowed every failure into one
+    `"size check failed"`, so airplane mode (a fact about THIS machine, nothing sent) was
+    indistinguishable from a dump host that would not answer — the standing
+    one-key-two-meanings defect, and it points an operator at someone else's server for their
+    own setting. A refusal by the kill switch must be named as such wherever it can surface.
+    THIRD, cheap and worth the grep: the probe read `dumpSelected()[0] || "en"` from a
+    MULTI-select picker, so it reported one edition's size as though it described the
+    selection and silently invented a default when nothing was chosen. A control whose input
+    is a collection and whose implementation indexes `[0]` is a shape to grep for.
+  - **CHECK A PRESCRIBED COLUMN AGAINST THE FACT'S CARDINALITY, NOT ONLY AGAINST THE CODE
+    (2026-09-07, "per-mention revid anchoring"):** the recorded rule says a plan written from
+    measurements is trustworthy about the DEFECT and not automatically about the REPAIR, and
+    names the module docstring as where the previous reasoning lives. There is a second,
+    faster check that needs no archaeology: ask what the value's cardinality is against the
+    grain of the table the plan names. Here the defect was exactly as recorded (the revid was
+    received and dropped, recoverable for watched pages only by reading a DIFFERENT fact and
+    not at all for dump ingests), and the remedy named `keyword_mentions` — but every mention
+    of an article is produced by ONE indexing pass over ONE text, so each would have carried
+    an identical value: millions of copies at field scale, on the largest table in the store,
+    of a fact with one distinct reading per article. That is the recorded "a term whose count
+    equals the article count is a fact about the channel" tell, applied to a schema rather
+    than to a keyword index. The fact belonged one level up, on the article, written in the
+    same transaction as the text it describes so the pair cannot drift. GENERAL FORM: before
+    adding a column, count how many rows would hold the same value for one entity; if the
+    answer is "all of them", the column is on the wrong table — and say so in the commit,
+    because deviating from a recorded shorthand silently is how the next reader re-files it
+    as unbuilt.
+  - **AN INVERSE VERIFIED BY ROUND TRIP BEATS ONE VERIFIED BY A CHARACTER RULE, AND THE
+    CHARACTER RULE FAILS TOWARD SILENCE (2026-09-07, `wiki_page_ref`):** turning a canonical
+    URL back into the `(wiki, title)` it was minted from needs a guard, since a hostile
+    `canonical_url` must never become a wiki lookup. My first version listed what a path may
+    not contain — and refused every title containing a slash, which is a real and ordinary
+    shape (`A/B testing`, `OS/2`, `AC/DC`), because the forward function's `quote` leaves the
+    slash alone. Nothing would have failed: those articles would simply never have been
+    offered their history link, an invented absence on a surface whose whole point is that an
+    absence is honest. Re-minting the URL from the candidate pair and requiring it back
+    byte-for-byte accepts EXACTLY what the forward function can produce, by construction —
+    no hand-maintained list to keep in step with `quote`'s `safe` set, and nothing this app
+    never minted can pass. TWO RIDERS. Test the shapes a character rule gets wrong
+    (`A/B testing`, `100% renewable`, `C++`, non-Latin titles) rather than the ones it gets
+    right, or the parametrisation proves the easy half. And a round trip legitimately accepts
+    a page genuinely titled `../../etc`, which is correct where the result is a bound DB
+    lookup key and a traversal the moment someone joins it onto a directory — so say in the
+    docstring which of the two it is, rather than leaving the next caller to assume.
+  - **A SOURCE GUARD CANNOT TELL A LIVE BRANCH FROM A DEAD ONE — the identifier it looks for
+    lives INSIDE the branch (2026-09-07, the tracked-changes header):** the recorded traps
+    cover a needle that is not unique, a needle satisfied by a comment, and a slice that
+    over-runs. This one is none of those: the guard was correctly scoped to
+    `loadWikiTC`, comment-stripped, and asserted `d.page.title` — the exact expression that
+    fills the panel's header from the server's answer when a `?wikitc=` deep link supplies
+    only a page id. Neutering the branch to `if (false)` left the assignment sitting inside
+    dead code and the guard GREEN. The class is general and has no source-level fix: for ANY
+    guard of the form "X is read from Y", X necessarily appears inside the conditional that
+    reads it, so disabling the conditional cannot change what the file contains. Only
+    behaviour discriminates. Driving the real function in node cost about forty lines of DOM
+    shim (`$` returning recording objects, an `api` that yields a fixture) and paid for
+    itself immediately, because the same harness then pinned the five things the view's
+    honesty actually rests on — the "showing N of M" window disclosure, the visible caveat,
+    the flag-aware empty state, a revision with no stored diff saying why, and a failed read
+    replacing the loading placeholder rather than leaving it up — each of which redden under
+    their own mutation. This is the recorded "a test of a HELPER is not a test of its WIRING"
+    lesson in mirror image: there a behavioural test missed the wiring, here a source test
+    could see the wiring and not whether it runs.
+  - **THE RECORDED REGEX BOMB HAD A SECOND, LARGER DISGUISE IN THE SAME FUNCTION — and the
+    test written for the first one is what found it (2026-09-07, `plain_from_wikitext`):** the
+    2026-08-05 lesson names `OPEN.*?CLOSE` and asks for the shape to be grepped. Grepping for
+    that literal shape found three patterns in the wiki strip and fixed them (13.4 s → 0.003 s
+    per 400 KB of unclosed-`<ref>` spam). It also MISSED six more in the same function, because
+    they are written `OPEN[^X]*CLOSE`: the character class consumes to end-of-document and then
+    backtracks position by position, which is a different mechanism with the same N² cost.
+    Measured, 100,000 → 400,000 chars: `[[File...]]` 1.749 s → **28.035 s**, `[[target]]`
+    1.721 → 27.398 s, `[url label]` 1.420 → 22.525 s, `<[^>]+>` 0.154 → 2.381 s — the ones I
+    had not touched were an order of magnitude worse than the ones I had. **What found them was
+    a TEST FAILING AGAINST THE FIX**: a bound on the comment shape came back 62× and the
+    tempting move was to widen the bar; measuring instead showed the comment BLOCK strip was
+    already linear and the cost was `<[^>]+>` downstream. GENERAL FORM: grep for the COST, not
+    for the syntax — "an opener that can scan to end-of-document when its closer is absent"
+    covers `.*?`, `[^X]*`, `\S+` and any other greedy class, and the syntax you grepped for is
+    the one you already knew about. And when a bound you wrote fails, measure what is actually
+    slow before touching the bound: the recorded rule is to raise the INPUT when the noise
+    scales and change the CLAIM when it does not, and there is a third case — the bar is fine
+    and the measurement is about something else entirely. RIDER on the fix's shape: a
+    scaling RATIO (4× the input must not cost ~16× the time) is the right assertion here, not an
+    absolute second count, because the defect is that the two diverge by an order of magnitude
+    while an absolute bar is a bet on the runner's speed.
+  - **A MUTATION MATRIX THAT NAMES A TEST FILE THAT DOES NOT EXIST REDDENS ON EVERY MUTATION,
+    AND READS AS A PERFECT RESULT (2026-09-07):** the recorded trap is `pytest -k` selecting
+    ZERO tests and printing nothing. This is its louder twin and it is more convincing: naming a
+    non-existent file makes pytest exit non-zero with a COLLECTION ERROR, so every mutation is
+    reported RED, "reddened: (collection error)" scrolls past, and the matrix appears to have
+    killed everything. The check that separates them is the one the recorded lesson already
+    prescribes for `-k`, and it applies to a file list too: **run the selector ONCE unmutated
+    first and read its pass count**, then mutate. Doing that here turned "9 of 9 killed" into
+    "6 of 9 killed, 3 survivors" — and all three survivors were worth having.
   - **A DECLINE'S OWN PREMISE CAN BE THE ARGUMENT FOR REVERSING IT, AND THE STEP IT NAMED
     WAS 5% OF THE COST (2026-09-07, C16 / S-D — reversing the 2026-07-12 F13 decline):**
     F13 recorded that the batched collector flush holds the single-writer gate across
@@ -6243,6 +6438,430 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A CAPABILITY PROBE THAT RUNS THE LIBRARY'S HAPPY PATH CAN STILL BE WRONG ABOUT IT — and
+    the FABRICATED-FAILURE half is the one no fixture catches (2026-09-07, D7's OTS probe):**
+    replacing `OTS_AVAILABLE`'s bare-import check with an offline round trip is the correct
+    fix, and the first version of that round trip reported OTS **unavailable on every install
+    that has it**. `opentimestamps` refuses to serialize an EMPTY `Timestamp` — by name, "An
+    empty timestamp can't be serialized" — and `anchor()` never meets that because it merges a
+    calendar's attestations in BEFORE serializing. So the probe exercised a shape production
+    never produces, and a fabricated FAIL is exactly as dishonest as the fabricated pass being
+    fixed, and much easier to believe: it looks like the library being broken rather than the
+    probe. THREE THINGS. (a) It was found by INSTALLING the optional extra and running the
+    probe, not by reading it — the recorded "run tool-gated tests with the tool" rule, which
+    on this repo means `pip install -e ".[pqc,timestamping]"` in the sandbox venv and takes a
+    minute. (b) The guard that stops it recurring must be keyed on the LIBRARY being
+    importable, never on the flag: a `skipif(not OTS_AVAILABLE)` keys a skip on the very thing
+    under test, so a probe that wrongly reports unavailable SKIPS the tests written to catch
+    that — mutation-proven, the mutation removing the attestation survived the first matrix and
+    reddens the second. (c) A probe of an optional extra needs a LANE that installs it: the
+    crypto lane installed `[pqc]` only, so the OTS positive half could not have run anywhere,
+    which is the recorded "an environment-gated guard goes to die in a lane that names files
+    explicitly" trap arriving before the guard was even written.
+  - **WITH A WORKING LIBRARY INSTALLED, AN IMPORT PROBE AND A CAPABILITY PROBE AGREE — so the
+    obvious assertion about the flag cannot fail (2026-09-07, same slice):** the natural guard
+    for "the flag is derived from the round trip" is
+    `assert PQC_AVAILABLE is _probe_mldsa(_mldsa)[0]`, and it SURVIVES the mutation that reverts
+    the flag to `_mldsa is not None`, because on a machine whose pqcrypto works both answers are
+    True. The discriminating case exists only if a library that IMPORTS and CANNOT WORK is
+    injected — which is the shipped 2026-08-20 defect itself — and injecting it means reloading a
+    module every custody test imports, so it belongs in a SUBPROCESS rather than in the shared
+    process. GENERAL FORM: when a fix replaces predicate A with predicate B, ask on which inputs
+    A and B DIFFER, and check the fixture reaches one; a fixture drawn from the healthy
+    environment usually reaches none, and the guard then measures the environment.
+  - **A "MUST BE WIRED" GUARD OVER A ZERO-ARGUMENT FUNCTION IS SATISFIED BY ITS OWN
+    DECLARATION, AND `"POST"` IS NEVER A UNIQUE NEEDLE (2026-09-07, the reader's AI lens):**
+    two source guards written in the same hour as the fix, both refuted by the mutation matrix
+    in one run. `assert "loadAiLens()" in src` cannot tell WIRED from DEFINED, because
+    `function loadAiLens() {` contains `loadAiLens()` — the recorded zero-argument trap,
+    recurring in a file where nothing had yet used the shared slicer. And
+    `assert '"POST"' in src` survived deleting the confirm request's method, because
+    `reader.js` has ANOTHER POST (summarize/translate) thirty lines away. The replacement is a
+    node suite that extracts the real functions and drives them: what is asserted is the markup
+    a reader ends up with and the request that actually leaves the page, and both mutations then
+    redden by name. Worth recording again because both traps are already in this file and were
+    still walked into — the durable fix is to reach for the behavioural shape FIRST on any
+    "is it called" claim, since that is the exact claim a substring cannot make.
+  - **AN EVIDENCE COLUMN'S HONESTY IS ITS EMPTINESS (2026-09-07, `AiKeyword.evidence`):** the
+    column is documented as "the snippet the model drew the term from" and had zero writers
+    since it was added. The tempting writer is the model — ask it for the snippet — and that
+    adds a SECOND unverifiable claim beside the first. A deterministic search of the article's
+    own stored text says something checkable instead ("this term appears HERE in your copy"),
+    and the case that carries the value is the one where it finds NOTHING: a term the model
+    produced that is not in the text was inferred, translated or invented, and only storing
+    nothing preserves that. So the mutation that matters is not "does it find the snippet" but
+    "does it invent one" — filling a miss with the article's opening line passes every
+    positive test. TWO MECHANICS worth keeping: search exact-first with `str.find` and fall
+    back to an IGNORECASE regex over the ORIGINAL string, because `"İ".lower()` is `i` plus a
+    combining dot and `"ß".casefold()` is `ss` — both change LENGTH, so lowering the text and
+    indexing back into it slices at the wrong place; and the needle is `re.escape`d, so there
+    is no pattern to backtrack (a literal search is linear, unlike the `OPEN.*?CLOSE` shape
+    that cost a 412 KB article 138 seconds).
+  - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
+    trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
+    catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
+    `verification.status: fetched`, and one of those feeds had never been asked for. The
+    status is about the PORTAL — impo.com.uy's row records loading `/contenido/`, while the
+    row's OWN notes call the feed URL the site's generic WordPress `/feed/` of news posts,
+    "not confirmed to carry each day's Diario Oficial issue individually, so verify before
+    relying on it for gazette monitoring". Promoting on the row status would have filed
+    Uruguayan site news in the corpus **as that country's official gazette**: not a broken
+    fetch, which announces itself, but a plausible wrong corpus, which does not. GENERAL
+    FORM: a verification tier covers the thing the verifying session actually looked at, and
+    every OTHER URL in that record is a claim nobody checked — so a field that will be
+    fetched needs its own tier, and the vocabulary should be narrower than the row's where
+    the middle tiers cannot mean anything (a search snippet can say a site exists, never
+    that a URL serves a parseable feed). The same catalog has 107 `enumeration_url` values
+    and a `structured.api`/`structured.bulk` pair in the identical position. COROLLARY on
+    reading the evidence: the row-level `evidence` sentence is what settles it, and it did —
+    three of the four record fetching the feed, one records fetching something else. Read
+    the sentence, not the enum.
+  - **A DENOMINATOR IN AN UNDECLARED UNIT IS NOT A DENOMINATOR, AND THE JOIN KEY IS THE
+    SECOND TRAP (2026-09-07, law coverage):** 39 dated official counts sat in the law
+    catalog as the completeness principle's missing denominators, and the obvious move —
+    print `tracked / enumerated` — is a fabricated statistic: a tracked document is
+    act/code-level while the recorded units run over codes, acts, volumes, gazette issues,
+    treaties and cases, and a volume or a gazette issue holds many acts. Deciding
+    commensurability from the unit STRING is the exact move ruling 47's extensive/intensive
+    rail already forbids for aggregation, so the two numbers are published side by side with
+    the reason attached and the declaration is raised as a ruling. SECOND HALF, and it would
+    have been silent: the counts key on ISO-2 `country` while documents key on an "ISO-ish"
+    `jurisdiction`, and `uk` documents state `gb` — so reading the jurisdiction code as a
+    country BOTH misses that pair AND risks attaching some other country's enumeration to a
+    code that collides with its ISO-2. The honest join runs only through the country a
+    document itself states, and a document stating none gets its own third state rather than
+    being reported as "no enumeration exists". GENERAL FORM: before dividing two numbers
+    from different files, check the UNIT and the JOIN KEY separately — either one alone can
+    make the quotient a number nobody measured.
+  - **A MECHANISM BUILT TO SURFACE CAVEATS IS BLIND TO THE CAVEATS IT WAS NOT SHAPED FOR —
+    carry the raw field too (2026-09-07, same slice):** a derived check (is the figure's
+    `source_url` on the publisher's own domain?) correctly flags the Council of Europe's
+    treaty count, which cites Wikipedia, and Mauritania's, which cites a news site. It
+    STRUCTURALLY cannot flag the African Union's 80, whose `source_url` is perfectly
+    on-domain and whose caveat lives in the row's `notes`: "a manual tally ... treat this as
+    approximate, not authoritative". Extracting that with a prose heuristic is the move this
+    project refuses, so the notes ride along verbatim beside the figure. GENERAL FORM: when
+    you build an instrument to expose disclosures, ask what it is structurally unable to
+    see, and keep the unprocessed field beside it — the same shape as the recorded
+    two-harvest-instruments lesson, at the level of one payload.
+  - **AN HONEST GAP RECORDED AS A COMMENT IS OUTSIDE THE SYSTEM, NOT A LESSER VERSION OF ONE
+    (2026-09-07, the law catalog's two confirmed gaps):** the catalog has a deliberate shape
+    for "we looked and there is no official portal" — a domain-less `lead` row, which the
+    validator sees and the loader drops, so a gap can never become a `Source`. Yemen is one.
+    North Korea's identically-reasoned, better-evidenced gap was a **YAML comment block**, so
+    the validator could not count it, the vetting board could not list it, and nothing that
+    reads the catalog as data knew it existed. Nobody was wrong at the time; the comment is
+    the producing session's own words and is where a future reader looks. GENERAL FORM: when
+    a project has a DATA shape for a deliberate absence, prose recording the same fact is not
+    a weaker record, it is an invisible one — add the row and keep the prose beside it.
+
+- **THE `shipped.csv` UNION-MERGE DUPLICATE HAS A THIRD SHAPE, AND ITS RECORDED TELL IS SILENT ON
+  IT (2026-09-07, caught live on PR #1025 by the prescribed scan):** the ledger already records
+  this defect twice, both times as *main edited a row your branch also carries*, with the tell
+  being **"a numstat with DELETIONS on a merge you expect to be purely additive."** This time the
+  direction was reversed: **THIS branch edited two rows and main merely carried the originals
+  forward** (main's own commits touched the file, but not those rows). Union kept both sides'
+  lines, so the merge produced **two duplicates while adding four lines and deleting NONE** —
+  `4 added / 0 deleted`, exactly the "purely additive" numstat the recorded tell says is the
+  healthy case. `git merge` reported success, and a conflict-marker grep is blind by
+  construction (`.gitattributes` sets `merge=union`, so this file never produces a marker).
+  **GENERAL FORM: the numstat tell detects only the direction where the OTHER side deleted
+  something. When YOU are the editor, the duplicate arrives with a clean, additive numstat and no
+  tell at all.** So the duplicate-key scan over `(date, area, item)` against the COMMON ANCESTOR
+  is not a confirmation step to run when something looks off — it is the ONLY check that sees all
+  three shapes, and it must be run on every merge that touches this file regardless of how the
+  numstat reads. (Compared against the ancestor, never against zero: nine duplicates already
+  exist there, so a bare "are there duplicates" test accuses every merge of nine things it did
+  not do.) A corollary worth stating plainly: **editing an existing row is strictly more dangerous
+  than appending one**, because only the edit can be duplicated by union — which is why rule (5b)
+  is best obeyed in the same session that learns the PR number, when the row is still the newest
+  thing in the file and no other branch carries a copy.
+  - **THE PUBLISHER'S OWN CONFORMANCE VECTORS ARE EVIDENCE; MY HAND-WRITTEN CASES
+    MEASURE MY UNDERSTANDING OF THE SPEC (2026-09-07, the vendored Public Suffix
+    List):** implementing the PSL algorithm, I wrote ~20 cases from the spec, ran
+    them, and they were all green. The upstream's own `tests/tests.txt` (CC0, 78
+    vectors, fetchable from the same repo as the list) then found **two real
+    defects on the first run**. (a) A LEADING DOT was stripped, so `.example.com`
+    answered `example.com` where the spec says a malformed input has no
+    registrable domain. (b) The list stores internationalised rules in UNICODE
+    (`公司.cn`) while hosts arrive in PUNYCODE, so every `xn--` host fell through
+    to the wrong suffix — **and that one has no positive-space symptom at all**:
+    the answers were plausible domains, one label short, which no eyeball and no
+    self-written case would flag. GENERAL FORM: when implementing a published
+    algorithm over a published data file, look for the publisher's OWN conformance
+    suite before writing a single expectation — a vector set authored by the
+    people who define the format is a different KIND of artifact from cases
+    authored by the implementer, and the difference is exactly the cases you did
+    not think of. Vendor it beside the data (its digest pinned in the test, the
+    registry coupling requiring both to be refreshed together: a newer list judged
+    by older vectors proves nothing), and give the parse an anti-vacuity floor
+    (`len(cases) >= 70`), because a truncated fixture makes the whole guard pass
+    for free.
+  - **A MUTATION CAN APPLY TEXTUALLY AND BE SEMANTICALLY INERT, AND `assert new !=
+    old` CANNOT SEE IT (2026-09-07, the newsletter resolver's matrix):** the
+    recorded rule is that a `str.replace` whose needle is absent is a silent no-op
+    whose green run reads like a dead guard, and the prescribed check is to assert
+    the edit landed. It did land here — `_INFRA_LABELS: frozenset[str] =
+    frozenset(` became `... = frozenset() or frozenset(` — and **an empty frozenset
+    is falsy**, so `X or Y` evaluated to the untouched real set and the "mutant"
+    was the shipped code with extra characters. All 28 tests passed and I was one
+    step from recording a guard as vacuous. So the edit landing is necessary and
+    not sufficient: a mutant is only evidence once it REPRODUCES THE DEFECT, which
+    for a data structure means asserting the structure is what you think (`assert
+    not _INFRA_LABELS`) and for a branch means proving the branch changed. Re-run
+    correctly (`if publication and publication not in _INFRA_LABELS:` ->
+    `if publication:`) it reddened three tests by name. Same family as the
+    recorded "a surviving mutant may be a finding about the MUTANT", with a
+    sharper tell: a survivor whose mutation involved a boolean operator, a default
+    argument or a falsy sentinel is a suspect mutant before it is a suspect test.
+  - **A RESTORED SOURCE FILE IS NOT A RESTORED IMPORT — `__pycache__` CAN SERVE
+    THE MUTANT'S BYTECODE FOR A WHOLE SECOND (2026-09-07, same matrix):** after a
+    mutation run I restored the module with `cp`, verified the restore with a grep
+    that could only match the ORIGINAL line, and re-measured — and got the
+    mutant's numbers back, twice, for a file whose source was provably correct.
+    CPython validates a `.pyc` by comparing the source mtime it recorded against
+    the source's current mtime, and both have **one-second granularity**: a `cp`
+    landing in the same second as the mutated run's cache write produces a
+    matching pair, so the stale bytecode is served. It presents as "my fix did not
+    take" or, worse, as a real measurement. RULE: clear `__pycache__` (and any
+    scratch script's own) as part of every mutation restore, and remember that a
+    source-level restore check proves what the next run will READ, never what it
+    will EXECUTE.
+  - **A MODULE THAT DEGRADES HONESTLY WHEN ITS DATA FILE IS ABSENT IS EXACTLY THE
+    ONE WHOSE PACKAGING OMISSION IS SILENT (2026-09-07, `src/geo/data`):** adding
+    `src/catalog/data` I checked `[tool.setuptools.package-data]` and found `"src"
+    = ["static/**/*"]` — so the offline IP-to-country table under `src/geo/data`
+    had been missing from every built wheel since the day it was added, and
+    nothing said so, because `ip_geo` reports an honest unavailable-with-a-reason
+    rather than raising. The wheel installs, the app boots, and a feature is
+    simply absent with a plausible explanation — the same shape as a degrade
+    wrapper hiding the bug it was built to survive, moved into the build. TWO
+    RULES. Derive the requirement from the TREE, not from memory: the guard walks
+    every `src/*/data` directory that exists and fails naming the file no pattern
+    covers, so the next such tree cannot be forgotten. And prove it with a REAL
+    BUILD (`python -m build --wheel`, then read the zip's namelist) rather than
+    with the declaration — the existing packaging guard is config-shape only and
+    was green throughout, which is what let the gap live.
+
+- **A DECLARATION THAT NAMES AN UNDEFINED CUSTOM PROPERTY DOES NOT DEGRADE — IT DELETES
+  ITSELF, AND NINE AUTHORS IN A ROW WILL NOT NOTICE (2026-09-07, PRH-32):** `var(--line)` is
+  referenced 41 times fallback-lessly across ten files of the SPA bundle and defined in none
+  of them — only in the two SERVER-RENDERED pages, which carry their own `:root`, so
+  `reader.css` is correct and everything the SPA loads is not. CSS does not fall back here: a
+  `var()` that resolves to nothing makes the whole declaration **invalid at computed-value
+  time**, so it becomes `unset`, and for `border` that is `0px none`. Measured with
+  `getComputedStyle`: all eleven `<dialog>` elements declared `border:1px solid var(--line)`
+  and every one computed `border-top-style: none` — nine have declared a border that has never
+  once rendered. THREE THINGS WORTH KEEPING. (a) This is the recorded `class="small"` lesson
+  one level down — there a class with no rule, here a NAME with no definition — and the same
+  tell applies: the defect is not in any line you can point at, it is in a line that does not
+  exist, so reading the markup tells you the opposite of what the screen shows. (b) **The
+  property's `unset` decides the severity**, so ask what it is before ranking one: `border`
+  disappears (cosmetic) while `fill` INHERITS, and the inherited value is black — the
+  diagnostics chart's two axis titles rendered `rgb(0,0,0)` on a `rgb(20,24,31)` panel,
+  **1.09:1**, on all twelve dark themes. (c) **A census must NOT flag `var(--x, fallback)`** —
+  that form is valid whether or not the token exists, and the first cut of this guard reported
+  `--hover`, `--lead-h` and `--muted-bg` as defects when all three are deliberate defaults
+  (`--lead-h` is set by JS at runtime). A fabricated FAIL is exactly as dishonest as a
+  fabricated pass; anchor the pattern on the closing paren. Reconciling the two counts is what
+  turned "53 broken references" into "41 broken and 12 fine" — the raw prefix grep overstated
+  the defect by a quarter.
+- **A ZERO-SPECIFICITY `:where()` DEFAULT IS WHAT LETS A GLOBAL SCALE COEXIST WITH DELIBERATE
+  EXCEPTIONS (2026-09-07, PRH-32):** lifting the 2026-08-11 Settings type scale app-wide as a
+  plain `.panel h3` rule would have carried (0,1,1) and beaten `.brief-bucket > h3` (12px, a
+  family lens label), `.fig-title` (13px) and `.lib-sub` (13px) — blowing three
+  deliberately-small labels up to 15.5px, i.e. trading the reported inversion for three new
+  ones. Written as `:where(.panel, dialog) :where(h3)` the rule contributes ZERO specificity,
+  so it is a DEFAULT any authored class overrides with no `!important` and no re-scoping war,
+  while a bare `<h3>` nobody styled stops taking the browser's 1.17em. Pinned by a guard
+  asserting BOTH `:where()` wrappers survive — the mutation that unwraps one reddens by name,
+  which is how you learn the mechanism is load-bearing rather than decoration. GENERAL FORM:
+  when a base rule must lose to every component that disagrees with it, express that as
+  SPECIFICITY rather than as source order — order only decides ties, and a class selector beats
+  an element-descendant one whatever the order.
+- **A PROPERTY THAT LIVES AT THE CALL SITE REACHES THE CALL SITES SOMEBODY REMEMBERED
+  (2026-09-07, PRH-32):** nine of eleven `<dialog>` elements carried
+  `background:var(--panel);color:var(--fg)` in their own `style=` attribute and two did not —
+  so those two alone fell back to the UA's `Canvas`/`CanvasText` and rendered IDENTICALLY on
+  all 17 themes (ground `rgb(18,18,18)` on the twelve dark ones, `rgb(255,255,255)` on the five
+  light ones). The palette reached nine dialogs and stopped at two, and nothing said so,
+  because a per-call-site convention has no place to fail. This is "gate EVERY entry point" in
+  a stylesheet: the repair is one `dialog { }` rule, so a twelfth dialog is themed by
+  construction. RIDER, and why the guard has two halves: an inline `style=` beats every
+  stylesheet rule, so the chokepoint is only a chokepoint while nothing re-inlines what it
+  owns — the guard therefore forbids the inline re-declaration as well as requiring the rule,
+  and both mutations redden separately.
+- **ONE THEME CANNOT ANSWER FOR SEVENTEEN WHEN THE VALUE COMES FROM THE UA (2026-09-07):** the
+  two off-palette dialogs measured 18.73:1 on ink and 21.00:1 on paper — *better* than the
+  app's own pairs, so a contrast-only check on one or two themes reports them as the healthiest
+  surfaces in the app. The finding is not the ratio, it is that the GROUND was the same two
+  values for all 17 themes while every themed surface's ground differs per theme. When a check
+  can be satisfied by a value the app did not choose, measure the GROUND as well as the ratio,
+  and sweep the axis the app actually varies.
+- **A HEADING PROBE SCOPED TO ONE CONTAINER CLASS REPORTS A CLEAN APP (2026-09-07, PRH-32):**
+  the first cut of the inversion probe defined "a section" as `.panel` and assigned each
+  heading by `closest('.panel')`. It found **zero** inner headings on six of fourteen surfaces
+  and reported **0 inversions** — a perfect-looking result from an instrument that could not
+  see its subject, because most of this app's content sits in `.an-panel` / `.card` /
+  `.fig-block`. The tell was the count, not the verdict: an anti-vacuity line printing
+  `sections / titled / inner_headings` per surface is what showed six zeros. Measure EVERY
+  candidate and post-process, rather than pre-filtering by a container you happened to name;
+  and for any "no violations found" result, print the population the check actually examined.
+
+- **A TEST NAMED FOR A MODE IS NOT COVERAGE OF THAT MODE — CHECK THE FIXTURE AGAINST THE SHAPE
+  THE MODE EMITS, NOT AGAINST THE CODE PATH YOU JUST CHANGED (2026-09-07, `parse_sdmx_json`
+  and `dimensionAtObservation=AllDimensions`):** the 2026-08-13 session fixed the
+  observation-level LOOKUP for that mode, wrote
+  `test_ref_area_is_read_at_observation_level_too_for_dimensionAtObservation_all`, and recorded
+  the lesson *"run the parser; do not reason about it."* It followed its own lesson — and the
+  fixture it ran the parser against kept `dataSets[].series[""]`, a container `AllDimensions`
+  never emits. So the test exercised the lookup, never the container, and stayed green for
+  three weeks while the mode returned **nothing**: `AllDimensions` hangs its observations
+  straight off the dataSet (`dataSets[].observations`, no `series` key at all), the parser read
+  them only out of `dataSets[].series[<key>].observations`, and a well-formed message parsed to
+  zero rows. **THE SHARP EDGE: "run the parser" bounds only as much as the INPUT is real.** A
+  fixture written by the same reasoning that wrote the fix inherits the same blind spot, and a
+  green test then certifies the blind spot. When a fixture stands in for someone else's wire
+  format, the thing to verify is the fixture against the format's own documented shape — a
+  fixture derived from your code's expectations tests your code against itself. The tell here
+  was cheap and general: the fixture had a `series` container in the one mode whose defining
+  property is that it has none.
+- **`[]` WITH NO LOG IS THE IDENTITY-LESS ROW INVERTED, AND THE ALARM MUST BE SCOPED TO A
+  MISSING CONTAINER RATHER THAN TO ZERO ROWS (same session, the honesty half):** the 2026-08-13
+  fix stopped a real number being emitted with no country, indicator or year. The mirror defect
+  survived it — an unreadable message returning an empty list without a word, so *"this parser
+  could not read the message"* and *"the publisher has no data for this query"* reached the
+  caller as the same fact. Both are a gap published as something else; only the direction
+  differs, and the silent one is harder to find precisely because nothing looks wrong. **AND
+  THE OBVIOUS GUARD IS THE WRONG ONE:** warning whenever a dataSet yields zero rows would fire
+  on `"series": {}` — a publisher honestly answering "nothing matches" — so the alarm has to
+  key on a container that is ABSENT, never on one that is present and empty. An over-eager
+  alarm is its own dishonesty: it trains a reader to ignore the real one. Both directions are
+  pinned by mutation-checked tests, because the guard that cries wolf and the guard that stays
+  silent fail in opposite directions and one test cannot see both.
+  - **A POLAR "IMPORTANCE" AXIS IS A LOG AXIS WAITING TO FABRICATE ITSELF, AND THE REAL CORPUS
+    PICKS THE FALLBACK (2026-09-07, the Observatory / `ooSky`):** the design specified a
+    log-scaled radius with labelled orbit rings, which is right for the measure it was
+    imagined against and wrong for three of the four the picker offers. Measured on a
+    440-article corpus through the real `index_article`: `mentions` tops out at 263 (2.4
+    decades, log is honest) but `distinct_sources` tops out at **7**, `distinct_languages` at
+    5 and `distinct_keywords` at 8 — under one decade each, so a log radius would spread five
+    sixths of a decade across an entire sky and label orbits nothing can occupy. This is the
+    recorded `logY` defect one geometry over, and the same repair applies: **choose the mode
+    from the data, fall back to the axis the data deserves, and SAY on the surface which one
+    was drawn** — a hint claiming "equal ratios are equal distances" above a linear render is
+    two statements at once. THE SECOND HALF IS BIGGER AND WAS NOT IN THE DESIGN AT ALL: **52
+    of 77 galaxies had a measure of ZERO.** `log10(0)` is `-Infinity`, and the natural guard
+    (`Math.max(v, 1e-9)`) plants a fabricated observation on the outermost orbit — so a zero
+    gets NO coordinate, and `r(v)` returns `null` rather than a number, which is what stops a
+    caller that ignored `mode` from plotting anyway. The absent majority then needs its own
+    labelled treatment outside the value scale, because on a young corpus the gap IS the
+    common case rather than an edge case. GENERAL FORM: before specifying a log axis, get the
+    real maximum AND the count of zeros for **every** measure the control can select; a scale
+    that is honest for the measure you had in mind is not thereby honest for its siblings.
+  - **A SIZE CHANNEL WITH A MINIMUM RADIUS HAS A CAP, AND THE LEGEND WILL QUIETLY TEACH A
+    SCALE THE CANVAS DOES NOT USE (2026-09-07, same slice):** `sqrtAreaScale` is the honest
+    way to size a mark by a value, but a renderer also needs a floor or small marks vanish —
+    and the floor is a CAP on the channel: every value under it draws identically. Two things
+    follow. (a) The legend must clamp to the SAME constant the canvas clamps to; the first cut
+    computed reference stars from the raw scale and produced a 0.8px sample while nothing on
+    screen was under 1.5px, i.e. a key for a scale that does not exist. (b) The value at which
+    the channel saturates is a number the surface owes the reader, exactly like "N shown, M in
+    the nebula" — so it is computed (`maxMentions * (MIN_STAR/maxStar)²`) and printed. A
+    visual channel's cap is an anti-capping disclosure like any other.
+  - **A SECOND `oo:langchange` LISTENER IS A SECOND ENUMERATOR, AND TWO EXISTING GUARDS FIND
+    "THE" LISTENER BY FIRST OCCURRENCE (2026-09-07, same slice):** a new module added its own
+    `document.addEventListener("oo:langchange", …)` — reasonable in isolation, and it reddened
+    `test_live_language_switch_rerenders_cldr_name_surfaces` and
+    `test_home_briefing_re_renders_on_language_switch`, both of which locate the app's ONE
+    canonical listener with `app.split('addEventListener("oo:langchange"', 1)[1]`. The new
+    module loads before `app-boot.js`, so it became the first occurrence and both guards
+    started reading a listener that was never theirs. The tests were right and the code was
+    wrong: "what must re-render when the language changes" is a question the app already
+    answers in one place, and a second listener is the recorded second-enumerator shape.
+    Register there. The needle being non-unique is the tell, not the bug.
+  - **AN ORM COLUMN DEFAULT MAKES A `None` FIXTURE UNABLE TO TEST THE NULL BRANCH (2026-09-07,
+    the article-length quarantine filter):** `Article.quarantined` is `Mapped[bool | None]`
+    with `default=False`, so a fixture row built with `quarantined=None` is stored as `0` and
+    not `NULL`. The test asserting that `isnot(True)` keeps never-judged rows therefore
+    contained no such row, and the mutation swapping `isnot(True)` for `== False` **survived**
+    — the one survivor in a sixteen-mutation matrix, and it was a finding about the fixture
+    rather than about the code. A pre-migration row is genuinely NULL, so the fixture has to
+    write that state the way the database holds it (`UPDATE … SET quarantined = NULL`) and
+    then ASSERT the NULL is there, or the branch is untested while looking covered. Same
+    family as the recorded fixture-missing-a-field-production-always-stamps entry, arriving
+    from the opposite direction: here production stamps a default the fixture cannot refuse.
+  - **A CODEC MULTIPLIER MEASURED IN THE PAGE CACHE OVER-STATES A DISK-BOUND WALK, AND
+    THE RULED PAGE SIZE IS WHY (2026-09-07, the S5 measurement of the two whole-corpus
+    PRAGMA checks):** `merge_diag.walk_probe` publishes a plaintext-versus-encrypted
+    page-walk RATIO precisely because a probe small enough to sit in a bundle is small
+    enough to sit in RAM, and its docstring's recipe is to take the field's own measured
+    `prepare_staged:validate` rate and apply the multiplier. Measured independently at
+    2 and 4 GiB on the real engine, n=3 per configuration, the multiplier reproduces
+    **warm** — 2.34x/2.57x against the recorded 2.40/2.39/2.42 — and falls to
+    **1.29x/1.39x cold**. THE MECHANISM IS THE RULING ITSELF: a staged corpus is
+    exported plaintext and gets SQLite's 4096 default, while an encrypted store created
+    under DB-10 §1b is **16384**, so the encrypted arm does a QUARTER as many reads,
+    four times as large, and once I/O dominates that pays for most of the codec — and
+    the field's `validate` rate (17 MB/s on a 32 GB artifact) is as disk-bound as a
+    number gets. So the recipe over-states by about 1.8x on exactly the input it names.
+    GENERAL FORM: a ratio survives a regime change only when BOTH arms stay in the same
+    regime; before applying one measured in RAM to a rate measured on a disk, ask what
+    ELSE differs between the arms — here a page size that a separate, correct ruling had
+    already changed. TWO MORE FACTS FROM THE SAME RUN, recorded so they are not
+    re-derived: both checks are **LINEAR in bytes** (encrypted `quick_check` 8.2 → 8.4
+    s/GiB cold as the corpus doubles, `foreign_key_check` 3.1 → 2.8, flat to within the
+    noise), and `foreign_key_check` is **CODEC-NEUTRAL** (0.84-0.98x per byte in both
+    regimes) and costs about a THIRD of `quick_check` — it is index-driven and never
+    walks the pages `quick_check` walks, so it is not the place to look first.
+    **AND THE MEASUREMENT TOOK THREE PASSES, WHICH IS THE OTHER HALF OF THE LESSON.**
+    Pass 1 ran ONE repetition per configuration while this session was also running
+    pytest, mypy and a mutation matrix; its cold ratios came out 1.51x/1.08x/0.95x/1.58x
+    — no trend — and a story was nearly written around the 0.95. Pass 2 fixed the
+    repetitions and interleaved AT THE CONDITION LEVEL (all arms cold, then all arms
+    warm), which spreads machine drift across arms and **destroys any condition that
+    depends on what ran immediately before**: by the time the first arm's "warm" run
+    happened, three later arms had each dropped the page cache and read gigabytes
+    through it, so its 2 GiB warm `quick_check` measured 14.6 s against a
+    genuinely-warm 5.2 s. Interleave one level OUT — a round visits every arm, and
+    within an arm the dependent conditions run back to back — and both properties
+    survive. The tell for both passes was the same: a per-configuration spread that made
+    the differences unreadable, against 1.19x worst-case once it was measured properly.
+  - **"DID IT COPY?" IS ANSWERED BY THE CONTENT, NEVER BY THE CLOCK — a timing
+    assertion at fixture scale is the lookalike trap wearing a test's clothes
+    (2026-09-07, the checkpoint's carried working copy):** the whole saving of the
+    import checkpoint is that the second item of a group REUSES the working copy
+    instead of re-snapshotting the corpus, so the obvious guard is that the second
+    item's `snapshot_working_copy` stage is faster than the first's. The mutation that
+    re-snapshots unconditionally **SURVIVED it**: on a fixture this small both numbers
+    are noise, and a comparison between two noise samples passes about half the time in
+    each direction. The exact, load-independent question is what a re-snapshot actually
+    DOES — it throws the previous merge away and starts again from the live corpus — so
+    the discriminator is `SELECT COUNT(*) FROM merge_batches` in the carried file: two
+    after two held items, one after a re-snapshot. GENERAL FORM: when a change's win is
+    that some work is SKIPPED, do not assert the duration; assert the state that only
+    the skipped path can produce. Same family as the recorded "a probe's scale is part
+    of the lookalike", with the fixture rather than the measurement as the subject.
+    **SECOND SURVIVOR FROM THE SAME MATRIX, and it was a finding about the CODE:**
+    deleting `self._checkpoint_k <= 1` from the hold decision changed nothing, because
+    the group-full check beside it (`open_items + 1 >= k`) independently returns False
+    for every item at K = 1. Neither deleting the clause nor writing a test for it is
+    right: it is a belt on the shipped default (an off-by-one turning `>=` into `>`
+    would let K = 1 hold an item), so it stays, the measurement goes in a comment beside
+    it, and the mutation matrix reverts BOTH clauses together — the recorded 2026-08-02
+    "revert every mechanism" lesson, met for the first time on a guard being written
+    rather than one being audited.
+  - **A STAGE LIST THAT SAYS WHERE A DRY RUN STOPS IS A CLAIM ABOUT AN EARLY RETURN,
+    AND THE RETURN MOVED FIRST (2026-09-07, `restore_stage_plan`):** the plan's own
+    docstring and its test both said "a dry run stops AFTER `corpus_delta_before`", and
+    `_RESTORE_STAGES_ALWAYS` duly counted that stage — while `run_restore`'s
+    `if not commit: return` sits directly ABOVE it, so a preview's published
+    denominator was one larger than the number of stages a preview walks. The drift
+    guard could not see it: it compares the declared list against the ORDER of
+    `timings.stage(...)` calls in the source, which is a claim about sequence and says
+    nothing about which of them a given flag reaches. GENERAL FORM: a guard over an
+    ordered list checks order; the CONDITIONAL membership needs its own assertion, one
+    per branch the function can return on.
   - **A RULING CAN INVALIDATE THE PLAN THAT ASKED FOR IT, AND THE PLAN GOES ON READING AS
     CURRENT (2026-09-07, the storage refresh):** `STORAGE_5TB_PLAN.md`'s whole priority order
     rests on headline finding (3) -- "a default-page SQLCipher file caps at ~17.5 TB, so text

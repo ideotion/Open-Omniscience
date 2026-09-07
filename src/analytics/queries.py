@@ -748,8 +748,12 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     languages = sorted({lang for _kid, lang, norm in cand
                         if equivalence.ring_of(lang, norm) == ring_id and lang})
     if not kw_ids:
+        # 0 here is a real measurement (nothing indexed yet ⇒ no country buckets), not
+        # an unmeasured gap, so the counts ride this branch too and a consumer never
+        # has to default an absent field into a number.
         return {"ring_id": ring_id, "found": True, "countries": [], "n_keywords": 0,
-                "languages": languages,
+                "languages": languages, "n_countries": 0, "countries_listed": 0,
+                "truncated": False,
                 "caveat": "No indexed keywords in this ring yet for your corpus."}
     q = (
         session.query(
@@ -765,10 +769,42 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         cutoff = date.today() - timedelta(days=days)
         q = q.filter(Article.published_at >= cutoff)
     rows = q.group_by(Source.country).order_by(func.count(func.distinct(KeywordMention.article_id)).desc()).all()
+    # The GROUP BY has already materialised every bucket, so both exact totals below
+    # are free -- but a bare ``rows[:limit]`` made two silent claims, and the shipped
+    # catalog carries 189 distinct source countries, so the default limit of 40 is
+    # reachable on any broadly-covered concept rather than theoretical.
+    #
+    # (a) The unlocated bucket was ordered like any other, so once more than ``limit``
+    #     countries carry the concept it drops out of the payload entirely and the
+    #     clickable "not mapped" drill -- the bucket the 2026-07-18 §D ruling names by
+    #     hand ("often the largest, and it must be investigable, never a dead end") --
+    #     silently vanishes. It survived only because it HAPPENED to be the biggest;
+    #     splitting it out BEFORE the limit makes that safe by construction instead.
+    # (b) Nothing published the real number of countries, so the only figure a reader
+    #     could count -- the polygons on the map, which the frontend announced as
+    #     "N countries" -- WAS the cap. The anti-capping ruling (2026-07-18) allows a
+    #     cap to bound which examples are listed and never a reported number, so the
+    #     list stays bounded and ``n_countries`` reports the exact total beside it.
+    located = [(c, m, a) for c, m, a in rows if c]
+    # NULL and '' are DISTINCT groups to the GROUP BY and ONE fact to a reader
+    # ("source country unknown"), so they are SUMMED rather than picked between --
+    # the groups are disjoint (a source has one country value), so adding their
+    # distinct-article counts is exact. Defensive rather than observed: no catalog
+    # entry ships an empty country today (measured), but `Source.country` is a
+    # nullable String(2) with nothing forbidding one. The old code emitted both as
+    # separate country:null rows and the frontend kept whichever came last, so the
+    # bucket's own numbers could already disagree with the table beside it.
+    unlocated = [(m, a) for c, m, a in rows if not c]
     countries = [
-        {"country": (c or None), "mentions": int(m or 0), "articles": int(a or 0)}
-        for c, m, a in rows[:limit]
+        {"country": c, "mentions": int(m or 0), "articles": int(a or 0)}
+        for c, m, a in located[:limit]
     ]
+    if unlocated:
+        countries.append({
+            "country": None,
+            "mentions": sum(int(m or 0) for m, _a in unlocated),
+            "articles": sum(int(a or 0) for _m, a in unlocated),
+        })
     return {
         "ring_id": ring_id,
         "found": True,
@@ -776,6 +812,12 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         "n_keywords": len(kw_ids),
         "languages": languages,
         "countries": countries,
+        # Exact, never the cap: the number of located country buckets that carry this
+        # concept, whatever ``limit`` lists. ``countries_listed`` is what the payload
+        # actually carries, so a reader (and the map's own label) can state both.
+        "n_countries": len(located),
+        "countries_listed": min(len(located), limit),
+        "truncated": len(located) > limit,
         "method": (
             "Mentions of every language member of the ring, grouped by the source's "
             "country. Keywords with no stored language are excluded (conservative). "

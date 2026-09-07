@@ -187,8 +187,8 @@
         + grid
         + `<polyline points="${X(0).toFixed(1)},${Y(0).toFixed(1)} ${X(xmax).toFixed(1)},${Y(ymax).toFixed(1)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>`
         + `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`
-        + `<text x="${(W / 2).toFixed(0)}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--text)">${esc(t("Cumulative words added →"))}</text>`
-        + `<text x="14" y="${(H / 2).toFixed(0)}" text-anchor="middle" font-size="12" fill="var(--text)" transform="rotate(-90 14 ${(H / 2).toFixed(0)})">${esc(t("Cumulative keywords →"))}</text>`
+        + `<text x="${(W / 2).toFixed(0)}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--fg)">${esc(t("Cumulative words added →"))}</text>`
+        + `<text x="14" y="${(H / 2).toFixed(0)}" text-anchor="middle" font-size="12" fill="var(--fg)" transform="rotate(-90 14 ${(H / 2).toFixed(0)})">${esc(t("Cumulative keywords →"))}</text>`
         + `</svg>`
         + `<div class="hint muted" style="margin-top:4px">${esc(t("Dashed line = perfectly linear growth. The more the curve bows below it, the more the vocabulary is saturating (fewer junk keywords)."))}</div>`;
     }
@@ -1711,10 +1711,36 @@
         }
         // Named, not counted: the reason says WHICH floor it hit, and that is the
         // difference between a model that invents and one that stays silent.
-        (g.refused_fields || []).forEach((rf) => {
-          body += `<div class="card-caveat">${esc(rf.language)} · ${esc(rf.field)} — `
-            + `${esc(rf.reason || "")}</div>`;
-        });
+        //
+        // D5 (ruled 2026-09-07): the list is UNCAPPED, and the 08-12 report shape puts
+        // THIRTY of these lines on screen, which buries the rest of the check. Collapsed
+        // behind a count — but NOT behind a calm-UI toggle, which the informed-consent
+        // non-negotiable forbids outright. The <summary> IS the caveat: rendered by
+        // default, in .card-caveat, stating how many refusals there are AND which fields
+        // they fall on, so the actionable fact ("who is refused, thirteen times") is on
+        // screen without expanding. The per-refusal reasons are one click away — the
+        // flip-card layering (an equal side revealed by one click), never a hidden block.
+        //
+        // NOT CAPPED, deliberately: the count is exact and every refusal is listed
+        // inside. A cap may bound which examples are shown; it may never bound a
+        // reported number, and here it bounds neither.
+        //
+        // Nothing renders when there is nothing refused. A refusal banner drawn
+        // unconditionally would invent a failure on a clean machine — the fabricated
+        // red that is exactly as dishonest as the fabricated all-clear.
+        const refusals = g.refused_fields || [];
+        if (refusals.length) {
+          const perField = {};
+          refusals.forEach((rf) => { perField[rf.field] = (perField[rf.field] || 0) + 1; });
+          const shape = Object.keys(perField)
+            .map((f) => `${esc(f)} ×${perField[f]}`).join(" · ");
+          body += `<details class="gate-refused"><summary class="card-caveat">`
+            + `${esc(t("Refused fields"))}: ${refusals.length} — ${shape}</summary>`
+            + refusals.map((rf) =>
+              `<div class="card-caveat">${esc(rf.language)} · ${esc(rf.field)} — `
+              + `${esc(rf.reason || "")}</div>`).join("")
+            + `</details>`;
+        }
         // "cleared" over-reads without this: a language here cleared at least one field.
         const partly = (g.partly_cleared || [])
           .map((p) => `${esc(p.language)} (${esc((p.not_cleared || []).join(", "))})`);

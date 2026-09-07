@@ -741,6 +741,36 @@ class Article(Base):
     # fails".
     keyword_indexed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # WHICH UPSTREAM REVISION THIS ARTICLE'S STORED TEXT CAME FROM (the version anchor).
+    #
+    # A VERSIONED SOURCE is an Article whose text is amendable — Wikipedia today, laws
+    # next — and the ruling that makes its audit trail meaningful rather than decorative
+    # is that an analytic result can name the version it was computed against. Every
+    # analytic over an article (keyword mentions, When x Where x Who, sentiment) is
+    # recomputed from `content` through the ONE index_article hook whenever that content
+    # changes, so the version the analytics saw is the version the TEXT came from — which
+    # is a fact about the ARTICLE, not about each of its mentions.
+    #
+    # THAT IS WHY IT IS NOT ON keyword_mentions. All of an article's mentions are produced
+    # by one indexing pass over one text, so a per-mention column would store a per-article
+    # constant once per mention: on the field corpus that is ~12.5M copies of a value with
+    # ~one distinct reading per wiki article, on the largest table in the store, for no
+    # fact the article-level column does not already carry. A term whose count equals the
+    # article count is a fact about the channel, not about the corpus.
+    #
+    # WHAT IT CLAIMS, EXACTLY: the upstream identifier of the revision whose text is in
+    # `content` — never "the analytics are current". It is written in the SAME transaction
+    # as `content`/`hash` (src.wiki.corpus.upsert_wiki_corpus_article), so the pair cannot
+    # drift: a value that is only meaningful beside another value travels with it.
+    #
+    # A STRING, not an int: a wiki revid is an integer but a law revision, a statistics
+    # vintage or a gazette issue is not, and this column is the one seam all versioned
+    # sources will write into. Additive + NULLABLE with no backfill, on the
+    # detected_language / quarantined / top_keyword_* pattern: NULL means "this article
+    # came from no versioned source, or predates the column" — deliberately NOT "revision
+    # unknown", which the UI must never render as a version.
+    source_revision: Mapped[str | None] = mapped_column(String(64))
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
 

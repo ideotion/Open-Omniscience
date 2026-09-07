@@ -21,8 +21,158 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
-- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
-  AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
+- **WIKIPEDIA AS A LIVING SOURCE — THE 2026-09-07 PASS (prompt 18): TWO SLICES SHIPPED, THE
+  WHOLE-EDITION HALF STOPPED AT THE SEAM WITH ITS GATE MEASURED, AND G10 IS SMALLER THAN IT
+  LOOKS.** Read with the FUTURE_DEVELOPMENTS Wikipedia pair (the 2026-07-10 section and the
+  2026-06-12 one that carries the superseding auto-track ruling — neither replaces the other).
+
+  **SHIPPED (a) — the consented "Refresh exact sizes" (the 2026-06-16 INLINE AUTO SIZE
+  ESTIMATES entry's REMAINING, above).** The per-edition "Estimate size" probe button is
+  retired. Building its replacement found THREE defects in it, each independently real and
+  none of them the one the entry named: it egressed a live HEAD to `dumps.wikimedia.org`
+  with **no `ensureOnline` consent**, while the dump START on the same surface has one
+  (invariant #14 gated the download and not the probe that precedes it); it read only
+  `dumpSelected()[0]` from a MULTI-select picker and fell back to `"en"` when nothing was
+  selected, so the figure could describe an edition the operator had not chosen; and every
+  failure printed one `"size check failed"`, so airplane mode, a dead host and a host
+  publishing no `Content-Length` were one value — a refusal by THIS machine reading as a
+  dump host that would not answer. `DumpDownloadManager.probe_sizes` now reads the whole
+  selection in one consented action, bounded and spaced by the same per-host politeness
+  interval `WikiClient` uses, and an unread size is `None` with a NAMED reason
+  (`airplane` / `unreachable` / `no-content-length` / `invalid-edition`) — never a 0.
+  `GET /api/wiki/dumps/sizes` is a plain `def` (its network batch must not sit on the event
+  loop) and NAMES the editions the cap kept it from reading. The picker marks an exact
+  reading `=` against the bundled dated estimate's `~`.
+
+  **THE "ONE REQUEST, NOT N HEADs" MECHANISM IS PARKED, AND THE PREMISE IT RESTS ON IS
+  CORRECTED WHEREVER IT WAS STATED AS FACT.** "The dump date's `dumpstatus.json` lists every
+  edition at once" was written into `src/wiki/dump_sizes.py`'s docstring on 2026-06-16, copied
+  into this queue, and copied again into `PROMPT_18`. **Nobody read the endpoint.** Every
+  `dumps.wikimedia.org` path this repository builds is per-edition
+  (`/<code>wiki/latest/…`), which is evidence against a single cross-edition document rather
+  than for one, and the host is egress-blocked in the build sandbox (`curl` → `000`, against
+  `200` for `pypi.org`), so the shape could not be checked here. Collapsing N HEADs into one
+  request remains a real optimisation and is worth taking **once someone can read the live
+  endpoint**; shipping a parser against a guessed shape would be a fabricated endpoint. The
+  three copies now say so.
+
+  **SHIPPED (b) — the VERSION ANCHOR, and the reader's way into the history.**
+  `Article.source_revision` records which upstream revision an article's stored TEXT came
+  from, written in the same transaction as `content`/`hash` so the pair cannot drift, for BOTH
+  the watched-page sync and the offline dump ingest. It closes the gap the ledger recorded as
+  "per-mention revid anchoring": `upsert_wiki_corpus_article` had always RECEIVED the revid and
+  had nowhere to put it, so it returned the number to its caller and dropped it.
+
+  **THE MECHANISM DEVIATES FROM THE SHORTHAND, DELIBERATELY.** All of an article's mentions are
+  produced by ONE indexing pass over ONE text, so a per-mention column would store a
+  per-article constant once per mention — millions of copies at field scale, on the largest
+  table in the store, carrying no fact the article-level column does not. The mentions inherit
+  the anchor through their article. It is a `String`, not an `int`, because a law revision, a
+  statistics vintage and a gazette issue are not integers and this is the one seam every
+  versioned source will write into — which is the FUTURE_DEVELOPMENTS §1 unifying principle
+  ("a versioned source is an Article + a linked revision trail") expressed as a column rather
+  than a table, and the reason a law promoted to an Article needs no second seam.
+
+  **AND THE HALF S2 WAS MISSING.** The dedicated tracked-changes VIEW is **SHIPPED** and has
+  been since wave 5 — `openWikiTC` / `_wikiRevRow` / `loadWikiTC` in `app-map.js`, `#wiki-tc`
+  in `index.html`, over `GET /api/wiki/pages/{id}/revisions`. The 2026-09-06 analysis records
+  it as UNBUILT with "no hits", which is wrong (`INVENTORY.md` WIKI-02, fixed in the same PR).
+  What was genuinely missing is that it was reachable ONLY from the Settings watched-pages
+  table, and the reader is a standalone page — so a wiki article opened from search or
+  analytics showed no version, no history, and no way to either. The reader now states the
+  version with what it claims, links the revision as published, and offers the local history
+  **only when this machine actually holds tracked revisions for that page**, saying so plainly
+  when it does not (a link into an empty room looks like a capability and answers nothing). A
+  `?wikitc=` deep link hydrates the view through the subtab component.
+
+  **SHIPPED (c) — the wiki strip's K·N regex bomb, AND a bigger measured finding behind it
+  (nothing asked for this; it was found while scoping S3).** `plain_from_wikitext` carried the
+  recorded 2026-08-05 `OPEN.*?CLOSE` shape in THREE patterns (`<ref>…</ref>`, `{|…|}`,
+  `<!--…-->`), on the path every watched-page sync and every dump ingest runs through — and the
+  one whole-edition ingest would run millions of times. MEASURED at 400,000 chars: **0.014 s
+  well-formed against 13.440 s for unclosed-`<ref>` spam and 12.295 s for unclosed-`{|`**. The
+  proven fix already existed in the tree as a PRIVATE helper hardcoded to `<style>`/`<script>`,
+  which is exactly why it had not propagated; it is now `src/utils/markup_blocks.strip_blocks`
+  and both sites use it. Byte-identical over 20,000 randomised documents (with 6,389 / 13,731 /
+  6,720 actually exercising each strip) + 19 hand shapes; 14.16 s → 0.0030 s; honest cost +17%
+  on well-formed input.
+
+  **THE PART THAT IS A PENDING ITEM RATHER THAN A FIX: SIX MORE PATTERNS IN THE SAME FUNCTION
+  ARE QUADRATIC, AND THEY ARE THE EXPENSIVE ONES.** They wear the class differently —
+  `OPEN[^X]*CLOSE`, where the character class consumes to end-of-document and then backtracks —
+  and a 4× input costs ~16× the time. Measured, 100,000 → 400,000 chars of opener-only spam:
+  `<[^>]+>` 0.154 → **2.381 s** · `<ref[^>/]*/>` 1.052 → **16.756 s** · `[[File|Image|Category]]`
+  1.749 → **28.035 s** · `[[target|label]]` 1.614 → **26.388 s** · `[[target]]` 1.721 →
+  **27.398 s** · `[url label]` 1.420 → **22.525 s**. Only `{{templates}}` is linear (4.1×),
+  because `[^{}]*` cannot cross a brace. **NOT FIXED HERE, deliberately:** each of the six
+  CAPTURES and rewrites rather than removing, so the scanner needs a replacement callback and
+  every rewrite needs its own byte-identical differential before it goes near the ingest path —
+  its own slice. Possessive quantifiers do NOT fix them (the cost is a scan per start position,
+  not backtracking depth), and neither does a "does the closer exist at all" pre-check, which is
+  byte-identical and free but only covers the no-closer-anywhere case. The numbers are in
+  `src/wiki/corpus.py`'s `_WIKI_BLOCKS` note and in `tests/test_markup_blocks.py` so the next
+  session starts from data. **This is also a real input to S1:** whole-edition ingest over
+  millions of pages meets these on every malformed one.
+
+  **STOPPED AT THE SEAM — WHOLE-EDITION INGEST (S1), and the gate is MEASURED rather than
+  cited.** The standing ruling is "do not start before the P0 scale set lands", and prompt 18
+  restates it as "if the storage plan's Phase C is not in place, say so and stop". Checked
+  against the tree rather than against a status line, `STORAGE_5TB_PLAN.md` §9's sequencing
+  stands at: step 1 (Phase-A deltas) DONE; step 2 (CREATE-time `auto_vacuum`/`page_size`
+  seams) DONE — `src/database/connect.py` carries both, so the 2026-07-22 banner saying they
+  are "still unwired" is itself stale; step 3 (the FTS split-out to a contentless-delete
+  `fts.db`) NOT built — `src/database/fts.py` is in-corpus and no split file exists; step 4
+  (the hash-sharding prototype at 50–100M synthetic documents, which the plan requires
+  BEFORE any sharding code) NOT run; step 5 (the Phase C packed keyed text store) NOT built,
+  and a tree-wide grep finds no text-offload store, no pack format and no sharding. **Four of
+  the six maintainer rulings the store's shape depends on are still unruled** (§8 rows 3–6:
+  blob dedup, OOENC2-vs-`age`, keyed HMAC addressing, the `sqlite3mc` trial). So three of the
+  five steps preceding whole-edition ingest are unbuilt and its storage shape is undecided.
+  **Nothing was built.** Building the delta half now — wiring the existing
+  `fetch_recentchanges` client into an ingest — would be starting whole-edition ingest against
+  a store the plan has not prepared, which is exactly what the scope fence forbids; and
+  auto-tracking after a dump download is "the largest thing the app would ever start on its
+  own", so its consent surface and visible job should be designed once the store's shape is
+  ruled, not twice.
+  **WHAT EXISTS TODAY, so the next session does not re-derive it:** the BOUNDED version is
+  already shipped — `ingest_dump_pages(session, wiki, titles, limit=1000)` reads an explicit
+  operator-chosen title list out of a downloaded multistream dump, offline, through the ONE
+  `index_article` hook, keyed on the canonical wiki URL so a later live sync updates the same
+  row (`POST /api/wiki/dumps/corpus-ingest`). The DELTA half has a client
+  (`WikiClient.fetch_recentchanges`) and **no consumer**. Nothing enumerates a whole edition,
+  and nothing auto-tracks after a download.
+
+  **G10 IS TWO QUESTIONS, NOT FIVE (S6).** Read against the section that filed them, three are
+  already answered — two of them by the maintainer's own 2026-06-12 ruling recorded in that
+  same section. **Q2 (analytics mixing) — RULED, same pools, YES.** **Q3 (version storage
+  depth) — RULED per-revision FULL TEXT, and SHIPPED the same day**
+  (`WikiRevision.full_text`, batched `fetch_revision_texts`). **Q4 (change feed) — RULED, the
+  watched-pages tracker IS the feed**, with the standing caveat that the superseding auto-track
+  ruling retires per-article watching, so at edition scale the feed becomes `recentchanges`;
+  that is a consequence of the superseding ruling, not a new answer. **STILL OPEN, and
+  sharpened by what has shipped since they were filed:**
+  * **Q1 — scope of dump ingestion.** The superseding ruling says a downloaded edition is
+    TRACKED entirely; it does not say the edition is INGESTED entirely, and the two are
+    different costs (metadata for ~100k edits/day is feasible on the reference VM; keyword-
+    indexing millions of articles is the P0-gated part). The tiering already proposed under
+    that ruling — metadata + flags for ALL edits, full text and analytics only for pages in
+    the analytical corpus — is the shape awaiting a yes/no, and S1's storage gate makes it the
+    first thing to settle, because tiering is what decides how much store Phase C must carry.
+  * **Q5 — backups.** Now interacts with a shipped engine rather than a design: `wiki_dumps/`
+    is excluded from the corpus artifact BY CONSTRUCTION as re-downloadable
+    (`src/backup/artifact.py`), while the separate large-data FOLDER backup can carry it, and
+    dump-derived Articles ride the corpus backup like any article. So the question is no longer
+    "carry or reference" in the abstract: it is whether an edition's ingested Articles should
+    ride the corpus artifact at edition scale (which multiplies its size by the edition) or be
+    reconstituted from the dump on restore (which makes a restore depend on a file the backup
+    deliberately does not carry, and on the dump still being downloadable). Both directions
+    have a real cost; neither is defaulted.
+
+  Recommended defaults were offered for Q1 and Q5 in `QUESTIONS_FOR_THE_MAINTAINER.md` and are
+  NOT taken here — a ruling the maintainer did not give is not recorded as one.
+- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: EXECUTED 2026-09-07 (PR #1021, #1025). WHAT REMAINS IS
+  ONE OPEN QUESTION AND ONE REVERSIBLE DECISION — the code is done** (branch
+  `claude/async-handlers-event-loop-qfyl1n`; five of
   the prompt's seven slices were ALREADY BUILT and are recorded as such in
   [`../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md`](../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md)
   and `INVENTORY.md` PERF-01/PRH-23; NO RULING IS INVENTED HERE):**
@@ -58,6 +208,22 @@
   never again — a pass on which the corpus is empty, so the lane's whole-corpus scan has nothing
   to scan. If the maintainer reads R5 more strictly than that, the reversal is one line: run the
   job's worker inline instead of kicking it, keeping the registry entry for visibility.
+  **WHAT SHIPPED, so the next session does not re-derive it.** S1: the 56 DB-touching `async def`
+  handlers are 4, and `tests/test_handlers_off_the_event_loop.py` is the AST guard that stops the
+  57th — three mechanisms (a census against a named allowlist; an allowlisted handler must await
+  something OTHER than its own `run_in_threadpool` hop; and no async handler may reach the DB around
+  the dependency via `session_scope`/`SessionLocal`). The four that remain each await the request
+  stream and none touches its session on the loop. S7: `src/monitoring/preflight_job.py` registers
+  `first-run-preflight`, kicked from the pass tail under the `first-run-preflight` tail phase.
+  **NOTHING ELSE IN PROMPT 09 IS OPEN.** Its S2–S6 were already built before this session (anchors
+  in the prompt file's staleness banner), and its own PERF-02 row is the operator-gated field twins
+  tracked in the crash-brief entry below — not a second, separate obligation.
+  **THREE MEASUREMENTS TAKEN HERE, none of them from a field machine, stated so they are not
+  mistaken for effect evidence:** async-vs-sync dispatch under a concurrent second request
+  (1,159.6 ms → 4.8 ms, this sandbox, a synthetic handler); the handler census (56 → 4, by parsing
+  signatures); and the full-suite baseline diff (9,180 → 9,192 passed, delta = the 12 tests added,
+  empty failure- and skip-name diffs). The field numbers this batch is meant to move are in the
+  crash-brief entry's field-twins bullet and remain unmeasured.
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
   chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
@@ -748,42 +914,71 @@
   only — an existing corpus keeps the tags its `Source` rows were created with, and a
   retroactive apply would be its own reviewed slice.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
-  the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
-  reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
-  `for` loop of `_run_item` → `run_restore`, so every backup pays its own
+  the MEASUREMENT shipped first, then item (b) on 2026-09-07; item (a) is still parked,
+  and the reasons are findings rather than reluctance):** the queue ran `_drive()` as a
+  strict `for` loop of `_run_item` → `run_restore`, so every backup paid its own
   **prepare** (stage A + validate + upgrade, measured 46.7 and 56.0 min on the two field
-  runs, on files that never touch the live corpus) and its own **verify_copy** (a
-  `quick_check` + `foreign_key_check` over the WHOLE working copy — the live corpus plus
-  everything merged so far). On eighteen backups that is ~14–17 h of prepare in series
-  with the merges, and eighteen structural walks of a growing multi-GB file.
-  **(a) PREFETCH — three blockers found by reading the seam, all of which raise the
-  estimate:** (i) staging lives INSIDE `VolumeBackupManager._run_restore`, on the
-  singleton manager's worker thread, and that singleton is one-job-at-a-time BY DESIGN
-  (`_reap_or_reject`) — so the queue would need to stage into its own tree and hand a
-  `StagedArtifact` across, which means a new `start_restore(..., staged=)` seam; (ii)
-  `cleanup_staging(staged)` is in a `finally` owned by the merge thread, so a
-  prefetched tree crosses an ownership boundary the current code guarantees by
-  construction — and on an encrypted corpus that tree is PLAINTEXT, so an orphan is an
-  at-rest hole, not just bytes; (iii) **decisive** — `find_completed_import` runs
-  BEFORE staging precisely so an already-merged artifact costs one small JSON read, and
-  the field log records **8 of 18 imports adding zero articles**. A prefetch that stages
-  ahead of that check burns 47–56 min per skipped item and defeats an existing
-  optimisation. Any build must run the digest check first.
-  **(b) CHECKPOINT INTERVAL — needs a RULING, not a guess:** verify+swap once per K
-  backups instead of per backup would save 17 × (verify + snapshot + swap), but nothing
-  is durable until a swap: today a kill at item 12 keeps eleven committed and skipped on
-  re-run, and at K=18 it loses twelve merges' CPU. The maintainer has killed this import
-  twice, so the trade is real. K is theirs to choose.
-  **WHAT SHIPPED INSTEAD (both merged-order-independent):** `verify_copy` sub-timings
-  (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) + the
-  `working_copy_bytes` the walk traverses, so the first completed backup converts
-  "2414 s" into a rate; and `merge_diag.walk_probe`, which measures the plaintext-vs-
-  encrypted page-walk RATIO on this machine (**2.40 / 2.39 / 2.42 across three runs**;
-  likely an upper bound at field scale, where I/O takes a larger share). `verify_copy`
-  has NEVER been observed in the field — both recorded runs ended before it — so every
-  estimate above rests on it, and the next completed backup supplies it for free.
-  SEQUENCING: read the first real verify number, THEN pick K, THEN build the prefetch if
-  the prepare side still dominates.
+  runs, on files that never touch the live corpus), its own whole-corpus **working-copy
+  snapshot**, and its own **verify_copy** (a `quick_check` + `foreign_key_check` over the
+  WHOLE working copy — the live corpus plus everything merged so far). On eighteen
+  backups that is ~14–17 h of prepare in series with the merges, eighteen copies of a
+  growing multi-GB file, and eighteen structural walks of it.
+  **(a) PREFETCH — STILL PARKED; the three blockers were RE-VERIFIED against
+  `main`@690920e on 2026-09-07 and all three still hold:** (i) staging lives INSIDE
+  `VolumeBackupManager._run_restore`, on the singleton manager's worker thread, and that
+  singleton is one-job-at-a-time BY DESIGN (`volume_job.py:196 _reap_or_reject`, which
+  raises on a genuinely-running job) — so a prefetch would need to stage into its own
+  tree and hand a `StagedArtifact` across, i.e. a new `start_restore(..., staged=)` seam;
+  (ii) `cleanup_staging(staged)` is still in a `finally` owned by the merge thread
+  (`volume_job.py:764`), so a prefetched tree crosses an ownership boundary the current
+  code guarantees by construction — and the staged corpus is PLAINTEXT by design
+  (`artifact.py:189-190`, `merge.py:1576`), so an orphan is an at-rest hole, not just
+  bytes; (iii) **decisive** — `find_completed_import` still runs BEFORE staging
+  (`volume_job.py:456` against `read_volume_backup` at `:550`) precisely so an
+  already-merged artifact costs one small JSON read, and the field log records **8 of 18
+  imports adding zero articles**. A prefetch that stages ahead of that check burns
+  47–56 min per skipped item and defeats an existing optimisation. **AND ITS OWN GATE IS
+  STILL UNMET:** C3's recommended default was "build only if the first real `verify_copy`
+  number shows prepare still dominating", and `verify_copy` has STILL never been observed
+  in the field. Note the contrast with (b), which is why (b) was the safe half to build:
+  the checkpoint's carried file is a WORKING COPY, which preserves the live at-rest state
+  — encrypted whenever the corpus is — so an orphan of it is not the at-rest hole a
+  prefetched staging tree would be, and it is swept by the same `.restore-*` janitor.
+  **(b) CHECKPOINT INTERVAL K — MECHANISM SHIPPED 2026-09-07; THE NUMBER IS STILL THE
+  MAINTAINER'S.** `run_restore` gained two optional parameters (`working_copy=` says
+  where to build or find the disposable copy, `hold_after_merge=` stops after the merge,
+  this batch's own verification and its side files), the queue drives the group, and
+  `verify_copy` split into `verify_merge` (per item: counts, the search index, the
+  sampled content comparison against the artifact — all of which need that item's staging
+  tree, which is deleted the moment it returns) and `verify_file` (per checkpoint:
+  `quick_check` + `foreign_key_check`, which ask about the FILE and therefore cover every
+  merge in it). The gate is not weakened; the WINDOW in which a crash costs work grows
+  with K, and that is the whole trade.
+  **⛔ THE OPEN RULING IS THE NUMBER, AND ONLY THE NUMBER.** `AppSettings.import_
+  checkpoint_k`, range 1..24, refused loudly outside it (never clamped — silently turning
+  a 30 into a 24 hands an operator a durability window they did not choose);
+  `OO_IMPORT_CHECKPOINT_K` overrides for one process; Settings → Data carries the control
+  with the cost on the visible surface and the long form in the hover bubble.
+  **The shipped default is 1 = today's behaviour, byte for byte, and the recommendation
+  on record is 3.** It ships at 1 because this entry itself said the trade "needs a
+  RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU that today
+  it would keep, and that is a change to what a Stop costs every operator. → **Pick K.**
+  **WHAT THE QUEUE NOW REPORTS, at any moment:** `items_committed` and `items_staged` as
+  two different numbers plus a `checkpoint` block (`k`, `open_group_items`, and a note
+  that at K > 1 names what a Stop would cost); per-item states `staged` ("Merged — not
+  yet saved") and `discarded` ("Discarded — import it again"), both `ok: false` so a
+  staged item's numbers can never sit behind a success headline; and a conclusion caveat
+  naming anything merged and never saved. A process restart rewrites `staged` →
+  `discarded`, because the working copy does not survive the process.
+  **WHAT SHIPPED IN 2026-08 INSTEAD (both merged-order-independent):** `verify_copy`
+  sub-timings (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`)
+  + the `working_copy_bytes` the walk traverses; and `merge_diag.walk_probe`, which
+  measures the plaintext-vs-encrypted page-walk RATIO on this machine (**2.40 / 2.39 /
+  2.42 across three runs**). **2026-09-07 REFINES THAT RATIO'S USE — see the Lessons
+  entry:** it is a WARM-cache number, and applying it to a field rate measured in the
+  DISK-BOUND regime over-states the encrypted walk, because a production encrypted store
+  is 16384-page (DB-10 §1b) against a staged plaintext corpus's 4096 and therefore does a
+  quarter as many, four times as large, reads.
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
   card provenance · Articles tab · Settings (maintainer; INTAKE + INVESTIGATION this session,
   code-verified against `main`@9c651ee, 47 numbered questions ANSWERED the same day; brief of
@@ -3477,6 +3672,71 @@
   ship; LOCAL .eml FILE import is GREENLIT (ruled 2026-06-15) — not a scraper
   (zero network), no-recovery contingency RESOLVED via anonymize-at-ingest (see
   Non-negotiables + the ".eml newsletter import" entry below).**
+- **PROMPT_19 STALENESS SWEEP + WHAT PROMPT_19 S6 LEFT PARKED (2026-09-07, tree anchor
+  `main` @ `d9ee33e`).** The working mode's staleness guard, run over the four areas the prompt
+  scopes, so the next session inherits the measurement rather than the prompt's claim:
+  **(a) VERIFIED-ABSENT** — no `rrule`/`RRULE` anywhere in `src/` (S1's RRULE expansion of
+  imported VEVENTs is genuinely unbuilt); `src/hazards/parse.py` still covers only USGS and
+  GDACS (S2's NWS/ReliefWeb/FEWS NET/EONET/WHO are unbuilt); nothing in the tree referenced a
+  public-suffix list before this session (S6's resolver was unbuilt).
+  **(b) VERIFIED-PRESENT, and the prompt is HALF right about it** — S1 says "month-span banners
+  ('Dry January') and `since:`-origin display are unbuilt". The BACKEND is shipped and has a
+  dedicated test file: `catalog._in_active_range`, `catalog._span_end_date`, `catalog._span_for`,
+  the `origin_year`/`until_year`/`end_month`/`end_day` fields and floating (nth-weekday)
+  recurrence all exist, pinned by `tests/test_event_recurrence.py`. What is unbuilt is the
+  DISPLAY — `app-agenda.js` renders none of it. Say which half, per the working mode.
+  **(c) VERIFIED-PRESENT** — `src/privacy/link_sanitizer.py` exists, so the .eml plan's S1
+  anonymisation core shipped; `ooMap` is wired in seven `app-*.js` modules.
+  **(d) THE AGENDA'S CONFIDENCE TIERS ARE UNBUILT AS A VOCABULARY.** `catalog` carries one
+  boolean `confirmed`, and `agRow` renders three pill states from it (`next_occurrence` /
+  "confirmed" / "approx · check source"). The ruled third tier — `scheduled` (official, sourced)
+  · `window` (a legal window, the France-2027 `confirmed:false` pattern) · `projected` (a sourced
+  rule plus last-held), with a passed projected date marked "status unknown — check the official
+  source" and NEVER silently re-projected, and no entry at all where there is no sourced rule —
+  is NOT expressible in that boolean. Recorded as the next slice; not started, because it is a
+  schema + display change across `world_events.yml`, the catalog loader and the agenda, and
+  half-building a schema is worse than parking it.
+  **(e) WHAT S6 DELIBERATELY DID NOT WIRE.** The resolver and its read-only preview shipped
+  (`GET /api/newsletters/publisher-preview`); the WRITE-PATH auto-attach did not. Ruling (d)
+  pairs the silent auto-attach with a dedicated import UI announcing it and an UNDO for the
+  automated attaches, and the undo is only feasible because send-domain + attached source id are
+  stored as provenance — which today they are not (`ParsedEmail` gained `list_id` this session;
+  nothing persists the send domain or an attach record). So the remaining S6 work is, in order:
+  the provenance columns (an additive migration), then the attach behind them, then the import
+  UI + undo. The preview exists so that decision can be reviewed against this corpus's real
+  senders rather than against a description.
+  **(b2) MORE VERIFIED-PRESENT, and two of these matter because the prompt reads as though
+  they are pending.** The **lunar-effects framework is BUILT AND FULLY WIRED** —
+  `src/analytics/lunar.py` correlates any stored daily series against the moon's illuminated
+  fraction, with Benjamini-Hochberg FDR (`src/stats/fdr.py`) MANDATORY on a screen and a
+  DETERMINISTIC circular-shift permutation test (no scipy, no RNG) that preserves the
+  autocorrelation of both series, correlation-is-not-causation on every result and the null
+  outcome named as the expected one; served by `/api/insights/lunar-correlation`
+  (`src/api/insights.py:1404`) and drawn by `app-insights.js` `loadLunar()` with limit and
+  `fdr_q` controls. The only piece genuinely absent is the PRE-REGISTRATION hypothesis step:
+  the screen exists, "declare what you expect before you look" does not.
+  **Weather signal-keywords are BUILT** — `src/analytics/weather_signals.py` derives
+  `kind="signal"` rows into a SEPARATE store (its own design note says why it is not the
+  keyword table), read by `/api/signals`. The **anomaly baseline is HALF-BUILT and honest
+  about it**: the module names the baseline ("climatology of <vars> (Open-Meteo ERA5 daily)
+  for this place & window") and publishes the gap — "Not yet checked against a baseline:
+  confirming an anomaly requires the consented Open-Meteo reanalysis fetch" — so it is
+  operator-gated, not unbuilt. The **`_hazard_tier` no-promotion rule** lives at
+  `src/analytics/alerts.py:71` (not under `src/hazards/`), with its own comment "a magnitude
+  still never becomes urgency" and a test in `tests/test_alert_selection.py`.
+  **STILL ABSENT, checked:** the reader weather-context row (no weather reference in
+  `app-corpus.js`/`app-library.js`); any OSM preprocessing into boundary/gazetteer artifacts
+  (`src/geo` holds only `ip_geo.py`, `osm_downloads.py`, `osm_regions.py`, and the single
+  "gazetteer" mention is a comment at `ip_geo.py:217`); and a job-shaped live mailbox pull
+  (`import_mailbox` at `src/api/ingestion.py:511` is still synchronous, taking the password
+  in the request body and storing nothing — I1 is untouched).
+
+  **(f) A NOTE FOR WHOEVER WIRES THE ATTACH:** `resolve_newsletter_publisher` matches
+  `lower(Source.domain)`, which is a scan of a few-thousand-row table — free for a report, wrong
+  per message. A functional index over that column needs a migration AND the recorded
+  NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
+  `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
   import a folder of .eml files as Articles in the ONE unified corpus (reuse
@@ -6663,6 +6923,16 @@
   import_feed's next save persists the cleanup). KNOWN ACCEPTED LOSS: the feed's first/last
   QUARTER phases (the computed layer covers full/new only; computing quarters via the same
   verified ch.49 method is the clean follow-up if wanted).
+  **LOSS CLOSED 2026-09-07 (PROMPT_19 S3, the follow-up this note named).** `phases_for_year`
+  now publishes four buckets — new · first quarter · full · last quarter — from Meeus ch.49's
+  own quarter series plus the ±W term, so nothing is re-imported from a method-unstated feed
+  and the scope fence holds. Verified NOT by a quoted constant (a fabricated reference is
+  what the fence forbids, and I misremembered 49.a's value before reading it out of the tree)
+  but by an INDEPENDENT elongation check from ch.47/ch.25, required to sit inside the same
+  error band that checker shows on the already-pinned new/full instants: measured 1900..2200,
+  new/full 0.0217° against quarters 0.0196°. Eleven mutations redden by name. Both agenda
+  grids draw them through one label map; +2 keys ×12 locales. Full entry in SHIPPED_LOG
+  2026-09-07.
   (3) **"Internet calendars should not be manually enabled" — VERIFIED ALREADY SHIPPED** (the
   staleness guard): `auto_import_due_feeds` has ridden every online collect pass DEFAULT-ON
   since the 2026-06-15 "auto-import everything" ruling (8 feeds/pass round-robin by
@@ -6732,7 +7002,10 @@
   statistics ("is a theme rising?"), a Leads family for super-groups, keyword→super-group
   navigation; brief of record =
   [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md`](../archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md);
-  execution delegated, PENDING — SEQUENCED AFTER the Leads-calibration + Families-entities
+  execution delegated — **EXECUTED AND SHIPPED 2026-07-19 in PR #721** (S1-S5 end to end; the
+  "PENDING" this entry carried until 2026-09-07 was stale for seven weeks and is what sent a later
+  prompt back to rebuild it — re-verified against `main` @ `58a4d6d`, see the closing note below;
+  it was SEQUENCED AFTER the Leads-calibration + Families-entities
   executions, whose primitives it consumes):** the ~77-group scaffold is healthy but the layer has
   NO statistics, and the export exposed the totals as broken: (1) GENERIC CONTAMINATION — "data"
   = 36,507 of the AI group's 43,067 mentions (85%); creation/sentence/marketplace/identity same
@@ -6774,6 +7047,28 @@
   largest bucket); every ⦾ chip app-wide deep-links to the map; the located-share honesty line
   states that map coverage grows as source countries are filled (the ~49% unlocated share = the
   standing Wikidata source-country generator lever, operator-side).
+  **CLOSING NOTE — VERIFIED-PRESENT 2026-09-07 against `main` @ `58a4d6d` (the staleness sweep the
+  2026-09-06 analysis prompts mandate; nothing was rebuilt):** every slice of BOTH briefs is in the
+  tree and its tests are green (76 passed as FOUND, 84 with the 8 guards this session added,
+  across `test_supergroup_stats/_rising/_index`,
+  `test_supergroups`, `test_group_stats`, `test_ring_country_split`, `test_ui_ring_map`,
+  `test_supergroup_seed`). S1 `src/analytics/supergroup_stats.py` (dedup-first member resolution +
+  mandatory dominance and cross-group-overlap disclosures) · S2 `supergroup_rising.py` (two-proportion
+  z-test on SHARE, Benjamini-Hochberg across the family, count floor, `driven_by` stated, the shared
+  DF-ubiquity gate refusing a generic-driven rise outright) · S3 `supergroup_index.py` + the
+  `.lvl-super` chip in the analysis Keywords subtab and a text note on omnibar rows (text there is
+  DELIBERATE and recorded at the call site: a command-palette row carries exactly one action) ·
+  S4 the two-tier circled browse, clickable country cells and clickable "not mapped" bucket, the
+  app-wide 🗺 deep-link, and the located-share honesty line (`index.html:1258`, keyed ×12) ·
+  S5 the four config fixes + the lint (`test_supergroup_seed.py::test_scaffold_config_lint`) ·
+  S6 both curation panels in Settings, Insights read-only, and the "only rows with a real decision"
+  filter with its honest empty state. **The one real gap the sweep found is now fixed** (see the
+  `shipped.csv` row of 2026-09-07): §D's country list was capped at 40 by `ring_country_split`, and
+  189 distinct source countries ship in the catalog, so on a broadly-covered concept (a) the
+  unlocated bucket could be truncated out of the payload — making the clickable "not mapped" drill
+  this very ruling names a dead end, surviving only because it HAPPENED to be the largest — and
+  (b) no exact country total was published, so the figure announced beside the map WAS the cap,
+  against the same day's anti-capping ruling. Both reproduced live before the fix.
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
   system's current limitations"; brief of record =
@@ -9279,7 +9574,38 @@
     so the next report carries the kernel verdict beside the app's own account.
   **OPERATOR STEPS (in the brief's §8, none guessable from here):** the A/B host checks + the
   kernel-log capture at the next crash; nothing else in the plan is gated on them.
-  PENDING: the brief's execution (14 sequenced PRs, S0.1 first).
+  **THE CODE HALF IS COMPLETE (2026-09-07). All 29 slices of the brief are shipped** — verified by
+  matching every `#### S<n>.<m>` heading in the brief against `shipped.csv`, not by reading a status
+  line. S3.6 was the last, and it was the one that looked done and was not: PR-10 shipped its
+  lock-state cache and left its 56-handler half, with no `S3.6` row written at all (see the
+  PROMPT 09 entry above). **WHAT REMAINS IS NOT CODE**, and it is these four things:
+  • **OPERATOR-GATED — the §8 host checks, and they expire.** `journalctl --list-boots`,
+    `-k -b -1` / `-b 0` greps, `last -x`, `coredumpctl list`, `free -m`/`swapon --show`, and the
+    journald `Storage=` + `adm`/`systemd-journal` membership checks, on machines A and B. **A boot
+    rotation destroys the `-b -1` journal**, so this is the one item that gets less answerable with
+    time. Also §8's six questions only the maintainer can answer (how the app is started and
+    stopped; whether the process was frozen or gone; whether the machine itself froze; whether a
+    browser tab was on Home; whether `install.sh` was re-run between crashes; whether `OO_AUTOSTART`
+    could have launched two instances).
+  • **OPERATOR-GATED — the field twins, which are the acceptance numbers.** Nothing in this batch
+    was measured on a field machine, and the brief says so: one pass on B at
+    `collect_parallelism=50` reporting `rss_max` / `mem_avail_min` (today 6,767 MB / 94 MB); a 72 h
+    soak on C with Home open reporting engage-cycles/day, `wal_history` max, the checkpoint `busy`
+    share, `/api/database/stats` p95, and `interrupted` on `/api/scheduler/activity` (today 37); one
+    bundle from A, whose `locked_errors_total` should fall from 234 toward 0. **Until these run, the
+    batch has mechanism evidence and no effect evidence** — and per the brief, a P0-style validation
+    run reads as not-measurable unless ≥1 full pass ran, and contaminates the collect_perf window.
+  • **RULING-GATED — the polled-GET admission cap** (recorded in full in the PROMPT 09 entry above).
+  • **DELIBERATELY DEFERRED, recorded so they are not rediscovered as new** (brief §9): the
+    engine-level `BEGIN IMMEDIATE` recipe, as its own measured slice (ruling R6 scoped this batch to
+    the two call sites); `wal_autocheckpoint=0` + a writer-side PASSIVE tick, MEASURE FIRST — with
+    1–6 h passes a boundary-only tick would remove the only in-pass growth bound; the btrfs
+    `chattr +C` recommendation for machine B, to DOCUMENT and never automate; and a source guard so
+    a future boot-time wiki-dump scan cannot land silently (B's 6.8 GB of dumps are verified inert
+    at boot and per pass today, and that is a property worth keeping by construction).
+  **AND THE HONEST LIMIT THE BRIEF OPENED WITH STILL HOLDS: none of this establishes what killed any
+  of the four sessions.** Phase 0 shipped so the NEXT one is answerable; it cannot recover the four
+  that are gone. Nothing here licenses writing a crash cause into a user-facing string.
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
   anything marked in the memory as something to do later. Sort everything into a detailed action plan
@@ -9435,6 +9761,342 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+**CARRY-OVER FROM THE PROMPT-17 SWEEP (2026-09-07, PR #1027 — four items, each measured; none
+of them blocks the PR, and none of them was silently dropped).** The sweep found prompt 17's
+S1-S7 already shipped and fixed the one real defect it turned up (the concept map's country cap);
+these are what it deliberately did NOT do, recorded here because a carry-over that lives only in a
+PR body is a carry-over nobody will read.
+
+1. **THE `--min 100` i18n GATE HAS ONE KEY OF ROUNDING SLACK — a ruling is wanted on whether to
+   close it.** `scripts/i18n_report.py` computes `pct = round(100 * covered / n, 1)`, so at today's
+   n = 3040 a locale missing exactly ONE key scores 99.967 -> **100.0**, prints
+   `complete 3039/3040 (100.0%)` and exits 0. Measured, not reasoned: deleting the newly-added key
+   from `fr.json` alone left the gate green. The blind spot WIDENS with every key the project adds,
+   so a check that was exact at 500 keys silently stopped being exact. **Tightening is free today** —
+   all 11 non-English locales are at the full count, verified — so the cost is only the risk of
+   reddening a parallel session mid-flight, which is the gate doing its job. NOT done in the slice
+   that found it because it changes a shared BLOCKING gate that every session depends on, and the
+   standing rule is that a reporting fix and a behaviour change do not ship on one line. The lesson
+   is in `LESSONS.md`; what is missing is the decision.
+
+2. **THE CONCEPT MAP'S NEW DISCLOSURE IS BROWSER-UNVERIFIED (fork-3).** PR #1027 changed what the
+   ring map announces (`n_countries`, never the polygon count) and added a visible
+   "Countries listed: N of M" line plus the matching aria label. Every guard is a source or payload
+   assertion; nothing rendered it. This sandbox CAN drive Chromium (the recorded 2026-08-04 lesson —
+   the fork-3 caveat is a habit, not a limit), so the honest close is a real click-through at a
+   corpus wide enough to truncate, checking the note against the map, the dumbbell and the table it
+   governs, and in Arabic for the RTL placement. The strings carry no punctuation-joined LTR run, so
+   no bidi isolate is expected to be needed — that expectation is exactly what a render would confirm
+   or refute.
+
+3. **`ring_country_article_ids`'s `total` IS THE CAP WHEN `bounded` IS TRUE — a name, not a hole.**
+   Noticed while auditing the sibling call and deliberately left alone. It is not the defect #1027
+   fixed: the cap is DISCLOSED (`bounded` rides beside it, and the drill's one caller reads neither),
+   so nothing published is secretly a bound. What is wrong is the FIELD NAME — `total` names a value
+   that is `min(real, limit)` — and the standing rule is that when a name and a measurement disagree
+   the NAME is the part you are allowed to change. A rename with readers is its own slice; doing it
+   inside an anti-capping fix would have made that fix's blast radius unreviewable.
+
+4. **RULING 22 NEVER REACHED THIS DOCKET, AND THAT IS WHY PROMPT 17 ASKED FOR THE THING IT
+   REMOVED.** The 2026-08-07 field ruling that RETIRED the per-row Summarize/Translate from the
+   analysis Articles list (absorbed by the reader, which runs both on the same endpoints and shows
+   the original URL as its own visible text, invariant #6) is recorded in a `shipped.csv` summary
+   (2026-08-20, rulings 20-22) and in a comment at the call site (`app-analysis.js`) — and nowhere a
+   reader looking for RULINGS would find it. Prompt 17's S7 duly listed AI-19 as work to do, and
+   building it would have undone a maintainer ruling. `INVENTORY.md` now records the closure; the
+   general question this raises is whether a ruling whose whole content is a REMOVAL needs an entry
+   here even though it ships no pending work, since the shipped-log row is written in the vocabulary
+   of what was built rather than of what may not be rebuilt. Recorded for a ruling rather than
+   answered.
+- **PROMPT_11 EXECUTED 2026-09-07 (the AI layer: model supply, capability probes, and the honest
+  gaps). FOUR OF ITS SEVEN SLICES WERE ALREADY BUILT, and the staleness guard is what said so —
+  the prompt's own scoping was written from doc status lines that had aged past the tree.** What
+  was VERIFIED-PRESENT at `main` @ 690920e, with the anchor that proves it: (a) **S6's roster
+  reduction** — `DEFAULT_ROSTER` is `_incumbents()`, `BENCH_ROSTER_AS_OF` is gone and
+  `src/llm/ollama.py:144` records that `MINISTRAL_AS_OF` INHERITED its dated-registry duty; the
+  prompt's "six roster tests are about the dropped entries, so a blind delete takes working guards
+  with it" was a live CI risk that is already spent. (b) **AI-14, the buried custom-model field** —
+  `index.html` Settings → Advanced → AI → "Run your own model", inside `<details class="adv-sec"
+  data-adv="ai">`, with the 2026-08-12 ruling quoted verbatim in the comment above it. (c) **S4 /
+  D10, the perception rollout** — `ai_sweep_perception_extract` defaults True, `field_gate` stores
+  only `active is True` and refuses the unmeasured, and BOTH structural points the prompt asks to
+  preserve are pinned by `test_repo_invariants.py::test_perception_extraction_is_eval_gated_and_
+  never_touches_the_trusted_tables` (only `ai-who`/`ai-place`/`ai-date` reach `ai_keyword`, never
+  the trusted tables; WHO stays ONE combined kind, with `ai-person`/`ai-org`/`ai-event` asserted
+  ABSENT). Only the numeric floors remain, and they are the operator's graded gold set (R6).
+  (d) **S3's CI-visible mechanism** — `tests/test_dependency_ceilings.py` shipped in #1016 and the
+  corrected migration measurements are already in the pyproject comment (16 failed/23 passed at
+  1.0.0 against 39 at 0.4.0; `keygen()` returns plain `bytes`; `PUBLIC_KEY_SIZE` 1952 in both).
+  **TWO INVENTORY ITEMS WERE REFUTED RATHER THAN BUILT, and both would have been damaging:**
+  **PRH-21** says to call `configure_ollama_store_access` "from `src/llm/installer.py`, where it is
+  defined, test-pinned and never invoked". Two of those three facts are wrong: it is a SHELL
+  function in `install.sh:495`, and its uninvoked state is a deliberate maintainer ruling, recorded
+  in the comment directly above it and pinned by `test_repo_invariants.py::test_seamless_install_
+  and_language_first_first_launch` — the 2026-06-20 field test moved Ollama provisioning ENTIRELY
+  to Settings → AI so the installer "asks NOTHING and never provisions Ollama". Wiring it would run
+  `sudo chmod` during install, which is exactly what that ruling removed. NOT DONE; the premise is
+  the defect. **PRH-09** says to prefill `#vllm-model-input` from the stored `llm_model_vllm`. That
+  element exists NOWHERE in the tree, and its only reader — `startVllm` in `app-ai-tools.js` — had
+  ZERO callers, so the function's own guard toasted "Enter a model id first." on every possible
+  click. Resolved as RETIRE, not prefill: the 2026-08-04 rework made the fused Local AI card THE
+  one control and it starts through `/api/llm/activation/start`. Adding a model input plus a second
+  start button beside it would re-create the routing-vs-provisioning confusion that fusion removed.
+  `POST /api/llm/vllm/start` is untouched and still reachable through activation.
+  **D8 IS A THIRD KIND OF STALE, and it is the interesting one:** `docs/design/MULTI_MODEL_
+  SPECIALISATION_2026-08-10.md` says "Nothing built" and the INVENTORY repeats it, while
+  `src/ai_layer/specialisation.py` ships 476 lines with `tests/test_specialisation.py` beside it.
+  What is genuinely missing is not the harness but any way to START it: `run_shape` has no caller
+  outside the test tree — no endpoint, no script, no button — so the OPERATOR STEP D8 defers to is
+  not actually available on the rig. Recorded, deliberately NOT built here, because D8's
+  recommendation is "no build" and adding an invocation path is a build; but the deferral should be
+  read as "the harness cannot be run yet", not as "the harness is missing".
+  **D9 — the live ollama.com library browse: DROPPED, with the reason.** Grep-verified that no
+  browse code exists (`ollama.com` appears only as a static download/library LINK in
+  `app-settings.js` and `installer.py`). The curated dated catalog plus the free-text tag box in
+  "Run your own model" covers the need; a live browse is a network surface with a maintenance tail,
+  against a one-model ruling whose whole point is that the default is not a menu.
+  **AI-15 IS STILL OPERATOR-GATED, and the evidence is per-host rather than a shrug:**
+  `ollama.com` answers this sandbox's proxy `CONNECT ... 403 Forbidden`, as does `huggingface.co`,
+  with `pypi.org` at 200 as the control (probed 2026-09-07). So "is the Ollama account `LiquidAI`
+  the publisher's own?" cannot be answered here and is deliberately NOT guessed — the same refusal
+  the 2026-08-02 entry recorded, now on its seventh consecutive session. It joins F1's list.
+  **WHAT WAS BUILT:** S1 (the model-weights pin, D6), S2 (round-trip capability probes, D7), S3's
+  missing half (a dependabot `ignore` for pqcrypto MAJORS), S5 (the two dead ends wired), and S7's
+  D5 collapse. Details in `docs/ledger/shipped.csv` (2026-09-07, `llm/weights-pin`).
+  **RULINGS TAKEN ON THE RECORDED RECOMMENDED DEFAULTS, not by the maintainer** — D5 (collapse
+  behind a count), D6 (pin + refuse), D7 (sweep yes; stay on `<1.0`), D8 (no build), D9 (drop),
+  D10 (already in the recommended shape). Each is reversible and each is named here so a
+  maintainer ruling that differs has one place to land.
+- **LAW VERTICAL — S2/S4/S6/S7 EXECUTED 2026-09-07 (branch `claude/law-enumeration-coverage-1txthg`,
+  one draft PR onto `main`); FOUR QUESTIONS FOR THE MAINTAINER, and two prompt claims corrected.**
+  Per-slice detail is in the `docs/ledger/shipped.csv` row; this entry holds only what needs a
+  ruling and what a later session must not re-derive.
+  **STALENESS FIRST, because two of the six slices did not exist as work.** `S3`/`S4b` (thread the
+  catalog's language to the corpus) and `S5`/`A5` (AI change summaries) were both recorded as
+  outstanding by `PROMPT_13` and both were already shipped at `main` @ `690920e2` — the columns are
+  at `src/database/models.py:2187-2188`, the summary ride-along at `src/scheduler/runner.py:1263`.
+  Neither was rebuilt; both prompt sections and the 2026-07-17 brief now carry the anchor. That is
+  the third and fourth law item in a row to turn out shipped-when-read (36 and 37 were the first
+  two, 2026-08-20), which is itself the finding: **this vertical's status text ages faster than any
+  other area's, so grep before building here, always.**
+  **F1 RE-PROBED AND STILL BLOCKED (2026-09-07, per-host evidence, so nobody re-runs it):**
+  `curl -o /dev/null -w '%{http_code}'` gives `pypi.org` 200 and `github.com` 400 (both reachable),
+  against `000` — connection refused at the tunnel — for `www.legislation.gov.uk`,
+  `eur-lex.europa.eu`, `www.gesetze-im-internet.de` AND `legal.gov.vc`. Unchanged from 2026-08-20.
+  S1 stays untouched; the one operator step (fetch one CLML `data.xml`, run `parse_clml`, check the
+  recovery floor and an empty `unknown_elements`) is still the thing that unblocks the enumeration.
+  **Q-LAW-1 (the one that actually blocks a number): should each `official_count` entry DECLARE
+  whether its unit counts the same objects an act/code-level tracked document is?** S4 put the
+  catalog's 39 dated counts (32 countries) into the coverage report and deliberately computes NO
+  fraction, because the units run over codes, acts, volumes, gazette issues, treaties and cases and
+  a volume or a gazette issue holds many acts. Deciding that from the unit STRING is the exact move
+  ruling 47's extensive/intensive rail forbids. Options: (a) add an explicit
+  `counts_documents: true|false` to each of the 39 entries, hand-decided and reviewable in the diff,
+  after which a real tracked-vs-enumerated fraction becomes computable for the entries that say
+  true; (b) leave it undeclared permanently and keep publishing the two numbers side by side;
+  (c) rule that the fraction is never wanted at all, since "covering a jurisdiction" is about
+  breadth rather than a percentage. Recommendation: **(a)** — it is ruling 47's own precedent
+  applied one vertical over, the population is 39 rows and closed, and until it lands the report is
+  honest but cannot answer "how much of France do we have".
+  **Q-LAW-2 (L6, and the stated default was APPLIED not decided): `[pdf]` stays optional and the
+  coverage report now says so, with the numbers.** Measured at this anchor: **63 of 275 catalog
+  sources declare a format list of exactly `[pdf]`, across 54 countries, and 6 of the 23 registrable
+  tracked documents are PDFs by URL** — all six Timor-Leste. So a default install cannot read a
+  quarter of the documents this vertical tracks. The question stands: promote `[pdf]` into the
+  default extras, or keep the disclosure? Recommendation: the disclosure is the right FLOOR either
+  way and is now shipped; promoting is a separate call about install weight (`pypdf` only).
+  **Q-LAW-3: 44 rows are on the vetting board and every one wants a one-word answer** —
+  `docs/product/LAW_VETTING_BOARD.md`, generated by `scripts/law_vetting_board.py`, in four
+  sections: 2 confirmed gaps (kp, ye — acknowledge or re-open), 9 unverified leads with a real
+  domain (enable / adapter / gap / drop), 29 access-blocked or bot-walled (adapter / API / honest
+  gap — never scraped around), 4 recorded down (re-check / park / drop). Sections 3 and 4 are a
+  KEYWORD TRIAGE over the catalog's own prose and the page says so; they are a starting point, not
+  an exhaustive list of blocked domains.
+  **Q-LAW-4: is a `gazette_feed` a first-class endpoint tier?** S2 gave each of the four
+  `gazette_feed` values its own `gazette_feed_verification` block, validator-enforced, vocabulary
+  `fetched | lead` only. This was necessary rather than tidy: all four rows are
+  `verification.status: fetched` at ROW level and one of them (impo.com.uy) has a feed nobody ever
+  fetched, which the row's own notes call the site's generic WordPress news feed — promoting on the
+  row status would have filed Uruguayan site news as that country's official gazette. Ruling asked
+  for: does this tier generalise to `enumeration_url` (107 of them, none fetched by anyone) and to
+  `structured.api`/`structured.bulk`? Recommendation: **yes, and the same way** — an endpoint field
+  that no test can distinguish from a URL somebody wrote down is the shape this vertical keeps
+  paying for.
+  **RECORDED SO IT IS NOT RE-DISCOVERED:** the DPRK honest-gap record lived ONLY in a YAML comment
+  while Yemen's identically-reasoned one was a domain-less `lead` row, so no tool could read it.
+  It is a row now (the comment kept beside it, verbatim); the loader still returns 275 sources
+  because a domain-less row can never become a `Source`. **And what S2 does NOT buy:**
+  `select_sources` admits only QUALIFIED sources, so the three wired feeds are not collected on
+  seeding — they enter the qualification ladder, which they previously could not, because
+  `trial_fetch` falls back to sitemap discovery without an `rss_url` and a gazette with neither
+  produces no evidence and stays unqualified forever.
+
+---
+
+## 2026-09-07 — PRH-32/33 (PR #1029): what the browser measured and what is parked
+
+**QUESTION FOR THE MAINTAINER — should 41 invisible borders start rendering?**
+`var(--line)` is referenced **41 times fallback-lessly** across ten files of the SPA bundle
+(app.css 7 · index.html 14 · taskmanager.html 2 · app-analysis.js 5 · app-corpus.js 5 ·
+app-ai-tools.js 2 · app-core.js 2 · app-map.js 2 · app-insights.js 1 · app-settings.js 1) and
+is defined **nowhere the SPA loads**. It exists only in the two SERVER-RENDERED pages, each of
+which carries its own `:root` block (`src/api/main.py`'s reader, `src/api/law.py`) — so
+`reader.css` is correct and every SPA reference is not. A `var()` with no fallback that
+resolves to nothing makes the WHOLE declaration invalid at computed-value time, so each of
+those 41 silently does nothing: measured live, all eleven `<dialog>` elements declared
+`border:1px solid var(--line)` and `getComputedStyle` reported `border-top-style: none` on
+every one — nine of them have declared a border that has never once rendered.
+
+Twelve FURTHER references in `taskmanager.html` carry a fallback (`var(--line, …)`) and are
+valid by design. The raw grep says 53; the defect count is 41. Recorded because the first cut
+of the census flagged the fallback-carrying ones too (`--hover`, `--lead-h`, `--muted-bg` are
+all deliberate defaults, and `--lead-h` is set by JS at runtime), and a fabricated FAIL is
+exactly as dishonest as a fabricated pass.
+
+**NOT REPAIRED IN #1029, deliberately.** Defining the token (or sweeping the call sites to
+`--border`) makes 41 currently-invisible 1px borders appear at once across the shell, the task
+manager and seven JS modules. That is a visible change the maintainer should see on its own
+terms, not one riding inside a type-scale PR. Ratcheted meanwhile by
+`tests/test_dialog_theming.py::test_every_custom_property_the_spa_uses_is_defined_somewhere`:
+a NEW undefined token fails immediately, and `--line` can neither grow past 41 nor be left
+above the real count. **The ruling needed is simply: were those borders wanted?** If yes the
+repair is one line (`--line: var(--border)` beside the other tokens) plus a browser pass; if
+no, the 41 declarations should be deleted rather than left looking like styling.
+
+**ONE INSTANCE OF THE SAME CLASS WAS REPAIRED**, because its failure direction is worse than
+cosmetic: `app-diagnostics.js` drew its two chart axis titles with `fill="var(--text)"`, and
+`fill` INHERITS rather than falling back to nothing, so they rendered `rgb(0,0,0)` on a
+`rgb(20,24,31)` panel — **1.09:1**, effectively invisible, on all twelve dark themes. Fixed to
+`var(--fg)` and pinned by the same census.
+
+**DELIBERATE OMISSION — the dialog `::backdrop` change is visible and is called out in #1029.**
+The new `dialog::backdrop` gives the ten dialogs that had none the same `rgba(0,0,0,.5)` scrim
+`#guide-wizard` had already chosen for itself, so opening a dialog now dims the page behind it.
+Standard modal behaviour and consistent with the app's own precedent, but it is a change a
+reviewer will see rather than an invisible fix.
+
+**COVERAGE THIS SESSION DID NOT REACH** (stated rather than left to look covered):
+the five axe-core P2s from the 2026-08-20 worklist §11.1 are untouched; the S6 "no layout media
+query between 900 px and desktop" item is untouched (`max-width:900px` is still the widest);
+`#tab-help` and an Insights `keywords` subtab were **probe coordinate errors of mine**, not app
+findings — Help has no `.nav-item` (it is reached by `showTab('help')`) and Insights has no
+`keywords` subtab — and the standalone Reader is a server-rendered page with its own `:root`,
+outside the SPA scale's scope entirely. Commodities WAS measured once its real coordinate was
+found (`nav_tab="markets"`, not an Indices subtab) and is clean.
+
+**TWO S6 CLAIMS IN `PROMPT_15_ui-browser-backlog.md` WERE ALREADY STALE** and are corrected in
+the same PR, per the working mode's staleness rule: `prefers-contrast` IS handled (`app.css`,
+`@media (prefers-contrast: more)`, from the 2026-07-28 audit's finding G-3, and the 2026-08-20
+matrix measured it applying live under `emulate_media(contrast="more")`), and `.sr-only` IS
+present (`app.css:161`, used by `app-markets.js`, `app-map.js` and `app-library.js` for their
+chart data tables). Both VERIFIED-PRESENT.
+
+
+### 2026-09-07 — PROMPT 14 (governments, official statistics, the bloc lens): S2 shipped, and what is left
+
+Executed on branch `claude/governments-stats-bloc-lens-74pr64` (PR #1026). **S2's live defect is
+fixed and S7 turned out to be mostly already built.** What follows is the carry-over, each item
+with the thing that actually blocks it, so the next session does not re-derive any of it.
+
+**SHIPPED here.** `parse_sdmx_json` read observations only out of
+`dataSets[].series[<key>].observations`, and a `dimensionAtObservation=AllDimensions` message
+carries no `series` key at all — so a well-formed message parsed to ZERO rows and logged NOTHING.
+Both containers are read now; dataSet-level dimensions are a weakest-precedence fallback
+(observation > series > dataSet); a dataSet carrying NEITHER container is logged as unreadable
+while an empty-but-present one stays silent; and a 2.0 message is refused BY NAME telling the
+operator to pin 1.0. Six mutation-checked guards. The lesson is in `LESSONS.md`.
+
+**VERIFIED-PRESENT — do not rebuild** (anchor `58a4d6df`; `INVENTORY.md` rows corrected):
+GOV-06, the revision-anomaly detector, is shipped AND wired end to end (`src/stats/revision.py`
+→ `store.py:267` → `/api/stats/revision-anomalies` → `app-map.js:2143`, three test files);
+GOV-05, all three parser families (`parse_csv`, `parse_jsonstat`, `parse_csv_wide` + the ZIP
+reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists.
+
+**STILL OPEN, by what blocks it:**
+
+1. **⛔ EGRESS (S1, S5, S6, and the data half of S3) — one allowlist decision, not four tasks.**
+   `api.worldbank.org`, `sdmx.oecd.org` and `dataservices.imf.org` each answer
+   `CONNECT <host>:443` → `403` at the sandbox proxy, `pypi.org` 200 as the control. This is the
+   SEVENTH consecutive session to converge on that, and the hosts are already itemised in
+   `QUESTIONS_FOR_THE_MAINTAINER` **F1**. Blocked behind it: the 36 World Bank codes
+   (`scripts/verify_worldbank_indicators.py`, ONE command, and `EN.ATM.CO2E.PC` vs the newer
+   `EN.GHG.CO2.PC.CE.AR5` wants the same run); `news_url` for the agencies directory, still **0
+   of 29 populated** against a target of ~150; the BRICS Joint Statistical Publication; the AfDB
+   and UNECA continental endpoints (the WB lens has no continental-Africa figure at all, which is
+   why both lenses ship); and the two task-2 loose ends (`page=2` against a cache-disabled
+   request, and the tail of page 1). **Nothing in a session can route around a TCP-layer refusal
+   — do not spend another session rewriting the prompt.**
+
+2. **SDMX-JSON 2.0 itself — needs ONE real fetched body, and only that.** The refusal is in place
+   and now names the version; the fixtures written here are SPEC-SHAPED, not fetched, and the
+   test docstring says so. The mapping work is small once a body exists (`data.structures` is a
+   plural ARRAY and each dataSet links to one of them by index); what cannot be done without a
+   body is knowing that the mapping is right. Depends on item 1.
+
+3. **S3, the bloc rosters (G3) — its own networked session, and the acquisition RULE is the hard
+   part, not the fetching.** The registry ships deliberately empty (27 groups, 20 unpopulated,
+   verified unchanged). **The publisher's own page is an interested party for a membership fact**
+   — one search returned four mutually incompatible states for Saudi Arabia in BRICS with the
+   bloc's own page the most confident and the least reliable. A roster page corroborates
+   membership and cannot settle a contested one; that needs the acceding state's own statement,
+   and where none exists the honest answer is a permanent `joined: UNVERIFIED`. Two sub-items
+   need sourced dates from the SAME session: region membership is undated (`dates_apply=False`,
+   stated, cross-vintage unsafe), and a country that did not exist in the requested year lands in
+   the coverage gap beside non-reporters, which are two different facts. **Do not build the dating
+   plumbing ahead of the dates** — empty schema is the half-built migration the working mode warns
+   about, and the suspension-EPISODE model was worth doing early only because the registry was
+   still empty.
+
+4. **S4, the default aggregation strategy — a RULING, not a task.** Recorded as question **G11**
+   with the arithmetic both ways and a recommended default of *keep the member mean*. It was
+   deliberately NOT flipped: every strategy is already shown side by side, so this decides only
+   which one the surface opens on, and which figure a reader sees first is an editorial decision.
+   A population-weighted mean of a per-capita indicator EQUALS `Σ numerator / Σ denominator` — the
+   true aggregate — but only where the numerator is reconstructed and the weight series is real
+   for the same members and year; where that holds the code already classifies the basis `exact`
+   and opens on it, so G11 governs only the case where it does not. Gini stays refused either way.
+
+5. **PRH-24, the "Registered statistics sources" view — genuinely unbuilt** (checked, not assumed:
+   only `/api/stats/sources/ingest` exists, no view). A UI slice, so browser-gated; it is the one
+   item of S7 that was not already shipped.
+- **THE OBSERVATORY IS BUILT (2026-09-07; ruled 2026-07-18, gate H1 answered "build now,
+  Chromium-verified" by the maintainer this session): S2 + S3 + most of S6 shipped, and
+  three of the design's own §11 open threads are now ANSWERED BY MEASUREMENT rather than by
+  taste.** The `ooSky` canvas renderer (`src/static/oosky.js`, pure polar geometry) + the
+  Observatory tab (`app-observatory.js`, `#tab-observatory`) + UI invariant #31. **§11 thread
+  1 (the default radial measure) resolved DIFFERENTLY from the proposal, and the reason is
+  the data spine rather than a preference:** the design proposed "deduped article spread",
+  but the shipped S1 payload publishes `distinct_sources` as its breadth measure and carries
+  no article-spread field. `distinct_sources` serves the SAME stated rationale ("breadth
+  resists single-source flooding") more directly — it literally counts sources — so it is the
+  default, and the substitution is stated in the surface's own method line. Adding a
+  distinct-article measure to `supergroup_stats` is prompt 17's stats core, not this slice's.
+  **§11 thread 2 (colour default): LANGUAGE, as proposed**, with the trend lens a chosen
+  alternative. **§11 thread 5 (fixed compass positions vs size ordering): FIXED, as
+  proposed** — wedges are ordered by domain NAME, because ordering by size would move every
+  wedge whenever the corpus grew and "change is signal" needs the frame to hold still.
+  **§11 threads 3 and 4 are UNTOUCHED and still open:** K (max arms) and the per-arm member
+  floor cannot be settled until the arm tier is built, and the Telescope remains explicitly
+  not-v1.
+  **WHAT IS NOT BUILT, and belongs to its own later slice (design §9), stated so no reader
+  has to infer it from silence:** the ARM tier (S5 — the Item-AC topic tags and their
+  top-K≤6 cardinality guard), the STAR-SYSTEM and PLANET tiers (S5 — rings and the literal
+  per-language planetary rings), NOVAE (S4 — the `supergroup_rising` gates), and the
+  ooTimeScope TIME SCRUB (S4). Each needs payload the endpoint does not emit yet, which is
+  the honest reason rather than a scoping preference; the S1 module's own docstring already
+  records that deferral and it still holds.
+  **CARRIED, needing a maintainer view:** (a) the domain wedge labels and the galaxy names
+  render in English in every locale, because they are corpus DATA (the bundled
+  `keyword_supergroups.yml` scaffold) and this app never translates data — consistent with
+  Insights → Super-groups, which shows the same names, but the twelve DOMAIN labels are
+  bundled scaffold rather than user content and could reasonably be keyed later if you want
+  them translated. (b) The tab AUTOLOADS its payload on first open. The endpoint is
+  `_deadlined` (the S2.4 discipline the design asked for) and server-cached for 120 s, and it
+  measured 0.26–0.28 s on a 440-article corpus — but it runs `supergroup_stats` for all 77
+  groups, so the cost grows with the corpus and has NOT been measured at the 500k scale. If a
+  live run is slow, the fix is the explicit-action button the article-length figure already
+  uses, not a cap.
 - **STORAGE PROMPT 22 (S1–S5) — THE PHASE-C DESIGN REFRESH: four rulings still open, three
   carry-overs, one operator job (2026-09-07; refresh of record =
   [`docs/design/STORAGE_5TB_REFRESH_2026-09-07.md`](../design/STORAGE_5TB_REFRESH_2026-09-07.md);

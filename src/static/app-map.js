@@ -1772,13 +1772,70 @@
     function dumpSelected() {                      // multi-select (maintainer 2026-06-11)
       return [...$("dump-lang").selectedOptions].map(o => o.value).filter(Boolean);
     }
-    async function probeDump() {
-      const w = dumpSelected()[0] || "en";
-      $("dump-estimate").textContent = "Checking size…";
+    // --- Exact dump sizes: ONE consented read for the whole selection ------ //
+    // Replaces the old per-edition "Estimate size" button, which had three
+    // defects: it egressed to dumps.wikimedia.org with NO network-consent popup
+    // (invariant #14 gates every other action on this surface); it read only
+    // dumpSelected()[0] though the picker is multi-select, silently defaulting
+    // to "en" when nothing was selected; and every failure -- airplane mode
+    // included -- printed the same "size check failed", so a refusal by THIS
+    // machine read as a dump host that would not answer.
+    //
+    // Exact readings live here so they survive re-filtering the picker, and
+    // renderWikiLanguages prefers them over the bundled dated estimate. The
+    // bundled table stays: it is what makes the picker informative with zero
+    // network (zero-network boot / airplane mode intact).
+    // `_dumpExactSizes` is DECLARED in app-settings.js (loaded first, and where
+    // renderWikiLanguages reads it); this module only writes into it. The
+    // app-*.js modules share one global lexical scope, and putting the `let`
+    // beside its reader keeps a source-extracting node suite from meeting a
+    // binding whose declaring module it never loaded.
+
+    function _dumpSizeReason(t, reason) {
+      if (reason === "airplane") return t("airplane mode is on — nothing was sent");
+      if (reason === "unreachable") return t("the dump host did not answer");
+      if (reason === "no-content-length") return t("the host published no size");
+      if (reason === "invalid-edition") return t("not a usable edition code");
+      return t("No size could be read.");
+    }
+
+    async function refreshDumpSizes() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const out = $("dump-estimate");
+      const picked = dumpSelected();
+      if (!picked.length) {
+        // Never silently probe a default edition the operator did not choose.
+        if (out) out.textContent = t("Select one or more editions first.");
+        return;
+      }
+      // The ONE network-consent popup (invariant #14): this reads live sizes
+      // from dumps.wikimedia.org, so it is an offline->online transition like
+      // any other and must never slip past the gate.
+      if (!await ensureOnline(t("Read the exact current size of the selected Wikipedia dumps"))) return;
+      if (out) out.textContent = t("Reading exact sizes…");
       try {
-        const d = await api(`/api/wiki/dumps/probe?wiki=${encodeURIComponent(w)}`);
-        $("dump-estimate").textContent = d.size_bytes ? `≈ ${humanBytes(d.size_bytes)} for ${d.wiki}` : "size unknown";
-      } catch (e) { $("dump-estimate").textContent = "size check failed"; }
+        const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`);
+        const rows = d.sizes || [];
+        const ok = [], bad = [];
+        rows.forEach(r => {
+          if (r.size_bytes != null) { _dumpExactSizes[r.wiki] = r.size_bytes; ok.push(`${r.wiki} ${_fmtBytes(r.size_bytes)}`); }
+          else { delete _dumpExactSizes[r.wiki]; bad.push(`${r.wiki} — ${_dumpSizeReason(t, r.reason)}`); }
+        });
+        // The cap bounds which editions were READ; it never bounds what is
+        // reported, so the un-probed remainder is named rather than dropped.
+        const over = (d.not_probed || []);
+        // label:value, never an interpolated sentence — a sentence with a count
+        // in it cannot conjugate, and every locale is correct by construction
+        // when the label carries the meaning and the data sits beside it.
+        const parts = [];
+        if (ok.length) parts.push(t("Read from the dump host") + ": " + ok.join(" · "));
+        if (bad.length) parts.push(t("Could not be read") + ": " + bad.join(" · "));
+        if (over.length) parts.push(t("Not attempted (batch limit)") + ": " + over.join(", "));
+        if (out) out.textContent = parts.join(" — ") || t("No size could be read.");
+        renderWikiLanguages();   // repaint the picker with the exact figures
+      } catch (e) {
+        if (out) out.textContent = t("Could not read the sizes") + ": " + e.message;
+      }
     }
 
     // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
@@ -2710,6 +2767,14 @@
       if (meth) meth.textContent = "";
       try {
         const d = await api(`/api/wiki/pages/${_wikiTc.id}/revisions?limit=50&flagged_only=${flagged}&include_diff=true`);
+        // A caller that knew the page named it; the ?wikitc= deep link from the
+        // article reader knows only the id, so the header is filled from the
+        // endpoint's OWN answer rather than left blank or guessed.
+        if (!_wikiTc.title && d.page && d.page.title) {
+          _wikiTc.title = d.page.title; _wikiTc.wiki = d.page.wiki || "";
+          const ttl2 = $("wiki-tc-title");
+          if (ttl2) ttl2.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
+        }
         const revs = d.revisions || [];
         if (!revs.length) {
           // Honest empty state (flagged-aware), never a blank pane.
