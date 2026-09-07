@@ -2301,7 +2301,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
-async def list_sources(request: Request, db: Session = Depends(get_db)):
+def list_sources(request: Request, db: Session = Depends(get_db)):
     """List all available news sources with optional filters."""
     logger.info("List sources request")
     sources = db.query(Source).all()

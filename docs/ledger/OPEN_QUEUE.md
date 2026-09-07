@@ -21,6 +21,43 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
+  AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
+  the prompt's seven slices were ALREADY BUILT and are recorded as such in
+  [`../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md`](../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md)
+  and `INVENTORY.md` PERF-01/PRH-23; NO RULING IS INVENTED HERE):**
+  **THE OPEN QUESTION — should polled GETs be admission-capped, now that 51 more handlers can
+  run concurrently?** Converting 56 `async def` handlers to plain `def` (S3.6) changes WHERE
+  their DB work runs, and it also changes HOW MANY can run at once: an `async def` handler was
+  serialised by the one event loop, a `def` one takes an anyio threadpool token (**40** by
+  default). The connection pool it then draws from is sized by the machine —
+  `memory_budget.resolve_for` gives **6 + 2 = 8** connections below 4 GB, 4 + 16 = 20 in the
+  middle tier, 8 + 64 = 72 above. So on a small machine, 40 possible concurrent handlers face 8
+  connections, and the 9th waits on `pool_timeout` (30 s) and then errors.
+  **THIS IS NOT NEW and it is not a regression:** the tree already had **283** plain `def`
+  handlers taking `Depends(get_db)`, including the polled ones, so the exposure predates this
+  change — which adds 51 to a set of 283 — and every one of the 51 previously froze the WHOLE
+  server instead, which is strictly worse. A pool-timeout error names itself; a frozen loop does
+  not. **What is NOT decided is whether to bound it deliberately.** The crash brief's own
+  refuter note (S3.4) killed the general form — "do NOT add a queueing semaphore in `get_db`
+  (it recreates pool-timeout hangs for writes and diagnostics)" — but left the narrow form
+  standing: *"if you cap, scope it to polled GETs and fast-fail 429."* That narrow cap is
+  designed and unbuilt. It is recorded here rather than built because it is a policy about what
+  the app does to the operator under load, and because the honest measurement that would size it
+  (how many concurrent handlers a small field machine actually reaches) does not exist yet —
+  guessing a cap would be the fabricated-number failure. **PENDING: the maintainer's call on
+  whether to build the polled-GET cap, and on which measurement should size it.**
+  **THE CLASS-B DECISION TAKEN (recorded so it is not re-litigated, and so it can be reversed
+  knowingly):** PRH-23 moved the first-run preflight onto the background-job registry, which
+  means the pass tail no longer BLOCKS on it — so it now overlaps the housekeeping lane, and
+  **ruling R5 asked for a serialised pass tail.** Judged compatible on two bounds, both stated
+  in `src/monitoring/preflight_job.py`: R5 serialised the two WHOLE-CORPUS DB consumers (the
+  lane's qualification scan and the briefing refresh) because they contend for memory and the
+  writer gate on two cores, whereas this job is network-bound, capped at 50 sources, and writes
+  one `SourceMetadata` row per source; and it runs on the FIRST pass of a fresh install and
+  never again — a pass on which the corpus is empty, so the lane's whole-corpus scan has nothing
+  to scan. If the maintainer reads R5 more strictly than that, the reversal is one line: run the
+  job's worker inline instead of kicking it, keeping the registry entry for visibility.
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
   chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the

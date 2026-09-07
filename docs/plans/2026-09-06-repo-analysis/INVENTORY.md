@@ -178,7 +178,7 @@ claim lives · owning prompt.
 ## PERF — throughput, scale, crash-brief remainder
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
 |---|---|---|---|---|---|
-| PERF-01 | Crash brief S3.6: lock-state cache + 56 DB-touching `async def` handlers → `def` (source_management 50) | UNBUILT | `src/api/source_management.py:373 async def list_sources` (53 async defs); `main.py:657 _lock_gate` uncached | crash brief §5 S3.6 | P09 |
+| PERF-01 | Crash brief S3.6: lock-state cache + 56 DB-touching `async def` handlers → `def` (source_management 50) | **BUILT 2026-09-07** (was HALF-SHIPPED: the lock-state cache landed with PR-10 `d447fe6d`; the 56 handlers did not) | cache: `src/database/connect.py:394-437` (`main_header_state` + `invalidate_header_cache`, TTL belt) via `src/api/unlock.py:53`. Handlers: 56 → 4 (`tests/test_handlers_off_the_event_loop.py` is the AST guard; the 4 that remain await the request stream) | crash brief §5 S3.6 | P09 |
 | PERF-02 | Crash brief §8 field twins (B pass, C 72 h soak, A bundle, P0-style run) + host kernel-log checks | OPERATOR-GATED | brief §8 | brief | P09 |
 | PERF-03 | Throughput C16 (S-D extraction out of the write gate, evidence-gated on writer-bound verdicts) + C17 (A1 decouple ingestion from enrichment) | UNBUILT (deferred per the brief's own gates) | shipped.csv row 464 | C brief | P10 |
 | PERF-04 | Indexing throughput board ①–⑨ (`INDEXING_THROUGHPUT_ANALYSIS_2026-08-03`) — per-item status | UNCHECKED (agent B) | design doc | design doc | P10 |
@@ -303,7 +303,7 @@ would look.
 | PRH-20 | The passphrase no-recovery WARNING and the security-dense custody paragraphs were deferred for native review, never scheduled | OPERATOR-GATED (native review) | PR #462 / i18n slices | PR history | P15 |
 | PRH-21 | `configure_ollama_store_access` is defined and test-pinned but never called from `src/llm/installer.py`; the `OLLAMA_MODELS` hint is never keyed | UNBUILT | PR range #423–#520 notes | PR history | P11 |
 | PRH-22 | Real floating events for `configs/world_events.yml` (only CHOGM is present) | UNBUILT (data) | PR range #423–#520 notes | PR history | P19 |
-| PRH-23 | First-run preflight still runs inline in `src/scheduler/runner.py` rather than as a visible job | UNBUILT | PR range #423–#520 notes | PR history | P09 |
+| PRH-23 | First-run preflight still runs inline in `src/scheduler/runner.py` rather than as a visible job | **BUILT 2026-09-07** | `src/monitoring/preflight_job.py` (registered `first-run-preflight`); `src/scheduler/runner.py` kicks it under the `first-run-preflight` tail phase | PR history | P09 |
 | PRH-24 | A "Registered statistics sources" view was designed and never built | UNBUILT | PR range #261–#520 notes | PR history | P14 |
 | PRH-25 | Bare-year date extraction; an acronym-aware mistagged-entity pass; the in-app Wikidata ring importer | UNBUILT (ideas) | PR range #261–#520 notes | PR history | P05 |
 | PRH-26 | `src/api/main.py` still holds inline endpoints that belong in the `core` router, and `observability.py` (Prometheus globals + middleware order) was never extracted | UNBUILT (refactor debt) | PR #236 | PR history | P20 |

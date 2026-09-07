@@ -5,6 +5,38 @@
 > **Sequencing:** never concurrent with prompts 07 or 08. Its S1 is the single largest measured defect class
 > still open in the backend.
 
+> ### STALENESS SWEEP, 2026-09-07 — five of the seven slices below were ALREADY BUILT
+>
+> Executed against `main` @ `690920e2`. Read this before the slices: the prompt's own status
+> text was a claim, and the tree disagreed with it on five counts. Verdicts, each with the
+> anchor that proves it:
+>
+> | slice | verdict | the anchor that settles it |
+> |---|---|---|
+> | **S1** — 56 `async def` handlers + the AST guard | **was genuinely open; BUILT 2026-09-07** | count re-derived by parsing signatures: 56, exactly as recorded. Now 4 — see below |
+> | **S2** — the lock-state cache | **ALREADY BUILT** (PR-10, `d447fe6d`, 2026-09-03) | `src/database/connect.py:394-437` — `main_header_state` + `invalidate_header_cache`, with BOTH belts (per-mutator invalidation and a 5 s TTL); reached from `src/api/unlock.py:53` |
+> | **S3** — the exclusive hold's remaining entry points | **ALREADY BUILT** (S6.1, 2026-09-03) | `src/analytics/serve_gate.py:80 exclusive_verdict()`, consulted by BOTH `rollup_serve._build_and_swap` and `map_serve._build_and_swap`. Its docstring already records the briefing-recompute non-extension for the reason this prompt gives |
+> | **S4** — the memory budget and the honest decline (R1/R2) | **ALREADY BUILT** (S1.1–S1.5, 2026-09-02/03) | `src/config/memory_budget.py` (tiers, DuckDB `memory_limit`+`threads`), `src/config/machine_floor.py` (`machine_floor`/`scan_budget`/`capped_workers` + override), `src/scheduler/release.py`, `src/monitoring/swap.py`, `renderMachineFloor` in `app-sources.js`, `docs/USER_MANUAL.md:1713` (`systemd-run … MemoryMax`) |
+> | **S5** — the two `SQLITE_BUSY_SNAPSHOT` call sites | **ALREADY BUILT** (S2.4, 2026-09-02) | `src/discovery/channels.py:528-531` (`with write_lock(), session.begin_nested():` — the gate taken BEFORE the first read) and `src/analytics/source_topics.py:110-121` (same shape) |
+> | **S6** — the WAL inference in three places | **ALREADY BUILT** (S0.1, 2026-09-02) | `src/monitoring/forensics.py:386-455` (three states, and `absent` now says NOTHING can be concluded), `src/monitoring/p0_validation.py:570-608`, `docs/product/P0_VALIDATION_RUNBOOK.md` §8.2 ("What `absent` does not prove") |
+> | **S7** — PRH-23, the inline first-run preflight | **was genuinely open; BUILT 2026-09-07** | was `src/scheduler/runner.py:1997-2020` |
+>
+> **The half-shipped one, named as §2 of the working mode requires.** S3.6 shipped as
+> PR-10's third slice, and its commit message describes only the lock-state cache. The
+> handler conversion — the larger half, and the one the prompt calls the largest measured
+> defect class still open — was not in that diff. `shipped.csv` carries no `S3.6` row at all,
+> which is why neither half showed as done.
+>
+> **What S1 turned out to be, once counted rather than assumed.** 51 of the 56 had no
+> `await` anywhere in their bodies — pure synchronous handlers that were `async def` by
+> habit. Those are now plain `def`. Of the remaining 5: two (`import_prices_csv`,
+> `import_csv`) genuinely await the upload stream but were doing their DB work on the loop
+> afterwards, and now hand it to `run_in_threadpool`; one (`import_pdf_folder`) took a JSON
+> body and awaited nothing but its own threadpool hop, so it became a plain `def`; and
+> `import_newsletters` — whose own test already claimed it ran off the loop — still did a
+> get-or-create (which COMMITS) and a rollback on the loop. Final count: **4**, each of
+> which awaits the request stream, and none of which touches its session on the loop.
+
 ## 0. Working mode
 
 Read `_WORKING_MODE.md`, then `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md` in full,
