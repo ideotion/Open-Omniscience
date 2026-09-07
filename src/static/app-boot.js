@@ -70,6 +70,16 @@
           renderCompositionFigures();
         }
       } catch (_e) {}
+      // The Observatory is the same class again, and worse: its canvas has no DOM
+      // for the i18n walker to reach at all, so EVERY label it paints (the orbit
+      // ticks, the domain wedge names) plus its tf()-built disclosures would stay
+      // in the first-rendered locale forever. Re-render only if it has payload,
+      // i.e. only if the tab was ever opened -- this never triggers a fetch.
+      try {
+        if (typeof _obs !== "undefined" && _obs.payload && typeof _obsRender === "function") {
+          _obsRender();
+        }
+      } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
       // interpolated string was added there: the qualification tile's composition note
       // ("Of 3 awaiting a verdict, 1 have never been attempted…") is built with

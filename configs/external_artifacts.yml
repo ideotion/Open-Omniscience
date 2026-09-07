@@ -51,6 +51,46 @@
 
 artifacts:
   # --- dated data / catalogs (each has a *_AS_OF constant the guard checks) -------
+  - id: public-suffix-list
+    title: Mozilla Public Suffix List
+    kind: dated-data
+    description: >
+      Offline eTLD+1 reduction for newsletter publisher identity (ruling 2026-06-15
+      clause (d): is a newsletter from email.bbc.com the same publisher as the scraped
+      bbc.com?). No arithmetic over labels can know that co.uk is a suffix, so the list
+      is the only honest way to answer; a two-label fallback would reduce bbc.co.uk to
+      co.uk and merge every British publisher into one source. Digest-verified before
+      it is parsed and refused outright on a mismatch, so unknown bytes can never
+      become publishers.
+    upstream: "https://publicsuffix.org/list/public_suffix_list.dat (repo publicsuffix/list)"
+    check_upstream: "the list changes continuously; refresh on a schedule, not on an event"
+    license: "MPL-2.0 (the list itself); the canonical test vectors are CC0"
+    pin: {file: src/catalog/publicsuffix.py, const: PUBLIC_SUFFIX_LIST_AS_OF}
+    refresh: >
+      curl -o src/catalog/data/public_suffix_list.dat
+      https://publicsuffix.org/list/public_suffix_list.dat ; curl -o
+      tests/data/public_suffix_list_tests.txt
+      https://raw.githubusercontent.com/publicsuffix/list/master/tests/tests.txt ;
+      then set PUBLIC_SUFFIX_LIST_AS_OF + PUBLIC_SUFFIX_LIST_SHA256 +
+      PUBLIC_SUFFIX_LIST_UPSTREAM and re-run tests/test_public_suffix_list.py
+    freshness: {max_age_months: 12}
+    couplings:
+      - "src/catalog/data/public_suffix_list.dat must match PUBLIC_SUFFIX_LIST_SHA256"
+      - "tests/data/public_suffix_list_tests.txt is the upstream's OWN vector set; it must
+         be refreshed in the same commit as the list, and it caught two real defects on the
+         first run (a leading dot accepted, and punycode hosts missing the list's unicode rules)"
+      - "src/ingest/newsletter_source.py NEWSLETTER_PLATFORM_HOSTS is NOT redundant with this
+         list: measured 2026-09-07, substack/beehiiv/ghost/mailchimp/buttondown/kit/medium are
+         in neither section, so the list alone would collapse every publisher on those
+         platforms into one source"
+    upstream_check: {github: "publicsuffix/list", type: path_commit, path: "public_suffix_list.dat", compare: as_of}
+    # Vendored 2026-09-07 at publicsuffix/list@24fdb5107983c3997144ca19e0d7e1e8fc714f03.
+    # NOTE, stated rather than glossed: the list's own header asks that it be pulled only
+    # from publicsuffix.org, and that host is CONNECT-refused from the build sandbox, so
+    # this snapshot came from the project's own upstream repository. An operator with
+    # clearnet should refresh from the canonical URL named in `refresh` above.
+    last_verified: "2026-09-07"
+
   - id: ip-geo-country
     title: DB-IP IP-to-Country Lite
     kind: dated-data

@@ -5,10 +5,13 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Pure-data tests — small inline fixtures shaped like real World Bank API v2 JSON and
-SDMX-JSON 2.1 "data message" responses (Eurostat/IMF). They assert the honesty rules of
-Group N: a published gap → ``value=None`` (never dropped, never a fabricated 0); the
-``extracted_at`` vintage is recorded verbatim per parse; comparability fields surface
-only when the response exposes them; and NO figure ever carries a composite score.
+SDMX-JSON 1.0 "data message" responses (Eurostat/IMF). (This said "SDMX-JSON 2.1" until
+2026-09-07 — the same nonexistent version the parser docstring was corrected for on
+2026-08-13, left behind here because the guard added then reads the PARSER's docstring only.)
+They assert the honesty rules of Group N: a published gap → ``value=None`` (never dropped,
+never a fabricated 0); the ``extracted_at`` vintage is recorded verbatim per parse;
+comparability fields surface only when the response exposes them; and NO figure ever
+carries a composite score.
 """
 
 from __future__ import annotations
@@ -462,3 +465,168 @@ def test_no_docstring_claims_the_nonexistent_sdmx_json_2_1_version():
     body = inspect.getdoc(sdmx.parse_sdmx_json) or ""
     assert "SDMX-JSON 2.1" not in body
     assert "SDMX-JSON 1.0" in body, "state which contract IS implemented, not merely which is not"
+
+
+# --------------------------------------------------------------------------- #
+# The observation CONTAINER, as opposed to the observation-level LOOKUP.
+#
+# The 2026-08-13 session fixed the lookup for `dimensionAtObservation=AllDimensions` and
+# recorded the lesson "run the parser; do not reason about it". Running the parser against
+# the container that mode actually returns is what this block does, and the answer was
+# three rows short.
+# --------------------------------------------------------------------------- #
+
+
+def _alldims_message() -> dict:
+    """A message as `dimensionAtObservation=AllDimensions` returns it.
+
+    PROVENANCE, stated because it decides how much this fixture proves: it is SPEC-SHAPED,
+    not a fetched body. `sdmx.oecd.org` is CONNECT-refused in this sandbox (403 at the
+    proxy), so no real 1.0 AllDimensions body has been read. What it encodes is the
+    structural claim that mode makes: `series` is empty, every dimension sits at
+    observation level, and the observations hang off the dataSet with NO `series` key.
+    """
+    return {
+        "data": {
+            "structure": {
+                "dimensions": {
+                    "dataSet": [],
+                    "series": [],
+                    "observation": [
+                        {"id": "REF_AREA", "values": [{"id": "FRA"}, {"id": "DEU"}]},
+                        {"id": "INDICATOR", "values": [{"id": "B1_GA"}]},
+                        {"id": "TIME_PERIOD", "values": [{"id": "2021"}, {"id": "2022"}]},
+                    ],
+                }
+            },
+            "dataSets": [
+                {
+                    "action": "Information",
+                    "observations": {
+                        "0:0:0": [2957000000000.0],
+                        "0:0:1": [3010000000000.0],
+                        "1:0:0": [3570000000000.0],
+                    },
+                }
+            ],
+        }
+    }
+
+
+def test_alldimensions_observations_hang_off_the_dataset_with_no_series_container():
+    """The defect: this message parsed to ZERO rows and logged NOTHING.
+
+    The parser read observations only out of `dataSets[].series[<key>].observations`. In
+    AllDimensions mode there is no `series` key at all, so the loop never ran, `unmapped`
+    stayed 0, and the caller received `[]` — indistinguishable from a publisher that holds
+    no data for the query. That is the identity-less-row defect of 2026-08-13 turned inside
+    out: instead of a number with no identity, an identity-bearing message read as nothing.
+
+    The test that was supposed to cover this mode kept a `series` map with an empty-string
+    key, which exercises the observation-level LOOKUP but is not a container AllDimensions
+    ever emits — so it stayed green while the mode returned nothing."""
+    rows = parse_sdmx_json(_alldims_message(), agency="oecd", extracted_at="2026-09-07")
+    assert [(r.ref_area, r.series_id, r.time_period, r.value) for r in rows] == [
+        ("FRA", "B1_GA", "2021", 2957000000000.0),
+        ("FRA", "B1_GA", "2022", 3010000000000.0),
+        ("DEU", "B1_GA", "2021", 3570000000000.0),
+    ]
+
+
+def test_alldimensions_rows_with_no_where_or_when_are_still_refused(caplog):
+    """Negative space. The new container must not become a way around the refusal that the
+    2026-08-13 session put in — a value with no WHERE and no WHEN is not a figure, whichever
+    container it arrived in."""
+    msg = _alldims_message()
+    # Drop TIME_PERIOD from the structure: every observation now has a place but no period.
+    msg["data"]["structure"]["dimensions"]["observation"] = [
+        {"id": "REF_AREA", "values": [{"id": "FRA"}, {"id": "DEU"}]},
+        {"id": "INDICATOR", "values": [{"id": "B1_GA"}]},
+    ]
+    with caplog.at_level("WARNING"):
+        rows = parse_sdmx_json(msg, agency="oecd", extracted_at="2026-09-07")
+    assert rows == [], "a period-less observation is not a partial figure; it is not a figure"
+    assert "no resolvable ref_area" in caplog.text, "and the drop must be audible"
+
+
+def test_a_dataset_with_no_observation_container_is_logged_not_silently_empty(caplog):
+    """The honesty half of the fix, and the half that holds whichever container shape a
+    future producer invents: a dataSet the parser cannot ENTER must not be reported as an
+    empty result. `[]` with no log is how an unreadable message gets stored as `the
+    publisher published nothing`, and nothing downstream can tell the two apart."""
+    msg = _alldims_message()
+    msg["data"]["dataSets"] = [{"action": "Information", "someFutureContainer": {"0:0:0": [1.0]}}]
+    with caplog.at_level("WARNING"):
+        rows = parse_sdmx_json(msg, agency="oecd", extracted_at="2026-09-07")
+    assert rows == []
+    assert "neither a `series` map nor a flat `observations` map" in caplog.text
+    assert "GAP, not a report of no data" in caplog.text
+
+
+def test_an_empty_but_present_container_is_a_real_empty_result_and_stays_silent(caplog):
+    """The negative-space twin of the guard above, and the reason it is scoped to a MISSING
+    container rather than to zero rows. A query that legitimately matches nothing comes back
+    as `"series": {}`. Warning about that would cry wolf on an honest publisher, which is
+    its own dishonesty — an over-eager alarm trains a reader to ignore the real one."""
+    msg = _alldims_message()
+    msg["data"]["dataSets"] = [{"action": "Information", "series": {}}]
+    with caplog.at_level("WARNING"):
+        rows = parse_sdmx_json(msg, agency="oecd", extracted_at="2026-09-07")
+    assert rows == []
+    assert caplog.text.strip() == "", "an empty-but-present container is a real empty result"
+
+
+def test_a_2_0_message_is_refused_by_name_and_says_how_to_fix_the_request(caplog):
+    """The refusal already existed; what it lacked was a reason. A 2.0 message fell through
+    to the generic ref_area/time_period drop, which is correct about the rows and silent
+    about the CAUSE, so a version mismatch looked like an empty publisher. OECD serves both
+    versions from one host selected by the request's `format` parameter, so the actionable
+    instruction is to PIN 1.0 — never to sniff the response."""
+    v20 = {
+        "data": {
+            "structures": [
+                {
+                    "dimensions": {
+                        "series": [{"id": "REF_AREA", "values": [{"id": "FR"}]}],
+                        "observation": [{"id": "TIME_PERIOD", "values": [{"id": "2021"}]}],
+                    }
+                }
+            ],
+            "dataSets": [{"structure": 0, "series": {"0": {"observations": {"0": [2.957e12]}}}}],
+        }
+    }
+    with caplog.at_level("WARNING"):
+        assert parse_sdmx_json(v20, agency="oecd", extracted_at="2026-09-07") == []
+    assert "SDMX-JSON 2.0" in caplog.text, "name the shape you refused"
+    assert "GAP, not a report that the publisher has no data" in caplog.text
+    assert "Pin the 1.0 format" in caplog.text, "say what the operator should change"
+
+
+def test_dataset_level_dimensions_supply_a_where_but_never_override_a_more_specific_one():
+    """Precedence, in both directions. A single-area query can legitimately carry REF_AREA
+    at dataSet level, where it is constant for the whole message — that is a real `where`,
+    and refusing it would discard good data to look careful. But it is the WEAKEST source:
+    an observation- or series-level value is more specific and must win, or a message
+    carrying both would have every row relabelled with the dataSet-wide value."""
+    supplies = {
+        "data": {
+            "structure": {
+                "dimensions": {
+                    "dataSet": [{"id": "REF_AREA", "values": [{"id": "ITA"}]}],
+                    "series": [],
+                    "observation": [{"id": "TIME_PERIOD", "values": [{"id": "2021"}]}],
+                }
+            },
+            "dataSets": [{"observations": {"0": [1.5]}}],
+        }
+    }
+    rows = parse_sdmx_json(supplies, agency="oecd", extracted_at="2026-09-07")
+    assert [(r.ref_area, r.time_period, r.value) for r in rows] == [("ITA", "2021", 1.5)]
+
+    # ...and the same message with REF_AREA also at observation level: the specific one wins.
+    overrides = _alldims_message()
+    overrides["data"]["structure"]["dimensions"]["dataSet"] = [
+        {"id": "REF_AREA", "values": [{"id": "ITA"}]}
+    ]
+    rows = parse_sdmx_json(overrides, agency="oecd", extracted_at="2026-09-07")
+    assert {r.ref_area for r in rows} == {"FRA", "DEU"}, "dataSet level must never override"

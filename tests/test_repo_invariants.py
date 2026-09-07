@@ -2038,6 +2038,20 @@ def test_custom_extractor_run_from_analysis_window_is_wired():
     assert "AI-derived metadata" in src
 
 
+def _oosky_code() -> str:
+    """oosky.js with BOTH comment forms stripped.
+
+    A "must be absent" guard trips on the comment that explains the absence, and
+    this needle is named in oosky.js's own header ("never Math.random"). The
+    recorded rule is to strip the comment, never to reword it -- that sentence is
+    what a future session reads before deciding the absence was an oversight.
+    """
+    import re
+
+    js = (_SRC / "static" / "oosky.js").read_text(encoding="utf-8")
+    return re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", js, flags=re.S))
+
+
 def test_ui_invariants():
     """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
     between sessions; now they fail CI instead of relying on memory."""
@@ -2084,6 +2098,24 @@ def test_ui_invariants():
     installer = (_ROOT / "install.sh").read_text(encoding="utf-8")
     assert '_mk_desktop "$APP_NAME-desk"' not in installer, (
         "single-launcher verdict: the installer must not create a Desk launcher"
+    )
+    # 31. The Observatory (ruled 2026-07-18; built 2026-09-07). The roster of
+    #     invariant #2 grew by one, and the surface's honesty rests on things a
+    #     reader cannot see in a canvas: which scale was drawn, what was left out,
+    #     and that the table beside it is the canonical view. Full behavioural
+    #     coverage is tests/test_observatory_ui.py + tests/oosky_node_test.js;
+    #     these are the four that must never regress silently.
+    assert '<button class="nav-item" data-tab="observatory"' in html, (
+        "the Observatory is a dedicated main tab in the sidebar (CLAUDE.md #31, #2)"
+    )
+    assert 'class="card-caveat" id="sky-caveat"' in html, (
+        "the Observatory caveat renders visibly, never behind a toggle (#31, informed consent)"
+    )
+    assert "LOG_MIN_SPAN" in _oosky_code(), (
+        "ooSky must keep its log-mode refusal -- a sub-decade log radius fabricates an axis (#31)"
+    )
+    assert "Math.random" not in _oosky_code(), (
+        "the sky is deterministic: same corpus, same sky, so change is signal (#31)"
     )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
@@ -7698,7 +7730,7 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 573
+_CLAUDE_MD_LINE_CEILING = 599
 
 
 def _claude_md_lines() -> int:

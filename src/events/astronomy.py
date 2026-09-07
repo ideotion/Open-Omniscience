@@ -5,9 +5,18 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 A reliable LOCAL mathematical model (maintainer-ruled, field report #2):
-full/new moons computed with the standard algorithm from Jean Meeus,
-*Astronomical Algorithms* (2nd ed.), chapter 49 — the mean-phase series plus
-the periodic and planetary corrections. Zero network, zero data files.
+the four principal lunar phases computed with the standard algorithm from Jean
+Meeus, *Astronomical Algorithms* (2nd ed.), chapter 49 — the mean-phase series
+plus the periodic and planetary corrections. Zero network, zero data files.
+
+QUARTERS (2026-09-07). The 2026-07-17 ruling retired the `monkeyness-moons`
+ICS feed as redundant and recorded ONE accepted loss: that feed carried the
+first/last QUARTER phases, which this layer did not compute. It does now, by
+the SAME ch. 49 method that was already verified for new/full — chapter 49
+gives the quarters their own periodic series plus the ±W term (added at first
+quarter, subtracted at last). This closes the loss without re-admitting a
+method-unstated feed, which the scope fence forbids.
+
 
 Honesty notes carried on every result:
   * Accuracy: the truncated series is typically good to ~1–2 minutes; we
@@ -22,7 +31,7 @@ Honesty notes carried on every result:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from math import floor, pi, sin
+from math import cos, floor, pi, sin
 from typing import Any
 
 _METHOD = (
@@ -37,9 +46,25 @@ _ACCURACY = (
 _D2R = pi / 180.0
 
 
+def _phase_of_k(k: float) -> str:
+    """Which of the four principal phases Meeus' ``k`` names.
+
+    The fractional part carries it: .0 new, .25 first quarter, .5 full,
+    .75 last quarter. Written as an explicit lookup rather than a chain of
+    float comparisons so a caller passing an off-grid k is REFUSED by name
+    instead of silently computing a new moon (Meeus' series are per-phase;
+    there is no honest answer for k = 3.1).
+    """
+    frac = round((k - floor(k)) * 4)
+    if abs((k - floor(k)) * 4 - frac) > 1e-6 or frac == 4:
+        raise ValueError(f"k must be a multiple of 0.25, got {k!r}")
+    return ("new", "first_quarter", "full", "last_quarter")[frac]
+
+
 def _jde_phase(k: float) -> float:
     """JDE (TD) of the lunar phase for Meeus' k (integer = new moon,
-    integer + 0.5 = full moon)."""
+    integer + 0.25 = first quarter, + 0.5 = full moon, + 0.75 = last
+    quarter)."""
     t = k / 1236.85
     t2, t3, t4 = t * t, t**3, t**4
     jde = (
@@ -59,7 +84,53 @@ def _jde_phase(k: float) -> float:
     ) * _D2R
     om = (124.7746 - 1.56375588 * k + 0.0020672 * t2 + 0.00000215 * t3) * _D2R
 
-    is_full = abs(k - floor(k) - 0.5) < 1e-9
+    phase = _phase_of_k(k)
+    is_full = phase == "full"
+    if phase in ("first_quarter", "last_quarter"):
+        # Meeus ch. 49 gives the QUARTERS their own periodic series (not the
+        # new/full series with different coefficients), plus the W term below.
+        corr = (
+            -0.62801 * sin(mp)
+            + 0.17172 * e * sin(m)
+            - 0.01183 * e * sin(mp + m)
+            + 0.00862 * sin(2 * mp)
+            + 0.00804 * sin(2 * f)
+            + 0.00454 * e * sin(mp - m)
+            + 0.00204 * e * e * sin(2 * m)
+            - 0.00180 * sin(mp - 2 * f)
+            - 0.00070 * sin(mp + 2 * f)
+            - 0.00040 * sin(3 * mp)
+            - 0.00034 * e * sin(2 * mp - m)
+            + 0.00032 * e * sin(m + 2 * f)
+            + 0.00032 * e * sin(m - 2 * f)
+            - 0.00028 * e * e * sin(mp + 2 * m)
+            + 0.00027 * e * sin(2 * mp + m)
+            - 0.00017 * sin(om)
+            - 0.00005 * sin(mp - m - 2 * f)
+            + 0.00004 * sin(2 * mp + 2 * f)
+            - 0.00004 * sin(mp + m + 2 * f)
+            + 0.00004 * sin(mp - 2 * m)
+            + 0.00003 * sin(mp + m - 2 * f)
+            + 0.00003 * sin(3 * m)
+            + 0.00002 * sin(2 * mp - 2 * f)
+            + 0.00002 * sin(mp - m + 2 * f)
+            - 0.00002 * sin(3 * mp + m)
+        )
+        # W: ADDED at first quarter, SUBTRACTED at last (Meeus 49). The sign is
+        # the only thing distinguishing the two, and it is worth ~9 minutes, so
+        # a flipped sign is a real error rather than a rounding one — the
+        # elongation guard in tests/test_astronomy.py is what catches it.
+        w = (
+            0.00306
+            - 0.00038 * e * cos(m)
+            + 0.00026 * cos(mp)
+            - 0.00002 * cos(mp - m)
+            + 0.00002 * cos(mp + m)
+            + 0.00002 * cos(2 * f)
+        )
+        corr += w if phase == "first_quarter" else -w
+        return jde + corr + _planetary(k, t)
+
     if is_full:
         c1, c2, c3 = -0.40614, 0.17302, 0.01614
         c5, c6 = 0.00734, -0.00515
@@ -99,7 +170,12 @@ def _jde_phase(k: float) -> float:
     if is_full:
         corr += (0.01043 - 0.01039) * sin(2 * f)
 
-    # Planetary corrections (A1..A14) — needed for the ~minutes accuracy class.
+    return jde + corr + _planetary(k, t)
+
+
+def _planetary(k: float, t: float) -> float:
+    """The A1..A14 planetary corrections (Meeus ch. 49) — the same for ALL four
+    phases, which is why they live here rather than being copied per branch."""
     t2k = t * t
     a = [
         (0.000325, 299.77 + 0.107408 * k - 0.009173 * t2k),
@@ -117,8 +193,7 @@ def _jde_phase(k: float) -> float:
         (0.000035, 239.56 + 25.513099 * k),
         (0.000023, 331.55 + 3.592518 * k),
     ]
-    add = sum(coef * sin(angle * _D2R) for coef, angle in a)
-    return jde + corr + add
+    return sum(coef * sin(angle * _D2R) for coef, angle in a)
 
 
 def _jde_to_datetime(jde: float) -> datetime:
@@ -143,13 +218,35 @@ def _jde_to_datetime(jde: float) -> datetime:
     return datetime(int(year), int(month), day_int, tzinfo=UTC) + timedelta(days=frac)
 
 
+# The four principal phases: Meeus' k offset -> the payload bucket that carries
+# it. Ordered by offset so a bucket can never be filed under another's phase name.
+_PHASE_BUCKETS = (
+    (0.0, "new_moons", "new"),
+    (0.25, "first_quarters", "first_quarter"),
+    (0.5, "full_moons", "full"),
+    (0.75, "last_quarters", "last_quarter"),
+)
+
+
 def phases_for_year(year: int) -> dict:
-    """All full and new moons of a calendar year (UTC), with method+accuracy."""
-    out: dict = {"year": year, "full_moons": [], "new_moons": [], "method": _METHOD,
-                 "accuracy": _ACCURACY}
-    k0 = floor((year - 2000) * 12.3685) - 1
-    for i in range(16):
-        for offset, bucket in ((0.0, "new_moons"), (0.5, "full_moons")):
+    """The four principal lunar phases of a calendar year (UTC), with
+    method+accuracy.
+
+    Buckets: ``new_moons`` · ``first_quarters`` · ``full_moons`` ·
+    ``last_quarters``. The quarters were an ACCEPTED LOSS when the redundant
+    moons ICS feed was retired (ruling 2026-07-17) and are computed here by the
+    same verified ch. 49 method — never re-imported from a method-unstated feed.
+    """
+    out: dict = {"year": year, "method": _METHOD, "accuracy": _ACCURACY}
+    for _off, bucket, _name in _PHASE_BUCKETS:
+        out[bucket] = []
+    # Scan from one lunation BEFORE the year and run past its end, so a phase
+    # falling in the first or last days of the year cannot be missed; the
+    # year filter below is what decides membership, so a wider scan can only
+    # ever find more of the same year and never duplicates a k.
+    k0 = floor((year - 2000) * 12.3685) - 2
+    for i in range(18):
+        for offset, bucket, name in _PHASE_BUCKETS:
             k = k0 + i + offset
             dt = _jde_to_datetime(_jde_phase(k))
             if dt.year == year:
@@ -157,9 +254,11 @@ def phases_for_year(year: int) -> dict:
                     {
                         "date": dt.date().isoformat(),
                         "time_utc": dt.strftime("%H:%M"),
-                        "phase": "full" if offset else "new",
+                        "phase": name,
                     }
                 )
+    for _off, bucket, _name in _PHASE_BUCKETS:
+        out[bucket].sort(key=lambda p: (p["date"], p["time_utc"]))
     return out
 
 

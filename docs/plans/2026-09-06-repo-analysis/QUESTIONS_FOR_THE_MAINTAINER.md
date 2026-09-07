@@ -255,7 +255,13 @@ in the next networked session? Recommended default: yes, IPTC Media Topics first
 **F1 · ⛔ Add these hosts to the build sandbox's egress allowlist**, or accept that the corresponding
 work stays operator-side forever. Six consecutive sessions have been refused at `CONNECT` with
 `"selective": false` (the sixth re-probed `dumps.wikimedia.org` on 2026-09-07, `pypi.org` 200 as the
-control); the variable was never the prompt. Hosts, by the work they unblock:
+control); the variable was never the prompt. **A seventh, same day, probed the three statistics hosts
+this section names and got the same answer** — `api.worldbank.org`, `sdmx.oecd.org` and
+`dataservices.imf.org` each returned `CONNECT <host>:443` → `HTTP/1.1 403 Forbidden` at the proxy
+(`127.0.0.1:41027`), i.e. refused before TLS, while `pypi.org` returned 200 as the control. So GOV-01
+(the one-command 36-code verification), the OECD/IMF message-version read and the S6 operator list are
+blocked at the TCP layer here, not by tooling — nothing in a session can route around it. Hosts, by the
+work they unblock:
 `dumps.wikimedia.org` (E2) · `api.worldbank.org`, `data.worldbank.org` (the 36-code verification is ONE
 command: `scripts/verify_worldbank_indicators.py`) · `sdmx.oecd.org`, `api.imf.org` (SDMX message-version
 verification) · `www.legislation.gov.uk`, `eur-lex.europa.eu`, `gesetze-im-internet.de` (the law
@@ -314,6 +320,27 @@ per-source-type layer) · version storage depth (ruled: full text per revision) 
 tracker IS the feed) · backups (carry dump-derived articles fully, or reference the dump). Recommended
 defaults: subset first (watched + their categories + top-N), per-source-type layer with merge/split,
 reference the dump + carry revisions. *(gates: `PROMPT_18`, V1-9.)*
+
+**G11 · The default aggregation strategy for an intensive indicator with no exact weighting** (`S4` of
+`PROMPT_14`; `src/stats/aggregate.py::_default_strategy`). Today a bloc/region opens on the plain MEMBER
+MEAN when no exact weighting is computable — every strategy is still shown side by side, so this decides
+only which one the surface opens on. It was flagged in the code as a judgement call, and this session did
+**not** flip it: which figure a reader sees first is an editorial decision, not a bug, and the arithmetic
+cuts both ways.
+
+The case for flipping: a population-weighted mean of a per-capita indicator **equals**
+`Σ numerator / Σ denominator` — the true aggregate, not an approximation — *provided* the numerator is
+reconstructed and the weight series is real for the same members and the same year. Where that holds, the
+code already classifies the basis as `exact` and opens on it, so the question is only about the case where
+it does **not** hold. The case for keeping the member mean: with a reconstructed-but-not-real numerator the
+weighted figure is an approximation wearing the clothes of a true aggregate, and the code's own comment
+says so ("the reconstructed numerator is not the real one"). A plain member mean is visibly a mean of
+members and misleads nobody about what it is. Gini stays refused either way (pooling biases it low).
+
+→ (a) keep the member mean as the opening view, or (b) open on the population-weighted mean, labelled
+approximate, whenever the weight series exists? Recommended default: **(a)**, unchanged — an approximation
+that reads as a true aggregate is the failure mode this project refuses everywhere else, and the reader who
+wants the weighted figure has it one click away with its basis stated. *(gates: `PROMPT_14` S4.)*
 
 ---
 
