@@ -13061,10 +13061,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   no grandfathering per the same-day seed ruling; catalog failures = catalog-review work
   items) before the switch; this row
   EXPLICITLY doubles as the backup/restore-AT-SCALE validation — RESTATED 2026-07-30 with
-  row 3's withdrawn 5M bar: at ~1M articles this is a restore at roughly 2× the P0-validated
-  2.5 GB scale, NOT the ~10× the 5M framing claimed. State the REAL multiple in the gate
-  evidence; carrying the old 10× wording over a 1M run would be a fabricated pass on a bar
-  that was never tested. (5) **an
+  row 3's withdrawn 5M bar: at ~1M articles this is a restore well short of the ~10× the 5M
+  framing claimed. State the REAL multiple in the gate evidence; carrying the old 10× wording
+  over a 1M run would be a fabricated pass on a bar that was never tested. **⚠ CORRECTED
+  2026-09-07: this line read "roughly 2× the P0-validated 2.5 GB scale", and that estimate was
+  superseded TWICE inside this same ledger entry before anyone noticed** — by 6.2× for the
+  2026-08-03 run (794,333 articles / 16.5 GB) and by **8.3×** for the 2026-08-12 one
+  (1,048,725 articles / 21.0 GB), which is the figure the gate doc carries. The estimate was
+  written before either run existed; the general point is that a sentence instructing a reader
+  to "state the REAL multiple" must not itself carry a guessed one, because the guess is what
+  gets quoted. (5) **an
   ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
   execution) → implemented → EXECUTED** on the real ~1M corpus (per row 3's withdrawn 5M
   bar), removing the undesired-article
@@ -13165,19 +13171,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   9 honesty rules standing as instruments; still open there: the 12-locale sweep (4
   covered), rule 9 (adversarial screenshot reading), and the Gecko/AppVM bar — every stamp
   stays "Chromium-verified (remote sandbox) · awaiting human UX pass".
-  ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
-  `criteria-calibration.json` is already an all-diagnostics bundle member
-  (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
-  execution is gated on — sequence = bundle → session proposes criteria against real specimens
-  → maintainer agrees → operator runs the quarantine pass with `write=True` → re-index clears
-  the junk keywords.
+  ~~ROW 5's remaining step is a DECISION~~ — **it was TAKEN 2026-08-23 (maintainer: "proceed
+  with tier A"), so the remaining step is the RUN.** The sequence (bundle → session proposes
+  criteria against real specimens → maintainer agrees → operator runs the quarantine pass with
+  `write=True` → re-index clears the junk keywords) is complete through the agreement;
+  `criteria-calibration.json` rides the all-diagnostics bundle (`src/api/diagnostics.py`, the
+  `criteria-calibration.json` member) and delivered the specimens the proposal was built on.
+  **The invocation is NOT the default one** — `?write=true&include_prose_gate=false`, because
+  the write path applies three independent criteria and only the URL-shape one is Tier A; the
+  four commands are `RELEASE_0.3_GATE.md` §7.1.
   **P0 VALIDATION RUN ON THE BIG CORPUS — MAINTAINER, 2026-08-03 (report
   `oo-p0-validation-20260803000812.json`, app 0.3.0, engine `oo-volumes-2`): 5 pass · 0 fail ·
   0 not-measurable.** REAL SCALE, stated as measured rather than as the bar's own wording:
   **16.5 GB / 794,333 articles**, i.e. **6.2× the 2,522 MB corpus v0.2.0 was validated at** —
   NOT the "100 GB" three acceptance-bar strings still say, and in the ~1M band the 2026-07-30
   ruling withdrew row 3 to. (Row 4's earlier "roughly 2×" estimate was low; the real multiple
-  is 6.2×. Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.)
+  is 6.2×. ~~Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.~~
+  **DONE 2026-08-03 — and this sentence was the stale half by 2026-09-06** (the repo-analysis
+  pass found it, and it is fixed here): `_acceptance_bars()` no longer names a size at all. Its
+  docstring records the reasoning verbatim — a bar naming a scale no run reaches makes every
+  verdict read as though it cleared that scale — so each bar is now the PROPERTY being tested
+  (RAM does not scale with the corpus) and the run's own `measurements` carry the size it was
+  at. `kpi.py`'s K1 still names "100 GB+", correctly: it is a KPI TARGET, not a bar a report
+  claims to have met, and it reports `not-measurable` without one.)
   • **P0.1 backup — a genuinely strong pass.** Peak RSS grew **53.9 MB over a 15,699 MiB
     corpus (0.34 %)**, against v0.2.0's +440 MB over 2,522 MiB (17.45 %): RAM did not merely
     stay under a bar, it stopped tracking corpus size. 47 volumes / 18.2 GB in 1,040 s, parity

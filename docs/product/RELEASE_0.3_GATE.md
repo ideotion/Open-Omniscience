@@ -9,8 +9,9 @@ Amended twice since; the amendment log is §3. The narrative board lives in
 [`docs/CHANGES.md`](../CHANGES.md) under `0.3.0`; this file is the part you tick.
 
 **The sequence from here to the tag is [§7](#7-the-path-to-the-tag--what-is-left-in-order).**
-One row remains and it needs a decision, not a measurement; §7.4
-records what a session already verified, and what that is worth.
+One row remains and it needs a **run**, not a decision — the criteria were agreed on
+2026-08-23. §7.1 is the four commands; §7.4 records what a session already verified, and
+what that is worth.
 
 **How a row closes.** A row is `CLOSED` only when there is a **named artifact** — a
 report file, a merged PR, a measured number — that a later reader can re-open and check.
@@ -28,15 +29,16 @@ no evidence.
 | 2 | Full transversal repo audit | session | **CLOSED** (2026-07-25) |
 | 3 | Full diagnostics from the real corpus at release scale | operator | **CLOSED** (2026-08-23) |
 | 4 | A committed full import that re-checks **all** sources | operator | **MOVED TO 0.4 — required there** (2026-08-13) |
-| 5 | Article clean-up: discussed → agreed → implemented → **executed** | shared | **OPEN** — criteria proposed, awaiting sign-off |
+| 5 | Article clean-up: discussed → agreed → implemented → **executed** | operator | **OPEN** — criteria **agreed 2026-08-23**; the pass has not been run |
 | 6 | DB-10 §1b page-size bench passed + the ruling made | maintainer | **CLOSED** (2026-08-13) |
 | 7a | Cold-boot unlock at full scale | operator | **CLOSED** (2026-08-23) |
 | 7b | Multi-day (≥72 h) collector soak | operator | **MOVED TO 0.4 — required there** (2026-08-23) |
 | 8 | Browser-verification bar | session | **CLOSED** (2026-08-13) |
 
-**One row remains: 5**, and what it needs is a decision, not a measurement — the criteria
-are proposed in that section from the 2026-08-23 field evidence, and the sign-off is the
-one step that cannot be delegated.
+**One row remains: 5**, and what it needs is a **run**. The criteria were proposed from the
+2026-08-23 field evidence and **agreed the same day** (*"proceed with tier A"*); the row has
+sat since on step 4 of its own sequence, the pass itself. [§7.1](#71-row-5--run-the-pass-four-commands)
+is the four commands, and the first of them is **not** the default invocation.
 
 Rows **3** and **7a** closed on 2026-08-23 against the release-scale instance (40,260
 articles). The **~1M scale bar moved to `0.4`** with the instance it was written for
@@ -118,10 +120,13 @@ was always about is *the real corpus at the scale this release actually ships ag
 that is the ~40k instance below.
 
 **What this costs, stated rather than glossed:** every finding from this run is evidence
-**at ~1M** and must be reported as such. Behaviour that only appears an order of magnitude
-higher stays **unmeasured** for 0.3. The 5M bar returns as a later-cycle target once the
-throughput work makes it reachable — the app's speed is why the bar moved, so the bar moves
-back when the speed does.
+**at 40,260 articles** and must be reported as such. This paragraph said *"at ~1M"* until
+2026-09-07 — written when that was the bar, and not updated when the bar moved on 2026-08-23,
+three lines above it. A cost statement carrying the scale the row *used to* be judged at makes
+every finding under it read as though it cleared an order of magnitude it never reached, which
+is the same fabricated-pass shape the row's own bar exists to prevent. Behaviour that only
+appears higher stays **unmeasured** for 0.3 — the ~1M bundle is a `0.4` row (§5), and the 5M
+framing returns as a later-cycle target once the throughput work makes it reachable.
 
 **Operator step:** Settings → Diagnostics → the one all-diagnostics button, then send the
 zip. The run journal (per-member begin/end, wall time, bytes, a runtime coverage block)
@@ -208,7 +213,7 @@ demonstration that nobody writes down becomes a demonstration that never happens
 
 ---
 
-### Row 5 — the article clean-up · OPEN, criteria proposed, awaiting sign-off
+### Row 5 — the article clean-up · OPEN, criteria agreed, the pass has not been run
 
 **Bar:** discussed → **agreed** (explicit sign-off before execution) → implemented →
 **executed** on the real corpus, removing the undesired-article class (nav soup, section
@@ -600,9 +605,12 @@ Recorded so a future reader does not mistake absence for oversight:
 
 ## 5. Carried to 0.4 — required, not merely deferred
 
-When the `0.4` gate is stood up, it **starts from this list**. Each entry names what it was,
-why it moved, and what closes it — so nobody re-derives the reasoning or, worse, quietly
-drops it.
+**The `0.4` board now exists: [`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md), stood up
+2026-09-07 from this list.** The three entries below are rows A, B and C there, carried under
+the rulings that moved them rather than re-argued. This section stays as the *reasoning* — what
+each row was, why it moved, and what `0.3` gives up by moving it — and the `0.4` board is where
+it gets ticked. If the two ever disagree, this is the record of what was decided and that is
+the record of what is left.
 
 A postponed data-safety demonstration that nobody writes down becomes a demonstration that
 never happens. This section is the write-down.
@@ -732,29 +740,89 @@ outlier rate).
 
 ## 7. The path to the tag — what is left, in order
 
-**One thing is left before the tag: you agree the row-5 criteria.** Everything else that a
-session can do is done, and §7.4 records the evidence.
+**One thing is left before the tag: run the row-5 quarantine pass.** The criteria were
+agreed on 2026-08-23 — *"proceed with tier A"* — so the decision step is behind us and what
+remains is four commands on your instance ([§7.1](#71-row-5--run-the-pass-four-commands)).
+Everything else a session can do is done, and §7.4 records the evidence.
 
 Rows 3 and 7a closed on 2026-08-23 against the release-scale instance; rows 4, 7b and the
 ~1M diagnostics bar are in `0.4` (§5). Step-by-step mechanics for any run live in
 [`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md); this is the sequence, not a
 duplicate of it.
 
-### 7.1 Row 5 — agree the criteria, then run the pass
+### 7.1 Row 5 — run the pass (four commands)
 
-1. **Read the proposal** in row 5. Tier A is 8 articles — BBC `/topics/<id>` indexes, an
-   explicit-path-segment rule, corroborated by a measured 0.0 function-word density. Tier B
-   (the 451 index pages above the word guard) is deliberately **not** proposed: their prose
-   is unmeasured, and that is the whole population the clean-up is for.
-2. **Agree, amend, or decline.** This is the sign-off the bar names and the one step that
-   cannot be delegated. Declining Tier A is a legitimate outcome — 8 reversible stamps is a
-   small clean-up, and the honest reason to run it is that the criteria then exist and are
-   proven end to end, not that 8 articles matter.
-3. **Run the quarantine pass with `write=True`**, then re-index to clear the keywords and
-   entities those articles contributed.
+**The decision is done.** Tier A was agreed on 2026-08-23 (*"proceed with tier A"*): the 8
+BBC `/topics/<id>` indexes, flagged by an explicit-path-segment rule and corroborated by a
+measured 0.0 function-word density. Tier B — the 451 index pages above the word guard — is
+**not** in scope and is not what these commands run.
 
-**Closes when** step 3 has run and the report names how many articles were quarantined
-under which criteria version — now `nav-soup-v2`.
+Everything below is `curl` against your own instance on loopback. Substitute your port if it
+is not the default. None of it touches the network.
+
+**1 — start the pass. This is not the default invocation.**
+
+```
+curl -X POST 'http://127.0.0.1:8000/api/quarantine/start?write=true&include_prose_gate=false'
+```
+
+`include_prose_gate=false` is what makes the agreed scope the executed scope. The write path
+applies three independent criteria and only the first is Tier A; the nav-soup prose gate is a
+*different* criterion over a *larger* population (every ≥100-word body in the corpus), it is
+**on by default**, and its size here is unmeasured. Running the plain `?write=true` would
+stamp the 8 agreed articles plus an unknown number nobody has reviewed. The flag is part of
+the run-lifetime mode, so a pause/resume or an app restart continues under the same criteria.
+
+**2 — watch it finish.**
+
+```
+curl -s 'http://127.0.0.1:8000/api/quarantine/status'
+```
+
+Poll until `state` reads `done`. The payload also echoes the mode back — check
+`dry_run: false` and `include_prose_gate: false` before trusting the tally, because a run
+under the wrong criteria reports a tally that looks exactly as legitimate as the right one.
+The job is also visible in the task manager as `quarantine`, and is pausable there.
+
+**3 — re-index, to clear what those articles contributed.**
+
+```
+curl -X POST 'http://127.0.0.1:8000/api/insights/reindex-job?scope=keywords&prune_after=true'
+```
+
+This is the "Clean up keywords" flow: the keyword pass plus the orphan-keyword GC. Quarantine
+stamps the article; it does not retract the keywords and entities that article already fed
+into the index, and this is what does. It resumes from a persisted cursor and is pausable —
+and note it **continues** a paused run rather than restarting one, so if you have a re-index
+already paused, that is what this resumes (add `&restart=true` only if you mean to start over,
+which discards the paused run's progress).
+
+**4 — read the number, and tick the row.**
+
+```
+curl -s 'http://127.0.0.1:8000/api/insights/figures/quarantine-composition'
+```
+
+`rows` is `{reason, criteria_version, n}` per reason that actually fired, and
+`criteria_versions` lists the stamps present. That is the named artifact this row closes on:
+how many articles were quarantined, under which reason, under which criteria version. Expect
+`url_taxonomy` at 8 under `nav-soup-v2` on the release-scale instance — if you see a
+`nav_soup` reason in there, the run applied the prose gate and step 1's flag was lost.
+
+Then set row 5 to `CLOSED` in [§1](#1-the-board) with that number, and go to §7.3.
+
+**If you decline instead.** Declining Tier A is still a legitimate outcome — 8 reversible
+stamps is a small clean-up, and the honest reason to run it is that the criteria are then
+proven end to end, not that 8 articles matter. Record the decline in §3's amendment log with
+its reason; do not leave the row open on a decision that was made.
+
+**Reversing it.** Quarantine is a stamp, never a delete. `Article.quarantined`,
+`quarantine_reason`, `quarantine_criteria_version` and `quarantined_at` are set; the article,
+its content and its provenance are untouched, and quarantined articles ride backup
+export/import as data.
+
+**Closes when** step 1 has run and step 4 names how many articles were quarantined under
+which criteria version — now `nav-soup-v2`.
 
 ### 7.2 Before any of it: land this PR
 
