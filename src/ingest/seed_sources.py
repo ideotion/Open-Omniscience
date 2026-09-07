@@ -124,26 +124,97 @@ def _to_source_kwargs(s: dict) -> dict:
     return kwargs
 
 
+#: How many shadowed entries a seed result carries as examples. A handful, so the
+#: report names the loss without dumping it; the COUNT beside them is exact.
+_SHADOW_EXAMPLES = 8
+
+
+def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
+    """Catalog entries a domain-keyed seeder can never register: ``{domain: [shadowed]}``.
+
+    ``Source.domain`` is UNIQUE, so one domain holds one feed -- and the catalogue
+    describes several distinct feeds per registrable domain. Measured on
+    ``configs/sources.yml`` (2026-09-07): 54 domains carry more than one entry and 227
+    of 3,429 entries are shadowed by an earlier sibling. They are NOT redundant rows.
+    ``bbc.com`` alone carries 31, and the 30 that lose are BBC's non-English language
+    services -- Arabic, Hausa, Swahili, Persian and the rest; ``rfi.fr`` shadows its
+    English, Spanish, Portuguese and Chinese services the same way. So the entries this
+    reports are, disproportionately, the catalogue's own non-Anglophone coverage.
+
+    That makes the obvious repair the wrong one: DELETING the shadowed entries would
+    delete exactly the multilingual breadth the language-equilibrium lever exists to
+    balance. Recovering them needs a decision about source identity (today a domain;
+    the alternative is the feed) which reaches the alias-aware dedup, the restore-merge's
+    domain joins, the qualification overlay and the citations tally -- a maintainer
+    ruling, recorded rather than taken here. This function exists so the loss is
+    COUNTED and inspectable instead of silent.
+
+    Pure: takes the loaded catalogue, touches no database. The winner is the FIRST entry
+    for a domain, which is the order ``seed_sources`` itself inserts in.
+    """
+    seen: set[str] = set()
+    shadowed: dict[str, list[dict]] = {}
+    for s in sources:
+        domain = str(s.get("domain") or "")
+        if not domain:
+            continue
+        if domain in seen:
+            shadowed.setdefault(domain, []).append(s)
+        else:
+            seen.add(domain)
+    return shadowed
+
+
 def seed_sources(session: Session, sources: list[dict]) -> dict[str, int]:
     """Create Source rows for any domain not already present. Idempotent.
 
     Deduplicates both against the existing DB and within the input list, then bulk
     inserts in a single commit (efficient for the full ~3,200-entry catalog).
+
+    THE SKIP REASONS ARE REPORTED APART (2026-09-07). ``skipped`` used to be one
+    counter over two facts that mean opposite things: a domain already in the database
+    is an idempotent re-run working correctly, while a domain claimed by an EARLIER
+    entry of this same input is a catalogue entry that will never be registered on any
+    install. Conflated, the second was invisible -- 227 entries, most of them
+    non-English language services (see :func:`catalog_domain_collisions`). ``skipped``
+    keeps its old value (their sum) so every existing caller reads unchanged.
     """
     existing = {d for (d,) in session.query(Source.domain).all()}
+    claimed: set[str] = set()
     to_add = []
-    skipped = 0
+    skipped_existing = 0
+    shadowed: list[dict] = []
     for s in sources:
         domain = s["domain"]
+        # Shadowing is a property of the CATALOGUE, not of this run: an entry an
+        # earlier sibling of the same input already claims can never be registered
+        # on any install, whether or not the database happens to hold that domain
+        # yet. Checked first, and by the same first-wins rule
+        # `catalog_domain_collisions` uses, so a re-seed reports the same loss a
+        # first seed did rather than quietly reclassifying it as idempotent.
+        if domain in claimed:
+            shadowed.append(s)
+            continue
+        claimed.add(domain)
         if domain in existing:
-            skipped += 1
+            skipped_existing += 1
             continue
         existing.add(domain)
         to_add.append(Source(**_to_source_kwargs(s)))
     if to_add:
         session.add_all(to_add)
         session.commit()
-    return {"created": len(to_add), "skipped": skipped, "total": len(sources)}
+    return {
+        "created": len(to_add),
+        "skipped": skipped_existing + len(shadowed),
+        "total": len(sources),
+        "skipped_existing": skipped_existing,
+        "shadowed": len(shadowed),
+        "shadowed_examples": [
+            {"name": s.get("name"), "domain": s.get("domain")}
+            for s in shadowed[:_SHADOW_EXAMPLES]
+        ],
+    }
 
 
 def seed_default_sources(session: Session, path: Path | None = None) -> dict[str, int]:
