@@ -10254,7 +10254,18 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   shim (81 passed, 8 skipped, 0 failed); that is evidence, not CI's verdict, and the two are not
   interchangeable. **CORRECTION, same session, ~1h after this item was written: the sentence "they
   now run against `main`" was WRONG, and item (8) is why.** The verdict has to come from a PR run;
-  for these four it will come from #1036's, whose head carries #1024's code via the merge.
+  for these four it came from #1036's, whose head carries #1024's code via the merge.
+  **RESOLVED 2026-09-07 18:07 UTC — THREE OF THE FOUR ARE GREEN, INCLUDING THE ONE THAT MATTERED.**
+  On #1036 head `0eaf2a3`, run `34147233035`: **Core-only install SUCCESS** (job `101821786146`,
+  17:49:37 → 18:07:37), Columnar store SUCCESS, SQLCipher wheel smoke SUCCESS on all three OSes;
+  Portability (windows-latest) still queued, and it observes rather than gates. So the S2 claim
+  that the capability probes report UNAVAILABLE rather than RAISING when `pqcrypto`/
+  `opentimestamps` are absent is now carried by CI, not only by the local `builtins.__import__`
+  shim — which is the distinction this item existed to keep open, and it is now closed in the
+  direction the shim predicted. The merge of #1024 on incomplete CI is retrospectively vindicated,
+  which is worth recording precisely BECAUSE it could have gone the other way: a green outcome does
+  not make merging before the lane reported a sound method, and item (8) is why the method was
+  weak.
   **(8) `main` ITSELF HAS HAD NO CI VERDICT FOR FIFTEEN CONSECUTIVE MERGES — found 2026-09-07
   while trying to read item (7)'s lanes, and it is a repo-level gap rather than a PROMPT_11
   item.** Every one of the fifteen most recent COMPLETED push-to-`main` runs of `ci.yml` concluded
