@@ -9435,3 +9435,41 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+- **THE OBSERVATORY IS BUILT (2026-09-07; ruled 2026-07-18, gate H1 answered "build now,
+  Chromium-verified" by the maintainer this session): S2 + S3 + most of S6 shipped, and
+  three of the design's own §11 open threads are now ANSWERED BY MEASUREMENT rather than by
+  taste.** The `ooSky` canvas renderer (`src/static/oosky.js`, pure polar geometry) + the
+  Observatory tab (`app-observatory.js`, `#tab-observatory`) + UI invariant #31. **§11 thread
+  1 (the default radial measure) resolved DIFFERENTLY from the proposal, and the reason is
+  the data spine rather than a preference:** the design proposed "deduped article spread",
+  but the shipped S1 payload publishes `distinct_sources` as its breadth measure and carries
+  no article-spread field. `distinct_sources` serves the SAME stated rationale ("breadth
+  resists single-source flooding") more directly — it literally counts sources — so it is the
+  default, and the substitution is stated in the surface's own method line. Adding a
+  distinct-article measure to `supergroup_stats` is prompt 17's stats core, not this slice's.
+  **§11 thread 2 (colour default): LANGUAGE, as proposed**, with the trend lens a chosen
+  alternative. **§11 thread 5 (fixed compass positions vs size ordering): FIXED, as
+  proposed** — wedges are ordered by domain NAME, because ordering by size would move every
+  wedge whenever the corpus grew and "change is signal" needs the frame to hold still.
+  **§11 threads 3 and 4 are UNTOUCHED and still open:** K (max arms) and the per-arm member
+  floor cannot be settled until the arm tier is built, and the Telescope remains explicitly
+  not-v1.
+  **WHAT IS NOT BUILT, and belongs to its own later slice (design §9), stated so no reader
+  has to infer it from silence:** the ARM tier (S5 — the Item-AC topic tags and their
+  top-K≤6 cardinality guard), the STAR-SYSTEM and PLANET tiers (S5 — rings and the literal
+  per-language planetary rings), NOVAE (S4 — the `supergroup_rising` gates), and the
+  ooTimeScope TIME SCRUB (S4). Each needs payload the endpoint does not emit yet, which is
+  the honest reason rather than a scoping preference; the S1 module's own docstring already
+  records that deferral and it still holds.
+  **CARRIED, needing a maintainer view:** (a) the domain wedge labels and the galaxy names
+  render in English in every locale, because they are corpus DATA (the bundled
+  `keyword_supergroups.yml` scaffold) and this app never translates data — consistent with
+  Insights → Super-groups, which shows the same names, but the twelve DOMAIN labels are
+  bundled scaffold rather than user content and could reasonably be keyed later if you want
+  them translated. (b) The tab AUTOLOADS its payload on first open. The endpoint is
+  `_deadlined` (the S2.4 discipline the design asked for) and server-cached for 120 s, and it
+  measured 0.26–0.28 s on a 440-article corpus — but it runs `supergroup_stats` for all 77
+  groups, so the cost grows with the corpus and has NOT been measured at the 500k scale. If a
+  live run is slow, the fix is the explicit-action button the article-length figure already
+  uses, not a cap.
