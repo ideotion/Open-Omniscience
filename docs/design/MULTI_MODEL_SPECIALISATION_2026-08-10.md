@@ -1,9 +1,19 @@
 # Several models, each with its speciality — the experiment, and what it has to control for
 
-**Status:** design of record for the NEXT session. Nothing built. The maintainer asked
+**Status:** design of record. ~~Nothing built.~~ The maintainer asked
 for the experiment explicitly ("let's test this in the next session, with 3 different
 batch sizes, starting with 100 articles up to 1000"), and this file exists so that
 session measures the right thing rather than re-deriving the question.
+
+> **Status re-check 2026-09-07 (PROMPT_11's staleness guard):** **the harness IS built** —
+> `src/ai_layer/specialisation.py` ships `measure_language_agreement`,
+> `compare_language_models`, `timed_switch` and `run_shape`, with `tests/test_specialisation.py`
+> beside it. What is missing is not the measurement code but any way to START it: `run_shape`
+> has **no caller outside the test tree** — no endpoint, no script, no button — so the operator
+> step this design defers to is not, today, available on the rig. Recorded rather than built,
+> because D8's recommendation is "no build; keep the design as the record of why one model won"
+> and adding an invocation path is a build. Read the deferral as *the harness cannot be run yet*,
+> not as *the harness is missing*.
 
 **The ask, verbatim:** *"add to the test the possibility (and the impact of) having
 several models, each with their specialty, for example Qwen for language detection only

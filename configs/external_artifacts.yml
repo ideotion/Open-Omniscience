@@ -146,6 +146,52 @@ artifacts:
     freshness: {max_age_months: 6}
     last_verified: "2026-08-02"
 
+  - id: model-weights-revision
+    title: Model WEIGHTS integrity pin (D6, OPERATOR-SUPPLIED)
+    kind: vendored-binary
+    description: >
+      The bytes, as distinct from the identifiers above. Everything else this app
+      downloads is checked before it is used -- the DuckDB httpfs extension is
+      SHA-pinned and re-verified before every LOAD, the Ollama installer verifies
+      against GitHub's own attested `digest: sha256:...` and REFUSES when none is
+      attested -- and model weights escaped all three: snapshot_download(repo) took
+      whatever `main` pointed at and `ollama pull tag` took whatever the tag pointed
+      at, so the bytes could change under an operator between two installs with
+      nothing to say so (recorded 2026-08-05 from the operator's own provisioning
+      scripts, which fetch at a full 40-char commit SHA and verify every later run).
+      NOW PINNABLE: `src/llm/weights_pin.py` holds HF_REVISION_PINS (a Hugging Face
+      commit SHA, which IS a content commitment, passed as `revision=` and verified
+      against the snapshots/<sha> the download reports) and OLLAMA_DIGEST_PINS (the
+      manifest digest /api/tags reports). A MISMATCH REFUSES; the operator re-pins
+      deliberately through OO_MODEL_REVISION / OO_OLLAMA_MODEL_DIGEST.
+      THE PINS SHIP BLANK, and that is the honest state rather than an oversight:
+      resolving either value needs huggingface.co / ollama.com, both of which answer
+      this build sandbox's proxy `CONNECT ... 403` (re-probed 2026-09-07, pypi.org
+      200 as the control), so no session that edits this file can verify a value to
+      write into it -- and a digest nobody fetched, typed here, is precisely the
+      fabricated checksum the non-negotiables forbid. Same shape as
+      `offline-bundle-python-runtime` and the httpfs binaries.
+    upstream: https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512 + https://ollama.com/library
+    check_upstream: >
+      Both hosts 403 from the build sandbox. An operator on a connected machine reads
+      the repo's current commit SHA (the HF "files and versions" view, or
+      `huggingface_hub.HfApi().model_info(repo).sha`) and the Ollama tag's digest.
+    license: Apache-2.0 (the model card adds a third-party-rights rider)
+    pin: {path: "", sha256: ""}   # intentionally blank: nothing verified in-repo (see above)
+    refresh: >
+      Re-pin DELIBERATELY, never silently: read the publisher's current revision on a
+      connected machine, review what changed, then set OO_MODEL_REVISION (a full
+      40-character commit SHA; a branch or short SHA is refused as a pin because it
+      still moves) and/or OO_OLLAMA_MODEL_DIGEST. A mismatch against an existing pin
+      refuses the download and deletes nothing.
+    freshness: {policy: on-security}
+    couplings:
+      - "the pinned model is the one at MINISTRAL_VLLM_MODEL / MINISTRAL_TAG; a pin is
+         never inherited by a model the operator typed into Settings"
+      - "the REFUSAL is at the download; the serve side (model_cache_state) discloses
+         and never refuses, so a cache predating the pin still starts"
+    last_verified: "2026-09-07"
+
   - id: worldbank-aggregate-codes
     title: World Bank statistical aggregate codes
     kind: catalog
