@@ -88,15 +88,28 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   (windows-latest)` is `continue-on-error: true` -- advisory, its verdict cannot fail the run -- and
   `timeout-minutes` appears **nowhere** in `ci.yml`, so every job inherits GitHub's 360-minute
   default. Run 4496 (2026-08-14): that job ran **00:48:57 -> 04:10:05 = 3 h 21 m** and ended
-  `failure` with no steps recorded, while the blocking `test` job was green at **19.5 min**. Run
-  4814 (2026-09-07) repeated it: `test` green in 20.5 min, the Windows lane still running **5 h
-  24 m** later, holding the slot across eleven consecutive merges.
+  `failure` with no steps recorded, while the blocking `test` job was green at **19.5 min**.
+  **AND `continue-on-error` DOES NOT PROTECT THE RUN FROM THAT LANE -- watched to completion on run
+  4814 (2026-09-07), and this is the sharp end of the finding.** Every blocking job was green at
+  **12:56:23**. The Windows `Test (pytest)` step ran **12:35:28 -> 18:33:46 = 5 h 58 m** and the job
+  **12:33:37 -> 18:33:51 = 6 h 00 m 14 s** -- the 360-minute default, to the second -- and the run
+  concluded **`cancelled` at 18:33:52**. So `6bd3db5e` got **no verdict at all**, 5 h 37 m after it
+  had already earned a green one. `continue-on-error` shields the run's conclusion from a job's
+  FAILURE, not from its TIMEOUT: GitHub reports a timeout kill as a *cancellation*, and a cancelled
+  job cancels the run. The lane that by design cannot fail the build destroys the build's result
+  instead.
+  **The 90 cancellations are therefore TWO mechanisms, not one** (this corrects a residual the first
+  pass left vague): **68 never executed**, superseded while pending after a median 21.6 min wait;
+  and **20 of the remaining 22 ran to the 360-minute ceiling and were killed there** (8 land on 360
+  exactly; the longer 384-692 min figures are queue time plus the same 6 h kill, since a run's
+  clock starts when it is created, not when it starts). Only 2 short outliers are unaccounted for.
   The fix direction is a `timeout-minutes` on the observation lane, **but the number is a ruling and
   the measurement for it does not exist**: no Windows portability run in the sampled window ever
   finished its pytest step, so what a *healthy* Windows suite costs here is unknown. The honest
   comparables are the same suite elsewhere in run 4496 -- macOS **16.5 min**, ubuntu core-only
   **15.6 min**, ubuntu `test` **17.2 min**. Whether to cap the lane, fix the hang, or drop Windows
-  from the matrix is a maintainer call; capping is the one that restores the gate today.
+  from the matrix is a maintainer call; capping is the one that restores the gate today, and a cap
+  BELOW 360 converts a 6 h run-killing cancellation into a fast advisory failure the run survives.
   CONSEQUENCE worth stating plainly: for most merges in this window `main` carries **no CI verdict
   at all**, and the five concluded `failure` runs are unreviewed red on the protected branch.
 - **SSRF TOCTOU** (TEST-03 residual): the SSRF guard resolves-and-checks, but `requests` re-resolves
