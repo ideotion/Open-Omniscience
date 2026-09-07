@@ -9481,7 +9481,7 @@ changes how the next session should size it:
    built 2026-07-17 and extended 2026-07-25, importing its covered/exempt maps FROM
    `src.api.diagnostics` so the CI-time check and the runtime coverage block cannot diverge. It
    does not need building. It DOES need to survive the split.
-2. **It, and 20 other source-read sites across 4 test files, read `diagnostics.py` AS A FILE**
+2. **It is one of 20 source-read sites across 4 test files that read `diagnostics.py` AS A FILE**
    (`(_SRC / "api" / "diagnostics.py").read_text(...)`), and the ratchet additionally regexes
    `@router.get("...")` out of that text plus every file in `_DIAG_SIBLING_FILES`. Turning the
    module into a package makes that path a DIRECTORY. This is exactly the 2026-08-20 `app.js`
@@ -9520,7 +9520,7 @@ dedicated import-ordering PR with a full-suite diff, which is the only way that 
   analysis extra, so the cc figures could not be re-measured and are repeated in PARKED.md as
   HISTORICAL readings rather than current ones.
 * **PRH-27** (`tests/test_installer.py` leaves an `oo.env` in the checkout) — **REFUTED, not
-  built.** A full 9,347-test run left no `oo.env` and a clean `git status`; `test_installer.py`
+  built.** A full suite run (9,221 passed / 126 skipped) left no `oo.env` and a clean `git status`; `test_installer.py`
   never sets `OO_DATA_DIR`, so `install.sh`'s `persist_data_dir` returns early, and the only
   test that drives the Python writer (`test_data_location.py`) monkeypatches `env_file_path` to
   a tmp path. Recorded as VERIFIED-ABSENT at `d9ee33e7` rather than fixed.
