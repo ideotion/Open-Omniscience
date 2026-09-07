@@ -112,6 +112,22 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   BELOW 360 converts a 6 h run-killing cancellation into a fast advisory failure the run survives.
   CONSEQUENCE worth stating plainly: for most merges in this window `main` carries **no CI verdict
   at all**, and the five concluded `failure` runs are unreviewed red on the protected branch.
+  **AND IT IS NOT ONLY `main` -- observed 2026-09-07 20:12, this has backed CI up across the whole
+  repo.** SEVEN `ci.yml` runs were simultaneously `in_progress`, the oldest since 14:29 (5 h 42 m),
+  every one of them alive ONLY on its Windows lane. Spot-checked on run 4823
+  (`claude/async-handlers-event-loop-qfyl1n`, `8d53e006`): **10 of its 11 jobs were green by
+  15:00:06** and `Portability observation (windows-latest)` was still running its pytest step
+  **5 h 34 m** later. Feature-branch runs DO cancel-in-progress, so these are not superseded -- they
+  simply sit, each pinning a Windows runner until the 6 h kill.
+  **THE MEASUREMENT GAP IS NARROWER THAN THE FIRST PASS SAID, AND IT POINTS AT "HUNG", NOT "SLOW".**
+  On that SAME COMMIT the macOS lane ran the SAME suite in **22 m 48 s** (14:37:10 -> 14:59:58,
+  `success`) while Windows passed 5 h 34 m on it. That is not a platform being slower; a suite that
+  finishes in 23 minutes elsewhere and never finishes here is hanging. So `fix the hang` gains
+  evidence, and a cap can be set at a modest multiple of 23 min without risking a legitimate run.
+  STATED AS INFERENCE, NOT FACT: that the queue backlog is runner-concurrency starvation is a READING
+  of the queue behaviour -- 22 jobs on PR #1042 sat `queued` for over an hour with none starting,
+  including its ubuntu jobs -- and GitHub exposes neither the concurrency ceiling nor a queue reason
+  through the API, so it cannot be read directly. The seven stuck runs and their durations ARE facts.
 - **SSRF TOCTOU** (TEST-03 residual): the SSRF guard resolves-and-checks, but `requests` re-resolves
   at connect time, leaving a DNS-rebinding TOCTOU window. Closing it needs connect-time IP pinning
   (a custom `requests` transport adapter). Exotic; hardening, not a known exploit path.
