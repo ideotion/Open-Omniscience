@@ -54,9 +54,22 @@ _SQLITE_MAGIC = b"SQLite format 3\x00"
 # (this only fires on the fresh-file branches of connect()).
 _FRESH_AUTO_VACUUM = 2  # INCREMENTAL
 
-# DB-10 §1b (FIRM recommendation, evidence delivered 2026-07-19/20 on real
-# 3 GB and 22 GB encrypted corpora: warm p50 index-window queries -34%/-50%,
-# stability improves toward scale — see CLAUDE.md's §1b evidence entry).
+# DB-10 §1b — RULED, TWICE OVER. Merging PR #749 was the ratification under the
+# §4.1.5 self-labeling convention (the §1a precedent), and the maintainer then made
+# it EXPLICIT on 2026-08-13: "Let's consider this as finished" (0.3 gate row 6,
+# recorded in docs/ledger/OPEN_QUEUE.md). Evidence: 2026-07-19/20 on real 3 GB and
+# 22 GB encrypted corpora — warm p50 index-window queries -34%/-50%, and the one
+# shape 4K won at 3 GB INVERTS at 22 GB, so it was a cache-fit artifact.
+#
+# THIS COMMENT USED TO READ "FIRM recommendation", AND THAT COST A REAL DECISION
+# (2026-09-07): a session reading it concluded the default was unratified, put
+# "ratify 16384" to the maintainer as ruling V1-7, and spent a maintainer decision
+# re-ratifying something already settled three weeks earlier — because it trusted a
+# code comment about a RULING'S STATUS instead of the ledger that records rulings.
+# The comment is the artifact that went stale, so it is corrected here rather than
+# only in the ledger. GENERAL FORM: a comment may state the EVIDENCE for a decision;
+# whether the decision was TAKEN is the ledger's to say, and a comment that answers
+# that question will eventually answer it wrongly.
 # UNLIKE auto_vacuum, this carries a REAL reopen hazard: SQLCipher decodes a
 # database ONLY at the page size it was created with, and that size is NOT
 # discoverable from the file (the 2026-07-19 field incident — a correct

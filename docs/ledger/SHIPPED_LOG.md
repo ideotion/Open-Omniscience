@@ -7170,3 +7170,29 @@ numstat of 17 added / 0 deleted. Only the duplicate-key scan against the common 
 saw it. The lesson is appended verbatim to `LESSONS.md` per rule (5a)(b); its two riders
 are that the obvious repair re-earns the CRLF-normalisation defect, and that a
 verification assertion assuming tail-only additions fires on a correct head-insertion.
+
+### 2026-09-07 addendum 2 — a fifth lesson, and a correction to lesson 2 above
+
+**Lesson 2's sibling clause was false, and the falsehood cost a maintainer decision.** In
+putting V1-7 to the maintainer I described `page_size=16384` as shipping on a *"FIRM
+recommendation, never a ruling"*. It had been ruled twice: merging **PR #749** was the
+ratification under the §4.1.5 self-labeling convention, and the maintainer made it explicit
+on **2026-08-13** — *"Let's consider this as finished"* — with 0.3 gate row 6 recorded CLOSED
+in `OPEN_QUEUE.md`. The claim came from `src/database/connect.py`'s own comment, three weeks
+stale; the ledger, which is one grep away and is the only authority on whether a ruling
+exists, was never checked. So a maintainer decision was spent re-ratifying a settled ruling —
+the exact cost the three-file ledger protocol exists to prevent, and the third stale-downstream-
+copy failure in this one session after the status banner and the i18n ratchets.
+
+The corrections are in place and keep the wrong text beside them: `src/database/connect.py`
+(the artifact that misled), the Open-queue V1-7 entry, `V1_PATHWAY_2026-07-14.md` §7, the
+decision brief, and lesson 2 in `LESSONS.md` itself. The substantive half of V1-7 — *"rule all
+four now"* — is unaffected and was delivered as
+`docs/design/STORAGE_RULINGS_ROUND2_2026-09-07.md`.
+
+**FIFTH LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** *a code comment may
+state the EVIDENCE for a decision; whether the decision was TAKEN is the ledger's to say.* Its
+operational tell: a comment that editorialises about PROCESS ("firm recommendation", "pending
+ruling", "provisional until X") is a claim about a conversation the code cannot observe, and is
+stale from the moment that conversation moves — where evidence ("the 4K point-lookup win at 3 GB
+inverts at 22 GB") stays true wherever the decision goes.

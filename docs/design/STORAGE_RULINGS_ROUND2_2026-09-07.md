@@ -5,13 +5,24 @@ planning session, because the maintainer's V1-7 answer was *"ratify 16384 and ru
 now"* and the second half of that needs evidence in front of it rather than four opinions.
 Owner doc: [`STORAGE_5TB_PLAN.md`](STORAGE_5TB_PLAN.md) §8, whose rows 3–6 these are.
 
-**What the first round settled** (recorded in the Open queue, 2026-09-07): §8 row 1
-(`auto_vacuum=INCREMENTAL`) was ruled 2026-07-17 and row 2 (`page_size=16384`) is now
-RATIFIED — it had been shipping in `src/database/connect.py` on a *"FIRM recommendation"*
-since the 3 GB / 22 GB evidence pair, which is a decision everyone treats as made because
-the code assumes it. Both create-time seams are therefore closed, and **V1-7's "urgent,
-create-time irreversible" framing is spent**: none of the four below is create-time
-irreversible, so none of them is on a clock.
+**What the first round settled** — and one thing it got wrong, corrected here the same day.
+§8 row 1 (`auto_vacuum=INCREMENTAL`) was ruled 2026-07-17. Row 2 (`page_size=16384`) **was
+already ruled too, and this brief's first version said otherwise.**
+
+> **⚠ CORRECTION.** The V1-7 question put to the maintainer described 16384 as shipping on a
+> *"FIRM recommendation, never a ruling"*. That is false. Merging **PR #749** was the
+> ratification under the §4.1.5 self-labeling convention, and the maintainer made it
+> **explicit on 2026-08-13** — *"Let's consider this as finished"* — recorded in
+> `docs/ledger/OPEN_QUEUE.md` as 0.3 gate **row 6 IS CLOSED**. The claim came from
+> `src/database/connect.py`'s own comment, which still read *"FIRM recommendation"* three
+> weeks after the ruling; the ledger was never checked. **A maintainer decision was spent
+> re-ratifying a settled ruling.** The comment is corrected in `connect.py`, because it is
+> the artifact that went stale. The rule it cost: *a code comment may state the EVIDENCE for
+> a decision; whether the decision was TAKEN is the ledger's to say.*
+
+Both create-time seams are therefore closed — and were before this session started — so
+**V1-7's "urgent, create-time irreversible" framing is spent**: none of the four below is
+create-time irreversible, so none of them is on a clock.
 
 ## What could and could not be measured here
 
@@ -126,10 +137,26 @@ pressing, and the whole value is in the old-hardware case nobody has measured ye
 ## What a ruling on these four does and does not unblock
 
 None of the four is create-time irreversible and none blocks a release currently on the
-train. Rows 3–5 are **Phase C** primitives, and Phase C's own sequencing (§9) puts a spike
-over a synthetic corpus before any real store ships — so ruling them now buys a settled
-design for that spike, not an earlier ship date. Row 6 unblocks a benchmark whose result is
-itself the gate for anything further.
+train. Rows 3–5 are **Phase C** primitives, so ruling them buys a settled design for the
+spike that precedes any real store, not an earlier ship date. Row 6 unblocks a benchmark
+whose result is itself the gate for anything further.
+
+> **⚠ PHASE C'S OWN PREMISE WAS RETIRED THE SAME DAY, by a parallel session** —
+> [`STORAGE_5TB_REFRESH_2026-09-07.md`](STORAGE_5TB_REFRESH_2026-09-07.md), merged as
+> **#1032** while this brief was being written. v1's central justification was *"a
+> default-page SQLCipher file caps at ~17.5 TB ⇒ Phase C is MANDATORY"*; at the ruled page
+> size the cap is **64.00 TiB**, so the 5 TB milestone sits at **7.1%** of one file rather
+> than 28%. **Phase C is now ruling-gated rather than mandatory**, and the refresh's §8
+> re-scopes the sequencing v1 §9 set. That makes these four rulings *less* pressing than
+> this brief's first version implied, not more — and it is the second time in one day that
+> a storage claim turned out to rest on a number a ruling had already moved.
+>
+> **It also CORROBORATES two of the four, independently.** The refresh's §7, listing what it
+> did NOT re-litigate, keeps *"**HMAC-keyed addressing with opaque pack names** (the
+> confirmation-attack fix) … **OOENC2** over `age` with `age` recorded as the fallback"* —
+> the same conclusions rows 5 and 4 reach here, from a different pass. Two independent
+> derivations agreeing is worth more than either alone, and is stated because it is the
+> kind of thing a reader should be told rather than left to notice.
 
 **The one thing worth ruling early is the row 3 / row 5 PAIR**, because they are a single
 honesty argument split across two rows, and splitting the ruling is the way to end up with

@@ -34,8 +34,12 @@ elections and climate, 0.7 patents and medical, 0.8 conflict and the 360° dossi
 V1-2 user-supplied API keys; V1-3 restrictive-license policy (the ACLED class); V1-4 PubMed bulk versus API;
 V1-5 Windows and macOS at 1.0; V1-6 the KPI bars; V1-7 the storage rulings (already prompt 22's C4; the
 **"urgent because create-time irreversible" framing was STALE — corrected 2026-09-07**: §1a
-`auto_vacuum=INCREMENTAL` was ruled 2026-07-17 and §1b `page_size=16384` shipped on its evidence pair, and
-both are already the defaults in `src/database/connect.py`, so no window is closing); V1-8 whether elections are required for 1.0; V1-9 the
+`auto_vacuum=INCREMENTAL` was ruled 2026-07-17 and §1b `page_size=16384` was ruled TWICE — implicitly by
+merging PR #749, then EXPLICITLY on 2026-08-13 — and both are already the defaults in
+`src/database/connect.py`, so no window is closing. **⚠ THE SECOND HALF OF THAT SENTENCE IS A CORRECTION TO
+THIS SESSION'S OWN WORK:** it first read *"shipped on its evidence pair"*, on the strength of a stale
+`connect.py` comment, and V1-7 was put to the maintainer as *"ratify 16384"* — spending a maintainer
+decision on a settled ruling); V1-8 whether elections are required for 1.0; V1-9 the
 Wikipedia edition-count bar at 1.0.
 
 ### S2 — G2: elections, with the coverage floor and the projection tiers

@@ -7174,10 +7174,37 @@
     normally run as "is this already BUILT?"; run it also as **"is the URGENCY still real?"**,
     because a deadline attribute is written once, is never revisited by the sessions that
     inherit it, and mis-sequences whole prompts: it had this one leading with a decision that
-    turned out to need only ratification. Its sibling: `page_size=16384` had been shipping on
-    a *"FIRM recommendation"* and never a ruling, which is the mirror defect — a decision
-    everyone treats as made because the code assumes it. When you find one, get it ratified
-    rather than leaving the default resting on a recommendation.
+    turned out to need only ratification. **⚠ AND THE "ONLY RATIFICATION" HALF WAS ITSELF
+    WRONG — see the entry directly below, which this sentence's original sibling clause
+    caused.** That clause said: ~~`page_size=16384` had been shipping on a *"FIRM
+    recommendation"* and never a ruling, which is the mirror defect — a decision everyone
+    treats as made because the code assumes it. When you find one, get it ratified rather
+    than leaving the default resting on a recommendation.~~ It had been ruled twice over. The
+    part of this entry that SURVIVES is the part about urgency, which is independently true
+    and was verified against the code: both create-time seams are shipped and defaulted, so
+    the deadline attribute really was spent.
+  - **A CODE COMMENT MAY STATE THE EVIDENCE FOR A DECISION; WHETHER THE DECISION WAS TAKEN IS
+    THE LEDGER'S TO SAY (2026-09-07, same session, and it cost a maintainer decision):** I put
+    "ratify `page_size=16384`" to the maintainer on the strength of
+    `src/database/connect.py`'s own comment, which read *"FIRM recommendation … not yet a
+    maintainer ruling"*. It had been ruled TWICE — implicitly by merging **PR #749** under the
+    §4.1.5 self-labeling convention, and **explicitly on 2026-08-13** when the maintainer said
+    *"Let's consider this as finished"* and 0.3 gate row 6 was closed in `OPEN_QUEUE.md`. The
+    comment simply never followed, and three weeks later it was the only thing I read. **A
+    scarce maintainer decision was spent re-ratifying a settled ruling** — the one cost this
+    project's whole ledger protocol exists to prevent. Two things generalise. (a) **The
+    ledger is the ONLY authority on whether a ruling exists** — `OPEN_QUEUE.md` and
+    `shipped.csv` — and checking it is one `grep`, so there is no version of this that was
+    expensive to avoid; a comment, a design doc's status line, and a plan's framing are all
+    downstream copies that go stale silently, exactly as the two entries above this one
+    describe for banners and ratchets. This is the same failure a THIRD time in one session,
+    which is what makes it a rule rather than a slip. (b) **The tell is a comment that
+    editorialises about PROCESS.** Evidence ages well ("the 4K point-lookup win at 3 GB
+    inverts at 22 GB") and stays true wherever the decision goes; process status ("firm
+    recommendation", "pending ruling", "provisional until X") is a claim about a conversation
+    the code cannot observe, and it is stale from the moment the conversation moves. When you
+    write the second kind, you are writing a fact with an expiry date into the artifact
+    nobody re-reads. Prefer the evidence and a pointer to the ledger row.
   - **A RATCHET'S VALUE IN A DOC IS NOT THE RATCHET (2026-09-07, same session):** the working
     mode named the i18n ratchets as 560 and 297; `ci.yml` pins **558 and 296**, one step
     lower, because a previous PR correctly lowered them and the doc did not follow. A session

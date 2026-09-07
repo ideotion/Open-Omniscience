@@ -10409,9 +10409,25 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
     ruling asked for bars, not for instruments); recorded so the next session reads this as
     "K5/K7/K8 need a channel before V1-6 can be applied to them", never as "the maintainer
     declined to set bars".
-  - **V1-7 — storage: RATIFY 16384 AND RULE ALL FOUR NOW.** `page_size=16384` on create is
+  - **V1-7 — storage: RATIFY 16384 AND RULE ALL FOUR NOW.**
+    **⚠ CORRECTION, SAME DAY, BEFORE THIS ENTRY WAS EVER ACTED ON: THE RATIFY HALF WAS
+    ASKED ON A FALSE PREMISE AND THE MAINTAINER'S DECISION ON IT WAS REDUNDANT.**
+    `page_size=16384` was ALREADY ruled, twice: merging PR #749 was the ratification under
+    the §4.1.5 self-labeling convention (the §1a precedent), and the maintainer made it
+    EXPLICIT on 2026-08-13 — *"Let's consider this as finished"*, recorded in this very file
+    as 0.3 gate **row 6 IS CLOSED**. The session that put "ratify 16384" to the maintainer
+    read `src/database/connect.py`'s comment, which still said *"FIRM recommendation"*, and
+    did NOT check the ledger that records rulings. So a maintainer decision was spent
+    re-ratifying a three-week-old ruling. **The substantive half of V1-7 — "rule all four
+    now" — stands and was delivered** as
+    [`docs/design/STORAGE_RULINGS_ROUND2_2026-09-07.md`](../design/STORAGE_RULINGS_ROUND2_2026-09-07.md).
+    The stale comment is corrected in `connect.py` itself, since it is the artifact that
+    misled, and the lesson is recorded in `LESSONS.md`: **a code comment may state the
+    EVIDENCE for a decision, but whether the decision was TAKEN is the ledger's to say.**
+    The original (wrong) text follows, kept rather than deleted because a claim that was
+    wrong is itself the finding: ~~`page_size=16384` on create is
     hereby a RULING, not the "FIRM recommendation" `src/database/connect.py:_FRESH_PAGE_SIZE`
-    has been resting on since it shipped — the evidence pair (2.95 GB and 22.2 GB live
+    has been resting on since it shipped~~ — the evidence pair (2.95 GB and 22.2 GB live
     encrypted corpora; warm index-window p50 −34% / −50%; the 4K point-lookup win at 3 GB
     INVERTING at 22 GB, proving it was a cache-fit artifact) is the basis. The remaining four
     (dedup · OOENC2-vs-age · keyed addressing · the sqlite3mc benchmark) are ruled in a
