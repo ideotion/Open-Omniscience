@@ -6162,6 +6162,52 @@ this history it reports the merge commit rather than the authoring one, and answ
     Before dividing an accumulated duration by a window, ask whether the thing being
     accumulated can happen in parallel with itself — and pin it, because the symmetry of the
     two field names is exactly what invites the second division.
+  - **A MODULE DOCSTRING CAN DESCRIBE A MECHANISM THAT DOES NOT EXIST — and the reader
+    auditing the module takes the sentence for the thing (2026-09-07, KPI K6):**
+    `src/monitoring/kpi.py` states its own contract in its header — an expensive
+    instrument "reports its last persisted value with an `as_of`, or
+    `not-measurable-here`" — and NO resolver read a persisted file anywhere. For K6,
+    cross-language translation coverage, the channel could not exist at all, because
+    `engine_report` is computed on demand, streamed to the caller and never written
+    down; so the metric the ring-lifecycle ruling asks the board to WATCH was on the
+    board and structurally unreadable, and "joins the KPI board" was satisfied by
+    LISTING it. GENERAL FORM: a docstring describing a MECHANISM is a claim of exactly
+    the kind the staleness guard distrusts in a status line — grep for the code that
+    implements it. The tell sat one screen away: K3's spec says "needs a P0-validation
+    report from the operator's live corpus run" while `last_p0_validation_report()` is
+    in the tree ready to serve one. THREE RIDERS, each found by a SURVIVING mutation
+    rather than by review. (a) **A second-precision clock makes a re-stamp invisible to
+    a same-second fixture:** `_now()` is `isoformat(timespec="seconds")`, so recording
+    and reading inside one second makes `as_of=measured_at` and `as_of=_now()` the same
+    string, and the mutation that re-stamps a months-old measurement as fresh passed a
+    test written to forbid exactly that — age the record deliberately (rewrite the file
+    with a `measured_at` 30 days old). (b) **Do not overload a sentinel:** reporting a
+    real figure under `not-measurable-here` because the bar is a pending ruling puts
+    "could not be read" and "read, no bar to judge it against" in one word; an EXISTING
+    guard caught it (`not-measurable ⇒ value is None and as_of is None`), a fourth state
+    (`measured-no-bar`) makes both honest, and widening a verdict domain owes the twin
+    that stops the new state parking a red — injecting BOTH abuses, since the
+    single-injector version leaves alive the dangerous one (a figure against a REAL
+    bar). (c) **A guard that iterates a condition it never creates is vacuous twice
+    over:** "no metric misuses the new verdict" passed with no metric using it AND with
+    the selftest's own check ranging over an empty list — create the condition, assert
+    the check SAW it (its own `detail` count), then feed it the abuse. FOURTH, on the
+    CONSUMER: two snapshots quoting ONE persisted measurement are not two agreeing
+    measurements — `kpi_diff.classify` compared values only, so an unmeasured cycle read
+    as `unchanged`, a fabricated stability finding on precisely the metrics a persisted
+    value exists for; it keys on the `as_of` now (`same-measurement`), never on the
+    value, because keying on the value would hide two genuine runs that agree.
+    **AND THE SIBLING, same session:** `scripts/generate_wikidata_rings.py` said its
+    output "augments" the live ring file; it has always REPLACED it and its default
+    `-o` IS that file, so an ordinary seed run was one command from deleting 684
+    hand-vetted rings with no error and no diff to notice (the refusal now fires BEFORE
+    the network run, so a refused pass costs no Wikidata calls). Where a script's prose
+    and its `write_text` disagree, the prose is what people act on. ONE MORE, from
+    building `--refresh` on it: batching `wbgetentities` turns a 684-ring refresh from
+    684 requests into 14 (measured offline against the real file), and it is only safe
+    because a QID ABSENT from a batch response is re-fetched ALONE before classification
+    — a truncated reply and a deleted item are opposite facts, and reading the first as
+    the second manufactures upstream drift out of a short answer.
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
   the english term 'climate', the app should be able to automatically search for that term in all
@@ -6354,9 +6400,13 @@ this history it reports the merge commit rather than the authoring one, and answ
   2 the month-occupancy diagnostic · 3 date-aware months + re-index (gated on 2) · 4 the ambiguity
   map · 5 ring-coverage expansion (operator: networked run) · 6 the sense INVENTORY (R2/R2a — the
   linker half is struck, evidence-refuted) · 7 the synonym tier (gated on the source ruling).
-  **Slices 1, 2, 3b and 4 need no network, no new dependency and no ruling** — and after BOTH
-  research passes NOTHING in slices 1-4 is gated on anything. Slice 3 is now cheaper (cross-check
-  (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the inventory half (R2a).
+  **Slices 1, 2 and 3b need no network, no new dependency and no ruling** — and after BOTH
+  research passes NOTHING in them is gated on anything. **⚠ CORRECTED 2026-09-07: this line read
+  "slices 1, 2, 3b AND 4" and "nothing in slices 1-4 is gated", which contradicts this entry's own
+  next paragraph — slice 4 is the ambiguity map and its one open number is settled only by a
+  Wikidata DUMP, so it has been dump-gated from the moment it was written.** Slice 3 is now
+  cheaper (cross-check (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the
+  inventory half (R2a).
   **EXECUTED 2026-09-05 (branch `claude/pr-1004-review-9ukgly`, draft PR #1010 onto `main`; five
   `docs/ledger/shipped.csv` rows): SLICES 1, 2 AND 3b ARE BUILT, plus the slice-3 ride-along.**
   Slice 1 = the ring dictionary finally read by search (R1 expansion on by default, disclosed, with
@@ -6481,7 +6531,11 @@ this history it reports the merge commit rather than the authoring one, and answ
   ENTRY, NOT A PROMPT:** pass 2's mandatory probe found wikidata/query.wikidata/en-word.net/kaikki/
   cldr.unicode/aclanthology ALL 403 `x-deny-reason: host_not_allowed` with the `pypi.org` control at
   200 and DNS resolving normally — **the FIFTH consecutive session to hit this allowlist on a
-  reach-named-publishers task**, and the second to characterise it rather than retry (its second
+  reach-named-publishers task** (**RE-PROBED 2026-09-07 rather than assumed, the SIXTH:
+  `dumps.wikimedia.org:443` answers `CONNECT … 403 Forbidden` through the agent proxy with
+  `pypi.org` at 200 as the control — so E2, and with it slices 4 and 6, is confirmed
+  operator-gated and no session should spend another pass rediscovering it**), and the second to
+  characterise it rather than retry (its second
   channel reached ceur-ws/arXiv but reports Wikimedia as cache-only, which is why every Wikidata
   claim in both reports is capped `search-verified`). Opening `dumps.wikimedia.org` is the single
   highest-value remaining step: it settles the one open number above. **RULINGS: (1) what R2 promises
@@ -12832,8 +12886,9 @@ this history it reports the merge commit rather than the authoring one, and answ
   uses the workflow AT THE TAG'S COMMIT (the old non-idempotent step), so the v0.2.0 unblock =
   maintainer deletes the asset-less release (KEEP the tag) → re-run the failed job → re-tick
   pre-release / re-edit notes; the idempotent step protects v0.3.0+.
-- **RING LIFECYCLE — LONG-TERM EVOLUTION STRATEGY (maintainer-agreed 2026-07-20; design note,
-  builds PENDING):** answers the maintainer's long-view question ("once the ~2000-ring target is
+- **RING LIFECYCLE — LONG-TERM EVOLUTION STRATEGY (maintainer-agreed 2026-07-20; BOTH AGREED
+  MECHANISMS SHIPPED 2026-09-07 — see the SHIPPED paragraph at the end of this entry; the
+  operator ring-batch half stays PENDING):** answers the maintainer's long-view question ("once the ~2000-ring target is
   reached, how does the selection evolve as the corpus grows? new words keep being invented — the
   strategy needs a very long term view"). GROUNDING recorded so the reasoning survives: (a) rings
   LAG, never GATE — keywords are captured uncapped instantly (the ChatGPT-2020 ruling), so an
@@ -12867,7 +12922,12 @@ this history it reports the merge commit rather than the authoring one, and answ
   `generate_wikidata_rings.py` OVERWRITES its `-o` target with only the current run's rings
   (emit-only, no merge — despite its docstring's "augments"; default `-o` IS the live
   `configs/keyword_rings_generated.yml`, so a naive `--seeds` run would WIPE the 540 vetted
-  rings) — always resolve to a temp file and append-merge, per the runbook; (ii) `nuclear fusion`
+  rings) — always resolve to a temp file and append-merge, per the runbook. **CLOSED 2026-09-07:
+  the docstring is corrected and replacing an existing non-empty ring file is now a loud REFUSAL
+  (`--force` to override), fired BEFORE any network call so a refused pass costs no Wikidata
+  requests; the temp-file discipline stays the runbook's instruction, it is simply no longer the
+  only thing between a seed run and the vetted corpus. The exposure had also GROWN since this
+  fact was recorded — the live file carries 684 rings now, not the 540 this line names**; (ii) `nuclear fusion`
   is a KNOWN REPEAT OFFENDER seed (already resolved wrong + dropped in the 2026-06-20 vetting;
   it sits in `test_wikidata_ring_gen.py`'s dropped-id guard). Batch overlap decisions
   recommended (vetter's call at run time): seed `right of asylum` not bare `asylum`
@@ -12875,6 +12935,36 @@ this history it reports the merge commit rather than the authoring one, and answ
   distinct concept from irreligion, which carries it as an alias); DROP `public relations`
   (marketing already carries `en:PR` + `en:public relations`); keep `pension` but strip
   `de:Pension` from the resolved members (bound to guest-house — a cross-language homograph).
+  **SHIPPED 2026-09-07 (branch `claude/keyword-search-remaining-slices-x6otsv`; the two agreed
+  mechanisms, plus PROMPT_06's S6 finding; one `docs/ledger/shipped.csv` row):** (1) the refresh
+  CADENCE is named — `docs/process/IMPROVEMENT_CYCLE.md` gains §1b THE RING REFRESH carrying both
+  passes' exact commands, the instruction to read the `unresolved` block FIRST, and both recorded
+  hazards; and `translation_coverage` is finally READABLE on the KPI board. **THE STALENESS GUARD
+  CORRECTED THE ASK HERE:** K6 was ALREADY listed on the board — with no resolver, so it could
+  only ever answer `not-measurable-here`, which is being LISTED rather than watched. The missing
+  half was the channel `kpi.py`'s own header already promised ("reports its last persisted value
+  with an `as_of`") and no resolver anywhere implemented, because `engine_report` is computed on
+  demand, streamed to the caller and never written down. `record_translation_coverage()` now
+  writes one small fixed-shape file where the scan is MADE (the keyword-engine endpoint, which
+  the bundle also drives — deliberately NOT an append-only journal, since "these events are rare"
+  is the premise that made this app unbootable once), and K6 reports the figure with the date it
+  was MEASURED and its age, never re-stamped as fresh. A FOURTH verdict `measured-no-bar` was
+  needed rather than reusing `not-measurable-here`: K6's target is `pending-ruling-V1-6`, so a
+  green/red would be invented, but a real figure behind a verdict whose whole meaning is "could
+  not be read" is two facts in one word. `kpi_diff` gains `same-measurement` for the same reason —
+  two snapshots quoting ONE persisted measurement are not two agreeing measurements, and calling
+  that `unchanged` is a fabricated stability finding on exactly the metrics a persisted value
+  exists for. (2) the QID-REFRESH PASS: `--refresh` re-reads the QIDs a human already vetted and
+  emits ONLY the members Wikidata has GAINED — never a re-search (which could silently re-point a
+  ring at another concept), never a removal (rings are never pruned), and never a `rings:`
+  document, so the artifact cannot be loaded as a ring file and replace a full ring with the
+  handful of members in it. Batched `wbgetentities`: 684 rings in **14 calls**, measured offline
+  against the real file, and safe only because a QID ABSENT from a batch is re-fetched ALONE
+  before classification (a truncated reply and a deleted item are opposite facts); four buckets
+  partition the input exactly — `unchanged` / additions / `unresolved` / `not_checked` — so a run
+  whose network flaked cannot report a clean bill of health. STILL PENDING here: the operator
+  ring-batch run itself (the 168-seed batch above, and any `--refresh` pass) — both need live
+  Wikidata, which the allowlist still refuses.
 - **SOURCE-MANAGEMENT ASKS — newsletter links · qualification funnel · language detection
   (maintainer asked 2026-07-20; INVESTIGATED same session, code-verified; builds PENDING —
   assessment-first, nothing built this turn):** three asks, each checked against the tree
@@ -15219,8 +15309,10 @@ this history it reports the merge commit rather than the authoring one, and answ
   (`#ins-term` / `exploreTerm`) is still live; and the P0 "100 GB" acceptance strings were corrected on
   2026-08-03, so the ledger sentence naming them as stale is itself the stale half.
   **WHAT IS GENUINELY OPEN, once the stale claims are removed** (§"What is actually open" in the index):
-  the egress allowlist (five consecutive sessions have now failed a reach-a-named-publisher task through
-  five different tool surfaces — it is not a prompt problem, and one allowlist entry unblocks ten items) ·
+  the egress allowlist (**six** consecutive sessions have now failed a reach-a-named-publisher task
+  through six different tool surfaces — the sixth re-probed it on 2026-09-07 rather than assuming it,
+  `dumps.wikimedia.org` `CONNECT … 403` against a `pypi.org` 200 control; it is not a prompt problem,
+  and one allowlist entry unblocks ten items) ·
   ~20 maintainer rulings, several create-time irreversible · the operator measurements (month occupancy,
   `configs/source_qualification.yml`, the graded gold sets, the ≥72 h soak, the committed full import) · the
   56 handlers · file members inside the signed backup artifact (the top parked data-safety item, and the

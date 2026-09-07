@@ -255,3 +255,265 @@ def test_from_log_falls_back_to_keywords_for_old_logs(tmp_path):
     args = argparse.Namespace(seeds=None, from_log=str(p), top=10)
     seeds = G.load_seeds(args)
     assert seeds == [("inflation", "en")]  # legacy path: English terms only
+
+
+# --------------------------------------------------------------------------- #
+#  --refresh: re-read already-vetted QIDs, propose ONLY the additions
+#  (the 2026-07-20 ring-lifecycle ruling; built 2026-09-07)
+# --------------------------------------------------------------------------- #
+
+_RING_ON_FILE = [
+    {"id": "public-election", "qid": "Q40231", "members": ["en:election", "de:Wahl"]},
+]
+
+
+def _refresh_getter(entities: dict, *, calls: list | None = None):
+    """A wbgetentities double. ``entities`` maps QID -> its entity block (or the literal
+    ``{"missing": ""}`` Wikidata returns for a deleted id); a QID absent from the mapping
+    is absent from the RESPONSE, which is how a truncated batch is simulated."""
+
+    def getter(url: str) -> bytes:
+        if calls is not None:
+            calls.append(url)
+        ids = url.split("ids=", 1)[1].split("&", 1)[0]
+        asked = [i for i in ids.replace("%7C", "|").split("|") if i]
+        return json.dumps({"entities": {q: entities[q] for q in asked if q in entities}}).encode()
+
+    return getter
+
+
+def _ent(labels=None, aliases=None):
+    return {"labels": labels or {}, "aliases": aliases or {}}
+
+
+def test_refresh_proposes_only_the_members_wikidata_has_gained():
+    getter = _refresh_getter({"Q40231": _ent(
+        labels={"en": {"value": "election"}, "de": {"value": "Wahl"}, "fr": {"value": "élection"}},
+        aliases={"en": [{"value": "elections"}]},
+    )})
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert out["checked"] == 1 and out["unchanged"] == 0
+    assert len(out["additions"]) == 1
+    add = out["additions"][0]
+    assert add["id"] == "public-election" and add["qid"] == "Q40231"
+    # only the NEW ones: en:election and de:Wahl are already on file
+    assert set(add["new_members"]) == {"fr:élection", "en:elections"}
+
+
+def test_refresh_reports_nothing_new_as_unchanged():
+    getter = _refresh_getter({"Q40231": _ent(
+        labels={"en": {"value": "election"}, "de": {"value": "Wahl"}}
+    )})
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert out["additions"] == [] and out["unchanged"] == 1
+
+
+def test_refresh_never_proposes_a_pure_recasing_as_an_addition():
+    """NEGATIVE SPACE. Upstream re-cases "Wahl" -> "wahl"; the app compares casefolded,
+    so it already HAS that member. Proposing it would be a fabricated finding in a tool
+    whose entire output is findings — and it is what a raw string diff would do."""
+    getter = _refresh_getter({"Q40231": _ent(
+        labels={"en": {"value": "ELECTION"}, "de": {"value": "wahl"}}
+    )})
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert out["additions"] == [], out["additions"]
+    assert out["unchanged"] == 1
+
+
+def test_refresh_member_key_agrees_with_the_app_normalisation():
+    """The script duplicates equivalence's normalisation so it stays runnable without an
+    app checkout; this pins the two together, because a drift makes the recasing case
+    above start proposing members the app already has."""
+    from src.analytics.equivalence import _norm
+
+    for raw in ("de:Wahl", "fr:  élection  ", "EN:Election", "ru:Совет Министров"):
+        lang, term = raw.split(":", 1)
+        assert G._member_key(raw) == (lang.strip().casefold(), _norm(term))
+    assert G._member_key("no-colon-here") is None
+    assert G._member_key("en:") is None
+
+
+def test_refresh_reports_a_deleted_qid_as_unresolved_not_as_unchanged():
+    """NEGATIVE SPACE. An id Wikidata says is missing means the ring's IDENTITY is now
+    wrong (an upstream merge or deletion) — the single most important thing a refresh
+    can find. Folding it into 'unchanged' would hide it behind a clean bill of health."""
+    getter = _refresh_getter({"Q40231": {"missing": ""}})
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert out["additions"] == [] and out["unchanged"] == 0
+    assert len(out["unresolved"]) == 1
+    assert out["unresolved"][0]["qid"] == "Q40231"
+    assert "missing" in out["unresolved"][0]["reason"]
+
+
+def test_refresh_reports_a_labelless_entity_as_unresolved_with_its_own_reason():
+    """NEGATIVE SPACE. The item exists but now carries no label or alias in the 12
+    languages — a different fact from 'deleted', and equally not 'unchanged'."""
+    getter = _refresh_getter({"Q40231": _ent(labels={"sv": {"value": "val"}})})
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert out["unchanged"] == 0 and out["additions"] == []
+    assert len(out["unresolved"]) == 1
+    reason = out["unresolved"][0]["reason"]
+    assert "no label" in reason and "missing" not in reason  # the two reasons stay distinct
+
+
+def test_refresh_refetches_singly_rather_than_calling_a_truncated_batch_deleted():
+    """NEGATIVE SPACE, and the reason batching is safe: a QID absent from a BATCH
+    response is a fact about the response, not about the item. Reading it as 'deleted'
+    would manufacture upstream drift out of a short reply."""
+    asked_sets: list[list[str]] = []
+
+    def getter(url: str) -> bytes:
+        ids = url.split("ids=", 1)[1].split("&", 1)[0].replace("%7C", "|")
+        asked = [i for i in ids.split("|") if i]
+        asked_sets.append(asked)
+        # Q1 is silently dropped from any MULTI-id reply; asked alone it answers fine.
+        ents = {
+            q: _ent(labels={"en": {"value": "a" if q == "Q1" else "b"}})
+            for q in asked
+            if not (q == "Q1" and len(asked) > 1)
+        }
+        return json.dumps({"entities": ents}).encode()
+
+    rings = [
+        {"id": "one", "qid": "Q1", "members": ["en:a", "de:x"]},
+        {"id": "two", "qid": "Q2", "members": ["en:b", "de:y"]},
+    ]
+    out = G.refresh_rings(rings, getter=getter, sleep=0, log=lambda m: None)
+    assert out["unresolved"] == [], out["unresolved"]  # NOT reported as deleted
+    assert out["unchanged"] == 2 and out["errors"] == [] and out["additions"] == []
+    assert asked_sets[0] == ["Q1", "Q2"]      # the batch went out as a batch
+    assert ["Q1"] in asked_sets[1:]           # and Q1 was then re-asked ALONE
+
+
+def test_refresh_records_a_failed_fetch_as_not_checked_never_as_unchanged():
+    """NEGATIVE SPACE. 'we looked and nothing was new' and 'we could not look' are
+    different facts; a refresh whose network flaked must not report a clean result."""
+
+    def getter(url: str) -> bytes:
+        raise OSError("connection reset")
+
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert out["unchanged"] == 0 and out["additions"] == [] and out["unresolved"] == []
+    assert len(out["errors"]) == 1 and out["errors"][0]["qid"] == "Q40231"
+
+
+def test_refresh_buckets_partition_the_checked_rings_exactly():
+    """Anti-vacuity: every checked ring lands in exactly one bucket, so a ring can
+    never be dropped on the floor and read as 'nothing to report'."""
+    rings = [
+        {"id": "gains", "qid": "Q1", "members": ["en:a", "de:x"]},
+        {"id": "same", "qid": "Q2", "members": ["en:b", "de:y"]},
+        {"id": "gone", "qid": "Q3", "members": ["en:c", "de:z"]},
+    ]
+    getter = _refresh_getter({
+        "Q1": _ent(labels={"en": {"value": "a"}, "fr": {"value": "aa"}}),
+        "Q2": _ent(labels={"en": {"value": "b"}, "de": {"value": "y"}}),
+        "Q3": {"missing": ""},
+    })
+    out = G.refresh_rings(rings, getter=getter, sleep=0, log=lambda m: None)
+    total = out["unchanged"] + len(out["additions"]) + len(out["unresolved"]) + len(out["errors"])
+    assert total == out["checked"] == 3
+    assert [a["id"] for a in out["additions"]] == ["gains"]
+    assert [u["id"] for u in out["unresolved"]] == ["gone"]
+
+
+def test_refresh_never_removes_a_member_wikidata_dropped():
+    """Rings are never pruned: a label upstream has dropped still serves the history
+    already in the corpus. The refresh has no 'removals' channel at all."""
+    getter = _refresh_getter({"Q40231": _ent(labels={"en": {"value": "election"}})})  # de:Wahl gone
+    out = G.refresh_rings(_RING_ON_FILE, getter=getter, sleep=0, log=lambda m: None)
+    assert "removals" not in out and "removed" not in out
+    assert out["unchanged"] == 1 and out["additions"] == []
+
+
+def test_refresh_batches_several_qids_into_one_request():
+    calls: list[str] = []
+    rings = [{"id": f"r{i}", "qid": f"Q{i}", "members": ["en:x", "de:y"]} for i in range(5)]
+    getter = _refresh_getter(
+        {f"Q{i}": _ent(labels={"en": {"value": "x"}, "de": {"value": "y"}}) for i in range(5)},
+        calls=calls,
+    )
+    G.refresh_rings(rings, getter=getter, sleep=0, log=lambda m: None)
+    assert len(calls) == 1  # one wbgetentities call, not five
+    assert "%7C" in calls[0] or "|" in calls[0]  # the ids were joined
+
+
+def test_load_ring_file_surfaces_rings_without_a_qid_rather_than_dropping_them(tmp_path):
+    p = tmp_path / "rings.yml"
+    p.write_text(
+        'rings:\n'
+        '  - id: has-qid\n    qid: Q1\n    members: ["en:a", "de:b"]\n'
+        '  - id: no-qid\n    members: ["en:c", "de:d"]\n',
+        encoding="utf-8",
+    )
+    rings, no_qid = G.load_ring_file(p)
+    assert [r["id"] for r in rings] == ["has-qid"]
+    assert no_qid == ["no-qid"]  # reported, so it cannot stay silently un-refreshed
+
+
+def test_the_additions_artifact_is_never_loadable_as_a_ring_file():
+    """It carries `ring_additions:`, never `rings:` — equivalence.load_rings merges by
+    id and the last file wins, so a partial ring under `rings:` would REPLACE the full
+    one with the handful of members listed here."""
+    result = {
+        "checked": 2, "unchanged": 1,
+        "additions": [{"id": "public-election", "qid": "Q40231", "new_members": ["fr:élection"]}],
+        "unresolved": [{"id": "gone", "qid": "Q9", "reason": "missing upstream"}],
+        "errors": [],
+    }
+    text = G.emit_additions_yaml(result, "2026-09", "configs/keyword_rings_generated.yml", ["no-qid"])
+    data = yaml.safe_load(text)
+    assert "rings" not in data and "ring_additions" in data
+    assert _parse_rings(data) == []  # the app would read zero rings from it
+    assert data["ring_additions"][0]["new_members"] == ["fr:élection"]
+    assert data["unresolved"][0]["qid"] == "Q9"
+    assert data["rings_without_a_qid"] == 1 and data["without_a_qid"] == ["no-qid"]
+    assert data["members_proposed"] == 1 and data["not_checked_count"] == 0
+
+
+def test_a_seed_run_refuses_to_replace_an_existing_ring_file(tmp_path):
+    """The recorded footgun: every write is a full replacement and -o defaults to the
+    LIVE vetted file, so an ordinary seed run could delete hundreds of vetted rings with
+    no error. The refusal fires BEFORE any network call."""
+    out = tmp_path / "rings.yml"
+    out.write_text("rings:\n  - id: keep-me\n    qid: Q1\n    members: [\"en:a\", \"de:b\"]\n",
+                   encoding="utf-8")
+    before = out.read_bytes()
+    seeds = tmp_path / "seeds.txt"
+    seeds.write_text("election\n", encoding="utf-8")
+
+    assert G.main(["--seeds", str(seeds), "-o", str(out)]) == 2
+    assert out.read_bytes() == before  # untouched
+
+    # --force is the deliberate way through; an empty file is not a refusal either.
+    empty = tmp_path / "fresh.yml"
+    empty.touch()
+    assert G._refuse_overwrite(empty, force=False) is None
+    assert G._refuse_overwrite(out, force=True) is None
+    assert G._refuse_overwrite(tmp_path / "nope.yml", force=False) is None
+
+
+def test_refresh_cli_refuses_an_unnamed_or_self_targeting_output(tmp_path):
+    src = tmp_path / "rings.yml"
+    src.write_text("rings:\n  - id: a\n    qid: Q1\n    members: [\"en:a\", \"de:b\"]\n",
+                   encoding="utf-8")
+    before = src.read_bytes()
+    assert G.main(["--refresh", str(src)]) == 2                      # no -o
+    assert G.main(["--refresh", str(src), "-o", str(src)]) == 2      # writes over its input
+    assert G.main(["--refresh", str(src), "--seeds", str(src), "-o", str(tmp_path / "x")]) == 2
+    assert src.read_bytes() == before
+
+
+def test_the_additions_artifact_survives_an_id_a_human_typed():
+    """Ids come back out of a HAND-EDITED file, not from _slug(), so one carrying a colon
+    would emit a document that no longer parses — and the whole artifact would be lost
+    for a run that had already spent its Wikidata calls."""
+    result = {
+        "checked": 1, "unchanged": 0,
+        "additions": [{"id": "odd: id", "qid": "Q1", "new_members": ['en:a "quoted" one']}],
+        "unresolved": [], "errors": [],
+    }
+    data = yaml.safe_load(G.emit_additions_yaml(result, "2026-09", "src: file", []))
+    assert data["ring_additions"][0]["id"] == "odd: id"
+    assert data["ring_additions"][0]["new_members"] == ['en:a "quoted" one']
+    assert data["source_file"] == "src: file"

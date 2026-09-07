@@ -65,6 +65,11 @@ empirical facts recorded before that batch ships, because both cost a run: the g
 the live rings file — so always resolve to a temp file and append-merge as a deliberate text splice. And
 `nuclear fusion` is a known repeat-offender seed already resolved wrong and dropped once.
 
+**The overwrite footgun is CLOSED as of 2026-09-07** — the docstring is corrected and replacing an existing
+non-empty ring file is a loud refusal (`--force` to override), fired BEFORE any network call so a refused
+pass costs no Wikidata requests. The temp-file discipline stays the runbook's instruction; it is simply no
+longer the only thing standing between a seed run and 684 hand-vetted rings.
+
 Slice 6 is permanently the **inventory** half (R2a), not a linker.
 
 ### S4 — Slice 7: the synonym tier (gated on E3/E4)
@@ -81,7 +86,7 @@ needs **E4** because "open access" is not a licence identifier. UNESCO is the in
 and ar, which OMW cannot supply at all, and `skos:broader` keeps the hierarchy **outside** the synonym set by
 construction — structurally the property OMW was found to lack.
 
-### S5 — The ring lifecycle (buildable now)
+### S5 — The ring lifecycle (buildable now) — **✅ BUILT 2026-09-07**
 
 Two agreed mechanisms, neither built. First, institutionalise the refresh cadence: the gap-digest →
 `--from-log` generate → vet → merge pass becomes a named per-cycle ritual, and `translation_coverage` joins
@@ -92,6 +97,18 @@ cost, because the QID judgement was made once.
 
 Rings are never pruned — cross-time recall is sacred and a dead concept's ring keeps serving history.
 
+> **⚠ CORRECTION, and it is the finding rather than a nit: "`translation_coverage` joins the KPI board" was
+> half stale when this prompt was written.** K6 was ALREADY listed on the board — with no resolver, so it
+> could only ever answer `not-measurable-here`, which is being LISTED rather than watched. The missing half
+> was the channel `kpi.py`'s own header already promised (an expensive instrument "reports its last persisted
+> value with an `as_of`") and which no resolver anywhere implemented, because `engine_report` is computed on
+> demand, streamed to the caller and never written down. Both halves shipped 2026-09-07:
+> `kpi.record_translation_coverage()` / `_k6_coverage` (with a fourth verdict `measured-no-bar`, because K6's
+> target is a pending ruling and a real figure behind `not-measurable-here` would be two facts in one word),
+> `kpi_diff`'s `same-measurement` (two snapshots quoting ONE persisted measurement are not two agreeing
+> measurements), `generate_wikidata_rings.refresh_rings` + `--refresh` (684 rings in 14 batched calls), and
+> `IMPROVEMENT_CYCLE.md` §1b naming both passes. The RUNS stay operator-gated on E2.
+
 ### S6 — Per-language month scoping (the complement to S1)
 
 Recorded as structurally impossible in the obvious place and worth stating so nobody re-proposes it:
@@ -100,6 +117,10 @@ Recorded as structurally impossible in the obvious place and worth stating so no
 per-language month scoping is a stoplist-**architecture** change, not a data-file edit — and it recovers three
 of seven named losses, because `march`/`may`/`april`/`august` are English months in English documents. It and
 S1 are complements, not alternatives.
+
+**RECORDED AT THE CODE 2026-09-07** rather than only here: `get_stopwords` now carries the branch-order
+constraint in its own docstring, with a behavioural guard pinning it, so the next reader meets the
+impossibility where they would act on it. Still UNBUILT — this is a finding, not a feature.
 
 ## 3. Scope fence
 

@@ -6021,3 +6021,70 @@ the CLASS underneath the instance — `PQC_AVAILABLE` is set from import success
 module that imports but lacks `generate_keypair` still reports itself available and crashes
 instead of degrading. That is a `src/custody/signing.py` change on a tamper-evidence path and
 belongs to its own reviewed slice.
+
+## 2026-09-07 — monitoring/kpi + the ring lifecycle: a docstring that described a channel nobody built
+
+**A MODULE DOCSTRING CAN DESCRIBE A MECHANISM THAT DOES NOT EXIST, and every later reader —
+including the one auditing the module — takes the sentence for the thing.** `src/monitoring/kpi.py`
+states its own contract in its header: an expensive instrument "reports its last persisted value
+with an ``as_of``, or ``not-measurable-here``". No resolver read a persisted file anywhere.
+`_RESOLVERS` held two entries, both live in-process, and the other twelve metrics returned a
+constant reason string. For K6 — cross-language translation coverage, the metric the 2026-07-20
+ring-lifecycle ruling asks the board to WATCH so coverage decay is *seen rather than discovered* —
+the channel could not exist at all, because `engine_report` is computed on demand, streamed to the
+caller and never written down. So the metric was on the board and structurally unreadable, and
+"joins the KPI board" was satisfied by LISTING it. GENERAL FORM: a docstring describing a
+MECHANISM is a claim of exactly the kind the staleness guard already distrusts in a status line —
+grep for the code that implements it. The tell was cheap and sat one screen away: K3's spec says
+"needs a P0-validation report from the operator's live corpus run" while
+`last_p0_validation_report()` sits in the tree ready to serve one.
+
+**THREE RIDERS, each of which a surviving mutation found rather than review.**
+
+(a) **A SECOND-PRECISION CLOCK MAKES A RE-STAMP INVISIBLE TO A SAME-SECOND FIXTURE.** `_now()` is
+`isoformat(timespec="seconds")`, so recording and reading inside one second makes
+`as_of=measured_at` and `as_of=_now()` the SAME STRING — and the mutation that re-stamps a
+months-old measurement as fresh passed a test written to forbid exactly that. Age the record
+deliberately (write the file back with a `measured_at` 30 days old) and the correct resolver
+reports the old date while the re-stamping one cannot. Re-stamping is not cosmetic: it turns a
+record of the past into a claim about today, which is the fabricated-freshness trap the
+qualification clock already paid for once.
+
+(b) **DO NOT OVERLOAD A SENTINEL TO CARRY A SECOND MEANING.** The first cut reported the real
+figure under `not-measurable-here`, because K6's target is `pending-ruling-V1-6` and a green/red
+verdict would be invented. That is two facts in one word — "could not be read" and "read, with no
+bar to judge it against" — and an EXISTING guard caught it before it shipped
+(`not-measurable ⇒ value is None and as_of is None`). A fourth state (`measured-no-bar`) makes both
+honest. Widening a verdict domain then owes the twin that stops the new state becoming a place to
+park a red, and that twin must inject BOTH abuses — an entry carrying no figure, and an entry
+carrying a figure against a REAL bar — because the single-injector version leaves the more
+dangerous one alive (measured, judgeable, and quietly unjudged).
+
+(c) **A GUARD THAT ITERATES A CONDITION IT NEVER CREATES IS VACUOUS TWICE OVER.** "No metric
+misuses the new verdict" passed with no metric using it AND with the selftest's own check ranging
+over an empty list. Create the condition first, assert the check actually SAW it (its own `detail`
+count), then feed it the abuse.
+
+**FOURTH, ON THE CONSUMER: two snapshots quoting ONE persisted measurement are not two agreeing
+measurements.** `kpi_diff.classify` compared values only, so a cycle in which nobody re-ran the
+expensive instrument read as `unchanged` — a fabricated stability finding on precisely the metrics
+a persisted value exists for. It keys on the `as_of` now (`same-measurement`), never on the value,
+because keying on the value would hide two genuine runs that happen to agree — the negative-space
+twin, and the one that decides which of the two designs is honest.
+
+**AND THE SIBLING, in the same session's other half:** `scripts/generate_wikidata_rings.py` said in
+its docstring that its output "augments" the live ring file. It has always REPLACED it, and its
+default `-o` is that file — so an ordinary seed run was one command away from deleting 684
+hand-vetted rings with no error and no diff to notice. The docstring is corrected and the
+replacement of an existing non-empty file is now a loud refusal, checked BEFORE the network run so
+a refused pass costs no Wikidata calls. GENERAL FORM: where a script's prose and its `write_text`
+disagree, the prose is what people act on.
+
+**ONE MORE, from building `--refresh` on top of that:** a batched `wbgetentities` turns a 684-ring
+refresh from 684 requests into 14 (measured offline against the real ring file), and the batching
+is only safe because a QID **absent from a batch response** is re-fetched ALONE before it is
+classified. A truncated reply and a deleted item are opposite facts; reading the first as the
+second would manufacture upstream drift out of a short answer, and "this ring's identity is now
+wrong" is the single most valuable thing the refresh can report. The same discipline gives the
+pass four buckets that partition its input exactly — `unchanged`, additions, `unresolved`,
+`not_checked` — so a run whose network flaked can never report a clean bill of health.

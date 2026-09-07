@@ -13,25 +13,46 @@ target, verdict}``:
     delta without a declared direction-of-goodness;
   * ``target`` may be ``"pending-ruling-V1-6"`` (the numeric bar is a ruling, not the
     direction);
-  * ``verdict`` is ``green`` / ``red`` / ``not-measurable-here`` — NEVER a fabricated pass
-    (the S1 lesson: a pass on a proxy over-reads). A metric whose instrument lacks data on
-    THIS machine (no live corpus, no graded gold set, no P0 report, no CI facts in-process)
-    reports ``not-measurable-here`` — that is the honest answer, not a gap to paper over.
+  * ``verdict`` is ``green`` / ``red`` / ``measured-no-bar`` / ``not-measurable-here`` —
+    NEVER a fabricated pass (the S1 lesson: a pass on a proxy over-reads). A metric whose
+    instrument lacks data on THIS machine (no live corpus, no graded gold set, no P0
+    report, no CI facts in-process) reports ``not-measurable-here`` — that is the honest
+    answer, not a gap to paper over. ``measured-no-bar`` is the DIFFERENT fact that the
+    figure IS known and the numeric bar is still a ruling (``target: pending-ruling-V1-6``):
+    reusing ``not-measurable-here`` there would say the metric could not be read, which is
+    false, and would put a real number behind a verdict whose whole meaning is that there
+    is none. It is never a way to dodge a red — the selftest requires it to carry a value
+    AND a pending-ruling target.
 
 HONESTY BY CONSTRUCTION: no composite (no overall score / percentage / count-of-greens);
 this GET NEVER triggers a heavy crunch (an expensive instrument reports its last persisted
 value with an ``as_of``, or ``not-measurable-here`` — it is not re-run here). Only the cheap,
 in-process instruments (the latency reservoir K2, the locale files K11) are read live.
+
+That "last persisted value" clause described nothing until 2026-09-07: no resolver read a
+persisted file, and the one expensive instrument the ring-lifecycle ruling asks the board to
+watch — K6, cross-language translation coverage — was on the board and STRUCTURALLY
+unreadable, because ``engine_report`` is computed on demand, streamed to the caller and never
+written down. A metric that can only ever answer "not-measurable-here" is not being watched;
+it is being listed. ``record_translation_coverage()`` (called where the measurement is MADE,
+never from this GET) closes that, and K6 now reports the real figure WITH the date it was
+measured and how old it is — never re-stamped as fresh, because a stale value read as current
+is the fabricated-freshness trap, and two snapshots quoting one measurement are not evidence
+of stability (``scripts/kpi_diff.py`` classifies that pair ``same-measurement``, not
+``unchanged``).
 """
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 _SCHEMA = "oo-kpi-1"
 _NM = "not-measurable-here"
+# Measured, but the bar it would be judged against is still a maintainer ruling.
+_NO_BAR = "measured-no-bar"
 _LOCALES = Path(__file__).resolve().parent.parent / "static" / "locales"
 
 
@@ -62,7 +83,9 @@ _SPECS: tuple[dict, ...] = (
            "keyword-engine diagnostic on the live corpus); no persisted value here"},
     {"id": "K6", "name": "Cross-language translation coverage", "direction": "up",
      "target": "pending-ruling-V1-6", "source_endpoint": "/api/diagnostics/keyword-engine",
-     "nm": "engine_report.translation_coverage is an expensive scan — not run on this GET"},
+     "nm": "engine_report.translation_coverage is an expensive corpus scan — never run on this "
+           "GET; no run has recorded one yet (run the keyword-engine diagnostic, or take an "
+           "all-diagnostics bundle, on the live corpus)"},
     {"id": "K7", "name": "Date-extraction recall", "direction": "up",
      "target": "pending-ruling-V1-6", "source_endpoint": "/api/diagnostics/datediag",
      "nm": "datediag coverage is an expensive article scan — not run on this GET"},
@@ -166,6 +189,122 @@ def _k2_latency(spec: dict) -> dict:
     )
 
 
+# --------------------------------------------------------------------------- #
+#  K6 — cross-language translation coverage (a PERSISTED measurement, not a live one)
+# --------------------------------------------------------------------------- #
+# One small fixed-shape file, replaced each run. Deliberately NOT an append-only
+# journal: the standing lesson is that "rare events" is a premise nobody enforces, and
+# an unbounded diagnostic stream has already made this app unbootable once. The cycle
+# history lives in the KPI SNAPSHOTS the operator keeps, which is what kpi_diff reads.
+_COVERAGE_FILE = "keyword-coverage.json"
+_COVERAGE_SCHEMA = "oo-keyword-coverage-1"
+
+
+def _coverage_path():
+    from src.paths import data_dir
+
+    d = data_dir() / "diagnostics"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / _COVERAGE_FILE
+
+
+def record_translation_coverage(report: dict) -> dict | None:
+    """Write down what a keyword-engine run measured about ring coverage.
+
+    Called from the endpoint that RUNS the scan — never from ``kpi_snapshot`` — so the
+    KPI GET stays read-only and free. Best-effort: a write that fails records nothing and
+    K6 then says, truthfully, that no run has recorded a measurement. Returns the stored
+    record, or ``None`` when there was nothing to store or the write failed.
+
+    ``pct`` of ``None`` (an empty corpus: no top terms to divide by) is stored AS None.
+    Storing 0.0 there would say "we looked at the keywords and none are ring-covered",
+    which is the opposite of "there were no keywords to look at"."""
+    block = (report or {}).get("translation_coverage")
+    if not isinstance(block, dict):
+        return None
+    record = {
+        "schema": _COVERAGE_SCHEMA,
+        "measured_at": _now(),
+        "pct": block.get("pct"),
+        "top_n": block.get("top_n"),
+        "in_a_ring": block.get("in_a_ring"),
+        "rings_total": block.get("rings_total"),
+    }
+    try:
+        path = _coverage_path()
+        part = path.with_suffix(path.suffix + ".part")
+        part.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(part, path)
+    except Exception:  # noqa: BLE001 - a diagnostic side-record never breaks the diagnostic
+        return None
+    return record
+
+
+def read_translation_coverage() -> dict | None:
+    """The last recorded coverage measurement, or ``None`` when none was ever written."""
+    try:
+        path = _coverage_path()
+        if not path.exists():
+            return None
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return rec if isinstance(rec, dict) and rec.get("schema") == _COVERAGE_SCHEMA else None
+
+
+def _age_days(iso: str | None) -> float | None:
+    if not iso:
+        return None
+    try:
+        then = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return round((datetime.now(UTC) - then).total_seconds() / 86400.0, 1)
+
+
+def _k6_coverage(spec: dict) -> dict:
+    """K6: the share of the most-mentioned keywords that belong to a cross-language ring.
+
+    Read from the last recorded run, and reported WITH its date and its age: the value is
+    a real measurement of the corpus as it was THEN, and re-stamping it ``as_of`` now
+    would turn a months-old figure into a claim about today."""
+    rec = read_translation_coverage()
+    if rec is None:
+        return _entry(spec)  # not-measurable-here, with the spec's honest reason
+    pct, top_n = rec.get("pct"), rec.get("top_n")
+    measured_at = rec.get("measured_at")
+    age = _age_days(measured_at)
+    aged = f", measured {age} day(s) ago" if age is not None else ""
+    if pct is None:
+        # A run happened and produced no share. That is not-measurable in the ordinary
+        # sense, so it carries no value and no as_of (the NM honesty guard); the date it
+        # was looked at still belongs in the reason.
+        return _entry(
+            spec, n=top_n,
+            method=("the last keyword-engine run (" + str(measured_at) + ") found no top "
+                    "terms to divide by — an empty or unindexed corpus. No coverage share "
+                    "exists, which is a different fact from a coverage of 0"),
+        )
+    return _entry(
+        spec,
+        value=pct,
+        n=top_n,
+        as_of=measured_at,
+        # target is "pending-ruling-V1-6": there is no bar, so green/red would be invented.
+        verdict=_NO_BAR,
+        method=(
+            f"{rec.get('in_a_ring')} of the {top_n} most-mentioned keywords fall in one of "
+            f"{rec.get('rings_total')} cross-language rings ({pct}%), recorded by the "
+            f"keyword-engine diagnostic{aged}. A PERSISTED measurement of the corpus as it "
+            "was then, never re-run here and never re-stamped as fresh; counts only, no "
+            "score. The numeric bar is ruling V1-6, so the figure is reported and the "
+            "pass/fail verdict withheld rather than invented."
+        ),
+    )
+
+
 def _k11_i18n(spec: dict) -> dict:
     """K11: minimum locale key-coverage across the 12 locales (cheap in-process file read).
 
@@ -198,7 +337,7 @@ def _k11_i18n(spec: dict) -> dict:
     )
 
 
-_RESOLVERS = {"K2": _k2_latency, "K11": _k11_i18n}
+_RESOLVERS = {"K2": _k2_latency, "K6": _k6_coverage, "K11": _k11_i18n}
 
 
 def kpi_snapshot(session=None) -> dict:  # noqa: ARG001 - session accepted for the endpoint contract
@@ -246,12 +385,19 @@ def run_kpi_selftest() -> dict:
     _check("direction_always_present",
            all(m.get("direction") in ("up", "down", "exact") for m in metrics))
     _check("verdict_in_domain",
-           all(m.get("verdict") in ("green", "red", _NM) for m in metrics))
+           all(m.get("verdict") in ("green", "red", _NM, _NO_BAR) for m in metrics))
     _check("target_always_present", all(m.get("target") for m in metrics))
     # not-measurable honesty: a NM metric carries no fabricated value/verdict.
     nm = [m for m in metrics if m["verdict"] == _NM]
     _check("not_measurable_is_honest", all(m.get("value") is None for m in nm),
            f"{len(nm)} not-measurable metrics")
+    # measured-no-bar honesty: it must carry the figure it claims to have measured AND a
+    # target that really is an open ruling — otherwise it is a way to withhold a red.
+    nb = [m for m in metrics if m["verdict"] == _NO_BAR]
+    _check("measured_no_bar_is_honest",
+           all(m.get("value") is not None and "pending-ruling" in str(m.get("target"))
+               for m in nb),
+           f"{len(nb)} measured-no-bar metrics")
 
     # no composite: walk keys for the banned score substrings (the key-walker convention).
     def _no_score(o) -> bool:

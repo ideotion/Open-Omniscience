@@ -292,3 +292,75 @@ def test_curated_scoped_keys_never_shrink_a_stopset():
         "the shrink hazard this guard exists for is no longer reproducible — "
         "re-derive the guard before relaxing it"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  The branch order in get_stopwords — why per-language scoping is unavailable
+#  for en/fr, and why month scoping is an architecture change (2026-09-07)
+# --------------------------------------------------------------------------- #
+
+def test_language_stopwords_is_tested_first_so_en_and_fr_never_reach_the_scoped_channel():
+    """Behavioural proof of the branch order, not a source read.
+
+    ``get_stopwords`` tests ``language_stopwords`` BEFORE ``scoped_stopwords``, so for a
+    language present in the first dict the second is unreachable. That is the whole
+    reason "just scope the month names per language" is a stoplist-ARCHITECTURE change
+    rather than a data-file edit: a curated ``en``/``fr`` word can only go into
+    ``LANGUAGE_STOPWORDS``, which ``extract.global_stopwords()`` unions — i.e. globally,
+    hiding that spelling in every corpus language."""
+    m = StopwordsManager()
+    for lang in ("en", "fr"):
+        assert lang in m.language_stopwords
+        m.language_stopwords[lang].add("zzfirstchannel")
+        m.scoped_stopwords.setdefault(lang, set()).add("zzsecondchannel")
+        got = m.get_stopwords(lang)
+        assert "zzfirstchannel" in got
+        assert "zzsecondchannel" not in got, (
+            f"{lang} now reaches the scoped channel — the branch order changed, so a "
+            "curated word for it is no longer necessarily global. Re-read the "
+            "get_stopwords docstring before relaxing this."
+        )
+    # A language NOT in the first dict does reach the scoped channel — the same
+    # mechanism, seen from the other side, so this is a branch-order guard and not a
+    # blanket "scoping never works" claim.
+    m.scoped_stopwords.setdefault("de", set()).add("zzsecondchannel")
+    assert "de" not in m.language_stopwords
+    assert "zzsecondchannel" in m.get_stopwords("de")
+
+
+def test_the_global_channel_holds_exactly_en_and_fr():
+    """Adding a key here MOVES that language from the collision-free scoped channel to
+    the collision-prone global one (English "content" is French *content* = happy). That
+    is a reviewed decision, never a silent edit — so it reddens here first."""
+    from src.services.stopwords import StopwordsManager as _SM
+
+    assert set(_SM.LANGUAGE_STOPWORDS) == {"en", "fr"}, (
+        "LANGUAGE_STOPWORDS gained or lost a language: every word curated for it is now "
+        "unioned into global_stopwords() and needs cross-language collision review"
+    )
+
+
+def test_the_banned_month_forms_that_hurt_most_collide_within_english():
+    """Why scoping is a COMPLEMENT to the date-aware block and not a replacement for it:
+    ``march``/``may``/``april``/``august`` are English months in English documents, so a
+    per-language stoplist could not recover the March on Washington or Theresa May even
+    if the scoped channel were reachable for ``en``. Only the date extractor's own claim
+    on a span separates a dateline from a topic."""
+    from src.analytics.month_occupancy import banned_month_tokens
+
+    banned = banned_month_tokens()
+    within_english = {"march", "may", "april", "august"}
+    still_banned = {t for t in within_english if t in banned}
+    assert still_banned == within_english, (
+        f"only {sorted(still_banned)} of {sorted(within_english)} are still banned — "
+        "re-derive the month-scoping argument against the current vocabulary"
+    )
+    # And they are banned out of the extractor's LANGUAGE-AGNOSTIC table ("global"), not
+    # a language-hinted one — a second reason a per-language stoplist has nothing to
+    # scope here. (The provenance values are table names, never language codes:
+    # month_vocabulary() reports global / gated / thai / jalali.)
+    for token in within_english:
+        assert "global" in banned[token], (
+            f"{token} is no longer in the language-agnostic month table "
+            f"(now {banned[token]}) — the scoping argument needs re-deriving"
+        )

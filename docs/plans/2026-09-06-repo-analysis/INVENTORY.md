@@ -71,7 +71,7 @@ claim lives · owning prompt.
 | KW-06 | Wiktextract share-alike ruling | RULING-GATED (E3) | §6b.4 | design doc | P06 |
 | KW-07 | Stoplist (1)/(2) ruling; English 11,263 + French 881 global-channel batch; zh/ja/th 611 after `[segmentation]` re-index | RULING-GATED (B2/B3) + OPERATOR-GATED | CLAUDE.md 2026-09-05 | CLAUDE.md | P05 |
 | KW-08 | 64,910 `kind_overrides` proposals | RULING-GATED (B4) | CLAUDE.md 2026-09-05 | CLAUDE.md | P05 |
-| KW-09 | Ring lifecycle: institutionalised refresh cadence + `translation_coverage` on the KPI board + a `--refresh` QID-refresh mode for `generate_wikidata_rings.py` | UNBUILT | CLAUDE.md RING LIFECYCLE (two agreed mechanisms) | CLAUDE.md | P06 |
+| KW-09 | Ring lifecycle: institutionalised refresh cadence + `translation_coverage` on the KPI board + a `--refresh` QID-refresh mode for `generate_wikidata_rings.py` | BUILT 2026-09-07 (`IMPROVEMENT_CYCLE.md` §1b; `kpi.record_translation_coverage`/`_k6_coverage`; `generate_wikidata_rings.refresh_rings`). **The row was PARTLY stale when written: K6 was already listed on the board — with no resolver, so it could only ever answer `not-measurable-here`.** The operator run of either pass stays gated on E2. | CLAUDE.md RING LIFECYCLE (two agreed mechanisms) | CLAUDE.md | P06 |
 | KW-10 | Keyword-skeleton fingerprint persistence + live `skeleton_echo` producer wiring | UNBUILT (dormant stretch) | `ACTION_PLAN_2026-07-22` Phase 7; `src/analytics/skeleton.py` pure core | design doc | P05 |
 | KW-11 | In-app review-and-apply of analyzer proposals (`generic_terms`, ring candidates, mistags) — the S4 panel | UNBUILT | `ACTION_PLAN_2026-07-22` 4.2 | design doc | P05 |
 | KW-12 | Stoplists → data files (4.1) | BUILT (2026-07-23 `configs/stopwords_extra/<lang>.yml`; STALE-CLAIM in the 2026-07-22 plan) | `ls configs/stopwords_extra` | design doc | P02 |
@@ -80,7 +80,7 @@ claim lives · owning prompt.
 | KW-15 | BM25F default weights (A/B harness built, no chosen weights) — needs the graded gold set | OPERATOR-GATED | strategy doc; Settings → Diagnostics gold-set builder | strategy doc | P05 |
 | KW-16 | Entity families: caps-furniture batch, Roman-numeral exclusion, cross-script alias rings, kind-dropdown honesty | BUILT (2026-07-19..21, per the 2026-07-22 audit) | `ACTION_PLAN_2026-07-22` §0 | — | — |
 | KW-17 | Clickable-keyword stats hover (slice 2) — "which stats" undecided | RULING-GATED (soft) | FUTURE_DEVELOPMENTS §"Clickable in-article keywords" | FD | P17 |
-| KW-18 | Per-language month scoping (a stopwords-ARCHITECTURE change; complement to slice 3) | UNBUILT | design doc §8 last row | design doc | P06 |
+| KW-18 | Per-language month scoping (a stopwords-ARCHITECTURE change; complement to slice 3) | UNBUILT — and RECORDED 2026-09-07 at the code that makes it impossible (`services/stopwords.get_stopwords`'s docstring + a behavioural branch-order guard), so the next reader meets the constraint where they would act on it rather than in a design doc | design doc §8 last row | design doc | P06 |
 
 ## LAW — the law vertical
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |

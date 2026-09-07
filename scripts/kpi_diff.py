@@ -7,8 +7,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Reads two ``oo-kpi-1`` snapshots (from ``GET /api/diagnostics/kpi``, saved across
 an improvement cycle) and reports, PER METRIC, whether it improved / regressed /
-unchanged / not-measurable / not-comparable — computed from the metric's declared
-``direction`` (up / down / exact), never a blended verdict and NO overall score.
+unchanged / same-measurement / not-measurable / not-comparable — computed from the
+metric's declared ``direction`` (up / down / exact), never a blended verdict and NO
+overall score. ``same-measurement`` is the pair whose two sides carry the SAME
+``as_of``: a persisted figure quoted twice, which says nothing about whether the metric
+moved.
 
 Stdlib-only (runs without the app installed — the ``analyze_keyword_log.py``
 pattern). A regression is a FINDING for the PLAN stage, not a CI failure, so the
@@ -31,6 +34,11 @@ _SCHEMA = "oo-kpi-1"
 # The verdict for one metric across the two snapshots.
 IMPROVED, REGRESSED, UNCHANGED = "improved", "regressed", "unchanged"
 NOT_MEASURABLE, NOT_COMPARABLE, CHANGED = "not-measurable", "not-comparable", "changed"
+# Both snapshots quote ONE measurement (identical ``as_of``). Reporting that as
+# "unchanged" would read as "the metric held steady", when what actually held steady
+# is that nobody re-measured — the difference matters most for the expensive
+# instruments, which is exactly where a persisted value is repeated across a cycle.
+SAME_MEASUREMENT = "same-measurement"
 
 
 class KpiDiffError(Exception):
@@ -61,14 +69,20 @@ def classify(old: dict | None, new: dict | None) -> str:
     """Classify one metric across the two snapshots from its direction-of-goodness.
 
     A metric missing from either side is not-comparable; a not-measurable value on
-    either side is not-measurable (no delta can be computed); otherwise up/down
-    metrics compare values numerically and exact metrics compare their green verdict.
+    either side is not-measurable (no delta can be computed); two sides quoting the
+    SAME measurement (identical as_of) are same-measurement, never unchanged; otherwise
+    up/down metrics compare values numerically and exact metrics compare their green
+    verdict.
     """
     if old is None or new is None:
         return NOT_COMPARABLE
     ov, nv = old.get("value"), new.get("value")
     if ov is None or nv is None:
         return NOT_MEASURABLE
+    oa, na = old.get("as_of"), new.get("as_of")
+    if oa and na and oa == na:
+        # One measurement seen twice, not two agreeing measurements.
+        return SAME_MEASUREMENT
     direction = new.get("direction") or old.get("direction")
     if direction in ("up", "down"):
         if not (_numeric(ov) and _numeric(nv)):
@@ -111,8 +125,10 @@ def diff_snapshots(old: dict, new: dict) -> dict:
         "new_generated_at": new.get("generated_at"),
         "metrics": rows,
         "counts": counts,  # per-category counts (a listing, not a blended score)
-        "method": "per-metric improved/regressed/unchanged/not-measurable/not-comparable "
-                  "from the declared direction-of-goodness; no blended verdict, no score.",
+        "method": "per-metric improved/regressed/unchanged/same-measurement/not-measurable/"
+                  "not-comparable from the declared direction-of-goodness; no blended verdict, "
+                  "no score. same-measurement = both sides quote one persisted measurement "
+                  "(identical as_of), so the pair is not evidence that the metric held steady.",
     }
 
 
