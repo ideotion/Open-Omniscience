@@ -302,23 +302,37 @@ articles on a URL rule alone, with no corroborating signal, is precisely the
 protect genuine articles at listing-shaped URLs, and Tier A's corroboration does not
 transfer to a population that cleared that guard.
 
-#### Two findings about the instrument, recorded rather than fixed
+#### Two findings about the instrument — FIXED 2026-09-07
 
-Both concern the report's prose-gate arm, and together they are why Tier B has no evidence.
+Both concerned the report's prose-gate arm, and together they were why Tier B had no
+evidence.
 
-1. **In the bundle, the arm can never finish.** It is resumable by design
-   (`prose_gate_after_id`), but the bundle member pins it to `prose_gate_after_id=0` with
-   `limit=500`. So every bundle re-measures the same lowest-id 500 articles, `done` can
+1. **In the bundle, the arm could never finish.** It is resumable by design
+   (`prose_gate_after_id`), but the bundle member pinned it to `prose_gate_after_id=0` with
+   `limit=500`. So every bundle re-measured the same lowest-id 500 articles, `done` could
    never become `true` on any corpus larger than 500, and both 2026-08-23 reports stopped
-   at `last_id: 695` having flagged 0. The per-batch denominator is honestly labelled; what
-   misleads is that "resumable" reads as "will finish", and here it will not.
-2. **It walks by id, not by the population under question.** Pointing it at the 451 would
-   make Tier B decidable in a single run, instead of ~20 paginated calls over articles
-   nobody has a question about.
+   at `last_id: 695` having flagged 0. The per-batch denominator was honestly labelled
+   throughout; what misled is that "resumable" reads as "will finish", and here it would
+   not have.
+2. **It walked by id, not by the population under question.** Ascending id samples whatever
+   that key happens to order first — not the 451 listing-shaped bodies the clean-up is for.
 
-Neither is fixed in this PR. The change is to a data-safety-adjacent instrument
-immediately before a tag, and the standing rule is to park that with a written reason
-rather than ship it fast — this is the reason.
+**Both are fixed.** The arm gained a `prose_gate_scope` (`all`, unchanged, = every
+≥100-word body, which is what a *default* quarantine run's prose gate would reach; or
+`index_pages`, = only those whose URL is also listing-shaped, which is Tier B's population)
+and an opt-in `resume` that carries a per-scope cursor across runs, keyed by criteria
+version so two detector generations' verdicts can never be summed. `done` stopped being the
+`scanned < limit` heuristic and became a measured `remaining == 0`. The bundle member now
+runs `scope=index_pages, resume=True`, so **consecutive bundles advance through Tier B's 451
+instead of re-reading the same 500 articles** — which is what gives a future Tier B decision
+evidence to stand on. The report states the population it walked, in the payload, so a count
+can never be read against the wrong denominator.
+
+**Deferred here, deliberately, in the earlier version of this section:** the reason given was
+that this is a data-safety-adjacent instrument immediately before a tag. It is fixed now
+because the instrument is **read-only detection** — it decrypts and measures, it stamps
+nothing — and because the population it measures is exactly what row 5's unfinished half
+needs. The **write** path (the quarantine job) is untouched by this change.
 
 **`CRITERIA_VERSION` is bumped to `nav-soup-v2`** in the same commit as the rule change,
 because that stamp is what tells a future reader which detector generation flagged a

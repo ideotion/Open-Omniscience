@@ -35,6 +35,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import heapq
 from collections import Counter
 from typing import Any
 
@@ -44,6 +45,23 @@ SCHEMA = "oo-non-article-scan-1"
 _SAMPLE_PER_REASON = 20  # a bounded id sample per reason so the operator can spot-check
 _PROSE_GATE_LIMIT = 2000  # bounded per-call content-decrypt cap for the opt-in prose-gate subpass
 
+# The prose gate's two candidate POPULATIONS. Both are "bodies the >=100-word guard KEEPS";
+# they differ in which of those bodies get decrypted, and the difference is the whole reason
+# this parameter exists.
+#
+#   "all"          every >=100-word body, walked by id. What the gate would fire on in a
+#                  DEFAULT quarantine run -- so it measures that run's blast radius.
+#   "index_pages"  only those whose URL is ALSO listing-shaped (``classify_index_page``) --
+#                  the ``index_pages_above_guard`` population, 1.12% of the 2026-08-23
+#                  release-scale corpus (451 articles). This is the population the article
+#                  clean-up is actually about (0.3 gate row 5's Tier B), and it is small
+#                  enough to FINISH, where walking every long body by id is ~20 paginated
+#                  calls over articles nobody has a question about.
+#
+# Neither is a superset judgement of the other: a scope is a statement about WHAT WAS
+# MEASURED, and the report says which one it walked rather than leaving a reader to assume.
+PROSE_GATE_SCOPES = ("all", "index_pages")
+
 
 def scan_non_article_candidates(
     session: Session,
@@ -52,6 +70,7 @@ def scan_non_article_candidates(
     include_prose_gate: bool = False,
     prose_gate_limit: int = _PROSE_GATE_LIMIT,
     prose_gate_after_id: int = 0,
+    prose_gate_scope: str = "all",
 ) -> dict[str, Any]:
     """Count-only retroactive scan of stored articles for URL-shaped non-articles.
 
@@ -62,9 +81,18 @@ def scan_non_article_candidates(
     ``include_prose_gate`` (default OFF, so this base contract is unchanged for every existing
     caller): also run the OPT-IN, BOUNDED PROSE-GATE subpass (NAV-SOUP SPECIMEN ruling) under the
     returned ``prose_gate`` key — see the module docstring. ``prose_gate_limit``/
-    ``prose_gate_after_id`` bound/resume that subpass (chunked like a reindex-job batch)."""
+    ``prose_gate_after_id`` bound/resume that subpass (chunked like a reindex-job batch).
+    ``prose_gate_scope`` (default ``"all"`` = byte-unchanged) selects WHICH >=100-word
+    bodies that subpass decrypts -- see :data:`PROSE_GATE_SCOPES`."""
     from src.database.models import Article
-    from src.ingest.non_article import classify_index_page, classify_non_article
+    from src.ingest.non_article import (
+        _ARTICLE_MIN_WORDS,
+        classify_index_page,
+        classify_non_article,
+    )
+
+    if prose_gate_scope not in PROSE_GATE_SCOPES:
+        raise ValueError(f"prose_gate_scope must be one of {PROSE_GATE_SCOPES!r}")
 
     by_reason: Counter[str] = Counter()
     human: dict[str, str] = {}
@@ -77,6 +105,19 @@ def scan_non_article_candidates(
     idx_by_tier: Counter[int] = Counter()
     idx_by_reason: Counter[str] = Counter()
     idx_samples: dict[str, list[int]] = {}
+    # ``index_pages`` prose-gate candidates, collected in THIS loop rather than by a second
+    # scan: the rows, the columns and the ``classify_index_page`` call are the ones already
+    # being made, so the scope costs no extra read -- and on an encrypted store a second
+    # ``(id, url, word_count)`` pass is not free, because those columns sit in rows the
+    # SQLCipher codec decrypts whole.
+    #
+    # Bounded by CONSTRUCTION: a max-heap of at most ``prose_gate_limit`` negated ids keeps
+    # the SMALLEST ids above the cursor, so the accumulator cannot grow with the corpus even
+    # though the candidate population does. ``idx_above_cursor`` counts them all, which is
+    # what turns "done" from a heuristic into an exact remaining.
+    want_index_candidates = include_prose_gate and prose_gate_scope == "index_pages"
+    idx_cand_heap: list[int] = []
+    idx_above_cursor = 0
     for aid, url, wc in session.query(Article.id, Article.url, Article.word_count):
         scanned += 1
         verdict = classify_non_article(url or "", word_count=wc)  # text=None -> URL-shape rules only
@@ -92,6 +133,20 @@ def scan_non_article_candidates(
                 s = idx_samples.setdefault(key, [])
                 if len(s) < sample_per_reason:
                     s.append(int(aid))
+                # The prose gate only has anything to say about a body the guard KEPT, and
+                # ``classify_index_page`` alone does not imply that (a thin body at a URL
+                # shape the URL rules do not cover reaches here too). Ask explicitly.
+                if (
+                    want_index_candidates
+                    and wc is not None
+                    and wc >= _ARTICLE_MIN_WORDS
+                    and int(aid) > prose_gate_after_id
+                ):
+                    idx_above_cursor += 1
+                    if len(idx_cand_heap) < prose_gate_limit:
+                        heapq.heappush(idx_cand_heap, -int(aid))
+                    elif -idx_cand_heap[0] > int(aid):
+                        heapq.heapreplace(idx_cand_heap, -int(aid))
             continue
         flagged += 1
         by_reason[verdict.signal] += 1
@@ -101,11 +156,20 @@ def scan_non_article_candidates(
             s.append(int(aid))
 
     prose_gate: dict[str, Any] = (
-        _prose_gate_subpass(session, limit=prose_gate_limit, after_id=prose_gate_after_id,
-                            sample_cap=sample_per_reason)
+        _prose_gate_subpass(
+            session,
+            limit=prose_gate_limit,
+            after_id=prose_gate_after_id,
+            sample_cap=sample_per_reason,
+            scope=prose_gate_scope,
+            candidate_ids=(sorted(-x for x in idx_cand_heap) if want_index_candidates else None),
+            candidates_above_cursor=(idx_above_cursor if want_index_candidates else None),
+        )
         if include_prose_gate
         else {
             "enabled": False,
+            "scope": prose_gate_scope,
+            "population": _population_sentence(prose_gate_scope),
             "caveat": f"Opt-in (include_prose_gate=True): decrypts Article.content for a BOUNDED "
                       f"batch of >=100-word bodies (prose_gate_limit, default {_PROSE_GATE_LIMIT}) "
                       "to run the NAV-SOUP prose gate — the word-rich nav-soup shape the URL-shape "
@@ -166,8 +230,33 @@ def scan_non_article_candidates(
     }
 
 
+def _population_sentence(scope: str) -> str:
+    """What a given scope WALKED, in one sentence, for the report to carry.
+
+    A report that names a count without naming the population it counted over is the shape
+    every stale figure in this project's gate documents has taken, so the sentence rides in
+    the payload rather than living only in a doc a reader may not have open."""
+    if scope == "index_pages":
+        return (
+            "Bodies the >=100-word guard KEEPS whose URL is ALSO listing-shaped "
+            "(classify_index_page) -- the index_pages_above_guard population, the one the "
+            "article clean-up is about. NOT every long body."
+        )
+    return (
+        "Every body the >=100-word guard KEEPS, walked by id -- what the nav-soup gate would "
+        "fire on in a DEFAULT quarantine run. NOT scoped to listing-shaped URLs."
+    )
+
+
 def _prose_gate_subpass(
-    session: Session, *, limit: int, after_id: int, sample_cap: int,
+    session: Session,
+    *,
+    limit: int,
+    after_id: int,
+    sample_cap: int,
+    scope: str = "all",
+    candidate_ids: list[int] | None = None,
+    candidates_above_cursor: int | None = None,
 ) -> dict[str, Any]:
     """Opt-in, BOUNDED, content-DECRYPTING subpass for the PROSE GATE (NAV-SOUP SPECIMEN ruling):
     the URL-shape pass above can never see word-rich nav soup (``classify_non_article``'s
@@ -181,17 +270,33 @@ def _prose_gate_subpass(
     from src.ingest.non_article import _ARTICLE_MIN_WORDS
     from src.services.prose_gate import prose_gate_verdict
 
-    q = (
-        session.query(Article.id, Article.content, Article.language, Article.detected_language)
-        .filter(Article.word_count >= _ARTICLE_MIN_WORDS, Article.id > after_id)
-        .order_by(Article.id)
-        .limit(limit)
+    base = session.query(
+        Article.id, Article.content, Article.language, Article.detected_language
     )
+    if scope == "index_pages":
+        ids = candidate_ids or []
+        rows = (
+            base.filter(Article.id.in_(ids)).order_by(Article.id).all()
+            if ids
+            else []
+        )
+        # EXACT, because the caller counted every candidate above the cursor while it was
+        # already walking them. ``done`` stops being the "did we fill the batch?" heuristic.
+        remaining = max(0, int(candidates_above_cursor or 0) - len(ids))
+    else:
+        rows = (
+            base.filter(Article.word_count >= _ARTICLE_MIN_WORDS, Article.id > after_id)
+            .order_by(Article.id)
+            .limit(limit)
+            .all()
+        )
+        remaining = None  # filled in below, once last_id is known
+
     scanned = 0
     flagged = 0
     sample_ids: list[int] = []
     last_id = after_id
-    for aid, content, lang, detected in q:
+    for aid, content, lang, detected in rows:
         scanned += 1
         last_id = int(aid)
         verdict = prose_gate_verdict(content or "", language=lang or detected)
@@ -200,20 +305,40 @@ def _prose_gate_subpass(
             if len(sample_ids) < sample_cap:
                 sample_ids.append(int(aid))
 
+    if remaining is None:
+        # One index-only COUNT over (word_count, rowid) -- no content decrypt. Cheaper than
+        # the base scan this rides on, and it is what lets a caller resuming across runs know
+        # how many calls are left instead of inferring it from a full batch.
+        remaining = int(
+            session.query(Article.id)
+            .filter(Article.word_count >= _ARTICLE_MIN_WORDS, Article.id > last_id)
+            .count()
+        )
+
     return {
         "enabled": True,
+        "scope": scope,
+        "population": _population_sentence(scope),
+        "after_id": after_id,
         "scanned": scanned,
         "flagged": flagged,
         "pct_flagged_of_batch": round(100.0 * flagged / scanned, 2) if scanned else 0.0,
         "sample_ids": sample_ids,
         "last_id": last_id,
-        "done": scanned < limit,
+        "remaining": remaining,
+        # Was ``scanned < limit`` -- correct in the ordinary case and wrong at the boundary
+        # where a full batch happens to have exhausted the population. ``remaining`` is
+        # measured, so the flag can be the fact rather than a proxy for it.
+        "done": remaining == 0,
         "limit": limit,
         "caveat": "Denominator is THIS BATCH only (scanned/flagged here), never the whole corpus — "
                   "distinct from the URL-shape pct_flagged above. Reads Article.content (decrypt "
-                  "cost) for up to `limit` >=100-word bodies ordered by id after `after_id`; call "
+                  "cost) for up to `limit` bodies from the population named in `population`; call "
                   "again with prose_gate_after_id=last_id to continue (never a whole-corpus decrypt "
-                  "in one call). Detection only; never removes/quarantines anything.",
+                  "in one call), or use the calibration report's `resume` to carry the cursor across "
+                  "runs. `remaining` counts the population above `last_id` at read time, so a corpus "
+                  "that grew or was pruned between calls moves it. Detection only; never removes/"
+                  "quarantines anything.",
     }
 
 
