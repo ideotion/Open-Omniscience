@@ -2822,7 +2822,11 @@ building:**
   Headlines: the corpus/index ATTACH split is DEAD (WAL forfeits cross-file atomicity — the
   durable file stays ONE file; only disposable/immutable pieces split out); the split-out FTS
   index must be CONTENTLESS-DELETE (external-content cannot cross ATTACH; verified snippet-safe
-  for the article index); text offload (Phase C) is MANDATORY (~17.5 TB default-page ceiling)
+  for the article index); text offload (Phase C) is **no longer mandatory BY SIZE** — the
+  ~17.5 TB figure is the ceiling at a 4096-byte page, and DB-10 §1b's ruled `page_size=16384`
+  moved it to **64.00 TiB**, so 5 TB is 7.1% of one file (REFRESHED 2026-09-07,
+  [`design/STORAGE_5TB_REFRESH_2026-09-07.md`](design/STORAGE_5TB_REFRESH_2026-09-07.md); Phase C
+  is re-scoped to a working-set lever gated on the DB-10 §6 footprint split) —
   and re-primitived as a PACKED (~8–16 MB containers), KEYED-addressed (HMAC under a
   passphrase-derived key — the confirmation-attack fix), OOENC2-encrypted, per-source-zstd
   (versioned encrypted dictionary registry) content store with blob-first writes + mark-and-sweep
