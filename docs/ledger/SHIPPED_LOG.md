@@ -6740,3 +6740,51 @@ restored source file is not a restored import, because `__pycache__` can serve t
 bytecode for a whole second; and a module that degrades honestly when its data file is absent is
 exactly the one whose packaging omission is silent (`src/geo/data` had been missing from every
 wheel since it was added).
+
+## 2026-09-07 — ui/type-scale — PRH-32 + PRH-33, and two defects the browser found on the way
+
+**PRH-32.** The 2026-08-11 type scale shipped scoped to `#tab-settings` "because that is what
+was asked", and its own comment recorded that the same inversion existed elsewhere. Measured in
+Chromium against a 440-article seeded corpus, on **all 17 themes**, it did: Home's section title
+"By channel" rendered **12.5px uppercase in `--muted` at 4.56–12.71:1** while a briefing card's
+own `<h4>` inside it rendered **15px in full `--fg` at 6.07–18.10:1** — bigger AND brighter than
+the section containing it, which is the maintainer's original words exactly. Library's
+`.lib-sub` had the same shape, and the Feed's article titles (`.feed-t`, an `h3` with no size
+rule) took the same UA `1.17em` the dialogs did. After: **17px at 7.00–19.80:1**, with 21 section
+titles lifted and 25 headings unchanged, and **0 horizontal overflow at 375px on 12 surfaces**
+(the overflow instrument self-tested against a 900px fixture first — it reports 525px, so a
+clean reading means something).
+
+The scale is written through `:where()`, which contributes ZERO specificity, so it is a DEFAULT
+any authored class overrides. That is the load-bearing part: a plain `.panel h3` rule carries
+(0,1,1) and would have beaten `.brief-bucket > h3` (12px), `.fig-title` (13px) and `.lib-sub`
+(13px), trading the reported inversion for three new ones.
+
+**TWO DEFECTS THE MEASUREMENT TURNED UP**, neither visible to a source read. Nine of the eleven
+`<dialog>` elements carried `background`/`color` inline and **two did not** (`#ux-import`,
+`#ux-export`), so those two alone fell back to the UA's `Canvas`/`CanvasText` and rendered
+identically on all 17 themes (ground `rgb(18,18,18)` on the twelve dark ones,
+`rgb(255,255,255)` on the five light ones) — the palette reached nine dialogs and stopped at
+two. And **`var(--line)` is defined nowhere the SPA loads**: 41 fallback-less references whose
+whole declaration is invalid at computed-value time, proven by `getComputedStyle` reporting
+`border-top-style: none` on all eleven dialogs. The same class had one case worse than
+cosmetic — `fill="var(--text)"` on the diagnostics chart's two axis titles, and `fill`
+INHERITS, so they rendered `rgb(0,0,0)` on a `rgb(20,24,31)` panel, **1.09:1**, on twelve dark
+themes. Fixed; the other 41 sites are ratcheted rather than repaired, because rendering them is
+a visible change wanting its own review (Open queue, same day).
+
+**PRH-33.** `Activity` / `Tracked` / `Database & storage` keyed ×12 by textual insert beside
+their sibling `World coverage` — `3 added / 0 deleted` per file — and verified rendering live in
+all twelve locales through the app's own `OOI18N.setLang()`. Untranslatable ratchet **560 → 557**,
+lowered in the same PR and re-checked at 556 to confirm it bites.
+
+Six mutations, each asserting it applied before its run counted, all redden **by name**. Full
+suite 9,229 passed / 125 skipped / 0 collection errors. Stamp: *Chromium-verified (remote
+sandbox) · awaiting human UX pass*. PR #1029.
+
+**FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a declaration naming an
+undefined custom property deletes itself rather than degrading, and the property's `unset` is
+what decides the severity; a zero-specificity `:where()` default is what lets a global scale
+coexist with deliberate exceptions; a property that lives at the call site reaches the call
+sites somebody remembered; one theme cannot answer for seventeen when the value comes from the
+UA; and a heading probe scoped to one container class reports a clean app.
