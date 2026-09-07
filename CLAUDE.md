@@ -5698,6 +5698,38 @@ this history it reports the merge commit rather than the authoring one, and answ
     a bound exists, install both versions and write down what you MEASURED — here 1.0.0 → 16
     failed / 23 passed in this repo's own suite against 0.4.0 → 39 passed, which is checkable,
     where a changelog paraphrase arrives at the same confidence and is where the error will be.
+    **THE BOUND HAS A TEST NOW (2026-09-07, PR #1016) — and writing it produced a finding the
+    obvious version of the guard would have missed: THE NEGATIVE-SPACE TWIN IS LOAD-BEARING ON A
+    VERSION CEILING, because over-narrowing SATISFIES the ceiling assertion.** `pqcrypto==0.3.4`
+    and `<0.4` both exclude 1.0.0, so both make a lone "the ceiling refuses 1.0.0" guard GREEN
+    while dropping the release a real install resolves to — i.e. the cheapest way to fix the
+    guard would be to make the extra useless. Mutation-proven in both directions: widening to
+    `<2.0` (dependabot's exact change) reddens ONLY the ceiling test, over-narrowing to
+    `==0.3.4` reddens ONLY the twin **while the ceiling test still passes**, and deleting the
+    requirement trips an anti-vacuity helper — an absent requirement parses as an EMPTY
+    `SpecifierSet`, which admits everything, so a guard that tolerated it would pass hardest at
+    exactly the moment the ceiling stopped existing. Two riders. (a) Assert CONTAINMENT via
+    `packaging.SpecifierSet`, never the literal constraint string: a lower-bound bump is
+    legitimate and must not redden, and `packaging` ships wherever pytest runs (pytest requires
+    it), so it is safe on the Core-only lane. (b) The failure MESSAGE is the whole deliverable —
+    it is what a reviewer of the widening PR reads — so it names the constraint that was set,
+    the version it now admits, and the inverted predicate, not just "bound changed".
+    **(c) A GUARD WHOSE SUBJECT IS THE ENVIRONMENT IS UNREACHABLE UNLESS THE LANE THAT BUILDS
+    THAT ENVIRONMENT COLLECTS IT — found in my own test, before it shipped.** The third guard
+    compares the DECLARED ceiling against what pip actually RESOLVED, and it could not run
+    anywhere: every bare `pytest -q` lane collects the file with no `[pqc]` installed, so it can
+    only reach its own skip, while `crypto` — the ONE lane that installs the extra — runs two
+    explicitly-named files and never collected it. Green in every lane, executed in none,
+    reading as coverage. Naming the file in that lane fixes it, and the fix is MEASURABLE: with
+    the extra installed the file goes 2-passed/1-skipped → 3-passed, and with pqcrypto 1.0.0
+    installed against the declared `<1.0` it fails ALONE (1 failed / 2 passed) — which is also
+    what proves it is not redundant with the twin, since the twin can only ever check a
+    `_SHIPPED` constant a human wrote down while this one checks what upstream actually
+    published. GENERAL FORM: when a test's meaning depends on an OPTIONAL extra, find the lane
+    that installs that extra and confirm it COLLECTS the file; a lane that names files
+    explicitly is where an environment-gated guard goes to die. Same class as the node-suite
+    driver ratchet, which exists because an unrun suite already cost a shipped defect — there
+    the file had no runner, here it had a runner in the one environment where it means nothing.
   - **A RESERVE SIZED FOR A MECHANISM THAT IS SWITCHED OFF IS NOT CONSERVATISM — it is a
     permanently unclaimed resource, and a "conservative" default stops being conservative
     once it decides EVERY machine (2026-09-05, the field context window; maintainer-ruled
@@ -6469,7 +6501,17 @@ this history it reports the merge commit rather than the authoring one, and answ
   **THE INSTANCE IS CLOSED, AND IT RE-OPENED ONCE** — `2617037c` + `e112e04f` upper-bounded it
   to `pqcrypto>=0.3.4,<1.0` with the reason in a comment; **dependabot #996 widened it straight
   back to `<2.0` on 2026-09-03 and it merged** (a bot does not read comments), and it was
-  re-narrowed the same day. That round MEASURED a second breakage the first pass missed: 1.0.0's
+  re-narrowed the same day. **AND ON 2026-09-07 DEPENDABOT #1012 PROPOSED THE IDENTICAL WIDENING
+  A THIRD TIME AND IT MERGED (06:56:37) — measured: `<2.0` resolves to 1.0.0 — so it was
+  re-narrowed again and the instance is now defended by a MECHANISM rather than by prose (#1016):
+  `tests/test_dependency_ceilings.py` reddens on the PR that widens the ceiling, naming the
+  inverted predicate, instead of the repository going red later on somebody else's unrelated
+  change.** The 1.0.0 API was re-measured that day against both real wheels installed side by
+  side and every claim in the pyproject comment held, the corrected key-format one included
+  (`keygen()` returns plain `bytes`; `PUBLIC_KEY_SIZE` is 1952 in both). The guard covers the
+  DECLARATION and the INSTALLED version; it does NOT close the CLASS below, and it does not
+  settle the registry question below either. That round MEASURED a second breakage the first
+  pass missed: 1.0.0's
   `verify` returns `None` for a VALID signature and raises `InvalidSignatureError` for an invalid
   one, where 0.4.0 returns True/False — so `signing.py`'s `bool(_mldsa.verify(...))` reports every
   genuine ML-DSA signature as a verification FAILURE on an install whose keys already exist, a

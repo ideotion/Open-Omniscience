@@ -224,8 +224,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[analysis,dev,pqc]"
 
+      # test_dependency_ceilings.py rides THIS lane deliberately. Its first two guards
+      # read pyproject and pass anywhere, but the third compares the DECLARED ceiling
+      # against the version actually resolved and installed -- and this is the only lane
+      # that installs [pqc], so anywhere else it can only skip. Collected by the bare
+      # `pytest -q` lanes too; named here so the one environment that can exercise it does.
       - name: Test the hybrid signing + signed annotation bundles
-        run: python -m pytest -q tests/test_custody_signing.py tests/test_annotations.py
+        run: |
+          python -m pytest -q \
+            tests/test_custody_signing.py \
+            tests/test_annotations.py \
+            tests/test_dependency_ceilings.py
 
   # ----------------------------------------------------------------------- #
   # Columnar derived store (DuckDB): the [columnar] extra is NOT in the main
