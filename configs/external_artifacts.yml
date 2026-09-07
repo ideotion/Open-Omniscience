@@ -293,6 +293,31 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-06-17"
 
+  - id: language-countries-floor
+    title: UI language -> country mapping (the elections coverage floor)
+    kind: dated-data
+    description: >-
+      The ruled elections coverage floor (V1_PATHWAY §4.5(1), maintainer 2026-07-14): every
+      country whose official, de-facto national or regionally predominant language is one of
+      the twelve UI languages. Used as the DENOMINATOR of K13's elections component, so a
+      wrong row is a wrong bar in either direction. Drafted 2026-09-07 from the assistant's
+      training knowledge with no network available and NOT verified against any primary
+      source -- the file carries verification_status per the climate_events.yml precedent,
+      and every consumer republishes it.
+    upstream: national constitutions and language statutes (per-language `source` field in the file)
+    check_upstream: "no feed; a language's legal standing changes by statute -- re-read the per-language sources"
+    license: project (GPL-3.0-or-later); the underlying facts are law, not a licensed dataset
+    pin: {file: src/civic/coverage_floor.py, const: LANGUAGE_COUNTRIES_AS_OF}
+    refresh: >-
+      Verify each row against the per-language `source`, flip verification_status, then bump
+      BOTH the YAML `as_of` and LANGUAGE_COUNTRIES_AS_OF (a test asserts they agree). Start
+      with the rows marked `contested: true` -- that is where a confident list is most likely
+      to be wrong.
+    freshness: {max_age_months: 12}
+    couplings:
+      - "src/catalog/countries.py -- every cc is validated against ISO_3166_1_ALPHA2 at load"
+    last_verified: "2026-09-07 (drafted, NOT verified -- see verification_status)"
+
   - id: stopwords-iso
     title: Multilingual stopword lists (stopwords-iso subset)
     kind: dated-data

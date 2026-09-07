@@ -3052,5 +3052,9 @@
   "Search one of them:": "Search one of them:",
   "{term}: searching the concept “{concept}”, which you chose": "{term}: searching the concept “{concept}”, which you chose",
   "Show all senses": "Show all senses",
-  "The sense you chose is not one this word belongs to, so it was ignored.": "The sense you chose is not one this word belongs to, so it was ignored."
+  "The sense you chose is not one this word belongs to, so it was ignored.": "The sense you chose is not one this word belongs to, so it was ignored.",
+  "Date set by the electoral authority. Confirm at the official source.": "Date set by the electoral authority. Confirm at the official source.",
+  "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "The exact day is not yet set — only the legal window is known. Confirm at the official source.",
+  "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.",
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "The projected date has passed and no result is recorded here — status unknown. Check the official source."
 }

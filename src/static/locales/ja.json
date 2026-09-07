@@ -3052,5 +3052,9 @@
   "Search one of them:": "いずれかを検索:",
   "{term}: searching the concept “{concept}”, which you chose": "{term}: あなたが選んだ概念「{concept}」を検索中",
   "Show all senses": "すべての意味を表示",
-  "The sense you chose is not one this word belongs to, so it was ignored.": "選んだ意味はこの語に属さないため、無視されました。"
+  "The sense you chose is not one this word belongs to, so it was ignored.": "選んだ意味はこの語に属さないため、無視されました。",
+  "Date set by the electoral authority. Confirm at the official source.": "選挙管理機関が定めた期日です。公式の情報源で確認してください。",
+  "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "正確な日はまだ決まっていません — 法定の期間のみが判明しています。公式の情報源で確認してください。",
+  "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "周期の規則から推定したもので、公告されたものではありません。選挙は延期・変更・中止されます — これは公式の情報源を確認するための手がかりであり、期日ではありません。",
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "推定した期日は過ぎており、ここには結果が記録されていません — 状況は不明です。公式の情報源で確認してください。"
 }

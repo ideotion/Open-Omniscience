@@ -3052,5 +3052,9 @@
   "Search one of them:": "Pesquisar um deles:",
   "{term}: searching the concept “{concept}”, which you chose": "{term}: pesquisando o conceito “{concept}”, que você escolheu",
   "Show all senses": "Mostrar todos os sentidos",
-  "The sense you chose is not one this word belongs to, so it was ignored.": "O sentido que você escolheu não pertence a esta palavra, por isso foi ignorado."
+  "The sense you chose is not one this word belongs to, so it was ignored.": "O sentido que você escolheu não pertence a esta palavra, por isso foi ignorado.",
+  "Date set by the electoral authority. Confirm at the official source.": "Data fixada pela autoridade eleitoral. Confirme na fonte oficial.",
+  "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "O dia exato ainda não está fixado — apenas o prazo legal é conhecido. Confirme na fonte oficial.",
+  "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "Projetada a partir de uma regra de periodicidade, não anunciada. As eleições são adiadas, transferidas ou canceladas — veja isto como um aviso para consultar a fonte oficial, nunca como uma data.",
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "A data projetada já passou e nenhum resultado está registado aqui — situação desconhecida. Confirme na fonte oficial."
 }

@@ -1,0 +1,267 @@
+# Open Omniscience — the elections COVERAGE FLOOR: UI language -> countries.
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# WHAT THIS IS. The maintainer ruled (2026-07-14, V1_PATHWAY §4.5) that the elections
+# vertical must cover "at least every country whose official or major language is one of
+# the twelve UI languages" — if a user can read the app in their language, their country's
+# elections must be in it. This file IS that country set: it turns the floor from an
+# intention into a denominator the K13 bar can be measured against.
+#
+# WHY IT IS A DENOMINATOR, AND WHY THAT MAKES BOTH ERRORS EXPENSIVE. A country wrongly
+# ABSENT lets the vertical claim coverage it does not have; a country wrongly PRESENT
+# manufactures a permanent red the calendar can never clear. So each entry carries the
+# BASIS of its claim rather than resting on the list's existence:
+#   basis: official  — the language is an official/national language of that state, by
+#                      constitution or statute (including co-official).
+#   basis: de-facto  — the state names no official language, or names another, but this
+#                      language is unambiguously the majority/working language.
+#   basis: regional  — official or predominant in a part of the state, not nationally.
+#                      COUNTED IN THE FLOOR (the ruling says "official OR major"), but
+#                      labelled, because it is the class most likely to be contested.
+#
+# VERIFICATION STATUS — read this before trusting any row. Drafted 2026-09-07 from the
+# assistant's training knowledge, exactly as `configs/climate_events.yml` was, and under
+# the same discipline: NOTHING here is presented as verified. The session that wrote it
+# had no network (every candidate source host answered 000 through the sandbox proxy while
+# pypi.org answered 200), so no row was checked against a primary source. Entries graduate
+# to "verified" only after a clearnet check against the per-language `source` below, and
+# `scripts/check_external_freshness.py` reports this file's age.
+#
+# THE KNOWN-CONTESTED ROWS ARE MARKED `contested: true` rather than quietly dropped or
+# quietly kept — a language's legal standing is exactly where a confident list is most
+# likely to be wrong, and hiding the doubt is worse than carrying it. A reviewer should
+# start there.
+#
+# EXPLICITLY NOT INCLUDED: dependencies and territories that are not ISO 3166-1 officially
+# assigned countries (Puerto Rico, Hong Kong, Macau, the French overseas collectivities).
+# They hold real elections, but the floor is stated per COUNTRY and the calendar's own
+# `country` field is an ISO 3166-1 alpha-2 code. Recorded so their absence reads as a
+# scoping decision rather than an oversight.
+#
+# This is reference data, not an editorial statement about any place — the same disclaimer
+# `src/catalog/countries.py` carries about the ISO set it uses.
+
+as_of: "2026-09-07"
+verification_status: "drafted-from-training-knowledge; clearnet check pending"
+method: >-
+  One row per (UI language, country) where the language is official, de-facto national, or
+  regionally predominant. The union of the country sets is the elections coverage floor.
+  Territories and dependencies are excluded; every code is ISO 3166-1 alpha-2, lowercase,
+  and is validated against src/catalog/countries.py at load time.
+
+languages:
+
+  ar:
+    name: "Arabic"
+    source: "Constitutions and language statutes of the Arab League member states; pending clearnet verification."
+    countries:
+      - {cc: dz, basis: official}
+      - {cc: bh, basis: official}
+      - {cc: td, basis: official}
+      - {cc: km, basis: official}
+      - {cc: dj, basis: official}
+      - {cc: eg, basis: official}
+      - {cc: iq, basis: official}
+      - {cc: jo, basis: official}
+      - {cc: kw, basis: official}
+      - {cc: lb, basis: official}
+      - {cc: ly, basis: official}
+      - {cc: mr, basis: official}
+      - {cc: ma, basis: official}
+      - {cc: om, basis: official}
+      - {cc: ps, basis: official}
+      - {cc: qa, basis: official}
+      - {cc: sa, basis: official}
+      - {cc: so, basis: official}
+      - {cc: sd, basis: official}
+      - {cc: sy, basis: official}
+      - {cc: tn, basis: official}
+      - {cc: ae, basis: official}
+      - {cc: ye, basis: official}
+      - {cc: er, basis: de-facto, contested: true, note: "Eritrea names no official language; Arabic is one of three working languages alongside Tigrinya and English."}
+
+  bn:
+    name: "Bengali"
+    source: "Constitution of Bangladesh art. 3; Eighth Schedule of the Constitution of India; pending clearnet verification."
+    countries:
+      - {cc: bd, basis: official}
+      - {cc: in, basis: regional, note: "A scheduled language of India and official in West Bengal and Tripura; India's national official languages are Hindi and English."}
+
+  de:
+    name: "German"
+    source: "National constitutions and language acts of the German-speaking states; pending clearnet verification."
+    countries:
+      - {cc: de, basis: official}
+      - {cc: at, basis: official}
+      - {cc: ch, basis: official}
+      - {cc: li, basis: official}
+      - {cc: lu, basis: official}
+      - {cc: be, basis: official, note: "One of Belgium's three official languages (the German-speaking Community)."}
+
+  en:
+    name: "English"
+    source: "National constitutions and language statutes; de-facto rows follow majority-language usage; pending clearnet verification."
+    countries:
+      - {cc: us, basis: de-facto, note: "The United States designates no official language at federal level."}
+      - {cc: gb, basis: de-facto, note: "The United Kingdom designates no official language by statute."}
+      - {cc: ie, basis: official}
+      - {cc: ca, basis: official}
+      - {cc: au, basis: de-facto, note: "Australia designates no official language by statute."}
+      - {cc: nz, basis: official}
+      - {cc: za, basis: official}
+      - {cc: ng, basis: official}
+      - {cc: gh, basis: official}
+      - {cc: ke, basis: official}
+      - {cc: ug, basis: official}
+      - {cc: tz, basis: official}
+      - {cc: zm, basis: official}
+      - {cc: zw, basis: official}
+      - {cc: mw, basis: official}
+      - {cc: bw, basis: official}
+      - {cc: na, basis: official}
+      - {cc: ls, basis: official}
+      - {cc: sz, basis: official}
+      - {cc: sl, basis: official}
+      - {cc: lr, basis: official}
+      - {cc: gm, basis: official}
+      - {cc: rw, basis: official}
+      - {cc: ss, basis: official}
+      - {cc: cm, basis: official, note: "Co-official with French."}
+      - {cc: mt, basis: official}
+      - {cc: in, basis: official, note: "Subsidiary official language of the Union alongside Hindi."}
+      - {cc: pk, basis: official}
+      - {cc: ph, basis: official}
+      - {cc: sg, basis: official}
+      - {cc: jm, basis: official}
+      - {cc: tt, basis: official}
+      - {cc: bb, basis: official}
+      - {cc: bs, basis: official}
+      - {cc: bz, basis: official}
+      - {cc: gy, basis: official}
+      - {cc: ag, basis: official}
+      - {cc: dm, basis: official}
+      - {cc: gd, basis: official}
+      - {cc: kn, basis: official}
+      - {cc: lc, basis: official}
+      - {cc: vc, basis: official}
+      - {cc: fj, basis: official}
+      - {cc: pg, basis: official}
+      - {cc: sb, basis: official}
+      - {cc: vu, basis: official}
+      - {cc: ws, basis: official}
+      - {cc: to, basis: official}
+      - {cc: ki, basis: official}
+      - {cc: nr, basis: official}
+      - {cc: mh, basis: official}
+      - {cc: fm, basis: official}
+      - {cc: pw, basis: official}
+      - {cc: tv, basis: official}
+
+  es:
+    name: "Spanish"
+    source: "National constitutions of the Spanish-speaking states; pending clearnet verification."
+    countries:
+      - {cc: es, basis: official}
+      - {cc: mx, basis: de-facto, contested: true, note: "Mexico recognises Spanish and 68 indigenous languages as national languages; no single official language is designated."}
+      - {cc: gt, basis: official}
+      - {cc: hn, basis: official}
+      - {cc: sv, basis: official}
+      - {cc: ni, basis: official}
+      - {cc: cr, basis: official}
+      - {cc: pa, basis: official}
+      - {cc: cu, basis: official}
+      - {cc: do, basis: official}
+      - {cc: ve, basis: official}
+      - {cc: co, basis: official}
+      - {cc: ec, basis: official}
+      - {cc: pe, basis: official}
+      - {cc: bo, basis: official}
+      - {cc: cl, basis: de-facto, note: "Chile designates no official language by constitution."}
+      - {cc: ar, basis: de-facto, note: "Argentina designates no official language at federal level."}
+      - {cc: uy, basis: de-facto, note: "Uruguay designates no official language by constitution."}
+      - {cc: py, basis: official}
+      - {cc: gq, basis: official}
+
+  fr:
+    name: "French"
+    source: "National constitutions and language statutes of the Francophone states; pending clearnet verification."
+    countries:
+      - {cc: fr, basis: official}
+      - {cc: be, basis: official}
+      - {cc: ch, basis: official}
+      - {cc: lu, basis: official}
+      - {cc: mc, basis: official}
+      - {cc: ca, basis: official}
+      - {cc: ht, basis: official}
+      - {cc: bj, basis: official}
+      - {cc: bf, basis: official}
+      - {cc: bi, basis: official}
+      - {cc: cm, basis: official}
+      - {cc: cf, basis: official}
+      - {cc: td, basis: official}
+      - {cc: km, basis: official}
+      - {cc: cd, basis: official}
+      - {cc: cg, basis: official}
+      - {cc: ci, basis: official}
+      - {cc: dj, basis: official}
+      - {cc: ga, basis: official}
+      - {cc: gn, basis: official}
+      - {cc: ml, basis: de-facto, contested: true, note: "Mali's 2023 constitution made 13 national languages official and reclassified French as a working language."}
+      - {cc: ne, basis: de-facto, contested: true, note: "Niger reclassified French as a working language in 2025; Hausa is the national language."}
+      - {cc: rw, basis: official}
+      - {cc: sn, basis: official}
+      - {cc: sc, basis: official}
+      - {cc: tg, basis: official}
+      - {cc: mg, basis: official}
+      - {cc: vu, basis: official}
+
+  hi:
+    name: "Hindi"
+    source: "Constitution of India art. 343; Constitution of Fiji 2013; pending clearnet verification."
+    countries:
+      - {cc: in, basis: official}
+      - {cc: fj, basis: official, contested: true, note: "Fiji's 2013 constitution names Fiji Hindi (a distinct variety) as an official language alongside English and iTaukei."}
+
+  id:
+    name: "Indonesian"
+    source: "Constitution of Indonesia art. 36; pending clearnet verification."
+    countries:
+      - {cc: id, basis: official}
+
+  ja:
+    name: "Japanese"
+    source: "De-facto national language of Japan; no statutory designation; pending clearnet verification."
+    countries:
+      - {cc: jp, basis: de-facto, note: "Japan designates no official language by statute."}
+
+  pt:
+    name: "Portuguese"
+    source: "National constitutions of the Lusophone states; pending clearnet verification."
+    countries:
+      - {cc: pt, basis: official}
+      - {cc: br, basis: official}
+      - {cc: ao, basis: official}
+      - {cc: mz, basis: official}
+      - {cc: gw, basis: official}
+      - {cc: cv, basis: official}
+      - {cc: st, basis: official}
+      - {cc: tl, basis: official}
+      - {cc: gq, basis: official, note: "Co-official since 2007, alongside Spanish and French."}
+
+  ru:
+    name: "Russian"
+    source: "National constitutions and language statutes; pending clearnet verification."
+    countries:
+      - {cc: ru, basis: official}
+      - {cc: by, basis: official}
+      - {cc: kz, basis: official, note: "Constitutionally used on equal terms with Kazakh in state institutions."}
+      - {cc: kg, basis: official}
+      - {cc: tj, basis: regional, contested: true, note: "Recognised as the language of interethnic communication rather than an official language."}
+
+  zh:
+    name: "Chinese"
+    source: "National language statutes; pending clearnet verification."
+    countries:
+      - {cc: cn, basis: official}
+      - {cc: sg, basis: official, note: "Mandarin is one of four official languages."}
+      - {cc: tw, basis: official, contested: true, note: "ISO 3166-1 assigns the code TW; listing it here is reference data and not a statement about statehood, per the disclaimer src/catalog/countries.py carries about the same code set."}
