@@ -25,3 +25,11 @@ one place; the plan doc records the real, checked status).
 
 Older prose in `CLAUDE.md` and `docs/ledger/SHIPPED_LOG.md` may still cite the original
 `docs/design/…` paths as historical records; this table is the old→new map.
+
+- [`UNIFIED_IMPORT_EXPORT.md`](UNIFIED_IMPORT_EXPORT.md) — the unified Import + Export/Backup dialog
+  consolidation (field remarks 2 / 5 / 6). **Archived 2026-09-07** once its one live carry-over was
+  lifted: the browser-gated cleanup (retire the orphaned `folderBackupStart` / `volBackupStart`
+  handlers and the capped single-file-CREATE remnant, after a click-through) is now a row in
+  `docs/ROADMAP.md` §4 under *Backup, import / export & data-safety*, so it no longer depends on
+  anyone reading this file. Everything the doc designed is shipped: the `#ux-export` / `#ux-import`
+  dialogs, the volumes+parity and folder engines behind them, and `scan_import_folder`'s discovery.

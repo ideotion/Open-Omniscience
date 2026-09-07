@@ -1,6 +1,10 @@
 # Autonomous session brief — 2026-08-01 Session D: Home-alerts relevance · Home Overview · Library subtabs · the axis-honesty pass
 
-**Status:** PENDING execution (an autonomous Opus 5 CLI session).
+**Status:** ~~PENDING execution~~ — **EXECUTED 2026-08-01** (re-verified 2026-09-07): S1–S5 all shipped
+(the toolkit-wide axis-honesty pass, the alert selection layer, Home Overview, the Library five-view
+restructure, the ingest-rhythm heatmap), zero introduced test failures at every slice. Every frontend
+slice remains awaiting a human UX pass. NOTE this brief's own §-worklist (line ~196) asks a later session
+to fix a stale PENDING banner on a sibling brief — the same class of drift this line corrects.
 **Answers of record:** the "FIELD IMPRESSIONS 2026-08-01" entry in CLAUDE.md (all 17 maintainer
 answers, rulings 1–11 + 17 govern this session).
 **Base:** cut from a freshly-fetched `origin/main`; draft PR(s) onto `main`; nothing auto-merges —

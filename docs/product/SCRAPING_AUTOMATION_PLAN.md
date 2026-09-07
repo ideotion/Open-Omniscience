@@ -1,6 +1,12 @@
 # Scraping automation & the download subsystem — action plan
 
-> **Status:** maintainer-commissioned 2026-06-13; awaiting review.
+> **Status:** maintainer-commissioned 2026-06-13; ~~awaiting review~~ — **largely EXECUTED.**
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** the plan's own steps 1–7 mostly shipped:
+> the ONE guarded socket factory, parallel dumps + the bounded fetch worker pool, auto-collect
+> default-on after the one consent, the Collect/Sources/Wikipedia tabs moving into Settings, and the
+> task-manager window. What remains open is named on the live boards, not here — chiefly the
+> segmented multi-circuit download and dump mirror selection (step 3/4), which the 2026-07-24
+> throughput brief re-sequenced. Read this for the reasoning; read `docs/ROADMAP.md` for status.
 > This is THE retrievable home of the plan triggered by the 2026-06-13
 > field session (slow-over-Tor downloads, "the task manager is absent",
 > "move Collect into Settings", "the app should focus on content, not
