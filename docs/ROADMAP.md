@@ -66,13 +66,13 @@ scaling failures now cause crashes and data loss, not just slowness.** So 0.2's 
 | # | Limitation | Detail | Status | Ref |
 |---|---|---|---|---|
 | DB-1 | **Unlock at scale** | ROOT-CAUSED + FIXED (A1): `ensure_fts` ran the FTS5 `'rebuild'` — a corpus-scaled codec re-read — on EVERY boot; now rebuilds only when needed. Measured on a 112k/2.7 GB encrypted synthetic corpus: 28.6 s → **0.002 s**; warm unlock **0.012 s** (bar < 2 s). | 🔧 fixed on synthetic — **live-corpus validation is the remaining gate** (never claim closed on synthetic) | SCALE_ROADMAP P0.4 |
-| DB-2 | **5 TB single-file SQLCipher unvalidated** | Page cache, VACUUM infeasibility, backup windows, single-writer behaviour at 5 TB never measured. Cross-time recall is sacred — no partitioning that makes old data second-class. | 🎨 design-only | SCALE_ROADMAP P1.7 · `DATA_ARCHITECTURE_SKELETON.md` |
+| DB-2 | **5 TB single-file SQLCipher unvalidated** | Page cache, VACUUM infeasibility, backup windows, single-writer behaviour at 5 TB never measured. Cross-time recall is sacred — no partitioning that makes old data second-class. **REFRESHED 2026-09-07 (`STORAGE_5TB_REFRESH_2026-09-07.md`): the SIZE ceiling is no longer the binding constraint.** It is `max_page_count × page_size` and the bundled sqlcipher3 compiles `MAX_PAGE_COUNT=0xfffffffe`, so DB-10 §1b's ruled `page_size=16384` moved it 16.00 TiB → **64.00 TiB** — 5 TB is 7.1% of one file, and Phase C is re-scoped from "MANDATORY, first" to a working-set lever gated on the DB-10 §6 footprint split. Hash-sharding measured for the first time: recall 100% in 44/44 cells (structural); rank divergence is per-shard thinness that shrinks as shards fatten. | 🎨 design-only — **premise refreshed; the 50–100 M sharding prototype is now a costed operator job (§4)** | SCALE_ROADMAP P1.7 · `DATA_ARCHITECTURE_SKELETON.md` · `STORAGE_5TB_REFRESH_2026-09-07.md` |
 | DB-3 | **Persisted encrypted columnar store (D1) — machinery built, gated on the per-OS binaries** | S3 built the D1 offline pin-and-verify httpfs LOADER + the D2/D3 persisted-serve wiring (epoch-gated incremental refresh), all behind `secure_crypto_available()`; the shipped `duckdb-httpfs-extension` registry pins are BLANK so it stays in-memory until the operator fetches + pins the per-OS httpfs binaries (`extensions.duckdb.org` egress-blocked here — the one networked step, per `EXTERNAL_DEPENDENCIES.md`). No checksum fabricated; a CI lane exercises the real path (checksum computed in-lane, never promoted). | 🛠 operational (machinery built + tested; awaiting the operator's networked binary fetch) | SCALE_ROADMAP Ruling-gated #2 · `PERSISTED_DUCKDB_HTTPFS.md` · S3.1/S3.2 |
 | DB-4 | **Keyword-table junk growth** | SEGMENTER SHIPPED (B1): zh/ja/th word segmentation via the optional `[segmentation]` extra (jieba MIT · janome Apache-2.0 · pythainlp Apache-2.0 — pure-local, dicts in-wheel, zero network) + ko/vi/mr (and fa/hu/…) stoplists vendored; graceful degrade without the extra. | 🔧 shipped — remaining: **install the extra + "Clean up keywords" re-index on the live corpus** to apply retroactively and measure the real junk reduction | SCALE_ROADMAP P1.5 / Ruling-gated #1 (executed) |
 | DB-5 | **~120 GB of the data folder unidentified** | The instruments are now shipped: the A12 `du`-style data-dir breakdown + the A12b/B14 itemized storage footprint (incl. the external Ollama store). The mystery itself is still unnamed. | 🔧 diagnostics shipped — **awaiting the maintainer's next field export** to name the 120 GB | SCALE_ROADMAP 2026-07-09 event |
 | DB-6 | **dbstat absent on the encrypted store** | The bundled `sqlcipher3` ships without dbstat, so the per-table storage-composition report degrades to PRAGMA totals only on the live encrypted DB. | ✅ shipped w/ honest limit; dbstat-enabled build is the follow-up | SCALE_ROADMAP P1.5 |
 | DB-9 | **Backup parity ceiling < 5 TB** | FIXED (S3.3): adaptive volume sizing bounds the volume COUNT not the size — N stays ~200 so N+M stays under the GF(2⁸) 255 ceiling at any scale (byte-identical below ~100 GB); sizes against the REAL per-member volume count (a skeptic caught + fixed a member-count-gap that could otherwise breach 255). Crash-safety unchanged; torture-tested incl. an interrupted tier-crossing. | ✅ shipped (S3.3) — RE-RUN the S1 P0.1 live validation before tag-day (this changes that engine) | SCALE_ROADMAP post-merge audit F6 · S3.3 |
-| DB-10 | **Near-dup growth / eviction / vacuum posture** | Decision MEMO written (S3.4, `docs/design/DB10_RETENTION_VACUUM_MEMO.md`): the IRREVERSIBLE auto_vacuum/page_size CREATE-time seam needs a maintainer ruling BEFORE 0.2 tags (a corpus created without it can never reclaim — full VACUUM infeasible at 5 TB); incremental-vacuum idle pass ready to wire into S2.2; tiered raw-text retention + near-dup folding are footprint-measure-gated. auto_vacuum now visible in the storage diagnostic; cross-time-recall codified as a repo invariant (§F). | 🎨 memo + cheap instrument + invariant (ruling-gated) | SCALE_ROADMAP P1.5 · S3.4 |
+| DB-10 | **Near-dup growth / eviction / vacuum posture** | Memo = `docs/design/DB10_RETENTION_VACUUM_MEMO.md`. **STATUS CORRECTED 2026-09-07 — the "ruling-gated" label was stale in both directions.** SHIPPED: §1a `auto_vacuum=INCREMENTAL` (ruled 2026-07-17) and §1b `cipher_page_size=16384` (ratified 2026-08-13) are both wired on `connect.py`'s fresh-file path with the reopen-hazard candidate ladder; §3's bounded idle `incremental_vacuum` pass is wired (`scheduler/maintenance.py` → `maybe_incremental_vacuum`). **§2 is HALF shipped:** `_confirmVacuum` discloses an estimated duration, but there is no backend refusal and no free-disk preflight on `POST /api/database/vacuum` though a full VACUUM needs ~2× the file in scratch, and nothing points at the incremental pass — which was the section's actual ask. **§6's footprint split has still never been measured**, and it now gates Phase C (DB-2). Migration mechanism verified + guarded 2026-09-07; `VACUUM INTO` refuted on encrypted stores (see §4). | 🔧 §1a/§1b/§3 shipped · **§2 half shipped** · §4/§5/§6 measure-gated | SCALE_ROADMAP P1.5 · S3.4 · `STORAGE_5TB_REFRESH_2026-09-07.md` |
 
 **Already resolved (this cycle):** expression index on `coalesce(published_at,created_at)`
 (was 735 s of full scans → index-only, #588) ✅ · corpus-epoch mechanism (`derived_meta`) ✅ ·
@@ -235,6 +235,62 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **D2 `keyword_daily` rollup + D3 incremental epoch-gated refresh** — S3 builds against the gated D1 store. 🚧
 - **D5 Roaring co-occurrence bitmaps** (pyroaring) — optional, off the critical path. 🎨
 
+#### Storage at 5 TB — what is left after the 2026-09-07 refresh
+Ordered as the refresh re-scoped them (`docs/design/STORAGE_5TB_REFRESH_2026-09-07.md` §8). The
+old order was set by a ceiling premise that no longer holds.
+
+- **DB-10 §6 — the footprint split.** Per-table `dbstat` bytes for `articles.content` against the
+  index and mention rows. **Never taken**, and it now gates Phase C: a 50% saving and a 90% saving
+  justify very different amounts of work, and nothing in the ledger substitutes for it (the two
+  field figures that look as though they might — ~42.6 KiB/article at 11.7 GB and ~21.9 KiB at
+  32.1 GB — are the *same* quantity on two different corpora, 2× apart). Needs a dbstat-enabled
+  build (DB-6). 🛠 operator
+- **C5 — the DB-10 migrate operation.** Mechanism VERIFIED and guarded
+  (`tests/test_db10_migration_mechanism.py`): ATTACH the target with its key, **declare
+  `cipher_page_size` AND `auto_vacuum` on the alias**, `sqlcipher_export` — proven up, down, and
+  rekey-plus-repage in one pass. A user-facing operation still owes a free-disk preflight, a
+  pragma self-verify that `int()`s the read-back, and an honest app-stopped cost statement
+  (~10–17 s/GB — a ledger figure only: `pagesize_bench.py` was removed under ruling 6, so a build
+  re-measures or cites the ledger, never implies the tree can reproduce it). Whether it should be
+  a button at all is still open. 🔒 ruling
+- **⚠ `VACUUM INTO` must never be used to migrate an ENCRYPTED store.** It writes its product at
+  the compiled default 4096 whatever the source is, **and reports success** — so on every corpus
+  created since 2026-08-13 (all of them at 16384) it silently produces an unopenable file. No live
+  call site today; the plan and the 2026-07-18 ruling both named it, and both are corrected.
+  Pinned by test so the next session cannot re-adopt it. ✅ closed as a trap
+- **DB-10 §2's missing backend half.** No refusal and no free-disk preflight on
+  `POST /api/database/vacuum` (a full VACUUM needs ~2× the file in scratch;
+  `src/safety/data_location.py` already has a `free_disk_bytes` helper), and nothing points at the
+  wired incremental pass. Small and self-contained. ⬜
+- **The FTS hash-sharding prototype — a costed operator job, not a caveat.** MEASURED 1,925 B of
+  FTS5 index per synthetic document at 2,692 docs/s ⇒ **89.6 GiB and 5.2 h per arm at 50 M**
+  (179.3 GiB / 10.3 h at 100 M); a single-vs-sharded comparison needs two arms. Treat 89.6 GiB as
+  an upper bound and measure the real corpus's index-bytes-per-article first. What it still has to
+  answer is the SCALE half — query-latency knee, merge behaviour, tombstone accumulation. What it
+  no longer has to answer: recall (100%, structural) and the rank divergence (per-shard thinness,
+  shrinks as shards fatten). Note for whoever runs it: FTS5's `bm25()` accepts only per-column
+  weights, so "maintain global term stats" is not available inside FTS5 — the real choices are fat
+  shards, disclosure, or scoring outside FTS5. 🛠 operator
+- **Phase B — the FTS split to a separate contentless-delete `fts.db`.** Moved **behind** the
+  sharding prototype on evidence: its "no second on-disk copy" bonus is already banked by the
+  shipped external-content table, and contentless-delete REFUSES `'rebuild'` (measured), trading a
+  minutes-to-hours engine primitive for a multi-day application re-feed at current corpus size. If
+  sharding lands, each shard is a separate file and the split comes free with it. 🎨
+- **Phase C — the packed, keyed, OOENC2 blob store.** Design unchanged; two amendments from the
+  refresh. Its working-set argument rests on **bytes-per-row through the codec**, not cache
+  economics (a benchmark built on cache-hit rate measures the wrong mechanism); and its
+  mark-and-sweep GC must be a **bounded windowed sweep from the first line** with
+  `temp_store=FILE`, because the bundled sqlcipher3 compiles `SQLITE_TEMP_STORE=2` and puts temps
+  in RAM invisibly. Gated on the footprint split above, and on C4 rulings 3–6. 🔒 ruling
+- **C4 rulings 3–6 (`STORAGE_5TB_PLAN.md` §8)** — dedup ON; OOENC2 vs `age`; keyed HMAC addressing;
+  the `sqlite3mc` benchmark trial. Standing recommendations intact and none defaulted. One input
+  moved: `cipher_memory_security` defaults to **0 (OFF)**, so "OOENC2 keeps the blob path
+  consistent with the SQL path's hygiene" is not an argument available to either side of ruling 4.
+  🔒 ruling
+- **Remaining `STORAGE_5TB_PLAN.md` §7 verification items** — items 1 and 3 closed 2026-09-07
+  (SQLite 3.51.1; `cipher_memory_security`=0). Still open: **(2)** backup live-read consistency
+  semantics, and **(4)** whether loadable FTS5 tokenizer extensions compose with SQLCipher. ⬜
+
 ### Maps & geo
 - **Hand-rolled offline vector-map renderer** — canvas 2.5D / CSS-3D, no WebGL/Three.js/tiles. 🎨
 - **Temporal-map remainder** — linear/log time-scale toggle + feed the mention layer with **event-places** (the temporal map itself is retired into `ooMap`). ⬜
@@ -363,8 +419,20 @@ Surface: Settings → Advanced → *Bulletin* (folded, last).
 - **The evidence archive** ✅ — owner-only, on demand: every article a figure was computed over, so the counts can be recomputed rather than trusted. Plaintext leaving an encrypted store, disclosed as such.
 - **The annexes bundle** ✅ (2026-08-11) — one click yields the report plus a ZIP of one file per cited article, where the report's `[0007]` and `..._Article_0007.md` are guaranteed the same article (one deterministic numberer, called by both the renderer and the bundle builder). Three different dates from three different facts: the bundle takes the creation day, each article file its own publication day, an undated article is named `undated_`.
 - **Written in the UI language** ✅ (2026-08-11/12) — a server-side translation layer keyed on the English sentence; 11 locales × 347 entries, mechanically verified complete. A missing translation renders English *and is reported*; a translation whose placeholders differ from its frame is refused rather than printed with a stray brace; copies of the English are counted apart from coverage, so a catalog of copies cannot report itself complete.
-- **REMAINING** — the §14 Layer-B `BackgroundJob` with a persisted cursor (narration runs inline today: right for a bounded story cap, wrong for a long run) ⬜ · §18's export-privacy enumeration before a first evidence archive leaves a machine 🔒 · four of the five §20 open questions (section list · introduction · mail sending · review-screen UX) 🔒 · a maintainer click-through of the Settings section and review screen 🛠 (every frontend slice shipped browser-unverified per fork-3) · the §6.3 time budget still rests on a guess until `/llm-bench` is run on a GPU machine and a slow one 🛠.
-- **Open question 4** — whether Layer A should be available *below* the hardware gate (a GPU-less operator is currently denied even the deterministic document). It is ONE constant with exactly one read (`src/bulletin/gate.py:LAYER_A_REQUIRES_CAPABLE_HARDWARE`, pinned by a test that counts the reads), so answering it is a one-line change, not an audit. 🔒
+- **Layer B as a background job** ✅ (2026-09-07) — §14's `BackgroundJob` with a persisted cursor. Narration ran inline inside the generate request, which is a multi-minute synchronous handler on a long run. Each unit is written back into the record with the cursor saved beside it; resume is the default and `restart` the destructive reading; an outage never advances the cursor and, after ten in a row, the run RAISES rather than ending in a benign-looking "done".
+- **The export-privacy enumeration** ✅ (2026-09-07) — §18's list of what a reader of an exported file can see, per artifact, measured against the exact articles that export carries. Tri-state: measured-there, measured-absent, NOT MEASURED. It rides the evidence plan, renders in the review screen, and travels inside both ZIPs.
+- **All five §20 questions** ✅ RULED (2026-09-07) — the eight sections and the checkbox review screen ratified; the introduction narrated with a deterministic fallback; mail sending **never**; Layer A available below the hardware gate (the gate now covers narration only, and the verdict is two facts rather than one).
+- **The card section's period** 🚧 (2026-09-07) — `run_all_bounded` takes an `as_of` and hands it to the producers that declare one; every card states which window its figures came from, and the section's `matches_period` is measured rather than hardcoded. Measured 2026-09-07: **5 of 37** registered producers are period-anchorable (`rising_now`, `framing_split`, `ip_litigation_pulse`, `on_the_horizon`, `through_time`).
+
+**REMAINING — what is left, and who it belongs to** (five items; measured 2026-09-07, PR #1028):
+
+| # | What | Status | Belongs to |
+|---|---|---|---|
+| BUL-1 | **Click through the Settings → Bulletin section and the review screen** in a browser — the gate disclosure's two verdicts, the narrate button and its job row in the task manager, the introduction's review row, and the export-privacy panel. Every frontend slice of the Bulletin shipped **browser-unverified per fork-3**; `node --check` and the two standing frontend invariants pass, which is not the same claim. | 🛠 | maintainer (a machine with a browser) |
+| BUL-2 | **Run `/llm-bench` on a GPU machine and on a slow one.** §6.3's narration time budget is a *guess* until it rests on two measurements. Until then the number shown to an operator is an estimate that has never been checked against hardware. | 🛠 | maintainer (two machines) |
+| BUL-3 | **Rule on the annexes ZIP's full-text default.** The bundle ships each cited article's full text, which raises a question about each publisher's terms. The export-privacy enumeration *states that the text is there* and deliberately does not answer it. A ruling would change a **default**, not build a mechanism — `full_text` is already a first-class flag on the route, the builder and the enumeration. Recorded in the Open queue with its three shapes and its options. | 🔒 | maintainer |
+| BUL-4 | **Convert the remaining 32 card producers to the `as_of` seam.** Ordinary work behind a seam that exists and is optional by construction — a producer that does not declare `as_of` is called exactly as before. The ones left are not blocked, they are unwritten; nothing claims a period it does not have, which is what the per-card window line is for. | ⬜ | any session |
+| BUL-5 | **§18's *publication profile*** — the named allow-list that would let an operator declare, once, what may leave the machine. The enumeration shipped because that is what §18 says is owed *before a first archive leaves*; the profile is a mechanism the operator has not been asked about, so it was deliberately not built. | 🎨 | needs a maintainer question first |
 
 ### Convergence, watches & alerting
 - **New Home producers** — "Converging now" (`space_time_convergence`) + "watch-rules fired" (`watch_matches`) ✅ exist and register; the TWO missing are now ✅ **SHIPPED (S6.4)**: **`on_the_horizon`** (an upcoming agenda date ∩ a currently-trending keyword; bucket watch) + **`through_time`** (anniversary lens: articles published on today's date in earlier years; bucket context; cross-time recall sacred). Neither promoted into an urgent alert (the ruled boundary). 🚧→✅

@@ -1,3 +1,18 @@
+> **REFRESHED 2026-09-07 → read [`STORAGE_5TB_REFRESH_2026-09-07.md`](./STORAGE_5TB_REFRESH_2026-09-07.md)
+> BEFORE building anything from this document.** Two of this plan's instructions are now measurably
+> wrong, both as a consequence of the DB-10 §1b ruling this plan itself asked for:
+> (1) **§0 headline finding (3) — the "~17.5 TB ceiling ⇒ Phase C is MANDATORY" premise is RETIRED.**
+> That ceiling is `max_page_count × page_size`, and at the ruled `page_size=16384` it is **64.00 TiB**
+> (70.37 TB), not 16.00 TiB (17.59 TB). The 5 TB milestone sits at 7.1% of one file. Phase C is
+> re-scoped from "mandatory, first" to "the largest lever on the hot working set, gated on the DB-10 §6
+> footprint measurement nobody has taken". (2) **§9's `VACUUM INTO` migration mechanism is REFUTED on an
+> encrypted store** — it writes its product at the compiled default 4096 whatever the source is, and
+> REPORTS SUCCESS, so on every corpus created since 2026-08-13 it silently produces an unopenable file.
+> `sqlcipher_export()` into an ATTACHed target with the pragmas DECLARED on the alias is verified in
+> all four directions and is the only mechanism. Both are pinned by
+> `tests/test_db10_migration_mechanism.py`. The refresh also answers §7 items 1 and 3, re-scores the
+> Phase-B FTS split, and reports the first direct measurement of hash-sharding's recall and ranking.
+>
 > **Status update (2026-09-07, docs-hygiene + reality-check pass) — the banner below is STALE on its own
 > headline finding.** The DB-10 CREATE-time seam **IS wired**: `src/database/connect.py`'s fresh-file path
 > now sets `auto_vacuum=INCREMENTAL` (§1a, ruled 2026-07-17) *and* `cipher_page_size=16384` (§1b, ratified
@@ -286,11 +301,15 @@ passphrase-derived KEK so only the wrapping re-derives).
 
 ## 7. Open verification items (cheap, do before the relevant slice)
 
-1. Bundled sqlcipher3's SQLite version ≥ 3.43 (`python -c "import sqlcipher3;
-   print(sqlcipher3.dbapi2.sqlite_version)"` in the py3.13 venv; expected 3.44+).
+1. ~~Bundled sqlcipher3's SQLite version ≥ 3.43.~~ **CLOSED 2026-09-07 — MEASURED 3.51.1**
+   (SQLCipher 4.12.0 community, provider openssl). `contentless_delete` is available and
+   accepted; what it COSTS is the refresh doc §4.
 2. Backup live-read consistency semantics (§2.3) — confirm checkpoint+quiesce equivalence.
-3. `PRAGMA cipher_memory_security` default (the report couldn't source it; check Zetetic docs
-   or the sqlcipher3 build).
+   **STILL OPEN.**
+3. ~~`PRAGMA cipher_memory_security` default (the report couldn't source it).~~
+   **CLOSED 2026-09-07 — MEASURED `0`, i.e. OFF by default.** Consequence for §5: that section
+   asks memory hygiene to "extend to the blob path", which reads as though the SQL path already
+   has it. It does not — the KDF hierarchy must not assume the SQL side is locked.
 4. Loadable FTS5 tokenizer extensions compose with SQLCipher (extension loading must be
    explicitly enabled; untested with these specific tokenizers — report §8).
 5. WAL starvation in the field: does the inter-pass TRUNCATE actually complete under live

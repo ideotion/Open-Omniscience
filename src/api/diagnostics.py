@@ -2782,9 +2782,11 @@ def bulletin_preview(
     Read-only. The period ENDS at the start of today, so it covers whole days and
     re-rendering it tomorrow answers the same question.
 
-    Gated on hardware that can practically run a local model (the feature is gated
-    as a whole, not merely its narration layer); the gate reports its reason and
-    the standing override reveals it. See src/bulletin/.
+    The hardware gate covers the NARRATION layer only (ruled 2026-09-07, open
+    question 4), and this preview is Layer A — deterministic SQL — so it is
+    produced on any machine. The verdict still travels in the payload, because a
+    reader of the preview should be able to see what this machine could add to it.
+    See src/bulletin/.
     """
     from src.bulletin.facts import layer_a
     from src.bulletin.gate import bulletin_available

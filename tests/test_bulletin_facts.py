@@ -396,9 +396,17 @@ def test_the_preview_endpoint_returns_layer_a_for_a_closed_period(monkeypatch):
     assert body["period"]["end_is_exclusive"] is True
 
 
-def test_an_incapable_machine_gets_the_refusal_and_no_figures(monkeypatch):
-    """The feature is gated as a whole, not merely its narration layer — so the
-    refusal must not ship a masthead alongside it."""
+def test_a_refused_verdict_gets_the_refusal_and_no_figures(monkeypatch):
+    """A False document verdict must not ship a masthead alongside it.
+
+    The docstring here used to read "the feature is gated as a whole, not merely
+    its narration layer", which the maintainer's 2026-09-07 answer to open question
+    4 superseded — the gate now covers narration only. The PROPERTY survives the
+    ruling and is what is pinned: whatever produces a False verdict (the constant
+    flipped back, or a probe that could not be read), the endpoint must publish the
+    refusal and no figures, because a payload carrying half a record beside a
+    refusal is a document that cannot say what it is.
+    """
     import src.api.diagnostics as diag
     import src.bulletin.gate as gate
 

@@ -2829,7 +2829,11 @@ building:**
   Headlines: the corpus/index ATTACH split is DEAD (WAL forfeits cross-file atomicity — the
   durable file stays ONE file; only disposable/immutable pieces split out); the split-out FTS
   index must be CONTENTLESS-DELETE (external-content cannot cross ATTACH; verified snippet-safe
-  for the article index); text offload (Phase C) is MANDATORY (~17.5 TB default-page ceiling)
+  for the article index); text offload (Phase C) is **no longer mandatory BY SIZE** — the
+  ~17.5 TB figure is the ceiling at a 4096-byte page, and DB-10 §1b's ruled `page_size=16384`
+  moved it to **64.00 TiB**, so 5 TB is 7.1% of one file (REFRESHED 2026-09-07,
+  [`design/STORAGE_5TB_REFRESH_2026-09-07.md`](design/STORAGE_5TB_REFRESH_2026-09-07.md); Phase C
+  is re-scoped to a working-set lever gated on the DB-10 §6 footprint split) —
   and re-primitived as a PACKED (~8–16 MB containers), KEYED-addressed (HMAC under a
   passphrase-derived key — the confirmation-attack fix), OOENC2-encrypted, per-source-zstd
   (versioned encrypted dictionary registry) content store with blob-first writes + mark-and-sweep
@@ -2962,30 +2966,44 @@ document must say about itself before anyone else reads it.
   number the record contains — and the document states that it is a selection, because a reader
   cannot see an omission.
 
-**OPEN QUESTIONS (§20) — four of five still open, with their real state:**
+**OPEN QUESTIONS (§20) — ALL FIVE RULED 2026-09-07. The list is closed; the answers are kept
+here because a closed question that vanishes is one the next session re-opens.**
 
-1. **Final section list.** Eight shipped (`rising_concepts · across_channels · country_coverage ·
-   by_topic_tag · changes_of_record · alerts · through_time · cards`) — §11's proposal plus
-   `country_coverage` and `cards`. Answered *de facto* by what shipped; never formally ruled.
-2. **An introduction — one, templated, or none?** None built. The document opens on a mechanical
-   framing line and the masthead; there is no generated prose above the first section. Genuinely
-   open, and the cheapest of the five to answer.
-3. **Mail sending — never, or opt-in later?** Not built, and the reason is recorded rather than
-   deferred: sending is real egress that reveals the operator to a mail provider, off Tor, with
-   stored credentials. The current exit is download plus a short digest for paste.
-4. **Should Layer A be available BELOW the hardware gate?** It needs no model, so a GPU-less
-   operator is currently denied even the deterministic document. This is ONE constant with
-   exactly one read (`src/bulletin/gate.py:LAYER_A_REQUIRES_CAPABLE_HARDWARE`, pinned by a test
-   that counts the reads) — a one-line change, not an audit. The strongest open question here.
-5. **Review-screen UX.** Shipped as one *reading* of the question — a checkbox per section and
-   story with per-sentence verdicts — not as a ruled design.
+1. **Final section list.** → **RULED: the eight shipped sections**, in order
+   (`rising_concepts · across_channels · country_coverage · by_topic_tag · changes_of_record ·
+   alerts · through_time · cards`), `cards` deliberately last. Pinned by a guard so an addition
+   is a deliberate edit of the ruling; adding one is still a one-line registry edit.
+2. **An introduction — one, templated, or none?** → **RULED: NARRATED BY THE MODEL**, over the
+   edition's own figures, with the deterministic template beside it that every Layer-B sentence
+   has — so a document produced below the hardware gate still opens with a paragraph. An
+   invented figure is dropped; the prompt forbids naming a leading subject.
+3. **Mail sending — never, or opt-in later?** → **RULED: NEVER.** No outbound mail path is added.
+   Sending is real egress that reveals the operator to a mail provider, off Tor, with stored
+   credentials — a new egress surface for a document the user can already export. Download plus
+   the paste digest stays the exit. A closed question, not a deferral.
+4. **Should Layer A be available BELOW the hardware gate?** → **RULED: YES.** The gate covers
+   NARRATION only. `bulletin_available()` now returns two verdicts — the document and the model —
+   each with its own reason and caveat, because below the bar they are opposite answers.
+   `LAYER_A_REQUIRES_CAPABLE_HARDWARE` is `False` and keeps exactly one read; the narration
+   verdict is a hardware fact and reads it nowhere.
+5. **Review-screen UX.** → **RULED: the checkbox-per-section / per-story screen with
+   per-sentence verdicts**, as shipped. The introduction joined it as a reviewable unit in the
+   same pass.
 
-**REMAINING slices:** (S1) the §14 Layer-B **`BackgroundJob` with a persisted cursor** — narration
-runs inline inside the generate request today, which is right for a bounded story cap and wrong
-for a long run, and the design record explicitly warns against repeating the abort-to-done bug
-this repo has fixed three times (a transient LLM error must retry with backoff, never end a run in
-a benign-looking "done"). (S2) **§18's export-privacy enumeration** before a first evidence archive
-leaves a machine: the document reveals the operator's source list, interests, cadence and — via
-timestamps — their timezone, and the archive is plaintext leaving an encrypted store. (S3) the
-maintainer **click-through** — every frontend slice shipped browser-unverified per fork-3. (S4) the
-§6.3 time budget rests on a guess until `/llm-bench` is run on a GPU machine *and* a slow one.
+**SHIPPED SINCE (2026-09-07):** §14's Layer-B **`BackgroundJob` with a persisted cursor** —
+narration ran inline inside the generate request, which is right for a bounded story cap and
+wrong for a long run; it does not repeat the abort-to-done bug the design record warns about (an
+outage never advances the cursor, and after ten in a row the run RAISES). And **§18's
+export-privacy enumeration** before a first evidence archive leaves a machine, per artifact, with
+a tri-state that keeps NOT-MEASURED apart from absent.
+
+**REMAINING — and none of it is a build this session could do.** (S1) the maintainer
+**click-through** of the Settings section and review screen: every frontend slice in this stack
+shipped browser-unverified per fork-3. (S2) the §6.3 time budget rests on a guess until
+`/llm-bench` is run on a GPU machine *and* a slow one. (S3) **whether redistributing publishers'
+full text** in the annexes ZIP is the operator's to do — a question about each publisher's terms,
+raised by the §18 enumeration and deliberately not answered by it; recorded in the Open queue with
+its options, and a ruling would change a default rather than build a mechanism. (S4) converting
+the remaining **card producers** to the period seam: `run_all_bounded` takes an `as_of` and five
+producers honour it, every card states which window its figures came from, and the rest is
+ordinary work behind an existing seam.
