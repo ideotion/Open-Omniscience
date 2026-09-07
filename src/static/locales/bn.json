@@ -1975,6 +1975,7 @@
   "By language": "ভাষা অনুযায়ী",
   "mentions per language": "প্রতি ভাষায় উল্লেখ",
   "Not mapped (source country unknown)": "মানচিত্রে নেই (উৎসের দেশ অজানা)",
+  "Countries listed: {shown} of {total}": "তালিকাভুক্ত দেশ: {total}-এর মধ্যে {shown}",
   "Mentions": "উল্লেখ",
   "Most recent": "সর্বশেষ",
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "এই ট্যাগযুক্ত উৎসগুলির মধ্যে নিবন্ধের প্রকাশের তারিখ (প্রকাশক নির্ধারিত) অনুযায়ী নতুনতমগুলি প্রথমে। প্রতিটি শিরোনাম অফলাইন সংরক্ষিত কপি খোলে।",

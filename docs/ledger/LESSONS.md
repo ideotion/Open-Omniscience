@@ -6110,6 +6110,75 @@
   whole thing. This is the inverse of the stale-PENDING-banner failure the 2026-09-06 analysis
   named: there a doc claimed less than the tree held; here a commit claimed a slice id and
   delivered half of it.
+  - **A LIST BOUND THAT THE RULING'S OWN LOAD-BEARING ROW RIDES ALONG WITH IS SAFE ONLY BY
+    ACCIDENT — and the ordering that saves it is a property of the data, not of the code
+    (2026-09-07, the concept map's country cap):** `ring_country_split` ended with a bare
+    `rows[:limit]` over a GROUP BY ordered by article count, `limit` defaulting to 40. The
+    unlocated ("not mapped") bucket is one of those rows — and it is the row the 2026-07-18 §D
+    ruling names BY HAND as "often the largest, and it must be investigable, never a dead end".
+    It survived every field run because it HAPPENED to be the biggest; on any concept carried by
+    more than 40 countries with a smaller unlocated share it falls outside the window and the
+    ruled-clickable drill simply is not in the payload. The shipped catalog carries **189 distinct
+    source countries**, so the bound is reachable rather than theoretical — which is the number
+    that turned "could this happen" into "this happens". TWO GENERAL RULES. (a) When a ruling
+    singles out one row as load-bearing, check whether it travels through the same bound as the
+    ordinary rows; if it does, split it out BEFORE the bound so the guarantee is structural, and
+    the fixture that proves it must make that row the SMALLEST — a fixture using the field's usual
+    shape (largest) survives any limit and the guard passes for free. (b) The same call had the
+    anti-capping defect in its purest form: no exact total was published, so the only figure a
+    reader could count — the polygons, which the frontend announced as "N countries" — WAS the cap.
+    The fix cost nothing, because a GROUP BY has already materialised every bucket: `len(located)`
+    is exact and free, and only the LIST needed bounding. Before adding a `[:limit]` to a
+    fully-materialised aggregate, ask what the caller will count, and publish the number beside the
+    list rather than leaving the list to stand in for it.
+  - **A MIN GATE EXPRESSED AS A ROUNDED PERCENTAGE GROWS SLACK AS ITS DENOMINATOR GROWS — at 3040
+    keys, exactly one missing translation is invisible (2026-09-07, measured while adding one
+    key):** `scripts/i18n_report.py --min 100` is one of the three blocking i18n gates and computes
+    `pct = round(100 * covered / n, 1)`. At today's n = 3040, a locale missing ONE key scores
+    99.967 → **100.0**, prints "complete 3039/3040 (100.0%)" and exits 0. Measured, not reasoned:
+    deleting the newly-added key from `fr.json` alone left the gate green. This is the recorded
+    "a gate you expect to be interesting never says anything interesting" family with a new
+    mechanism — the gate is not blind, it is ROUNDED, and its blind spot WIDENS with every key the
+    project adds, so a check that was exact at 500 keys silently stopped being exact. GENERAL FORM:
+    any threshold applied to a rounded ratio has a tolerance equal to half the rounding step times
+    the denominator, so state it in ITEMS ("this gate cannot see 1 missing key") rather than in
+    percent, and prefer comparing the counts. Not fixed in the slice that found it, deliberately:
+    it changes a shared blocking gate and belongs to its own reviewed change — but measure the
+    cost of tightening before deferring it, because all 11 non-English locales are currently at the
+    full count, so today it would redden nothing.
+  - **`grep --include` IS A WHOLE-INVOCATION FILTER, NOT A POSITIONAL ONE — naming files of another
+    type beside it searches NONE of them, and reports a confident nothing (2026-09-07):**
+    `grep -rn "<needle>" src/static/*.js src/static/*.html src/ --include=*.py` looks like "search
+    these JS and HTML files, plus the Python under src/". It is not: `--include` applies to every
+    path in the call, so the JS and HTML files were filtered out and the command searched only
+    `*.py`. It printed nothing, and I concluded from that silence that a translated honesty string
+    was keyed in twelve locales and rendered NOWHERE — a finding about an orphaned translation,
+    written up as such, when the sentence is sitting in `index.html` and guarded by a test. The
+    tell was available and I walked past it: the same run reported the string missing from files I
+    had just been told it was in. Same family as the recorded `cmd | tail` exit-code trap and the
+    `pytest -k` selector matching zero tests — a check that reports success (or emptiness) without
+    having examined what it claims to. RULE: put `--include`/`--exclude` only on a bare recursive
+    search, and when a grep over explicitly-named files returns nothing, re-run it on ONE of those
+    files alone before believing the absence.
+  - **A GUARD ANCHORED ON A LITERAL OPERAND LIST REDDENS WHEN YOU ADD AN OPERAND BESIDE THE
+    ONE IT IS ABOUT — and the tell is that it fails against code where its own named property
+    is untouched (2026-09-07, the ring-map dumbbell):** `test_dumbbell_wired_into_ring_map_detail`
+    asserted the string `"langs + langBd + unlocNote + dumb + tbl"`. Inserting a SIXTH,
+    unrelated operand (a truncation disclosure) between two of them reddened it — while the
+    dumbbell it is named for was wired exactly as before. That is the recorded
+    "anchored on a landmark that merely coincided with the property" class, in the cheapest
+    possible form: a concatenation's operand ORDER is not the claim, membership is. Re-anchor
+    STRUCTURALLY — select the composed render assignment (not the `= ""` resets that clear the
+    block) and assert the term is one of its operands — which is strictly stronger, since it
+    still fails when the term is dropped and stops failing when a neighbour is added; pin BOTH
+    directions, because a re-anchor that only relaxes is indistinguishable from deleting the
+    guard. **THE ROOT CAUSE IS THE CHEAP HABIT I SKIPPED:** before changing any string in
+    `src/static/`, grep the TEST tree for it. The ledger already carries that rule twice (the
+    `async def view_article` rename, the `did not grow` reason string) and I paid for it again
+    by running only the suites I had touched; the full run is what caught it, ~20 minutes after
+    it could have been caught in seconds. The grep is not "which tests are about this file" —
+    it is the literal string, because the file that anchors on it will be named for something
+    else entirely (here: a dumbbell chart).
 
   - **A DECLINE'S OWN PREMISE CAN BE THE ARGUMENT FOR REVERSING IT, AND THE STEP IT NAMED
     WAS 5% OF THE COST (2026-09-07, C16 / S-D — reversing the 2026-07-12 F13 decline):**
