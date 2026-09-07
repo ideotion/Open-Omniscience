@@ -1,6 +1,9 @@
 # Autonomous session brief — 2026-07-24 Session B: the AI-stack rework (dual backend · vLLM · AI pill · toggle runs · AI metadata extraction)
 
-**Status:** PENDING execution (an autonomous Sonnet-5 CLI session), SEQUENCED AFTER Session A
+**Status:** ~~PENDING execution~~ — **EXECUTED 2026-07-24** (re-verified 2026-09-07): B1–B7 all shipped,
+including the B6 eval-gated who/where/when extraction — whose gate the 2026-07-25 transversal audit then
+found INERT and which was fixed the same day. Its carry-overs (the GPU-path live validation, the browser
+click-through) are on the live boards. Original status: (an autonomous Sonnet-5 CLI session), SEQUENCED AFTER Session A
 (`AUTONOMOUS_SESSION_BRIEF_2026-07-24_A_FIELD_FIXES.md`) per the maintainer's A16 ruling.
 **Rulings of record:** the CLAUDE.md "FIELD FEEDBACK 2026-07-24" entry (item 8 + answers
 A12–A15). This brief is the operating manual; the ledger is binding where they differ.

@@ -1,4 +1,13 @@
-> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — **SUPERSEDED for its unexecuted items.** A 2026-07-22 audit found almost none of T1–T10 was ever executed: no docs/README.md index reconciliation (T1), no `test_docs_index_covers_live_docs` invariant (T2), AUDIT_TRAIL.md still stops around 2026-06-14 (T3), no USER_MANUAL staleness banner (T5), QUICKSTART still says "Phases 2–5" (T6), and the archival sweep (T8) had never run before this pass. The remaining items are now carried forward as Phase 1 of `ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md` — treat that plan as authoritative for what's left. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+> **Status update (2026-09-07, docs-hygiene + reality-check pass) — SUPERSEDES the 2026-07-22 banner
+> below, which is now itself stale.** Re-verified task by task against `main`: **T1, T2, T3, T4, T5, T7
+> and T10 are DONE**; **T6 is HALF-done** and was finished in this pass; **T8 is PARTLY done** (4 of its
+> 7 moves landed on 2026-07-22, but its blocking T8.0 carry-over lifts had not) and **T9 was never
+> executed** — both are carried into this pass. Per-task evidence is in the DONE line at the head of each
+> task below. The 2026-07-22 banner's claim that "almost none of T1–T10 was ever executed" was accurate
+> on the day it was written and stopped being accurate shortly after; it is kept verbatim as a record,
+> not as a status.
+>
+> **Status update (2026-07-22, docs-audit remediation pass) — HISTORICAL, see above:** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — **SUPERSEDED for its unexecuted items.** A 2026-07-22 audit found almost none of T1–T10 was ever executed: no docs/README.md index reconciliation (T1), no `test_docs_index_covers_live_docs` invariant (T2), AUDIT_TRAIL.md still stops around 2026-06-14 (T3), no USER_MANUAL staleness banner (T5), QUICKSTART still says "Phases 2–5" (T6), and the archival sweep (T8) had never run before this pass. The remaining items are now carried forward as Phase 1 of `ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md` — treat that plan as authoritative for what's left. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # Action plan — documentation review & reconciliation (2026-07-17)
 
@@ -49,6 +58,9 @@ rule 5 territory, maintainer-gated); executing PARKED.md's still-open engineerin
 
 ## T1 — Reconcile `docs/README.md` (the documentation index) — P1, size S
 
+> **DONE** (verified 2026-09-07). `docs/README.md` now carries the legal tree, `audit/`, `process/`,
+> `maintenance/`, `testing/`, `research/`, `i18n/`, GOVERNANCE, CODE_OF_CONDUCT and QUARANTINE_ARCHIVE.
+
 **Problem:** the index was last reconciled 2026-07-11 and no longer covers the live set.
 A reader navigating from the index cannot discover several load-bearing documents —
 most importantly the **legal tree that now gates first launch**.
@@ -92,6 +104,8 @@ from `docs/README.md`; zero dead links; T2's guard test passes.
 
 ## T2 — Guard test: the index can't silently drift again — P1, size S
 
+> **DONE** (verified 2026-09-07). `tests/test_repo_invariants.py::test_docs_index_covers_live_docs`.
+
 **Rationale:** the project's own convention — a reconciled invariant gets a test
 (`tests/test_repo_invariants.py` already has the same shape at
 `test_in_app_docs_exist_on_disk`, line ~1421).
@@ -114,6 +128,9 @@ from `docs/README.md`; zero dead links; T2's guard test passes.
 ---
 
 ## T3 — Backfill `AUDIT_TRAIL.md` (root) — P1, size S
+
+> **DONE** (verified 2026-09-07), and extended in the same 2026-09-07 pass: the trail now runs to
+> 2026-08-20 (audit 09 · the 2026-07-28 GUI audit · both UI click-throughs were added then).
 
 **Problem:** the file declares itself an *append-only ledger of audit runs, newest
 first*, but its newest entry is **2026-06-18**, while two audits have run since and
@@ -140,6 +157,10 @@ existing entries byte-untouched (append-only discipline).
 ---
 
 ## T4 — Fix the stale "Outstanding" note in the legal-decline test doc — P2, size XS
+
+> **DONE** (verified 2026-09-07). `docs/testing/LEGAL_DECLINE_UNINSTALL_TEST.md` §Outstanding now
+> records that no `[À COMPLÉTER]`/`[À VÉRIFIER]` markers remain. The legal docs' own permanent
+> no-lawyer-review markers were correctly left alone.
 
 **Problem:** `docs/testing/LEGAL_DECLINE_UNINSTALL_TEST.md` (§Outstanding) says the
 legal docs *"still carry `Version:` / `Date: [À COMPLÉTER]`; finalize them and bump
@@ -186,6 +207,9 @@ in `IMPLEMENTATION_NOTES.md` that the web-GUI consent gate was still unbuilt (it
 
 ## T5 — USER_MANUAL: mark the historical section + re-verify nav ground truth — P2, size M
 
+> **DONE** (verified 2026-09-07). The `# What shipped in 0.0.8` section carries its
+> "Historical snapshot, see CLAUDE.md" banner.
+
 **Problem A (verified):** `docs/USER_MANUAL.md:2269` opens a top-level section
 `# What shipped in 0.0.8 — the roadmap cycle` inside the live manual — a historical
 record embedded without saying so, five release cycles later.
@@ -221,6 +245,11 @@ heading — the in-app help may reference anchors).
 
 ## T6 — QUICKSTART: retire the "Phases 2–5" framing (+ mirror to fr) — P2, size S
 
+> **HALF-DONE, finished 2026-09-07.** The §D heading was retitled (it is `## E. Analysis capabilities`
+> today, with no "(Phases 2–5)"), but the acceptance bar is *"no `Phase N` vocabulary remains"* and
+> six inline `— Phase N.` labels survived in the English file, plus the fr mirror. Retired in this
+> pass; the fr file's wider lag is noted rather than re-translated (operator-gated, per step 3).
+
 **Verified current state:** the *content* of `docs/QUICKSTART.md` §D is CURRENT
 (Settings → AI installer, model download queue, clearnet-egress disclosure, honest
 503s, quarantine pointer — all match shipped behaviour). What's stale is the
@@ -249,6 +278,9 @@ build-phase numbering from the early project, meaningless to a new reader.
 
 ## T7 — PARKED.md: reconcile the v0.0.7-era backlog to today's tree — P3, size M
 
+> **DONE** — by the 2026-08-20 quality-ratchet session, not by this plan's own executor; `PARKED.md`
+> carries its "Reconciled 2026-08-20" header and per-item SHIPPED lines with anchors.
+
 **Problem:** the root `PARKED.md` still presents its items as open, but the tree has
 moved. Partially verified already (2026-07-17):
 
@@ -267,7 +299,7 @@ moved. Partially verified already (2026-07-17):
 2. Annotate each item **in place** with a status line — `✅ done (evidence/pointer)` ·
    `🔶 partial (what remains)` · `⬜ open` — non-lossy, the record stays.
 3. Add a header line: *"Reconciled 2026-07-17 against `<sha>`; the live forward board is
-   [`docs/ROADMAP.md`](docs/ROADMAP.md) — still-open items below are candidates for its
+   [`docs/ROADMAP.md`](../ROADMAP.md) — still-open items below are candidates for its
    §4 backlog, not a second board."* Mirror any still-open item that is genuinely
    roadmap-worthy into ROADMAP §4 **only if it isn't already there** (check first —
    several likely are).
@@ -365,6 +397,11 @@ survives verbatim; links resolve; the preamble's discipline statement is true ag
 ---
 
 ## T10 — two one-line drift fixes in the storage docs — P3, size XS
+
+> **DONE** (both halves, 2026-09-07). Item 2's header note landed on 2026-07-22; item 1's body line
+> ("`journal_size_limit` is set NOWHERE") had only been corrected in that doc's *banner*, never in
+> the §3 body it misleads — corrected in this pass. Note both storage banners had themselves gone
+> stale on `auto_vacuum`/`page_size`, which ARE now wired; that is fixed here too.
 
 1. **`STORAGE_5TB_PLAN.md` §3 (Phase A):** the claim "`journal_size_limit` is set NOWHERE
    (grep-verified 2026-07-12)" is stale — it is now set at `src/database/session.py:137`, whose

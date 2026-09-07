@@ -1,6 +1,13 @@
 # AI layer: backend viability, model selection, and the honesty gap
 
-**Status:** design of record. Nothing in this document is built.
+**Status:** design of record. ~~Nothing in this document is built.~~
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **most of it IS built now.** The vLLM install path, the dual-backend seam
+(`src/llm/backend.py` + `vllm_lifecycle.py`), the measured model bench (`src/ai_layer/model_bench.py`)
+and the context management this document argued for (`src/ai_layer/context.py`) all ship, and the
+default-model question §2 poses was settled by the 2026-08-12 ruling — ONE model, Ministral-3 **3B**,
+throughout the app (`src/llm/ollama.py:MINISTRAL_TAG`), with a user override. Read §§1–5 for the
+measurements and the reasoning, §6 for the rulings that were still open when it was written.
 **Date:** 2026-07-29 · **Base:** `main` @ 67d0a3f (v0.3.0)
 **Evidence:** the operator's `oo-all-diagnostics` bundle of 2026-07-29T07:46, plus
 hand-verification against the live tree. Every claim below carries its anchor.

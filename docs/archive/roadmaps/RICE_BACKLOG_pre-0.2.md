@@ -1,6 +1,6 @@
 # Product roadmap — Open Omniscience
 
-> Strategic backlog synthesised from the [use-case scenarios](USE_CASES.md) and the v0.0.7
+> Strategic backlog synthesised from the [use-case scenarios](../../product/USE_CASES.md) and the v0.0.7
 > audit (`docs/audit/`, `PARKED.md`). Every item cites the gap or finding that motivates it,
 > respects the §0.5 invariants (local-first, ethical-by-construction, FOSS-only, auditable,
 > provenance, operator-privacy), and carries an explicit invariant check. This is the
@@ -68,7 +68,7 @@ Impact 1–3, Confidence 0.5–1.0, Effort in person-weeks (S=1, M=3, L=6, XL=12
 > The 0.0.8 section is kept as the record.
 
 ### Shipped — the 0.0.8 release: "trustworthy MVP, hardened" *(was "Now")*
-*(Executable work-package plan: [RELEASE_0.0.8_PLAN.md](RELEASE_0.0.8_PLAN.md).)*
+*(Executable work-package plan: [RELEASE_0.0.8_PLAN.md](../releases/RELEASE_0.0.8_PLAN.md).)*
 Ship the honestly-scoped functional MVP (ingest → dedup → store → search → export, reliably)
 with the trust surface tightened. **RM-03** (gate the DuckDuckGo call), **RM-10** (standing
 audit cadence — builds on the bandit/pip-audit CI gates this audit added), **RM-02** (close the

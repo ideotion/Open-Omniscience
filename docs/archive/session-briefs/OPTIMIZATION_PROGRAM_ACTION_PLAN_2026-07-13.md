@@ -1,9 +1,9 @@
-> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the §1–§8 buildable-now optimization cores plus R1/R2/R4 are all confirmed SHIPPED. R3 (the `ui_walk` AppVM runner — still scaffolding, no real browser) and R6 (a real graded IR gold set) remain exactly as operator/browser-gated as this doc anticipated. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the §1–§8 buildable-now optimization cores plus R1/R2/R4 are all confirmed SHIPPED. R3 (the `ui_walk` AppVM runner — still scaffolding, no real browser) and R6 (a real graded IR gold set) remain exactly as operator/browser-gated as this doc anticipated. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](../../design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # Optimization-program action plan (2026-07-13)
 
 **What this is.** A per-phase, build-class-tagged action plan for
-[`PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`](PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md)
+[`PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`](../../design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md)
 (§1 Conjunction Lens · §2 Leads 2.0 · §3 keyword fingerprints · §4 search
 instrumentation-first · §5 Tor throughput · §6 recursive improvement · §7 power
 profiles · §8 LLM keyword triage · §9 sequencing). It is the durable bridge from

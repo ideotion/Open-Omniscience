@@ -1,3 +1,11 @@
+> **Status update (2026-09-07, docs-hygiene + reality-check pass) — the banner below is STALE on its own
+> headline finding.** The DB-10 CREATE-time seam **IS wired**: `src/database/connect.py`'s fresh-file path
+> now sets `auto_vacuum=INCREMENTAL` (§1a, ruled 2026-07-17) *and* `cipher_page_size=16384` (§1b, ratified
+> 2026-08-13), with the reopen-hazard candidate ladder that page_size requires under SQLCipher; the bounded
+> idle `incremental_vacuum` pass is wired through `src/scheduler/maintenance.py` →
+> `src/database/maintenance.py:maybe_incremental_vacuum`. Existing corpora keep their create-time pragmas
+> and migrate only through a deliberate rebuild — that part of the banner still holds.
+>
 > **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the CREATE-time seam (`auto_vacuum`/`page_size`) this whole plan sequences after is still unwired in `src/database/connect.py` (see the 5TB_ARCHITECTURE_REVIEW banner) — Phase B/C and the KDF hierarchy remain correctly not-yet-due. `journal_size_limit` is now set (`src/database/session.py:137`), confirmed shipped. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # Storage at 5 TB+ — the PLAN OF RECORD (v1, 2026-07-12)
@@ -102,8 +110,12 @@ since every commit creates a level-0 FTS segment; no-bare-`SCAN` plan discipline
 `free_bytes_note` (S3.4); VACUUM correctly banned at scale (DB-10 §2).
 
 **The genuine Phase-A deltas (small, buildable next wave):**
-- **`journal_size_limit` is set NOWHERE** (grep-verified 2026-07-12) — set it alongside the
-  existing TRUNCATE checkpoints so the WAL file has a resting ceiling between passes.
+- ~~**`journal_size_limit` is set NOWHERE** (grep-verified 2026-07-12) — set it alongside the
+  existing TRUNCATE checkpoints so the WAL file has a resting ceiling between passes.~~
+  **SHIPPED** — re-verified 2026-09-07: `src/database/session.py` sets
+  `PRAGMA journal_size_limit` from the WAL-ceiling setting, in a block whose comment cites this
+  very plan. (T10 item 1 of `ACTION_PLAN_2026-07-17_DOCS_REVIEW.md`: the correction had been
+  applied to this doc's banner but never to the body line the banner corrects.)
 - **Checkpoint-starvation honesty:** the official hazard is "always at least one active
   reader ⇒ no checkpoint completes ⇒ WAL grows without bound" — precisely our workload
   (continuous ingest + always-on UI polls/analytics). The inter-pass TRUNCATE takes the
