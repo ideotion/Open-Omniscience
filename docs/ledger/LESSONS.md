@@ -6400,3 +6400,148 @@
     indexing back into it slices at the wrong place; and the needle is `re.escape`d, so there
     is no pattern to backtrack (a literal search is linear, unlike the `OPEN.*?CLOSE` shape
     that cost a 412 KB article 138 seconds).
+  - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
+    trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
+    catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
+    `verification.status: fetched`, and one of those feeds had never been asked for. The
+    status is about the PORTAL — impo.com.uy's row records loading `/contenido/`, while the
+    row's OWN notes call the feed URL the site's generic WordPress `/feed/` of news posts,
+    "not confirmed to carry each day's Diario Oficial issue individually, so verify before
+    relying on it for gazette monitoring". Promoting on the row status would have filed
+    Uruguayan site news in the corpus **as that country's official gazette**: not a broken
+    fetch, which announces itself, but a plausible wrong corpus, which does not. GENERAL
+    FORM: a verification tier covers the thing the verifying session actually looked at, and
+    every OTHER URL in that record is a claim nobody checked — so a field that will be
+    fetched needs its own tier, and the vocabulary should be narrower than the row's where
+    the middle tiers cannot mean anything (a search snippet can say a site exists, never
+    that a URL serves a parseable feed). The same catalog has 107 `enumeration_url` values
+    and a `structured.api`/`structured.bulk` pair in the identical position. COROLLARY on
+    reading the evidence: the row-level `evidence` sentence is what settles it, and it did —
+    three of the four record fetching the feed, one records fetching something else. Read
+    the sentence, not the enum.
+  - **A DENOMINATOR IN AN UNDECLARED UNIT IS NOT A DENOMINATOR, AND THE JOIN KEY IS THE
+    SECOND TRAP (2026-09-07, law coverage):** 39 dated official counts sat in the law
+    catalog as the completeness principle's missing denominators, and the obvious move —
+    print `tracked / enumerated` — is a fabricated statistic: a tracked document is
+    act/code-level while the recorded units run over codes, acts, volumes, gazette issues,
+    treaties and cases, and a volume or a gazette issue holds many acts. Deciding
+    commensurability from the unit STRING is the exact move ruling 47's extensive/intensive
+    rail already forbids for aggregation, so the two numbers are published side by side with
+    the reason attached and the declaration is raised as a ruling. SECOND HALF, and it would
+    have been silent: the counts key on ISO-2 `country` while documents key on an "ISO-ish"
+    `jurisdiction`, and `uk` documents state `gb` — so reading the jurisdiction code as a
+    country BOTH misses that pair AND risks attaching some other country's enumeration to a
+    code that collides with its ISO-2. The honest join runs only through the country a
+    document itself states, and a document stating none gets its own third state rather than
+    being reported as "no enumeration exists". GENERAL FORM: before dividing two numbers
+    from different files, check the UNIT and the JOIN KEY separately — either one alone can
+    make the quotient a number nobody measured.
+  - **A MECHANISM BUILT TO SURFACE CAVEATS IS BLIND TO THE CAVEATS IT WAS NOT SHAPED FOR —
+    carry the raw field too (2026-09-07, same slice):** a derived check (is the figure's
+    `source_url` on the publisher's own domain?) correctly flags the Council of Europe's
+    treaty count, which cites Wikipedia, and Mauritania's, which cites a news site. It
+    STRUCTURALLY cannot flag the African Union's 80, whose `source_url` is perfectly
+    on-domain and whose caveat lives in the row's `notes`: "a manual tally ... treat this as
+    approximate, not authoritative". Extracting that with a prose heuristic is the move this
+    project refuses, so the notes ride along verbatim beside the figure. GENERAL FORM: when
+    you build an instrument to expose disclosures, ask what it is structurally unable to
+    see, and keep the unprocessed field beside it — the same shape as the recorded
+    two-harvest-instruments lesson, at the level of one payload.
+  - **AN HONEST GAP RECORDED AS A COMMENT IS OUTSIDE THE SYSTEM, NOT A LESSER VERSION OF ONE
+    (2026-09-07, the law catalog's two confirmed gaps):** the catalog has a deliberate shape
+    for "we looked and there is no official portal" — a domain-less `lead` row, which the
+    validator sees and the loader drops, so a gap can never become a `Source`. Yemen is one.
+    North Korea's identically-reasoned, better-evidenced gap was a **YAML comment block**, so
+    the validator could not count it, the vetting board could not list it, and nothing that
+    reads the catalog as data knew it existed. Nobody was wrong at the time; the comment is
+    the producing session's own words and is where a future reader looks. GENERAL FORM: when
+    a project has a DATA shape for a deliberate absence, prose recording the same fact is not
+    a weaker record, it is an invisible one — add the row and keep the prose beside it.
+
+- **THE `shipped.csv` UNION-MERGE DUPLICATE HAS A THIRD SHAPE, AND ITS RECORDED TELL IS SILENT ON
+  IT (2026-09-07, caught live on PR #1025 by the prescribed scan):** the ledger already records
+  this defect twice, both times as *main edited a row your branch also carries*, with the tell
+  being **"a numstat with DELETIONS on a merge you expect to be purely additive."** This time the
+  direction was reversed: **THIS branch edited two rows and main merely carried the originals
+  forward** (main's own commits touched the file, but not those rows). Union kept both sides'
+  lines, so the merge produced **two duplicates while adding four lines and deleting NONE** —
+  `4 added / 0 deleted`, exactly the "purely additive" numstat the recorded tell says is the
+  healthy case. `git merge` reported success, and a conflict-marker grep is blind by
+  construction (`.gitattributes` sets `merge=union`, so this file never produces a marker).
+  **GENERAL FORM: the numstat tell detects only the direction where the OTHER side deleted
+  something. When YOU are the editor, the duplicate arrives with a clean, additive numstat and no
+  tell at all.** So the duplicate-key scan over `(date, area, item)` against the COMMON ANCESTOR
+  is not a confirmation step to run when something looks off — it is the ONLY check that sees all
+  three shapes, and it must be run on every merge that touches this file regardless of how the
+  numstat reads. (Compared against the ancestor, never against zero: nine duplicates already
+  exist there, so a bare "are there duplicates" test accuses every merge of nine things it did
+  not do.) A corollary worth stating plainly: **editing an existing row is strictly more dangerous
+  than appending one**, because only the edit can be duplicated by union — which is why rule (5b)
+  is best obeyed in the same session that learns the PR number, when the row is still the newest
+  thing in the file and no other branch carries a copy.
+  - **THE PUBLISHER'S OWN CONFORMANCE VECTORS ARE EVIDENCE; MY HAND-WRITTEN CASES
+    MEASURE MY UNDERSTANDING OF THE SPEC (2026-09-07, the vendored Public Suffix
+    List):** implementing the PSL algorithm, I wrote ~20 cases from the spec, ran
+    them, and they were all green. The upstream's own `tests/tests.txt` (CC0, 78
+    vectors, fetchable from the same repo as the list) then found **two real
+    defects on the first run**. (a) A LEADING DOT was stripped, so `.example.com`
+    answered `example.com` where the spec says a malformed input has no
+    registrable domain. (b) The list stores internationalised rules in UNICODE
+    (`公司.cn`) while hosts arrive in PUNYCODE, so every `xn--` host fell through
+    to the wrong suffix — **and that one has no positive-space symptom at all**:
+    the answers were plausible domains, one label short, which no eyeball and no
+    self-written case would flag. GENERAL FORM: when implementing a published
+    algorithm over a published data file, look for the publisher's OWN conformance
+    suite before writing a single expectation — a vector set authored by the
+    people who define the format is a different KIND of artifact from cases
+    authored by the implementer, and the difference is exactly the cases you did
+    not think of. Vendor it beside the data (its digest pinned in the test, the
+    registry coupling requiring both to be refreshed together: a newer list judged
+    by older vectors proves nothing), and give the parse an anti-vacuity floor
+    (`len(cases) >= 70`), because a truncated fixture makes the whole guard pass
+    for free.
+  - **A MUTATION CAN APPLY TEXTUALLY AND BE SEMANTICALLY INERT, AND `assert new !=
+    old` CANNOT SEE IT (2026-09-07, the newsletter resolver's matrix):** the
+    recorded rule is that a `str.replace` whose needle is absent is a silent no-op
+    whose green run reads like a dead guard, and the prescribed check is to assert
+    the edit landed. It did land here — `_INFRA_LABELS: frozenset[str] =
+    frozenset(` became `... = frozenset() or frozenset(` — and **an empty frozenset
+    is falsy**, so `X or Y` evaluated to the untouched real set and the "mutant"
+    was the shipped code with extra characters. All 28 tests passed and I was one
+    step from recording a guard as vacuous. So the edit landing is necessary and
+    not sufficient: a mutant is only evidence once it REPRODUCES THE DEFECT, which
+    for a data structure means asserting the structure is what you think (`assert
+    not _INFRA_LABELS`) and for a branch means proving the branch changed. Re-run
+    correctly (`if publication and publication not in _INFRA_LABELS:` ->
+    `if publication:`) it reddened three tests by name. Same family as the
+    recorded "a surviving mutant may be a finding about the MUTANT", with a
+    sharper tell: a survivor whose mutation involved a boolean operator, a default
+    argument or a falsy sentinel is a suspect mutant before it is a suspect test.
+  - **A RESTORED SOURCE FILE IS NOT A RESTORED IMPORT — `__pycache__` CAN SERVE
+    THE MUTANT'S BYTECODE FOR A WHOLE SECOND (2026-09-07, same matrix):** after a
+    mutation run I restored the module with `cp`, verified the restore with a grep
+    that could only match the ORIGINAL line, and re-measured — and got the
+    mutant's numbers back, twice, for a file whose source was provably correct.
+    CPython validates a `.pyc` by comparing the source mtime it recorded against
+    the source's current mtime, and both have **one-second granularity**: a `cp`
+    landing in the same second as the mutated run's cache write produces a
+    matching pair, so the stale bytecode is served. It presents as "my fix did not
+    take" or, worse, as a real measurement. RULE: clear `__pycache__` (and any
+    scratch script's own) as part of every mutation restore, and remember that a
+    source-level restore check proves what the next run will READ, never what it
+    will EXECUTE.
+  - **A MODULE THAT DEGRADES HONESTLY WHEN ITS DATA FILE IS ABSENT IS EXACTLY THE
+    ONE WHOSE PACKAGING OMISSION IS SILENT (2026-09-07, `src/geo/data`):** adding
+    `src/catalog/data` I checked `[tool.setuptools.package-data]` and found `"src"
+    = ["static/**/*"]` — so the offline IP-to-country table under `src/geo/data`
+    had been missing from every built wheel since the day it was added, and
+    nothing said so, because `ip_geo` reports an honest unavailable-with-a-reason
+    rather than raising. The wheel installs, the app boots, and a feature is
+    simply absent with a plausible explanation — the same shape as a degrade
+    wrapper hiding the bug it was built to survive, moved into the build. TWO
+    RULES. Derive the requirement from the TREE, not from memory: the guard walks
+    every `src/*/data` directory that exists and fails naming the file no pattern
+    covers, so the next such tree cannot be forgotten. And prove it with a REAL
+    BUILD (`python -m build --wheel`, then read the zip's namelist) rather than
+    with the declaration — the existing packaging guard is config-shape only and
+    was green throughout, which is what let the gap live.

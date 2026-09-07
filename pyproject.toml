@@ -288,7 +288,11 @@ include = ["src*", "configs", "migrations*", "docs"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"src" = ["static/**/*"]
+# static/** is the whole UI. The two data/ trees are runtime data the code READS:
+# catalog/data holds the vendored Public Suffix List (newsletter publisher identity),
+# geo/data the offline IP->country table. Both modules degrade honestly when the file
+# is absent, which is precisely why a packaging omission here would be SILENT.
+"src" = ["static/**/*", "catalog/data/*", "geo/data/*"]
 "configs" = ["**/*.yml", "**/*.yaml", "**/*.txt", "**/*.json", "**/*.csv", "**/*.mmdb", "**/*.bin", "**/*.gz", "**/*.example"]
 "migrations" = ["script.py.mako"]
 "docs" = ["*.md", "i18n/**/*.md", "legal/*.md"]

@@ -57,13 +57,27 @@ never reach the normal pipeline. Vietnam and St Vincent's `legal.gov.vc` (a work
 the two confirmed. Wire them as `source_type legal` through the ordinary ingest path — this is the cheapest
 real coverage in the vertical.
 
+**BUILT 2026-09-07, and the count above is off in both directions.** Reading each row's *evidence*
+rather than its `verification.status` gives THREE feeds whose own record says somebody fetched them
+(Georgia's `matsne.gov.ge` as well as the two named) and ONE — Uruguay's `impo.com.uy` — whose feed
+was never fetched at all and whose own notes call it the site's generic WordPress news feed. All
+four rows are `verification.status: fetched`, because that field is about the PORTAL, not the feed.
+A feed now carries its own tier (`gazette_feed_verification`) and only `fetched` is promoted.
+
 ### S3 — S4b: the catalog's language never reaches the document
 
-`LawDocument` has no language or country column, and law corpus Articles ingest with `language=None`. So
-**Cambodian law, which is in French**, gets the wrong keyword treatment — the catalog knows and the document
-does not. Thread catalog → `LawDocument` → `Article.language`. The catalog carries languages-of-the-law
-deliberately distinct from the country's spoken languages, which is exactly why this is worth threading
-rather than inferring.
+**STALE — VERIFIED-PRESENT at `main` @ `690920e2` (checked 2026-09-07, not rebuilt).** The claim
+below was already false when this prompt was written: `LawDocument.language` / `.country` are
+declared at `src/database/models.py:2187-2188`, `register_documents` populates them from the
+catalog and heals both the row and its already-ingested Article, and `upsert_law_corpus_article`
+passes `language=doc.language` into the Article (`src/law/corpus.py:119`). Shipped 2026-07-17 as
+S4b. The original text is kept below as the problem statement it was.
+
+> `LawDocument` has no language or country column, and law corpus Articles ingest with `language=None`. So
+> **Cambodian law, which is in French**, gets the wrong keyword treatment — the catalog knows and the document
+> does not. Thread catalog → `LawDocument` → `Article.language`. The catalog carries languages-of-the-law
+> deliberately distinct from the country's spoken languages, which is exactly why this is worth threading
+> rather than inferring.
 
 ### S4 — Coverage denominators from the source's own enumeration
 
@@ -78,10 +92,22 @@ say "coverage unknown" rather than printing a ratio against a number it invented
 as not read off the official page (Council of Europe via Wikipedia; the African Union manual tally) — keep the
 disclosure attached to the figure.
 
+**BUILT 2026-09-07; the count is 39, not 27, across 32 countries** (measured: `official_count` on a
+source row). No ratio is printed anywhere — the join runs only through the country a document
+itself states, and nothing declares the enumerated units commensurable with an act/code-level
+tracked document. See the open question this raises for the maintainer.
+
 ### S5 — A5: AI change summaries
 
-Auto at track time for UI-language-floor jurisdictions, on demand elsewhere, always labelled
-"AI-derived · unreliable". `src/law/summarize.py` exists; verify what it is wired to before extending it.
+**STALE — VERIFIED-PRESENT at `main` @ `690920e2` (checked 2026-09-07, nothing extended).** The
+instruction to verify the wiring first was the right one and it answers the whole slice:
+`advance_law_summaries` runs as a scheduler ride-along (`src/scheduler/runner.py:1263`),
+`summarize_revision` is the on-demand path (`src/api/law.py:378`), the language floor is
+`UI_LOCALE_CODES` (`pending_ai_summaries`), and each summary stores model + prompt_version + the
+verbatim prompt text. Ruling A5 is met as written; there was nothing to extend.
+
+> Auto at track time for UI-language-floor jurisdictions, on demand elsewhere, always labelled
+> "AI-derived · unreliable". `src/law/summarize.py` exists; verify what it is wired to before extending it.
 
 ### S6 — The vetting board (operator, but prepare it)
 
