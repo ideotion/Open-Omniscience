@@ -21,8 +21,9 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
-- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
-  AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
+- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: EXECUTED 2026-09-07 (PR #1021, #1025). WHAT REMAINS IS
+  ONE OPEN QUESTION AND ONE REVERSIBLE DECISION — the code is done** (branch
+  `claude/async-handlers-event-loop-qfyl1n`; five of
   the prompt's seven slices were ALREADY BUILT and are recorded as such in
   [`../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md`](../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md)
   and `INVENTORY.md` PERF-01/PRH-23; NO RULING IS INVENTED HERE):**
@@ -58,6 +59,22 @@
   never again — a pass on which the corpus is empty, so the lane's whole-corpus scan has nothing
   to scan. If the maintainer reads R5 more strictly than that, the reversal is one line: run the
   job's worker inline instead of kicking it, keeping the registry entry for visibility.
+  **WHAT SHIPPED, so the next session does not re-derive it.** S1: the 56 DB-touching `async def`
+  handlers are 4, and `tests/test_handlers_off_the_event_loop.py` is the AST guard that stops the
+  57th — three mechanisms (a census against a named allowlist; an allowlisted handler must await
+  something OTHER than its own `run_in_threadpool` hop; and no async handler may reach the DB around
+  the dependency via `session_scope`/`SessionLocal`). The four that remain each await the request
+  stream and none touches its session on the loop. S7: `src/monitoring/preflight_job.py` registers
+  `first-run-preflight`, kicked from the pass tail under the `first-run-preflight` tail phase.
+  **NOTHING ELSE IN PROMPT 09 IS OPEN.** Its S2–S6 were already built before this session (anchors
+  in the prompt file's staleness banner), and its own PERF-02 row is the operator-gated field twins
+  tracked in the crash-brief entry below — not a second, separate obligation.
+  **THREE MEASUREMENTS TAKEN HERE, none of them from a field machine, stated so they are not
+  mistaken for effect evidence:** async-vs-sync dispatch under a concurrent second request
+  (1,159.6 ms → 4.8 ms, this sandbox, a synthetic handler); the handler census (56 → 4, by parsing
+  signatures); and the full-suite baseline diff (9,180 → 9,192 passed, delta = the 12 tests added,
+  empty failure- and skip-name diffs). The field numbers this batch is meant to move are in the
+  crash-brief entry's field-twins bullet and remain unmeasured.
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
   chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
@@ -9279,7 +9296,38 @@
     so the next report carries the kernel verdict beside the app's own account.
   **OPERATOR STEPS (in the brief's §8, none guessable from here):** the A/B host checks + the
   kernel-log capture at the next crash; nothing else in the plan is gated on them.
-  PENDING: the brief's execution (14 sequenced PRs, S0.1 first).
+  **THE CODE HALF IS COMPLETE (2026-09-07). All 29 slices of the brief are shipped** — verified by
+  matching every `#### S<n>.<m>` heading in the brief against `shipped.csv`, not by reading a status
+  line. S3.6 was the last, and it was the one that looked done and was not: PR-10 shipped its
+  lock-state cache and left its 56-handler half, with no `S3.6` row written at all (see the
+  PROMPT 09 entry above). **WHAT REMAINS IS NOT CODE**, and it is these four things:
+  • **OPERATOR-GATED — the §8 host checks, and they expire.** `journalctl --list-boots`,
+    `-k -b -1` / `-b 0` greps, `last -x`, `coredumpctl list`, `free -m`/`swapon --show`, and the
+    journald `Storage=` + `adm`/`systemd-journal` membership checks, on machines A and B. **A boot
+    rotation destroys the `-b -1` journal**, so this is the one item that gets less answerable with
+    time. Also §8's six questions only the maintainer can answer (how the app is started and
+    stopped; whether the process was frozen or gone; whether the machine itself froze; whether a
+    browser tab was on Home; whether `install.sh` was re-run between crashes; whether `OO_AUTOSTART`
+    could have launched two instances).
+  • **OPERATOR-GATED — the field twins, which are the acceptance numbers.** Nothing in this batch
+    was measured on a field machine, and the brief says so: one pass on B at
+    `collect_parallelism=50` reporting `rss_max` / `mem_avail_min` (today 6,767 MB / 94 MB); a 72 h
+    soak on C with Home open reporting engage-cycles/day, `wal_history` max, the checkpoint `busy`
+    share, `/api/database/stats` p95, and `interrupted` on `/api/scheduler/activity` (today 37); one
+    bundle from A, whose `locked_errors_total` should fall from 234 toward 0. **Until these run, the
+    batch has mechanism evidence and no effect evidence** — and per the brief, a P0-style validation
+    run reads as not-measurable unless ≥1 full pass ran, and contaminates the collect_perf window.
+  • **RULING-GATED — the polled-GET admission cap** (recorded in full in the PROMPT 09 entry above).
+  • **DELIBERATELY DEFERRED, recorded so they are not rediscovered as new** (brief §9): the
+    engine-level `BEGIN IMMEDIATE` recipe, as its own measured slice (ruling R6 scoped this batch to
+    the two call sites); `wal_autocheckpoint=0` + a writer-side PASSIVE tick, MEASURE FIRST — with
+    1–6 h passes a boundary-only tick would remove the only in-pass growth bound; the btrfs
+    `chattr +C` recommendation for machine B, to DOCUMENT and never automate; and a source guard so
+    a future boot-time wiki-dump scan cannot land silently (B's 6.8 GB of dumps are verified inert
+    at boot and per pass today, and that is a property worth keeping by construction).
+  **AND THE HONEST LIMIT THE BRIEF OPENED WITH STILL HOLDS: none of this establishes what killed any
+  of the four sessions.** Phase 0 shipped so the NEXT one is answerable; it cannot recover the four
+  that are gone. Nothing here licenses writing a crash cause into a user-facing string.
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
   anything marked in the memory as something to do later. Sort everything into a detailed action plan
