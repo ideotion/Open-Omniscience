@@ -1448,7 +1448,12 @@ def test_a_real_download_reports_the_cache_it_produced(monkeypatch, tmp_path):
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
 
     def _runner(argv, env=None, should_stop=None):
-        assert argv[0] == str(V.venv_python()) and argv[-1] == "org/m"
+        # The MODEL is argv[4] and the (D6) revision pin argv[5]; asserting "the last
+        # argument is the model" pinned a position rather than the claim, and the pin
+        # legitimately took that slot. `in argv` would pass for a model appended
+        # anywhere, so the index is named.
+        assert argv[0] == str(V.venv_python()) and argv[4] == "org/m"
+        assert argv[5] == "", "an unpinned model passes an EMPTY revision, never 'main'"
         rev = tmp_path / "models--org--m" / "snapshots" / "r1"
         rev.mkdir(parents=True)
         (rev / "config.json").write_text("{}", encoding="utf-8")

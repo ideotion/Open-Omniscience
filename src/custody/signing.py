@@ -55,13 +55,85 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 # "Dilithium3" intent. Older "dilithium3" module names are gone, so we bind to
 # the real, current API only.
 _MLDSA_VARIANT = "ml_dsa_65"
-try:  # pragma: no cover - exercised indirectly; availability is environment-dependent
+try:  # pragma: no cover - availability is environment-dependent
     from pqcrypto.sign import ml_dsa_65 as _mldsa  # type: ignore
-
-    PQC_AVAILABLE = True
 except Exception:  # noqa: BLE001 - any import failure means "no PQC here"
     _mldsa = None  # type: ignore
-    PQC_AVAILABLE = False
+
+
+def _mldsa_verify(mod: object, pub: bytes, data: bytes, sig: bytes) -> bool:
+    """Verify exactly the way :func:`_verify_mldsa` does, in ONE place.
+
+    Both the capability probe below and the production verifier call this, so the
+    probe can never test a contract the shipped code does not use -- the two would
+    otherwise drift and the probe would certify a call site it never exercised.
+    """
+    try:
+        return bool(mod.verify(pub, data, sig))  # type: ignore[attr-defined]
+    except (ValueError, TypeError):
+        return False
+
+
+def _probe_mldsa(mod: object) -> tuple[bool, str]:
+    """CAN IT SIGN? -- not "does it import?". Returns ``(available, reason)``.
+
+    THE DEFECT THIS CLOSES (D7, ruled from the 2026-08-20 near-miss). ``PQC_AVAILABLE``
+    used to be set by the bare import succeeding, which answers a different question.
+    When upstream ``pqcrypto`` 1.0.0 renamed ``generate_keypair`` to ``keygen`` the
+    module still imported perfectly: the flag stayed ``True``,
+    :attr:`HybridSigner.pqc_unavailable_but_requested` -- a property that exists
+    SPECIFICALLY to say "the operator wants PQC and the library cannot provide it" --
+    returned ``False``, and the call raised at the call site. A whole honest-degrade
+    machine, walked straight past. Worse, ``custody/settings.availability()`` published
+    ``{"pqc_available": true}`` for a library that cannot sign, under a docstring
+    promising to "report what the BUILD can actually do" -- a fabricated capability
+    claim, which is the one thing the non-negotiables forbid outright.
+
+    AN ATTRIBUTE PROBE IS NOT ENOUGH, and that is the half worth writing down. 1.0.0's
+    ``verify`` returns ``None`` for a VALID signature and raises for an invalid one, so
+    every attribute this module touches is PRESENT while ``bool(verify(...))`` reports
+    every genuine signature as a verification FAILURE -- silently, in the tamper-evidence
+    path, on an install whose keys already exist and which therefore never reaches the
+    renamed function at all. So this is a ROUND TRIP through the real call sites
+    (keygen -> sign -> verify-true -> verify-false), and a library that cannot complete it
+    is UNAVAILABLE, which is precisely the state the degrade path was built for.
+
+    IT NEVER RAISES. That is the load-bearing property and the negative direction the
+    tests pin: a module that imports but cannot do the job must REPORT unavailable, not
+    blow up inside the caller that trusted the flag.
+
+    It runs at import, deliberately: it is pure CPU (no I/O, no network, no thread),
+    MEASURED at 1.6 ms for the ML-DSA-65 round trip and 0.02 ms for the OTS one on this
+    machine (a figure, not a guess -- the recorded rule against writing a quantitative
+    claim without counting), and this module is imported by the custody paths rather
+    than by boot. A lazy flag would break every existing
+    ``monkeypatch.setattr(signing, "PQC_AVAILABLE", ...)`` and every
+    ``from ... import PQC_AVAILABLE`` reader for no honesty gain.
+    """
+    if mod is None:
+        return False, "pqcrypto is not installed (the [pqc] extra)"
+    probe = b"open-omniscience ml-dsa capability probe"
+    try:
+        if int(getattr(mod, "PUBLIC_KEY_SIZE", 0)) <= 0:
+            return False, "PUBLIC_KEY_SIZE is missing or is not a positive length"
+        pk, sk = mod.generate_keypair()  # type: ignore[attr-defined]
+        sig = mod.sign(sk, probe)  # type: ignore[attr-defined]
+        if not _mldsa_verify(mod, pk, probe, sig):
+            return False, (
+                "verify() did not confirm a signature this build had just produced "
+                "(pqcrypto 1.0.0 returns None here, which reads as a forgery)"
+            )
+        if _mldsa_verify(mod, pk, probe + b"!", sig):
+            return False, "verify() accepted a signature over different data"
+    except Exception as exc:  # noqa: BLE001 - the whole point is that NOTHING escapes
+        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
+    return True, f"{_MLDSA_VARIANT} round trip verified (keygen, sign, verify true and false)"
+
+
+#: Set from the CAPABILITY, never from the import. ``PQC_REASON`` travels with it so a
+#: report can place the blame -- "not installed" and "installed but cannot sign" call for
+#: opposite actions and must not share one boolean.
+PQC_AVAILABLE, PQC_REASON = _probe_mldsa(_mldsa)
 
 
 class SigningError(RuntimeError):
@@ -314,10 +386,7 @@ def _verify_mldsa(variant: str, pub_hex: str, sig_hex: str, data: bytes) -> bool
     """Return True/False, or None if this verifier cannot check the variant."""
     if not PQC_AVAILABLE or variant != _MLDSA_VARIANT:
         return None
-    try:
-        return bool(_mldsa.verify(bytes.fromhex(pub_hex), data, bytes.fromhex(sig_hex)))
-    except (ValueError, TypeError):
-        return False
+    return _mldsa_verify(_mldsa, bytes.fromhex(pub_hex), data, bytes.fromhex(sig_hex))
 
 
 def verify(

@@ -615,6 +615,11 @@ class OllamaClient:
                     "tag": m.get("name"),
                     "size_gb": round(size / (1024**3), 1) if isinstance(size, int) else None,
                     "modified": m.get("modified_at"),
+                    # D6: the manifest digest Ollama itself reports for this tag. Read
+                    # (never derived) so a pull that followed a re-pointed tag is at
+                    # least VISIBLE; None when this build does not report one, which is
+                    # a third state and not a match -- see weights_pin.check_pulled_digest.
+                    "digest": m.get("digest") or None,
                 }
             )
         return out

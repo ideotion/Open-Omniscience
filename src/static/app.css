@@ -1236,6 +1236,12 @@
        mandate: caveats are never hidden behind a toggle). Only the verbose
        method/math stays in the toggled .mc block. var(--caveat) clears WCAG AA. */
     .card-caveat { margin:6px 0 0; font-size:11.5px; line-height:1.45; color:var(--caveat); }
+    /* D5: the AI check's refused-field list, collapsed behind its own visible count.
+       The <summary> carries .card-caveat, so the caveat itself is on screen by default
+       and only the per-refusal reasons are one click away — layering, never hiding. No
+       `display` is set on .card-caveat, so the disclosure marker survives. */
+    details.gate-refused > summary { cursor:pointer; }
+    details.gate-refused > .card-caveat { margin-inline-start:14px; }
     /* --- figure furniture (F1/F2/F3) ---------------------------------------- */
     /* A chart legend entry is a real <button>, not a clickable <span> with an inline
        onclick: keyboard-reachable, aria-pressed announced, and off the
