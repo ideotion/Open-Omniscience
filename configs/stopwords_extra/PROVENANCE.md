@@ -234,6 +234,43 @@ source carries any candidate in its fingerprint, but only 241 sources have a fin
 at all and most are English, so that is absence of evidence rather than evidence of
 absence. The rejections above rest on linguistic review, not on the export.
 
+### The four standing cross-language refusals (`sea` · `tom` · `fin` · `laut`)
+
+Recorded here 2026-09-07 (PRH-11). These were refused by the 2026-06-14 batch and the
+refusal lived as a parenthetical mid-file — *"cross-language collisions (sea/tom/fin/laut…)
+deliberately omitted"* — with no reason per word and no statement of where each one IS
+handled. A future batch re-proposing them would have found the words but not the argument,
+which is how a reasoned refusal becomes a re-litigated one.
+
+They are not one case but two, and the difference is the whole point. Measured against the
+live channels on 2026-09-07 (`StopwordsManager.get_stopwords` per language, and
+`global_stopwords()`):
+
+| word | in the GLOBAL union | scoped languages that already filter it | the content sense the union would have hidden |
+|---|---|---|---|
+| `sea` | no | `es` | en *sea* — a body of water, plainly content |
+| `tom` | no | `cs`, `sk` | a given name; sv/no/da *tom* = empty |
+| `fin` | no | `es`, `it`, `sv` | en *fin* — of a fish; and *fin de siècle* as a topic |
+| `laut` | no | **none — not even `de`** | id *laut* = sea (the app ships an Indonesian locale and Indonesian sources) |
+
+For the first three the refusal is not a gap at all: each is a function word in some
+language, each is ALREADY filtered there by the language-SCOPED channel
+(`configs/stopwords_iso/<lang>.txt`), which is collision-free by construction, and the
+only thing refused was the additional step of globalising it — which would have hidden it
+everywhere else too. The scoped channel is where a word like this belongs, and it is
+already there. Nothing is owed.
+
+`laut` is different and the table says so rather than rounding it into the group: it is
+in no list at all, German's included, so if it is genuinely leaking as German chrome
+(*laut* is a preposition, "according to") it is currently filtered NOWHERE. That is a
+candidate for a scoped `de` entry with evidence behind it, not for the global union —
+but the evidence has not been gathered, so this records the observation and not a verdict.
+
+The general rule these four illustrate, and the reason to keep them written down: a word
+that is a function word in one corpus language and content in another belongs in the
+SCOPED channel, never in this directory. Everything here is unioned across all languages
+regardless of which file it sits in.
+
 `hidden_set()` unions `global_stopwords()` at QUERY time
 (`src/analytics/filters.py:121`), so this batch is retroactive with no re-index;
 `extract.py:436` also filters at EXTRACTION time, so applying it BEFORE a large

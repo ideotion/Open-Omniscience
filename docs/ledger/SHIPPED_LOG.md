@@ -3,6 +3,56 @@
 > The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into CLAUDE.md's Session-rituals 'Lessons' subsection. Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **A REFACTOR THAT PRESERVES *WHAT* IS FOUND NEEDS A DIFFERENTIAL, BECAUSE A NAME-LEVEL
+  ASSERTION CANNOT SEE THE FIELD THAT BROKE (2026-09-07, the location extractor's dispatch):**
+  splitting `extract_locations` from one-scan-per-pattern into a scan half plus an indexed half
+  is a change to HOW candidates are found and must be no change at all to WHAT is found, so it
+  was checked by running the old and new implementations side by side over ~22,000
+  (text x source_country) pairs at both gazetteer scales. The first draft's `names` were all
+  correct and it was still wrong: the result dict's `snippet` still read the loop variable `m`
+  from the scan half, so every indexed hit carried some other pattern's snippet, and once no
+  scan pattern matched at all it raised `UnboundLocalError`. Every assertion I would plausibly
+  have written -- on names, kinds, mention counts -- passes against that. The differential
+  compares the WHOLE returned structure, which is what made it visible in the first run.
+  THREE FACTS ESTABLISHED BY MEASUREMENT rather than assumed, each load-bearing:
+  (a) `rx.match(text, pos)` DOES honour a leading `\b` against `text[pos-1]` (the engine sees
+  the whole string, so an anchored candidate check is exact -- without this the index would
+  have needed its own boundary logic);
+  (b) `re.IGNORECASE` and `str.lower()` DISAGREE on real input -- `"İ".lower()` is `i` plus a
+  combining dot while IGNORECASE matches `İSTANBUL` against `istanbul`, and `ſ` folds to `s`
+  for the engine and to itself for `lower()` -- so an exact-token index over case-INSENSITIVE
+  patterns is a false-NEGATIVE hazard, which is why the ~140 case-insensitive patterns keep
+  their scan and only the case-SENSITIVE gazetteer half (the half that scales) is indexed;
+  (c) the ratio is the wrong headline. 2,173 -> 86 ms at 4,500 cities reads as "25x faster",
+  but the number that describes the fix is that 86 ms at 4,500 cities is within noise of 82 ms
+  at 21 -- the cost stopped scaling with the gazetteer. A ratio measured on one fixture says
+  nothing about the next one; a removed dimension does.
+  COROLLARY ON THE MUTATION MATRIX: two of four mutations SURVIVED, and both were findings about
+  the tests rather than redundant code -- the discriminating inputs are the ones where the
+  obvious simplification and the correct rule differ, and neither is the obvious example.
+  Position-order and pattern-order replay agree on "Northern Ireland" (the longer name also
+  starts first) and differ on "New Mexico City", where the shorter guard opens at 0, claims the
+  span, and the city silently disappears. Trusting the index without re-confirming with the
+  pattern is harmless for every single-token name (the key IS the whole name) and FABRICATES a
+  place for a multi-word one -- measured, "New arrivals were reported." yields New York. When a
+  mutation survives, find the input on which the two versions actually differ before concluding
+  the mechanism is redundant.
+
+- **A COMPLETENESS RATCHET WHOSE PARSER CANNOT READ A LOOP IS EXEMPTING WHOLE MIGRATIONS
+  (2026-09-07, found when a new column tripped the guard that was supposed to catch it):**
+  `test_migration_self_heal_drift` exists so a migration that adds a column without a boot
+  self-heal fails in CI instead of breaking a user's store at upgrade. Its AST parser read
+  `op.add_column` with literal or module-constant arguments, and four real migrations add their
+  columns from a LOOP over a module-level table -- so those four files resolved to ZERO columns
+  and were silently exempt: 12 columns across four tables that a reader would have read the
+  guard as covering. Nothing was broken (all four were genuinely self-healed; only the registry
+  was blind), which is exactly why it survived -- a detector blind spot has no symptom. The
+  general form is the recorded "a ratchet is only as good as its detector" lesson with a new
+  tell: **compare what the parser resolves against a crude textual count of the construct it is
+  looking for** (34 `.add_column(` calls in the tree against 30 pairs resolved) -- the gap is
+  the blind spot, and it costs one grep. And when you extend such a detector, put the newly-seen
+  form into its own anti-vacuity test (here: assert the loop-form columns ARE found), or the
+  detector can go blind again while the guard it feeds keeps passing.
 - **WINDOWS RESTORE, ROUND 2: `os.replace` WAS THE OTHER HALF OF THE LOCK FIX — plus the
   diagnostic that answers "who holds it" (2026-08-23, branch `claude/windows-repo-install-255ude`;
   two `shipped.csv` rows):** the same Win11 ARM64 machine, the same `-wal`, ten minutes in,
