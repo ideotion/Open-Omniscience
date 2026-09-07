@@ -114,6 +114,18 @@ def test_the_service_worker_precaches_every_module():
         assert f'"/static/{m}"' in sw, (
             f"{m} is loaded by index.html but not in sw.js's SHELL precache list"
         )
+    # EVERY local script index.html loads, not only the `app-*` ones. `app_modules()`
+    # matches the app-* naming, so the shared renderer modules beside them -- ooviz.js,
+    # oosky.js -- were in the precache list and guarded by nothing: deleting oosky.js
+    # from it left this test green, which a mutation run found while checking the fix
+    # that added it. The property the offline shell actually needs is "every script
+    # tag the page carries", so assert that instead of a naming convention.
+    html = (_STATIC / "index.html").read_text(encoding="utf-8")
+    for src in re.findall(r'<script src="(/static/[^"]+\.js)"', html):
+        assert f'"{src}"' in sw, (
+            f"{src} is loaded by index.html but not in sw.js's SHELL precache list -- "
+            "an offline shell missing a script is a broken app, not a slower one"
+        )
 
 
 def test_the_i18n_chrome_audit_reads_every_module():

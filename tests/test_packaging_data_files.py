@@ -44,6 +44,31 @@ def test_package_data_covers_static_configs_and_docs():
     assert _pyproject()["tool"]["setuptools"].get("include-package-data") is True
 
 
+def test_package_data_covers_every_runtime_data_tree_under_src():
+    """A module that reads a bundled file and DEGRADES honestly when it is missing
+    is exactly the one whose packaging omission is silent: the wheel installs, the
+    app boots, and the feature is simply absent with a plausible reason. So the
+    declaration is derived from the tree rather than remembered — every
+    ``src/*/data`` directory that exists must be covered by a package-data pattern.
+    (``src/geo/data`` was uncovered from the day it was added; found while adding
+    ``src/catalog/data``.)"""
+    import fnmatch
+
+    pats = _pyproject()["tool"]["setuptools"]["package-data"].get("src", [])
+    trees = sorted(p for p in (_ROOT / "src").glob("*/data") if p.is_dir())
+    assert trees, "no src/*/data trees found — has the layout moved?"
+    for tree in trees:
+        rel = tree.relative_to(_ROOT / "src")
+        files = [f for f in tree.rglob("*") if f.is_file()]
+        assert files, f"{rel} is empty"
+        for f in files:
+            name = str(f.relative_to(_ROOT / "src"))
+            assert any(fnmatch.fnmatch(name, pat) for pat in pats), (
+                f"src package-data does not carry {name} — it would be missing from "
+                f"the wheel, and its module degrades quietly rather than failing"
+            )
+
+
 def test_manifest_grafts_the_same_trees_for_the_sdist():
     manifest = (_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
     for line in ("graft src/static", "graft configs", "graft migrations"):

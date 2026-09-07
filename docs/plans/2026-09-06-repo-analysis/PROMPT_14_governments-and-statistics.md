@@ -50,6 +50,22 @@ Which dimension sits at which level is decided by the request's `dimensionAtObse
 OECD's own documented example passes `AllDimensions` — so `ref_area` and `series_id` must be looked up at
 observation level as well as series level.
 
+**DONE 2026-09-07 (anchor `58a4d6df`), and the lookup was only half of it.** That observation-level lookup
+shipped on 2026-08-13; the CONTAINER it arrives in did not. `AllDimensions` returns the observations hanging
+straight off the dataSet (`dataSets[].observations`, **no `series` key at all**), and the parser read
+observations only out of `dataSets[].series[<key>].observations` — so a well-formed `AllDimensions` message
+parsed to **zero rows and logged nothing**, which is the 2026-08-13 identity-less-row defect turned inside
+out: instead of a number with no identity, an identity-bearing message read as "the publisher has no data".
+The test that was supposed to cover this mode kept a `series` map with an empty-string key — a shape
+`AllDimensions` never emits — so it stayed green while the mode returned nothing. Fixed: both containers are
+read; dataSet-level dimensions are a weakest-precedence fallback (observation > series > dataSet); a dataSet
+carrying **neither** container is logged as unreadable while an empty-but-present one stays silent (a real
+empty result must not cry wolf); and a 2.0 message is refused **by name** with the instruction to pin 1.0.
+Every refusal from 2026-08-13 is retained and pinned by a mutation-checked test.
+
+**Still open:** SDMX-JSON **2.0** itself. The fixtures above are spec-shaped, not fetched — `sdmx.oecd.org`
+is `CONNECT`-refused here — so 2.0 still needs one real body, exactly as this slice said.
+
 ### S3 — The bloc rosters (G3 — its own networked session)
 
 The registry ships deliberately **empty**: thirteen political blocs with no membership data, because "a
@@ -91,10 +107,21 @@ which is precisely why both lenses ship); OECD and IMF message-version verificat
 
 ### S7 — PRH-24 and the parser families
 
-A "Registered statistics sources" view was designed and never built. CSV/OWID, JSON-stat/PxWeb and bulk-ZIP
-(V-Dem, UCDP) parsers were scoped; verify what `src/stats/bulk.py` already covers before writing any of them.
-The revision-anomaly detector over `StatFigure` vintages — flag a new vintage that moves a past official
-figure into the tail of its own revision history — is the on-mission kernel here and needs no model.
+A "Registered statistics sources" view was designed and never built — **still true** (checked 2026-09-07:
+only `/api/stats/sources/ingest` exists, no view).
+
+The other two items were **already built**, and the instruction to verify before writing is what caught it:
+
+- **Parser families — VERIFIED-PRESENT** @ `58a4d6df`. All three ship: `parse_csv` and `parse_jsonstat` in
+  `src/stats/sdmx.py`, `parse_csv_wide` + `zip_csv_members`/`read_zip_member` in `src/stats/bulk.py` (the
+  wide-CSV projection is explicitly the V-Dem/OWID shape, and the ZIP reader carries a decompression
+  ceiling). Covered by `tests/test_stats_csv_jsonstat_parse.py` and `tests/test_stats_bulk.py`.
+- **The revision-anomaly detector — VERIFIED-PRESENT** @ `58a4d6df`, and wired end to end, not merely
+  present: `src/stats/revision.py` → `store.py:267` → `GET /api/stats/revision-anomalies` →
+  `app-map.js:2143`, guarded by `tests/test_stats_revision.py`, `tests/test_stats_revision_store.py` and a
+  `tests/test_repo_invariants.py` invariant. It is model-free and retrospective, degrades to silence on a
+  thin or zero-spread history, and carries components rather than a score — i.e. it already does what this
+  slice describes as the on-mission kernel. **Do not rebuild it.**
 
 ## 3. Scope fence
 

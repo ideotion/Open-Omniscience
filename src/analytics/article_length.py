@@ -111,7 +111,25 @@ def article_length_report(session: Session) -> dict:
     by_lang: dict[str, list[int]] = {}
     scanned = 0
     with_word_count = 0
-    for wc, lang, sid in session.query(Article.word_count, Article.language, Article.source_id):
+    # QUARANTINED ROWS ARE EXCLUDED (2026-09-07). This report was the one analytics
+    # path that still measured them: `quarantine_composition` counts them on
+    # purpose, and every other path filters them out, but the length distribution
+    # scanned the lot -- so the very nav-soup and extraction-junk the quarantine
+    # exists to condemn was setting the thresholds the Home substance filter uses
+    # to exclude junk. `isnot(True)` rather than `== False` because the column is
+    # NULL on every row the quarantine job has never visited (the same predicate
+    # month_occupancy.py already uses).
+    #
+    # The exclusion is COUNTED and returned, never silent: an omitted population
+    # and a zero are different facts, and a reader who cannot see how much was held
+    # out cannot judge what the distribution describes.
+    excluded_quarantined = int(
+        session.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0
+    )
+    for wc, lang, sid in (
+        session.query(Article.word_count, Article.language, Article.source_id)
+        .filter(Article.quarantined.isnot(True))
+    ):
         scanned += 1
         if wc is None:
             continue
@@ -127,9 +145,14 @@ def article_length_report(session: Session) -> dict:
     # so the zeros are the rest of the corpus.
     link_counts: list[int] = []
     linked_articles = 0
+    # The SAME exclusion, joined through Article -- `zeros` below is
+    # `scanned - linked_articles`, so counting links for articles the scan above
+    # skipped would understate the zeros and mix quarantined rows into the
+    # cited-source distribution. Two populations that must match, filtered once each.
     for _aid, c in (
         session.query(ArticleLink.article_id, func.count(ArticleLink.id))
-        .filter(ArticleLink.link_type == "external")
+        .join(Article, Article.id == ArticleLink.article_id)
+        .filter(ArticleLink.link_type == "external", Article.quarantined.isnot(True))
         .group_by(ArticleLink.article_id)
     ):
         link_counts.append(int(c))
@@ -150,6 +173,7 @@ def article_length_report(session: Session) -> dict:
     return {
         "scanned": scanned,
         "with_word_count": with_word_count,
+        "excluded_quarantined": excluded_quarantined,
         "word_count": _words_summary(all_words),
         "word_count_by_content_type": per_type,
         "word_count_by_language": per_language,
@@ -158,7 +182,10 @@ def article_length_report(session: Session) -> dict:
         "method": (
             "word_count = len(text.split()) at ingest; cited sources = outbound "
             "external ArticleLink rows per article (articles with none counted as 0). "
-            "Distributions over the whole corpus; percentiles are nearest-rank."
+            "Distributions over the whole corpus EXCEPT quarantined articles, which "
+            "are held out and counted separately in 'excluded_quarantined' (they are "
+            "the junk these thresholds exist to exclude, so measuring them would set "
+            "the gate from the thing it gates); percentiles are nearest-rank."
         ),
         "caveat": (
             "Counts only, never a score — a long article is not necessarily good, a "

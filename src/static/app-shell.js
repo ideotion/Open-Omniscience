@@ -59,6 +59,7 @@
       indices: () => loadIndices(),
       markets: () => loadMarkets(),
       insights: () => loadInsights(),
+      observatory: () => loadObservatory(),   // the night-sky lens over the same corpus (design 2026-07-18)
       timemap: () => loadOoMapCoverage(),   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: () => loadGovernments(),   // Governments tab (Countries · Map · Law subtabs)
       agenda: () => loadAgenda(),

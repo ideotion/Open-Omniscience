@@ -39,6 +39,7 @@ import yaml
 from src.analytics.managed import normalize_lang
 from src.analytics.segmentation import segment
 from src.services.stopwords import stopwords_manager
+from src.utils.markup_blocks import strip_blocks
 
 # A word token: starts with a (unicode) letter, may contain letters, marks,
 # apostrophes and hyphens. Digits-only / punctuation tokens are ignored.
@@ -144,30 +145,15 @@ def _strip_style_script(text: str, repl: str = " ") -> str:
     every later ``<style`` can be skipped without re-scanning. That is what turns
     K scans into one.
     """
-    out: list[str] = []
-    copied = 0
-    scan = 0
-    exhausted: set[str] = set()
-    while True:
-        m = _MARKUP_STYLE_OPEN_RE.search(text, scan)
-        if m is None:
-            break
-        tag = m.group(1).lower()
-        if tag in exhausted:
-            scan = m.end()  # copy cursor untouched: the opener stays in the output
-            continue
-        close = _MARKUP_STYLE_CLOSE_RE[tag].search(text, m.end())
-        if close is None:
-            exhausted.add(tag)
-            scan = m.end()
-            continue
-        out.append(text[copied:m.start()])
-        out.append(repl)
-        copied = scan = close.end()
-    if not out:  # nothing removed -> return the ORIGINAL object, byte-identical
-        return text
-    out.append(text[copied:])
-    return "".join(out)
+    # DELEGATED 2026-09-07. The loop this used to hold was correct and was also the
+    # only copy of it, which is why the same K*N bomb was still sitting in
+    # `plain_from_wikitext` a month later: a fix in one module does not propagate
+    # itself to a sibling, only a shared primitive does. Behaviour is unchanged --
+    # `strip_blocks` retires on the CLOSER's pattern rather than the tag name, and
+    # each tag here has its own closer, so the families partition identically.
+    return strip_blocks(
+        text, _MARKUP_STYLE_OPEN_RE, lambda m: _MARKUP_STYLE_CLOSE_RE[m.group(1).lower()], repl
+    )
 
 
 def _has_markup(text: str) -> bool:

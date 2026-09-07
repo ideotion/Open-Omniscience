@@ -888,7 +888,7 @@ The extractor is high-precision: bare years and vague spans are not extracted, b
   articles surface as a distinct, filterable **deduced** layer — each entry shows a
   "deduced · never confirmed" pill and the article/source counts, and its title opens
   the exact article set. Counts only, never a verdict.
-- **Astronomy, computed locally:** full/new moons and the equinoxes/solstices are
+- **Astronomy, computed locally:** the four principal moon phases (new, first quarter, full, last quarter) and the equinoxes/solstices are
   computed on this machine (Meeus' algorithms, verified against published almanac
   values); each entry states its **method and accuracy** in the hover bubble.
   Seasons are named **hemisphere-honestly** — never a bare "summer".
@@ -1229,6 +1229,14 @@ Official **figures** are not here at all — they are data, so they live under
   - **Pull from a mailbox (IMAP/POP3)** — pull live from a mailbox, with a visible
     disclosure at the point of use (TLS to the provider, your IP is visible, **not** over
     Tor, credentials are not stored).
+  - **Which publisher does each newsletter belong to?** — imported newsletters currently
+    all sit in one bucket source. `GET /api/newsletters/publisher-preview` shows what a
+    per-publisher filing WOULD look like for the newsletters you already have: each sending
+    domain, how many messages came from it, and which existing source it resolves to (a real
+    eTLD+1 from a bundled Public Suffix List — so `email.bbc.com` resolves to `bbc.com` — with
+    newsletter platforms handled the other way round, so two Substack publications never
+    collapse into one "Substack"). It is a **preview only**: nothing is attached or moved, and
+    where the evidence does not decide, it says so instead of guessing.
   - **Remove imported newsletters** — delete every imported-newsletter article (.eml +
     mailbox) from the live corpus, for replacing a faulty set with a clean re-import
     (restore is additive, so leaving newsletters out of a backup never removes them — this
@@ -1599,7 +1607,7 @@ keywords, sources, watched Wikipedia and tracked law).
 independence notes); `GET /api/links/preview` (local link-preview extraction).
 
 **Agenda events** — `GET /api/events/calendars|feeds|imported`;
-`GET /api/events/astronomy` (locally-computed moons + equinoxes/solstices, verified vs
+`GET /api/events/astronomy` (locally-computed moon phases — new, first quarter, full, last quarter — + equinoxes/solstices, verified vs
 almanac) and `GET /api/events/climate` (bundled El Niño dataset). **Weather context** —
 `POST /api/weather/context` (corpus-driven Open-Meteo reanalysis slices, consented).
 

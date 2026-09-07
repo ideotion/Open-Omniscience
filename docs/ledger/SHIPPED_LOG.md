@@ -6555,6 +6555,146 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
+
+- **NET-01 — THE SSRF GUARD NOW VALIDATES THE ADDRESS THE CONNECTION ACTUALLY REACHES, AND
+  THE PRESCRIBED REMEDY WAS REFUSED ON ITS FAILURE MODE (2026-09-07, prompt 21 S1):**
+  `EthicalFetcher._guard_target` resolves the target and refuses a non-public answer — and
+  that is not the resolution the connection uses, because `requests`/`urllib3` resolve the
+  same name again inside `create_connection`. Reproduced live before anything was built: a
+  real fetcher against a resolver answering `93.184.216.34` at guard time and `127.0.0.1` at
+  connect time returned a loopback HTTP server's body as a clean 200, with no error anywhere.
+  The plan named "connect-time IP PINNING (a custom transport adapter)". That was costed and
+  refused: pinning means taking over urllib3's connection construction and then carrying the
+  hostname separately for SNI, certificate matching and the `Host` header — version-fragile
+  private API whose failure mode is a SILENTLY WEAKER TLS verification, and which fails OPEN
+  the day urllib3 moves. Validating the address actually connected to is the same security
+  property (the threat is reaching an INTERNAL address; a second, different PUBLIC answer is
+  normal under CDN anycast), touches no TLS state, and rides the stdlib socket chokepoint
+  every HTTP client must pass through, so it fails CLOSED. `src/ingest/ssrf_guard.py` holds a
+  thread- and request-scoped scope entered by `_guarded_redirect_get` — the one method the
+  page fetch, the robots fetch, every redirect hop and both preflight side doors pass through
+  — with two nets: every address a resolution ANSWERS with, and every address a connect is
+  HANDED. It is hooked into `airplane.py`'s EXISTING patch layer, so one place patches
+  sockets and a call site cannot meet one gate and miss the other; `_installed` is split from
+  a new `_airplane_armed` so `OO_AIRPLANE_SOCKET_GUARD=0` keeps meaning exactly what it meant.
+  The proxy endpoint is allowlisted as an exact `(address, port)` pair (by address alone it
+  would open every port on the machine) and the endpoint set is merged from the ENVIRONMENT as
+  well as the session, because `merge_environment_settings` folds `HTTP(S)_PROXY` in whenever
+  `trust_env` is set. STATED RESIDUALS, in the module rather than implied: a hostname proxy
+  endpoint stands the check down for that request; a publicly-routable-but-internal address is
+  out of reach of any address-shape rule; `socks5h` never resolves the destination here at all.
+  **FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a guard's own exemption
+  set can defeat the guard (exempt the QUESTION, never the ANSWER — the resolution check went
+  BLIND to any answer equal to a configured proxy's own address, i.e. to `127.0.0.1` wherever a
+  loopback proxy is configured, and the later net hid it);
+  a second guard riding an existing patch layer must not inherit the first's off switch, and
+  one flag cannot carry two facts; a plan's remedy is a hypothesis and the tie-break is which
+  way it fails; a translation scoped to the call you expected to raise leaks the one you did
+  not (a redirect hop's own `_guard_target` resolves inside the scope); and `session.proxies`
+  is not the answer to "what will requests connect to".
+
+- **NET-02 + PRH-03 — THE APP-WIDE URL SANITIZERS CATCH `ValueError` ONLY, AND THE DUCKDUCKGO
+  REDIRECT RESOLVES (2026-09-07, prompt 21 S2):** `safe_href` and `sanitize_url` held
+  `except Exception` around `urlparse` — right for the one exception `urlparse` genuinely
+  raises and wrong for everything else, so a `TypeError` from a bytes/None argument or an
+  `AttributeError` from a caller passing the wrong object became a clean empty string,
+  indistinguishable from "this link was unsafe", on every surface that renders an ingested
+  URL. Both now catch `ValueError`; `urlparse` is hoisted to a module import so the
+  propagation half is testable at all. `_clean_url` stripped the query string BEFORE it
+  validated, so every real DuckDuckGo result — always its own redirector,
+  `//duckduckgo.com/l/?uddg=<target>` — arrived scheme-less and was discarded, silently, in
+  the one sanctioned external discovery channel, with a test asserting only that a list came
+  back. `_unwrap_search_redirect` resolves it first and DISCARDS a redirect with no usable
+  target rather than falling back to the redirector, which on the absolute form is a valid
+  https URL and would register `duckduckgo.com` itself as a discovered SOURCE. Deliberately
+  unchanged and now stated rather than implied: the query strip on the final url (right for
+  this consumer, which keeps the DOMAIN and treats the url as a homepage to look for feeds
+  under; wrong in general, for the recorded reason that a URL's query can BE the article
+  address). RECORDED AND NOT CHANGED: the result-link regex requires `class=` to be the first
+  attribute after `<a `, which is real fragility — and `html.duckduckgo.com` answers
+  `CONNECT … 403` through this sandbox against a `pypi.org` 200 control, so the live markup
+  could not be observed and widening the pattern blind could start admitting sponsored anchors
+  as discovered sources. **ONE LESSON, copied verbatim into `LESSONS.md`:** measure a
+  surviving mutant for EQUIVALENCE before writing a fixture to kill it — three of five
+  survived, one was a fixture gap and two were genuinely equivalent at the caller, which makes
+  the honest repair a direct test of the helper's own contract with the measurement in its
+  docstring, not a deleted guard and not a contrived fixture.
+## 2026-09-07 — Wikipedia as a living source (prompt 18): two slices, one measured stop
+
+**The consented "Refresh exact sizes" (S5).** The 2026-06-16 inline-size-estimates ruling's
+REMAINING was to retire the per-edition "Estimate size" probe button and replace it with one
+consented refresh. Building the replacement found three defects in the button itself, none of
+them the one the ruling named: it egressed a live HEAD to `dumps.wikimedia.org` with **no
+`ensureOnline` consent** (invariant #14 gates the dump START, and the probe runs first); it read
+only `dumpSelected()[0]` from a MULTI-select picker, silently falling back to `"en"`; and every
+failure printed one `"size check failed"`, so airplane mode read as a dump host that would not
+answer. `DumpDownloadManager.probe_sizes` now reads the selection in one bounded,
+politeness-spaced action, and an unread size carries a NAMED reason rather than a zero.
+`GET /api/wiki/dumps/sizes` is a plain `def` and names the editions its cap kept it from reading.
+**The "one request, not N HEADs" mechanism is PARKED with its evidence** — the `dumpstatus.json`
+premise it rests on was never read by anyone, `dumps.wikimedia.org` is egress-blocked here, and
+all three places that stated it as fact now say so.
+
+**The version anchor, and the reader's way into the history (S4 + the half S2 was missing).**
+`Article.source_revision` records which upstream revision an article's stored TEXT came from,
+written in the same transaction as the content it describes, for both the watched-page sync and
+the offline dump ingest — closing a gap where `upsert_wiki_corpus_article` received the revid and
+had nowhere to put it. The mechanism is per-ARTICLE rather than per-mention, deliberately and with
+the reason recorded. The tracked-changes VIEW turned out to be **already shipped** (the 2026-09-06
+analysis records it UNBUILT with "no hits"; `openWikiTC`/`loadWikiTC` and `#wiki-tc` prove
+otherwise) but reachable only from Settings, so the reader — a standalone page — showed no version
+and no history. It now states the version with what it claims and offers the local history only
+when this machine holds one.
+
+**The wiki strip's K*N regex bomb, and the bigger finding behind it (nothing asked for this).**
+`plain_from_wikitext` carried the recorded 2026-08-05 `OPEN.*?CLOSE` shape in three patterns, on the
+path every watched-page sync and every dump ingest runs through: 0.014 s well-formed against
+**13.440 s** for unclosed-`<ref>` spam at 400 KB. The proven fix already existed as a PRIVATE helper
+hardcoded to `<style>`/`<script>`, which is why it had not propagated; it is now the shared
+`src/utils/markup_blocks.strip_blocks`, byte-identical over 20,000 randomised documents, 14.16 s ->
+0.0030 s. **Six MORE patterns in the same function are quadratic and are the expensive ones** --
+`[[File...]]` costs **28.035 s** per 400 KB -- written down with their measurements and deliberately
+not rushed, because each captures and rewrites and needs its own differential.
+
+**Whole-edition ingest (S1): stopped at the seam, with the gate measured rather than cited.**
+Three of the five `STORAGE_5TB_PLAN.md` §9 steps preceding it are unbuilt (the FTS split-out, the
+sharding prototype, the Phase C store) and four of the six §8 rulings are unruled. Nothing was
+built. The bounded version already ships (`ingest_dump_pages` over an operator-chosen title list);
+the delta half has a client and no consumer. **G10 is two questions, not five** — Q2, Q3 and Q4
+were answered by the maintainer's own 2026-06-12 ruling in the very section that filed them, and
+Q3 shipped the same day.
+
+**SEVEN LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a premise copied three times
+is still unverified, and each copy makes it read as better sourced; a consent gate on the ACTION is
+not a consent gate on what the UI does to help you decide; check a prescribed column against the
+fact's CARDINALITY, not only against the code; an inverse verified by round trip beats one verified
+by a character rule, and the character rule fails toward silence; and a source guard cannot tell a
+live branch from a dead one, because the identifier it looks for lives inside the branch. Plus: the recorded regex bomb had a second, larger disguise in the SAME function, and the test written for the first one is what found it; and a mutation matrix that names a test file which does not exist reddens on every mutation and reads as a perfect result.
+
+## 2026-09-07 — prompt 17: the sweep that found the work done, and the one cap that outlived its ruling
+
+Prompt 17 (super-groups, the concept map, the analysis surfaces) was verified slice by slice
+against `main` @ `58a4d6d` and found ALREADY SHIPPED end to end — S1-S5 and the GROUPS-layer
+amendment in PR #721 (2026-07-19), S6's curation-in-Settings, S7's KW-17 hover, and the Trends
+third window with its per-window top-5 charts (2026-06-16). Nothing was rebuilt. The prompt read
+as unbuilt because the DOCKET was stale: the Open-queue SUPER-GROUPS entry still said "execution
+delegated, PENDING" seven weeks after its own execution merged. Two S7 rows were not gaps either
+— KW-17 is shipped, and AI-19 was DELIBERATELY removed by maintainer ruling 22 as an absorption
+into the reader, so building it would have undone a ruling.
+
+The one real defect was found by reading §D's code against §D's own ruling, and it is the entry
+worth keeping.
+
+**THREE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a bound that a ruling's
+load-bearing row rides along with is safe only by accident; a MIN gate expressed as a rounded
+percentage grows slack as its denominator grows, and at 3040 keys exactly one missing translation
+is invisible; and `grep --include` is a whole-invocation filter, so naming files of another type
+positionally beside it silently searches none of them.
+
+**A FOURTH LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** a guard anchored on a
+literal operand list reddens when you add an operand beside the one it is about — re-anchor it on
+the property, pin both directions, and grep the TEST tree for any string you change in
+`src/static/` before you change it.
 ---
 
 ## 2026-09-07 — PROMPT_11: model supply, capability probes, and the honest gaps
@@ -6663,3 +6803,277 @@ S3/S4b and S5/A5 were both recorded as outstanding by the prompt and both were a
 shipped — the third and fourth law item in a row to turn out shipped-when-read (rulings 36
 and 37 were the first two, 2026-08-20). This vertical's status text ages faster than any
 other area's in the repo, so grep before building here, always.
+
+**Moon quarters: closing the one accepted loss of the retired moons feed (2026-09-07, PROMPT_19
+S3).** The 2026-07-17 ruling retired `monkeyness-moons` as redundant against the computed Meeus
+layer and recorded a single accepted loss — that feed carried the first/last QUARTER phases, which
+the computed layer did not have. It has them now, from the same chapter 49: the quarters carry
+their own periodic series plus the ±W term (added at first quarter, subtracted at last), and the
+planetary corrections are shared with new/full rather than copied. `phases_for_year` publishes four
+buckets; `_phase_of_k` REFUSES an off-grid k by name rather than silently computing a new moon,
+because Meeus' series are per-phase and there is no honest answer for k = 3.1.
+
+**The verification is the point, and it is not a quoted constant.** New/full are pinned against
+Meeus' own worked example 49.a. For the quarters the risk is a mistranscribed coefficient, and a
+constant written from memory would be the fabricated reference this project forbids — I confirmed
+that risk is real by misremembering 49.a's own value before reading it out of the tree. So the
+quarters are checked against an INDEPENDENT method: a principal phase IS the instant the Moon's
+apparent longitude leads the Sun's by 0/90/180/270°, computed from other chapters entirely (ch. 47
+for the Moon, ch. 25 for the Sun, no term shared with ch. 49). The anti-vacuity half is what makes
+it evidence: the same checker runs over the new and full instants, whose times are already verified
+to ~26 s, so its error there is its OWN truncation noise and the quarters must sit inside that band
+rather than under a tolerance picked by hand. Measured 1900..2200, worst elongation error: shipped
+code new/full 0.0217° · quarters 0.0196° (ratio 0.90); W sign flipped 0.1106° (5.09); leading
+coefficient mistyped 0.1137° (5.24); W dropped 0.0621° (2.86). The bars — ratio ≤ 2.0 and absolute
+≤ 0.035° — fail all three and clear the shipped code with ~2x margin both ways; the W-dropped
+mutant is the tight one, which is why the ratio bar is 2.0 rather than the 3.0 a first pass would
+have chosen. Two more mutations (the quarter branch never taken, an off-grid k accepted) and six
+over the wiring redden by name.
+
+**A guessed bound failed against correct code, again.** The interval check first asserted the four
+gaps were within ±0.8 d of a quarter synodic month; the real quarter-lunation runs **6.583..8.240 d**
+over 1900..2200, because the orbit is elliptical and the inequality itself varies. Measured, the
+bound is 6.3..8.5 with the numbers written beside it, and its job is stated: it catches a gross
+error, never a minute-scale one — the elongation guard is what has that resolution.
+
+Frontend: both agenda grids resolve every phase label through ONE map (a second hand-written
+ternary is how a month and a week view come to disagree about a glyph), four distinct glyphs, and
+two new labels keyed in all twelve locales. The non-English values are AI-drafted standard
+astronomical terms and are flagged for native review.
+
+**Newsletter publisher identity: the eTLD+1 and the inversion the list cannot give (2026-09-07,
+PROMPT_19 S6).** Every imported newsletter still lands in one bucket source, so the 2026-06-15
+ruling's question — is a newsletter from `email.bbc.com` the same publisher as the scraped
+`bbc.com`? — had no machinery behind it. Now it does: a vendored, dated, digest-verified Public
+Suffix List (registry entry, twelve-month window, refused outright on a digest mismatch so unknown
+bytes can never become publishers), then the ruled ladder — exact `Source.domain` → the alias map →
+a new DISABLED email source — and never a fuzzy merge. The list DEGRADES rather than guesses: the
+tempting two-label fallback reduces `bbc.co.uk` to `co.uk`, and a public suffix presented as a
+publisher merges every British site into one source. ICANN-vs-PRIVATE is an explicit argument at
+every entry point rather than a silent default, because both readings are defensible and picking
+one quietly is how two surfaces come to disagree about one quantity.
+
+**MEASURED, and it decides the design:** substack.com, beehiiv.com, ghost.io, mailchimp,
+buttondown.email, convertkit/kit.com and medium.com are in NEITHER section of the list, so the list
+alone performs exactly the collapse the ruling's platform-inversion clause forbids. That clause is
+load-bearing rather than a restatement, and it runs BEFORE the eTLD+1. A platform sender carrying
+no publication label — `hello@substack.com`, or an infrastructure label like `mail.` — is REFUSED,
+not attached to the platform: a refusal is a gap, a merge is a fabrication that reads as data.
+List-Id is parsed and kept (clause (a); recipient-safe by construction, which is why the same
+ruling keeps it and drops List-Unsubscribe) and rescues that case, but only when it corroborates
+the sending platform. The source lookup is case-insensitive on both sides, per the recorded
+one-sided-normalisation defect: `Source.domain` is BINARY-collated and stored as typed, and a
+match that does not fire is indistinguishable from a publisher nobody has.
+
+**What is deliberately NOT built.** The resolver decides nothing on the write path. The ruling
+pairs silent auto-attach with an import UI that announces it and an UNDO for the automated
+attaches; shipping the attach without those is half a data-placement change, which is worse than
+none. So the caller today is a read-only preview over the newsletters already imported — the
+evidence that decision needs, computed by the real function rather than described, which also
+keeps the resolver from being the dead-end shape the ledger records five times over.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** the publisher's own
+conformance vectors are evidence where hand-written cases measure the implementer's understanding
+(they found two defects, one of them invisible in the positive space); a mutation can apply
+textually and be semantically inert, so `assert new != old` is necessary and not sufficient; a
+restored source file is not a restored import, because `__pycache__` can serve the mutant's
+bytecode for a whole second; and a module that degrades honestly when its data file is absent is
+exactly the one whose packaging omission is silent (`src/geo/data` had been missing from every
+wheel since it was added).
+
+## 2026-09-07 — ui/type-scale — PRH-32 + PRH-33, and two defects the browser found on the way
+
+**PRH-32.** The 2026-08-11 type scale shipped scoped to `#tab-settings` "because that is what
+was asked", and its own comment recorded that the same inversion existed elsewhere. Measured in
+Chromium against a 440-article seeded corpus, on **all 17 themes**, it did: Home's section title
+"By channel" rendered **12.5px uppercase in `--muted` at 4.56–12.71:1** while a briefing card's
+own `<h4>` inside it rendered **15px in full `--fg` at 6.07–18.10:1** — bigger AND brighter than
+the section containing it, which is the maintainer's original words exactly. Library's
+`.lib-sub` had the same shape, and the Feed's article titles (`.feed-t`, an `h3` with no size
+rule) took the same UA `1.17em` the dialogs did. After: **17px at 7.00–19.80:1**, with 21 section
+titles lifted and 25 headings unchanged, and **0 horizontal overflow at 375px on 12 surfaces**
+(the overflow instrument self-tested against a 900px fixture first — it reports 525px, so a
+clean reading means something).
+
+The scale is written through `:where()`, which contributes ZERO specificity, so it is a DEFAULT
+any authored class overrides. That is the load-bearing part: a plain `.panel h3` rule carries
+(0,1,1) and would have beaten `.brief-bucket > h3` (12px), `.fig-title` (13px) and `.lib-sub`
+(13px), trading the reported inversion for three new ones.
+
+**TWO DEFECTS THE MEASUREMENT TURNED UP**, neither visible to a source read. Nine of the eleven
+`<dialog>` elements carried `background`/`color` inline and **two did not** (`#ux-import`,
+`#ux-export`), so those two alone fell back to the UA's `Canvas`/`CanvasText` and rendered
+identically on all 17 themes (ground `rgb(18,18,18)` on the twelve dark ones,
+`rgb(255,255,255)` on the five light ones) — the palette reached nine dialogs and stopped at
+two. And **`var(--line)` is defined nowhere the SPA loads**: 41 fallback-less references whose
+whole declaration is invalid at computed-value time, proven by `getComputedStyle` reporting
+`border-top-style: none` on all eleven dialogs. The same class had one case worse than
+cosmetic — `fill="var(--text)"` on the diagnostics chart's two axis titles, and `fill`
+INHERITS, so they rendered `rgb(0,0,0)` on a `rgb(20,24,31)` panel, **1.09:1**, on twelve dark
+themes. Fixed; the other 41 sites are ratcheted rather than repaired, because rendering them is
+a visible change wanting its own review (Open queue, same day).
+
+**PRH-33.** `Activity` / `Tracked` / `Database & storage` keyed ×12 by textual insert beside
+their sibling `World coverage` — `3 added / 0 deleted` per file — and verified rendering live in
+all twelve locales through the app's own `OOI18N.setLang()`. Untranslatable ratchet **560 → 557**,
+lowered in the same PR and re-checked at 556 to confirm it bites.
+
+Six mutations, each asserting it applied before its run counted, all redden **by name**. Full
+suite 9,229 passed / 125 skipped / 0 collection errors. Stamp: *Chromium-verified (remote
+sandbox) · awaiting human UX pass*. PR #1029.
+
+**FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a declaration naming an
+undefined custom property deletes itself rather than degrading, and the property's `unset` is
+what decides the severity; a zero-specificity `:where()` default is what lets a global scale
+coexist with deliberate exceptions; a property that lives at the call site reaches the call
+sites somebody remembered; one theme cannot answer for seventeen when the value comes from the
+UA; and a heading probe scoped to one container class reports a clean app.
+
+## 2026-09-07 — stats/sdmx: the observation CONTAINER, as opposed to the observation-level lookup (P14 S2)
+
+`parse_sdmx_json` read observations only out of `dataSets[].series[<key>].observations`. A message
+returned for `dimensionAtObservation=AllDimensions` carries no `series` key at all — its observations
+hang straight off the dataSet as `dataSets[].observations` — so a well-formed message parsed to **zero
+rows and logged nothing**. The 2026-08-13 session had fixed the observation-level LOOKUP for exactly
+this mode and written a test named for it; the fixture kept a `series` map with an empty-string key, a
+shape `AllDimensions` never emits, so the test covered the lookup and never the container.
+
+Shipped: both containers are read; dataSet-level dimensions become a weakest-precedence fallback
+(observation > series > dataSet — a single-area query can legitimately carry `REF_AREA` there, and
+refusing it would discard good data to look careful); a dataSet carrying **neither** container is
+logged as unreadable, while an empty-but-present container stays silent; and an SDMX-JSON **2.0**
+message is refused **by name**, with the instruction to pin 1.0 on the request rather than sniff the
+response. Every refusal from 2026-08-13 is retained, each pinned by a mutation-checked test (six
+mutants, all killed by name).
+
+Provenance, because it bounds what this proves: the fixtures are **spec-shaped, not fetched**.
+`sdmx.oecd.org`, `api.worldbank.org` and `dataservices.imf.org` each answer `CONNECT <host>:443` →
+`403` at the sandbox proxy, with `pypi.org` 200 as the control — the seventh consecutive session to
+converge on that, recorded as per-host evidence under `QUESTIONS_FOR_THE_MAINTAINER` F1. SDMX-JSON 2.0
+support itself therefore stays unbuilt: it still needs one real body.
+
+Also corrected in the same PR, under the staleness guard: the revision-anomaly detector (`GOV-06`) and
+all three parser families (`GOV-05`) were recorded as UNCHECKED/on-mission-to-build and are in fact
+**shipped and wired** — the detector runs `revision.py` → `store.py:267` → `/api/stats/revision-anomalies`
+→ `app-map.js:2143` with three test files guarding it. `PRH-24` (the "Registered statistics sources"
+view) really is unbuilt. `S4` (the default aggregation strategy) was **not** flipped: which figure a
+reader sees first is an editorial decision, so it is recorded as question `G11` instead.
+## 2026-09-07 — insights/observatory — the Observatory ships, and the real corpus picked both refusals
+
+The design of record (`docs/design/OBSERVATORY_DESIGN.md`, ruled 2026-07-18) had been carried as
+"DESIGN-ONLY — nothing built" since the backend S0/S1 landed on 2026-07-20; question **H1** asked
+whether to build the renderer in-session and Chromium-verify it, and the maintainer answered *build
+now*. So: `src/static/oosky.js` (the pure polar geometry, dual node/browser like `ooviz.js`) +
+`src/static/app-observatory.js` (the wiring) + a dedicated main tab + **UI invariant #31**.
+
+**The honesty spine is one measure per channel and nothing blended:** angle is the domain wedge
+(now labelled — see below), with stable-hash jitter inside it disclosed on the surface as
+meaningless; radius is ONE chosen measure with labelled orbit rings; size is mentions through
+`ooViz.sqrtAreaScale` so AREA carries the value, with a reference-star legend; colour is the
+dominant language or a trend lens, and never the only signal, because the ranked table beside the
+sky names every value. Deterministic by construction (`ooViz.mulberry32`, never `Math.random`), so
+the same corpus draws the same sky and CHANGE becomes the signal.
+
+**BOTH LOAD-BEARING REFUSALS CAME FROM MEASURING A REAL CORPUS, NOT FROM THE DESIGN.** Seeded 440
+articles through the real `index_article` and read the live payload:
+
+* `mentions` tops out at **263** — 2.4 decades, so a log radius is honest and the decade orbits are
+  real. But `distinct_sources` tops out at **7** across all 77 galaxies, `distinct_languages` at 5,
+  `distinct_keywords` at 8. A log radius on those spreads five sixths of a decade across an entire
+  sky and labels orbits nothing can occupy — the recorded `ooChart` `logY` defect, one geometry
+  over. `radialScale` therefore chooses the mode from the data, and the surface PRINTS which scale
+  it drew and why, because a hint claiming "equal ratios are equal distances" above a linear render
+  is two statements at once.
+* **52 of 77 galaxies have a measure of ZERO.** `log10(0)` is `-Infinity` and the natural guard
+  (`Math.max(v, 1e-9)`) plants a fabricated observation on the outermost orbit. So a zero gets no
+  coordinate at all: `r(v)` returns `null` rather than a number, which is what stops a caller that
+  ignored `mode` from plotting anyway, and the absent majority goes to a labelled band outside the
+  value scale. On a young corpus the gap is the common case, not an edge case.
+
+**CHROMIUM-VERIFIED IN THE REMOTE SANDBOX (awaiting the human UX pass), and it found four defects
+that no amount of source reading would have.** (1) The twelve domain wedges had **no labels at
+all** — a categorical axis a reader could see and never learn. (2) The i18n DOM walker was
+reverting the dynamic `aria-label` to its static placeholder, because the walker caches an
+element's attribute on first sight as "the original English"; `data-i18n-dyn` is its own opt-out
+and the fix. (3) The readout printed `Mentions: 263 · Mentions: 263` whenever mentions was also the
+radial measure. (4) The nebula band overlapped the not-observed marks, rendering two different
+facts on top of each other, and was the loudest thing on screen while carrying no quantity.
+
+A **16-mutation matrix** ran over every new guard: all caught by name, and the one survivor was a
+finding about a fixture rather than about the code (see the lessons). Also fixed here, because it
+was the one live defect in `PROMPT_16` §3's own list: `article_length_report` was the last
+analytics path still measuring **quarantined** rows, so the junk the quarantine condemns was
+setting the thresholds the Home substance filter uses to exclude junk.
+
+**STALENESS (working mode §2), both corrected in this PR:** §3's article-length histogram was
+already built to spec on 2026-08-04 (`814e5dc1`), and the `domain:` field §2 calls a prerequisite
+shipped 2026-07-20 (`ae066e10`) across all 77 groups. **NOT BUILT and honestly deferred**, each
+needing payload the endpoint does not emit: the arm/tag tier, star systems, planets, novae, and the
+time scrub.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a polar "importance" axis is
+a log axis waiting to fabricate itself, and the real corpus picks the fallback; a size channel with
+a minimum radius has a cap, and the legend will quietly teach a scale the canvas does not use; a
+second `oo:langchange` listener is a second enumerator, and two existing guards find "the" listener
+by first occurrence; and an ORM column default makes a `None` fixture unable to test the NULL branch.
+## 2026-09-07 — the import checkpoint interval K, and what the two whole-corpus PRAGMA checks actually cost
+
+**THE MECHANISM SHIPPED; THE NUMBER DID NOT.** The 2026-08-08 queue entry's item (b) asked
+whether a multi-backup import should verify and swap once per K backups instead of once per
+backup. It is built: `run_restore` gained `working_copy=` (where to build or find the
+disposable copy) and `hold_after_merge=` (stop after the merge, this batch's own verification
+and its side files, leaving the copy for the caller), the import queue drives the group, and
+`verify_copy` split into `verify_merge` — counts, the search index and the sampled content
+comparison against the artifact, all of which need that item's staging tree, which is deleted
+the moment it returns — and `verify_file`, the whole-file `quick_check` + `foreign_key_check`,
+which ask about the FILE and therefore cover every merge in it. That split is what makes K > 1
+possible without weakening the gate.
+
+**IT SHIPS AT K = 1, WHICH IS TODAY'S BEHAVIOUR BYTE FOR BYTE**, because the entry itself said
+the trade "needs a RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU
+that today it would keep, and that is a change to what a Stop costs every operator. The
+recommendation on record is 3; the value is one setting
+(`AppSettings.import_checkpoint_k`, 1..24, refused loudly outside the range rather than
+clamped, with `OO_IMPORT_CHECKPOINT_K` as a one-process override and a control in
+Settings → Data whose visible surface carries the cost and whose hover bubble carries the long
+form).
+
+**WHAT THE DURABILITY COST LOOKS LIKE FROM THE OUTSIDE**, because a trade nobody can see is a
+trade nobody agreed to: the queue publishes `items_committed` and `items_staged` as two
+different numbers plus a `checkpoint` block naming K and the open group; a per-item `staged`
+state reads "Merged — not yet saved" and a `discarded` one reads "Discarded — import it
+again"; both are `ok: false`, so a staged item's numbers can never sit behind a success
+headline; a failure or a refused verification discards the whole open group, because a windowed
+merge step commits mid-merge and a half-merged copy must never become the live corpus; and a
+process restart rewrites `staged` to `discarded`, because the working copy does not survive the
+process.
+
+**THE MEASUREMENT HALF** (the brief's S5, "measure them, do not change them") is in
+`docs/design/IMPORT_PERFORMANCE_2026-08-08.md` §5b, and the three reusable findings are in
+`LESSONS.md`: both checks are linear in bytes; `foreign_key_check` costs about a third of
+`quick_check` and is codec-neutral; and the plaintext-versus-encrypted codec multiplier that
+`merge_diag.walk_probe` publishes is a WARM-cache number (2.34x/2.57x measured) that falls to
+1.29x/1.39x cold, because a production encrypted store is 16384-page under DB-10 §1b against a
+staged plaintext corpus's 4096 and therefore does a quarter as many, four times as large,
+reads. Applying it to the field's disk-bound `validate` rate — which is exactly what
+`walk_probe`'s docstring recommends — over-states the encrypted walk by about 1.8x. It took
+three passes to get there, and the two failures are in `LESSONS.md`: a single-run pass on a
+machine busy with this session's own test suites, and a pass whose interleaving destroyed the
+warm condition it was measuring.
+
+**TWO SURVIVING MUTANTS OUT OF TWENTY-ONE, and both were findings rather than noise.** A
+timing assertion (`the second item's snapshot stage is faster`) could not discriminate a
+carried working copy at fixture scale; the content can (`SELECT COUNT(*) FROM merge_batches` is
+two after two held items and one after a re-snapshot). And the hold decision's explicit
+`K <= 1` clause is independently delivered by the group-full check beside it, so a
+single-clause mutation is a no-op — the clause stays as a belt on the shipped default, with the
+measurement in a comment, and the matrix reverts both together.
+
+**ALSO FIXED, found while reading the plan it belongs to:** `restore_stage_plan` counted
+`corpus_delta_before` for a PREVIEW, which returns above it — a published denominator one
+larger than the stages a preview actually walks.
+
+**RECORDED VERIFIED-PRESENT, not rebuilt:** the brief's S3 (the post-import conclusion screen's
+articles-first headline, labelled per-type breakdown, corpus delta and work-induced queue) and
+S4 (one aggregated conclusion for a whole queue with per-item rows beneath) were both already
+built; the descriptions that said otherwise were corrected in the same PR.

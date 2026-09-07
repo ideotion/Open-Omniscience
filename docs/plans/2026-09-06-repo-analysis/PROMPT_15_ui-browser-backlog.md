@@ -80,17 +80,36 @@ string must be keyed in the same commit or CI reddens.
 Known specifics: the eight `guis/` skins are outside the gate's scope entirely; `reader.js` calls `t()` zero
 times; the `{action} failed: {error}` template was considered and **rejected** in favour of full-sentence keys
 (that decision is recorded — do not re-propose the template); three Library subtab labels (`Activity`,
-`Tracked`, `Database & storage`) are unkeyed (PRH-33); the uninstall dynamic preview and confirm dialogs stay
+`Tracked`, `Database & storage`) were unkeyed (PRH-33) — **SHIPPED 2026-09-07 (PR #1029)**, keyed
+×12 and the untranslatable ratchet lowered 560 → 557 in the same PR; the uninstall dynamic preview and confirm dialogs stay
 English (PRH-19).
 
 Lower a ratchet in the same PR that frees the slack — leaving slack invites the next drift to land unseen.
 
 ### S6 — Accessibility and layout
 
-The five a11y P2s from the axe-core pass. `prefers-contrast` is unhandled although a `contrast` theme exists.
-`.sr-only` is absent from the static shell. The `h3`-over-`h2` type inversion was fixed for `#tab-settings`
-and still exists on Home, Insights, Markets and the two Export/Import dialogs (PRH-32). There is no layout
-media query between 900 px and desktop.
+The five a11y P2s from the axe-core pass. There is no layout media query between 900 px and desktop
+(`max-width:900px` is still the widest).
+
+**Two claims in this slice were STALE and are corrected here (2026-09-07, PR #1029), per the working
+mode's staleness rule:**
+
+- ~~`prefers-contrast` is unhandled~~ — **VERIFIED-PRESENT.** `app.css` carries
+  `@media (prefers-contrast: more)`, added by the 2026-07-28 GUI audit's finding G-3, and the
+  2026-08-20 matrix measured it applying live under `emulate_media(contrast="more")` (hint colour
+  and icon borders measurably change). Do not rebuild it.
+- ~~`.sr-only` is absent from the static shell~~ — **VERIFIED-PRESENT.** `app.css:161`, used by
+  `app-markets.js`, `app-map.js` and `app-library.js` for the chart data tables that make an SVG
+  figure readable. Do not rebuild it.
+
+**SHIPPED 2026-09-07 (PR #1029):** the `h3`-over-`h2` type inversion (PRH-32). It was real and
+wider than recorded — measured in Chromium on all 17 themes, Home's section title rendered 12.5px
+in `--muted` at 4.56–12.71:1 under a briefing card's own 15px full-`--fg` title at 6.07–18.10:1,
+and Library's `.lib-sub` and the Feed's `.feed-t` had the same shape. Lifted app-wide through a
+zero-specificity `:where()` default. The two Export/Import dialogs turned out to be a SEPARATE
+defect (they alone of eleven omitted `background`/`color`, so no theme reached them), and the same
+pass found `var(--line)` undefined at 41 SPA call sites — parked with a ratchet and a question, in
+`docs/ledger/OPEN_QUEUE.md`.
 
 ### S7 — The unrendered work
 
