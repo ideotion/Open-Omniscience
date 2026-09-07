@@ -231,9 +231,20 @@ never the way to make room for something rules (5)/(5a) would have sent to
    IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
    public-IP wording. Scheduler responses carry `online` → immediate repaint,
    never the 5 s poll. Gated: toggle, collect (start/run-now/first-run),
-   markets/indices imports, wiki page add, dump start. Enforced in
+   markets/indices imports, wiki page add, dump start, dump size read. Enforced in
    test_ui_invariants + tests/test_network_consent.py (incl. the
    socket-importer RATCHET: no new module may import requests/httpx).
+   **EXTENDED #14e (2026-09-07, from a measured breach): THE GATE COVERS WHAT THE
+   UI DOES TO HELP YOU DECIDE, NOT ONLY THE ACTION.** "dump size read" joins the
+   list because the "Estimate size" button egressed a live HEAD to
+   dumps.wikimedia.org with NO `ensureOnline`, for years, beside a "Download"
+   button that had one — a preview reads as *looking*, not as *doing*, which is
+   exactly where a gate gets forgotten. So the RULE, not just the list: after
+   gating an action, gate every estimate, preview, validation, reachability check
+   or autocomplete that runs BEFORE it, because those egress first. COROLLARY,
+   from the same breach: a refusal BY THE KILL SWITCH must be named as such
+   wherever it can surface — that probe reported airplane mode as "size check
+   failed", pointing an operator at someone else's server for their own setting.
    **REFINED #14c (UI_SHELL §3, SHIPPED #133):** the transition flash is now
    DIRECTION-AWARE — go-on = live accent, go-off = calm/grounded (never the old
    single red wash that conflated both meanings); consent/semantics unchanged.

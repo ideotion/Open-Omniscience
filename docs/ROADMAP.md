@@ -280,6 +280,17 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
 - Prior sub-items folded in: dumps → corpus ingestion path · edition-wide auto-track after a dump download
   (the 2026-06-12 superseding ruling, now the plan of record) · a dedicated tracked-changes tab ·
   auto-watch all 12 UI editions · Wikipedia tab → Settings · agenda ↔ wiki linking. 🎨
+- **2026-09-07 pass (prompt 18) — two shipped, one measured stop.** ✅ The **version anchor**
+  (`Article.source_revision`: which upstream revision an article's stored TEXT came from, for both the
+  watched-page sync and the dump ingest) and the **reader's way into the history** (the tracked-changes
+  view was already built but reachable only from Settings; the reader now states the version and links
+  the local history when this machine holds one). ✅ The **consented "Refresh exact sizes"** retires the
+  unconsented per-edition probe button. ✅ The wiki strip's **K·N regex bomb** (13.4 s per 400 KB of
+  unclosed-`<ref>` spam, on the ingest path) fixed through a shared linear scanner. 🚧 **Whole-edition
+  ingest stopped at the seam with its gate MEASURED:** three of the five `STORAGE_5TB_PLAN.md` §9 steps
+  preceding it are unbuilt and four of the six §8 rulings unruled. **G10 is two questions, not five** —
+  Q2/Q3/Q4 were answered on 2026-06-12 and Q3 shipped the same day; Q1 (ingest scope) and Q5 (backups)
+  remain open. 🚧
 
 ### UI / UX & onboarding
 - **"Database size" shows EVERYTHING** — ✅ **BUILT** (A12b backend ✅ + B14 display ⏳ #625): the Library + System-tab "Storage footprint" panels render the all-stores total (db/wal/wiki/OSM/staging/**Ollama store outside data_dir**) with the private-vs-re-downloadable split visible; lazy-measured + cached, never on the poll. Remaining 🛠: click-through.

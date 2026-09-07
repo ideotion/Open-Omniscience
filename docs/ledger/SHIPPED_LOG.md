@@ -6555,3 +6555,55 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
+
+## 2026-09-07 — Wikipedia as a living source (prompt 18): two slices, one measured stop
+
+**The consented "Refresh exact sizes" (S5).** The 2026-06-16 inline-size-estimates ruling's
+REMAINING was to retire the per-edition "Estimate size" probe button and replace it with one
+consented refresh. Building the replacement found three defects in the button itself, none of
+them the one the ruling named: it egressed a live HEAD to `dumps.wikimedia.org` with **no
+`ensureOnline` consent** (invariant #14 gates the dump START, and the probe runs first); it read
+only `dumpSelected()[0]` from a MULTI-select picker, silently falling back to `"en"`; and every
+failure printed one `"size check failed"`, so airplane mode read as a dump host that would not
+answer. `DumpDownloadManager.probe_sizes` now reads the selection in one bounded,
+politeness-spaced action, and an unread size carries a NAMED reason rather than a zero.
+`GET /api/wiki/dumps/sizes` is a plain `def` and names the editions its cap kept it from reading.
+**The "one request, not N HEADs" mechanism is PARKED with its evidence** — the `dumpstatus.json`
+premise it rests on was never read by anyone, `dumps.wikimedia.org` is egress-blocked here, and
+all three places that stated it as fact now say so.
+
+**The version anchor, and the reader's way into the history (S4 + the half S2 was missing).**
+`Article.source_revision` records which upstream revision an article's stored TEXT came from,
+written in the same transaction as the content it describes, for both the watched-page sync and
+the offline dump ingest — closing a gap where `upsert_wiki_corpus_article` received the revid and
+had nowhere to put it. The mechanism is per-ARTICLE rather than per-mention, deliberately and with
+the reason recorded. The tracked-changes VIEW turned out to be **already shipped** (the 2026-09-06
+analysis records it UNBUILT with "no hits"; `openWikiTC`/`loadWikiTC` and `#wiki-tc` prove
+otherwise) but reachable only from Settings, so the reader — a standalone page — showed no version
+and no history. It now states the version with what it claims and offers the local history only
+when this machine holds one.
+
+**The wiki strip's K*N regex bomb, and the bigger finding behind it (nothing asked for this).**
+`plain_from_wikitext` carried the recorded 2026-08-05 `OPEN.*?CLOSE` shape in three patterns, on the
+path every watched-page sync and every dump ingest runs through: 0.014 s well-formed against
+**13.440 s** for unclosed-`<ref>` spam at 400 KB. The proven fix already existed as a PRIVATE helper
+hardcoded to `<style>`/`<script>`, which is why it had not propagated; it is now the shared
+`src/utils/markup_blocks.strip_blocks`, byte-identical over 20,000 randomised documents, 14.16 s ->
+0.0030 s. **Six MORE patterns in the same function are quadratic and are the expensive ones** --
+`[[File...]]` costs **28.035 s** per 400 KB -- written down with their measurements and deliberately
+not rushed, because each captures and rewrites and needs its own differential.
+
+**Whole-edition ingest (S1): stopped at the seam, with the gate measured rather than cited.**
+Three of the five `STORAGE_5TB_PLAN.md` §9 steps preceding it are unbuilt (the FTS split-out, the
+sharding prototype, the Phase C store) and four of the six §8 rulings are unruled. Nothing was
+built. The bounded version already ships (`ingest_dump_pages` over an operator-chosen title list);
+the delta half has a client and no consumer. **G10 is two questions, not five** — Q2, Q3 and Q4
+were answered by the maintainer's own 2026-06-12 ruling in the very section that filed them, and
+Q3 shipped the same day.
+
+**SEVEN LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a premise copied three times
+is still unverified, and each copy makes it read as better sourced; a consent gate on the ACTION is
+not a consent gate on what the UI does to help you decide; check a prescribed column against the
+fact's CARDINALITY, not only against the code; an inverse verified by round trip beats one verified
+by a character rule, and the character rule fails toward silence; and a source guard cannot tell a
+live branch from a dead one, because the identifier it looks for lives inside the branch. Plus: the recorded regex bomb had a second, larger disguise in the SAME function, and the test written for the first one is what found it; and a mutation matrix that names a test file which does not exist reddens on every mutation and reads as a perfect result.

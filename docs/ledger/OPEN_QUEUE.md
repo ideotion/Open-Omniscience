@@ -21,6 +21,155 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **WIKIPEDIA AS A LIVING SOURCE — THE 2026-09-07 PASS (prompt 18): TWO SLICES SHIPPED, THE
+  WHOLE-EDITION HALF STOPPED AT THE SEAM WITH ITS GATE MEASURED, AND G10 IS SMALLER THAN IT
+  LOOKS.** Read with the FUTURE_DEVELOPMENTS Wikipedia pair (the 2026-07-10 section and the
+  2026-06-12 one that carries the superseding auto-track ruling — neither replaces the other).
+
+  **SHIPPED (a) — the consented "Refresh exact sizes" (the 2026-06-16 INLINE AUTO SIZE
+  ESTIMATES entry's REMAINING, above).** The per-edition "Estimate size" probe button is
+  retired. Building its replacement found THREE defects in it, each independently real and
+  none of them the one the entry named: it egressed a live HEAD to `dumps.wikimedia.org`
+  with **no `ensureOnline` consent**, while the dump START on the same surface has one
+  (invariant #14 gated the download and not the probe that precedes it); it read only
+  `dumpSelected()[0]` from a MULTI-select picker and fell back to `"en"` when nothing was
+  selected, so the figure could describe an edition the operator had not chosen; and every
+  failure printed one `"size check failed"`, so airplane mode, a dead host and a host
+  publishing no `Content-Length` were one value — a refusal by THIS machine reading as a
+  dump host that would not answer. `DumpDownloadManager.probe_sizes` now reads the whole
+  selection in one consented action, bounded and spaced by the same per-host politeness
+  interval `WikiClient` uses, and an unread size is `None` with a NAMED reason
+  (`airplane` / `unreachable` / `no-content-length` / `invalid-edition`) — never a 0.
+  `GET /api/wiki/dumps/sizes` is a plain `def` (its network batch must not sit on the event
+  loop) and NAMES the editions the cap kept it from reading. The picker marks an exact
+  reading `=` against the bundled dated estimate's `~`.
+
+  **THE "ONE REQUEST, NOT N HEADs" MECHANISM IS PARKED, AND THE PREMISE IT RESTS ON IS
+  CORRECTED WHEREVER IT WAS STATED AS FACT.** "The dump date's `dumpstatus.json` lists every
+  edition at once" was written into `src/wiki/dump_sizes.py`'s docstring on 2026-06-16, copied
+  into this queue, and copied again into `PROMPT_18`. **Nobody read the endpoint.** Every
+  `dumps.wikimedia.org` path this repository builds is per-edition
+  (`/<code>wiki/latest/…`), which is evidence against a single cross-edition document rather
+  than for one, and the host is egress-blocked in the build sandbox (`curl` → `000`, against
+  `200` for `pypi.org`), so the shape could not be checked here. Collapsing N HEADs into one
+  request remains a real optimisation and is worth taking **once someone can read the live
+  endpoint**; shipping a parser against a guessed shape would be a fabricated endpoint. The
+  three copies now say so.
+
+  **SHIPPED (b) — the VERSION ANCHOR, and the reader's way into the history.**
+  `Article.source_revision` records which upstream revision an article's stored TEXT came
+  from, written in the same transaction as `content`/`hash` so the pair cannot drift, for BOTH
+  the watched-page sync and the offline dump ingest. It closes the gap the ledger recorded as
+  "per-mention revid anchoring": `upsert_wiki_corpus_article` had always RECEIVED the revid and
+  had nowhere to put it, so it returned the number to its caller and dropped it.
+
+  **THE MECHANISM DEVIATES FROM THE SHORTHAND, DELIBERATELY.** All of an article's mentions are
+  produced by ONE indexing pass over ONE text, so a per-mention column would store a
+  per-article constant once per mention — millions of copies at field scale, on the largest
+  table in the store, carrying no fact the article-level column does not. The mentions inherit
+  the anchor through their article. It is a `String`, not an `int`, because a law revision, a
+  statistics vintage and a gazette issue are not integers and this is the one seam every
+  versioned source will write into — which is the FUTURE_DEVELOPMENTS §1 unifying principle
+  ("a versioned source is an Article + a linked revision trail") expressed as a column rather
+  than a table, and the reason a law promoted to an Article needs no second seam.
+
+  **AND THE HALF S2 WAS MISSING.** The dedicated tracked-changes VIEW is **SHIPPED** and has
+  been since wave 5 — `openWikiTC` / `_wikiRevRow` / `loadWikiTC` in `app-map.js`, `#wiki-tc`
+  in `index.html`, over `GET /api/wiki/pages/{id}/revisions`. The 2026-09-06 analysis records
+  it as UNBUILT with "no hits", which is wrong (`INVENTORY.md` WIKI-02, fixed in the same PR).
+  What was genuinely missing is that it was reachable ONLY from the Settings watched-pages
+  table, and the reader is a standalone page — so a wiki article opened from search or
+  analytics showed no version, no history, and no way to either. The reader now states the
+  version with what it claims, links the revision as published, and offers the local history
+  **only when this machine actually holds tracked revisions for that page**, saying so plainly
+  when it does not (a link into an empty room looks like a capability and answers nothing). A
+  `?wikitc=` deep link hydrates the view through the subtab component.
+
+  **SHIPPED (c) — the wiki strip's K·N regex bomb, AND a bigger measured finding behind it
+  (nothing asked for this; it was found while scoping S3).** `plain_from_wikitext` carried the
+  recorded 2026-08-05 `OPEN.*?CLOSE` shape in THREE patterns (`<ref>…</ref>`, `{|…|}`,
+  `<!--…-->`), on the path every watched-page sync and every dump ingest runs through — and the
+  one whole-edition ingest would run millions of times. MEASURED at 400,000 chars: **0.014 s
+  well-formed against 13.440 s for unclosed-`<ref>` spam and 12.295 s for unclosed-`{|`**. The
+  proven fix already existed in the tree as a PRIVATE helper hardcoded to `<style>`/`<script>`,
+  which is exactly why it had not propagated; it is now `src/utils/markup_blocks.strip_blocks`
+  and both sites use it. Byte-identical over 20,000 randomised documents (with 6,389 / 13,731 /
+  6,720 actually exercising each strip) + 19 hand shapes; 14.16 s → 0.0030 s; honest cost +17%
+  on well-formed input.
+
+  **THE PART THAT IS A PENDING ITEM RATHER THAN A FIX: SIX MORE PATTERNS IN THE SAME FUNCTION
+  ARE QUADRATIC, AND THEY ARE THE EXPENSIVE ONES.** They wear the class differently —
+  `OPEN[^X]*CLOSE`, where the character class consumes to end-of-document and then backtracks —
+  and a 4× input costs ~16× the time. Measured, 100,000 → 400,000 chars of opener-only spam:
+  `<[^>]+>` 0.154 → **2.381 s** · `<ref[^>/]*/>` 1.052 → **16.756 s** · `[[File|Image|Category]]`
+  1.749 → **28.035 s** · `[[target|label]]` 1.614 → **26.388 s** · `[[target]]` 1.721 →
+  **27.398 s** · `[url label]` 1.420 → **22.525 s**. Only `{{templates}}` is linear (4.1×),
+  because `[^{}]*` cannot cross a brace. **NOT FIXED HERE, deliberately:** each of the six
+  CAPTURES and rewrites rather than removing, so the scanner needs a replacement callback and
+  every rewrite needs its own byte-identical differential before it goes near the ingest path —
+  its own slice. Possessive quantifiers do NOT fix them (the cost is a scan per start position,
+  not backtracking depth), and neither does a "does the closer exist at all" pre-check, which is
+  byte-identical and free but only covers the no-closer-anywhere case. The numbers are in
+  `src/wiki/corpus.py`'s `_WIKI_BLOCKS` note and in `tests/test_markup_blocks.py` so the next
+  session starts from data. **This is also a real input to S1:** whole-edition ingest over
+  millions of pages meets these on every malformed one.
+
+  **STOPPED AT THE SEAM — WHOLE-EDITION INGEST (S1), and the gate is MEASURED rather than
+  cited.** The standing ruling is "do not start before the P0 scale set lands", and prompt 18
+  restates it as "if the storage plan's Phase C is not in place, say so and stop". Checked
+  against the tree rather than against a status line, `STORAGE_5TB_PLAN.md` §9's sequencing
+  stands at: step 1 (Phase-A deltas) DONE; step 2 (CREATE-time `auto_vacuum`/`page_size`
+  seams) DONE — `src/database/connect.py` carries both, so the 2026-07-22 banner saying they
+  are "still unwired" is itself stale; step 3 (the FTS split-out to a contentless-delete
+  `fts.db`) NOT built — `src/database/fts.py` is in-corpus and no split file exists; step 4
+  (the hash-sharding prototype at 50–100M synthetic documents, which the plan requires
+  BEFORE any sharding code) NOT run; step 5 (the Phase C packed keyed text store) NOT built,
+  and a tree-wide grep finds no text-offload store, no pack format and no sharding. **Four of
+  the six maintainer rulings the store's shape depends on are still unruled** (§8 rows 3–6:
+  blob dedup, OOENC2-vs-`age`, keyed HMAC addressing, the `sqlite3mc` trial). So three of the
+  five steps preceding whole-edition ingest are unbuilt and its storage shape is undecided.
+  **Nothing was built.** Building the delta half now — wiring the existing
+  `fetch_recentchanges` client into an ingest — would be starting whole-edition ingest against
+  a store the plan has not prepared, which is exactly what the scope fence forbids; and
+  auto-tracking after a dump download is "the largest thing the app would ever start on its
+  own", so its consent surface and visible job should be designed once the store's shape is
+  ruled, not twice.
+  **WHAT EXISTS TODAY, so the next session does not re-derive it:** the BOUNDED version is
+  already shipped — `ingest_dump_pages(session, wiki, titles, limit=1000)` reads an explicit
+  operator-chosen title list out of a downloaded multistream dump, offline, through the ONE
+  `index_article` hook, keyed on the canonical wiki URL so a later live sync updates the same
+  row (`POST /api/wiki/dumps/corpus-ingest`). The DELTA half has a client
+  (`WikiClient.fetch_recentchanges`) and **no consumer**. Nothing enumerates a whole edition,
+  and nothing auto-tracks after a download.
+
+  **G10 IS TWO QUESTIONS, NOT FIVE (S6).** Read against the section that filed them, three are
+  already answered — two of them by the maintainer's own 2026-06-12 ruling recorded in that
+  same section. **Q2 (analytics mixing) — RULED, same pools, YES.** **Q3 (version storage
+  depth) — RULED per-revision FULL TEXT, and SHIPPED the same day**
+  (`WikiRevision.full_text`, batched `fetch_revision_texts`). **Q4 (change feed) — RULED, the
+  watched-pages tracker IS the feed**, with the standing caveat that the superseding auto-track
+  ruling retires per-article watching, so at edition scale the feed becomes `recentchanges`;
+  that is a consequence of the superseding ruling, not a new answer. **STILL OPEN, and
+  sharpened by what has shipped since they were filed:**
+  * **Q1 — scope of dump ingestion.** The superseding ruling says a downloaded edition is
+    TRACKED entirely; it does not say the edition is INGESTED entirely, and the two are
+    different costs (metadata for ~100k edits/day is feasible on the reference VM; keyword-
+    indexing millions of articles is the P0-gated part). The tiering already proposed under
+    that ruling — metadata + flags for ALL edits, full text and analytics only for pages in
+    the analytical corpus — is the shape awaiting a yes/no, and S1's storage gate makes it the
+    first thing to settle, because tiering is what decides how much store Phase C must carry.
+  * **Q5 — backups.** Now interacts with a shipped engine rather than a design: `wiki_dumps/`
+    is excluded from the corpus artifact BY CONSTRUCTION as re-downloadable
+    (`src/backup/artifact.py`), while the separate large-data FOLDER backup can carry it, and
+    dump-derived Articles ride the corpus backup like any article. So the question is no longer
+    "carry or reference" in the abstract: it is whether an edition's ingested Articles should
+    ride the corpus artifact at edition scale (which multiplies its size by the edition) or be
+    reconstituted from the dump on restore (which makes a restore depend on a file the backup
+    deliberately does not carry, and on the dump still being downloadable). Both directions
+    have a real cost; neither is defaulted.
+
+  Recommended defaults were offered for Q1 and Q5 in `QUESTIONS_FOR_THE_MAINTAINER.md` and are
+  NOT taken here — a ruling the maintainer did not give is not recorded as one.
 - **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
   AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
   the prompt's seven slices were ALREADY BUILT and are recorded as such in

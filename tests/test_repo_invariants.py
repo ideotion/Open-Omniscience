@@ -2185,6 +2185,20 @@ def test_ui_invariants():
     for fn in ("schedulerStart", "schedulerRunNow", "firstRun"):
         body = html.split(f"async function {fn}(", 1)[1].split("async function", 1)[0]
         assert "ensureOnline(" in body, f"{fn} must consent before going online"
+    # 14e (2026-09-07, from a measured breach): the gate covers what the UI does to
+    #      HELP YOU DECIDE, not only the action. "Estimate size" egressed a live HEAD
+    #      to dumps.wikimedia.org with NO ensureOnline, for years, beside a "Download"
+    #      button that had one -- a preview reads as *looking*, not as *doing*, which
+    #      is exactly where a gate gets forgotten. Both are asserted here, together,
+    #      so the pair cannot drift apart again. (The general half of the amendment --
+    #      gate every estimate/preview/validation that runs BEFORE a gated action --
+    #      is a reading instruction; no grep can enumerate "every preview".)
+    for fn in ("startDump", "refreshDumpSizes"):
+        body = _strip_js_comments(_js_function_body(app_js(), fn))
+        assert "ensureOnline(" in body, (
+            f"{fn} egresses to the dump host, so it must pass the ONE consent popup "
+            "(CLAUDE.md #14, extended #14e)"
+        )
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
@@ -7684,7 +7698,7 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 544
+_CLAUDE_MD_LINE_CEILING = 555
 
 
 def _claude_md_lines() -> int:
