@@ -58,6 +58,22 @@ COUNTRY_RE = re.compile(r"^[a-z]{2}$")
 LANG_RE = re.compile(r"^[a-z]{2,3}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
 VERIFICATION_STATUSES = ("fetched", "search-verified", "lead")
+
+#: A ``gazette_feed`` is a MACHINE ENDPOINT, so its tier vocabulary is deliberately
+#: narrower than a source row's: a feed either answered when someone asked it, or it
+#: did not. There is no meaningful "search-verified" middle for a feed — a search
+#: snippet can say a site exists, never that a URL serves a parseable feed — so
+#: admitting that status would create a tier nothing could ever mean.
+#:
+#: WHY THIS FIELD EXISTS AT ALL (2026-09-07): the row-level ``verification.status``
+#: is about the PORTAL and says nothing about the feed. All four rows carrying a
+#: ``gazette_feed`` are ``fetched`` at row level, and one of them — impo.com.uy — has
+#: a feed the producing session never fetched, whose own ``notes`` say it is the
+#: site's generic WordPress /feed/ of news posts and to "verify before relying on it
+#: for gazette monitoring". Reading the row status as the feed's status would have
+#: wired a news feed in as Uruguay's official gazette: a fabricated coverage claim,
+#: not a broken fetch. Hence a separate, mandatory tier per feed.
+FEED_VERIFICATION_STATUSES = ("fetched", "lead")
 LEGAL_SYSTEMS_RE = re.compile(r"^(civil_law|common_law|mixed(:.+)?|religious|customary)$")
 SOURCE_TYPES = ("legal", "ip", "case_law", "gazette")
 SPECIAL_COUNTRIES = ("eu", "int")
@@ -92,6 +108,44 @@ def _check_url(
     if allow_text:
         return  # descriptive adapter-planning metadata, not a fetch target
     _err(errors, where, f"{field} must be an https:// URL (got {value!r})")
+
+
+def _check_feed_verification(errors: list[str], where: str, s: dict) -> None:
+    """A ``gazette_feed`` must carry its OWN tier — see FEED_VERIFICATION_STATUSES.
+
+    The scope fence for this vertical is that every committed endpoint is fetched by
+    the session that commits it and tiered, and that a ``lead`` ships disabled. A feed
+    is an endpoint, so it owes a tier; without one there is no way to tell a feed
+    somebody actually fetched from a URL somebody wrote down. A row with no
+    ``gazette_feed`` owes nothing.
+    """
+    feed = s.get("gazette_feed")
+    if not feed:
+        if s.get("gazette_feed_verification"):
+            _err(errors, where, "gazette_feed_verification without a gazette_feed")
+        return
+    ver = s.get("gazette_feed_verification")
+    if not isinstance(ver, dict):
+        _err(
+            errors,
+            where,
+            "a gazette_feed must carry gazette_feed_verification {status, evidence} — the "
+            "row's own verification.status is about the PORTAL and says nothing about "
+            "whether this URL serves a feed",
+        )
+        return
+    status = ver.get("status")
+    if status not in FEED_VERIFICATION_STATUSES:
+        _err(
+            errors,
+            where,
+            f"gazette_feed_verification.status must be one of {FEED_VERIFICATION_STATUSES} "
+            f"(got {status!r})",
+        )
+    elif status == "fetched" and not ver.get("retrieved_at"):
+        _err(errors, where, "a fetched gazette_feed must carry gazette_feed_verification.retrieved_at")
+    if not ver.get("evidence"):
+        _err(errors, where, "gazette_feed_verification.evidence is required — what was observed")
 
 
 def validate(generated: dict, curated: dict) -> dict:
@@ -136,6 +190,7 @@ def validate(generated: dict, curated: dict) -> dict:
             _err(errors, where, f"legal_system {ls!r} is not in the vocabulary")
         for field in ("enumeration_url", "gazette_feed"):
             _check_url(errors, warnings, where, field, s.get(field))
+        _check_feed_verification(errors, where, s)
         st = s.get("structured") or {}
         for field in ("api", "bulk"):
             _check_url(errors, warnings, where, f"structured.{field}", st.get(field),
