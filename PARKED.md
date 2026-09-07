@@ -78,9 +78,25 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
 - **SSRF TOCTOU** (TEST-03 residual): the SSRF guard resolves-and-checks, but `requests` re-resolves
   at connect time, leaving a DNS-rebinding TOCTOU window. Closing it needs connect-time IP pinning
   (a custom `requests` transport adapter). Exotic; hardening, not a known exploit path.
-  **Still open (2026-08-20):** the quality-ratchet session's stretch slot deliberately did NOT
-  attempt it — a security change in the fetch path wants its own full-skeptic session, and a
-  half-shipped one is worse than none.
+  **SHIPPED (2026-09-07, prompt 21 S1, PR #1031) — but NOT by the remedy this entry prescribes,
+  and that is the part worth reading.** The defect was live-reproduced first: a real
+  `EthicalFetcher` against a resolver answering `93.184.216.34` at guard time and `127.0.0.1` at
+  connect time returned a loopback HTTP server's body as a clean 200. Connect-time IP PINNING was
+  then costed and refused — it means taking over urllib3's private connection construction and
+  hand-carrying the hostname for SNI, certificate matching and the `Host` header, so its failure
+  mode is a *silently weaker TLS verification* and it fails OPEN the day urllib3 moves. What
+  shipped instead validates the address the connection ACTUALLY reaches: same security property
+  (the threat is reaching an INTERNAL address; a second, different PUBLIC answer is normal under
+  CDN anycast), no TLS state touched, and it rides the stdlib socket chokepoint every HTTP client
+  must pass through, so it fails CLOSED. `src/ingest/ssrf_guard.py` + the scope entered in
+  `_guarded_redirect_get`, hooked into `airplane.py`'s ONE socket patch layer;
+  `tests/test_ssrf_connect_guard.py` (17 tests, a 13-mutation matrix).
+  **Residual, stated rather than implied:** a fetch whose proxy endpoint is a HOSTNAME stands the
+  connect-time check down for that request — allowlisting it would mean resolving from inside a
+  socket hook on every fetch, and a security guard may not break a working configuration in order
+  to protect it. `_guard_target`'s policy there is unchanged, so such a deployment is exactly as
+  protected as before. A publicly-routable-but-internal address is out of reach of any
+  address-shape rule, here and in `_guard_target` alike.
 - **Narrow discovery excepts** (BUG-05 remainder): the URL-parsing helper fallbacks in
   `duckduckgo.py` could be narrowed from `except Exception`.
   **SHIPPED (narrowing found already landed; pins added 2026-08-20, this PR):** `_clean_url` /
@@ -91,6 +107,12 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   an `except Exception` in `_clean_url`'s validation chain — the one remaining broad except in the
   URL-parsing path. Narrowing it changes behaviour for non-str inputs of an app-wide sanitizer, so
   it wants its own reviewed slice, not a drive-by.
+  **SHIPPED (2026-09-07, prompt 21 S2, PR #1031):** `safe_href` AND its sibling `sanitize_url` now
+  catch `ValueError` only — the one exception `urlparse` genuinely raises — and log the drop.
+  `urlparse` is hoisted to a module import so the PROPAGATION half is testable at all; without
+  that, "an unexpected exception escapes" is an untestable claim. Pinned by the NET-02 block in
+  `tests/test_security_hardening.py`; re-widening either except reddens exactly the two
+  propagation tests.
 - **DDG redirect results are dropped** (found 2026-08-20, recorded not fixed — behaviour change):
   `_clean_url` strips the query string BEFORE validation, so a real DuckDuckGo result href of the
   `//duckduckgo.com/l/?uddg=<encoded-target>` redirect form loses its target and is then rejected
@@ -98,6 +120,45 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   test only asserts `isinstance(results, list)` so it cannot see this. The fix is to unwrap `uddg`
   before stripping; it changes discovery behaviour and needs its own slice with a fixture of real
   DDG result HTML.
+  **SHIPPED (2026-09-07, prompt 21 S2, PR #1031):** `_unwrap_search_redirect` resolves the
+  redirector FIRST. It returns the target, or the input UNCHANGED for anything that is not a
+  redirect (so a non-redirect result takes a byte-identical path), or `None` for a redirect with no
+  usable target — never the redirector itself, which on the absolute form
+  (`https://duckduckgo.com/l/?rut=…`) is a perfectly valid https URL and would register
+  duckduckgo.com as a DISCOVERED SOURCE. `tests/test_duckduckgo_url_helpers.py`, seven mutations,
+  all reddening by name. The query strip on the FINAL url is deliberately unchanged and now stated
+  rather than implied: it is right for this consumer (which keeps the DOMAIN and treats the url as
+  a homepage to look for feeds under) and wrong in general, for the recorded reason that a URL's
+  query can BE the article address.
+  **What this did NOT close, and could not:** the entry asked for "a fixture of real DDG result
+  HTML" and there is still none, because `html.duckduckgo.com` answers `CONNECT … 403` through the
+  session sandbox's proxy (probed 2026-09-07 against a `pypi.org` 200 control). See the new
+  result-link-regex entry below — the `uddg` fix is justified by the URL shape alone, which is
+  documented and stable, and is strictly additive, so it cannot lose a result that resolves today.
+
+- **The DDG result-link regex requires `class=` to be the FIRST attribute** (found 2026-09-07,
+  recorded NOT fixed): `_parse_results` matches `<a class="result__a" href="…">`, so an anchor
+  carrying `rel="nofollow"` before `class`, or `href` before `class`, does not match at all. That
+  is real fragility in the one sanctioned external discovery channel. It is deliberately left
+  alone: widening it blind could start admitting sponsored anchors as discovered sources, and the
+  live markup **could not be observed** — `html.duckduckgo.com` answers `CONNECT … 403` through the
+  session sandbox's proxy against a `pypi.org` 200 control. Unblocked by either an egress-allowlist
+  entry for that host or a captured sample of a real response; until then, changing it would be
+  guessing at someone else's HTML.
+- **Nonce-based CSP** (audit S-006 residual, NET-04): `src/api/main.py::_CSP` still carries
+  `script-src 'self' 'unsafe-inline'`. It cannot lose that clause until the inline handlers go —
+  re-counted 2026-09-06 at roughly **590** (~331 in `index.html`, ~259 across the seventeen
+  `app-*.js` modules), not the 295 the ledger recorded, which counted `index.html` only and
+  predates the module split. Sequenced strictly BEHIND that retirement; landing the nonce first
+  breaks the app.
+- **Four security items wait on a maintainer ruling, not on work** (re-verified 2026-09-07 —
+  each has zero code, so a future session need not re-investigate): **I3** Tor-exit-resolve
+  (SOCKS `RESOLVE` / `0xF0`; the design of record is already written, only the go/no-go is owed),
+  **I4** `oo-netcut` and Stem-controlled Tor (Arti's Python bindings must be RE-VERIFIED, not
+  assumed), and **G9 + NET-09** self-update and release signing (`release.yml` publishes
+  `SHA256SUMS` and its own header already says signing is a tracked future item, so the release
+  path does not over-claim today). Full detail, with what each is blocked on, in
+  [`docs/ledger/OPEN_QUEUE.md`](docs/ledger/OPEN_QUEUE.md).
 
 ## Capability / architecture (roadmap candidates)
 - **Postgres parity or honest SQLite-only** (ARCH-06): either add an FTS path + CI matrix for
