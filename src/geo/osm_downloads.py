@@ -36,6 +36,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from src.geo.osm_regions import estimate_bytes, get_region, is_valid_code
+from src.ingest.download_rate import RateRegistry
 from src.ingest.segmented_download import (
     choose_mirror,
     default_fetch_segment,
@@ -146,7 +147,13 @@ class OsmDownloadManager:
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
-        self._save_lock = threading.Lock()  # state-file writes only (see _save)
+        self._save_lock = threading.Lock()
+        # PERF-09: owner-measured bytes-over-time, one sampler per key. The
+        # SAME registry the wiki-dump manager uses -- these two download loops
+        # grew independently and have already had a fix land on one and not the
+        # other (backup enumeration, resume); one shared measurement is what
+        # stops that here. In-memory only, never in _save().
+        self._rates = RateRegistry()  # state-file writes only (see _save)
         self.max_concurrent = (
             max_concurrent if max_concurrent and max_concurrent > 0 else _DEFAULT_OSM_CONCURRENCY
         )
@@ -268,6 +275,11 @@ class OsmDownloadManager:
                 # Queue position lets the Settings list render + reorder the queue,
                 # the same prioritisation control the task manager already offers.
                 d["queue_position"] = (order.index(e.key) + 1) if e.key in order else None
+                # PERF-09: the measurement rides BESIDE the byte counts, and
+                # says so when there is nothing to report rather than 0.
+                d["rate"] = self._rates.snapshot(
+                    e.key, total_bytes=e.total_bytes or None, done_bytes=e.downloaded_bytes
+                )
                 out.append(d)
             return out
 
@@ -389,6 +401,10 @@ class OsmDownloadManager:
             entry.status = "downloading"
             entry.error = None
             self._save()
+            # PERF-09: the measurement window starts HERE, which is also the
+            # resume point -- a download that sat paused is never charged for
+            # the time it spent stopped.
+            rate = self._rates.start(entry.key, resume)
             from src.ingest import kill_switch_active
 
             with open(dest, mode) as fh:
@@ -405,6 +421,8 @@ class OsmDownloadManager:
                         continue
                     fh.write(chunk)
                     entry.downloaded_bytes += len(chunk)
+                    # PERF-09: measured where the bytes actually land.
+                    rate.observe(entry.downloaded_bytes)
             entry.status = "done"
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
@@ -494,6 +512,7 @@ class OsmDownloadManager:
             entry = self._entries.pop(key, None)
         if entry is None:
             return False
+        self._rates.forget(key)
         with contextlib.suppress(OSError):
             Path(entry.dest).unlink(missing_ok=True)
         self._save()

@@ -1995,29 +1995,26 @@ class BackgroundScheduler:
             # market/calendar fetches are understood, not mistaken for a stall. ---
             _phase_set("background")
             # First-ever scrape: preflight the enabled sources once (reachability +
-            # robots verdicts -> per-source settings + a shareable JSONL log). Done
-            # here, not at app boot: boot must stay offline; this run is already
-            # going to the network. Best-effort -- never blocks the scrape (now after it).
-            try:
-                from src.monitoring.preflight import has_run_before, preflight_sources
+            # robots verdicts -> per-source settings + a shareable JSONL log), then the
+            # NON-source targets (maintainer-ruled 2026-06-10): robots per feed host +
+            # a per-provider sample of the bundled calendar/market feeds, into the
+            # shareable data/feed_preflight.jsonl. Once, ever. Done here, not at app
+            # boot: boot must stay offline; this run is already going to the network.
+            #
+            # PRH-23: as a TASK-MANAGER-VISIBLE JOB, not inline on this thread. Between
+            # them the two halves are up to 50 source checks plus one robots read per
+            # feed host plus the samples -- many minutes over Tor, during which the task
+            # manager could only show the coarse "background" phase, so a first launch
+            # looked stalled while the app was working correctly. The job names the host
+            # it is on, counts them, and offers an honest Cancel. Same work, same order,
+            # same bounds, same once-only gate; see src/monitoring/preflight_job.py for
+            # why the overlap it introduces is bounded and why it takes its own session.
+            with _tail_phase("first-run-preflight", pass_id=_pass_id):
+                from src.monitoring import preflight_job
 
-                if not has_run_before():
-                    result_pf = preflight_sources(session, fetcher)
-                    _LOG.info("first-run source preflight: %s", result_pf)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("source preflight failed", exc_info=True)
-            # Same contract for the NON-source targets (maintainer-ruled
-            # 2026-06-10): robots per feed host + a per-provider sample of the
-            # bundled calendar/market feeds, appended to the shareable
-            # data/feed_preflight.jsonl. Once, here — never at boot.
-            try:
-                from src.monitoring import feed_preflight
-
-                if not feed_preflight.has_run_before():
-                    result_fpf = feed_preflight.run_feed_preflight(fetcher)
-                    _LOG.info("first-run feed preflight: %s", result_fpf)
-            except Exception:  # noqa: BLE001
-                _LOG.warning("feed preflight failed", exc_info=True)
+                started_pf = preflight_job.kick(fetcher)
+                if started_pf is not None:
+                    _LOG.info("first-run preflight: started as job %s", preflight_job.JOB_KIND)
             # S-B (2026-07-24 throughput brief, C1): calendar auto-import, market
             # auto-load, and law auto-track (+ its AI change-summary follow-up) —
             # each a real Tor fetch — used to run HERE, serially, on the pass

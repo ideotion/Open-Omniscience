@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from src.commodity.correlation import correlate_price_with_counts
 from src.commodity.csv_import import parse_price_csv
@@ -62,6 +63,27 @@ def import_prices(symbol: str, req: ImportPricesRequest, db: Session = Depends(g
     return {"symbol": symbol, "imported": len(req.points)}
 
 
+def _store_price_rows(
+    db: Session, symbol: str, points: list[dict], filename: str | None
+) -> None:
+    """The synchronous write half of :func:`import_prices_csv`, extracted so the async
+    handler can hand it to the threadpool. Same statements, same commit, same order --
+    only the thread it runs on changes."""
+    for p in points:
+        db.add(
+            CommodityPrice(
+                symbol=symbol,
+                market=p.get("market"),
+                observed_on=p["observed_on"],
+                price=p["price"],
+                currency=p.get("currency", "USD"),
+                unit=p.get("unit", "kg"),
+                source=f"csv:{filename}",
+            )
+        )
+    db.commit()
+
+
 @router.post("/{symbol}/prices/import-csv")
 async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends(get_db)) -> dict:
     """Bulk-import price points for a symbol from an uploaded CSV.
@@ -74,19 +96,12 @@ async def import_prices_csv(symbol: str, file: UploadFile, db: Session = Depends
     parsed = parse_price_csv(raw.decode("utf-8", errors="replace"))
     if not parsed.points and parsed.errors:
         raise HTTPException(status_code=400, detail="; ".join(parsed.errors[:5]))
-    for p in parsed.points:
-        db.add(
-            CommodityPrice(
-                symbol=symbol,
-                market=p.get("market"),
-                observed_on=p["observed_on"],
-                price=p["price"],
-                currency=p.get("currency", "USD"),
-                unit=p.get("unit", "kg"),
-                source=f"csv:{file.filename}",
-            )
-        )
-    db.commit()
+    # S3.6: this handler MUST stay `async def` -- it awaits the upload stream -- so its
+    # synchronous DB half runs ON the single event loop unless it is moved off. A CSV of
+    # a daily index since 1971 is ~13k rows through the SQLCipher codec, and every other
+    # request (the task manager included) waits for it. Same shape, same fix, as the
+    # `ingestion.py` uploaders next door: await the stream here, do the writing there.
+    await run_in_threadpool(_store_price_rows, db, symbol, parsed.points, file.filename)
     return {
         "symbol": symbol,
         "imported": len(parsed.points),
