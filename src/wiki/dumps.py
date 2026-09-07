@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from src.ingest.download_rate import RateRegistry
 from src.ingest.segmented_download import (
     choose_mirror,
     default_fetch_segment,
@@ -205,6 +206,10 @@ class DumpDownloadManager:
         self._stops: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
         self._save_lock = threading.Lock()  # state-file writes only (see _save)
+        # PERF-09: owner-measured bytes-over-time, one sampler per key.
+        # In-memory ONLY and deliberately not in _save(): a rate restored
+        # from a state file describes a transfer that is no longer running.
+        self._rates = RateRegistry()
         # Up to ``max_concurrent`` downloads run in PARALLEL (maintainer
         # 2026-06-13). When MORE dumps are requested than the capacity, the
         # excess becomes a REAL, reorderable queue (the T9 fr-before-en
@@ -329,7 +334,17 @@ class DumpDownloadManager:
 
     def list(self) -> list[dict]:
         with self._lock:
-            return [e.to_dict() for e in self._entries.values()]
+            entries = list(self._entries.values())
+        out = []
+        for e in entries:
+            d = e.to_dict()
+            # PERF-09: the measurement rides BESIDE the byte counts, and
+            # says so when there is nothing to report rather than 0.
+            d["rate"] = self._rates.snapshot(
+                e.key, total_bytes=e.total_bytes or None, done_bytes=e.downloaded_bytes
+            )
+            out.append(d)
+        return out
 
     # -- size probe -------------------------------------------------------- #
 
@@ -522,6 +537,11 @@ class DumpDownloadManager:
             entry.status = "downloading"
             entry.error = None
             self._save()
+            # PERF-09: the owner starts its OWN measurement window here, which is
+            # also the resume point -- so a download that sat paused for a day is
+            # never charged for that time, and the partial file's existing bytes
+            # are a starting point rather than progress made just now.
+            rate = self._rates.start(entry.key, resume)
             from src.ingest import kill_switch_active
 
             with open(dest, mode) as fh:
@@ -540,6 +560,10 @@ class DumpDownloadManager:
                         continue
                     fh.write(chunk)
                     entry.downloaded_bytes += len(chunk)
+                    # PERF-09: measured where the bytes actually land. A client
+                    # dividing two polled counters would be measuring the task
+                    # manager's own adaptive poll as much as the transfer.
+                    rate.observe(entry.downloaded_bytes)
             entry.status = "done"
             self._save()
         except Exception as exc:  # noqa: BLE001 - record, never crash the worker thread
@@ -634,6 +658,7 @@ class DumpDownloadManager:
             entry = self._entries.pop(key, None)
         if entry is None:
             return False
+        self._rates.forget(key)
         with contextlib.suppress(OSError):
             Path(entry.dest).unlink(missing_ok=True)
         self._save()

@@ -339,11 +339,29 @@ never the way to make room for something rules (5)/(5a) would have sent to
    Settings, as the cancel detail says), routed to new `DumpDownloadManager.resume`
    / `OsmDownloadManager.resume` (both call start() to continue the partial file).
    +2 strings ×12 (Resume a paused download · Resumed.); test_ui_invariants #20d +
-   tests/test_jobs_resume.py. REMAINING: History; per-job RATE/ETA/bandwidth-cap —
-   DELIBERATELY omitted (the owners report only bytes/percent, NOT a rate; an
-   honest rate needs owner-measured bytes-over-time in the manager — never a
-   client-side guess across the adaptive poll; the cap needs a backend that
-   supports throttling, which it does not yet).
+   tests/test_jobs_resume.py.
+   **PER-JOB RATE + ETA SHIPPED 2026-09-07 (PERF-09), exactly as the omission
+   specified:** the owners now measure their OWN bytes-over-time
+   (`src/ingest/download_rate.py`, ONE `RateSampler`/`RateRegistry` wired into
+   BOTH `_download` loops), so the rate is taken where the bytes land rather than
+   guessed by the client across the adaptive poll. The refusals are the invariant:
+   an unmeasurable rate is ABSENT with a reason, never `0` (a `0` reads as
+   "stalled", a different fact); samples are pruned against a FRESH clock at READ
+   time, so a stalled transfer ages out and reports its idle time instead of
+   repeating its last healthy figure; `reset()` on start AND resume means a pause
+   is never charged as slowness; nothing is persisted, so after a restart a
+   download is honestly unmeasured; and the ETA rides ONLY on a measured rate AND
+   the server's real Content-Length — never a catalog size estimate. The task
+   manager draws a measured rate (method on hover) and a STALL, and draws NOTHING
+   otherwise. Enforced by tests/test_download_rate.py,
+   tests/test_download_rate_ui.py + download_rate_note_node_test.js.
+   REMAINING: History; the per-job BANDWIDTH CAP — still DELIBERATELY omitted, and
+   the reason has moved on: throttling is a change to the fetch loop's BEHAVIOUR
+   rather than a measurement, and it needs a ruling the code cannot make for
+   itself — whether the budget is per-job or per-process, and how it composes with
+   the collection-speed governor (`#rate-toggle`, invariant #4), which already owns
+   a global rate target. A second, unrelated rate authority beside it is how two
+   surfaces come to disagree about one quantity.
 21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
    #132):** indexing follows ingest (the index_article hook) + a SILENT
    background top-up (`autoIndexInsights`) clears any legacy backlog when
