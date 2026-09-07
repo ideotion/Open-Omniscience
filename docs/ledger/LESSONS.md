@@ -6302,3 +6302,53 @@
     indexing back into it slices at the wrong place; and the needle is `re.escape`d, so there
     is no pattern to backtrack (a literal search is linear, unlike the `OPEN.*?CLOSE` shape
     that cost a 412 KB article 138 seconds).
+  - **A STATUS RE-CHECK IS ITSELF A CLAIM, AND ONE DATED TODAY CAN BE WRONG ABOUT WORK THAT
+    SHIPPED TWO MONTHS AGO — search for the CAPABILITY, never for the design's own vocabulary
+    (2026-09-07, PROMPT 23's staleness guard):** `docs/FUTURE_DEVELOPMENTS.md` carried a
+    "Status re-check 2026-09-07 (docs-hygiene + reality-check pass)" banner listing three
+    manipulation-card items as "genuinely open". Two of the three were shipped, one of them
+    since **PR #568** — so the banner was not merely stale, it was BORN wrong, on the same
+    day, by a pass whose entire job was checking status. The recorded 2026-08-20 lesson
+    ("a status line ages faster than the finding it describes") does not cover this case:
+    nothing had aged. **THE MECHANISM IS THE SEARCH VOCABULARY.** The design said the bury
+    half of card #4 "needs a real external trigger", so a re-check naturally greps for a
+    trigger — and the shipped implementation had resolved that blocker by a substitution the
+    design never anticipated: the REST OF THE CORPUS is the trigger (a two-proportion z-test
+    of the source's topic share against the rest-of-corpus share, BH-FDR corrected). Nothing
+    in the code says "external trigger", so every search phrased in the design's words came
+    back empty and read as confirmation. The same pass called outrage-intensity open because
+    it is SECONDARY — which is its spec ("annotates, never fires alone"), not a deferral;
+    that is *designed-as-partial* misread as *not built*. GENERAL FORM: when checking whether
+    a designed item exists, grep for the CAPABILITY a user would get (`buried_topic`, the
+    producer registry, the endpoint) rather than for the blocker the design named, because an
+    implementation that solved the blocker differently is invisible to the design's own
+    vocabulary — and it is precisely the item whose blocker was *interesting* that someone
+    was most likely to solve creatively. COROLLARY, cheap and worth doing every time: when a
+    re-check concludes "still open", cost one `git log -S` on the obvious identifier before
+    writing it down; here that single command dates the answer to PR #568 in seconds. And
+    when correcting such a banner, KEEP the wrong one beside the correction — a status line
+    that was wrong is itself the finding, and deleting it hides that the re-check mechanism
+    can fail.
+  - **A DECISION RECORDED AS URGENT CAN HAVE BEEN SPENT MONTHS EARLIER, AND URGENCY IS THE
+    ATTRIBUTE NOBODY RE-CHECKS (2026-09-07, same session, ruling V1-7):** the plan listed the
+    storage rulings as "urgent, because they are CREATE-time irreversible", and a prompt built
+    from it repeated that verbatim. Both create-time seams had already shipped —
+    `_FRESH_AUTO_VACUUM` and `_FRESH_PAGE_SIZE = 16384` are the defaults in
+    `src/database/connect.py`, one ruled 2026-07-17 and one shipped on a measured evidence
+    pair — so no window was closing and had not been for weeks. The staleness guard is
+    normally run as "is this already BUILT?"; run it also as **"is the URGENCY still real?"**,
+    because a deadline attribute is written once, is never revisited by the sessions that
+    inherit it, and mis-sequences whole prompts: it had this one leading with a decision that
+    turned out to need only ratification. Its sibling: `page_size=16384` had been shipping on
+    a *"FIRM recommendation"* and never a ruling, which is the mirror defect — a decision
+    everyone treats as made because the code assumes it. When you find one, get it ratified
+    rather than leaving the default resting on a recommendation.
+  - **A RATCHET'S VALUE IN A DOC IS NOT THE RATCHET (2026-09-07, same session):** the working
+    mode named the i18n ratchets as 560 and 297; `ci.yml` pins **558 and 296**, one step
+    lower, because a previous PR correctly lowered them and the doc did not follow. A session
+    trusting the doc believes it has two slots of slack against gates that in fact have ZERO,
+    and the recorded "lower it in the same PR that adds the keys" habit is what closes that
+    gap — so the stale copy invites exactly the drift the ratchet exists to catch. Read the
+    number out of `ci.yml`, never out of prose, and reproduce each of the three i18n commands
+    separately (gate 1 passing is no evidence at all about gate 2 — it compares locale files
+    against `en.json` and is structurally blind to a brand-new string with no key).

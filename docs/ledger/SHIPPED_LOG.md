@@ -6596,3 +6596,16 @@ operator step it is gated on is not actually available, which is a different sen
 doc's "Nothing built" and the one worth recording. **The general form: when an inventory says
 UNBUILT, the three questions are whether it is built, whether its premise still holds, and
 whether the thing that is missing is the one named.**
+
+## 2026-09-07 — PROMPT 23: the nine V1 rulings, and the verticals' network-free halves
+
+Branch `claude/v1-pathway-planning-4pf6n8`. The full shipped record is the `shipped.csv` row of the
+same date (`planning/civic+climate`); the rulings themselves, with their per-vertical consequences,
+are the Open-queue entry "THE NINE V1 RULINGS ANSWERED". Recorded here for the three reusable
+lessons it earned, which are copied verbatim into `LESSONS.md` per protocol rule (5a)(b):
+
+1. A status re-check is itself a claim, and one dated today can be wrong about work that shipped two
+   months ago — search for the CAPABILITY, never for the design's own vocabulary.
+2. A decision recorded as urgent can have been spent months earlier, and urgency is the attribute
+   nobody re-checks.
+3. A ratchet's value in a doc is not the ratchet.
