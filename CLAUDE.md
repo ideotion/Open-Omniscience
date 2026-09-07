@@ -6460,32 +6460,16 @@ this history it reports the merge commit rather than the authoring one, and answ
   (not guessed); UKB's licence 404s on three standard filenames, which matters because it is the
   strongest non-neural WSD system in the comparison; the WordNet supersense list could not be
   fetched; BabelNet's terms were deliberately not asserted.
-- **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the BOUND now has a guard,
-  the CLASS is still open (found 2026-08-20 while reviewing a CI red on PR #963; the
-  capability-probe half is still RECORD-ONLY, deferred at the maintainer's request):** upstream `pqcrypto` 1.0.0 (2026-08-15)
+- **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
+  is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing
+  built — the maintainer asked to record and defer):** upstream `pqcrypto` 1.0.0 (2026-08-15)
   renamed the ml_dsa_65 API, and the "PQC signing path" lane went red with
   `AttributeError: module 'pqcrypto.sign.ml_dsa_65' has no attribute 'generate_keypair'`
   (14 failed / 4 passed across `tests/test_custody_signing.py` + `tests/test_annotations.py`).
   **THE INSTANCE IS CLOSED, AND IT RE-OPENED ONCE** — `2617037c` + `e112e04f` upper-bounded it
   to `pqcrypto>=0.3.4,<1.0` with the reason in a comment; **dependabot #996 widened it straight
   back to `<2.0` on 2026-09-03 and it merged** (a bot does not read comments), and it was
-  re-narrowed the same day. **AND A THIRD TIME: dependabot #1012 widened it again on
-  2026-09-07 and merged, ~40 minutes before a release-process branch rebased onto it.** Two
-  recurrences of one defect is a pattern; the third one closed it, because the 2026-09-03 entry
-  had already written the remedy down — *"only a CI-visible mechanism addresses a bot, and this
-  bound had no test"* — and nobody had built it. **NOW BUILT:**
-  `test_repo_invariants.py::test_the_pqc_extra_still_excludes_pqcrypto_1_0` asserts the PROPERTY
-  (1.0.0 must not satisfy the specifier) rather than the string, so a reformat or a raised floor
-  passes and only a real widening reddens; its negative-space twin asserts 0.4.0 is STILL
-  admitted, because a ceiling low enough to exclude 1.0.0 and also the version we ship would
-  satisfy the first assertion while breaking every install. Mutation-checked five ways: the exact
-  dependabot widening, a removed ceiling, and an over-tight ceiling all redden; a reformat and a
-  raised floor pass. `packaging` is safe to import in EVERY lane because pytest hard-requires
-  `packaging>=22` with no marker (checked, not assumed — the core-only lane exists precisely to
-  prove extras are optional). WHY IT KEPT MERGING GREEN: only the "PQC signing path" lane
-  installs the extra, so every other lane skips these tests — a widening reddens exactly one lane
-  and looks harmless in the PR's own summary. That round MEASURED a second breakage the first
-  pass missed: 1.0.0's
+  re-narrowed the same day. That round MEASURED a second breakage the first pass missed: 1.0.0's
   `verify` returns `None` for a VALID signature and raises `InvalidSignatureError` for an invalid
   one, where 0.4.0 returns True/False — so `signing.py`'s `bool(_mldsa.verify(...))` reports every
   genuine ML-DSA signature as a verification FAILURE on an install whose keys already exist, a
