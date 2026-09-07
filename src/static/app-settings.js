@@ -970,6 +970,11 @@
     // by the type-to-filter box (matches name, autonym or code). The label leads
     // with the native name (autonym), the identifier per invariant #15. Keeps the
     // selection if it survives the filter; otherwise selects the first visible edition.
+    // Exact per-edition dump sizes read from the dump host by the ONE consented
+    // "Refresh exact sizes" action (app-map.js: refreshDumpSizes). Empty until
+    // the operator asks, so the picker's default state stays zero-network.
+    let _dumpExactSizes = {};
+
     function renderWikiLanguages() {
       const sel = $("dump-lang");
       if (!sel || !_wikiLangsFlat.length) return;
@@ -983,7 +988,13 @@
       const opt = l => {
         // Inline, instant size estimate (bundled + dated; never a network probe).
         // "~" + the dated caveat beside the picker keep it honestly an estimate.
-        const sz = l.size_estimate_bytes ? ` · ~${_fmtBytes(l.size_estimate_bytes)}` : "";
+        // An EXACT figure, once the operator has consented to read one, replaces
+        // it and is marked "=" so the two are never confused: one is a bundled
+        // estimate reviewed on a date, the other is what the host publishes now.
+        const exact = _dumpExactSizes[l.code];
+        const sz = (exact != null)
+          ? ` · =${_fmtBytes(exact)}`
+          : (l.size_estimate_bytes ? ` · ~${_fmtBytes(l.size_estimate_bytes)}` : "");
         return `<option value="${esc(l.code)}">${esc(l.autonym)} — ${esc(l.name)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})${sz}</option>`;
       };
       sel.innerHTML = langs.length

@@ -155,3 +155,68 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   **SHIPPED (0.0.8 WP3; found-resolved 2026-08-20):** `tests/test_rate_limit_timing.py` is exactly
   this (its docstring names the finding). This PR adds the two properties it did not pin: the
   shipped default stays polite (≥ 1s), and the per-host stamp survives a transport failure.
+
+## Wikipedia as a living source — what the 2026-09-07 pass left (prompt 18)
+
+Recorded here so the backlog carries them; the reasoning and the full measurements are in the
+Open queue entry (`docs/ledger/OPEN_QUEUE.md`, "WIKIPEDIA AS A LIVING SOURCE — THE 2026-09-07
+PASS") and in `docs/plans/2026-09-06-repo-analysis/PROMPT_18_wikipedia-living-source.md`.
+
+- **Six quadratic patterns in `plain_from_wikitext`** (found this pass; three sibling patterns
+  were fixed in it). They wear the recorded K·N class as `OPEN[^X]*CLOSE`, where an opener with
+  no closer makes the character class consume to end-of-document and then backtrack. MEASURED on
+  the real function, 100,000 → 400,000 chars of opener-only spam: `<[^>]+>` 0.154 → **2.381 s** ·
+  `<ref[^>/]*/>` 1.052 → **16.756 s** · `[[File|Image|Category]]` 1.749 → **28.035 s** ·
+  `[[target|label]]` 1.614 → **26.388 s** · `[[target]]` 1.721 → **27.398 s** · `[url label]`
+  1.420 → **22.525 s**. Only `{{templates}}` is linear. This is on the wiki INGEST path, so
+  whole-edition ingest meets it on every malformed page. Not fixed in the same pass because each
+  CAPTURES and rewrites rather than removing, so `strip_blocks` needs a replacement callback and
+  every rewrite needs its own byte-identical differential before it goes near ingest. The
+  differential harness and the numbers are in `tests/test_markup_blocks.py`; the constants and
+  their measurements are beside `_WIKI_BLOCKS` in `src/wiki/corpus.py`. Recorded refutations:
+  possessive quantifiers do not fix these (the cost is a scan per start position, not
+  backtracking depth), and a "does the closer exist at all" pre-check is byte-identical and free
+  but only covers the no-closer-anywhere case.
+- **S3 — wikitext rendering.** DESIGNED, not built:
+  `docs/plans/2026-09-06-repo-analysis/WIKI_S3_RENDERER_DESIGN.md`. Its deciding constraint is
+  verified: the raw wikitext is not in `Article.content` and must not be put there, so the
+  renderer must render ON READ from `WikiPage.latest_text` and degrade honestly for a
+  dump-ingested page that has none. It is a new HTML-emitting surface over untrusted markup, so
+  its safety argument (escape everything, a fixed tag allowlist, no raw HTML pass-through) is the
+  slice rather than a detail of it.
+- **S1 — whole-edition ingest.** STORAGE-GATED and stopped at the seam, with the gate measured
+  against the tree rather than read off a status line: of `docs/design/STORAGE_5TB_PLAN.md` §9's
+  five sequencing steps preceding it, steps 1–2 are done and steps 3–5 are not (the FTS split-out
+  to a contentless-delete `fts.db`; the hash-sharding prototype at 50–100M synthetic documents,
+  which the plan requires BEFORE any sharding code; the Phase C packed keyed text store). Four of
+  the six §8 rulings are unruled (blob dedup · OOENC2-vs-`age` · keyed HMAC addressing · the
+  `sqlite3mc` trial). What exists today: the bounded ingest already ships
+  (`ingest_dump_pages` over an operator-chosen title list); the delta half has a client
+  (`WikiClient.fetch_recentchanges`) and **no consumer**; nothing enumerates a whole edition and
+  nothing auto-tracks after a dump download.
+- **One consented request instead of N HEADs for dump sizes.** The shipped refresh is one
+  consented, bounded, politeness-spaced read over the operator's SELECTION. Folding it into a
+  single request would be a real win, and the premise it was proposed on — "the dump date's
+  `dumpstatus.json` lists every edition at once" — is UNVERIFIED: it has one origin (an
+  assistant-written docstring) and two echoes, every `dumps.wikimedia.org` path this repo builds
+  is per-edition, and the host is egress-blocked in the build sandbox. **Needs someone who can
+  reach the live endpoint**; shipping a parser against a guessed shape would be a fabricated
+  endpoint.
+- **G10, and it is TWO questions rather than five.** Q2 (analytics mixing), Q3 (version storage
+  depth) and Q4 (change feed) were answered by the maintainer's own 2026-06-12 ruling recorded in
+  the same FUTURE_DEVELOPMENTS section that filed them, and Q3 shipped the same day. **Q1 —
+  scope of dump ingestion:** the superseding ruling says a downloaded edition is TRACKED
+  entirely; it does not say INGESTED entirely, and the tiering already proposed under it
+  (metadata + flags for all edits, full text and analytics only for pages in the analytical
+  corpus) is what decides how much store Phase C must carry. **Q5 — backups:** whether an
+  edition's ingested Articles ride the corpus artifact at edition scale, or are reconstituted
+  from the dump on restore — which makes a restore depend on a file the backup deliberately
+  excludes as re-downloadable. Recommended defaults exist in
+  `docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md` and are NOT taken.
+- **Browser pass.** The dump picker's `=`/`~` size marking, the reader's version row and the
+  `?wikitc=` deep link are guarded behaviourally (a node suite drives the tracked-changes view)
+  but are Chromium-unverified in that pass.
+- **`Article.source_revision` fills forward only.** Existing wiki articles keep `NULL` until a
+  re-sync or a re-ingest; there is deliberately no backfill, because a revision that was never
+  recorded cannot be recovered from the text. If a backfill is wanted for watched pages, the
+  honest source is `WikiPage.latest_text_revid`, and it would claim less than the column does.

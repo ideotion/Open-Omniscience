@@ -230,11 +230,12 @@ claim lives · owning prompt.
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
 |---|---|---|---|---|---|
 | WIKI-01 | Whole-edition ingest: dump-as-baseline + `recentchanges` delta + auto-track after a dump download | UNBUILT (only title-list `ingest_dump_pages` + `fetch_recentchanges` client exist) | `src/wiki/corpus.py:237,275`; `client.py:81` | FD §1/§22; V1-9 | P18 |
-| WIKI-02 | Dedicated tracked-changes TAB in the reader | UNBUILT | no hits | CLAUDE.md WIKIPEDIA entry | P18 |
-| WIKI-03 | Wikitext rendering | UNBUILT | no renderer | CLAUDE.md | P18 |
-| WIKI-04 | Per-mention revid anchoring | UNBUILT | — | CLAUDE.md | P18 |
-| WIKI-05 | One consented "refresh exact sizes" replacing the per-edition probe button | UNBUILT | CLAUDE.md INLINE AUTO SIZE remaining | CLAUDE.md | P18 |
-| WIKI-06 | Questions 1–5 | RULING-GATED (G10) | FD §988 | FD | P18 |
+| WIKI-02 | Dedicated tracked-changes TAB in the reader | **CORRECTED 2026-09-07 — the VIEW was already SHIPPED, the READER was not**; the "no hits" evidence was wrong. Now complete: the reader states the version and links the local history. | `src/static/app-map.js` `openWikiTC`/`_wikiRevRow`/`loadWikiTC`; `index.html` `#wiki-tc`; `GET /api/wiki/pages/{id}/revisions`; reader + `?wikitc=` deep link 2026-09-07 | CLAUDE.md WIKIPEDIA entry | P18 |
+| WIKI-03 | Wikitext rendering | UNBUILT — design written 2026-09-07, deliberately not half-built (a new HTML-emitting surface over untrusted markup; its safety argument is the whole slice) | no renderer | CLAUDE.md | P18 |
+| WIKI-04 | Per-mention revid anchoring | **SHIPPED 2026-09-07 as a per-ARTICLE anchor** (`Article.source_revision`) — per-mention would store a per-article constant once per mention; deviation recorded | `src/database/models.py`; `src/wiki/corpus.py`; migration `b5684999c1e1` | CLAUDE.md | P18 |
+| WIKI-05 | One consented "refresh exact sizes" replacing the per-edition probe button | **SHIPPED 2026-09-07**; the single-request `dumpstatus.json` mechanism is PARKED — the premise was never verified and the host is egress-blocked here | `src/wiki/dumps.py` `probe_sizes`; `GET /api/wiki/dumps/sizes` | CLAUDE.md | P18 |
+| WIKI-06 | Questions 1–5 | **CORRECTED 2026-09-07 — THREE OF THE FIVE ARE ALREADY RULED** (Q2 same pools · Q3 per-revision full text, shipped · Q4 the tracker is the feed), all by the maintainer's own 2026-06-12 ruling recorded in the section that filed them. Q1 (ingest scope) and Q5 (backups) remain RULING-GATED (G10). | FD §22's ruling block | FD | P18 |
+| WIKI-07 | `plain_from_wikitext` carried the recorded K·N `OPEN.*?CLOSE` bomb in three patterns, on the wiki INGEST path | **FIXED 2026-09-07** — measured 13.4 s per 400 KB of unclosed-`<ref>` spam against 0.014 s well-formed; now 0.0030 s, byte-identical over 20,000 randomised documents | `src/utils/markup_blocks.py`; `src/wiki/corpus.py`; `src/analytics/extract.py` | found this session | P18 |
 
 ## MAP — maps and geo
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |

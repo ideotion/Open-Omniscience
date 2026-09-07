@@ -6180,6 +6180,132 @@
     it is the literal string, because the file that anchors on it will be named for something
     else entirely (here: a dumbbell chart).
 
+  - **A PREMISE COPIED THREE TIMES IS STILL UNVERIFIED, AND EACH COPY MAKES IT READ AS BETTER
+    SOURCED (2026-09-07, the dump-size endpoint):** "the dump date's `dumpstatus.json` lists
+    every edition at once, so it is ONE request, not N HEADs" was written into an
+    assistant-authored docstring in `src/wiki/dump_sizes.py`, copied verbatim into the Open
+    queue as the ruled REMAINING work, and copied again into the prompt derived from the
+    queue. By the third copy it had the shape of a settled fact with three citations, and
+    **nobody had read the endpoint** — the sentence has one origin and two echoes. The
+    recorded lesson that "an agreement between two methods that share a defect is not
+    corroboration" is the same shape one level up, in prose: agreement between two DOCUMENTS
+    that share an origin is not corroboration either, and the tell is that none of them says
+    who looked. Two cheap checks settle it without the network. **Ask what the codebase's own
+    behaviour implies:** every `dumps.wikimedia.org` URL this repo builds is per-edition
+    (`/<code>wiki/latest/…`), which is evidence AGAINST a single cross-edition document.
+    **And probe the host before planning around it:** `curl -o /dev/null -w '%{http_code}'`
+    returns `000` here against `200` for `pypi.org`, so the shape was not checkable in this
+    sandbox at all. The honest outcome is to ship the part that does not depend on the
+    premise (one CONSENTED, bounded, politeness-spaced read over the operator's actual
+    selection), park the optimisation with the evidence, and correct all three copies —
+    building on the premise would have shipped a fabricated endpoint, and a 404 degrading to
+    "sizes unavailable" is the kind of failure nobody ever traces back to a docstring.
+    GENERAL FORM: when a plan states a fact about a THIRD PARTY's endpoint, file format or
+    API shape, find where the sentence was FIRST written and whether that author read it; a
+    fact with no reader is a guess with a citation trail.
+  - **A CONSENT GATE ON THE ACTION IS NOT A CONSENT GATE ON WHAT THE UI DOES TO HELP YOU
+    DECIDE (2026-09-07, same slice):** UI invariant #14 lists "dump start" among the gated
+    actions, and `startDump` duly passes `ensureOnline`. The button beside it — "Estimate
+    size" — fired a live HEAD to the same host with no gate at all, because it reads as
+    *looking*, not as *doing*. Every sibling action on that surface (watched-page add, OSM
+    region download, statistics fetch) has the popup; the preview did not, and it is the one
+    that runs FIRST. GENERAL FORM: after gating an action, enumerate what the surface does
+    BEFORE it — a size estimate, a preview, a validation, a reachability check, an
+    autocomplete — because those egress too and are exactly where a gate gets forgotten. THE
+    SECOND HALF, found in the same read: the ungated probe swallowed every failure into one
+    `"size check failed"`, so airplane mode (a fact about THIS machine, nothing sent) was
+    indistinguishable from a dump host that would not answer — the standing
+    one-key-two-meanings defect, and it points an operator at someone else's server for their
+    own setting. A refusal by the kill switch must be named as such wherever it can surface.
+    THIRD, cheap and worth the grep: the probe read `dumpSelected()[0] || "en"` from a
+    MULTI-select picker, so it reported one edition's size as though it described the
+    selection and silently invented a default when nothing was chosen. A control whose input
+    is a collection and whose implementation indexes `[0]` is a shape to grep for.
+  - **CHECK A PRESCRIBED COLUMN AGAINST THE FACT'S CARDINALITY, NOT ONLY AGAINST THE CODE
+    (2026-09-07, "per-mention revid anchoring"):** the recorded rule says a plan written from
+    measurements is trustworthy about the DEFECT and not automatically about the REPAIR, and
+    names the module docstring as where the previous reasoning lives. There is a second,
+    faster check that needs no archaeology: ask what the value's cardinality is against the
+    grain of the table the plan names. Here the defect was exactly as recorded (the revid was
+    received and dropped, recoverable for watched pages only by reading a DIFFERENT fact and
+    not at all for dump ingests), and the remedy named `keyword_mentions` — but every mention
+    of an article is produced by ONE indexing pass over ONE text, so each would have carried
+    an identical value: millions of copies at field scale, on the largest table in the store,
+    of a fact with one distinct reading per article. That is the recorded "a term whose count
+    equals the article count is a fact about the channel" tell, applied to a schema rather
+    than to a keyword index. The fact belonged one level up, on the article, written in the
+    same transaction as the text it describes so the pair cannot drift. GENERAL FORM: before
+    adding a column, count how many rows would hold the same value for one entity; if the
+    answer is "all of them", the column is on the wrong table — and say so in the commit,
+    because deviating from a recorded shorthand silently is how the next reader re-files it
+    as unbuilt.
+  - **AN INVERSE VERIFIED BY ROUND TRIP BEATS ONE VERIFIED BY A CHARACTER RULE, AND THE
+    CHARACTER RULE FAILS TOWARD SILENCE (2026-09-07, `wiki_page_ref`):** turning a canonical
+    URL back into the `(wiki, title)` it was minted from needs a guard, since a hostile
+    `canonical_url` must never become a wiki lookup. My first version listed what a path may
+    not contain — and refused every title containing a slash, which is a real and ordinary
+    shape (`A/B testing`, `OS/2`, `AC/DC`), because the forward function's `quote` leaves the
+    slash alone. Nothing would have failed: those articles would simply never have been
+    offered their history link, an invented absence on a surface whose whole point is that an
+    absence is honest. Re-minting the URL from the candidate pair and requiring it back
+    byte-for-byte accepts EXACTLY what the forward function can produce, by construction —
+    no hand-maintained list to keep in step with `quote`'s `safe` set, and nothing this app
+    never minted can pass. TWO RIDERS. Test the shapes a character rule gets wrong
+    (`A/B testing`, `100% renewable`, `C++`, non-Latin titles) rather than the ones it gets
+    right, or the parametrisation proves the easy half. And a round trip legitimately accepts
+    a page genuinely titled `../../etc`, which is correct where the result is a bound DB
+    lookup key and a traversal the moment someone joins it onto a directory — so say in the
+    docstring which of the two it is, rather than leaving the next caller to assume.
+  - **A SOURCE GUARD CANNOT TELL A LIVE BRANCH FROM A DEAD ONE — the identifier it looks for
+    lives INSIDE the branch (2026-09-07, the tracked-changes header):** the recorded traps
+    cover a needle that is not unique, a needle satisfied by a comment, and a slice that
+    over-runs. This one is none of those: the guard was correctly scoped to
+    `loadWikiTC`, comment-stripped, and asserted `d.page.title` — the exact expression that
+    fills the panel's header from the server's answer when a `?wikitc=` deep link supplies
+    only a page id. Neutering the branch to `if (false)` left the assignment sitting inside
+    dead code and the guard GREEN. The class is general and has no source-level fix: for ANY
+    guard of the form "X is read from Y", X necessarily appears inside the conditional that
+    reads it, so disabling the conditional cannot change what the file contains. Only
+    behaviour discriminates. Driving the real function in node cost about forty lines of DOM
+    shim (`$` returning recording objects, an `api` that yields a fixture) and paid for
+    itself immediately, because the same harness then pinned the five things the view's
+    honesty actually rests on — the "showing N of M" window disclosure, the visible caveat,
+    the flag-aware empty state, a revision with no stored diff saying why, and a failed read
+    replacing the loading placeholder rather than leaving it up — each of which redden under
+    their own mutation. This is the recorded "a test of a HELPER is not a test of its WIRING"
+    lesson in mirror image: there a behavioural test missed the wiring, here a source test
+    could see the wiring and not whether it runs.
+  - **THE RECORDED REGEX BOMB HAD A SECOND, LARGER DISGUISE IN THE SAME FUNCTION — and the
+    test written for the first one is what found it (2026-09-07, `plain_from_wikitext`):** the
+    2026-08-05 lesson names `OPEN.*?CLOSE` and asks for the shape to be grepped. Grepping for
+    that literal shape found three patterns in the wiki strip and fixed them (13.4 s → 0.003 s
+    per 400 KB of unclosed-`<ref>` spam). It also MISSED six more in the same function, because
+    they are written `OPEN[^X]*CLOSE`: the character class consumes to end-of-document and then
+    backtracks position by position, which is a different mechanism with the same N² cost.
+    Measured, 100,000 → 400,000 chars: `[[File...]]` 1.749 s → **28.035 s**, `[[target]]`
+    1.721 → 27.398 s, `[url label]` 1.420 → 22.525 s, `<[^>]+>` 0.154 → 2.381 s — the ones I
+    had not touched were an order of magnitude worse than the ones I had. **What found them was
+    a TEST FAILING AGAINST THE FIX**: a bound on the comment shape came back 62× and the
+    tempting move was to widen the bar; measuring instead showed the comment BLOCK strip was
+    already linear and the cost was `<[^>]+>` downstream. GENERAL FORM: grep for the COST, not
+    for the syntax — "an opener that can scan to end-of-document when its closer is absent"
+    covers `.*?`, `[^X]*`, `\S+` and any other greedy class, and the syntax you grepped for is
+    the one you already knew about. And when a bound you wrote fails, measure what is actually
+    slow before touching the bound: the recorded rule is to raise the INPUT when the noise
+    scales and change the CLAIM when it does not, and there is a third case — the bar is fine
+    and the measurement is about something else entirely. RIDER on the fix's shape: a
+    scaling RATIO (4× the input must not cost ~16× the time) is the right assertion here, not an
+    absolute second count, because the defect is that the two diverge by an order of magnitude
+    while an absolute bar is a bet on the runner's speed.
+  - **A MUTATION MATRIX THAT NAMES A TEST FILE THAT DOES NOT EXIST REDDENS ON EVERY MUTATION,
+    AND READS AS A PERFECT RESULT (2026-09-07):** the recorded trap is `pytest -k` selecting
+    ZERO tests and printing nothing. This is its louder twin and it is more convincing: naming a
+    non-existent file makes pytest exit non-zero with a COLLECTION ERROR, so every mutation is
+    reported RED, "reddened: (collection error)" scrolls past, and the matrix appears to have
+    killed everything. The check that separates them is the one the recorded lesson already
+    prescribes for `-k`, and it applies to a file list too: **run the selector ONCE unmutated
+    first and read its pass count**, then mutate. Doing that here turned "9 of 9 killed" into
+    "6 of 9 killed, 3 survivors" — and all three survivors were worth having.
   - **A DECLINE'S OWN PREMISE CAN BE THE ARGUMENT FOR REVERSING IT, AND THE STEP IT NAMED
     WAS 5% OF THE COST (2026-09-07, C16 / S-D — reversing the 2026-07-12 F13 decline):**
     F13 recorded that the batched collector flush holds the single-writer gate across
