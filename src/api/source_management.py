@@ -58,7 +58,7 @@ from src.api.ratelimit import limiter
 
 @router.get("/candidates", response_model=dict)
 @limiter.limit("100/hour")
-async def list_source_candidates(
+def list_source_candidates(
     request: Request,
     status: str = Query("candidate", pattern="^(candidate|promoted|dismissed|all)$"),
     limit: int = Query(50, ge=1, le=500),
@@ -92,7 +92,7 @@ async def list_source_candidates(
 
 @router.post("/candidates/{candidate_id}/promote", response_model=dict)
 @limiter.limit("100/hour")
-async def promote_source_candidate(
+def promote_source_candidate(
     request: Request, candidate_id: int, db: Session = Depends(get_db)
 ):
     """Promote a candidate into a DISABLED Source (the operator enables it)."""
@@ -124,7 +124,7 @@ async def promote_source_candidate(
 
 @router.post("/candidates/{candidate_id}/dismiss", response_model=dict)
 @limiter.limit("100/hour")
-async def dismiss_source_candidate(
+def dismiss_source_candidate(
     request: Request, candidate_id: int, db: Session = Depends(get_db)
 ):
     """Dismiss a candidate (remembered; the channels never re-suggest it)."""
@@ -140,7 +140,7 @@ async def dismiss_source_candidate(
 
 @router.post("/preflight", response_model=dict)
 @limiter.limit("10/hour")
-async def run_source_preflight(
+def run_source_preflight(
     request: Request, limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)
 ):
     """Test enabled sources NOW (reachability + robots.txt) and update their
@@ -154,7 +154,7 @@ async def run_source_preflight(
 
 
 @router.get("/unmanaged-languages", response_model=dict)
-async def unmanaged_language_sources(db: Session = Depends(get_db)):
+def unmanaged_language_sources(db: Session = Depends(get_db)):
     """How many ENABLED sources publish in a language the keyword engine cannot yet
     manage (no stoplist, or unsegmented like zh/ja). These pollute analytics with
     function-word junk and inflate the corpus. Read-only: counts + per-language
@@ -181,7 +181,7 @@ async def unmanaged_language_sources(db: Session = Depends(get_db)):
 
 
 @router.post("/disable-unmanaged-languages", response_model=dict)
-async def disable_unmanaged_language_sources(db: Session = Depends(get_db)):
+def disable_unmanaged_language_sources(db: Session = Depends(get_db)):
     """DISABLE (never delete) every enabled source in an unmanaged language so the
     app stops accumulating un-analysable junk. Reversible: the sources stay in the
     catalogue, filterable, and re-enablable once a stoplist for their language lands.
@@ -205,7 +205,7 @@ async def disable_unmanaged_language_sources(db: Session = Depends(get_db)):
 
 @router.post("/promote-cited", response_model=dict)
 @limiter.limit("30/hour")
-async def promote_cited_sources_endpoint(
+def promote_cited_sources_endpoint(
     request: Request,
     min_source_citers: int | None = Query(None, ge=1, le=100),
     cap: int = Query(200, ge=1, le=2000),
@@ -236,7 +236,7 @@ async def promote_cited_sources_endpoint(
 
 @router.get("/{source_id}/provenance", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source_provenance(request: Request, source_id: int, db: Session = Depends(get_db)):
+def get_source_provenance(request: Request, source_id: int, db: Session = Depends(get_db)):
     """Discovery provenance for one source: the channel it entered through (a
     promoted candidate / catalog via:* tag / the cited auto-integration channel /
     external-source registry) plus, when discovered via citation, the FIRST citing
@@ -251,7 +251,7 @@ async def get_source_provenance(request: Request, source_id: int, db: Session = 
 
 @router.get("/{source_id}/citation-tally", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source_citation_tally(request: Request, source_id: int, db: Session = Depends(get_db)):
+def get_source_citation_tally(request: Request, source_id: int, db: Session = Depends(get_db)):
     """Qualified-citations tally for one source's own articles: how many distinct
     cited domains are qualified / disqualified / pending, vs never entering the
     qualification funnel (commerce/social/infrastructure, tallied separately).
@@ -347,7 +347,7 @@ async def qualify_sources_bulk(
 
 @router.get("/qualify-bulk/status", response_model=dict)
 @limiter.limit("200/hour")
-async def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db)):
+def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db)):
     """Live status of the bulk qualification job + a fresh backlog estimate (so the
     panel can show remaining work even while the job is idle)."""
     from src.catalog.qualify_job import initial_backlog_estimate
@@ -370,7 +370,7 @@ async def qualify_sources_bulk_cancel(request: Request):
 
 @router.get("/", response_model=list[dict])
 @limiter.limit("100/hour")
-async def list_sources(
+def list_sources(
     request: Request,
     enabled: bool | None = None,
     priority: int | None = None,
@@ -476,7 +476,7 @@ async def list_sources(
 
 @router.get("/facets", response_model=dict)
 @limiter.limit("120/hour")
-async def source_facets(
+def source_facets(
     request: Request,
     enabled_only: bool = False,
     db: Session = Depends(get_db),
@@ -523,7 +523,7 @@ async def source_facets(
 
 @router.get("/{source_id}", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
+def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Get a specific source by ID.
     """
@@ -580,7 +580,7 @@ async def get_source(request: Request, source_id: int, db: Session = Depends(get
 
 @router.get("/{source_id}/observed-ips", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source_observed_ips(request: Request, source_id: int, db: Session = Depends(get_db)):
+def get_source_observed_ips(request: Request, source_id: int, db: Session = Depends(get_db)):
     """Per-source aggregated view of the already-captured server IPs (SOURCE IPs
     ruling, 2026-07-20, ask 2): distinct observed IPs + first/last seen + each IP's
     geolocated country. An aggregation over the existing ``Article.server_ip`` /
@@ -599,7 +599,7 @@ async def get_source_observed_ips(request: Request, source_id: int, db: Session 
 
 @router.post("/", response_model=dict)
 @limiter.limit("50/hour")
-async def create_source(request: Request, source_data: dict, db: Session = Depends(get_db)):
+def create_source(request: Request, source_data: dict, db: Session = Depends(get_db)):
     """
     Create a new source.
     """
@@ -637,7 +637,7 @@ async def create_source(request: Request, source_data: dict, db: Session = Depen
 
 @router.put("/{source_id}", response_model=dict)
 @limiter.limit("50/hour")
-async def update_source(
+def update_source(
     request: Request, source_id: int, source_data: dict, db: Session = Depends(get_db)
 ):
     """
@@ -660,7 +660,7 @@ async def update_source(
 
 @router.delete("/{source_id}", response_model=dict)
 @limiter.limit("20/hour")
-async def delete_source(request: Request, source_id: int, db: Session = Depends(get_db)):
+def delete_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Delete a source.
     """
@@ -679,7 +679,7 @@ async def delete_source(request: Request, source_id: int, db: Session = Depends(
 
 @router.post("/batch/enable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_enable_sources(
+def batch_enable_sources(
     request: Request, source_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -694,7 +694,7 @@ async def batch_enable_sources(
 
 @router.post("/batch/disable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_disable_sources(
+def batch_disable_sources(
     request: Request, source_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -709,7 +709,7 @@ async def batch_disable_sources(
 
 @router.post("/batch/priority", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_priority(
+def batch_set_priority(
     request: Request,
     source_ids: list[int],
     priority: int = Query(..., ge=1, le=3),
@@ -727,7 +727,7 @@ async def batch_set_priority(
 
 @router.post("/batch/rate-limit", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_rate_limit(
+def batch_set_rate_limit(
     request: Request,
     source_ids: list[int],
     rate_limit_ms: int = Query(..., ge=100, le=60000),
@@ -745,7 +745,7 @@ async def batch_set_rate_limit(
 
 @router.post("/batch/tags/add", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_add_tags(
+def batch_add_tags(
     request: Request, source_ids: list[int], tags: list[str], db: Session = Depends(get_db)
 ):
     """
@@ -760,7 +760,7 @@ async def batch_add_tags(
 
 @router.post("/batch/tags/remove", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_remove_tags(
+def batch_remove_tags(
     request: Request, source_ids: list[int], tags: list[str], db: Session = Depends(get_db)
 ):
     """
@@ -778,7 +778,7 @@ async def batch_remove_tags(
 
 @router.get("/groups/", response_model=list[dict])
 @limiter.limit("100/hour")
-async def list_groups(
+def list_groups(
     request: Request, tag_based: bool | None = None, db: Session = Depends(get_db)
 ):
     """
@@ -815,7 +815,7 @@ async def list_groups(
 
 @router.get("/groups/{group_id}", response_model=dict)
 @limiter.limit("100/hour")
-async def get_group(request: Request, group_id: int, db: Session = Depends(get_db)):
+def get_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     Get a specific group by ID.
     """
@@ -860,7 +860,7 @@ async def get_group(request: Request, group_id: int, db: Session = Depends(get_d
 
 @router.post("/groups/", response_model=dict)
 @limiter.limit("50/hour")
-async def create_group(request: Request, group_data: dict, db: Session = Depends(get_db)):
+def create_group(request: Request, group_data: dict, db: Session = Depends(get_db)):
     """
     Create a new source group.
     """
@@ -888,7 +888,7 @@ async def create_group(request: Request, group_data: dict, db: Session = Depends
 
 @router.put("/groups/{group_id}", response_model=dict)
 @limiter.limit("50/hour")
-async def update_group(
+def update_group(
     request: Request, group_id: int, group_data: dict, db: Session = Depends(get_db)
 ):
     """
@@ -906,7 +906,7 @@ async def update_group(
 
 @router.delete("/groups/{group_id}", response_model=dict)
 @limiter.limit("20/hour")
-async def delete_group(request: Request, group_id: int, db: Session = Depends(get_db)):
+def delete_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     Delete a source group.
     """
@@ -925,7 +925,7 @@ async def delete_group(request: Request, group_id: int, db: Session = Depends(ge
 
 @router.post("/groups/{group_id}/sources", response_model=dict)
 @limiter.limit("50/hour")
-async def add_sources_to_group(
+def add_sources_to_group(
     request: Request, group_id: int, source_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -940,7 +940,7 @@ async def add_sources_to_group(
 
 @router.delete("/groups/{group_id}/sources", response_model=dict)
 @limiter.limit("50/hour")
-async def remove_sources_from_group(
+def remove_sources_from_group(
     request: Request, group_id: int, source_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -955,7 +955,7 @@ async def remove_sources_from_group(
 
 @router.post("/{source_id}/groups", response_model=dict)
 @limiter.limit("50/hour")
-async def add_source_to_groups(
+def add_source_to_groups(
     request: Request, source_id: int, group_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -970,7 +970,7 @@ async def add_source_to_groups(
 
 @router.delete("/{source_id}/groups", response_model=dict)
 @limiter.limit("50/hour")
-async def remove_source_from_groups(
+def remove_source_from_groups(
     request: Request, source_id: int, group_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -988,7 +988,7 @@ async def remove_source_from_groups(
 
 @router.post("/groups/tag-based", response_model=dict)
 @limiter.limit("50/hour")
-async def create_tag_based_group(
+def create_tag_based_group(
     request: Request, name: str, tag_pattern: str, db: Session = Depends(get_db)
 ):
     """
@@ -1008,7 +1008,7 @@ async def create_tag_based_group(
 
 @router.post("/groups/{group_id}/refresh", response_model=dict)
 @limiter.limit("20/hour")
-async def refresh_tag_based_group(request: Request, group_id: int, db: Session = Depends(get_db)):
+def refresh_tag_based_group(request: Request, group_id: int, db: Session = Depends(get_db)):
     """
     Refresh a tag-based group to update its source membership.
     """
@@ -1032,7 +1032,7 @@ async def refresh_tag_based_group(request: Request, group_id: int, db: Session =
 
 @router.post("/groups/refresh-all", response_model=dict)
 @limiter.limit("10/hour")
-async def refresh_all_tag_based_groups(request: Request, db: Session = Depends(get_db)):
+def refresh_all_tag_based_groups(request: Request, db: Session = Depends(get_db)):
     """
     Refresh all tag-based groups.
     """
@@ -1048,7 +1048,7 @@ async def refresh_all_tag_based_groups(request: Request, db: Session = Depends(g
 
 @router.get("/{source_id}/metadata", response_model=dict)
 @limiter.limit("100/hour")
-async def get_metadata(request: Request, source_id: int, db: Session = Depends(get_db)):
+def get_metadata(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Get metadata for a source.
     """
@@ -1086,7 +1086,7 @@ async def get_metadata(request: Request, source_id: int, db: Session = Depends(g
 
 @router.post("/{source_id}/metadata", response_model=dict)
 @limiter.limit("50/hour")
-async def create_metadata(
+def create_metadata(
     request: Request, source_id: int, metadata_data: dict, db: Session = Depends(get_db)
 ):
     """
@@ -1101,7 +1101,7 @@ async def create_metadata(
 
 @router.put("/{source_id}/metadata", response_model=dict)
 @limiter.limit("50/hour")
-async def update_metadata(
+def update_metadata(
     request: Request, source_id: int, metadata_data: dict, db: Session = Depends(get_db)
 ):
     """
@@ -1121,7 +1121,7 @@ async def update_metadata(
 
 @router.delete("/{source_id}/metadata", response_model=dict)
 @limiter.limit("20/hour")
-async def delete_metadata(request: Request, source_id: int, db: Session = Depends(get_db)):
+def delete_metadata(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     Delete metadata for a source.
     """
@@ -1142,7 +1142,7 @@ async def delete_metadata(request: Request, source_id: int, db: Session = Depend
 
 @router.post("/groups/batch/enable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_enable_groups(
+def batch_enable_groups(
     request: Request, group_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -1157,7 +1157,7 @@ async def batch_enable_groups(
 
 @router.post("/groups/batch/disable", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_disable_groups(
+def batch_disable_groups(
     request: Request, group_ids: list[int], db: Session = Depends(get_db)
 ):
     """
@@ -1172,7 +1172,7 @@ async def batch_disable_groups(
 
 @router.post("/groups/batch/priority", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_group_priority(
+def batch_set_group_priority(
     request: Request,
     group_ids: list[int],
     priority: int = Query(..., ge=1, le=3),
@@ -1192,7 +1192,7 @@ async def batch_set_group_priority(
 
 @router.post("/groups/batch/rate-limit", response_model=dict)
 @limiter.limit("50/hour")
-async def batch_set_group_rate_limit(
+def batch_set_group_rate_limit(
     request: Request,
     group_ids: list[int],
     rate_limit_ms: int = Query(..., ge=100, le=60000),
@@ -1215,7 +1215,7 @@ async def batch_set_group_rate_limit(
 
 @router.post("/discover/rss", response_model=dict)
 @limiter.limit("20/hour")
-async def discover_rss_feeds(
+def discover_rss_feeds(
     request: Request,
     source_ids: list[int] | None = None,
     timeout: int = 10,
@@ -1246,7 +1246,7 @@ async def discover_rss_feeds(
 
 @router.post("/discover/topic", response_model=dict)
 @limiter.limit("20/hour")
-async def discover_sources_by_topic(
+def discover_sources_by_topic(
     request: Request,
     topic: str,
     max_sources: int = 20,
@@ -1295,7 +1295,7 @@ async def discover_sources_by_topic(
 
 @router.post("/discover/add", response_model=dict)
 @limiter.limit("20/hour")
-async def add_discovered_sources(
+def add_discovered_sources(
     request: Request,
     sources: list[dict],
     group_name: str | None = None,
@@ -1329,7 +1329,7 @@ async def add_discovered_sources(
 
 @router.post("/import", response_model=dict)
 @limiter.limit("10/hour")
-async def import_sources(request: Request, db: Session = Depends(get_db)):
+def import_sources(request: Request, db: Session = Depends(get_db)):
     """
     Import sources from YAML configuration.
     """
@@ -1351,7 +1351,7 @@ async def import_sources(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/export", response_model=dict)
 @limiter.limit("10/hour")
-async def export_sources(
+def export_sources(
     request: Request, group_id: int | None = None, db: Session = Depends(get_db)
 ):
     """
@@ -1397,7 +1397,7 @@ async def export_sources(
 
 @router.get("/stats", response_model=dict)
 @limiter.limit("100/hour")
-async def get_source_statistics(request: Request, db: Session = Depends(get_db)):
+def get_source_statistics(request: Request, db: Session = Depends(get_db)):
     """
     Get statistics about sources, groups, and metadata.
     """
@@ -1430,7 +1430,7 @@ async def get_source_statistics(request: Request, db: Session = Depends(get_db))
 
 @router.get("/search", response_model=dict)
 @limiter.limit("50/hour")
-async def search_sources(
+def search_sources(
     request: Request, query: str, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)
 ):
     """
