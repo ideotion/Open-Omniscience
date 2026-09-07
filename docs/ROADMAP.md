@@ -323,8 +323,10 @@ anchoring), Node 0 = the maintainer's own machine. **User corpora never touch th
 ### Structural debt — measured 2026-08-04, deferred by ruling
 
 Recorded, not scheduled. Measured during the 2026-08-04 critical review; none is a defect on
-its own, and all three are the kind of change this project's own rules say not to attempt
-without a browser and a runnable suite in the same session.
+its own, and each is the kind of change this project's own rules say not to attempt without a
+browser and a runnable suite in the same session. (The board said "all three" until
+2026-09-07 — it was written when there were three rows, and has carried five since S-4 and
+S-5 joined it.)
 
 | # | Item | Measurement | Why deferred | What would unblock it |
 |---|---|---|---|---|
