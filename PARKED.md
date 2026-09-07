@@ -201,9 +201,10 @@ the source file had moved; corrected rather than repeated:**
   **ruff: RULED 2026-09-07 (PROMPT_20 S7) — it STAYS ADVISORY, and may no longer GROW.** The
   composition, the verdict and the burn-down instructions are in
   `docs/maintenance/RUFF_STYLE_LANE.md`. The finding that decided it: this entry recorded 344
-  findings on 2026-08-20 and the lane measured **432** on 2026-09-07 — 88 of drift in eighteen days,
+  findings on 2026-08-20 and the lane measured **432** on 2026-09-07, then 442 and 450 within the
+  hour as parallel branches merged — 88 of drift in eighteen days and 18 more in an hour,
   unnoticed, because a lane that is allowed to fail says nothing when it fails a little more.
-  `scripts/ruff_ratchet.py --max 432` is now a blocking step; ruff is version-bounded in pyproject
+  `scripts/ruff_ratchet.py --max 450` is now a blocking step; ruff is version-bounded in pyproject
   for the same reason mypy is pinned.
 - **Endpoint test coverage** (TEST-05): keyword_management, reporting, framing, llm HTTP integration.
   **SHIPPED (core in 0.0.8 WP4; residue closed 2026-08-20, this PR):** WP4 delivered

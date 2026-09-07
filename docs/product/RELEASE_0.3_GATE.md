@@ -932,12 +932,12 @@ carries `0.3.0` on `main`:
 > carry no slack and the next unkeyed string reddens.)
 >
 > **And `ci.yml` gained a blocking gate the table above predates** (2026-09-07, PROMPT_20
-> S7): `python scripts/ruff_ratchet.py --max 442` — a NON-GROWTH ratchet on the *advisory*
+> S7): `python scripts/ruff_ratchet.py --max 450` — a NON-GROWTH ratchet on the *advisory*
 > style lane, which stays advisory. The ceiling is calibrated at the MERGE POINT rather than
-> when the step was written: it measured 432 against `main` @ `d9ee33e7`, and roughly forty
-> commits from parallel branches took the lane to 442 while that PR was open. Verified
-> like-for-like that none of the growth was the branch's — `main` alone measures 442 and
-> `main` plus the branch measures 442. Nothing above is re-measured for it; this is the note
+> when the step was written: 432 against `main` @ `d9ee33e7`, 442 after roughly forty commits
+> from parallel branches, and **450** after fifteen more about forty minutes later. Verified
+> like-for-like each time — `main` alone 450, `main` plus the branch 450, and a per-file diff
+> of ruff's JSON showing zero files where the branch has more. Nothing above is re-measured for it; this is the note
 > the table's own instruction points at. See `docs/maintenance/RUFF_STYLE_LANE.md`.
 >
 > **The two i18n figures in the paragraph above are stale, re-measured 2026-09-07 on the

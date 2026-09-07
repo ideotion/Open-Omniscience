@@ -18,39 +18,46 @@ was produced by the command printed beside it, on the tree anchor named.
 ## What the advisory lane actually holds
 
 Re-measured on the MERGED tree (2026-09-07) with **ruff 0.16.6** — not on `main` @ `d9ee33e7`,
-which measured 432; see the note under the table
-(`python scripts/ruff_ratchet.py --max 442 --show-composition`):
+which measured 432, nor at the first merge point, which measured 442; see the note under the table
+(`python scripts/ruff_ratchet.py --max 450 --show-composition`):
 
 | Count | Rule | What it is |
 |---:|---|---|
 | 132 | `I001` | import block un-sorted / un-formatted |
-| 57 | `SIM105` | `try/except/pass` that could be `contextlib.suppress` |
+| 58 | `SIM105` | `try/except/pass` that could be `contextlib.suppress` |
 | 44 | `E702` | multiple statements on one line (semicolon) |
+| 24 | `UP037` | quoted annotation |
 | 22 | `SIM300` | Yoda condition |
 | 20 | `C416` | unnecessary comprehension |
 | 20 | `SIM905` | split a literal string |
 | 19 | `SIM117` | nested `with` |
-| 18 | `UP037` | quoted annotation |
 | 18 | `SIM115` | file opened without a context manager |
 | 18 | `C408` | `dict()` / `list()` call instead of a literal |
 | 11 | `UP035` | deprecated import |
-| 63 | *(tail)* | `SIM102`(9) `C420`(8) `SIM108`(8) `E741`(8) `UP032`(5) `UP017`(4) `E711`(4) `SIM103`(3) `C401`(3) `UP047`(2) `SIM110`(2) `E402`(2) `UP031`(1) `UP034`(1) `E714`(1) `SIM222`(1) `SIM114`(1) |
+| 64 | *(tail)* | `SIM102`(9) `C420`(8) `SIM108`(8) `E741`(8) `UP032`(5) `UP017`(4) `E711`(4) `SIM103`(3) `C401`(3) `UP034`(2) `UP047`(2) `SIM110`(2) `E402`(2) `UP031`(1) `E714`(1) `SIM222`(1) `SIM114`(1) |
 
-**235** of the 442 are auto-fixable by `--fix`; a further **70** need `--unsafe-fixes`, for 305
-total. The earlier figure of 305 conflated the two, and the distinction is the whole point here:
-an unsafe fix is one ruff itself says may change behaviour, and this lane's verdict rests on the
-claim that converging it is not behaviour-neutral.
+**242** of the 450 are auto-fixable by `--fix`; a further **70** need `--unsafe-fixes`, for 312
+total. An earlier draft of this page gave the combined figure as though it were the `--fix` one,
+and the distinction is the whole point here: an unsafe fix is one ruff itself says may change
+behaviour, and this lane's verdict rests on the claim that converging it is not behaviour-neutral.
 
-*(The named rows sum to 379 and the tail to 63, which closes at 442 — stated so a future reader
+*(The named rows sum to 386 and the tail to 64, which closes at 450 — stated so a future reader
 can check the table rather than trust it.)*
 
-**The count moved while this was being written, and that is worth recording rather than
-smoothing over.** It was 432 at `d9ee33e7`; about forty commits from parallel branches
-landed during the PR and took it to 442. The ceiling is calibrated to the tree that
-actually lands, because a ceiling below the merge result reddens `main` immediately —
-and it was verified like-for-like that none of the growth belonged to that PR (main
-alone 442, main plus the branch 442). This is the raise the last section calls a
-deliberate act: it is here, with its measurement, not made quietly.
+**The count moved TWICE while this was being written, and that is not an embarrassment —
+it is the measurement that justifies the step.** 432 at `d9ee33e7`; **442** after roughly
+forty commits from parallel branches; **450** after fifteen more, about forty minutes
+later. Eight findings in forty minutes, from branches nobody was watching this lane for.
+An advisory lane absorbs that silently and forever; a ratchet makes each increment
+somebody's decision.
+
+The ceiling is calibrated to the tree that actually LANDS, because a ceiling below the
+merge result reddens `main` immediately over findings that are not the PR's. Each time it
+was verified LIKE-FOR-LIKE in a worktree at the exact `main` being merged — main alone
+450, main plus the branch 450, and a per-file diff of ruff's own JSON showing **zero**
+files where the branch has more. That per-file check is the one that matters: two equal
+totals can still hide a branch finding cancelling a main fix. This is the raise the last
+section calls a deliberate act: it is here, with its measurement, not made quietly.
 
 ## Why it does not converge in this prompt
 
@@ -102,7 +109,7 @@ itself rather than as mystery debt.
 ## How to move the number
 
 ```bash
-python scripts/ruff_ratchet.py --max 442 --show-composition   # what is in there
+python scripts/ruff_ratchet.py --max 450 --show-composition   # what is in there
 ruff check src/ tests/ --fix                                   # the 231 safe autofixes
 python scripts/ruff_ratchet.py --max <the new, lower number>   # then lower the ceiling
 ```

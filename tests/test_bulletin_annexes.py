@@ -375,6 +375,11 @@ def test_the_bundle_is_one_file_per_cited_article_plus_a_contents_page(corpus):
         "20260811_OOS_Bulletin_Weekly/20260805_Article_0002.md",
         "20260811_OOS_Bulletin_Weekly/20260805_Article_0003.md",
         "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md",
+        # §18: the enumeration of what a recipient can read off this bundle travels
+        # INSIDE it, because the person who opens the ZIP is not always the one who
+        # exported it. Named here rather than tolerated by a loosened count — an
+        # exact list is what makes a future ADDITION a deliberate edit.
+        "20260811_OOS_Bulletin_Weekly/WHAT-A-READER-CAN-SEE.md",
     ]
 
 
@@ -476,7 +481,8 @@ def test_a_body_that_cannot_be_read_still_leaves_a_file(corpus, monkeypatch):
         for r in rows:
             r["excerpt"] = ""
     files = _unzip(build_annexes(corpus, ed))
-    assert len(files) == 4
+    # 3 articles + the contents page + the §18 privacy enumeration.
+    assert len(files) == 5
     assert "No text is included" in files[
         "20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"
     ]
@@ -524,7 +530,13 @@ def test_an_edition_naming_no_articles_produces_an_honest_empty_bundle(corpus):
     )
     files = _unzip(out)
     assert out["articles"] == 0
-    assert list(files) == ["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
+    # An empty bundle still carries its enumeration: a reader opening a ZIP with no
+    # articles in it should not have to guess whether a privacy note was omitted or
+    # never written.
+    assert sorted(files) == [
+        "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md",
+        "20260811_OOS_Bulletin_Weekly/WHAT-A-READER-CAN-SEE.md",
+    ]
     assert "nothing to annex" in files[
         "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"
     ]
@@ -586,7 +598,8 @@ def test_the_annexes_download_as_a_zip_named_after_the_report(client):
     ]
     assert r.headers["X-OO-Annex-Articles"] == "3"
     with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-        assert len(zf.namelist()) == 4
+        # 3 articles + the contents page + the §18 privacy enumeration.
+        assert len(zf.namelist()) == 5
 
 
 def test_the_annexes_honour_the_same_selection_as_the_report(client):

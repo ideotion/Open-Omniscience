@@ -117,15 +117,18 @@ jobs:
       # pyproject for the same reason mypy is pinned -- a new rule set would otherwise
       # redden every PR through no code change.
       #
-      # CEILING CALIBRATED AT THE MERGE POINT, not when this step was written. It was
-      # measured at 432 against main @ d9ee33e7; roughly forty commits from parallel
-      # branches landed while that PR was open and took the lane to 442. Verified
-      # like-for-like that NONE of the growth was that PR's -- main alone measured 442
-      # and main-plus-the-branch measured 442, with no file where the branch had more.
-      # Shipping the older, tighter number would simply have reddened main on the merge
-      # commit, which is worse than a ceiling that reflects the tree it guards.
+      # CEILING CALIBRATED AT THE MERGE POINT, not when this step was written -- and it
+      # moved TWICE while the PR was open, which is itself the measurement that justifies
+      # the step. 432 against main @ d9ee33e7; 442 after roughly forty commits from
+      # parallel branches; 450 after fifteen more, about forty minutes later. Each time,
+      # verified LIKE-FOR-LIKE in a worktree at the exact main being merged that NONE of
+      # the growth was this branch's: main alone 450, main-plus-branch 450, and a
+      # per-file diff of ruff's JSON showing ZERO files where the branch has more.
+      # Shipping the older, tighter number would redden main on the merge commit over
+      # findings that are not this PR's, which is worse than a ceiling that reflects the
+      # tree it guards. Lowering it is always welcome; the script prints the new floor.
       - name: Lint — style non-growth ratchet (may only be lowered)
-        run: python scripts/ruff_ratchet.py --max 442
+        run: python scripts/ruff_ratchet.py --max 450
 
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session

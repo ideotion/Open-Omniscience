@@ -712,3 +712,59 @@ def test_the_stub_does_not_invite_a_value_bearing_translation(edition):
     for row in rep["languages"]:
         stub = row.get("catalog_stub") or {}
         assert _SUMMARY not in stub, f"{row['language']}: the stub must not ask for this"
+
+
+# --------------------------------------------------------------------------- #
+#  THE COMPLETENESS GUARD: a shipped catalog must answer everything the sample
+#  edition asks for, in EVERY locale.
+#
+#  The eleven non-English catalogs are AI-drafted and want native review, which is
+#  an operator step. What keeps them from silently ROTTING in the meantime is this:
+#  a sentence added to a renderer without a catalog entry reddens here, by locale
+#  and by string, instead of shipping English into eleven languages and being found
+#  by whoever eventually reads a bulletin in their own.
+#
+#  The sample record is exercised rather than minimal for exactly this reason — a
+#  record that omitted cards, coverage, the annex notes or the introduction would
+#  report full coverage for strings nobody translated, which is a fabricated pass.
+# --------------------------------------------------------------------------- #
+def test_every_shipped_catalog_answers_everything_a_rendered_edition_asks_for():
+    from src.monitoring.bulletin_language import bulletin_language_report
+
+    rep = bulletin_language_report()
+    rows = [r for r in rep["languages"] if r["language"] != "en"]
+    assert len(rows) == 11, f"expected 11 shipped catalogs, measured {len(rows)}"
+
+    # ANTI-VACUITY, and it is not decoration: if the sample stopped rendering, or the
+    # translator stopped being asked, every row would report zero missing and this
+    # guard would pass hardest at the moment it stopped testing anything.
+    for row in rows:
+        assert row["strings_seen"] > 100, (
+            f"{row['language']}: only {row['strings_seen']} strings reached the "
+            "translator — the sample is not exercising the renderers"
+        )
+
+    gaps = [
+        f"{row['language']}: {s}"
+        for row in rows
+        for s in (row.get("missing_listed") or [])
+    ]
+    assert not gaps, (
+        "every sentence a bulletin renders must be keyed in every shipped catalog, or "
+        "readers of that language get English:\n  " + "\n  ".join(gaps[:20])
+    )
+
+
+def test_the_introduction_is_part_of_what_the_sample_exercises():
+    """D2 shipped a narrated opening paragraph. A sample that does not carry one
+    cannot see whether its chrome was translated — the recorded trap where a guard
+    passes because its fixture never reaches the branch."""
+    from src.monitoring.bulletin_language import sample_edition
+
+    intro = sample_edition().get("introduction") or {}
+    assert intro.get("text"), "the sample must carry an introduction"
+    assert intro.get("narrated") is True
+    assert intro.get("partial") is True, (
+        "and a PARTIAL one, so the removal note is exercised too — that note is the "
+        "string this guard was written after"
+    )

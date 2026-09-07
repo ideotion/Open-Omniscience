@@ -22,12 +22,46 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.jobs.background import BackgroundJob, register_job
 
 router = APIRouter(prefix="/api/bulletin", tags=["bulletin"])
 
 
+def _narration_worker(ctx, **kwargs):
+    from src.bulletin.narration_job import run_bulletin_narration_job
+
+    return run_bulletin_narration_job(ctx, **kwargs)
+
+
+#: §14: Layer B is a BackgroundJob with a persisted cursor, task-manager-visible,
+#: abortable. Registered here beside the route that starts it — the house
+#: convention, and one registration site rather than two that could disagree about
+#: whether a run is cancellable.
+#:
+#: ``is_writer=False``: the only writes are the edition JSON on disk and the job's
+#: own cursor file. Each story's evidence is read in its own short session, never
+#: one held across hours of model calls.
+_NARRATION_JOB = register_job(
+    BackgroundJob(
+        "bulletin-narration",
+        "Bulletin narration (AI-derived, removable)",
+        _narration_worker,
+        is_writer=False,
+        cancellable=True,
+    )
+)
+
+
 def _require_gate() -> dict:
-    """The hardware gate, as a 403 with its reason rather than a bare refusal."""
+    """The DOCUMENT verdict, as a 403 with its reason rather than a bare refusal.
+
+    Since the maintainer's 2026-09-07 answer to open question 4 this refuses only
+    when the constant is flipped back to gate the document; on the ruled setting a
+    machine that cannot run a model still gets every route here. The NARRATION
+    verdict travels in the same payload and is enforced where narration is asked
+    for — never by this function, because refusing a deterministic read for want of
+    a GPU is exactly what the ruling removed.
+    """
     from src.bulletin.gate import bulletin_available
 
     gate = bulletin_available()
@@ -81,7 +115,12 @@ def generate(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    edition = build_edition(db, period, narrate=narrate)
+    # The narration verdict is the model one, not the document one. A machine below
+    # the bar still builds the edition; asking it to narrate is refused HERE, before
+    # a call is attempted, so the reason the operator reads is the hardware fact
+    # rather than a connection error standing in for it.
+    refusal = None if gate.get("narration_available") else gate.get("narration_reason")
+    edition = build_edition(db, period, narrate=narrate, narration_refusal=refusal)
     edition["gate"] = gate
     if persist:
         try:
@@ -128,6 +167,106 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=404, detail="no such edition") from exc
     except ValueError as exc:  # malformed JSON on disk — say so, never return {}
         raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
+
+
+@router.post("/editions/{filename}/narrate")
+def narrate_edition(
+    filename: str,
+    lang: str = Query("", description="the language to narrate in; blank = the model's default"),
+    restart: bool = Query(
+        False,
+        description="discard a paused run and start this edition from the first unit",
+    ),
+    introduction: bool = Query(True, description="also narrate the opening paragraph"),
+    max_stories: int = Query(0, ge=0, le=200, description="0 = every story in the record"),
+) -> dict:
+    """Start (or RESUME) the narration of one persisted edition, as a background job.
+
+    §14. Narration used to run inline inside ``/generate``, which is a multi-minute
+    synchronous handler on a long run — the whole-server-freeze family this codebase
+    has paid for three times. This returns immediately; the run is visible in the
+    task manager, stoppable, and carries a PERSISTED CURSOR, so a restart resumes
+    rather than starts over.
+
+    RESUME IS THE DEFAULT. ``restart=true`` is the destructive reading and has to be
+    asked for: a default that discards a paused run is indistinguishable from a
+    resume at every layer above it, and the loss only surfaces as a progress bar
+    back at zero.
+
+    409 when a run is already in flight, and 409 with the cursor when a paused run
+    is for a DIFFERENT edition — continuing that one would misreport what was
+    narrated, and starting over would discard it, so neither is chosen silently.
+    """
+    from src.bulletin.narration_job import NarrationScopeMismatch
+    from src.bulletin.store import read_edition
+
+    gate = _require_gate()
+    if not gate.get("narration_available"):
+        # 403 with the hardware verdict, not a job that starts and refuses: the
+        # operator asked for narration and the answer is about this machine.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": gate.get("narration_reason"),
+                "caveat": gate.get("narration_caveat"),
+                "narration_available": False,
+            },
+        )
+    try:
+        read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    try:
+        return _NARRATION_JOB.start(
+            filename=filename,
+            language=lang or None,
+            restart=bool(restart),
+            introduction=bool(introduction),
+            max_stories=int(max_stories) or None,
+        )
+    except NarrationScopeMismatch as exc:  # pragma: no cover - raised inside the worker
+        raise HTTPException(status_code=409, detail={"reason": str(exc), **exc.state}) from exc
+    except RuntimeError as exc:
+        # A run of this kind is already going. Return its status rather than a bare
+        # refusal: the caller asked for narration and what they need to know is that
+        # it is already happening, and how far along.
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": str(exc), "status": _NARRATION_JOB.status()},
+        ) from exc
+
+
+@router.get("/narration")
+def narration_status() -> dict:
+    """The narration run's live status and its PERSISTED account of itself.
+
+    Two facts, not one. ``job`` is process-local and a restart erases it; ``run`` is
+    the cursor on disk, which is what makes a multi-hour run's progress survive one
+    — and the absence of a completion stamp there is the evidence that a run did not
+    finish, so nothing ever writes one to mark a run handled.
+    """
+    from src.bulletin.narration_job import last_narration_run
+
+    gate = _require_gate()
+    return {
+        "job": _NARRATION_JOB.status(),
+        "run": last_narration_run(),
+        "narration_available": gate.get("narration_available"),
+        "narration_reason": gate.get("narration_reason"),
+    }
+
+
+@router.post("/narration/stop")
+def narration_stop() -> dict:
+    """Ask the narration run to stop at its next unit boundary.
+
+    Cooperative: it never kills a thread. The cursor is already saved per unit, so
+    stopping costs at most the unit in flight and starting again resumes from there.
+    """
+    _require_gate()
+    _NARRATION_JOB.cancel()
+    return {"stopping": True, "status": _NARRATION_JOB.status()}
 
 
 @router.get("/editions/{filename}/review")
@@ -194,6 +333,64 @@ def ai_plan(
         per_call_s=per_call_s or None,
         concurrency=concurrency,
     )
+
+
+@router.get("/editions/{filename}/export-privacy")
+def export_privacy_route(
+    filename: str,
+    kind: str = Query("annexes", description="report | annexes | evidence"),
+    full_text: bool = Query(True, description="for annexes: would the bundle carry full text"),
+    exclude_sections: str = Query("", description="the same selection the export would use"),
+    exclude_stories: str = Query(""),
+    db: Session = Depends(get_db),
+) -> dict:
+    """What a READER of this export could see — the §18 enumeration.
+
+    Owed before an artifact leaves the machine, and answered here so the operator
+    meets it BEFORE the download rather than after. It is measured against the exact
+    set of articles the export would carry, which is why it takes the same selection
+    the render and annexes routes take: an enumeration over a different population
+    would describe a file nobody is about to send.
+
+    Read-only, and it decides nothing. Every item it lists is legitimate content
+    that no filter over field names could tell from ordinary data — which is
+    precisely why the mechanism is disclosure and not a scrubber.
+    """
+    from src.bulletin.annexes import assign_refs
+    from src.bulletin.privacy import export_privacy
+    from src.bulletin.review import apply_selection
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
+    if kind == "evidence":
+        # The evidence archive's population is the PERIOD, not the citations, and it
+        # is resolved by the archive's own selector rather than a second copy of the
+        # predicate — two copies is how two surfaces come to disagree about a number.
+        from src.bulletin.period import resolve_period
+        from src.bulletin.privacy import period_article_count  # noqa: F401  (documented seam)
+
+        try:
+            period = resolve_period(str((edition.get("period") or {}).get("cadence") or "weekly"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        from src.bulletin.evidence import _period_article_ids
+
+        ids = _period_article_ids(db, period)
+    else:
+        ids = [int(e["id"]) for e in assign_refs(edition)]
+
+    try:
+        return export_privacy(
+            db, edition, kind=kind, article_ids=ids, full_text=bool(full_text)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/editions/{filename}/render")
