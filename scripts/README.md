@@ -20,7 +20,7 @@ root; none are needed for normal app use. Network-touching scripts say so.
 | `add_gpl3_headers.py` / `update_license.py` | License-header maintenance. | no |
 | `make_icon_png.py` | Render the eye icon PNG from the SVG. | no |
 | `analysis/` | Ad-hoc analysis helpers used during audits. | no |
-| `init-postgres.sql` | Schema bootstrap for the (unsupported, future) Postgres path. | — |
+| `init-postgres.sql` | Schema scaffolding for a PostgreSQL path that **does not exist** — not supported, not tested, not run by anything here (J3, 2026-09-07; the file's own banner and `docs/ARCHITECTURE.md` say why). | — |
 
 > `setup_llm.py` was **removed on 2026-09-07** (PARKED PRH-04). It had not run for a
 > long time and could not: its first two imports, `src.llm.config` and

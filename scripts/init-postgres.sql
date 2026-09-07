@@ -1,3 +1,22 @@
+-- =========================================================================
+-- NOT SUPPORTED. NOT TESTED. NOT RUN BY ANYTHING IN THIS REPOSITORY.
+--
+-- Ruled 2026-09-07 (audit ARCH-06 / question J3): SQLite is the ONLY supported
+-- backend. This file is scaffolding for a PostgreSQL path that does not exist:
+-- there is no full-text search on PostgreSQL here (FTS5 is SQLite-only, so the
+-- search surface would be dead), no at-rest encryption (SQLCipher is likewise
+-- SQLite-only, and encryption is this app's stated security model), no
+-- single-writer gate, no CI matrix, and no test in the suite runs against it.
+--
+-- It is kept rather than deleted because it records real schema work, and the
+-- roadmap item it belongs to (an FTS path plus a PostgreSQL CI lane) is written
+-- down in docs/ARCHITECTURE.md. Do not read it as an installation option.
+--
+-- NOTE FOR THE MAINTAINER, recorded rather than acted on: the "License: Open
+-- Source (MIT)" line below contradicts the repository's GPL-3.0-or-later, and
+-- correcting a licence header is not a call this change makes on its own.
+-- =========================================================================
+
 -- Open-Omniscience PostgreSQL Initialization Script
 -- 
 -- This script is executed when the PostgreSQL container starts for the first time.
