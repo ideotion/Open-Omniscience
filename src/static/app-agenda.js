@@ -896,13 +896,35 @@
     // T11: the astronomy layer (Meeus, computed locally) — moon glyphs in the
     // month grid; method+accuracy ride the hover convention (informed consent).
     let _astroYear = null, _astroByDate = {}, _seasonByDate = {};
+    // [payload bucket, kind, glyph] for the four principal lunar phases.
+    const _MOON_BUCKETS = [
+      ["new_moons", "new", "\u{1F311}"],
+      ["first_quarters", "first_quarter", "\u{1F313}"],
+      ["full_moons", "full", "\u{1F315}"],
+      ["last_quarters", "last_quarter", "\u{1F317}"],
+    ];
+    // ONE label map for the four phases, so the two grids (month and week) can
+    // never disagree about what a glyph means. A kind with no entry falls back
+    // to the kind itself rather than mislabelling it as one of the others.
+    function _moonLabel(kind, tr) {
+      const L = {new: "New moon", first_quarter: "First quarter moon",
+                 full: "Full moon", last_quarter: "Last quarter moon"};
+      return L[kind] ? tr(L[kind]) : String(kind || "");
+    }
     async function _ensureAstro(year) {
       if (_astroYear === year) return;
       try {
         const d = await api(`/api/events/astronomy?year=${year}`);
         _astroByDate = {}; _seasonByDate = {};
-        for (const fm of (d.full_moons || [])) _astroByDate[fm.date] = {glyph: "\u{1F315}", kind: "full", time: fm.time_utc, method: d.method, acc: d.accuracy};
-        for (const nm of (d.new_moons || [])) _astroByDate[nm.date] = {glyph: "\u{1F311}", kind: "new", time: nm.time_utc, method: d.method, acc: d.accuracy};
+        // The FOUR principal phases. The quarters were the one accepted loss when
+        // the redundant moons ICS feed was retired (ruling 2026-07-17); they are
+        // computed by the same Meeus ch.49 layer, so they carry the same method
+        // and accuracy note and go through the same hover convention.
+        for (const [bucket, kind, glyph] of _MOON_BUCKETS) {
+          for (const ph of (d[bucket] || [])) {
+            _astroByDate[ph.date] = {glyph: glyph, kind: kind, time: ph.time_utc, method: d.method, acc: d.accuracy};
+          }
+        }
         // Seasons (equinoxes/solstices, Meeus ch.27) — named astronomically
         // (hemisphere-honest); a solstice sun glyph, an equinox star.
         for (const s of (d.seasons || [])) {
@@ -966,7 +988,7 @@
         const iso = `${y}-${String(m).padStart(2, "0")}-${String(c.d).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc((moon.kind === "full" ? t9m("Full moon") : t9m("New moon")) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9m) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
           : "";
         const season = _seasonByDate[iso];
         const seasonHtml = season
@@ -1025,7 +1047,7 @@
         const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const moon = _astroByDate[iso];
         const moonHtml = moon
-          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc((moon.kind === "full" ? t9("Full moon") : t9("New moon")) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
+          ? `<span class="ag-moon" style="float:inline-end;font-size:11px" title="${esc(_moonLabel(moon.kind, t9) + " " + moon.time + " UTC — " + moon.method + "; " + moon.acc)}">${moon.glyph}</span>`
           : "";
         const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
         const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);
