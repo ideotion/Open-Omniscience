@@ -41,6 +41,15 @@ from src.utils.security import safe_href
 
 logger = setup_logging("duckduckgo")
 
+#: DuckDuckGo's HTML endpoint never links a result directly: every ``result__a`` href
+#: is a protocol-relative hop through its OWN ``/l/`` redirect, with the real target
+#: percent-encoded in ``uddg`` and a ``rut`` signature beside it. Anchored at the start
+#: and requiring the ``/l/?`` path so that neither a lookalike domain
+#: (``duckduckgo.com.evil.example``) nor a foreign host carrying a ``uddg`` parameter
+#: can be unwrapped -- an unwrap is a redirect we FOLLOW, so widening it would hand any
+#: page we merely found the ability to point discovery wherever it liked.
+_DDG_REDIRECT_RE = re.compile(r"^(?:https?:)?//(?:[\w-]+\.)*duckduckgo\.com/l/\?", re.IGNORECASE)
+
 
 class DuckDuckGoSearch:
     """
@@ -213,6 +222,23 @@ class DuckDuckGoSearch:
 
         return results
 
+    @staticmethod
+    def _redirect_target(url: str) -> str | None:
+        """The raw, still-encoded ``uddg`` value of a DuckDuckGo ``/l/`` hop.
+
+        Call only for a URL ``_DDG_REDIRECT_RE`` matched. Returns ``None`` when the hop
+        carries no ``uddg`` at all -- a DuckDuckGo-internal link rather than a result.
+
+        The value is returned STILL ENCODED so ``_clean_url``'s single ``unquote``
+        decodes it exactly once; decoding here as well would corrupt any target carrying
+        a literal percent sign (``%2525`` -> ``%25`` -> ``%``).
+        """
+        for pair in url.split("?", 1)[1].split("&"):
+            name, sep, value = pair.partition("=")
+            if sep and name == "uddg":
+                return value or None
+        return None
+
     @classmethod
     def _clean_url(cls, url: str) -> str | None:
         """Clean and validate a URL from search results."""
@@ -221,11 +247,35 @@ class DuckDuckGoSearch:
 
         # Remove tracking parameters
         url = re.sub(r"\/\*[^*]+\*\/", "/", url)
-        url = re.sub(r"\?.*$", "", url)  # Remove query string for now
+        # HTML entities BEFORE anything reads the query: the href arrives from raw
+        # markup, so a redirect hop's parameter separator is "&amp;". Moving this ahead
+        # of the query strip is byte-neutral for a direct href -- the strip discards the
+        # query either way, and a path can only lose a literal "&amp;" it never had.
+        url = url.replace("&amp;", "&")
+
+        # PRH-03: unwrap DuckDuckGo's own redirect BEFORE the query strip. Stripping
+        # first discarded the "uddg" target -- the only address such a result carries --
+        # and left the scheme-less "//duckduckgo.com/l/", which the validation below then
+        # rejected. Every real search result was therefore dropped in silence, and the
+        # one sanctioned external channel returned nothing but the occasional direct
+        # href. Only DuckDuckGo's OWN hop is unwrapped: an arbitrary host answering with
+        # a "uddg" parameter is left alone, so a page we merely found can never redirect
+        # discovery at a target of its choosing.
+        if _DDG_REDIRECT_RE.match(url):
+            target = cls._redirect_target(url)
+            if not target:
+                return None
+            # An unwrapped target does NOT get the tracking strip: "uddg" is the
+            # complete address DuckDuckGo resolved, and this codebase has already paid
+            # for treating a query as disposable -- an older CMS puts the article id
+            # there ("/news/?articleid=2504"), so stripping it would re-introduce the
+            # very loss this fix is about, one layer down.
+            url = target
+        else:
+            url = re.sub(r"\?.*$", "", url)  # Remove query string for now
 
         # Decode URL encoding
         try:
-            url = url.replace("&amp;", "&")
             from urllib.parse import unquote
 
             url = unquote(url)
@@ -242,7 +292,9 @@ class DuckDuckGoSearch:
             return None
         # Belt-and-braces scheme allowlist: only http(s) is a real source URL. The
         # downstream fetch re-guards (robots/SSRF/scheme), but a discovery result
-        # carrying javascript:/data:/file: should never leave this function.
+        # carrying javascript:/data:/file: should never leave this function. It is also
+        # what stops the unwrap above becoming a smuggling route: an attacker-supplied
+        # "uddg=javascript:..." meets exactly the same allowlist.
         if not safe_href(url):
             logger.debug(f"URL rejected (non-http(s) scheme): {url!r}")
             return None

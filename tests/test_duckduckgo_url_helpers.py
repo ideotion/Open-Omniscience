@@ -15,13 +15,17 @@ Deliberately imported via the canonical ``src.services.duckduckgo`` path (the
 older test_duckduckgo.py imports a ``services.duckduckgo`` sys.path alias — a
 different module object).
 
-Recorded here, NOT fixed (behaviour changes, out of this session's territory):
-* ``safe_href`` (src/utils/security.py) still holds a broad ``except`` in the
-  ``_clean_url`` chain.
-* ``_clean_url`` strips the query string BEFORE validation, which drops the
-  ``uddg=`` target of real DuckDuckGo ``/l/?uddg=...`` redirect results. That
-  finding is recorded in PARKED.md; the happy-path tests below use query-less
-  URLs so the strip semantics are deliberately NOT pinned as correct.
+BOTH findings this file used to record as "NOT fixed" were fixed on 2026-09-07
+(PROMPT_20 S5) and now have their own pins -- kept named here so a reader of this
+docstring is not sent looking for open work that closed:
+* ``safe_href`` / ``sanitize_url`` (src/utils/security.py): the broad ``except
+  Exception`` blocks are narrowed to ``ValueError``, pinned by
+  ``tests/test_security_url_excepts.py``.
+* ``_clean_url`` unwrapping the DuckDuckGo ``/l/?uddg=...`` redirect BEFORE the
+  query strip, pinned by ``tests/test_duckduckgo_redirect.py``. The happy-path
+  tests below still use query-less URLs, which is now a deliberate DIVISION of
+  labour rather than an omission: the strip applies to a DIRECT href only, and
+  that file owns the redirect path and the direct/redirect asymmetry.
 """
 
 from __future__ import annotations

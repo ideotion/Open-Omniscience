@@ -38,6 +38,12 @@ import logging
 import re
 from pathlib import Path
 
+# Module scope, not function scope, for two reasons: the two URL helpers below both
+# need it, and a test can only pin "an unexpected exception PROPAGATES" if it can
+# reach the name it would have to plant one in (src/services/duckduckgo.py already
+# imports it this way for exactly that pin).
+from urllib.parse import urlparse
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -236,14 +242,20 @@ def sanitize_url(url: str) -> str:
         return ""
 
     # Validate URL structure
-    from urllib.parse import urlparse
-
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             # If no scheme or netloc, assume it's a relative URL
             return url
-    except Exception:
+    except ValueError:
+        # NET-02 (2026-09-07): ``ValueError`` only -- the one exception ``urlparse``
+        # raises for a str (an invalid IPv6 literal in the netloc). It cannot be
+        # reached by a non-str: the ``re.sub`` above rejects those with a TypeError
+        # BEFORE this block, which is the premise PARKED.md parked this narrowing on
+        # and ``tests/test_security_url_excepts.py`` now measures. The realistic
+        # failure still fails CLOSED; only an UNEXPECTED one escapes, because
+        # ``except Exception`` in a sanitizer means a genuine bug inside it reads as
+        # "this link is unsafe" forever with nothing saying so.
         return ""
 
     return url
@@ -280,11 +292,9 @@ def safe_href(url: str | None) -> str:
     if not url:
         return ""
     cleaned = re.sub(r"[\x00-\x20\x7f]+", "", url)
-    from urllib.parse import urlparse
-
     try:
         scheme = urlparse(cleaned).scheme.lower()
-    except Exception:
+    except ValueError:  # NET-02: see the note in sanitize_url above -- same reasoning.
         return ""
     return cleaned if scheme in ("http", "https") else ""
 

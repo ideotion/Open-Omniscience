@@ -15,13 +15,22 @@ root; none are needed for normal app use. Network-touching scripts say so.
 | `build_world_outline.py` | Rebuild the bundled Natural-Earth coastline outline. | download |
 | `i18n_report.py` | Locale completeness report; `--audit-chrome` diffs every UI text node against `en.json` (the long-tail number). | no |
 | `translate_docs.py` | Draft `docs/i18n/<lang>/` translations with the LOCAL Ollama (provenance banner, resumable). | loopback (Ollama) |
-| `setup_llm.py` | Provision the local Ollama model (see the clearnet notice in `install.sh`). | Ollama registry |
 | `benchmark_audit.py` | The performance gates recorded during the v0.0.7 audit. | no |
 | `verify_custody.py` / `verify_evidence.py` | Offline verification of the signed custody log / evidence bundles. | no |
 | `add_gpl3_headers.py` / `update_license.py` | License-header maintenance. | no |
 | `make_icon_png.py` | Render the eye icon PNG from the SVG. | no |
 | `analysis/` | Ad-hoc analysis helpers used during audits. | no |
 | `init-postgres.sql` | Schema bootstrap for the (unsupported, future) Postgres path. | — |
+
+> `setup_llm.py` was **removed on 2026-09-07** (PARKED PRH-04). It had not run for a
+> long time and could not: its first two imports, `src.llm.config` and
+> `src.llm.model_manager`, name modules that no longer exist, so the script died at
+> import with `ModuleNotFoundError` before parsing a single argument — while this table
+> advertised it as the way to provision the local model. Everything it offered now lives
+> in the app: Settings → Local models pulls and manages models, and `src/llm/installer.py`
+> installs the Ollama binary against the publisher's own attested digest. Repairing it
+> would have meant a second, untested provisioning path beside the one the app actually
+> uses, which is how two surfaces come to disagree about one thing.
 
 > This file used to document a `debug_install.sh` helper (with a `curl | bash`
 > line pointing at the long-retired `0.03` branch) that never shipped — removed
