@@ -164,7 +164,8 @@ claim lives · owning prompt.
 |---|---|---|---|---|---|
 | DAT-01 | S6.2 file members (wiki/OSM/models) inside the SIGNED volume manifest (`file_members` block + traversal guards) | UNBUILT | no `file_members` in `src/backup/artifact.py`/`stream_backup.py` | CLAUDE.md S6 closeout (1) | P07 |
 | DAT-02 | Legacy single-file restore removal | RULING-GATED (C1) | `src/api/backup_v2.py:49…374`, `app-backup.js:604,660` | FD §49 | P07 |
-| DAT-03 | Import checkpoint interval K + prefetch | RULING-GATED (C2/C3) | CLAUDE.md 2026-08-08 | CLAUDE.md | P08 |
+| DAT-03 | Import checkpoint interval K | **BUILT 2026-09-07** — the mechanism ships; K is `AppSettings.import_checkpoint_k`, range 1..24, **default 1 = today's behaviour**, so the RULING (C2: which K) is still the maintainer's and is all that is left | `src/backup/import_queue.py:import_checkpoint_k`; `src/backup/merge.py:run_restore(working_copy=, hold_after_merge=)`; `tests/test_import_checkpoint.py` | CLAUDE.md 2026-08-08 (b) | P08 |
+| DAT-03b | Import prefetch (stage the next backup while the current one merges) | PARKED, blockers re-verified at `main`@690920e | singleton `volume_job.py:196` `_reap_or_reject`; `cleanup_staging` in a merge-thread `finally` at `volume_job.py:764`; the digest check at `volume_job.py:456` runs 94 lines before `read_volume_backup` at `:550`. C3's own gate (a field `verify_copy` number) is still unmet | CLAUDE.md 2026-08-08 (a) | P08 |
 | DAT-04 | DB-10 migrate op (rebuild at the ruled pragmas) as a user-facing action | RULING-GATED (C5) | `src/database/connect.py:84` fresh-file pragmas; bench = mechanism proof | CLAUDE.md | P22 |
 | DAT-05 | D1 httpfs binaries + pins (`configs/external_artifacts.yml:491-495` blank) | OPERATOR-GATED (C6) | registry | PERSISTED_DUCKDB_HTTPFS | P22 |
 | DAT-06 | Data-location chooser at first launch (`OOS data` subfolder) | UNBUILT (C7) | no hits in unlock.html/unlock.py | FIX_SESSION_2026-07-14_STATE | P07 |

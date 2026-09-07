@@ -374,7 +374,21 @@ class ImportQueueManager:
             for idx, item in enumerate(self._items):
                 if self._stop.is_set():
                     break
-                hold = self._decide_hold(idx, item)
+                # OUTSIDE the per-item try, so a fault here would abort the whole
+                # run with the item still "queued". Today nothing in _decide_hold
+                # can raise -- the lookahead already catches around its own digest
+                # read and DB query, and the rest is list slicing -- so this guards
+                # nothing that exists, which is exactly why it is written down
+                # rather than assumed: the decision is a THROUGHPUT choice and must
+                # never be able to cost an import, and False is today's behaviour.
+                try:
+                    hold = self._decide_hold(idx, item)
+                except Exception:  # noqa: BLE001
+                    _LOG.warning(
+                        "the checkpoint hold decision for %s failed; committing this "
+                        "item on its own", item.get("id"), exc_info=True,
+                    )
+                    hold = False
                 with self._lock:
                     self._cursor = idx
                     item["state"] = "running"
@@ -391,7 +405,20 @@ class ImportQueueManager:
                     with self._lock:
                         item["state"] = state
                         item["summary"] = summary
-                    self._after_item(item, summary)
+                    # OUTSIDE the item's own verdict. Every path in _after_item is
+                    # already non-raising (rmtree ignores errors, _save swallows, the
+                    # staging guard is wrapped), but it sits inside the try that
+                    # decides whether this item FAILED -- so a bookkeeping fault would
+                    # relabel a successful import as an error, which is the one thing
+                    # a group's bookkeeping must never be able to say. If it does
+                    # fault, the run's own finally still discards whatever is open.
+                    try:
+                        self._after_item(item, summary)
+                    except Exception:  # noqa: BLE001
+                        _LOG.warning(
+                            "checkpoint-group bookkeeping failed after item %s",
+                            item.get("id"), exc_info=True,
+                        )
                 except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
                     _LOG.exception("import item %s failed", item.get("id"))
                     with self._lock:

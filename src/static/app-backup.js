@@ -1067,11 +1067,19 @@
         const oc = _uxOutcome(r.state);
         const pct = max > 0 ? (r.total / max) * 100 : 0;
         const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
+        // "nothing imported" is right for every state that MERGED nothing --
+        // cancelled, stopped, skipped, failed. It is wrong for the two checkpoint
+        // states, which merged something and then lost it before it was saved, so
+        // those say what actually happened to them instead.
+        const _lostIts = (r.state === "staged" || r.state === "discarded");
         const bar = r.total > 0
           ? `<div style="width:${pct.toFixed(1)}%;min-width:2px;display:flex;height:10px;border-radius:5px;overflow:hidden">`
             + seg(r.new, "var(--accent, #4a90d9)") + seg(r.dup, "var(--muted-bg, #888)")
             + seg(r.conf, "var(--err, #d9534f)") + `</div>`
-          : `<div class="muted" style="font-size:11px">${esc(r.error ? String(r.error).slice(0, 120) : t("nothing imported"))}</div>`;
+          : `<div class="muted" style="font-size:11px">${esc(
+              r.error ? String(r.error).slice(0, 120)
+                      : t(_lostIts ? _UX_IM_STATE_LABEL[r.state] : "nothing imported")
+            )}</div>`;
         const counts = r.total > 0
           ? `${num(r.new)} ${t("imported")} · ${num(r.dup)} ${t("deduplicated")}`
             + (r.conf ? ` · ${num(r.conf)} ${t("conflicts (your version kept)")}` : "")

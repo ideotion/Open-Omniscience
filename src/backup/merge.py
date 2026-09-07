@@ -3489,7 +3489,14 @@ def _run_scoped_snapshot() -> Path | None:
       * a LATER run gets a new token and therefore a new snapshot.
 
     Re-verifies the file still exists before reusing it: a snapshot someone deleted must
-    be re-taken, never silently reported as still standing."""
+    be re-taken, never silently reported as still standing.
+
+    AT A CHECKPOINT INTERVAL K > 1 the first copy is written at the first CHECKPOINT
+    rather than at the first item, because a HELD item skips this stage entirely. Its
+    CONTENT is unchanged by that: nothing writes the live corpus between the run's start
+    and its first swap, so the file still holds the run-start state an operator would
+    want back. And a run stopped before any checkpoint needs no safety net at all —
+    nothing was written to the corpus to return from."""
     from src.scheduler.runner import exclusive_window_token
 
     token = exclusive_window_token()
@@ -4958,7 +4965,10 @@ def run_restore(
         and its side files, WITHOUT verifying the whole file, snapshotting,
         swapping or re-indexing. The report comes back ``held=True``,
         ``committed=False``, and the working copy is left for the caller to carry
-        into the next item.
+        into the next item. It is meaningful only with ``commit=True``: a preview
+        returns above the held branch and its report carries no ``held`` key at
+        all, which is what a caller reads, so the combination costs nothing and
+        claims nothing.
 
     THE COST, and it is the caller's to accept: nothing is durable until a swap, so
     every item held is an item that a kill, a Stop or a failure discards along with

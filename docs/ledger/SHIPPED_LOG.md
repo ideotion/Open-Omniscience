@@ -6511,3 +6511,64 @@ dependency into a BUILD dependency, and it fails at the END of initialisation wi
 expensive resource already committed — which reads as "it worked and then stopped"
 rather than "it never started". When a component is chosen at runtime because a package
 is merely importable, ask what that component does on first use.
+## 2026-09-07 — the import checkpoint interval K, and what the two whole-corpus PRAGMA checks actually cost
+
+**THE MECHANISM SHIPPED; THE NUMBER DID NOT.** The 2026-08-08 queue entry's item (b) asked
+whether a multi-backup import should verify and swap once per K backups instead of once per
+backup. It is built: `run_restore` gained `working_copy=` (where to build or find the
+disposable copy) and `hold_after_merge=` (stop after the merge, this batch's own verification
+and its side files, leaving the copy for the caller), the import queue drives the group, and
+`verify_copy` split into `verify_merge` — counts, the search index and the sampled content
+comparison against the artifact, all of which need that item's staging tree, which is deleted
+the moment it returns — and `verify_file`, the whole-file `quick_check` + `foreign_key_check`,
+which ask about the FILE and therefore cover every merge in it. That split is what makes K > 1
+possible without weakening the gate.
+
+**IT SHIPS AT K = 1, WHICH IS TODAY'S BEHAVIOUR BYTE FOR BYTE**, because the entry itself said
+the trade "needs a RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU
+that today it would keep, and that is a change to what a Stop costs every operator. The
+recommendation on record is 3; the value is one setting
+(`AppSettings.import_checkpoint_k`, 1..24, refused loudly outside the range rather than
+clamped, with `OO_IMPORT_CHECKPOINT_K` as a one-process override and a control in
+Settings → Data whose visible surface carries the cost and whose hover bubble carries the long
+form).
+
+**WHAT THE DURABILITY COST LOOKS LIKE FROM THE OUTSIDE**, because a trade nobody can see is a
+trade nobody agreed to: the queue publishes `items_committed` and `items_staged` as two
+different numbers plus a `checkpoint` block naming K and the open group; a per-item `staged`
+state reads "Merged — not yet saved" and a `discarded` one reads "Discarded — import it
+again"; both are `ok: false`, so a staged item's numbers can never sit behind a success
+headline; a failure or a refused verification discards the whole open group, because a windowed
+merge step commits mid-merge and a half-merged copy must never become the live corpus; and a
+process restart rewrites `staged` to `discarded`, because the working copy does not survive the
+process.
+
+**THE MEASUREMENT HALF** (the brief's S5, "measure them, do not change them") is in
+`docs/design/IMPORT_PERFORMANCE_2026-08-08.md` §5b, and the three reusable findings are in
+`LESSONS.md`: both checks are linear in bytes; `foreign_key_check` costs about a third of
+`quick_check` and is codec-neutral; and the plaintext-versus-encrypted codec multiplier that
+`merge_diag.walk_probe` publishes is a WARM-cache number (2.34x/2.57x measured) that falls to
+1.29x/1.39x cold, because a production encrypted store is 16384-page under DB-10 §1b against a
+staged plaintext corpus's 4096 and therefore does a quarter as many, four times as large,
+reads. Applying it to the field's disk-bound `validate` rate — which is exactly what
+`walk_probe`'s docstring recommends — over-states the encrypted walk by about 1.8x. It took
+three passes to get there, and the two failures are in `LESSONS.md`: a single-run pass on a
+machine busy with this session's own test suites, and a pass whose interleaving destroyed the
+warm condition it was measuring.
+
+**TWO SURVIVING MUTANTS OUT OF TWENTY-ONE, and both were findings rather than noise.** A
+timing assertion (`the second item's snapshot stage is faster`) could not discriminate a
+carried working copy at fixture scale; the content can (`SELECT COUNT(*) FROM merge_batches` is
+two after two held items and one after a re-snapshot). And the hold decision's explicit
+`K <= 1` clause is independently delivered by the group-full check beside it, so a
+single-clause mutation is a no-op — the clause stays as a belt on the shipped default, with the
+measurement in a comment, and the matrix reverts both together.
+
+**ALSO FIXED, found while reading the plan it belongs to:** `restore_stage_plan` counted
+`corpus_delta_before` for a PREVIEW, which returns above it — a published denominator one
+larger than the stages a preview actually walks.
+
+**RECORDED VERIFIED-PRESENT, not rebuilt:** the brief's S3 (the post-import conclusion screen's
+articles-first headline, labelled per-type breakdown, corpus delta and work-induced queue) and
+S4 (one aggregated conclusion for a whole queue with per-item rows beneath) were both already
+built; the descriptions that said otherwise were corrected in the same PR.

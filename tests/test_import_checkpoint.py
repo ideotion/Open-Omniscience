@@ -614,3 +614,27 @@ def test_a_held_item_does_not_hand_off_a_reindex_backlog():
     }
     assert "defer_reindex" in names or "defer_reindex" in consts
     assert "held" in consts, "the hand-off must be gated on the item not being held"
+
+
+def test_a_fault_in_the_hold_decision_never_costs_the_import(tmp_path, monkeypatch):
+    """The hold decision is a THROUGHPUT choice made outside the per-item try, so a
+    fault in it would abort the whole run with the item still queued. It falls back
+    to False — commit this item on its own, which is the behaviour at K = 1."""
+    ran: list[str] = []
+
+    def _boom(self, idx, item):
+        raise RuntimeError("the lookahead exploded")
+
+    monkeypatch.setattr(ImportQueueManager, "_decide_hold", _boom)
+    monkeypatch.setattr(ImportQueueManager, "_tune_after_run", lambda self: None)
+    monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    q = _queue(tmp_path, [{"kind": "corpus"}] * 2, k=3)
+
+    def _run(item, *, hold=False):
+        ran.append(f"{item['id']}:{hold}")
+        return {"report": {"committed": True}}
+
+    monkeypatch.setattr(q, "_run_corpus", _run)
+    q._drive()
+    assert ran == ["0-corpus:False", "1-corpus:False"], ran
+    assert [it["state"] for it in q._items] == ["done", "done"]
