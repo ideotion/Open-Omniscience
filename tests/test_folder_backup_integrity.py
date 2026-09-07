@@ -27,6 +27,7 @@ recorded checksum must never be invented for a file nobody hashed.
 
 from __future__ import annotations
 
+import inspect
 import json
 import subprocess
 from pathlib import Path
@@ -413,3 +414,51 @@ def test_the_restore_journal_records_what_it_turned_away() -> None:
     assert "copied=res.get(\"copied\")" not in src, (
         "a restore does not copy; that field was always null here"
     )
+
+
+def test_the_run_journal_is_named_as_excluded_never_silently_dropped(tmp_path, monkeypatch):
+    """DAT-09 (decided 2026-09-07): `run_logs` must be OUT of the encrypted artifact, and
+    the manifest must SAY so.
+
+    Both halves are the point. Carrying it would be wrong -- its size tracks how much there
+    was to diagnose (11 MB -> 1.6 GB in one 24 h merge), it is forensics about this machine
+    rather than about the corpus, and `promote_incomplete_runs` reads the directory AT BOOT,
+    so a restored foreign journal would make another machine's crashed run read as this
+    one's. But an omission the manifest does not name is exactly the silence the excluded
+    inventory exists to prevent, and this directory was excluded by construction and unsaid.
+    """
+    import src.backup.artifact as art
+    from src.paths import data_dir
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    d = data_dir() / "run_logs"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "imp-20260907T000000Z-abc.beat.jsonl").write_text('{"t":1}\n', encoding="utf-8")
+
+    named = {e["name"]: e for e in art._excluded_inventory()}
+    assert "run_logs" in named, "excluded by construction and unnamed is the silence D3 forbids"
+    row = named["run_logs"]
+    assert row["files"] == 1 and row["bytes"] > 0, "the omission is stated with its real size"
+    # And it says WHY, in the operator's terms rather than as a bare category.
+    assert "diagnostics bundle" in row["reason"], "where it DOES travel, bounded"
+    assert "crashed run" in row["reason"], "the reason carrying it would be actively wrong"
+
+
+def test_a_backup_never_collects_the_run_journal(tmp_path, monkeypatch):
+    """The negative-space twin of the naming above: the inventory is a DISCLOSURE, and a
+    disclosure is worth nothing if the files ride along anyway. Asserted against the member
+    collector itself, so a future member added over `data_dir()` cannot sweep the journal in
+    while the manifest goes on calling it excluded."""
+    import src.backup.artifact as art
+    from src.paths import data_dir
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    d = data_dir() / "run_logs"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "imp-20260907T000000Z-abc.beat.jsonl").write_text('{"t":1}\n', encoding="utf-8")
+
+    src_txt = inspect.getsource(art._collect_members)
+    assert "run_logs" not in src_txt, "the journal is excluded by construction, not by filter"
+    # ...and the directory constant it is named by is the one the inventory uses, so the
+    # two can never drift into disagreeing about which directory is meant.
+    assert art._RUN_LOGS_DIR == "run_logs"
