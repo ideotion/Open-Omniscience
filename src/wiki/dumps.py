@@ -22,6 +22,7 @@ import json
 import logging
 import re
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -32,6 +33,10 @@ from src.ingest.segmented_download import (
     default_mirror_probe,
     segmented_fetch,
 )
+# Module scope on purpose: ``except NetworkBlocked`` is EVALUATED when an
+# exception propagates, so binding the name inside the guarded ``try`` would
+# turn any earlier failure into a NameError from the handler.
+from src.safety.fetcher import NetworkBlocked
 
 _LOG = logging.getLogger(__name__)
 _CHUNK = 1024 * 1024  # 1 MiB
@@ -51,6 +56,49 @@ DUMP_KINDS = (
     "pages-articles-multistream",
     "pages-articles-multistream-index",
 )
+
+#: Upper bound on how many editions ONE "refresh exact sizes" action may probe.
+#: The editions share a single host, so the batch is bounded AND spaced (see
+#: ``DumpDownloadManager.probe_sizes``); the picker's own selection is far
+#: smaller than this in practice.
+MAX_SIZE_PROBE_EDITIONS = 12
+
+#: Seconds between two size probes in one batch -- the same per-host politeness
+#: interval ``src.wiki.client.WikiClient`` applies to the MediaWiki API.
+DUMP_PROBE_INTERVAL_S = 1.0
+
+
+@dataclass(frozen=True)
+class DumpSizeReading:
+    """One edition's CURRENT published dump size, or a NAMED reason it is absent.
+
+    ``size_bytes`` is a real reading or ``None`` -- never a 0, because 0 is a
+    legal size and "we could not read it" is not a measurement. ``reason`` says
+    WHICH absence it is, because these mean different things to an operator and
+    a single sentinel would hide the difference:
+
+    * ``airplane`` -- the network kill switch refused the request, so nothing
+      left this machine and the dump host was never contacted;
+    * ``unreachable`` -- the request was made and failed (host, DNS, timeout);
+    * ``no-content-length`` -- the host answered without publishing a size;
+    * ``invalid-edition`` -- the code could not become a URL, so no request was
+      attempted.
+    """
+
+    wiki: str
+    kind: str
+    url: str
+    size_bytes: int | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "wiki": self.wiki,
+            "kind": self.kind,
+            "url": self.url,
+            "size_bytes": self.size_bytes,
+            "reason": self.reason,
+        }
 
 
 # A Wikipedia edition code is lowercase alphanumeric segments joined by single
@@ -139,6 +187,11 @@ class DumpDownloadManager:
         self.state_path = self.base_dir / "downloads.json"
         self._http_get = http_get
         self._http_head = http_head
+        # Injected so a size-probe batch is testable without waiting out the real
+        # per-host politeness interval (a test that compresses time must compress
+        # the throttle too).
+        self._sleep = time.sleep
+        self._probe_interval_s = DUMP_PROBE_INTERVAL_S
         # C11: injectable for tests; the real defaults route through the guarded
         # factory with per-segment/per-mirror isolation tokens (never used unless
         # an entry actually carries mirrors/expected_sha256 — see DownloadEntry).
@@ -281,17 +334,92 @@ class DumpDownloadManager:
     # -- size probe -------------------------------------------------------- #
 
     def probe_size(self, wiki: str, kind: str = "pages-articles") -> int | None:
-        """Return the server-reported size in bytes (HEAD), or None."""
-        return self._probe_url_size(dump_url(wiki, kind))
+        """Return the server-reported size in bytes (HEAD), or None.
 
-    def _probe_url_size(self, url: str) -> int | None:
+        Kept as the two-state answer its existing callers read. ``probe_sizes``
+        is the same reading with the REASON attached, and both go through the
+        one ``_read_url_size`` implementation so the two can never disagree.
+        """
+        return self._read_url_size(dump_url(wiki, kind)).size_bytes
+
+    def probe_sizes(
+        self,
+        wikis: Sequence[str],
+        kind: str = "pages-articles-multistream",
+        *,
+        max_editions: int = MAX_SIZE_PROBE_EDITIONS,
+        # NOTE: `Sequence[...]`, not `list[...]`. This class defines a method
+        # named `list`, which shadows the builtin for every annotation declared
+        # after it in the class body -- mypy reports "Function ... .list is not
+        # valid as a type". Recorded lesson, reproduced here.
+    ) -> Sequence[DumpSizeReading]:
+        """Read the CURRENT server-published size of one dump per edition.
+
+        ONE operator action, several editions: the picker is multi-select and the
+        old per-edition button read only the first of them. Each edition is one
+        HEAD against the very URL the download itself would fetch, so the figure
+        is the same one the download reports -- never a second, differently-derived
+        number (the recorded "two functions answering one question from different
+        sources" defect).
+
+        POLITENESS: the editions share ONE host (dumps.wikimedia.org), so the
+        requests are spaced by ``_probe_interval_s`` exactly as ``WikiClient``
+        spaces its API calls, and the batch is bounded at ``max_editions``.
+
+        HONESTY: an edition whose size could not be read gets ``size_bytes=None``
+        with a NAMED ``reason`` -- never a 0 and never a silent omission. The
+        three reasons mean genuinely different things and must not share a value:
+        ``airplane`` (the kill switch refused it, so NOTHING left this machine),
+        ``unreachable`` (the request was made and failed) and ``no-content-length``
+        (the host answered without publishing a size).
+        """
+        seen: list[str] = []
+        for w in wikis:
+            code = (w or "").strip().lower()
+            if code and code not in seen:
+                seen.append(code)
+        out: list[DumpSizeReading] = []
+        for i, code in enumerate(seen[: max(0, max_editions)]):
+            if i:
+                self._sleep(self._probe_interval_s)
+            try:
+                url = dump_url(code, kind)
+            except ValueError:
+                # An unusable edition code never becomes a request; it is
+                # reported as a refusal rather than dropped from the answer.
+                out.append(
+                    DumpSizeReading(wiki=code, kind=kind, url="", size_bytes=None,
+                                    reason="invalid-edition")
+                )
+                continue
+            out.append(self._read_url_size(url, wiki=code, kind=kind))
+        return out
+
+    def _read_url_size(
+        self, url: str, *, wiki: str = "", kind: str = ""
+    ) -> DumpSizeReading:
+        """One HEAD; the size when the host published one, else a NAMED reason."""
         head = self._http_head or _default_head
         try:
             resp = head(url)
             cl = resp.headers.get("Content-Length")
-            return int(cl) if cl else None
-        except Exception:  # noqa: BLE001 - size is best-effort
-            return None
+        except NetworkBlocked:
+            # Airplane mode refused it: no request was made, so this is a fact
+            # about THIS MACHINE, not about the dump host. Saying "unreachable"
+            # here would send an operator hunting a server that is fine.
+            return DumpSizeReading(wiki=wiki, kind=kind, url=url,
+                                   size_bytes=None, reason="airplane")
+        except Exception:  # noqa: BLE001 - a transport failure is not a size of 0
+            return DumpSizeReading(wiki=wiki, kind=kind, url=url,
+                                   size_bytes=None, reason="unreachable")
+        try:
+            size = int(cl) if cl else None
+        except (TypeError, ValueError):
+            size = None
+        if size is None:
+            return DumpSizeReading(wiki=wiki, kind=kind, url=url,
+                                   size_bytes=None, reason="no-content-length")
+        return DumpSizeReading(wiki=wiki, kind=kind, url=url, size_bytes=size, reason=None)
 
     # -- download ---------------------------------------------------------- #
 
@@ -329,7 +457,7 @@ class DumpDownloadManager:
         surface as a genuine download error (the caller's own except records
         it), never a silently-downgraded fallback that could mask a tampered
         fetch."""
-        total = self._probe_url_size(fetch_url) or entry.total_bytes
+        total = self._read_url_size(fetch_url).size_bytes or entry.total_bytes
         if not total:
             return False
         data = segmented_fetch(

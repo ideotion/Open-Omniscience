@@ -59,6 +59,22 @@ Replace the per-edition "Estimate size" probe button (a live per-edition HEAD) w
 call: the dump date's `dumpstatus.json` lists every edition at once. The bundled dated size table and its
 freshness test already ship, so the probe is the only remaining live per-edition fetch.
 
+> **SHIPPED 2026-09-07, with the mechanism half CORRECTED.** The ruled requirement — retire the
+> per-edition probe button and replace it with ONE consented refresh — is built. The sentence above about
+> `dumpstatus.json` is **an unverified premise, not a fact**: it originates in an assistant-written
+> docstring (`src/wiki/dump_sizes.py`, 2026-06-16), was copied into the Open queue and then into this
+> prompt, and nobody read the endpoint. Every `dumps.wikimedia.org` path this repository builds is
+> per-edition, and the host is egress-blocked here (`curl` → 000, against 200 for pypi.org), so it could
+> not be checked. The shipped action is therefore ONE consented, bounded, politeness-spaced read over the
+> operator's actual selection; folding it into a single request is parked with that evidence. Building it
+> on the premise would have shipped a fabricated endpoint.
+>
+> Three further defects were found in the button being retired and are fixed in the same slice: it
+> egressed with **no `ensureOnline` consent** though every sibling action on that surface has one
+> (invariant #14); it read only `dumpSelected()[0]` from a MULTI-select picker, silently defaulting to
+> `en` when nothing was selected; and every failure — airplane mode included — printed one
+> "size check failed", so a refusal by this machine read as a dump host that would not answer.
+
 ### S6 — G10, the five questions
 
 Answer them where they are recorded, and let the answers shape S1's tiering rather than the other way round.
