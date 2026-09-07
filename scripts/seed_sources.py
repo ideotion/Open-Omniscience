@@ -23,10 +23,23 @@ def main(argv: list[str]) -> int:
     sources = load_sources_from_yaml(path)
     with session_scope() as session:
         result = seed_sources(session, sources)
+    # `skipped` sums three different facts, and calling all of them "already present"
+    # was wrong for two: an entry shadowed by an earlier sibling of the same catalogue
+    # can never be registered on any install, and a malformed one never could either.
     print(
-        f"Seeded sources: {result['created']} created, {result['skipped']} already present "
-        f"(of {result['total']})."
+        f"Seeded sources: {result['created']} created, "
+        f"{result['skipped_existing']} already present (of {result['total']})."
     )
+    if result["shadowed"]:
+        print(
+            f"  {result['shadowed']} catalogue entries were SHADOWED -- an earlier entry "
+            "claims the same domain, so these can never be registered. They are not "
+            "duplicates: see catalog_domain_collisions() for what is lost."
+        )
+        for ex in result["shadowed_examples"]:
+            print(f"    - {ex['name']} ({ex['domain']})")
+    if result["skipped_malformed"]:
+        print(f"  {result['skipped_malformed']} entries carried no usable domain.")
     return 0
 
 
