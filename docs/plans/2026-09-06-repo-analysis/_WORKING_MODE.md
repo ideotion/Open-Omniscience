@@ -95,8 +95,9 @@ than lowering the budget. `test_import_graph.py` holds `TRUE_CYCLE_CEILING = 0`.
 - Seed a synthetic corpus through the **real** `index_article`, never by inserting rows; serve with
   `OO_DATA_DIR=<tmp> OO_DB_PLAINTEXT=1 OO_NO_SCHEDULER=1 .venv/bin/uvicorn src.api.main:app`.
 - **Egress is allowlisted.** `pypi.org` and `github.com` pass; essentially every publisher host answers
-  `CONNECT … 403` with `"selective": false`. Five consecutive sessions have failed a reach-a-publisher task
-  through five different tool surfaces. If your prompt needs a named external host, **probe it first**
+  `CONNECT … 403` with `"selective": false`. Six consecutive sessions have failed a reach-a-publisher task
+  through six different tool surfaces (the sixth, 2026-09-07, probed first and reported it as a finding —
+  which is the point of the next sentence). If your prompt needs a named external host, **probe it first**
   (`curl -o /dev/null -w '%{http_code}' https://<host>/`, plus one host known to work), and if it is blocked
   say so as a finding about the environment with the per-host evidence — do not rewrite the prompt and retry.
 

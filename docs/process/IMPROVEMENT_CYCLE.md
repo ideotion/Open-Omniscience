@@ -29,15 +29,65 @@ The live corpus NEVER enters an agent session; the exported counts/structure are
   0/1/2. Small, regular, compounding — it is what unblocks K9/K10, lemmatization, the BM25F
   default, and LLM extraction. One heroic grading session never happens; a 15-minute-per-cycle
   habit does.
+- **Run the keyword-engine diagnostic** (`GET /api/diagnostics/keyword-engine`; it also rides
+  the bundle) — this is what STAMPS K6, cross-language translation coverage. It is an expensive
+  corpus scan, so the KPI GET never runs it; it reports the figure the last run recorded, with
+  the date it was measured. Skip a cycle and K6 quotes the older run: the differ reports that
+  pair as `same-measurement`, never `unchanged`, so a cycle nobody measured cannot read as a
+  cycle in which coverage held steady.
+
+### 1b · THE RING REFRESH — a named per-cycle pass (operator, networked machine)
+
+Ring coverage decays on its own: language keeps inventing concepts, and Wikidata keeps renaming
+and re-aliasing the ones already vetted. K6 is the sensor; these two passes are the response, and
+they are DIFFERENT work — run the cheap one every cycle, the expensive one when K6 says coverage
+is slipping.
+
+**a · The refresh pass (cheap — every cycle).** Re-read the QIDs a human already vetted and
+collect only what Wikidata has gained since:
+
+```
+python3 scripts/generate_wikidata_rings.py \
+    --refresh configs/keyword_rings_generated.yml -o /tmp/ring-additions-<date>.yml
+```
+
+The QID judgement was made once, so reviewing the result is reading a short list. Read the
+`unresolved` block FIRST: an id Wikidata now reports as missing means an upstream merge or
+deletion, i.e. that ring's identity — not just its members — needs re-vetting. `not_checked` is
+the third state and is never silence: a ring whose fetch failed was not examined, and folding it
+into "nothing new" would report a clean bill of health for a pass that half-ran. Accepted lines
+are spliced into the ring file BY HAND; nothing is ever removed, because rings are never pruned.
+
+**b · The growth pass (expensive — when coverage slips).** Seed NEW concepts from the corpus's
+own gap digest, which is computed in the keyword-diagnostics export:
+
+```
+python3 scripts/generate_wikidata_rings.py \
+    --from-log oo-keyword-log-<date>.json --top 300 -o /tmp/new-rings-<date>.yml
+```
+
+Every generated ring is HAND-VETTED before it is merged (Wikidata's first search hit is wrong
+often enough to matter: 35 of one batch, 12 of another — journals, bands, films, place-names,
+homographs and meta-classes). Then splice.
+
+**Two hazards, both of which have cost a run:**
+
+- The generator **replaces** its `-o` target; it has never merged, whatever older prose said.
+  Always resolve `-o` to a fresh path. Writing over an existing non-empty file is refused now,
+  but the refusal is a net, not the procedure.
+- The merge into `configs/keyword_rings_generated.yml` is a deliberate append-only TEXT SPLICE.
+  A full YAML round-trip reorders and reformats every untouched ring and buries the real diff.
 
 ### 2 · COMPARE — the KPI differ
 ```
 python3 scripts/kpi_diff.py kpi-<prev>.json kpi-<this>.json        # human table
 python3 scripts/kpi_diff.py kpi-<prev>.json kpi-<this>.json --json # machine
 ```
-Per metric: `improved | regressed | unchanged | not-measurable | not-comparable`, computed from
-the declared direction-of-goodness (no blended verdict, no score). A **regression is a
-first-class finding** (the `merged ≠ green` lesson made mechanical), not a CI failure — the
+Per metric: `improved | regressed | unchanged | same-measurement | not-measurable |
+not-comparable`, computed from the declared direction-of-goodness (no blended verdict, no
+score). `same-measurement` is the pair whose two sides carry the same `as_of` — one persisted
+figure quoted twice, which says nothing about whether the metric moved, and must not be read as
+stability. A **regression is a first-class finding** (the `merged ≠ green` lesson made mechanical), not a CI failure — the
 differ always exits 0 for a well-formed diff; only a malformed/incompatible snapshot exits 2.
 
 ### 3 · PLAN — a planning session
@@ -101,4 +151,5 @@ maintainer ruling in the ledger, never proposed as a "fix."
 `scripts/kpi_diff.py` · `GET /api/diagnostics/recursive-loop` (the meta-gate that proves the
 instruments themselves are trustworthy — `src/monitoring/recursive_loop.py`) · `engine_report` ·
 `datediag` · `request-latency` · `source-audit` · the P0-validation job · the IR/perception
-gold-set builders.
+gold-set builders · `scripts/generate_wikidata_rings.py` (`--refresh` for the cheap per-cycle
+pass, `--from-log` for the growth pass) · `GET /api/diagnostics/month-occupancy`.

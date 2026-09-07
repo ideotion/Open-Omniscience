@@ -103,3 +103,57 @@ def test_main_exit_codes(tmp_path, capsys):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"schema": "nope", "metrics": []}), encoding="utf-8")
     assert kd.main([str(a), str(bad)]) == 2
+
+
+# --------------------------------------------------------------------------- #
+#  same-measurement: one persisted figure quoted twice is not evidence of stability
+#  (added 2026-09-07 with K6's persisted resolver)
+# --------------------------------------------------------------------------- #
+
+def _mk(mid, value, direction, as_of, verdict="measured-no-bar"):
+    return {"id": mid, "name": mid, "value": value, "direction": direction,
+            "verdict": verdict, "as_of": as_of}
+
+
+def test_two_snapshots_quoting_one_measurement_are_not_unchanged():
+    """The trap this closes: an expensive instrument reports a PERSISTED value, so a
+    cycle in which nobody re-ran it shows the identical figure on both sides. Calling
+    that "unchanged" reads as "coverage held steady", when what held steady is that it
+    was never re-measured."""
+    a = _mk("K6", 12.2, "up", "2026-08-01T00:00:00+00:00")
+    b = _mk("K6", 12.2, "up", "2026-08-01T00:00:00+00:00")
+    assert kd.classify(a, b) == "same-measurement"
+    assert kd.classify(a, b) != "unchanged"
+
+
+def test_two_real_measurements_that_agree_are_still_unchanged():
+    """NEGATIVE SPACE. The new classification keys on the as_of, never on the value:
+    two genuine runs that happen to land on the same figure DID hold steady, and calling
+    that same-measurement would hide a real result behind a caveat about staleness."""
+    a = _mk("K6", 12.2, "up", "2026-08-01T00:00:00+00:00")
+    b = _mk("K6", 12.2, "up", "2026-09-01T00:00:00+00:00")
+    assert kd.classify(a, b) == "unchanged"
+    c = _mk("K6", 15.0, "up", "2026-09-01T00:00:00+00:00")
+    assert kd.classify(a, c) == "improved"
+    assert kd.classify(c, a) == "regressed"
+
+
+def test_metrics_without_an_as_of_are_unaffected_by_the_new_classification():
+    """Live in-process metrics (K2, K11) stamp a fresh as_of every snapshot, and the
+    not-measurable ones carry none at all — so the change is scoped by construction to
+    the persisted case and cannot disturb the rest of the board."""
+    a, b = _m("K2", 600.0, "down"), _m("K2", 400.0, "down")  # no as_of at all
+    assert "as_of" not in a
+    assert kd.classify(a, b) == "improved"
+    # a missing as_of on ONE side is not a repeated measurement either
+    assert kd.classify(_mk("K6", 9.0, "up", "2026-08-01T00:00:00+00:00"),
+                       _m("K6", 9.0, "up")) == "unchanged"
+
+
+def test_the_report_names_same_measurement_in_its_method_and_counts():
+    a = _snap([_mk("K6", 12.2, "up", "2026-08-01T00:00:00+00:00")])
+    b = _snap([_mk("K6", 12.2, "up", "2026-08-01T00:00:00+00:00")])
+    r = kd.diff_snapshots(a, b)
+    assert r["counts"] == {"same-measurement": 1}
+    assert "same-measurement" in r["method"]
+    assert "same-measurement" in kd.format_report(r)

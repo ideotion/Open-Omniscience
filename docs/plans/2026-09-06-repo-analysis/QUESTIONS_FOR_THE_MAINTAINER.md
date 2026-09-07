@@ -253,8 +253,9 @@ in the next networked session? Recommended default: yes, IPTC Media Topics first
 ## F. Egress allowlist entries (one consolidated ask)
 
 **F1 · ⛔ Add these hosts to the build sandbox's egress allowlist**, or accept that the corresponding
-work stays operator-side forever. Five consecutive sessions have been refused at `CONNECT` with
-`"selective": false`; the variable was never the prompt. Hosts, by the work they unblock:
+work stays operator-side forever. Six consecutive sessions have been refused at `CONNECT` with
+`"selective": false` (the sixth re-probed `dumps.wikimedia.org` on 2026-09-07, `pypi.org` 200 as the
+control); the variable was never the prompt. Hosts, by the work they unblock:
 `dumps.wikimedia.org` (E2) · `api.worldbank.org`, `data.worldbank.org` (the 36-code verification is ONE
 command: `scripts/verify_worldbank_indicators.py`) · `sdmx.oecd.org`, `api.imf.org` (SDMX message-version
 verification) · `www.legislation.gov.uk`, `eur-lex.europa.eu`, `gesetze-im-internet.de` (the law

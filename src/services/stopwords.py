@@ -352,6 +352,28 @@ class StopwordsManager:
                 self.scoped_stopwords.setdefault(lang, set()).update(curated)
 
     def get_stopwords(self, language="en"):
+        """The stopword set for one language.
+
+        THE BRANCH ORDER IS LOAD-BEARING, and it is why "just scope it per language" is
+        not available for `en` or `fr`: `language_stopwords` is tested FIRST and holds
+        exactly those two keys, so an `en`/`fr` lookup can never reach the
+        language-SCOPED channel below it. A curated word for either language has to go
+        into `LANGUAGE_STOPWORDS`, which the extraction path unions into
+        `analytics.extract.global_stopwords()` — i.e. it is GLOBAL, hiding that spelling
+        in every corpus language, and it needs cross-language collision review.
+
+        This is the whole reason per-language month scoping is a stoplist-ARCHITECTURE
+        change and not a data-file edit (research pass 2, 2026-09-05). The banned month
+        forms that hurt most — `march`, `may`, `april`, `august` — are English months in
+        English documents, so scoping could not recover them even if the channel were
+        reachable: they collide WITHIN one language. The date-aware block (drop a month
+        token only where the date extractor claimed its span,
+        `analytics.month_occupancy`) is the mechanism-matched fix; scoping is its
+        complement for the cross-language half, never its alternative.
+
+        The third branch is the honest fallback: a language with no set of its own gets
+        the English default rather than nothing, which leaks its grammar — measured and
+        recorded for `sr`/`az`, which are managed but have no vendored list."""
         lang = language.lower()
         if lang in self.language_stopwords:
             stopwords = self.language_stopwords[lang].copy()
