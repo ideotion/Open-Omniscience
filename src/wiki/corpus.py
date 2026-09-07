@@ -39,6 +39,7 @@ from urllib.parse import quote, unquote
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source, WikiPage, WikiRevision
+from src.utils.markup_blocks import strip_one_block
 
 _LOG = logging.getLogger(__name__)
 
@@ -97,23 +98,71 @@ def wiki_page_ref(canonical_url: str) -> tuple[str, str] | None:
     return wiki, title
 
 
+#: The three DELIMITED BLOCKS this strip removes. They are NOT written as
+#: ``OPEN.*?CLOSE`` regexes, and that is the whole point: an opener with no closer
+#: makes the lazy ``.*?`` scan to end-of-document, fail, and RESTART from the next
+#: opener, so K openers cost K*N. MEASURED on this very function at 400,000 chars:
+#: 0.014 s well-formed against **13.440 s** for unclosed-``<ref>`` spam and
+#: 12.295 s for unclosed-``{|`` -- a ~960x cliff turning only on whether the
+#: closers happen to be there, reached by ordinary broken wikitext, on the path
+#: EVERY watched-page sync and EVERY dump ingest runs through. The recorded
+#: 2026-08-05 lesson names this shape and asks for it to be grepped rather than
+#: waited for; it was still here in three patterns on 2026-09-07.
+#: ``src.utils.markup_blocks.strip_blocks`` walks each opener forward once and
+#: retires a family that can no longer close: 14.16 s -> 0.0030 s, byte-identical
+#: over 20,000 randomised documents (tests/test_markup_blocks.py).
+#:
+#: **SIX OF THE PATTERNS BELOW STILL CARRY THE SAME CLASS AND ARE NOT FIXED HERE.**
+#: They wear it differently -- ``OPEN[^X]*CLOSE``, where an opener with no closer
+#: makes the character class consume to end-of-document and then backtrack
+#: position by position -- and they are the EXPENSIVE half. Measured on this
+#: function, 100,000 -> 400,000 chars of opener-only spam:
+#:
+#:   ``<[^>]+>``          0.154 s -> 2.381 s   (15.4x for a 4x input)
+#:   ``<ref[^>/]*/>``     1.052 s -> 16.756 s  (15.9x)
+#:   ``[[File|Image|…]]`` 1.749 s -> 28.035 s  (16.0x)
+#:   ``[[target|label]]`` 1.614 s -> 26.388 s  (16.4x)
+#:   ``[[target]]``       1.721 s -> 27.398 s  (15.9x)
+#:   ``[url label]``      1.420 s -> 22.525 s  (15.9x)
+#:   ``{{templates}}``    0.005 s -> 0.019 s   (4.1x -- LINEAR, because ``[^{}]*``
+#:                                             cannot cross a brace)
+#:
+#: They are RECORDED rather than rushed: each CAPTURES and rewrites rather than
+#: removing, so the scanner needs a replacement callback and every rewrite needs
+#: its own byte-identical differential before it goes near the ingest path. The
+#: numbers are here so the next session has them; the Open queue carries the
+#: finding. Possessive quantifiers do NOT fix these either -- the cost is a scan
+#: per start position, not backtracking depth.
+_WIKI_BLOCKS: tuple[tuple[re.Pattern[str], re.Pattern[str]], ...] = (
+    (re.compile(r"<!--"), re.compile(r"-->")),
+    (re.compile(r"<ref[^>]*>", re.IGNORECASE), re.compile(r"</ref>", re.IGNORECASE)),
+    (re.compile(r"\{\|"), re.compile(r"\|\}")),  # tables
+)
+
+
 def plain_from_wikitext(text: str, *, max_passes: int = 4) -> str:
     """Reduce wikitext to analyzable plain text (bounded lexical strip).
 
     Deliberately simple and stated: nested templates are peeled in a few
     passes, refs/comments/tables/files dropped, link labels kept. The goal is
     keyword/WWW-quality text, not rendering fidelity.
+
+    Comment, ``<ref>`` and table BLOCKS go through the shared linear scanner
+    rather than a lazy regex -- see ``_WIKI_BLOCKS`` for the measurement.
     """
     t = text or ""
-    t = re.sub(r"<!--.*?-->", " ", t, flags=re.S)
-    t = re.sub(r"<ref[^>/]*/>", " ", t)
-    t = re.sub(r"<ref[^>]*>.*?</ref>", " ", t, flags=re.S | re.I)
+    comment_open, comment_close = _WIKI_BLOCKS[0]
+    t = strip_one_block(t, comment_open, comment_close)
+    t = re.sub(r"<ref[^>/]*/>", " ", t)  # self-closing: not a block, no closer to find
+    ref_open, ref_close = _WIKI_BLOCKS[1]
+    t = strip_one_block(t, ref_open, ref_close)
     for _ in range(max_passes):  # peel nested {{templates}} inside-out
         t2 = re.sub(r"\{\{[^{}]*\}\}", " ", t)
         if t2 == t:
             break
         t = t2
-    t = re.sub(r"\{\|.*?\|\}", " ", t, flags=re.S)  # tables
+    table_open, table_close = _WIKI_BLOCKS[2]
+    t = strip_one_block(t, table_open, table_close)
     t = re.sub(r"\[\[(?:File|Image|Category)[^\]]*\]\]", " ", t, flags=re.I)
     t = re.sub(r"\[\[[^\]|]*\|([^\]]+)\]\]", r"\1", t)  # [[target|label]] -> label
     t = re.sub(r"\[\[([^\]]+)\]\]", r"\1", t)  # [[target]] -> target
