@@ -1648,6 +1648,41 @@
        keeps its own markup, loaders and honest empty states. */
     .lib-view > .panel:first-child { margin-top:0; }
     .lib-sub { font-size:13px; margin:14px 0 6px; }
+
+    /* ---- Observatory (the ooSky surface) -------------------------------------
+       Every colour here is theme-derived; the canvas reads the SAME custom
+       properties through ooViz.readCssVar and repaints on a theme change, so all
+       17 themes inherit (accessibility rule A3 -- a sky wants dark, but a light
+       theme must stay legible, so the background is --panel2 and never black).
+       No rule here sets `opacity` on a text-bearing element: element opacity
+       composites the whole element over what is behind it, which is how the
+       .ag-cal chip failed WCAG AA on 16 of 17 themes while every declared colour
+       still looked fine. */
+    #sky-stage { margin:10px 0 0; background:var(--panel2); border:1px solid var(--border);
+                 border-radius:10px; overflow:hidden; }
+    #sky-canvas { display:block; width:100%; cursor:grab; }
+    #sky-canvas:active { cursor:grabbing; }
+    #sky-canvas:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+    .sky-readout { min-height:34px; margin:8px 0 0; font-size:12.5px; line-height:1.5;
+                   color:var(--fg-soft); }
+    .sky-leg { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin:8px 0 0;
+               font-size:12px; color:var(--fg-soft); }
+    .sky-leg-h { color:var(--muted); text-transform:none; font-weight:600; }
+    /* `gap` rather than a literal space between the swatch and its label: a flex
+       container DISCARDS the whitespace between its items, which is how a legend
+       once rendered "series 1n=40". */
+    .sky-ref { display:inline-flex; align-items:center; gap:6px; }
+    .sky-sw { width:12px; height:12px; border-radius:3px; display:inline-block;
+              border:1px solid var(--border); }
+    /* The table is the canonical view and holds every galaxy, so it scrolls
+       inside its own box rather than being truncated -- a displayed figure is
+       never secretly a cap. */
+    .sky-table-wrap { max-height:420px; overflow:auto; border:1px solid var(--border);
+                      border-radius:10px; }
+    .sky-tbl { font-size:12.5px; }
+    .sky-tbl thead th { position:sticky; top:0; background:var(--panel); z-index:1; }
+    .sky-tbl td button.ghost { padding:0; font-size:12.5px; text-align:left; }
+
     .lib-rhythm svg { border:1px solid var(--border); border-radius:6px; padding:4px; background:var(--panel2); }
 
     /* The honest crash screen (rulings 17-19, field report 2026-08-07). Painted

@@ -350,6 +350,12 @@ def article_length_distribution(session: Session, *, min_n: int = 1) -> dict:
         },
         "scanned": int(rep.get("scanned") or 0),
         "with_word_count": int(rep.get("with_word_count") or 0),
+        # Passed through from the report so the figure can SAY how many articles
+        # were held out. The report's own `caveat` is an i18n key carried by all
+        # twelve locales, so the exclusion travels as a field and the frontend
+        # composes its own keyed sentence -- appending to the key would have
+        # changed it and silently un-translated it in eleven locales.
+        "excluded_quarantined": int(rep.get("excluded_quarantined") or 0),
         "n": seg_n,
         # The one field the frontend must branch on: an all-zero histogram over an
         # empty set is not a measurement of zeros.

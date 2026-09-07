@@ -6544,3 +6544,55 @@
   alarm is its own dishonesty: it trains a reader to ignore the real one. Both directions are
   pinned by mutation-checked tests, because the guard that cries wolf and the guard that stays
   silent fail in opposite directions and one test cannot see both.
+  - **A POLAR "IMPORTANCE" AXIS IS A LOG AXIS WAITING TO FABRICATE ITSELF, AND THE REAL CORPUS
+    PICKS THE FALLBACK (2026-09-07, the Observatory / `ooSky`):** the design specified a
+    log-scaled radius with labelled orbit rings, which is right for the measure it was
+    imagined against and wrong for three of the four the picker offers. Measured on a
+    440-article corpus through the real `index_article`: `mentions` tops out at 263 (2.4
+    decades, log is honest) but `distinct_sources` tops out at **7**, `distinct_languages` at
+    5 and `distinct_keywords` at 8 — under one decade each, so a log radius would spread five
+    sixths of a decade across an entire sky and label orbits nothing can occupy. This is the
+    recorded `logY` defect one geometry over, and the same repair applies: **choose the mode
+    from the data, fall back to the axis the data deserves, and SAY on the surface which one
+    was drawn** — a hint claiming "equal ratios are equal distances" above a linear render is
+    two statements at once. THE SECOND HALF IS BIGGER AND WAS NOT IN THE DESIGN AT ALL: **52
+    of 77 galaxies had a measure of ZERO.** `log10(0)` is `-Infinity`, and the natural guard
+    (`Math.max(v, 1e-9)`) plants a fabricated observation on the outermost orbit — so a zero
+    gets NO coordinate, and `r(v)` returns `null` rather than a number, which is what stops a
+    caller that ignored `mode` from plotting anyway. The absent majority then needs its own
+    labelled treatment outside the value scale, because on a young corpus the gap IS the
+    common case rather than an edge case. GENERAL FORM: before specifying a log axis, get the
+    real maximum AND the count of zeros for **every** measure the control can select; a scale
+    that is honest for the measure you had in mind is not thereby honest for its siblings.
+  - **A SIZE CHANNEL WITH A MINIMUM RADIUS HAS A CAP, AND THE LEGEND WILL QUIETLY TEACH A
+    SCALE THE CANVAS DOES NOT USE (2026-09-07, same slice):** `sqrtAreaScale` is the honest
+    way to size a mark by a value, but a renderer also needs a floor or small marks vanish —
+    and the floor is a CAP on the channel: every value under it draws identically. Two things
+    follow. (a) The legend must clamp to the SAME constant the canvas clamps to; the first cut
+    computed reference stars from the raw scale and produced a 0.8px sample while nothing on
+    screen was under 1.5px, i.e. a key for a scale that does not exist. (b) The value at which
+    the channel saturates is a number the surface owes the reader, exactly like "N shown, M in
+    the nebula" — so it is computed (`maxMentions * (MIN_STAR/maxStar)²`) and printed. A
+    visual channel's cap is an anti-capping disclosure like any other.
+  - **A SECOND `oo:langchange` LISTENER IS A SECOND ENUMERATOR, AND TWO EXISTING GUARDS FIND
+    "THE" LISTENER BY FIRST OCCURRENCE (2026-09-07, same slice):** a new module added its own
+    `document.addEventListener("oo:langchange", …)` — reasonable in isolation, and it reddened
+    `test_live_language_switch_rerenders_cldr_name_surfaces` and
+    `test_home_briefing_re_renders_on_language_switch`, both of which locate the app's ONE
+    canonical listener with `app.split('addEventListener("oo:langchange"', 1)[1]`. The new
+    module loads before `app-boot.js`, so it became the first occurrence and both guards
+    started reading a listener that was never theirs. The tests were right and the code was
+    wrong: "what must re-render when the language changes" is a question the app already
+    answers in one place, and a second listener is the recorded second-enumerator shape.
+    Register there. The needle being non-unique is the tell, not the bug.
+  - **AN ORM COLUMN DEFAULT MAKES A `None` FIXTURE UNABLE TO TEST THE NULL BRANCH (2026-09-07,
+    the article-length quarantine filter):** `Article.quarantined` is `Mapped[bool | None]`
+    with `default=False`, so a fixture row built with `quarantined=None` is stored as `0` and
+    not `NULL`. The test asserting that `isnot(True)` keeps never-judged rows therefore
+    contained no such row, and the mutation swapping `isnot(True)` for `== False` **survived**
+    — the one survivor in a sixteen-mutation matrix, and it was a finding about the fixture
+    rather than about the code. A pre-migration row is genuinely NULL, so the fixture has to
+    write that state the way the database holds it (`UPDATE … SET quarantined = NULL`) and
+    then ASSERT the NULL is there, or the branch is untested while looking covered. Same
+    family as the recorded fixture-missing-a-field-production-always-stamps entry, arriving
+    from the opposite direction: here production stamps a default the fixture cannot refuse.
