@@ -654,3 +654,69 @@ def test_both_shapes_of_an_aborted_statement_count_and_an_unrelated_error_does_n
     assert got["interrupted_errors_total"] == 2
     assert got["interrupted_errors_this_session"] == 2
     assert got["locked_errors_total"] == 1, "the lock error is its own count, not an abort"
+
+
+# --------------------------------------------------------------------------- #
+# Degrading without lying                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def test_a_point_whose_time_cannot_be_read_is_excluded_and_counted(monkeypatch, session):
+    """A reading whose timestamp will not parse cannot be attributed to this window -- its
+    value could become the maximum, and a maximum attributed to the wrong session is the
+    misattribution the filtering exists to prevent. Excluded, and counted, never dropped
+    in silence."""
+    start = datetime.now(UTC).replace(minute=30, second=0, microsecond=0)
+    _uptime(monkeypatch, seconds=2 * 3600.0, started_at=start.isoformat(timespec="seconds"))
+    _series(
+        monkeypatch,
+        [
+            {"t": "not-a-timestamp", "n": 9_000_000},
+            {"t": _hour(start + timedelta(hours=1)), "n": 5},
+        ],
+    )
+
+    wal = sw.soak_window(session)["wal"]
+    assert wal["measured"] is True
+    assert wal["max_bytes"] == 5, "the unreadable point must not become the maximum"
+    assert wal["points_unreadable"] == 1
+
+
+def test_a_malformed_value_degrades_instead_of_taking_the_report_down(monkeypatch, session):
+    start = datetime.now(UTC).replace(minute=30, second=0, microsecond=0)
+    _uptime(monkeypatch, seconds=2 * 3600.0, started_at=start.isoformat(timespec="seconds"))
+    _series(
+        monkeypatch,
+        [
+            {"t": _hour(start + timedelta(hours=1)), "n": "oops"},
+            {"t": _hour(start + timedelta(hours=1, minutes=1)), "n": 7},
+        ],
+    )
+
+    wal = sw.soak_window(session)["wal"]
+    assert wal["measured"] is True
+    assert wal["max_bytes"] == 7
+    assert wal["points_unreadable"] == 1
+
+
+def test_a_crashed_block_is_told_apart_from_a_block_with_nothing_to_read(monkeypatch, session):
+    """Opposite facts must not share a sentinel. "we read this and there was nothing there"
+    and "this block itself broke" call for different actions, and collapsing them is how a
+    degrade wrapper becomes the hiding place for the bug it survives."""
+    _uptime(monkeypatch, seconds=80 * 3600.0)
+    _series(monkeypatch, [])
+
+    def _boom(_window):
+        raise RuntimeError("gate exploded")
+
+    monkeypatch.setattr(sw, "_write_gate", _boom)
+    got = sw.soak_window(session)
+
+    crashed = got["write_gate"]
+    assert crashed["measured"] is False
+    assert "RuntimeError: gate exploded" in crashed["block_error"]
+    assert "write_gate" in got["unmeasured"], "a crashed block is still an absence"
+
+    absent = got["wal"]
+    assert absent["measured"] is False
+    assert "block_error" not in absent, "an honest absence is not an error"

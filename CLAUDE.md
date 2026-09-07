@@ -6032,6 +6032,39 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the choice was not applied. Validate a selector against the set it claims to select
     from, rather than trusting it and hoping the value is still real.
 
+  - **A REPORT WHOSE EVERY BLOCK DEGRADES HONESTLY HAS THE SAME SHAPE WHEN IT WAS HANDED
+    NOTHING — so a shape assertion cannot tell a working member from a broken one
+    (2026-09-07, the soak-window bundle member):** the recorded K2 lesson names a degrade
+    wrapper becoming the hiding place for the bug it survives, and the FastAPI-sentinel
+    lesson names `Query(False)` being truthy when a route is called directly. This is
+    where the two meet: a composed report in which each block reports `{measured: false,
+    reason}` on failure produces a payload with all the right KEYS whether it got a real
+    Session or a `Depends` object, so `assert "window" in payload` passes on exactly the
+    defect it was written for. Measured, not reasoned: the mutation that replaced
+    `soak_window_report(db=db)` with `soak_window_report()` left the guard GREEN. The
+    assertion has to be on a VALUE only the real path can produce — here a `wal_bytes` row
+    the test itself inserted, read back out through the member. GENERAL FORM: the better
+    your degrade discipline, the weaker a shape assertion is, and the two are related by
+    construction rather than by accident.
+  - **FILTERING A BUCKETED SERIES TO A SUB-BUCKET WINDOW IS A CHOICE OF WHICH WAY TO BE
+    WRONG — pick the direction the hazard makes safe, and disclose it (2026-09-07, same
+    slice):** `wal_bytes` is stamped with its HOUR BUCKET, so a snapshot genuinely taken at
+    10:45 by a process that started at 10:30 carries the timestamp 10:00. A strict `t >=
+    started_at` drops a reading that really is in the window and UNDER-reports the maximum;
+    widening the boundary to the containing hour can include up to 59 minutes of a previous
+    session. Neither is free. For a GROWTH hazard the under-report is the dangerous half —
+    a hidden WAL spike is the thing the series exists to show — so widen, and publish the
+    boundary plus the first point's timestamp so a reader can see exactly which reading is
+    the borderline one. The general question to ask is not "which is correct" but "which
+    error does this metric's failure mode punish".
+  - **NOT EVERY CUMULATIVE SECOND MAY BE DIVIDED BY A WINDOW (2026-09-07, same slice):** the
+    write gate publishes `total_held_s` and `total_wait_s` side by side and only ONE of them
+    is a share of wall time. The gate is exclusive, so at most one holder exists at a time
+    and held time is bounded by elapsed time; waiting is summed ACROSS waiters, so on a
+    contended gate it exceeds the window and a "share" computed from it would exceed 1.
+    Before dividing an accumulated duration by a window, ask whether the thing being
+    accumulated can happen in parallel with itself — and pin it, because the symmetry of the
+    two field names is exactly what invites the second division.
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
   the english term 'climate', the app should be able to automatically search for that term in all

@@ -220,7 +220,21 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
     # than dropping it -- under-reporting a WAL maximum is the dangerous direction for
     # a growth hazard -- and the widening is disclosed rather than assumed away.
     edge = start.replace(minute=0, second=0, microsecond=0)
-    inside = [p for p in series if (_parse_ts(p.get("t")) or start) >= edge]
+    inside = []
+    unreadable = 0
+    for point in series:
+        when = _parse_ts(point.get("t"))
+        if when is None:
+            # A point whose time cannot be read may not be attributed to this window --
+            # its value could become the maximum, and a maximum attributed to the wrong
+            # session is exactly the misattribution the filtering exists to prevent. It
+            # is counted rather than dropped silently.
+            unreadable += 1
+            continue
+        if when >= edge:
+            inside.append(point)
+    if unreadable:
+        out["points_unreadable"] = unreadable
     if not inside:
         out["measured"] = False
         out["reason"] = (
@@ -228,7 +242,16 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
             "series above is earlier history and describes other sessions"
         )
         return out
-    values = [int(p["n"]) for p in inside if p.get("n") is not None]
+    values = []
+    for point in inside:
+        try:
+            values.append(int(point["n"]))
+        except (KeyError, TypeError, ValueError):
+            # A malformed value is not a reading. Raising here would take the whole
+            # report down over one row: a diagnostic degrades, it never 500s.
+            unreadable += 1
+    if unreadable:
+        out["points_unreadable"] = unreadable
     if not values:
         out["measured"] = False
         out["reason"] = "the in-window snapshots carry no values"
@@ -379,6 +402,25 @@ def _interrupted() -> dict[str, Any]:
     return out
 
 
+def _block(name: str, fn: Any) -> dict[str, Any]:
+    """Run one block, and turn a crash into an honest absence.
+
+    The sentinel deliberately does NOT reuse ``reason`` alone: "we read this and there was
+    nothing there" and "this block itself broke" are opposite facts, and collapsing them is
+    how a degrade wrapper becomes the hiding place for the bug it survives (the recorded
+    ``section_ok`` lesson). ``block_error`` is present only in the second case.
+    """
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never 500s
+        _LOG.debug("soak-window block %s failed", name, exc_info=True)
+        return {
+            "measured": False,
+            "block_error": f"{type(exc).__name__}: {exc}",
+            "reason": f"the {name} block could not be computed -- this is not a reading of zero",
+        }
+
+
 def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[str, Any]:
     """The soak report: five readings, each with its own window and denominator.
 
@@ -386,13 +428,13 @@ def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[
     enough to be read against the gate's bar; what the numbers inside it mean is the
     maintainer's call, and a composite would be a score this project does not publish.
     """
-    window = _window(bar_hours)
+    window = _block("window", lambda: _window(bar_hours))
     blocks: dict[str, Any] = {
-        "memory_guard": _memory_guard(window),
-        "wal": _wal(session, window),
-        "write_gate": _write_gate(window),
-        "database_stats_latency": _db_stats_latency(),
-        "interrupted": _interrupted(),
+        "memory_guard": _block("memory_guard", lambda: _memory_guard(window)),
+        "wal": _block("wal", lambda: _wal(session, window)),
+        "write_gate": _block("write_gate", lambda: _write_gate(window)),
+        "database_stats_latency": _block("database_stats_latency", _db_stats_latency),
+        "interrupted": _block("interrupted", _interrupted),
     }
     unmeasured = sorted(k for k, v in blocks.items() if not v.get("measured"))
     return {
