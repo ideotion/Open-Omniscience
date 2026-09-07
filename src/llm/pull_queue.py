@@ -113,6 +113,36 @@ class ModelPullManager:
                         self._progress = _progress_of(nxt, prog)
             except Exception as exc:  # noqa: BLE001 - surface, never crash the pump
                 status, err = "error", str(exc)
+            # D6: what ARRIVED, against what was PINNED. Ollama's own /api/tags digest is
+            # the only content commitment on this path -- a tag can be re-pointed, so a
+            # pull "succeeding" says nothing about which bytes landed. Checked only on a
+            # completed pull: a cancelled or failed one has no bytes to judge, and
+            # reporting a mismatch there would name the wrong cause.
+            integrity: dict | None = None
+            if status == "done":
+                try:
+                    from src.llm.weights_pin import PinMismatch, check_pulled_digest
+
+                    digest = next(
+                        (
+                            m.get("digest")
+                            for m in self._client().list_installed_detailed()
+                            if m.get("tag") == nxt
+                        ),
+                        None,
+                    )
+                    integrity = check_pulled_digest(nxt, digest)
+                except PinMismatch as exc:
+                    # Its own status, never folded into "error": a network failure is the
+                    # operator's to retry, "the published image is not the bytes you
+                    # pinned" is a supply-chain finding and must read as one.
+                    status, err = "integrity-mismatch", str(exc)
+                except Exception:  # noqa: BLE001 - an unreadable digest is a GAP, not a verdict
+                    integrity = {
+                        "pinned": None,
+                        "verified": False,
+                        "basis": "the installed digest could not be read after the pull",
+                    }
             with self._lock:
                 self._cancel.discard(nxt)
                 self._active = None
@@ -127,6 +157,8 @@ class ModelPullManager:
                     entry["store"] = dest["dest"]
                 if dest.get("reason"):
                     entry["store_note"] = dest["reason"]
+                if integrity is not None:
+                    entry["integrity"] = integrity
                 self._history.append(entry)
                 self._history = self._history[-20:]
 
