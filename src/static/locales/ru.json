@@ -1294,6 +1294,8 @@
   "skipped": "пропущено",
   "Stopped:": "Остановлено:",
   "Done.": "Готово.",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "Отклонено — байты не совпали с контрольной суммой, записанной этой резервной копией, поэтому они НЕ были восстановлены",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "Восстановлено, но без проверки содержимого — эта резервная копия не записала для них контрольную сумму",
   "Open an article to read its summary or translation.": "Откройте статью, чтобы прочитать её сводку или перевод.",
   "Local model — click to re-check": "Локальная модель — нажмите, чтобы перепроверить",
   "Saved.": "Сохранено.",

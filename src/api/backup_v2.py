@@ -510,7 +510,14 @@ def folder_backup_start(body: FolderBackupBody) -> dict:
 @router.post("/folder/restore")
 def folder_backup_restore(body: FolderRestoreBody) -> dict:
     """Restore a folder backup ADDITIVELY back into the live locations (skip-if-present,
-    never overwriting a differing local dump/blob)."""
+    never overwriting a differing local dump/blob).
+
+    CONTENT-VERIFIED WHILE COPYING: each file is hashed as it streams and checked against
+    the sha256 the backup recorded when it wrote those bytes; a mismatch is discarded with
+    its temp file, so a member that rotted on the drive never reaches the live data
+    directory. The result carries ``corrupt_refused`` (with the named ``corrupt`` members)
+    and ``restored_unverified`` -- the latter counting files a backup written before the
+    checksums existed could not be checked against. Both ride ``/folder/status``."""
     from src.backup.folder_backup import get_folder_manager
 
     try:
@@ -528,13 +535,17 @@ def folder_backup_verify(body: FolderRestoreBody) -> dict:
     """Verify a folder backup at ``src`` against its manifest — the standalone integrity check
     the volumes backup already has (``/v2/volumes/verify``) but the folder backup lacked.
 
-    Read-only. Every manifest-listed file must be present with the exact recorded size; the
-    content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are additionally content-
-    hashed. Wiki dumps + OSM extracts carry NO stored checksum (immutable public downloads) so
-    they are size-verified only — stated per file. Runs as the (single) folder job, so it
+    Read-only. Every manifest-listed file must be present with the exact recorded size and,
+    where the backup recorded one, matching the sha256 it wrote (2026-09-07 — before that
+    wiki dumps and OSM extracts were size-verified only, and an older backup still is: those
+    files are counted in ``size_only`` rather than silently called sound). The
+    content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are checked against the
+    hash in their own filename as well. The manifest itself is signed, and its state
+    (``signed`` / ``unsigned`` / ``bad-signature``) rides the verdict. Runs as the (single) folder job, so it
     surfaces in /api/jobs + /folder/status and is cancellable; the verdict rides
     ``status()['verify']`` (schema ``oo-folder-verify-1``: ok, files_checked, files_checksummed,
-    summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused}, problems).
+    summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused},
+    signature_state, problems).
     400 on a bad path; 409 if a folder job is already running."""
     from src.backup.folder_backup import get_folder_manager
 

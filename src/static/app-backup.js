@@ -505,7 +505,11 @@
         if (s && s.state === "done" && s.mode === "restore") {
           const p = s.progress || {};
           summaries.push({ title: label(t("Large data")), tally: { restored: p.restored || 0, skipped: p.skipped || 0 }, lines: [
-            `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`] });
+            `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`],
+            // Carried onto the summary itself, not only into `lines` (which render as a
+            // muted hint inside the collapsed per-item detail): a member the restore
+            // turned away has to be readable without opening anything.
+            caveat: _fbRefusalLines(p) });
         }
       } catch (e) { /* best-effort */ }
       try {
@@ -1393,11 +1397,21 @@
           `<div class="card-caveat" style="margin-top:6px">${esc(body)}</div>`;
       }
 
+      // What a large-data restore REFUSED (bytes that did not match the checksum the
+      // backup recorded) and what it could not check. Same treatment as the indexing
+      // caveat above and for the same reason: the summary is the artifact an operator
+      // reads afterwards, and a restore that discarded three rotted files is not a
+      // clean one. Built from the summaries' own `caveat` arrays, so a producer that
+      // has nothing to say adds nothing.
+      const _refusals = summaries.flatMap((s2) => (s2 && s2.caveat) || []);
+      const refusalLine = _refusals.length
+        ? `<div class="card-caveat" style="margin-top:6px">${_refusals.map(esc).join("<br>")}</div>` : "";
+
       host.innerHTML =
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
         + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
         + countLine + excludedNote
-        + growLine + headline + bar + typeBlock + extraLine + qualBlock + metaBlock + indexingLine + queueBlock
+        + growLine + headline + bar + typeBlock + extraLine + qualBlock + metaBlock + indexingLine + refusalLine + queueBlock
         + _uxPerItemView(perItem, t, tf)
         + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`
@@ -1533,6 +1547,44 @@
         _volStartPoll("vb-rprogress", btn, null);
       } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
     }
+    // What a folder RESTORE turned away, and what it could not check. The restore
+    // hashes every file as it streams and discards a member whose bytes do not match
+    // the checksum the backup recorded when it wrote them -- before it reaches the
+    // live data directory. That refusal is only honest end to end if the operator is
+    // TOLD: a run that silently dropped three rotted dumps and reported "Done." reads
+    // as a complete restore, and the missing files surface later as a mystery.
+    // Returns [] when there is nothing to say, so a clean restore renders unchanged.
+    // Label:value, never an interpolated sentence -- a count cannot conjugate, and
+    // Russian has three plural forms to Arabic's six.
+    function _fbRefusalLines(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, vars) => {
+        let out = s2;
+        if (vars) out = out.replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined || vars[k] === null) ? m : String(vars[k]));
+        return out;
+      });
+      const lines = [];
+      const refused = p.corrupt_refused || 0;
+      if (refused) {
+        // The NAMES are the actionable half -- they are what the operator re-downloads
+        // -- so they ride the line as data, bounded, with the remainder stated rather
+        // than silently cut. The backend caps the named list at 200; this shows a few.
+        const named = (p.corrupt || []).slice(0, 6)
+          .map((c) => `${c.category}/${c.rel}`);
+        const hidden = refused - named.length;
+        const tail = named.length
+          ? " — " + named.join(" · ") + (hidden > 0 ? " " + tf("+ {n} more (not shown)", { n: hidden }) : "")
+          : "";
+        lines.push(t("Refused — bytes did not match the checksum this backup recorded, so they were NOT restored")
+          + ": " + refused + tail);
+      }
+      const unverified = p.restored_unverified || 0;
+      if (unverified) {
+        lines.push(t("Restored, but not content-verified — this backup recorded no checksum for them")
+          + ": " + unverified);
+      }
+      return lines;
+    }
     function _fbStartPoll() {
       if (_fbPoll) clearInterval(_fbPoll);
       _fbRefresh();
@@ -1555,8 +1607,13 @@
         prog.innerHTML = `${esc(verb)}… ${pct}% · ${(p.copied || 0)} ${esc(t("copied"))}, ` +
           `${(p.skipped || 0)} ${esc(t("skipped"))}` + (s.state === "paused" ? ` (${esc(t("paused"))})` : "");
       } else if (s.state === "done") {
+        // A refusal is NOT a footnote: it rides a visible caveat line beside "Done.",
+        // never a muted hint and never behind a toggle (invariant #23).
+        const refusals = _fbRefusalLines(p);
+        const caveat = refusals.length
+          ? `<div class="card-caveat" style="margin-top:6px">${refusals.map(esc).join("<br>")}</div>` : "";
         prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(p.copied || 0)} ${esc(t("copied"))}, ` +
-          `${(p.restored || 0)} ${esc(t("restored"))}, ${(p.skipped || 0)} ${esc(t("skipped"))}.`;
+          `${(p.restored || 0)} ${esc(t("restored"))}, ${(p.skipped || 0)} ${esc(t("skipped"))}.` + caveat;
       } else if (s.state === "error") {
         prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
       } else { prog.textContent = ""; }

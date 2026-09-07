@@ -1294,6 +1294,8 @@
   "skipped": "已跳过",
   "Stopped:": "已停止：",
   "Done.": "完成。",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "已拒绝 — 字节与此备份记录的校验和不符，因此未予恢复",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "已恢复，但未校验内容 — 此备份未为它们记录校验和",
   "Open an article to read its summary or translation.": "打开一篇文章即可阅读其摘要或翻译。",
   "Local model — click to re-check": "本地模型——点击重新检查",
   "Saved.": "已保存。",

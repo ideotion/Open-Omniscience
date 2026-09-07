@@ -1294,6 +1294,8 @@
   "skipped": "スキップ",
   "Stopped:": "停止しました：",
   "Done.": "完了。",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "拒否 — バイト列がこのバックアップの記録したチェックサムと一致しなかったため、復元されませんでした",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "復元しましたが内容は未検証 — このバックアップはこれらのチェックサムを記録していません",
   "Open an article to read its summary or translation.": "記事を開くと、その要約または翻訳を読めます。",
   "Local model — click to re-check": "ローカルモデル — クリックして再確認",
   "Saved.": "保存しました。",

@@ -1294,6 +1294,8 @@
   "skipped": "ignoré(s)",
   "Stopped:": "Arrêté :",
   "Done.": "Terminé.",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "Refusé — les octets ne correspondaient pas à la somme de contrôle enregistrée par cette sauvegarde ; ils n'ont PAS été restaurés",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "Restauré, mais sans vérification du contenu — cette sauvegarde n'a enregistré aucune somme de contrôle pour ces fichiers",
   "Open an article to read its summary or translation.": "Ouvrez un article pour lire son résumé ou sa traduction.",
   "Local model — click to re-check": "Modèle local — cliquez pour revérifier",
   "Saved.": "Enregistré.",

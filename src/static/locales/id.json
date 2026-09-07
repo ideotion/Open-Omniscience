@@ -1294,6 +1294,8 @@
   "skipped": "dilewati",
   "Stopped:": "Dihentikan:",
   "Done.": "Selesai.",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "Ditolak — byte tidak cocok dengan checksum yang dicatat cadangan ini, sehingga TIDAK dipulihkan",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "Dipulihkan, tetapi isinya tidak diverifikasi — cadangan ini tidak mencatat checksum untuk berkas tersebut",
   "Open an article to read its summary or translation.": "Buka sebuah artikel untuk membaca ringkasan atau terjemahannya.",
   "Local model — click to re-check": "Model lokal — klik untuk periksa ulang",
   "Saved.": "Tersimpan.",

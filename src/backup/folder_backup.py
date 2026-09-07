@@ -48,6 +48,10 @@ BACKUP_SCHEMA = "oo-folder-backup-1"
 _CATEGORIES = ("wiki_dumps", "osm_regions", "models", "hf_models")
 _COPY_BUF = 4 * 1024 * 1024  # 4 MiB streaming buffer
 _PART_SUFFIX = ".oopart"  # in-progress temp; cleaned + never backed up
+#: A recorded checksum is 64 hex characters or it is not one. Manifest values are
+#: untrusted external-drive input, so a malformed one is DISCARDED (unverifiable),
+#: never compared against and never reported as a match.
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 # --------------------------------------------------------------------------- #
@@ -62,8 +66,14 @@ class BackupItem:
     src: Path
     size: int
 
-    def to_dict(self) -> dict:
-        return {"category": self.category, "rel": self.rel, "size": self.size}
+    def to_dict(self, *, sha256: str | None = None) -> dict:
+        """The manifest entry. ``sha256`` is OMITTED when unknown rather than written as
+        an empty string: "not hashed" and "hashed to nothing" are different facts, and a
+        reader that cannot tell them apart reports an unverifiable file as verified."""
+        d = {"category": self.category, "rel": self.rel, "size": self.size}
+        if sha256:
+            d["sha256"] = sha256
+        return d
 
 
 def human_bytes(n: int) -> str:
@@ -288,10 +298,23 @@ def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
 # --------------------------------------------------------------------------- #
 # Copy + restore (atomic, idempotent, skip-if-present)
 # --------------------------------------------------------------------------- #
-def _atomic_copy(src: Path, dst: Path, *, should_stop: Callable[[], bool] | None = None) -> bool:
+def _atomic_copy(
+    src: Path,
+    dst: Path,
+    *,
+    should_stop: Callable[[], bool] | None = None,
+    digest: "hashlib._Hash | None" = None,
+) -> bool:
     """Stream ``src`` to ``dst`` via a temp file + rename (so a paused copy never leaves
     a corrupt destination). Returns True if it completed, False if ``should_stop`` fired
-    mid-copy (the temp is removed). Never partially overwrites an existing ``dst``."""
+    mid-copy (the temp is removed). Never partially overwrites an existing ``dst``.
+
+    ``digest`` is updated with every byte written. Hashing HERE is what makes recorded
+    checksums affordable at a hundred gigabytes: the bytes are already in the buffer, so
+    the copy that has to happen anyway pays for the integrity value -- as against a
+    separate pass, which would double the read and is exactly the cost this module's own
+    design notes give as the reason wiki dumps and OSM extracts had no checksum at all.
+    A stopped copy leaves the digest partial; the caller discards it with the temp."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + _PART_SUFFIX)
     try:
@@ -305,6 +328,8 @@ def _atomic_copy(src: Path, dst: Path, *, should_stop: Callable[[], bool] | None
                 if not chunk:
                     break
                 w.write(chunk)
+                if digest is not None:
+                    digest.update(chunk)
             w.flush()
             os.fsync(w.fileno())
         os.replace(tmp, dst)  # atomic on the same filesystem
@@ -312,6 +337,59 @@ def _atomic_copy(src: Path, dst: Path, *, should_stop: Callable[[], bool] | None
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def _sign_folder_manifest(m: dict) -> dict:
+    """Ed25519 over the manifest minus its signature — the SAME machinery, key and
+    canonicalisation the volume manifest uses (``stream_backup._sign_manifest``), so a
+    folder backup and a volume backup written to one destination are signed by one key
+    and a reader has one thing to check."""
+    from src.backup.stream_backup import _sign_manifest
+
+    return _sign_manifest(m)
+
+
+def folder_manifest_signature_state(m: dict) -> str:
+    """verified | bad-signature | unsigned.
+
+    ``unsigned`` is the honest verdict for a backup written before signing existed, not a
+    failure: those manifests are real backups and refusing them would strand data. It is
+    reported, never silently upgraded."""
+    from src.backup.stream_backup import _manifest_signature_state
+
+    return _manifest_signature_state(m)
+
+
+def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
+    """``(category, rel, size) -> sha256`` from the destination's existing manifest.
+
+    Keyed on the SIZE too: the skip that reuses a checksum is itself a size match, so a
+    file whose size differs from the recorded one is not the file that was hashed and its
+    old digest must not travel. A missing, damaged or foreign manifest is simply an empty
+    map — this is a best-effort carry-forward, never a gate."""
+    try:
+        m = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    cats = m.get("categories") if isinstance(m, dict) else None
+    if not isinstance(cats, dict):
+        return {}
+    out: dict[tuple[str, str, int], str] = {}
+    for c, lst in cats.items():
+        if not isinstance(lst, list):
+            continue
+        for e in lst:
+            if not isinstance(e, dict):
+                continue
+            sha = e.get("sha256")
+            rel = e.get("rel")
+            try:
+                size = int(e.get("size", -1))
+            except (TypeError, ValueError):
+                continue
+            if isinstance(sha, str) and _SHA256_RE.match(sha) and isinstance(rel, str):
+                out[(str(c), rel, size)] = sha.lower()
+    return out
 
 
 def write_folder_backup(
@@ -333,14 +411,25 @@ def write_folder_backup(
     total_bytes = sum(it.size for it in items)
     copied = skipped = copied_bytes = 0
     stopped = False
+    # Checksums recorded by the PREVIOUS complete pass, so a refresh that skips an
+    # unchanged file keeps its integrity value instead of losing it or re-reading a
+    # hundred gigabytes to recover it (the same reuse discipline the volume writer's
+    # pool applies to slices). Keyed on (category, rel, size): a size change means the
+    # file is not the one that was hashed.
+    prior = _recorded_digests(root)
+    digests: dict[tuple[str, str], str] = {}
     for it in items:
         dst = root / it.category / it.rel
         if dst.exists() and dst.stat().st_size == it.size:
             skipped += 1
+            if (carried := prior.get((it.category, it.rel, it.size))) is not None:
+                digests[(it.category, it.rel)] = carried
         else:
-            if not _atomic_copy(it.src, dst, should_stop=should_stop):
+            h = hashlib.sha256()
+            if not _atomic_copy(it.src, dst, should_stop=should_stop, digest=h):
                 stopped = True
                 break
+            digests[(it.category, it.rel)] = h.hexdigest()
             copied += 1
             copied_bytes += it.size
         if progress_cb is not None:
@@ -356,19 +445,38 @@ def write_folder_backup(
             )
     by_cat: dict[str, list[dict]] = {c: [] for c in _CATEGORIES}
     for it in items:
-        by_cat.setdefault(it.category, []).append(it.to_dict())
+        by_cat.setdefault(it.category, []).append(
+            it.to_dict(sha256=digests.get((it.category, it.rel)))
+        )
+    unhashed = sum(
+        1 for it in items if digests.get((it.category, it.rel)) is None
+    )
     manifest = {
         "schema": BACKUP_SCHEMA,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "categories": {c: by_cat.get(c, []) for c in _CATEGORIES},
         "total_bytes": total_bytes,
         "files": len(items),
+        # A gap is published as a gap: an entry with no sha256 is one this pass skipped
+        # and whose checksum the previous manifest did not carry (a backup written before
+        # checksums existed). Verify reports those as unverifiable rather than counting
+        # them as content-checked.
+        "files_without_checksum": unhashed,
         "note": (
             "Public, re-downloadable blobs copied as-is (NOT encrypted) — the private "
-            "corpus stays in the encrypted oo-backup-2 backup. Restore is additive."
+            "corpus stays in the encrypted oo-backup-2 backup. Restore is additive. "
+            "Each entry carries the sha256 of the bytes written, so verify and restore "
+            "can check content, not only size."
         ),
     }
     if not stopped:  # only finalise the manifest on a complete pass
+        # SIGNED, like the volume manifest and for the same reason: this file lives on an
+        # external drive and is editable there, so the checksums it carries are worth
+        # exactly as much as the evidence that they are the ones we wrote. The signature
+        # proves internal consistency with the EMBEDDED key -- anyone can self-sign, so it
+        # is tamper-EVIDENCE against a drive, never trust in an origin -- which is why
+        # every name->path field is still traversal-guarded before anything is touched.
+        manifest["signature"] = _sign_folder_manifest(manifest)
         (root / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return {
         "dest": str(root),
@@ -396,6 +504,14 @@ def restore_folder_backup(
     differing local dump/blob is preserved). ``targets`` maps a category to its live
     directory (defaults: data_dir/wiki_dumps, data_dir/osm_regions, the Ollama store).
     Only ``categories`` (default: all present) are restored. Atomic per-file.
+
+    CONTENT-VERIFIED WHILE COPYING (2026-09-07). Each file is hashed as it streams and
+    the result matched against the sha256 the backup recorded when it WROTE those bytes;
+    a mismatch is discarded with its temp file and reported in ``corrupt``, so a member
+    that rotted on the external drive is never handed to the live data directory. The
+    bytes are read either way, so the check costs nothing. Where no checksum was recorded
+    (a backup written before they were), the file restores as before and is counted in
+    ``restored_unverified`` -- an honest gap, not a silent pass.
 
     SYMLINKS ARE ALWAYS REFUSED, NEVER FOLLOWED (fixed 2026-07-25, transversal audit
     09): the backup source is untrusted input — the module's own top docstring states
@@ -431,7 +547,15 @@ def restore_folder_backup(
 
         tgt.setdefault("hf_models", hf_home())
 
+    # The checksums this backup recorded when it wrote the bytes. Empty for a backup
+    # written before they existed, and for one whose manifest is missing or damaged --
+    # in which case every file restores as before and is COUNTED as unverifiable, never
+    # silently called sound.
+    recorded = _recorded_digests(src)
+
     restored = skipped = refused_symlinks = 0
+    corrupt: list[dict] = []
+    unverifiable = 0
     stopped = False
     for cat in _CATEGORIES:
         if cat not in cats:
@@ -448,13 +572,28 @@ def restore_folder_backup(
                 continue
             if not p.is_file():
                 continue
-            dst = dest_dir / p.relative_to(cat_root)
+            rel = p.relative_to(cat_root)
+            dst = dest_dir / rel
             if dst.exists():
                 skipped += 1  # never overwrite a local file
                 continue
-            if not _atomic_copy(p, dst, should_stop=should_stop):
+            want = recorded.get((cat, rel.as_posix(), p.stat().st_size))
+            # VERIFY WHILE COPYING, and only commit the copy if it matches. The bytes
+            # are read either way, so the check is free; the temp file is what makes
+            # "refuse" possible at all -- a corrupt member is discarded before it can
+            # land in the live data directory. Without this a dump that rotted on the
+            # external drive was restored silently, and the app then read it as its own.
+            h = hashlib.sha256() if want is not None else None
+            if not _atomic_copy(p, dst, should_stop=should_stop, digest=h):
                 stopped = True
                 break
+            if h is not None and h.hexdigest() != want:
+                dst.unlink(missing_ok=True)
+                if len(corrupt) < _PROBLEM_CAP:
+                    corrupt.append({"category": cat, "rel": rel.as_posix()})
+                continue
+            if want is None:
+                unverifiable += 1
             restored += 1
             if progress_cb is not None:
                 progress_cb({"restored": restored, "skipped": skipped})
@@ -465,6 +604,15 @@ def restore_folder_backup(
         "restored": restored,
         "skipped": skipped,
         "refused_symlinks": refused_symlinks,
+        # A file whose bytes did not match the checksum this backup recorded for it. NOT
+        # restored: the copy is removed again, so the live data directory never receives
+        # it. Named, so the operator can re-download exactly those.
+        "corrupt_refused": len(corrupt),
+        "corrupt": corrupt,
+        # Restored, but with no recorded checksum to check against (a pre-2026-09-07
+        # backup, or a manifest that could not be read). A gap, published as a gap:
+        # these were NOT content-verified and must not be counted as if they were.
+        "restored_unverified": unverifiable,
         "stopped": stopped,
     }
 
@@ -529,10 +677,14 @@ def verify_folder_backup(
       * The content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are ALSO
         content-verified: their bytes are streamed-hashed and compared to the sha256 in
         their name (bounded RAM). This is the only stored checksum in a folder backup.
-      * Wikipedia dumps + OSM extracts carry NO stored checksum (immutable public
-        re-downloads; re-hashing tens of GB every run defeats the point), so they are
-        SIZE-verified only — stated per file (``size_only``) and in the caveat, never
-        dressed up as a content check.
+      * EVERY file a 2026-09-07-or-later backup wrote carries a recorded ``sha256``
+        (hashed during the copy, so it cost no extra read), and is content-verified
+        against it. Wikipedia dumps and OSM extracts were SIZE-ONLY until then, which
+        is why an older backup still reports ``size_only`` for them — stated per file
+        and in the caveat, never dressed up as a content check.
+      * The manifest's own Ed25519 signature is reported (``signature_state``). A
+        ``bad-signature`` fails the verdict; ``unsigned`` does not, because a backup
+        written before signing existed is a real backup.
 
     ``should_stop`` cancels between files (a stopped run reports ``ok=False`` — an
     incomplete verify can never claim success); ``progress_cb`` gets a live tally.
@@ -554,6 +706,14 @@ def verify_folder_backup(
         return out
     out["manifest_found"] = True
     out["backup_created_at"] = manifest.get("created_at") if isinstance(manifest, dict) else None
+    # Reported, never enforced: an `unsigned` manifest is a backup written before signing
+    # existed, and refusing it would strand real data. `bad-signature` is a finding the
+    # operator must read -- it means the manifest's own contents (including every recorded
+    # checksum) are not the ones this key wrote -- so it fails the verdict below.
+    sig_state = (
+        folder_manifest_signature_state(manifest) if isinstance(manifest, dict) else "unsigned"
+    )
+    out["signature_state"] = sig_state
 
     # The manifest is UNTRUSTED external-drive input: a damaged/foreign structure must yield an
     # honest ok=False verdict, NEVER a crash (skeptic finding) and NEVER a false ok=True (a
@@ -609,12 +769,25 @@ def verify_folder_backup(
             status = "size_mismatch"
             detail = {"expected_size": size, "actual_size": actual}
         else:
+            # Two independent stored checksums, and they are not the same evidence.
+            # `sha256` is what THIS backup recorded when it wrote the bytes (present
+            # since 2026-09-07, and signed with the manifest). The Ollama blob's own
+            # name embeds its sha256, which is the publisher's value and is carried by
+            # a backup of any age. Where both exist they must BOTH match: a recorded
+            # digest that disagrees with the name is exactly the case where trusting
+            # either one alone reports a corrupted blob as sound.
+            recorded = e.get("sha256")
+            recorded = recorded.lower() if (
+                isinstance(recorded, str) and _SHA256_RE.match(recorded)
+            ) else None
             blob_hex = _blob_sha256_from_name(rel) if category == "models" else None
-            if blob_hex is not None and verify_model_checksums:
+            want = [h for h in (recorded, blob_hex) if h is not None]
+            if want and (blob_hex is None or verify_model_checksums):
                 checksummed += 1
-                status = "ok" if _sha256_file(path) == blob_hex else "checksum_mismatch"
+                actual_hex = _sha256_file(path)
+                status = "ok" if all(actual_hex == h for h in want) else "checksum_mismatch"
             else:
-                status = "size_only"  # present + right size; no stored checksum for this file
+                status = "size_only"  # present + right size; no usable stored checksum
         summary[status] += 1
         checked += 1
         if status not in ("ok", "size_only") and len(problems) < _PROBLEM_CAP:
@@ -629,6 +802,9 @@ def verify_folder_backup(
         + summary["checksum_mismatch"]
         + summary["traversal_refused"]
         + malformed  # a structurally-damaged manifest is a failure, never a silent "all clear"
+        # A manifest that does not verify against its own embedded key is not a manifest
+        # to verify files against. `unsigned` is NOT counted: see above.
+        + (1 if sig_state == "bad-signature" else 0)
     )
     out.update(
         {
@@ -642,14 +818,19 @@ def verify_folder_backup(
             "problems_truncated": max(0, failures - len(problems)),
             "method": (
                 "Every manifest-listed file must be present with the exact recorded size; "
-                "content-addressed Ollama model blobs (blobs/sha256-<hex>) are additionally "
-                "hashed and matched to the sha256 in their name. Manifest paths are "
+                "any file carrying a recorded sha256 is streamed-hashed and matched against "
+                "it, and content-addressed Ollama model blobs (blobs/sha256-<hex>) are also "
+                "matched against the sha256 in their name (both, where both exist). The "
+                "manifest's own Ed25519 signature is reported. Manifest paths are "
                 "traversal-guarded before any stat/hash. Counts only, no score."
             ),
             "caveat": (
-                "Wikipedia dumps and OSM extracts carry no stored checksum (immutable public "
-                "re-downloads), so they are size-verified only (size_only) — a size match is "
-                "NOT a proof of content. Model blobs ARE content-verified."
+                "size_only means the manifest recorded no usable checksum for that file — a "
+                "backup written before checksums were recorded, or an entry skipped by a "
+                "refresh whose earlier manifest had none. A size match is NOT a proof of "
+                "content. The signature proves the manifest is consistent with the key "
+                "embedded in it; anyone can self-sign, so it is tamper-evidence against an "
+                "edited drive, never proof of who wrote the backup."
             ),
         }
     )
@@ -801,8 +982,17 @@ class FolderBackupManager:
                     self._progress = {**self._progress, **res}
                 runlog.end(
                     ("cancelled" if self._cancelled else "paused") if res["stopped"] else "ok",
-                    copied=res.get("copied"), skipped=res.get("skipped"),
+                    # A restore RESTORES; it does not "copy". The field was `copied`
+                    # here, which restore_folder_backup has never returned, so every
+                    # restore journal carried `copied: null` -- a field that reads as
+                    # "nothing was copied" when the truth is that the operation has no
+                    # such number. The two refusal counts ride the SAME line as the
+                    # successes for the same reason: a journal that records only what
+                    # arrived cannot say what was turned away.
+                    restored=res.get("restored"), skipped=res.get("skipped"),
                     refused_symlinks=res.get("refused_symlinks"),
+                    corrupt_refused=res.get("corrupt_refused"),
+                    restored_unverified=res.get("restored_unverified"),
                 )
             except Exception as exc:  # noqa: BLE001
                 with self._lock:

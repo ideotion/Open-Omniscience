@@ -1294,6 +1294,8 @@
   "skipped": "छोड़ा गया",
   "Stopped:": "रोका गया:",
   "Done.": "हो गया।",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "अस्वीकृत — बाइट्स इस बैकअप में दर्ज चेकसम से मेल नहीं खाए, इसलिए उन्हें बहाल नहीं किया गया",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "बहाल किया गया, पर सामग्री की जाँच नहीं हुई — इस बैकअप ने उनके लिए कोई चेकसम दर्ज नहीं किया",
   "Open an article to read its summary or translation.": "किसी लेख का सारांश या अनुवाद पढ़ने के लिए उसे खोलें।",
   "Local model — click to re-check": "स्थानीय मॉडल — फिर से जाँचने के लिए क्लिक करें",
   "Saved.": "सहेजा गया।",

@@ -1294,6 +1294,8 @@
   "skipped": "skipped",
   "Stopped:": "Stopped:",
   "Done.": "Done.",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "Restored, but not content-verified — this backup recorded no checksum for them",
   "Open an article to read its summary or translation.": "Open an article to read its summary or translation.",
   "Local model — click to re-check": "Local model — click to re-check",
   "Saved.": "Saved.",

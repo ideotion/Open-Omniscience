@@ -1294,6 +1294,8 @@
   "skipped": "متخطّى",
   "Stopped:": "تم الإيقاف:",
   "Done.": "تم.",
+  "Refused — bytes did not match the checksum this backup recorded, so they were NOT restored": "مرفوض — لم تُطابق البايتات المجموع الاختباري الذي سجّلته هذه النسخة الاحتياطية، لذلك لم تُستعَد",
+  "Restored, but not content-verified — this backup recorded no checksum for them": "تمت الاستعادة، لكن دون التحقّق من المحتوى — لم تسجّل هذه النسخة الاحتياطية أي مجموع اختباري لها",
   "Open an article to read its summary or translation.": "افتح مقالًا لقراءة ملخصه أو ترجمته.",
   "Local model — click to re-check": "النموذج المحلي — انقر لإعادة الفحص",
   "Saved.": "تم الحفظ.",

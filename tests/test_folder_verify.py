@@ -52,7 +52,41 @@ def test_verify_ok_on_a_fresh_backup(tmp_path):
     assert rep["manifest_found"] is True
     assert rep["ok"] is True
     assert rep["files_total"] == 2
-    assert rep["summary"]["size_only"] == 2  # dumps/maps: size-verified, no stored checksum
+    # Was `size_only == 2` -- "dumps/maps: size-verified, no stored checksum". That was the
+    # world until 2026-09-07: the WRITE path now hashes every file in the same stream that
+    # copies it, so a fresh backup carries a checksum for every member and there is nothing
+    # left to verify by size alone. Amended deliberately, not by reflex: the property this
+    # test names (a fresh backup verifies clean) is unchanged and is now checked on a
+    # STRONGER basis, and the size-only path it used to exercise is still real -- see
+    # test_an_older_backup_without_checksums_still_verifies below, which is what keeps a
+    # pre-2026-09-07 backup from being called broken.
+    assert rep["summary"]["size_only"] == 0
+    assert rep["files_checksummed"] == 2, "a fresh backup verifies by CONTENT, not by size"
+    assert rep["signature_state"] == "verified"
+    assert rep["problems"] == []
+
+
+def test_an_older_backup_without_checksums_still_verifies(tmp_path):
+    """The negative space of the amendment above: a backup written before the checksums
+    existed carries none, and must verify as SOUND with the gap stated -- never as broken.
+
+    Reproduced by stripping what an older writer never wrote (the per-file ``sha256`` and
+    the manifest signature), which is exactly the shape such a backup has on disk.
+    """
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    write_folder_backup(dest, _items(src))
+    m = json.loads((dest / MANIFEST_NAME).read_text(encoding="utf-8"))
+    m.pop("signature", None)
+    for entries in m["categories"].values():
+        for e in entries:
+            e.pop("sha256", None)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m), encoding="utf-8")
+
+    rep = verify_folder_backup(dest)
+    assert rep["ok"] is True, "an old backup is old, not tampered with"
+    assert rep["summary"]["size_only"] == 2
+    assert rep["files_checksummed"] == 0
+    assert rep["signature_state"] == "unsigned"
     assert rep["problems"] == []
 
 
