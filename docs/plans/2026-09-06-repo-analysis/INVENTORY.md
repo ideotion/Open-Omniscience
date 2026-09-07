@@ -1,0 +1,354 @@
+# Inventory — every open item found by the 2026-09-06 repo analysis
+
+Anchored at `main` @ `1d421e9`. Produced by twelve read-only investigation agents (documentation,
+design docs, roadmaps/gates, the whole PR history #1–#1010, code/test/CI markers, audit reports)
+plus a verification pass by the orchestrating session. **Every verdict below was re-derived from the
+tree or from a named artifact — a doc's own status text was treated as a claim, never as evidence.**
+
+Verdict vocabulary: **BUILT** (found shipped — record, never rebuild) · **PARTIAL** (a named piece missing) ·
+**UNBUILT** · **STALE-CLAIM** (a doc says one thing, the tree says another) · **OPERATOR-GATED** (needs a
+networked machine, a real corpus, or the maintainer's hands) · **RULING-GATED** (needs a maintainer decision;
+question ID in QUESTIONS_FOR_THE_MAINTAINER.md) · **BROWSER-GATED** (needs a real page driven — the sandbox
+CAN do this in Chromium; the maintainer's UX pass is the remaining bar) · **UNCHECKED** (not verified this pass).
+
+Columns: ID · item · verdict · evidence (anchor in the tree or the doc, as of `main` @ `1d421e9`) · where the
+claim lives · owning prompt.
+
+## REL — release and process
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| REL-01 | 0.3 gate row 5: Tier A quarantine pass (8 articles, `nav-soup-v2`) executed with `write=True` + re-index | OPERATOR-GATED (A1) | `docs/product/RELEASE_0.3_GATE.md` §1 row 5 OPEN, §7.1 | gate doc | P01 |
+| REL-02 | `v0.3.0` tag cut from the maintainer's machine after CI green at the SHA | OPERATOR-GATED | gate §7.3; the session proxy refuses tag pushes | gate doc | P01 |
+| REL-03 | `RELEASE_0.4_GATE.md` stood up from §5 (3-at-scale, row 4, row 7b) | UNBUILT (A2) | no `docs/product/RELEASE_0.4_GATE.md` | gate §5 | P01 |
+| REL-04 | P0 validation bar strings still say "100 GB" while the ruled bar is ~1M / release-scale | STALE-CLAIM | `src/monitoring/p0_validation.py` acceptance strings (ledger 2026-08-03) | CLAUDE.md | P01 |
+| REL-05 | Criteria-calibration prose arm pinned at `after_id=0, limit=500` — never advances in the bundle | UNBUILT (instrument defect) | CLAUDE.md 2026-08-23 "expensive calibration arm"; `src/api/diagnostics.py` member args | CLAUDE.md | P01 |
+| REL-06 | 0.4 row 4 tooling: committed import demonstration + disqualified-source spot-check script | UNBUILT | gate §5 closing clause | gate doc | P07 |
+| REL-07 | 0.4 row 7b ≥72 h soak — instrumentation exists (`collect_perf`, stall forensics), the run is the operator's | OPERATOR-GATED | gate §5; `UNATTENDED_RUN_RUNBOOK.md` | gate doc | P01 |
+| REL-08 | `docs/CHANGES.md` 0.3.0 section is current up to 2026-09-05; the tag-day amendment of "Not yet tagged" | UNBUILT (at tag) | `docs/CHANGES.md` | — | P01 |
+| REL-09 | Ledger restructure (Open queue → `docs/ledger/OPEN_QUEUE.md`, rule (1) amendment, retire shipped entries, size ratchet) | RULING-GATED (A3) | `docs/design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md` §7; CLAUDE.md 1,339,174 B / 161 bullets | proposal | P03 |
+| REL-10 | Freshness issue #998: vendored Alpine upstream v3.17.0 vs `reviewed_through` v3.16.2 (on-security policy) | OPERATOR-GATED (review) | GitHub issue #998; `configs/external_artifacts.yml` `vendored-alpine` | issue | P14 |
+
+## DOC — documentation hygiene
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| DOC-01 | 2026-07-17 docs-review T1 (docs/README index), T2 (`test_docs_index_covers_live_docs`), T3 (AUDIT_TRAIL backfill), T5 (USER_MANUAL banner), T6 (QUICKSTART "Phases" heading + fr mirror) | BUILT (STALE-CLAIM in `ACTION_PLAN_2026-07-22` Phase 2, which still lists them open) | `docs/README.md` mentions legal/audit/process/…; `tests/test_repo_invariants.py:7651`; `AUDIT_TRAIL.md` entries to 2026-07-22; `docs/USER_MANUAL.md:2780` banner; `docs/QUICKSTART.md:365` | ACTION_PLAN_2026-07-22 §Phase 2 | P02 |
+| DOC-02 | T9 FUTURE_DEVELOPMENTS reality-check: 19/50 sections STALE-CLAIM, 4 embedded historical ledgers (§3 field-test 2026-06-24, §4 consolidated to-do, §5 0.0.9 sequencing, §47 field diagnostics 2026-06-27), 3 duplicate pairs (§1/§22, §35/§43, §2/§49) | UNBUILT (A4 decides depth) | agent A report; `docs/FUTURE_DEVELOPMENTS.md` 3,099 lines / 50 sections | ACTION_PLAN_2026-07-17 T9 | P02 |
+| DOC-03 | Dead refs: `scripts/import_eml.py`, ROADMAP "Email & Newsletter Intelligence", `docs/design/COLLECTOR_WRITER_BATCHING.md` (→ archive), `configs/stat_indicators.yml` (never created), `app.js:6151` / `backup_v2.py:269` line refs, bare `SCALE_ROADMAP.md` link | STALE-CLAIM | agent A; `ls scripts/import_eml.py` absent | FUTURE_DEVELOPMENTS | P02 |
+| DOC-04 | `docs/ROADMAP.md` last reconciled 2026-07-11 (+ a few 2026-08-20 touches); many rows stale vs the tree | STALE-CLAIM | `docs/ROADMAP.md:5,354` | ROADMAP | P02 |
+| DOC-05 | `docs/process/NAV_SOUP_QUARANTINE_STRATEGY_DRAFT.md` — superseded by the shipped quarantine column/write step + gate row 5 | STALE-CLAIM (retire/banner) | shipped.csv 2026-07-23 rows | process/ | P02 |
+| DOC-06 | Design-doc status banners: `ACTION_PLAN_2026-07-22` Phase 2 (done), Phase 8 (triage runs — done 2026-09-05), Phase 9 (closed); `AI_LAYER_STRATEGY_2026-07-29` "nothing built" (most built); `OBSERVATORY_DESIGN` "nothing built" (S0/S1 built); `SCRAPING_AUTOMATION_PLAN` / `UI_SHELL_REDESIGN_PLAN` "awaiting review" (largely built) | STALE-CLAIM | banners quoted in the analysis | design/product docs | P02 |
+| DOC-07 | CLAUDE.md Open-queue entries that describe since-shipped work as open: card-audit `-inf` (fixed, `src/briefing/card_audit.py:1623`); qualification-assist UI trigger (`src/static/app-sources.js:396`); newsletter links → `ArticleLink` (`src/ingest/email.py:418,474`); server IP in the reader (`src/api/main.py:1842`); per-source observed IPs (`src/analytics/queries.py:1369`) | STALE-CLAIM | tree anchors | CLAUDE.md | P02 |
+| DOC-08 | `docs/product/USE_CASES.md` predates the UI rework (banner present) | BUILT (banner) | file header | — | P02 |
+
+## SRC — sources, qualification, discovery
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| SRC-01 | `enabled` vs `qualified` split: `select_unqualified` trial-fetches DISABLED candidates; a `qualified` verdict never flips `enabled`; collection requires both | RULING-GATED (B1) | `src/catalog/qualification.py:231`; `src/scheduler/runner.py:419-426` | CLAUDE.md 2026-07-26 item 9 | P04 |
+| SRC-02 | Phase-2 promotion frontier (candidate → trial → graduated; additive `SourceCandidate` state columns; consent-gated trial-enable; audit view + undo) | UNBUILT | `ACTION_PLAN_2026-07-13` omnibus status "REMAINING (the dedicated Phase-2 slice)" | design doc | P04 |
+| SRC-03 | Discovery-trail provenance panel (first citing article + citing source, click-through) | UNBUILT | CLAUDE.md 2026-07-20 SOURCE DISCOVERY TRAIL (1) | CLAUDE.md | P04 |
+| SRC-04 | Qualified-citations tally + reciprocal drills (per class → cited domains list → citing articles) | UNBUILT | CLAUDE.md 2026-07-20 (2) + reciprocal ruling | CLAUDE.md | P04 |
+| SRC-05 | Corpus facet filters (source/language present in the current corpus) in the Articles subtab; id-seeded corpus INTERSECT on refine | UNBUILT | CLAUDE.md 2026-07-20 (3) | CLAUDE.md | P15 |
+| SRC-06 | Newsletter links → `ArticleLink` rows (feeds both funnels) | BUILT (STALE-CLAIM in CLAUDE.md "not the case today") | `src/ingest/email.py:418 _email_link_rows`, `:474` | CLAUDE.md 2026-07-20 (1) | P02 |
+| SRC-07 | `configs/source_qualification.yml` generation from real instances (loader/export/merge script shipped 2026-09-04) | OPERATOR-GATED (B5) | file absent; `scripts/merge_source_qualification.py` present | CLAUDE.md 2026-09-04 | P04 |
+| SRC-08 | Recency-windowed re-check (the 6-month re-verification reads whole history) | RULING-GATED (B7) | CLAUDE.md 2026-09-04 "NAMED FOLLOW-UP" | CLAUDE.md | P04 |
+| SRC-09 | `PATHOLOGY_ABS_FLOOR` 0.5 unreachable (max observed 0.211); options (a)/(b)/(c) | RULING-GATED (B6) | CLAUDE.md 2026-08-03 "SLICE 5 IS A MAINTAINER DECISION" | CLAUDE.md | P04 |
+| SRC-10 | Source-tag review remainder: 59 domains below the article floor; 47 whose batch failed the canary (re-run after the canary re-spec) | OPERATOR-GATED (a re-run) | CLAUDE.md 2026-09-05 source-tags entry | CLAUDE.md | P04 |
+| SRC-11 | 54 duplicate domains → 227 of 3,429 `configs/sources.yml` entries unreachable by the create-only seeder | UNBUILT (data fix + guard) | CLAUDE.md 2026-09-05 lesson | CLAUDE.md | P04 |
+| SRC-12 | Retroactive apply of tag edits to an existing corpus (seeder is create-only) | UNBUILT | CLAUDE.md 2026-09-05 | CLAUDE.md | P04 |
+| SRC-13 | Source-diversification brief's 14-cluster networked run (English share ~69%) | OPERATOR-GATED | `SOURCE_DIVERSIFICATION_BRIEF.md` banner | design doc | P04 |
+| SRC-14 | De-US remainder: Wikidata generator run for the 73 named gaps; `catalog_targets.yml` ratification; alias table | OPERATOR-GATED / RULING-GATED | FUTURE_DEVELOPMENTS §"De-US-centring" | FD | P04 |
+| SRC-15 | World-discovery ride-along RUN on a real instance + `build_world_news_catalog.py` committed for every install | OPERATOR-GATED | CLAUDE.md 2026-07-15 | CLAUDE.md | P04 |
+| SRC-16 | S6.1b cited-provenance remainder: background citing-resolve job at scale, denormalised `citing_source_id`, the citing-trail surface | UNBUILT | CLAUDE.md S6 closeout (2) | CLAUDE.md | P04 |
+
+## KW — keyword engine, translation, disambiguation
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| KW-01 | Slice 3: date-aware month block + re-index (gated on the occupancy number) | OPERATOR-GATED (E1) then buildable | design doc §8 row 3; `src/analytics/month_occupancy.py` shipped | KEYWORD_TRANSLATION design | P06 |
+| KW-02 | Slice 4: ambiguity map from the Wikidata fetch + `held_back.ambiguous_language` | OPERATOR-GATED (E2 allowlist) | §8 row 4; §6c.5 the one open number | design doc | P06 |
+| KW-03 | Slice 5: ring coverage expansion (168-seed batch prepared; generator OVERWRITES `-o`) | OPERATOR-GATED | CLAUDE.md RING LIFECYCLE | CLAUDE.md | P06 |
+| KW-04 | Slice 6: sense INVENTORY coverage (the pick mechanism shipped over 91 collisions) | OPERATOR-GATED (dump) | §8 row 6, §8c | design doc | P06 |
+| KW-05 | Slice 7: synonym tier via the SKOS family (OMW refuted) — licence check | RULING-GATED (E4) | §8 row 7 | design doc | P06 |
+| KW-06 | Wiktextract share-alike ruling | RULING-GATED (E3) | §6b.4 | design doc | P06 |
+| KW-07 | Stoplist (1)/(2) ruling; English 11,263 + French 881 global-channel batch; zh/ja/th 611 after `[segmentation]` re-index | RULING-GATED (B2/B3) + OPERATOR-GATED | CLAUDE.md 2026-09-05 | CLAUDE.md | P05 |
+| KW-08 | 64,910 `kind_overrides` proposals | RULING-GATED (B4) | CLAUDE.md 2026-09-05 | CLAUDE.md | P05 |
+| KW-09 | Ring lifecycle: institutionalised refresh cadence + `translation_coverage` on the KPI board + a `--refresh` QID-refresh mode for `generate_wikidata_rings.py` | UNBUILT | CLAUDE.md RING LIFECYCLE (two agreed mechanisms) | CLAUDE.md | P06 |
+| KW-10 | Keyword-skeleton fingerprint persistence + live `skeleton_echo` producer wiring | UNBUILT (dormant stretch) | `ACTION_PLAN_2026-07-22` Phase 7; `src/analytics/skeleton.py` pure core | design doc | P05 |
+| KW-11 | In-app review-and-apply of analyzer proposals (`generic_terms`, ring candidates, mistags) — the S4 panel | UNBUILT | `ACTION_PLAN_2026-07-22` 4.2 | design doc | P05 |
+| KW-12 | Stoplists → data files (4.1) | BUILT (2026-07-23 `configs/stopwords_extra/<lang>.yml`; STALE-CLAIM in the 2026-07-22 plan) | `ls configs/stopwords_extra` | design doc | P02 |
+| KW-13 | P5.2 static-embedding recall layer (model2vec/sqlite-vec/RRF) | OPERATOR-GATED (graded gold set) | KEYWORD_ENGINE_OPTIMIZATION_STRATEGY | strategy doc | P05 |
+| KW-14 | P6 entity→QID (OpenTapioca) | OPERATOR-GATED + licence check | same | strategy doc | P05 |
+| KW-15 | BM25F default weights (A/B harness built, no chosen weights) — needs the graded gold set | OPERATOR-GATED | strategy doc; Settings → Diagnostics gold-set builder | strategy doc | P05 |
+| KW-16 | Entity families: caps-furniture batch, Roman-numeral exclusion, cross-script alias rings, kind-dropdown honesty | BUILT (2026-07-19..21, per the 2026-07-22 audit) | `ACTION_PLAN_2026-07-22` §0 | — | — |
+| KW-17 | Clickable-keyword stats hover (slice 2) — "which stats" undecided | RULING-GATED (soft) | FUTURE_DEVELOPMENTS §"Clickable in-article keywords" | FD | P17 |
+| KW-18 | Per-language month scoping (a stopwords-ARCHITECTURE change; complement to slice 3) | UNBUILT | design doc §8 last row | design doc | P06 |
+
+## LAW — the law vertical
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| LAW-01 | CLML adapter offline half | BUILT | `src/law/adapters/clml.py`, `diff.py` | law brief S6 | P13 |
+| LAW-02 | Adapter LIVE half + enumeration (legislation.gov.uk, gesetze-im-internet, EUR-Lex) — egress 403 in the sandbox | OPERATOR-GATED (F1) | CLAUDE.md law rulings 34a status | CLAUDE.md | P13 |
+| LAW-03 | Gazettes-as-streams (S7): verified RSS candidates (Vietnam, St Vincent `legal.gov.vc`) → `source_type legal` | UNBUILT | CLAUDE.md law batches | CLAUDE.md | P13 |
+| LAW-04 | PDF handling: `[pdf]` extra + `src/ingest/pdf.py` degrade loudly | BUILT | `src/law/corpus.py:129-133` comment; pyproject `[pdf]` | — | P13 |
+| LAW-05 | Breadth-first track (per-country corpora beyond adapters) — ruled "marked for later" (A4) | UNBUILT (ROADMAP row) | CLAUDE.md 2026-07-24 A4 | CLAUDE.md | P13 |
+| LAW-06 | AI change summaries auto at track time for UI-floor jurisdictions (A5) | UNCHECKED (summarize.py exists) | `src/law/summarize.py` | CLAUDE.md A5 | P13 |
+| LAW-07 | Catalog language threading (Cambodia-in-French → `LawDocument`/`Article.language`) — S4b | UNCHECKED | law brief S4b | CLAUDE.md | P13 |
+| LAW-08 | Coverage diagnostic denominators from the official enumeration (France 76 codes; the 27 dated counts) | PARTIAL | `src/law/coverage.py:31` | CLAUDE.md completeness principle | P13 |
+| LAW-09 | Per-country aggregate figures/indices/law/revisions + the Gini/GDP-through-time map | PARTIAL (map exists; per-country law aggregate not) | CLAUDE.md 2026-07-24 (3) | CLAUDE.md | P13 |
+| LAW-10 | Vetting board: 9 leads; ~25 robots-blocked domains (adapter/API paths or honest gaps); Grenada portal down; NK documented gap | OPERATOR-GATED (review) | CLAUDE.md law batches | CLAUDE.md | P13 |
+| LAW-11 | Legal-review anonymity clause (disclose identity to GitHub) — maintainer action | OPERATOR-GATED | D3 notes #693 | PR history | P02 |
+
+## GOV — governments and official statistics
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| GOV-01 | 36 WB indicator codes never fetched — `scripts/verify_worldbank_indicators.py` is ONE command on a networked machine | OPERATOR-GATED (F1) | script docstring | CLAUDE.md | P14 |
+| GOV-02 | Bloc rosters (Task 4) — registry deliberately EMPTY; own networked session | OPERATOR-GATED (G3) | `src/catalog/blocs.py` docstring | CLAUDE.md | P14 |
+| GOV-03 | OECD SDMX-JSON 1.0 / IMF message support (parser handles one message shape; "SDMX-JSON 2.1" docstring corrected) | UNBUILT (needs a real fetched body) | `src/stats/sdmx.py:143-154` | CLAUDE.md 2026-08-13 lesson | P14 |
+| GOV-04 | Agencies directory 29 → ~152 with `news_url` (networked research pass) | OPERATOR-GATED (G5) | `src/stats/agencies.py` 29 entries | CLAUDE.md | P14 |
+| GOV-05 | CSV/OWID + JSON-stat/PxWeb + bulk-ZIP parsers (V-Dem/UCDP) | UNCHECKED (`src/stats/bulk.py` exists) | FUTURE_DEVELOPMENTS §"Statistical-data ingestion" | FD | P14 |
+| GOV-06 | Revision-anomaly detector over `StatFigure` vintages | UNCHECKED (`src/stats/revision.py` exists) | FD | FD | P14 |
+| GOV-07 | IPCC as a source + forecast/prediction tracking | RULING-GATED (G4) | FD §"IPCC" | FD | P14 |
+| GOV-08 | Key-gated sources (EIA API v2, FRED, Comtrade, FIRMS, OpenAQ) — V1-2 | RULING-GATED (G1) | V1_PATHWAY §7 | V1 | P14 |
+| GOV-09 | BRICS Joint Statistical Publication; AfDB/UNECA continental endpoints | OPERATOR-GATED | CLAUDE.md 2026-08-07 rulings 2/46 | CLAUDE.md | P14 |
+| GOV-10 | Governments UI: WB-lens "no continental Africa" disclosure, compare rows, aggregates — maintainer click-through | BROWSER-GATED (UX pass) | CLAUDE.md 2026-08-20 board | CLAUDE.md | P15 |
+| GOV-11 | `page=2` cache-disabled confirmation + page-1 tail read (Task 2 loose ends) | OPERATOR-GATED | INTERNET_SESSION_PROMPT status | design doc | P14 |
+| GOV-12 | Series-as-Articles: FTS no longer matches `World Bank` / the series code (stated loss); `?source=`/`?tags=statistics` cover it | BUILT (loss stated) | CLAUDE.md 2026-08-20 lesson | — | P14 |
+
+## AI — the AI layer and the Bulletin
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| AI-01 | Bulletin S1: Layer-B narration as a `BackgroundJob` with a persisted cursor | UNBUILT | FD §"The Bulletin" REMAINING (S1); `src/bulletin/narration.py` inline | FD | P12 |
+| AI-02 | Bulletin S2: §18 export-privacy enumeration before a first evidence ZIP leaves a machine | UNBUILT | FD REMAINING (S2); `src/bulletin/evidence.py:7` | FD | P12 |
+| AI-03 | Bulletin Q4: `LAYER_A_REQUIRES_CAPABLE_HARDWARE = True` (one read) | RULING-GATED (D1) | `src/bulletin/gate.py:34,76` | FD §20 | P12 |
+| AI-04 | Bulletin Q1/Q2/Q3/Q5 | RULING-GATED (D2–D4) | FD §20 | FD | P12 |
+| AI-05 | Bulletin S4: `/llm-bench` on a GPU machine and a slow one (the §6.3 time budget) | OPERATOR-GATED | FD REMAINING (S4) | FD | P12 |
+| AI-06 | Model-weights revision pin in the registry + refuse-on-mismatch | RULING-GATED (D6) | CLAUDE.md 2026-08-05 finding | CLAUDE.md | P11 |
+| AI-07 | `X_AVAILABLE` capability probes (PQC/OTS) probe a round trip, not an import; pqcrypto stays `<1.0` | RULING-GATED (D7) | `src/custody/signing.py:61`, `timestamp.py:62`; pyproject bound | CLAUDE.md `PQC_AVAILABLE` entry | P11 |
+| AI-08 | Q8 live ollama.com library browse | RULING-GATED (D9) | no browse code (`src/llm/ollama.py` catalog only) | CLAUDE.md | P11 |
+| AI-09 | Multi-model specialisation bench | RULING-GATED (D8) | `MULTI_MODEL_SPECIALISATION_2026-08-10.md` "Nothing built" | design doc | P11 |
+| AI-10 | Perception extraction rollout: cleared fields only; graded gold set (R6) for numeric floors | RULING-GATED (D10) + OPERATOR | `src/ai_layer/perception_extract.py` gate | CLAUDE.md | P11 |
+| AI-11 | The refused-field list uncapped in the AI check | RULING-GATED (D5) | CLAUDE.md 2026-09-05 | CLAUDE.md | P11 |
+| AI-12 | Ollama `num_ctx` RAM auto-tune (B7 gap) | BUILT (STALE-CLAIM in the Session-B carry-over) | `src/ai_layer/context.py:169`, `MIN_NUM_CTX` | CLAUDE.md | P02 |
+| AI-13 | Bench roster reduction after the one-model ruling (8 entries; six roster tests are ABOUT the dropped entries) | UNBUILT | CLAUDE.md 2026-08-12 ONE MODEL entry "REMAINING" | CLAUDE.md | P11 |
+| AI-14 | Custom-model field moved to a buried advanced position | UNCHECKED | same entry | CLAUDE.md | P11 |
+| AI-15 | LFM2.5 Instruct first-party tag question (`LiquidAI` Ollama account) | OPERATOR-GATED (one lookup) | CLAUDE.md BENCH-ROSTER entry | CLAUDE.md | P11 |
+| AI-16 | Qualification-assist per-source button | BUILT (STALE-CLAIM in Session-B carry-over (c)) | `src/static/app-sources.js:396` | CLAUDE.md | P02 |
+| AI-17 | The ~50-anchor triage grading sitting + the real roster bench run on the rig | OPERATOR-GATED | CLAUDE.md Session E remaining | CLAUDE.md | P11 |
+| AI-18 | Deep-model tier / whole-corpus cited synthesis / corpus Q&A / per-surface LLM lenses (2026-06-17 expansion rulings) | UNBUILT (design-only) | CLAUDE.md IN-APP OLLAMA entry "REMAINING" | CLAUDE.md | P11 |
+| AI-19 | Per-article Summarize/Translate on the analysis Articles list | UNCHECKED | same | CLAUDE.md | P17 |
+
+## UI — browser-verified backlog
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| UI-01 | 12-locale sweep (4 covered), rule 9 adversarial screenshot reading, the Gecko/AppVM bar | BROWSER-GATED (H2) | `docs/audit/UI_CLICKTHROUGH_2026-08-20.md` open items | audit | P15 |
+| UI-02 | a11y P2s filed by the axe-core pass | UNCHECKED (agent F) | same | audit | P15 |
+| UI-03 | Inline `on*=` handlers: 331 in `index.html` + 259 in `app-*.js` (= 590); CSP `'unsafe-inline'` | UNBUILT (H4) | `grep -o " on[a-z]*=\""` counts; `src/api/main.py:555` | ROADMAP/PARKED | P15 |
+| UI-04 | Dead temporal-map cluster (`loadTimemap`/`renderTimemap`/`showTmapDetail` at `app-map.js:1633/1671/1689`) interleaved with live helpers; `#corpus-win` modal (`index.html:2895`); orphan `loadIndicesData`/`loadMarketData`; orphan `#onboard` keys | UNBUILT (browser-verified deletion) | tree greps | CLAUDE.md DEFERRED DEAD-UI-CODE | P15 |
+| UI-05 | Insights search bar removal (`#ins-term` `index.html:1135`, `exploreTerm` `app-corpus.js:626`) — absorption-gated | RULING-GATED (H3) | tree | CLAUDE.md S4.4 | P15 |
+| UI-06 | `ooViz` unwired primitives (11: `binCounts1D`, `bin2D`, `fiveNumberSummary`, `sqrtAreaScale`, `symbolRadii`, `pathWithGaps`…) | UNBUILT (activations need a surface) | `docs/plans/2026-08-04-gui-visualization-plan.md` status | plans | P16 |
+| UI-07 | i18n ratchets 560 untranslatable / 297 unkeyed `t()` — a lowering program | UNBUILT | ci.yml | ci | P15 |
+| UI-08 | Leads 2.0 grading onto Home (evidence chips, sort control, lifecycle deltas) | BROWSER-GATED | CLAUDE.md OPTIMIZATION-TAIL carry-over (a) | CLAUDE.md | P15 |
+| UI-09 | Conjunction-lens deeper views (conditional trend · vocabulary contrast · intensity · lead/lag) — payload extension | UNBUILT | carry-over (b) | CLAUDE.md | P15 |
+| UI-10 | Sparse-rule reach decision for `ringDumbbellSvg` / `commodityOverlaySvg` / `ooDonut` | RULING-GATED (soft) | Session D §1.9 | CLAUDE.md | P15 |
+| UI-11 | El Niño agenda span banners (after ONI verification + span support) | OPERATOR-GATED (ONI) | omnibus 1(c) | design doc | P19 |
+| UI-12 | Subjectivity reader HIGHLIGHT panel (spans emitted, no surface) | UNBUILT | S5 carry-over (e) | CLAUDE.md | P15 |
+| UI-13 | Post-import results screen (Articles-first headline, corpus delta, work induced) | UNCHECKED (2026-07-22 audit said the headline shipped) | CLAUDE.md POST-IMPORT entry | CLAUDE.md | P15 |
+| UI-14 | `prefers-contrast` unhandled; `.sr-only` absent from the static shell | UNCHECKED | GUI audit G-3 | audit | P15 |
+| UI-15 | Observatory `ooSky` renderer + dedicated tab (backend S0/S1 shipped) | BROWSER-GATED (H1) | `src/analytics/observatory.py`, `/observatory` route; no frontend hits | OBSERVATORY_DESIGN | P16 |
+| UI-16 | ooMap embed on When/Where + Insights; per-slide perf on huge corpora | UNBUILT | CLAUDE.md MAP REWORK remaining | CLAUDE.md | P19 |
+| UI-17 | Task-manager History tab; per-job rate/ETA/bandwidth cap (owner-measured) | UNBUILT (deliberately, needs owner-measured rates) | CLAUDE.md #20 | CLAUDE.md | P10 |
+| UI-18 | GUIs gallery: human click-through across themes; screenshot thumbnails; translate the per-UI essays | BROWSER-GATED | invariant #30 | CLAUDE.md | P15 |
+| UI-19 | Every "browser-unverified per fork-3/Q6a" slice since 2026-06 not covered by the 08-13/08-20 walks | BROWSER-GATED | the walks' surface list | audits | P15 |
+
+## DAT — data, backup, import, storage
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| DAT-01 | S6.2 file members (wiki/OSM/models) inside the SIGNED volume manifest (`file_members` block + traversal guards) | UNBUILT | no `file_members` in `src/backup/artifact.py`/`stream_backup.py` | CLAUDE.md S6 closeout (1) | P07 |
+| DAT-02 | Legacy single-file restore removal | RULING-GATED (C1) | `src/api/backup_v2.py:49…374`, `app-backup.js:604,660` | FD §49 | P07 |
+| DAT-03 | Import checkpoint interval K + prefetch | RULING-GATED (C2/C3) | CLAUDE.md 2026-08-08 | CLAUDE.md | P08 |
+| DAT-04 | DB-10 migrate op (rebuild at the ruled pragmas) as a user-facing action | RULING-GATED (C5) | `src/database/connect.py:84` fresh-file pragmas; bench = mechanism proof | CLAUDE.md | P22 |
+| DAT-05 | D1 httpfs binaries + pins (`configs/external_artifacts.yml:491-495` blank) | OPERATOR-GATED (C6) | registry | PERSISTED_DUCKDB_HTTPFS | P22 |
+| DAT-06 | Data-location chooser at first launch (`OOS data` subfolder) | UNBUILT (C7) | no hits in unlock.html/unlock.py | FIX_SESSION_2026-07-14_STATE | P07 |
+| DAT-07 | Storage plan Phase C (packed/keyed/OOENC2 store, contentless FTS, hash-sharding prototype) + §8 rulings 3–6 | RULING-GATED (C4) | STORAGE_5TB_PLAN §8 | design doc | P22 |
+| DAT-08 | `_MERGE_NOT_CARRIED` five identity-less tables — handlers | BUILT (2026-08-03 rulings received + built) | CHANGES 0.3.0; `src/backup/merge.py:1696` list now only derived/per-machine tables | — | — |
+| DAT-09 | Run-journal + `run_logs` in backups? (journal files are per-machine; not carried) | UNCHECKED | `docs/maintenance/RUN_JOURNAL.md` | — | P07 |
+| DAT-10 | Postgres parity vs SQLite-only | RULING-GATED (J3) | PARKED ARCH-06 | PARKED | P20 |
+| DAT-11 | `sqlite3mc` benchmark trial | RULING-GATED (C4 #6) | STORAGE_5TB_PLAN §6 | design doc | P22 |
+| DAT-12 | Merge step 3 unexplained 15–65× gap (FTS relocated; residual candidates: codec over multi-GB FTS segments, virtual disk); `cost_probe` measures on the operator's machine | OPERATOR-GATED | CLAUDE.md MERGE STEP 3 entry | CLAUDE.md | P08 |
+
+## PERF — throughput, scale, crash-brief remainder
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| PERF-01 | Crash brief S3.6: lock-state cache + 56 DB-touching `async def` handlers → `def` (source_management 50) | UNBUILT | `src/api/source_management.py:373 async def list_sources` (53 async defs); `main.py:657 _lock_gate` uncached | crash brief §5 S3.6 | P09 |
+| PERF-02 | Crash brief §8 field twins (B pass, C 72 h soak, A bundle, P0-style run) + host kernel-log checks | OPERATOR-GATED | brief §8 | brief | P09 |
+| PERF-03 | Throughput C16 (S-D extraction out of the write gate, evidence-gated on writer-bound verdicts) + C17 (A1 decouple ingestion from enrichment) | UNBUILT (deferred per the brief's own gates) | shipped.csv row 464 | C brief | P10 |
+| PERF-04 | Indexing throughput board ①–⑨ (`INDEXING_THROUGHPUT_ANALYSIS_2026-08-03`) — per-item status | UNCHECKED (agent B) | design doc | design doc | P10 |
+| PERF-05 | Before/after bench on the 8-core/20 GB machine for the duty-cycle fix; the 5M diagnostics bar returns when speed allows | OPERATOR-GATED | CLAUDE.md 2026-07-23; gate row 3 note | CLAUDE.md | P10 |
+| PERF-06 | `collect_perf` rolling retention too short to see multi-hour stalls (Library graphs are the detector) | PARTIAL | CLAUDE.md 2026-07-23 | CLAUDE.md | P10 |
+| PERF-07 | Overlap the network ride-alongs with the next pass's fetch phase (S4.1 cause ii) | UNBUILT | CLAUDE.md 2026-07-23 REMAINING | CLAUDE.md | P10 |
+| PERF-08 | Collector write-batching remainder (extraction-in-gate) = C16 | see PERF-03 | — | — | P10 |
+| PERF-09 | Per-job rate/ETA/bandwidth cap (owner-measured bytes-over-time; throttling backend) | UNBUILT | CLAUDE.md #20 | CLAUDE.md | P10 |
+| PERF-10 | 0.4 row 7b soak support: engage cycles/day, `wal_history` max, busy share, `/api/database/stats` p95, `interrupted` count — a one-page soak REPORT member | UNBUILT (instrument) | brief §8 field twins | brief | P01 |
+
+## NET — security and network
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| NET-01 | SSRF TOCTOU: connect-time IP pinning (custom transport adapter) | UNBUILT | PARKED "Still open (2026-08-20)" | PARKED | P21 |
+| NET-02 | `safe_href` broad `except Exception` in `src/utils/security.py:246,287` | UNBUILT (own slice) | PARKED | PARKED | P21 |
+| NET-03 | DDG redirect results dropped (`uddg` unwrap; zero hits for `uddg` in src) | UNBUILT (behaviour change) | PARKED; grep | PARKED | P21 |
+| NET-04 | Nonce-based CSP (blocked on inline-handler retirement) | UNBUILT | `src/api/main.py:555` | audit S-008/S-012 residuals | P21 |
+| NET-05 | S-012 indirect prompt-injection posture for LLM inputs | UNCHECKED | D1 notes #34 | PR history | P21 |
+| NET-06 | Tor-exit-resolve (SOCKS 0xF0) for source IP over Tor | RULING-GATED (I3) | CLAUDE.md SOURCE IPs amendment | CLAUDE.md | P21 |
+| NET-07 | `oo-netcut` privileged airplane layer; Stem-controlled Tor + consented per-source clearnet | RULING-GATED (I4) | FD §"Reliable Tor" / network switch | FD | P21 |
+| NET-08 | App self-update mechanics (snapshot→verify→migrate→swap→rollback) + Q1–Q5 | RULING-GATED (G9) | FD §"In-app self-update"; no `self_update` code | FD | P21 |
+| NET-09 | Release signing key (checksums only today) | RULING-GATED | gate §7.3 step 7 | gate | P21 |
+| NET-10 | Airplane guard: SOCKS/Tor blind spot CLOSED 2026-07-25; `_tunnel` + `socksocket.connect` patched | BUILT | audit 09 fix-forward | — | P21 |
+
+## STRUCT — structural debt and test hygiene
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| STR-01 | S-1 `src/api/diagnostics.py` 6,200 lines / 126 routes → package split | RULING-GATED (J1) | `wc -l`; `grep -c @router` | ROADMAP S-1 | P20 |
+| STR-02 | S-2 import cycles: 6 modules import `src.api.main` (diagnostics, llm, ai, insights, unlock, scale_bench) | UNBUILT | grep | ROADMAP S-2 | P20 |
+| STR-03 | S-4 ad-hoc slicer budget 232 → lower (route through `js_source_helper`) | UNBUILT (ratchet) | `tests/test_source_slicing_discipline.py:253` | ROADMAP S-4 | P20 |
+| STR-04 | `structlog` orphaned core dependency (pyproject:79, 0 call sites) | RULING-GATED (J2) | grep | PARKED MAINT-04 | P20 |
+| STR-05 | `view_article` (`src/api/main.py`) / `build_families` refactors; cc≥C list | UNBUILT | PARKED | PARKED | P20 |
+| STR-06 | MinHash vectorisation (PERF-01) | UNBUILT (low) | PARKED | PARKED | P20 |
+| STR-07 | ruff advisory lane 344 → 0; mypy/ruff-style blocking flip | PARTIAL (mypy blocking; ruff style advisory) | PARKED; ci.yml | PARKED | P20 |
+| STR-08 | Subset-order test pollution: `test_a2_job_endpoints` before `test_doctor_healthy_returns_zero` | UNBUILT (flagged 2026-07-12) | CLAUDE.md S1.1 finding | CLAUDE.md | P20 |
+| STR-09 | 84 `print(` statements — all blessed by the AST guard; migration set EMPTY | BUILT (nothing to do) | PARKED MAINT-04 | — | P20 |
+| STR-10 | `ConfidenceInterval.sample_size` fractional under Haldane–Anscombe — a statistics call | RULING-GATED (soft) | PARKED | PARKED | P20 |
+
+## NEWS — newsletters
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| NEWS-01 | eTLD+1 PSL resolver + deterministic silent auto-attach + UNDO window + platform inversion (substack etc.) | UNBUILT | no `public_suffix`/`etld` in src; `src/privacy/` holds only `link_sanitizer.py` | EMAIL_NEWSLETTER_IMPORT_PLAN S2/S3 | P19 |
+| NEWS-02 | Task-manager-visible job over a long live mailbox pull | UNBUILT | CLAUDE.md ruling 11 REMAINING | CLAUDE.md | P19 |
+| NEWS-03 | Stored/encrypted credentials for repeat pulls | RULING-GATED (I1) | same | CLAUDE.md | P19 |
+| NEWS-04 | Import-time no-recovery disclosure ×12 | UNCHECKED | Non-negotiables contingency | CLAUDE.md | P19 |
+| NEWS-05 | Legacy `scripts/import_eml.py` retirement | BUILT (file absent) | ls | plan "To retire" | P19 |
+
+## WIKI — Wikipedia as a living source
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| WIKI-01 | Whole-edition ingest: dump-as-baseline + `recentchanges` delta + auto-track after a dump download | UNBUILT (only title-list `ingest_dump_pages` + `fetch_recentchanges` client exist) | `src/wiki/corpus.py:237,275`; `client.py:81` | FD §1/§22; V1-9 | P18 |
+| WIKI-02 | Dedicated tracked-changes TAB in the reader | UNBUILT | no hits | CLAUDE.md WIKIPEDIA entry | P18 |
+| WIKI-03 | Wikitext rendering | UNBUILT | no renderer | CLAUDE.md | P18 |
+| WIKI-04 | Per-mention revid anchoring | UNBUILT | — | CLAUDE.md | P18 |
+| WIKI-05 | One consented "refresh exact sizes" replacing the per-edition probe button | UNBUILT | CLAUDE.md INLINE AUTO SIZE remaining | CLAUDE.md | P18 |
+| WIKI-06 | Questions 1–5 | RULING-GATED (G10) | FD §988 | FD | P18 |
+
+## MAP — maps and geo
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| MAP-01 | OSM offline preprocessing bridge (admin-1 boundaries + gazetteer + finer admin-0; border honesty) | UNBUILT | only `src/geo/osm_*` download manager + `src/static/osmpbf.js` bounded preview | ACTION_PLAN_2026-07-13 Part 2; 2026-07-22 Phase 6 | P19 |
+| MAP-02 | Map change-tracking over dated OSM extracts | UNBUILT (later) | same | design doc | P19 |
+| MAP-03 | Sources-by-observed-IP choropleth dimension (distinct from asserted country) | UNCHECKED (reader + per-source view built) | `queries.py:1369 source_observed_ips` | CLAUDE.md SOURCE IPs (3) | P19 |
+| MAP-04 | Dead temporal-map deletion (see UI-04) | — | — | — | P15 |
+
+## AGD — agenda, events, hazards, weather
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| AGD-01 | Religious calendars (Islamic tabular ±1 day; Hindu/Buddhist published tables) + eclipse canon — dates from the maintainer | OPERATOR-GATED (G8) | ruling 9 (2026-06-17) | CLAUDE.md | P19 |
+| AGD-02 | RRULE recurrence expansion of imported VEVENTs; month-span banners; `since:` origin display; saved-filter smart calendars | UNBUILT | no `rrule` in `src/events`; `catalog.py:73` spans exist for curated | S6 closeout (3) | P19 |
+| AGD-03 | Moon quarter phases (accepted loss when the feed was retired) | UNBUILT (optional) | CLAUDE.md 2026-07-17 (2) | CLAUDE.md | P19 |
+| AGD-04 | Online-calendar catalog expansion (networked acquisition) | OPERATOR-GATED | CLAUDE.md 2026-07-17 (5) | CLAUDE.md | P19 |
+| AGD-05 | Elections calendar acquisition session (coverage floor + three-tier confidence) | RULING/OPERATOR-GATED (G2) | V1 §4.5 | V1 | P23 |
+| AGD-06 | Event significance tier / personal tag namespace / IPO-tech-launch-regulatory calendars | UNBUILT (ideas) | D1 notes #43/#50 | PR history | P19 |
+| AGD-07 | Hazard channels beyond USGS/GDACS (NWS, ReliefWeb, FEWS NET, EONET, WHO); nuclear/radiological urgent rule; official forecast relay | UNBUILT | `src/hazards/parse.py` GDACS+USGS only | FD §"Hazard & news alerting"; D1 #51/#52 | P19 |
+| AGD-08 | Open-Meteo anomaly baselines, signal-keywords, reader weather row, temporal-map overlay | UNBUILT (slice 1 shipped) | FD §"Open-Meteo" | FD | P19 |
+| AGD-09 | El Niño ONI clearnet verification (`verification_status` flagged) | OPERATOR-GATED | `configs/climate_events.yml:11,20` | FD | P19 |
+| AGD-10 | Agenda ↔ Wikipedia linking | UNBUILT | FD §"Agenda ↔ Wikipedia" | FD | P19 |
+| AGD-11 | Lunar-effects testing framework (correlate daily series vs lunar, BH-FDR, pre-registration UI) | UNBUILT (series shipped) | FD §"Lunar-effects" | FD | P19 |
+
+## V1 — verticals and user-centric features
+| ID | Item | Verdict | Evidence | Claim lives in | Prompt |
+|---|---|---|---|---|---|
+| V1-A | V1-1..V1-9 rulings | RULING-GATED (G1) | V1_PATHWAY §7 | V1 | P23 |
+| V1-B | Elections/civic: roster (two-class deduced/confirmed), coverage floor, poll Tier 2, event-timed-op card, flag-distribution self-audit | UNBUILT (design complete) | FD §"Elections"; `configs/world_events.yml` elections calendar only | FD | P23 |
+| V1-C | Climate/environment: OWID CSVs, quakes/fires/air quality (key-gated), ONI | UNBUILT | V1 §4.3 | V1 | P23 |
+| V1-D | Patents/IP, PubMed (V1-4), conflict/defense (V1-3) | UNBUILT (no code) | `grep pubmed/patent src` → producers only | V1 §4 | P23 |
+| V1-E | Claim Workspace A1, entity spine, dossier (0.5); A2 corpus passport; A8 saved analyses; A9 since-last-visit | UNBUILT | FD §"User-centric reflections" A1–A9 | FD | P23 |
+| V1-F | Scenario cards remaining: #1 warnings-existed, #5 news-desert atlas, #6 story-propagation (BUILT as `story_propagation`?), #4b BURY half, silent-disasters, law-takes-effect | PARTIAL (`disputed_chronology`, `story_propagation` exist at producers.py:2589/2654) | grep | FD §"Seven remaining scenario cards" | P23 |
+| V1-G | Training & onboarding supervised track (curriculum, facilitator guide, synthetic exercise corpus) | UNBUILT (design) | FD §"Training & onboarding" | FD | P23 |
+| V1-H | Voice-only mode; Open Commons Mirror sister project; offline LLM kit (RM-08) | UNBUILT (designed, not committed) | FD | FD | P23 |
+| V1-I | Language-manipulation detector ideas from the never-merged PR #16 (fallacies, euphemism, doublespeak, weasel claims) — recorded in FD? | UNCHECKED (grep found FD mentions) | D1 notes | PR history | P23 |
+
+## PRH — items found ONLY in the PR history (not in CLAUDE.md, ROADMAP, PARKED, FUTURE_DEVELOPMENTS or shipped.csv)
+
+The four PR-history agents read every merged and closed pull request from #1 to #1010 and cross-checked each
+forward-looking sentence against the five memory files. These are the ones that matched nothing. Each is small;
+the value is that a deliberate decision or a known defect stopped being written down anywhere a future session
+would look.
+
+| ID | Item | Verdict | Evidence | First recorded in | Prompt |
+|---|---|---|---|---|---|
+| PRH-01 | `backfill_corpus` (the automatic Insights top-up) has **no cursor** — an article that legitimately yields zero terms is re-selected on every call, forever, and occupies the front of the queue | UNBUILT (live-reproduced) | `src/analytics/store.py:507` `_unindexed_query(...).order_by(Article.id).limit(...)`; reproducer `scripts/analysis/repro_backfill_wedge.py` | PR #851 | P05 |
+| PRH-02 | `structlog` is an orphaned core dependency: declared in `pyproject.toml:79`, **zero** call sites in `src/` (stdlib logging ~612 sites) | RULING-GATED (J2) | `grep -c structlog src/**/*.py` → 0 | PR #967 (PARKED) | P20 |
+| PRH-03 | `_clean_url` strips the query string **before** validation, so every real DuckDuckGo `/l/?uddg=<target>` redirect result loses its target and is discarded as scheme-less; the existing test asserts only `isinstance(results, list)` | UNBUILT (behaviour change) | `src/services/duckduckgo.py:195,217` | PR #967 | P21 |
+| PRH-04 | `scripts/setup_llm.py::start_ollama` is dead code calling `self.model_manager.start_ollama()` on a module that no longer exists | UNBUILT (delete or repair) | `scripts/setup_llm.py:141,299` | PR #793 | P20 |
+| PRH-05 | `extract_locations` compiles and scans the whole text once **per gazetteer entry** (~4,700 regexes; 2,558 ms/article at 4,500 cities) — only bites installs that ran `build_city_gazetteer.py` | UNBUILT (measured, not fixed) | `src/timemap/locextract.py:164` `for rx, name, kind in _patterns(): for m in rx.finditer(text)` | PR #799 | P05 |
+| PRH-06 | Keyword aggregates in `store.py`, `rollup_serve.py` and `columnar.py` have **no quarantine filter** (`queries.py` has 9 references, the other three have 0) — the two must move together with `corpus_language_shares` | UNBUILT | grep counts above | PR #817 / #863 | P05 |
+| PRH-07 | `AiKeyword.evidence` (`models.py:1944`) has zero writers, and `POST /api/ai/keywords/confirm` has no frontend consumer | UNBUILT (wire or retire) | grep: no `AiKeyword(... evidence=` writer; no `ai/keywords/confirm` in `src/static/` | PR #787 / #802 | P11 |
+| PRH-08 | `r.samples` for sources is dead: the sample query runs after the INSERT, so its `NOT EXISTS` is never true and the list is always empty | UNBUILT | PR #915 body | PR #915 | P07 |
+| PRH-09 | `#vllm-model-input` is never prefilled from the stored `llm_model_vllm` setting | UNBUILT (papercut) | PR #793 body | PR #793 | P11 |
+| PRH-10 | Nine `shipped.csv` rows (2026-07-18 … 08-13) carry a bare `PR pending` in `refs` although all nine merged — either a sweep or a convention ruling ("record the PR number on merge" vs "`PR pending` is fine") | UNBUILT (flagged) | PR #993 body | PR #993 | P02 |
+| PRH-11 | The four cross-language collision words deliberately omitted from the global stoplist (`sea`/`tom`/`fin`/`laut`) — the refusal is reasoned and recorded nowhere a future stoplist batch would read it | UNBUILT (record) | PR #514 body | PR #514 | P05 |
+| PRH-12 | A NULL-only backfill migration so existing installs pick up the `country_from_title` source-country recoveries (the fix is forward-only today) | UNBUILT | PR range #423–#520 notes | PR history | P04 |
+| PRH-13 | Platform-name stoplist ruling (`facebook`/`twitter`, `comments`/`follow`) — dual-use, never ruled | RULING-GATED (soft, fold into B2) | PR range #423–#520 notes | PR history | P05 |
+| PRH-14 | The unwired `#vitals-pop` popover is still in the tree (`index.html`, `app-boot.js`, `app-core.js`) and is **absent from** the recorded dead-UI worklist | UNBUILT | PR range #423–#520 notes; grep | PR history | P15 |
+| PRH-15 | Per-source boilerplate flags (the Pluralistic `yrsago` / `permalink` / `ISSN` case) — a source-scoped furniture channel distinct from the language-scoped stoplist | UNBUILT | PR range #423–#520 notes | PR history | P05 |
+| PRH-16 | `OO_REQUIRE_CONSENT`, `CONSENT_DOC_VERSION` and a web consent modal were designed during the legal-acceptance work and exist nowhere | UNBUILT | PR range #423–#520 notes | PR history | P21 |
+| PRH-17 | The legal `[À VÉRIFIER]` items and the per-release "confirm no telemetry" ritual are recorded in no memory file | UNBUILT (record) | PR range #423–#520 notes | PR history | P02 |
+| PRH-18 | Install docs were never updated for the seamless (no-prompt, auto-launch) installer | STALE-CLAIM | PR range #423–#520 notes | PR history | P02 |
+| PRH-19 | A future opt-in "leave no uninstall log"; the uninstall dynamic preview/confirm dialogs stay English | UNBUILT | PR range #423–#520 notes | PR history | P15 |
+| PRH-20 | The passphrase no-recovery WARNING and the security-dense custody paragraphs were deferred for native review, never scheduled | OPERATOR-GATED (native review) | PR #462 / i18n slices | PR history | P15 |
+| PRH-21 | `configure_ollama_store_access` is defined and test-pinned but never called from `src/llm/installer.py`; the `OLLAMA_MODELS` hint is never keyed | UNBUILT | PR range #423–#520 notes | PR history | P11 |
+| PRH-22 | Real floating events for `configs/world_events.yml` (only CHOGM is present) | UNBUILT (data) | PR range #423–#520 notes | PR history | P19 |
+| PRH-23 | First-run preflight still runs inline in `src/scheduler/runner.py` rather than as a visible job | UNBUILT | PR range #423–#520 notes | PR history | P09 |
+| PRH-24 | A "Registered statistics sources" view was designed and never built | UNBUILT | PR range #261–#520 notes | PR history | P14 |
+| PRH-25 | Bare-year date extraction; an acronym-aware mistagged-entity pass; the in-app Wikidata ring importer | UNBUILT (ideas) | PR range #261–#520 notes | PR history | P05 |
+| PRH-26 | `src/api/main.py` still holds inline endpoints that belong in the `core` router, and `observability.py` (Prometheus globals + middleware order) was never extracted | UNBUILT (refactor debt) | PR #236 | PR history | P20 |
+| PRH-27 | `tests/test_installer.py` leaves an `oo.env` behind in the checkout when it runs | UNBUILT (test hygiene) | PR #931 | PR history | P20 |
+| PRH-28 | `natural-earth-geometry` carries a blank `sha256` in the external-artifact registry (existence-only check) — the same one-line fix Alpine's entry got | UNBUILT | PR #976; `configs/external_artifacts.yml` | PR history | P02 |
+| PRH-29 | The Windows `pytest` lane HANGS (3 h 21 m → failure; ~6 h → cancelled) and "deserves a bisect against the suite, separately" | UNBUILT | PR #977 | PR history | P20 |
+| PRH-30 | `RestoreAborted` labels the outcome `cancelled` and journals "stopped-by-operator" when the operator cancelled nothing (also the quiesce barrier) | UNBUILT (re-labelling slice) | PR #987, recorded in a source comment | PR history | P07 |
+| PRH-31 | `_window_daily_series` omits zero-count days, so the index axis compresses (day 1 and day 5 render adjacent); repair is zero-FILLING and touches the trending sparklines | UNBUILT | PR #850 / #863 | PR history | P15 |
+| PRH-32 | The `h3`-over-`h2` type inversion fixed for `#tab-settings` still exists on Home, Insights, Markets panels and the two Export/Import dialogs | UNBUILT | PR #921 | PR history | P15 |
+| PRH-33 | Three Library subtab labels (`Activity`, `Tracked`, `Database & storage`) are unkeyed | UNBUILT | PR #867 | PR history | P15 |
+| PRH-34 | The 2026-06-17 supervised-training track (curriculum, facilitator guide, train-the-trainer, synthetic exercise corpus, safety self-check) is recorded only in PR #49 | UNBUILT (design) | PR #49 | PR history | P23 |
+| PRH-35 | The never-merged PR #16 (the maintainer's own idea file) lists a language-manipulation detector — formal/informal fallacies, sophism, euphemism, dysphemism, doublespeak, gaslighting, weasel claims, framing effect, slippery slope, false analogy, circular reasoning, red herring — and an article↔source publication-date delta | UNBUILT (idea) | PR #16 diff | PR history | P23 |
+
+### PR-history dispositions worth keeping (verified, nothing to do)
+- `p0_validation.py`'s "100 GB" acceptance strings were **corrected on 2026-08-03** — the module now carries the
+  real figures in a comment. REL-04 above is therefore closed; the ledger entry naming it is the stale half.
+- The three closed-unmerged PRs whose content re-landed elsewhere (#7 install, #18 PQC/custody, #66 the 0.09
+  branch) hold nothing that is not in the tree, **except** #18's key-rotation / Key-Revocation-List /
+  hardware-backed-key (YubiKey, TPM) design notes, which exist in no memory file.
+- PR #398 (blind-by-language keyword filter) and PR #496 (Home "Latest") were closed on purpose and both
+  refusals are recorded in CLAUDE.md — do not rebuild either.
+
+## Cross-cutting lists
+
+### Operator-gated (needs a networked machine, a real corpus, or the maintainer's hands)
+REL-01 (Tier A quarantine pass) · REL-02 (the tag) · REL-07 (≥72 h soak) · SRC-07 (`source_qualification.yml`) ·
+SRC-10 (source-tag canary re-run) · SRC-13/14/15 (diversification + de-US + world-discovery runs) ·
+KW-01 (month-occupancy number) · KW-02/04 (`dumps.wikimedia.org`) · KW-03 (168-seed ring batch) ·
+KW-13/14/15 (the graded gold sets) · LAW-02 (live enumeration) · LAW-10 (vetting board) ·
+GOV-01/04/09/11 (World Bank, agencies, BRICS/AfDB/UNECA, page-2 tail) · AI-05 (`/llm-bench` twice) ·
+AI-15 (the LiquidAI lookup) · AI-17 (the ~50-anchor grading) · DAT-05 (httpfs binaries) ·
+DAT-12 (`cost_probe` on the field machine) · PERF-02/05 (field twins, the 8-core bench) ·
+AGD-01/04/09 (calendars, ONI) · PRH-20 (native review) · REL-10 (Alpine freshness review).
+
+### Ruling-gated (a maintainer decision; question IDs in `QUESTIONS_FOR_THE_MAINTAINER.md`)
+A2 A3 A4 · B1 B2 B4 B6 B7 · C1 C2 C4 C5 C6 C7 · D1 D2 D3 D4 D5 D6 D7 D8 D9 D10 · E3 E4 · F1 ·
+G1 G2 G4 G8 G9 G10 · H1 H2 H3 H4 · I1 I3 I4 · J1 J2 J3.
+
+### Browser-gated (the sandbox CAN drive Chromium; the maintainer's UX pass is the remaining bar)
+UI-01 UI-08 UI-15 UI-18 UI-19 · GOV-10 · every slice stamped "browser-unverified per fork-3/Q6a" since
+2026-06 that the 2026-08-13 and 2026-08-20 walks did not reach.
+
+### Stale claims to correct (a doc says one thing, the tree says another)
+DOC-01 (the 2026-07-22 plan's Phase 2 is done) · DOC-03 (dead refs) · DOC-04 (ROADMAP) · DOC-05 (nav-soup draft) ·
+DOC-06 (six design-doc banners) · DOC-07 (five CLAUDE.md Open-queue entries describing shipped work) ·
+KW-12 (stoplists → data files) · SRC-06 (newsletter links) · AI-12 (Ollama `num_ctx`) · AI-16 (qualification-assist
+button) · UI-03 (the inline-handler count: ledger says 295, the tree says ~590) · REL-04 (the "100 GB" strings) ·
+PRH-18 (install docs) · the four "PENDING execution" brief banners whose briefs were executed within 48 hours.

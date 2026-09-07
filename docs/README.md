@@ -51,7 +51,12 @@ one that matches what you need.
 - **[design/](design/)** — per-feature design-of-record specs.
 - **[plans/](plans/)** — action plans written by a read-only reconnaissance pass for a *later*
   session to execute: verified current state with citations, scored candidates, and ordered
-  work units. Nothing here has been built (a plan states its own unverified claims).
+  work units. Nothing here has been built (a plan states its own unverified claims). The
+  2026-09-06 folder is the whole-repository sweep — its
+  [`00_INDEX.md`](plans/2026-09-06-repo-analysis/00_INDEX.md) maps every open item to one of
+  twenty-three session prompts, and
+  [`QUESTIONS_FOR_THE_MAINTAINER.md`](plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md)
+  collects the decisions those prompts are gated on.
 - **[process/](process/)** — the standing recursive-improvement-cycle protocol
   ([`IMPROVEMENT_CYCLE.md`](process/IMPROVEMENT_CYCLE.md)) plus sequencing drafts awaiting a
   maintainer decision (never executed on their own say-so).
