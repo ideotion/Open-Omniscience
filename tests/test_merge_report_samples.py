@@ -181,3 +181,47 @@ def test_samples_are_bounded(tmp_path):
     )
     assert results["sources"]["new"] == _SAMPLE_LIMIT + 4
     assert len(_samples(results, "sources")) == _SAMPLE_LIMIT
+
+
+# --------------------------------------------------------------------------- #
+#  ... and they reach a human
+# --------------------------------------------------------------------------- #
+def test_the_human_readable_report_names_the_examples():
+    """A populated field that stops at the JSON is the dead-end shape. The markdown
+    report is the artefact a person opens, so that is where the names have to appear."""
+    from src.backup.import_reports import render_import_report_markdown
+
+    md = render_import_report_markdown(
+        {
+            "kind": "restore",
+            "outcome": "ok",
+            "plan": {
+                "articles": {"new": 2, "duplicate": 1, "conflict": 0,
+                             "samples": ["Genuinely new", "Only in B"]},
+                "sources": {"new": 1, "duplicate": 0, "conflict": 0,
+                            "samples": ["new-a.example"]},
+            },
+        }
+    )
+    assert "### Examples of what was added" in md
+    assert "Genuinely new" in md and "Only in B" in md
+    assert "new-a.example" in md
+    # The count stays the exact figure; the examples never stand in for it.
+    assert "not a full list" in md
+
+
+def test_the_report_omits_the_examples_section_when_there_are_none():
+    """The negative twin. A heading over an empty list reads as 'nothing was added',
+    which is the same omitted-field-vs-zero confusion the samples fix is about."""
+    from src.backup.import_reports import render_import_report_markdown
+
+    md = render_import_report_markdown(
+        {
+            "kind": "restore",
+            "outcome": "ok",
+            "plan": {"articles": {"new": 0, "duplicate": 3, "conflict": 0}},
+        }
+    )
+    assert "Examples of what was added" not in md
+    # The table itself is still rendered -- the absence is of examples, not of the plan.
+    assert "| articles |" in md

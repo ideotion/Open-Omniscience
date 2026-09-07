@@ -1089,11 +1089,20 @@ def _new_row_samples(
         omitted-field-vs-zero confusion the honesty rules exist to prevent.
       * **It cannot drift from the statement.** A sample query that restates the INSERT's
         predicate is a second copy of it: the ``articles`` INSERT additionally joins
-        ``temp.map_sources``, so a restated predicate would have named rows the INSERT
-        then skipped. Provenance reports what LANDED, which is the claim the report makes.
+        ``temp.map_sources``, so a restated predicate COULD name rows the INSERT then
+        skipped. Stated as a hazard rather than an observation, because it is currently
+        unreachable -- ``map_sources`` is built after the sources INSERT and
+        ``Article.source_id`` is NOT NULL with an FK, so every incoming article maps in
+        a schema-valid corpus. Provenance reports what LANDED, which is the claim the
+        report makes, and it stays true if either statement changes.
 
-    ``expr`` is a SQL expression over the target table aliased ``m``; both it and
-    ``table`` are module-local literals from the callers below, never input.
+    ``expr`` must be NON-NULLABLE over the target table aliased ``m``: the ``None``
+    filter below runs *after* ``LIMIT``, so a nullable expression could drop five rows
+    and report an empty list while real rows sat below the limit. It holds for all
+    three callers (``sources.domain`` and both ``wiki_pages`` columns are NOT NULL, and
+    the articles expression is a ``COALESCE``), which is what makes the filter a
+    vestigial belt rather than something load-bearing. Both ``expr`` and ``table`` are
+    module-local literals from the callers below, never input.
     """
     if not _SAFE_KEY_NAME.fullmatch(table):
         raise ValueError(f"unsafe sample table {table!r}")
