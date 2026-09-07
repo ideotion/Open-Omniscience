@@ -930,6 +930,25 @@ carries `0.3.0` on `main`:
 > — by whichever change keyed the strings; read the workflow, not this table, before
 > running the gates. (Re-measured 2026-09-07 at `fb51d7b`: 560 and 297, so the ratchets
 > carry no slack and the next unkeyed string reddens.)
+>
+> **And `ci.yml` gained a blocking gate the table above predates** (2026-09-07, PROMPT_20
+> S7): `python scripts/ruff_ratchet.py --max 450` — a NON-GROWTH ratchet on the *advisory*
+> style lane, which stays advisory. The ceiling is calibrated at the MERGE POINT rather than
+> when the step was written: 432 against `main` @ `d9ee33e7`, 442 after roughly forty commits
+> from parallel branches, and **450** after fifteen more about forty minutes later. Verified
+> like-for-like each time — `main` alone 450, `main` plus the branch 450, and a per-file diff
+> of ruff's JSON showing zero files where the branch has more. Nothing above is re-measured for it; this is the note
+> the table's own instruction points at. See `docs/maintenance/RUFF_STYLE_LANE.md`.
+>
+> **The two i18n figures in the paragraph above are stale, re-measured 2026-09-07 on the
+> merged tree** (the table's own instruction is to read the workflow rather than the table,
+> so this correction sits beside it rather than rewriting it): `ci.yml` runs
+> `--max-untranslatable` **555** and `--max-unkeyed-t-calls` **296**, not the 560 and 297
+> recorded at `fb51d7b`, and the tooling reports **554** and **295** — so each ratchet now
+> carries ONE slot of slack rather than none. The slack is `main`'s own attrition and was
+> left rather than reclaimed inside a merge commit, on the grounds `docs/ROADMAP.md`'s S-4
+> note already states: tightening it reddens any in-flight branch that legitimately adds a
+> string, and this repository merges several in parallel.
 
 The pass count carries its own proof at every step: 8390 → **8406** is exactly the 16 tests
 the first pass added, 8406 → **8415** is exactly the 9 that arrived with `origin/main`'s

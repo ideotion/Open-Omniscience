@@ -133,31 +133,21 @@ installed with the app (it is a core dependency — no separate install).
 
 ### 🔍 Full-Text Search
 
-For advanced full-text search, consider the following:
+Full-text search is **already built and wired** — there is nothing to enable. The store
+carries an FTS5 external-content table (`article_fts`) kept in sync by triggers; see
+`src/database/fts.py` for the schema and `search_ids` in `src/api/main.py` for the query
+path (id-only resolution in final order, full rows loaded for the page alone).
 
-#### SQLite:
-SQLite has built-in full-text search (FTS) capabilities. To enable:
-1. Create a virtual table:
-   ```python
-   from sqlalchemy import text
-   session.execute(text("CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(title, content)"))
-   ```
-2. Insert data into the FTS table (trigger-based or manually).
-
-#### PostgreSQL:
-PostgreSQL has excellent full-text search support. Example query:
-```python
-from sqlalchemy import func
-results = session.query(Article).filter(
-    func.to_tsvector('english', Article.content).match('your & search & query')
-).all()
-```
+This section used to offer a "consider creating a virtual table" recipe for SQLite and a
+`to_tsvector` recipe for PostgreSQL. Both were wrong: the SQLite one described building by
+hand a table the app ships and maintains (under a *different* name, so following it would
+have produced a second, unmaintained index), and PostgreSQL has no search path at all here,
+which the store section above states as the first reason it is not a supported backend.
 
 ---
 
 ### 📉 Monitoring and Maintenance
 
-#### SQLite:
 - **Check database size**:
   ```bash
   ls -lh data/open_omniscience.db
@@ -166,20 +156,9 @@ results = session.query(Article).filter(
   ```bash
   sqlite3 data/open_omniscience.db "SELECT name, COUNT(*) FROM sqlite_master WHERE type='table';"
   ```
-
-#### PostgreSQL:
-- **Check database size**:
-  ```bash
-  psql -U open_omniscience -d open_omniscience -c "SELECT pg_size_pretty(pg_database_size('open_omniscience'));"
-  ```
-- **Check table sizes**:
-  ```bash
-  psql -U open_omniscience -d open_omniscience -c "SELECT table_name, pg_size_pretty(pg_total_relation_size(table_name)) FROM information_schema.tables WHERE table_schema='public';"
-  ```
-- **Monitor connections**:
-  ```bash
-  psql -U open_omniscience -d open_omniscience -c "SELECT * FROM pg_stat_activity;"
-  ```
+  On an **encrypted** store the `sqlite3` CLI cannot open the file at all (that is the
+  point of it) — use the in-app Settings → Diagnostics surfaces, which read the store
+  through the same guarded connection factory the app itself uses.
 
 ---
 
@@ -197,45 +176,32 @@ results = session.query(Article).filter(
 - **"Too many open files"**:
   - SQLite opens a new connection for each thread. Limit the number of threads or use connection pooling.
 
-##### PostgreSQL:
-- **"Connection refused"**:
-  - Ensure PostgreSQL is running:
-    ```bash
-    sudo systemctl status postgresql
-    ```
-  - Check the connection string (host, port, username, password).
-
-- **"Permission denied"**:
-  - Verify the user has permissions on the database:
-    ```sql
-    GRANT ALL PRIVILEGES ON DATABASE open_omniscience TO open_omniscience;
-    ```
-
-- **"Relation does not exist"**:
-  - Run the migrations:
-    ```bash
-    alembic upgrade head
-    ```
+- **"Relation does not exist" / "no such table"**:
+  - Run the migrations: `alembic upgrade head`.
 
 ---
 
 ### 📌 Best Practices
 
-1. **Backup Regularly**:
-   - **SQLite**: Copy the `open_omniscience.db` file.
-   - **PostgreSQL**: Use `pg_dump`:
-     ```bash
-     pg_dump -U open_omniscience -d open_omniscience > open_omniscience_backup.sql
-     ```
+1. **Back up through the app, not with `cp`**:
+   - Use Settings → Backup (or `GET /api/database/backup` for a consistent snapshot).
+     Copying `open_omniscience.db` by hand is **not** a backup: the store runs in WAL
+     mode, so the live file is missing whatever is still in `-wal`, and on the default
+     **encrypted** store a copied file is useless without the passphrase and carries no
+     integrity commitment. The app's own path checkpoints, streams and signs.
 
 2. **Test Migrations**:
    - Always test migrations on a backup of your database before applying to production.
 
 3. **Monitor Performance**:
-   - Use tools like `pgAdmin` (PostgreSQL) or `sqlite3` CLI to monitor query performance.
+   - Settings → Diagnostics carries the slow-query log, the request-latency log and the
+     write-gate report; the `sqlite3` CLI works on a plaintext store.
 
 4. **Optimize Queries**:
-   - Use `EXPLAIN ANALYZE` (PostgreSQL) or `.explain()` (SQLite) to analyze slow queries.
+   - `EXPLAIN QUERY PLAN` is the tool. Note that SQLite writes `SCAN` for **both** a bare
+     table scan and an index-only scan — a `SCAN <table> USING [COVERING] INDEX …` is
+     healthy; the smell is a bare `SCAN <table>` with no `USING`
+     (`src/monitoring/slowquery.py` classifies on exactly that).
 
 5. **Limit Data Retention**:
    - Regularly archive or delete old articles to keep the database manageable.
