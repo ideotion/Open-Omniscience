@@ -461,7 +461,18 @@ this history it reports the merge commit rather than the authoring one, and answ
   `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/shipped.csv`
   returns nothing — the 2026-07-18 b9dcbcc merge committed unresolved conflict
   markers INTO CLAUDE.md on main because only shipped.csv was verified (fixed
-  same day; both sides were kept additively, as the ledger rule requires). Agent findings get hand-re-verified before
+  same day; both sides were kept additively, as the ledger rule requires). **AND THAT GREP IS
+  BLIND TO `shipped.csv`, WHICH IS THE FILE IT NAMES (2026-09-07):** `.gitattributes` sets
+  `merge=union` on it, so it NEVER produces a conflict marker — union keeps both sides' lines
+  and reports success. That is correct for an append-only file and silently WRONG for any row
+  the other side EDITED: main's docs reality-check rewrote eleven historical rows, and the one
+  this branch also carried came out as TWO rows — the stale `PR pending` text beside main's
+  corrected `PR #1011`. A marker grep cannot see it and neither can a clean `git merge`. The
+  check that works is a DUPLICATE-KEY scan over `(date, area, item)`, compared against the
+  COMMON ANCESTOR rather than against zero — nine duplicates already existed there, so a bare
+  "are there duplicates" test would have accused this merge of nine things it did not do. The
+  tell in the diff is a numstat with DELETIONS on a merge you expect to be purely additive.
+  Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
   SUBPROCESS-spawning determinism test import the OLD code from the mutated
