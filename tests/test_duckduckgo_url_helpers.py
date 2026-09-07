@@ -296,3 +296,54 @@ def test_an_unwrapped_target_keeps_its_path():
         )
         == "https://news.example/deep/path/"
     )
+
+
+# --- PRH-03, negative space that the host check owns ------------------------ #
+#
+# Added on the PROMPT_20 branch AFTER PR #1031 landed the implementation above,
+# because two sessions found PRH-03 in parallel. Everything the other session
+# built is kept; these four are the cases its matrix does not reach, and each is
+# a branch of ``_unwrap_search_redirect`` that no test here drives.
+
+
+def test_a_subdomain_hop_is_unwrapped():
+    """``html.duckduckgo.com`` is the host this app actually fetches
+    (``SEARCH_URL``), so the ``endswith(".duckduckgo.com")`` branch is not a
+    generality -- it is the production path, and nothing above drives it."""
+    assert (
+        DuckDuckGoSearch._clean_url(f"//html.duckduckgo.com/l/?uddg={_ENCODED}&rut=abc")
+        == _TARGET
+    )
+
+
+def test_a_lookalike_host_is_not_unwrapped():
+    """``duckduckgo.com`` as a LABEL PREFIX of somebody else's domain must not
+    match. This is what makes the pair ``host != HOST and not
+    host.endswith("." + HOST)`` load-bearing rather than decorative: a
+    substring test would accept this host and hand discovery whatever it names.
+    Asserted as the exact surviving URL rather than ``is None``, so it cannot
+    pass merely because the lookalike was refused for some other reason."""
+    assert (
+        DuckDuckGoSearch._clean_url(f"https://duckduckgo.com.evil.example/l/?uddg={_ENCODED}")
+        == "https://duckduckgo.com.evil.example/l/"
+    )
+
+
+def test_uddg_is_found_when_it_is_not_the_FIRST_parameter():
+    """Parameter order is DuckDuckGo's choice, not ours, and this is the
+    discriminating input for the entity-unescape ORDER: reading the query before
+    ``&amp;`` becomes ``&`` leaves the second pair named ``amp;uddg``, so a hop
+    that puts ``rut`` first loses its target. With ``uddg`` first the two orders
+    are indistinguishable."""
+    assert (
+        DuckDuckGoSearch._clean_url(f"//duckduckgo.com/l/?rut=abc123&amp;uddg={_ENCODED}")
+        == _TARGET
+    )
+
+
+def test_an_EMPTY_uddg_is_discarded_and_not_merely_a_missing_one():
+    """``keep_blank_values=False`` is what makes an empty target read as absent.
+    Distinct from the missing-parameter case above: drop that flag and this hop
+    unwraps to ``""``, which is falsy, so the discard still happens -- but by a
+    different line. Pinned so the flag cannot be changed silently."""
+    assert DuckDuckGoSearch._clean_url("//duckduckgo.com/l/?uddg=&rut=abc") is None

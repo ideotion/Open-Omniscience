@@ -281,13 +281,20 @@
     var host = document.getElementById("r-ailens");
     if (!host) return;
     var rows = (d.keywords || []).map(function (k) {
-      // `evidence` is OMITTED when the term is not in the stored article, and that
-      // absence is the informative case -- an ungrounded term was inferred, translated
-      // or invented. Said in words rather than left blank, because a missing line reads
-      // as "nothing to show" and this is a finding.
-      var ev = k.evidence
-        ? '<div class="r-aiev">' + esc(k.evidence) + "</div>"
-        : '<div class="r-aiev r-aigap">Not found in your stored copy of this article</div>';
+      // THREE states, never two. `evidence` is where the term occurs in your stored
+      // copy. `evidence_absent` means the copy WAS searched and the term is not in it --
+      // the informative case, said in words rather than left blank, because a missing
+      // line reads as "nothing to show" and this is a finding (inferred, translated, or
+      // invented). NEITHER key means the stored copy has no text, so nothing could be
+      // searched -- and claiming "not found" there would assert a search nobody ran.
+      var ev;
+      if (k.evidence) {
+        ev = '<div class="r-aiev">' + esc(k.evidence) + "</div>";
+      } else if (k.evidence_absent) {
+        ev = '<div class="r-aiev r-aigap">Not found in your stored copy of this article</div>';
+      } else {
+        ev = '<div class="r-aiev r-aigap">Your stored copy has no text to search</div>';
+      }
       var label = k.confirmed ? "Confirmed" : "Confirm";
       return '<li><span class="r-aikind">' + esc(k.kind) + "</span> "
         + "<b>" + esc(k.term) + "</b> "

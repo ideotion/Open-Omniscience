@@ -103,6 +103,33 @@ jobs:
         run: ruff check src/ tests/
         continue-on-error: true  # advisory until the legacy style debt is burned down
 
+      # ...and a NON-GROWTH ratchet on that same lane (ruled 2026-09-07, PROMPT_20 S7
+      # "decide whether it converges or stays advisory, and record which"). The verdict
+      # is: stays advisory -- see docs/maintenance/RUFF_STYLE_LANE.md for the measured
+      # composition and why converging it is not a behaviour-neutral change (I001 alone
+      # is 132 findings and reorders imports in a tree with load-bearing import order).
+      #
+      # What was missing is that "advisory" had quietly become "unwatched": PARKED.md
+      # recorded this lane at 344 findings on 2026-08-20 and it measured 432-442 on
+      # 2026-09-07, because a lane that is ALLOWED to fail says nothing when it fails a
+      # little more. A ratchet, like the two i18n gates below: it may only be LOWERED,
+      # and the script prints the new floor when it can drop. ruff is version-bounded in
+      # pyproject for the same reason mypy is pinned -- a new rule set would otherwise
+      # redden every PR through no code change.
+      #
+      # CEILING CALIBRATED AT THE MERGE POINT, not when this step was written -- and it
+      # moved TWICE while the PR was open, which is itself the measurement that justifies
+      # the step. 432 against main @ d9ee33e7; 442 after roughly forty commits from
+      # parallel branches; 450 after fifteen more, about forty minutes later. Each time,
+      # verified LIKE-FOR-LIKE in a worktree at the exact main being merged that NONE of
+      # the growth was this branch's: main alone 450, main-plus-branch 450, and a
+      # per-file diff of ruff's JSON showing ZERO files where the branch has more.
+      # Shipping the older, tighter number would redden main on the merge commit over
+      # findings that are not this PR's, which is worse than a ceiling that reflects the
+      # tree it guards. Lowering it is always welcome; the script prints the new floor.
+      - name: Lint — style non-growth ratchet (may only be lowered)
+        run: python scripts/ruff_ratchet.py --max 450
+
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session
       # manual ritual; gate it so a locale that declares status:complete but drops
@@ -121,7 +148,7 @@ jobs:
       # A RATCHET, not a target: it may only be lowered. Lower it in the same PR
       # that adds the keys -- the script prints the new floor when it can drop.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 555
+        run: python scripts/i18n_report.py --max-untranslatable 554
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says
@@ -130,7 +157,7 @@ jobs:
       # the certain class can be driven to zero on its own schedule instead of
       # hiding inside a blended number. Also a ratchet: it may only be lowered.
       - name: i18n unkeyed t() call sites
-        run: python scripts/i18n_report.py --max-unkeyed-t-calls 296
+        run: python scripts/i18n_report.py --max-unkeyed-t-calls 295
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
@@ -301,6 +328,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Portability observation (${{ matrix.os }})
     continue-on-error: true  # observation lane: graduates to required when green
+    # PRH-29: the Windows leg HANGS -- 3 h 21 m to failure, about 6 h to cancellation.
+    # continue-on-error means it never blocked anything, so it was left to burn six
+    # hours of runner time per push, and a job killed by the workflow-level cap is also
+    # the least diagnosable outcome there is. This bound does NOT fix the hang (that
+    # wants a bisect against the suite, as its own task): it caps the cost, and it turns
+    # the hang into a log that stops at a known minute, which is where a bisect starts.
+    # 45 min is ~2x the Linux `test` lane's own wall time, so it cannot clip a healthy run.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

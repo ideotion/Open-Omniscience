@@ -10364,6 +10364,308 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   carries a `parked:` field naming the blocker (`extensions.duckdb.org` is not in the egress
   allowlist, and a sha256 for a binary nobody fetched cannot be written without fabricating it)
   and what it costs. Recorded here only so the next reader does not re-open it.
+
+## 2026-09-07 — PROMPT_20: four questions ANSWERED ON THEIR RECOMMENDED DEFAULTS (not maintainer rulings), and what stayed unbuilt
+
+**READ THE FIRST SENTENCE BEFORE CITING ANY OF THIS AS A RULING.** No maintainer answer was
+given for J1, J2, J3 or L8. `QUESTIONS_FOR_THE_MAINTAINER.md` says an unanswered question that
+is **not** marked ⛔ is proceeded on under its own recommended default, with the assumption
+recorded — the 2026-06-15 "always choose autonomously" ruling. None of these four carries ⛔.
+So each is recorded here as an ASSUMPTION TAKEN, reversible by a word from the maintainer, and
+`CLAUDE.md`'s "never invent a ruling the maintainer did not give" is why it is worded this way
+rather than as a decision from above.
+
+**J2 — `structlog`: DROPPED** (default: drop). Zero call sites against ~612 stdlib-`logging`
+ones. Gone from `pyproject.toml`, `requirements.lock` and the `docs/ETHICS.md` third-party
+table; both venv profiles re-verified; `tests/test_dependency_hygiene.py` pins that it is
+neither declared nor imported and is written to be SUPERSEDED in the PR that adds the first real
+call site, should it ever be adopted. **This also closes PARKED MAINT-04 in both directions:**
+that entry's migration TARGET was structlog and its migration SET was already empty, so the item
+had no subject at either end.
+
+**J3 — SQLite-only, DOCUMENTED** (default: SQLite-only). Half of it turned out to be shipped and
+unrecorded — `docs/ARCHITECTURE.md` has said "the only supported, tested backend" at the top
+since the v0.0.7 audit. The unshipped half was the same file's lower sections still handing out
+PostgreSQL recipes, and `session.py`'s docstring calling a PostgreSQL URL "honoured". Both
+fixed; `_build_engine` now warns once, naming the four things a non-SQLite engine actually
+loses, printing only the URL scheme. **What was NOT taken, deliberately: it does not REFUSE a
+non-SQLite URL.** Refusing would break an install in the name of documenting it, and turning a
+documented non-choice into a hard error is a bigger decision than the question asked. If the
+maintainer wants a refusal, that is a one-line change and a ruling.
+
+**L8 — `PR pending` in `shipped.csv`: SWEPT, and it needed sweeping after all.** First measured
+at the session's start: `grep -c "PR pending"` was **0**, so the item read as closed. By the time
+this branch merged, `main` had grown **six** new rows carrying the placeholder — one repository
+day. That is the real shape of L8: not a backlog to clear once but a placeholder that refills,
+because rows are written before their PR number exists and the sweep is nobody's step. All six are
+resolved here by rule (5b)'s own method — first-parent binary search of `main` for the earliest
+commit whose `shipped.csv` contains the row, the number read out of that merge's subject, the
+clone confirmed non-shallow first (`git rev-parse --is-shallow-repository` → `false`), and each
+answer corroborated independently rather than trusted: four by a branch name matching the row's
+subject (`#1034 claude/import-performance-results`, `#1024 claude/ai-layer-model-supply`,
+`#1031 claude/security-network-posture-consent`, `#1040 claude/ci-never-completes-on-main`) and
+the two whose branch names carry no subject (`#1033`, and `#1031`'s second row) by the merge's own
+file list — `src/static/oosky.js` + `app-observatory.js` for the Observatory row,
+`docs/SECURITY.md` for the SECURITY row. `grep -c "PR pending"` is **0** again.
+
+⚠ **A SWEEP IS ITSELF A DUPLICATE-ROW GENERATOR under `.gitattributes`' `merge=union`** — and
+**this entry predicted it in the morning and was proved right the same afternoon, by its own
+sweep.** Any branch cut BEFORE a sweep still holds the `PR pending` text; when it merges, union
+keeps both lines and the row appears twice with no conflict marker and no failing check.
+
+*Written as a warning, then measured.* The first merge of this branch scanned clean (854 rows, 9
+ancestor duplicates, 0 introduced, arithmetic closing at 845 + 4 + 5). The SECOND merge, fifteen
+commits of `main` later, came back **860 rows against an expected 856 — four introduced
+duplicates**, each an exact pair differing in ONE column: this branch's swept `PR #1034` / `PR
+#1031` beside another branch's stale `PR pending` copy of the same row. Nothing else saw it. The
+merge was clean, no marker existed to grep for, and the numstat tell was `6 added / 0 deleted` —
+**purely additive, which is what the trap looks like from this side**: the earlier recorded
+instance had DELETIONS as its tell, so a reader who had memorised the tell rather than the check
+would have passed this one. Only the duplicate-key scan against the common ancestor found it.
+The four stale copies were deleted, keeping the swept twin; re-scanned at 856 rows, 0 introduced,
+**0 keys lost** (checked in the same pass, because deleting rows to fix duplicates is exactly how
+a real row disappears).
+
+**So the scan is not optional and its tells are not a substitute for it.** Run it on every merge
+of this branch, compare against the COMMON ANCESTOR with multiplicity preserved, and check both
+directions — introduced AND lost.
+
+**THE STANDING QUESTION L8 ACTUALLY RAISES, put to the maintainer rather than answered here:**
+should a row be allowed to carry `PR pending` at all? A test asserting `grep -c "PR pending" == 0`
+would end the refill permanently, at the cost of forcing every session to open its PR before
+writing its ledger row — which is a change to the order of the ritual, not a lint. Recommendation:
+**yes, add the test**, because the alternative has now been measured twice and the sweep is
+unowned work that also manufactures duplicate rows. Not taken unilaterally: it changes the
+sequence every session follows.
+
+**J1 — the `src/api/diagnostics.py` split: ANSWERED "yes", NOT ATTEMPTED, and the
+reconnaissance is the deliverable.** Three measurements the prompt did not have, each of which
+changes how the next session should size it:
+1. **The completeness ratchet the prompt says is needed ALREADY EXISTS.** PROMPT_20 S1 describes
+   it as the thing that "proves nothing was lost"; it is
+   `tests/test_repo_invariants.py::test_all_diagnostics_bundle_covers_every_get_diagnostic`,
+   built 2026-07-17 and extended 2026-07-25, importing its covered/exempt maps FROM
+   `src.api.diagnostics` so the CI-time check and the runtime coverage block cannot diverge. It
+   does not need building. It DOES need to survive the split.
+2. **It is one of 20 source-read sites across 4 test files that read `diagnostics.py` AS A FILE**
+   (`(_SRC / "api" / "diagnostics.py").read_text(...)`), and the ratchet additionally regexes
+   `@router.get("...")` out of that text plus every file in `_DIAG_SIBLING_FILES`. Turning the
+   module into a package makes that path a DIRECTORY. This is exactly the 2026-08-20 `app.js`
+   split, whose recorded lesson is that a POSITIVE assertion fails loudly and gets fixed while a
+   NEGATIVE one passes FOR FREE against a file that no longer contains what it checks — 151
+   sites went vacuous in one commit that way. So the split's FIRST commit is a concatenating
+   reader that returns the package's modules in a defined order, read from the package rather
+   than hard-coded, before a single route moves.
+3. **The current shape:** 6,291 lines, 128 route decorators of which 100 are GET.
+
+   Not attempted here because it is a whole session's work and this one had six other slices; a
+   half-moved package is worse than an unsplit file. Recorded so the next session starts from
+   the reader rather than from `git mv`.
+
+**S7 / the ruff style lane — RULED HERE (it had no J-number): STAYS ADVISORY, AND MAY NOT
+GROW.** The composition, the verdict and the burn-down route are in
+`docs/maintenance/RUFF_STYLE_LANE.md`. Converging it is not behaviour-neutral (I001 is 128 of
+432 and reorders imports where import order is load-bearing). The lane grew 344 → 432 in
+eighteen days unnoticed, so the count is now ratcheted and ruff is version-bounded. **A
+maintainer decision is still open behind it:** whether the 231 auto-fixable findings are worth a
+dedicated import-ordering PR with a full-suite diff, which is the only way that block converges.
+
+**PRH-03 + NET-02 — BUILT HERE AND YIELDED, because another session shipped them first.** Both
+were completed on this branch (implementation, 43 tests, an 8-mutant matrix) and
+[PR #1031](https://github.com/ideotion/Open-Omniscience/pull/1031) landed the same two items,
+independently found and independently mutation-checked, hours before this merge. Its
+implementation is the one in the tree. This branch took `src/services/duckduckgo.py`,
+`src/utils/security.py` and `tests/test_duckduckgo_url_helpers.py` from `origin/main` byte for
+byte and deleted its own two test files, keeping the five assertions #1031 does not carry (the
+NET-02 blocker refutation, and four negative-space cases on the redirect host check — three of
+which are the sole failure under their own mutant against #1031's code). **The scheduling problem
+this exposes is in `PARKED.md` and `INVENTORY.md`, not in either session:** a parked item has no
+owner and no in-flight marker, `INVENTORY.md` filed both under P21 while PROMPT_20 §S5 claimed
+them by name, `00_INDEX.md` sets no fence between the two prompts, and the losing PR flagged that
+exact disagreement in its own body before building anyway — because a flagged disagreement is not
+a lock. **Open question for the maintainer:** an owner/claim column on `PARKED.md` and
+`INVENTORY.md` rows, or a convention that a session opens its PR before starting a named item?
+Recommendation: the convention, since it needs no new file and the PR list is already the one
+place every session can see. Not taken unilaterally — it binds every session, not just this one.
+
+**A FINDING FROM THE YIELD, recorded and NOT repaired:** through the redirect, a target is
+percent-decoded exactly one more time than through a direct href — `parse_qsl` decodes it,
+`_unwrap_search_redirect` decodes it again, `_clean_url` decodes it a third — so `/%2561` arrives
+as `/a` via the hop and as `/%61` direct. Measured, both paths, side by side. Left alone because
+`discover_sources_by_topic` keeps only the DOMAIN, which is unaffected (verified), because the
+direct path already over-decodes once and this is a consistency gap rather than a new class of
+defect, and because a merge resolution is the wrong place to edit another session's just-merged
+code over a judgement it made deliberately. Also in `PARKED.md`, under the DDG entry.
+
+**CARRY-OVER — what PROMPT_20 asked for and this session did NOT build, each with why:**
+* **S1** (the diagnostics split) — above.
+* **S2 / PRH-26** (the import cycles; the inline endpoints that belong in `core`; the
+  `observability.py` extraction). Untouched. The Prometheus duplicate-registration collision the
+  prompt names as what makes several test files fail when they share a process was NOT
+  reproduced here — the full suite is green on it in one process — so the next session should
+  establish that symptom before extracting for it.
+* **S4** (the ad-hoc slicer budget, 232 with zero slack). Untouched, and untouched deliberately:
+  the recorded rule is "prefer being stopped by this ratchet over lowering it", and this
+  session's four new test files were written through the existing helpers and did not move the
+  number. The 1,063 unaudited source assertions the prompt names remain unaudited.
+* **STR-05** (`view_article`, now measured at **611** lines rather than the 197 PARKED.md
+  claimed; `build_families`; the rest of the cc≥C list). Untouched. `radon` is not in the
+  analysis extra, so the cc figures could not be re-measured and are repeated in PARKED.md as
+  HISTORICAL readings rather than current ones.
+* **PRH-27** (`tests/test_installer.py` leaves an `oo.env` in the checkout) — **REFUTED, not
+  built.** A full suite run (9,221 passed / 126 skipped) left no `oo.env` and a clean `git status`; `test_installer.py`
+  never sets `OO_DATA_DIR`, so `install.sh`'s `persist_data_dir` returns early, and the only
+  test that drives the Python writer (`test_data_location.py`) monkeypatches `env_file_path` to
+  a tmp path. Recorded as VERIFIED-ABSENT at `d9ee33e7` rather than fixed.
+* **PRH-29** (the Windows hang) — the BISECT is unbuilt and still deserves its own task. There
+  is no Windows runner here. What shipped is a 45-minute cap so the hang stops costing six hours
+  a push and leaves a log that stops at a known minute.
+* **S6's other siblings** — `test_export_sources_to_yaml` against the legacy shared engine,
+  `test_get_source_statistics`, the prometheus duplicate-registration collisions, the port-8001
+  ordering collision between the two vLLM files. Untouched. The one member this session DID fix
+  was not on the prompt's list: it was found by the mandatory baseline run, and it was RED on
+  `main`.
+- **WHAT PROMPT_11 LEFT UNDONE — the standing list, written 2026-09-07 after #1024 merged
+  (`965e3e5`).** The executed record is the entry above; this is the actionable remainder, most
+  serious first. Items (1) and (5) are findings made while writing this list, not carry-over.
+  **(1) A LIVE HONESTY DEFECT IN MY OWN S5, and it is the exact collapse S1 was careful to
+  avoid.** `evidence` is written ONLY at insert time by `record_keywords`; there is no backfill
+  and no migration. So every `ai_keyword` row that existed before #1024 has `evidence = NULL`,
+  `GET /api/ai/articles/{id}/keywords` omits the field (`src/api/ai.py:210`), and the reader
+  renders "Not found in your stored copy of this article" (`src/static/reader.js:290`). For a
+  legacy row that sentence is FALSE: nothing ever searched. Two different facts — *searched and
+  genuinely absent* (the informative case: inferred, translated or invented) and *never searched*
+  — print as one, which is the same three-state collapse `weights_pin.py` refuses when it OMITS
+  `revision_matches_pin` rather than sending `False` for a cache nothing compared. The discipline
+  was applied in one slice of the PR and missed in the other, the same day. Anyone who ran the AI
+  keyword pass before 2026-09-07 sees the false label on EVERY term. **RECOMMENDED DEFAULT: a
+  deterministic offline top-up**, not a schema change — `evidence_for` needs only the stored
+  article text, is idempotent, and the repo already has the precedent in invariant #21's silent
+  `autoIndexInsights` backlog top-up. A `evidence_checked` column would also work and costs a
+  migration for a distinction a re-scan removes.
+  **FIXED 2026-09-07 (maintainer asked), AND NOT BY THE RECOMMENDED DEFAULT — the precedent I
+  cited turned out to be an argument AGAINST it.** `autoIndexInsights` carries a cooldown
+  because of the P0-5 storm (`/api/insights/reindex` called 1,326× in 369 s, "each batch a heavy
+  write contending with the live scrape"), so citing it as a licence to write was backwards. The
+  fix RESOLVES AT READ TIME instead and persists nothing, which removes the ambiguity rather
+  than describing it: `store.evidence_for_rows` searches the stored copy for every row the
+  endpoint is about to return, so an absent snippet IS "searched and not found". No migration,
+  no write inside a GET, no backfill window during which the answer is still wrong, and the
+  endpoint's "a read never writes anything" docstring stays TRUE.
+  **THREE STATES SHIP, because two were the defect:** `evidence` (occurs here), `evidence_absent`
+  (searched, not in your copy — the informative case), and NEITHER KEY when the stored copy has
+  no text, which is a different fact rather than a weaker "not found". +1 string ×12
+  ("Your stored copy has no text to search").
+  **ONE THING THE FIX ONLY JUST AVOIDED, worth keeping:** a compressed article keeps its text in
+  `compressed_content` and leaves `content` EMPTY, so searching the column directly would have
+  reported every term of every compressed article as absent — fabricating the exact absence this
+  lens exists to report. `article_evidence_text` goes through `Article.get_content()`, and
+  `test_compressed_articles_are_searched_through_get_content` is the guard.
+  Seven mutations, each reddening by name; the endpoint mutation that always claims absence
+  reproduces the original defect. Both i18n ratchets lowered to the measured values (555→554,
+  296→295).
+  **(2) BOTH PIN VALUES SHIP BLANK — the mechanism is complete, only the values are missing.**
+  `HF_REVISION_PINS` and `OLLAMA_DIGEST_PINS` in `src/llm/weights_pin.py` are empty dicts, so the
+  pin reports "not pinned, nothing was checked" — the honest third state, not a silent pass.
+  Resolving them needs `huggingface.co` / `ollama.com`, which answer this sandbox's proxy
+  `CONNECT ... 403` (`pypi.org` 200 as the control). OPERATOR STEP, on a connected machine:
+  resolve the Ministral snapshot's revision SHA and the Ollama manifest digest for
+  `MINISTRAL_TAG`, fill both dicts, and re-date `model-weights-revision` in
+  `configs/external_artifacts.yml`. The refusal path is already fixture-tested; a digest nobody
+  fetched, typed in from here, is the fabricated checksum the non-negotiables forbid.
+  **(3) AI-15 — ONE LOOKUP, still unanswered on its seventh consecutive session.** Is the Ollama
+  account `LiquidAI` the publisher's own? Same 403 as (2). Deliberately NOT guessed; it joins F1's
+  list. It gates nothing that ships, but it is the provenance claim behind the default model.
+  **(4) D8's HARNESS CANNOT BE STARTED, which is why its "operator step on the rig" is not
+  actually available.** `src/ai_layer/specialisation.py` ships 476 lines with its own suite, and
+  `run_shape` has no caller outside the test tree — no endpoint, no script, no button. NEEDS A
+  RULING before any build: D8's recommendation is "no build", and an invocation path IS a build.
+  The cheapest honest shape is a script rather than a surface, since the measurement is an
+  operator step and not a user feature. Read the deferral as "the harness cannot be run yet".
+  **(5) PRH-21's SECOND HALF IS MOOT AS WRITTEN, and the real question is different.** The
+  inventory says "the `OLLAMA_MODELS` hint is never keyed". The hint is `install.sh:526`, and it
+  sits INSIDE `configure_ollama_store_access()` (lines 495–528), which has exactly one occurrence
+  in the file — its own definition, zero call sites. So the string cannot be unkeyed FOR A USER:
+  it never prints. `install.sh` has no i18n machinery at all, so keying it is not a key addition
+  either. The live question is what to do with 34 lines of deliberately-dead shell that the
+  2026-06-20 ruling keeps uninvoked on purpose: keep it as a documented affordance an operator can
+  call by hand, or delete it. NEEDS A RULING; do NOT wire it (that runs `sudo chmod` during
+  install, which is exactly what the ruling removed).
+  **(6) D10 / S4's NUMERIC FLOORS remain the operator's graded gold set (R6).** The structural
+  half is built and test-pinned; the floors are a measurement nobody in a sandbox can take.
+  **(7) FOUR CI LANES HAD NOT REPORTED WHEN #1024 MERGED**, on the maintainer's instruction with
+  the full `test` suite and the `PQC signing path` lane already green: Core-only install, Columnar
+  store, Portability (windows-latest), SQLCipher wheel smoke (ubuntu-latest). Core-only is the one
+  to read — it is the lane that proves the new probes report UNAVAILABLE rather than raising when
+  `pqcrypto`/`opentimestamps` are absent. It was reproduced locally with a `builtins.__import__`
+  shim (81 passed, 8 skipped, 0 failed); that is evidence, not CI's verdict, and the two are not
+  interchangeable. **CORRECTION, same session, ~1h after this item was written: the sentence "they
+  now run against `main`" was WRONG, and item (8) is why.** The verdict has to come from a PR run;
+  for these four it came from #1036's, whose head carries #1024's code via the merge.
+  **RESOLVED 2026-09-07 18:07 UTC — THREE OF THE FOUR ARE GREEN, INCLUDING THE ONE THAT MATTERED.**
+  On #1036 head `0eaf2a3`, run `34147233035`: **Core-only install SUCCESS** (job `101821786146`,
+  17:49:37 → 18:07:37), Columnar store SUCCESS, SQLCipher wheel smoke SUCCESS on all three OSes;
+  Portability (windows-latest) still queued, and it observes rather than gates. So the S2 claim
+  that the capability probes report UNAVAILABLE rather than RAISING when `pqcrypto`/
+  `opentimestamps` are absent is now carried by CI, not only by the local `builtins.__import__`
+  shim — which is the distinction this item existed to keep open, and it is now closed in the
+  direction the shim predicted. The merge of #1024 on incomplete CI is retrospectively vindicated,
+  which is worth recording precisely BECAUSE it could have gone the other way: a green outcome does
+  not make merging before the lane reported a sound method, and item (8) is why the method was
+  weak.
+  **(8) `main` ITSELF HAS HAD NO CI VERDICT FOR FIFTEEN CONSECUTIVE MERGES — found 2026-09-07
+  while trying to read item (7)'s lanes, and it is a repo-level gap rather than a PROMPT_11
+  item.** Every one of the fifteen most recent COMPLETED push-to-`main` runs of `ci.yml` concluded
+  **`cancelled`**, unbroken from #1009 (2026-09-05) through #1024 and #1023 today. None of them
+  ran: `list_workflow_jobs` returns **zero jobs** for the ones checked (#1024's `34146578254`,
+  #1023's `34146815483`), so they were killed while still PENDING, before a single job dispatched.
+  The concurrency block at `ci.yml:22-24` is where it happens, group `${{ github.workflow }}-${{
+  github.ref }}` with `cancel-in-progress` written to be FALSE on the default branch.
+  **CORRECTION, SAME SESSION — I ASSERTED A MECHANISM MY EVIDENCE DOES NOT ESTABLISH.** This entry
+  first said GitHub keeps at most one PENDING run per group and supersedes it, so every main run
+  dies before starting. Zero jobs plus a cancellation timestamp matching the next run's creation is
+  consistent with that — and EQUALLY consistent with the `cancel-in-progress` expression evaluating
+  TRUE on `main`, i.e. the exemption simply not working. The two are indistinguishable from what I
+  measured, and PR #1040 reached the same finding independently and was RIGHT to mark the mechanism
+  **"UNMEASURED, deliberately"**: the cancellation reason that would separate them is not cleanly
+  exposed by the Actions API. Read #1040's entry as the primary record — its sample is larger and
+  its restraint is better. **The one argument that does bear on it, for whoever resolves this:**
+  under pure pending-supersession a run that has actually STARTED survives, so some push run should
+  eventually complete — and #1040 measures that ZERO ever have. That leans against supersession,
+  except that the observed queue depth (this session's own jobs sat queued over forty minutes)
+  means a run rarely reaches "running" before the next merge arrives, which rescues it. So the
+  question is genuinely open, and the fix must not be chosen from either story until someone reads
+  the mechanism rather than the symptom. The timestamps are exact — #1024's run
+  updated at 17:15:08 and #1023's was created at 17:15:07; #1022's updated at 17:11:50 and #1024's
+  created at 17:11:49. **What this means: the repo's entire CI protection is PR runs.** Nothing
+  verifies the merge COMMIT — so a semantic conflict between two PRs that are each green alone
+  would land on `main` unseen, which is exactly what a merge queue exists to catch and exactly
+  what the fast-merge ritual makes likely. NEEDS A RULING, and the honest options are not equal:
+  (a) adopt a merge queue, which is the real fix and changes the merge ritual; (b) keep push runs
+  but let them queue rather than supersede, which needs a per-SHA concurrency group (`${{
+  github.sha }}`) and will run many suites at once on a busy day; (c) accept PR-run-only coverage
+  as DELIBERATE and say so in the ritual, so nobody again reads a cancelled main run as a pass.
+  Do NOT read (c) as the cheap default: it is only honest if the ledger stops implying main is
+  verified. Recorded rather than changed, because `ci.yml`'s concurrency is a workflow-policy
+  decision and this session found it, it was not asked to set it. **AND PR #1040 ADDS THE ARGUMENT
+  THIS ENTRY WAS MISSING: the fix spends the maintainer's money.** A concurrency change makes every
+  merge run a full macOS + Windows + ubuntu matrix instead of being cancelled, at roughly one merge
+  every four minutes — so option (a)/(b) is a COST decision, not merely a correctness one, and #1040
+  names the cheap alternative I did not: rule that the nightly cron IS the referee for `main` and
+  require sessions to reproduce lanes locally. Its measurement also supplies what mine lacked —
+  of the 40 most recent completed runs, **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron**, so the cron referee already exists in fact. TWO ENTRIES NOW
+  DESCRIBE ONE FINDING (this one and #1040's, from parallel sessions); both are kept per the
+  additive rule, and #1040's is the one to cite.
+  **ONE FACT THAT BEARS ON OPTION (c) SPECIFICALLY, measured on this branch 2026-09-07 19:48:**
+  "PR runs are the referee" assumes PR runs COMPLETE, and at this merge cadence they can be starved
+  the same way. Any branch touching `docs/ledger/OPEN_QUEUE.md` is re-conflicted by the next merge
+  that appends to it — four times in four hours here — and each resolve-and-push CANCELS its own
+  queued PR run (`cancel-in-progress` is TRUE off the default branch, correctly) and restarts a
+  queue that was measured at 45+ minutes. Main moving roughly every ten minutes against a queue
+  that long means a ledger branch can be forced to re-merge faster than its own CI can conclude.
+  So (c) is not free either: it needs the queue to drain faster than `main` moves, which is the
+  same runner-capacity question option (b) raises, arriving from the other side.
 - **THE NINE V1 RULINGS ANSWERED (maintainer ruled 2026-09-07, PROMPT 23 planning session,
   branch `claude/v1-pathway-planning-4pf6n8`; V1_PATHWAY_2026-07-14 §7 had carried V1-1..V1-9
   open since it was written, and the 2026-07-22 audit banner recorded them still open). The

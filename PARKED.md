@@ -60,9 +60,18 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   every other file, and the list is documented shrink-only.
 
 ## Refactors (behaviour-preserving; gated on existing tests)
-- `view_article` (`src/api/main.py`, 197 lines): extract row-rendering helpers.
-- `build_families` (`src/analytics/families.py`, cc=31): split scoring from grouping.
-- Other cc≥C functions from `docs/audit/raw/radon_cc.txt`.
+**Re-measured 2026-09-07 (PROMPT_20 S5/STR-05). The figures below were stale by 3x and
+the source file had moved; corrected rather than repeated:**
+- `view_article` (`src/api/main.py`): **611 lines**, not the 197 this entry claimed —
+  measured on `main` @ `d9ee33e7` by slicing the function to the next top-level `def`.
+  Extract row-rendering helpers. NOT attempted in the 2026-09-07 pass: it is the largest
+  single refactor here and wants its own slice with the endpoint's own tests, not a
+  drive-by inside a prompt whose other slices are behaviour-neutral.
+- `build_families` (`src/analytics/families.py:257`): split scoring from grouping. The
+  `cc=31` figure is NOT re-verified — `radon` is not installed in the analysis extra, so
+  it is repeated as a HISTORICAL reading rather than a current one.
+- Other cc≥C functions from **`docs/archive/audits/raw/radon_cc.txt`** (the path in this
+  entry, `docs/audit/raw/`, has not existed since the audits were archived).
 
 ## Performance (non-urgent; measured as fine today)
 - **MinHash micro-optimization** (PERF-01): vectorise the 128-permutation hashing (numpy) to cut the
@@ -113,6 +122,12 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   that, "an unexpected exception escapes" is an untestable claim. Pinned by the NET-02 block in
   `tests/test_security_hardening.py`; re-widening either except reddens exactly the two
   propagation tests.
+  **AND THE BLOCKER THIS ENTRY STATED WAS FACTUALLY WRONG (measured 2026-09-07, PROMPT_20 S5,
+  PR #1035 — recorded because it is why the item sat parked from 2026-08-20):** "changes
+  behaviour for non-str inputs" is not true of either function. Both touch the input BEFORE the
+  `try` — `safe_href` with `re.sub`, `sanitize_url` with a `.lower()` chain — so a truthy
+  non-str already raised OUTSIDE the block and the broad except never covered that case at all.
+  Pinned by `test_a_non_str_input_already_raised_BEFORE_the_narrowing` beside the NET-02 block.
 - **DDG redirect results are dropped** (found 2026-08-20, recorded not fixed — behaviour change):
   `_clean_url` strips the query string BEFORE validation, so a real DuckDuckGo result href of the
   `//duckduckgo.com/l/?uddg=<encoded-target>` redirect form loses its target and is then rejected
@@ -135,6 +150,17 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   session sandbox's proxy (probed 2026-09-07 against a `pypi.org` 200 control). See the new
   result-link-regex entry below — the `uddg` fix is justified by the URL shape alone, which is
   documented and stable, and is strictly additive, so it cannot lose a result that resolves today.
+  **RESIDUAL, measured 2026-09-07 by the parallel session (PR #1035) and deliberately NOT
+  repaired: the redirect path percent-decodes a target exactly ONE MORE TIME than the direct
+  path.** `parse_qsl` decodes the `uddg` value, `_unwrap_search_redirect` calls `unquote` on it
+  again, and `_clean_url` decodes a third time — so `https://example.com/%2561` arrives as
+  `/a` through a hop and as `/%61` as a direct href. Left alone on three grounds, each measured
+  rather than assumed: `discover_sources_by_topic` keeps only the DOMAIN, which is identical on
+  both paths; the direct path ALREADY over-decodes once, so this is a consistency gap and not a
+  new class of defect; and the query strip that would truncate a re-encoded target is a
+  deliberate, documented choice of the shipping implementation. It becomes a real defect the day
+  a consumer uses the full URL rather than its host — fix it then by returning the raw `uddg`
+  value and letting `_clean_url`'s single `unquote` decode it once.
 
 - **The DDG result-link regex requires `class=` to be the FIRST attribute** (found 2026-09-07,
   recorded NOT fixed): `_parse_results` matches `<a class="result__a" href="…">`, so an anchor
@@ -168,8 +194,18 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   ("Core-only install (no [analysis] extra)": installs `-e ".[dev]"`, boot-checks the app, runs the
   full suite with analysis tests skipping cleanly).
 - **mypy / ruff blocking in CI**: once the debt is paid, flip both from advisory to blocking.
-  Still open. Progress 2026-08-20: ruff's advisory lane is down to 344 findings (E402, a third of
-  it, zeroed via the per-file-ignores carve-out); mypy sits at the 127-error ratchet baseline.
+  **mypy: DONE — the ratchet no longer exists.** The 2026-08-20 paydown took the residue to zero and
+  `ci.yml` runs a plain blocking `python -m mypy src/` (re-verified 2026-09-07: rc 0, 502 files). The
+  "127-error ratchet baseline" this entry claimed is a record of how the number fell, not of what to
+  check.
+  **ruff: RULED 2026-09-07 (PROMPT_20 S7) — it STAYS ADVISORY, and may no longer GROW.** The
+  composition, the verdict and the burn-down instructions are in
+  `docs/maintenance/RUFF_STYLE_LANE.md`. The finding that decided it: this entry recorded 344
+  findings on 2026-08-20 and the lane measured **432** on 2026-09-07, then 442 and 450 within the
+  hour as parallel branches merged — 88 of drift in eighteen days and 18 more in an hour,
+  unnoticed, because a lane that is allowed to fail says nothing when it fails a little more.
+  `scripts/ruff_ratchet.py --max 450` is now a blocking step; ruff is version-bounded in pyproject
+  for the same reason mypy is pinned.
 - **Endpoint test coverage** (TEST-05): keyword_management, reporting, framing, llm HTTP integration.
   **SHIPPED (core in 0.0.8 WP4; residue closed 2026-08-20, this PR):** WP4 delivered
   `tests/test_llm_api.py` + `tests/test_reporting_api.py` + `tests/test_framing_keywords_api.py`

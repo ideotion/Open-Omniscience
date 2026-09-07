@@ -15,8 +15,16 @@ Design (single local user, loopback-only, SQLite default):
     ``Depends``) or the ``session_scope`` context manager -- never one global
     Session shared across threads.
 
-A PostgreSQL ``DATABASE_URL`` is honoured for future server deployments; the
-SQLite-specific PRAGMAs are simply skipped for non-SQLite engines.
+**SQLite is the only SUPPORTED backend** (audit ARCH-06 / question J3, ruled
+2026-09-07; see ``docs/ARCHITECTURE.md``). A non-SQLite ``DATABASE_URL`` is not
+rejected -- the engine is still built and ordinary ORM reads and writes work -- but
+this docstring used to call that "honoured … the SQLite-specific PRAGMAs are simply
+skipped", and that understated the loss by a wide margin. What a non-SQLite engine
+actually skips is the SQLCipher connection factory and therefore **at-rest
+encryption**, which is this app's whole stated security model; FTS5 and therefore
+**the entire search path**; the single-writer gate; and the boot index self-heal.
+``_build_engine`` logs a WARNING naming that, so such a URL degrades LOUDLY instead
+of producing a half-working app that looks fine.
 """
 
 from __future__ import annotations
@@ -88,6 +96,20 @@ def _build_engine() -> Engine:
             max_overflow=int(_b["db_max_overflow"]),
             pool_timeout=float(os.getenv("OO_DB_POOL_TIMEOUT", "30")),
         )
+    # NOT SQLite. Nothing here refuses the URL -- refusing would break an install in
+    # the name of documenting it -- but a silent half-working app is the dishonest
+    # outcome, so say what is missing, once, at the only place that knows. The logger
+    # is resolved by NAME rather than through the module's ``_LOG``, because that
+    # binding lives below the module-level ``_build_engine()`` call this line runs
+    # inside. Only the SCHEME is printed: a DATABASE_URL carries a password, and the
+    # error log ships inside the diagnostics bundle an operator hands to somebody else.
+    logging.getLogger("database.session").warning(
+        "DATABASE_URL is %s, not SQLite. SQLite is the only supported backend "
+        "(docs/ARCHITECTURE.md): this engine has NO at-rest encryption (the SQLCipher "
+        "connection factory is SQLite-only), NO full-text search (FTS5 -- search will "
+        "be empty), no single-writer gate and no boot index self-heal.",
+        DATABASE_URL.split("://", 1)[0] + "://...",
+    )
     # PostgreSQL / other: modest pool suitable for a single-user server.
     return create_engine(
         DATABASE_URL,
