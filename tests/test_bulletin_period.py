@@ -168,12 +168,17 @@ def test_the_gate_reads_inference_capability_not_detect_gpu():
     assert "detect_gpu" not in body
 
 
-def test_an_incapable_machine_is_refused_with_the_ruled_reason():
+def test_an_incapable_machine_still_gets_the_document_and_is_refused_narration():
+    """RULED 2026-09-07 (open question 4): the gate covers the narration layer, not
+    the document. The two verdicts must disagree here — that disagreement is the
+    whole ruling, and one key could not have carried it."""
     out = bulletin_available(
         capability={"practical": False, "reason": "no accelerator detected", "warnings": []}
     )
-    assert out["available"] is False
-    assert "no accelerator" in out["reason"]
+    assert out["available"] is True, "the deterministic document needs no model"
+    assert out["narration_available"] is False
+    assert "no accelerator" in out["narration_reason"]
+    assert "produced on this machine" in out["reason"]
 
 
 def test_a_capable_machine_is_available_and_carries_its_warnings_verbatim():
@@ -181,6 +186,7 @@ def test_a_capable_machine_is_available_and_carries_its_warnings_verbatim():
         capability={"practical": True, "reason": "NVIDIA", "warnings": ["low VRAM"]}
     )
     assert out["available"] is True
+    assert out["narration_available"] is True
     assert out["warnings"] == ["low VRAM"]
 
 
@@ -198,18 +204,86 @@ def test_a_probe_that_raises_degrades_instead_of_taking_the_surface_down(monkeyp
     )
     out = bulletin_available()
     assert out["available"] is False
+    assert out["narration_available"] is False
     assert "probe exploded" in out["reason"], "a probe failure must never read as a pass"
+    assert "probe exploded" in out["narration_reason"]
+
+
+def test_an_unreadable_probe_reports_unmeasured_never_below_the_bar(monkeypatch):
+    """An unreadable hardware fact is *unmeasured*, never *below* (§3 invariant 3).
+    The caveat on that path must therefore make no claim about the gate at all —
+    including no claim that the document was withheld, which it was not measured
+    to have been."""
+    monkeypatch.setattr(
+        "src.llm.backend.inference_capability",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("nvidia-smi missing")),
+    )
+    out = bulletin_available()
+    assert "could not be read" in out["caveat"]
+    assert "unmeasured" in out["caveat"]
+    assert "gated" not in out["caveat"], (
+        "an unmeasured machine must not be told it fell short of a bar nobody measured"
+    )
 
 
 def test_open_question_four_is_one_constant():
-    """The ruling gates the whole feature; the recorded consequence is that a
-    GPU-less operator loses the model-free half too. Making that reversible in one
-    place is the design record's own instruction."""
-    assert LAYER_A_REQUIRES_CAPABLE_HARDWARE is True
+    """RULED False 2026-09-07. The read count is the load-bearing half: a second
+    read is a second place to flip, and the whole point of answering this question
+    in one line is that there is only ever one line."""
+    assert LAYER_A_REQUIRES_CAPABLE_HARDWARE is False
     src = (__import__("pathlib").Path("src/bulletin/gate.py")).read_text(encoding="utf-8")
     assert src.count("LAYER_A_REQUIRES_CAPABLE_HARDWARE") == 2, (
         "the definition and exactly one read — a second read is a second place to flip"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  THE DISCLOSURE MUST BE RIGHT IN BOTH STATES OF THE CONSTANT
+#
+#  Answering open question 4 is a one-line change either way; the work was making the
+#  wording true on both sides of it. A caveat that is only correct in the state that
+#  happens to ship turns the one-line flip into a lie, and nothing about flipping a
+#  boolean would tell you so. These drive the flipped state directly.
+# --------------------------------------------------------------------------- #
+_INCAPABLE = {"practical": False, "reason": "no accelerator detected", "warnings": []}
+
+
+def test_flipping_the_constant_back_gates_the_document_and_says_so(monkeypatch):
+    monkeypatch.setattr("src.bulletin.gate.LAYER_A_REQUIRES_CAPABLE_HARDWARE", True)
+    out = bulletin_available(capability=dict(_INCAPABLE))
+    assert out["available"] is False, "the flipped state must really gate the document"
+    assert "gated as a whole" in out["caveat"]
+    assert "withheld only because" in out["caveat"]
+
+
+def test_the_ruled_state_never_claims_the_document_was_withheld(monkeypatch):
+    """The twin, and the one that catches a stale disclosure: on the shipped setting
+    the document is NOT withheld, so a caveat still saying it is would be a refusal
+    the operator never received."""
+    monkeypatch.setattr("src.bulletin.gate.LAYER_A_REQUIRES_CAPABLE_HARDWARE", False)
+    out = bulletin_available(capability=dict(_INCAPABLE))
+    assert out["available"] is True
+    assert "withheld only because" not in out["caveat"]
+    assert "needs no model" in out["caveat"]
+
+
+def test_the_narration_verdict_is_a_hardware_fact_and_ignores_the_constant(monkeypatch):
+    """Flipping open question 4 must change what the DOCUMENT does and nothing about
+    what is true of the machine. If the narration verdict moved with the constant,
+    the constant would be gating two things and the ruling would only have answered
+    one of them."""
+    seen = []
+    for flag in (True, False):
+        monkeypatch.setattr("src.bulletin.gate.LAYER_A_REQUIRES_CAPABLE_HARDWARE", flag)
+        seen.append(bulletin_available(capability=dict(_INCAPABLE))["narration_available"])
+    assert seen == [False, False]
+
+    seen = []
+    for flag in (True, False):
+        monkeypatch.setattr("src.bulletin.gate.LAYER_A_REQUIRES_CAPABLE_HARDWARE", flag)
+        cap = {"practical": True, "reason": "NVIDIA", "warnings": []}
+        seen.append(bulletin_available(capability=cap)["narration_available"])
+    assert seen == [True, True]
 
 
 # -- loop registration ------------------------------------------------------ #

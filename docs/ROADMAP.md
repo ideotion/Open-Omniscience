@@ -66,13 +66,13 @@ scaling failures now cause crashes and data loss, not just slowness.** So 0.2's 
 | # | Limitation | Detail | Status | Ref |
 |---|---|---|---|---|
 | DB-1 | **Unlock at scale** | ROOT-CAUSED + FIXED (A1): `ensure_fts` ran the FTS5 `'rebuild'` — a corpus-scaled codec re-read — on EVERY boot; now rebuilds only when needed. Measured on a 112k/2.7 GB encrypted synthetic corpus: 28.6 s → **0.002 s**; warm unlock **0.012 s** (bar < 2 s). | 🔧 fixed on synthetic — **live-corpus validation is the remaining gate** (never claim closed on synthetic) | SCALE_ROADMAP P0.4 |
-| DB-2 | **5 TB single-file SQLCipher unvalidated** | Page cache, VACUUM infeasibility, backup windows, single-writer behaviour at 5 TB never measured. Cross-time recall is sacred — no partitioning that makes old data second-class. | 🎨 design-only | SCALE_ROADMAP P1.7 · `DATA_ARCHITECTURE_SKELETON.md` |
+| DB-2 | **5 TB single-file SQLCipher unvalidated** | Page cache, VACUUM infeasibility, backup windows, single-writer behaviour at 5 TB never measured. Cross-time recall is sacred — no partitioning that makes old data second-class. **REFRESHED 2026-09-07 (`STORAGE_5TB_REFRESH_2026-09-07.md`): the SIZE ceiling is no longer the binding constraint.** It is `max_page_count × page_size` and the bundled sqlcipher3 compiles `MAX_PAGE_COUNT=0xfffffffe`, so DB-10 §1b's ruled `page_size=16384` moved it 16.00 TiB → **64.00 TiB** — 5 TB is 7.1% of one file, and Phase C is re-scoped from "MANDATORY, first" to a working-set lever gated on the DB-10 §6 footprint split. Hash-sharding measured for the first time: recall 100% in 44/44 cells (structural); rank divergence is per-shard thinness that shrinks as shards fatten. | 🎨 design-only — **premise refreshed; the 50–100 M sharding prototype is now a costed operator job (§4)** | SCALE_ROADMAP P1.7 · `DATA_ARCHITECTURE_SKELETON.md` · `STORAGE_5TB_REFRESH_2026-09-07.md` |
 | DB-3 | **Persisted encrypted columnar store (D1) — machinery built, gated on the per-OS binaries** | S3 built the D1 offline pin-and-verify httpfs LOADER + the D2/D3 persisted-serve wiring (epoch-gated incremental refresh), all behind `secure_crypto_available()`; the shipped `duckdb-httpfs-extension` registry pins are BLANK so it stays in-memory until the operator fetches + pins the per-OS httpfs binaries (`extensions.duckdb.org` egress-blocked here — the one networked step, per `EXTERNAL_DEPENDENCIES.md`). No checksum fabricated; a CI lane exercises the real path (checksum computed in-lane, never promoted). | 🛠 operational (machinery built + tested; awaiting the operator's networked binary fetch) | SCALE_ROADMAP Ruling-gated #2 · `PERSISTED_DUCKDB_HTTPFS.md` · S3.1/S3.2 |
 | DB-4 | **Keyword-table junk growth** | SEGMENTER SHIPPED (B1): zh/ja/th word segmentation via the optional `[segmentation]` extra (jieba MIT · janome Apache-2.0 · pythainlp Apache-2.0 — pure-local, dicts in-wheel, zero network) + ko/vi/mr (and fa/hu/…) stoplists vendored; graceful degrade without the extra. | 🔧 shipped — remaining: **install the extra + "Clean up keywords" re-index on the live corpus** to apply retroactively and measure the real junk reduction | SCALE_ROADMAP P1.5 / Ruling-gated #1 (executed) |
 | DB-5 | **~120 GB of the data folder unidentified** | The instruments are now shipped: the A12 `du`-style data-dir breakdown + the A12b/B14 itemized storage footprint (incl. the external Ollama store). The mystery itself is still unnamed. | 🔧 diagnostics shipped — **awaiting the maintainer's next field export** to name the 120 GB | SCALE_ROADMAP 2026-07-09 event |
 | DB-6 | **dbstat absent on the encrypted store** | The bundled `sqlcipher3` ships without dbstat, so the per-table storage-composition report degrades to PRAGMA totals only on the live encrypted DB. | ✅ shipped w/ honest limit; dbstat-enabled build is the follow-up | SCALE_ROADMAP P1.5 |
 | DB-9 | **Backup parity ceiling < 5 TB** | FIXED (S3.3): adaptive volume sizing bounds the volume COUNT not the size — N stays ~200 so N+M stays under the GF(2⁸) 255 ceiling at any scale (byte-identical below ~100 GB); sizes against the REAL per-member volume count (a skeptic caught + fixed a member-count-gap that could otherwise breach 255). Crash-safety unchanged; torture-tested incl. an interrupted tier-crossing. | ✅ shipped (S3.3) — RE-RUN the S1 P0.1 live validation before tag-day (this changes that engine) | SCALE_ROADMAP post-merge audit F6 · S3.3 |
-| DB-10 | **Near-dup growth / eviction / vacuum posture** | Decision MEMO written (S3.4, `docs/design/DB10_RETENTION_VACUUM_MEMO.md`): the IRREVERSIBLE auto_vacuum/page_size CREATE-time seam needs a maintainer ruling BEFORE 0.2 tags (a corpus created without it can never reclaim — full VACUUM infeasible at 5 TB); incremental-vacuum idle pass ready to wire into S2.2; tiered raw-text retention + near-dup folding are footprint-measure-gated. auto_vacuum now visible in the storage diagnostic; cross-time-recall codified as a repo invariant (§F). | 🎨 memo + cheap instrument + invariant (ruling-gated) | SCALE_ROADMAP P1.5 · S3.4 |
+| DB-10 | **Near-dup growth / eviction / vacuum posture** | Memo = `docs/design/DB10_RETENTION_VACUUM_MEMO.md`. **STATUS CORRECTED 2026-09-07 — the "ruling-gated" label was stale in both directions.** SHIPPED: §1a `auto_vacuum=INCREMENTAL` (ruled 2026-07-17) and §1b `cipher_page_size=16384` (ratified 2026-08-13) are both wired on `connect.py`'s fresh-file path with the reopen-hazard candidate ladder; §3's bounded idle `incremental_vacuum` pass is wired (`scheduler/maintenance.py` → `maybe_incremental_vacuum`). **§2 is HALF shipped:** `_confirmVacuum` discloses an estimated duration, but there is no backend refusal and no free-disk preflight on `POST /api/database/vacuum` though a full VACUUM needs ~2× the file in scratch, and nothing points at the incremental pass — which was the section's actual ask. **§6's footprint split has still never been measured**, and it now gates Phase C (DB-2). Migration mechanism verified + guarded 2026-09-07; `VACUUM INTO` refuted on encrypted stores (see §4). | 🔧 §1a/§1b/§3 shipped · **§2 half shipped** · §4/§5/§6 measure-gated | SCALE_ROADMAP P1.5 · S3.4 · `STORAGE_5TB_REFRESH_2026-09-07.md` |
 
 **Already resolved (this cycle):** expression index on `coalesce(published_at,created_at)`
 (was 735 s of full scans → index-only, #588) ✅ · corpus-epoch mechanism (`derived_meta`) ✅ ·
@@ -235,6 +235,62 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **D2 `keyword_daily` rollup + D3 incremental epoch-gated refresh** — S3 builds against the gated D1 store. 🚧
 - **D5 Roaring co-occurrence bitmaps** (pyroaring) — optional, off the critical path. 🎨
 
+#### Storage at 5 TB — what is left after the 2026-09-07 refresh
+Ordered as the refresh re-scoped them (`docs/design/STORAGE_5TB_REFRESH_2026-09-07.md` §8). The
+old order was set by a ceiling premise that no longer holds.
+
+- **DB-10 §6 — the footprint split.** Per-table `dbstat` bytes for `articles.content` against the
+  index and mention rows. **Never taken**, and it now gates Phase C: a 50% saving and a 90% saving
+  justify very different amounts of work, and nothing in the ledger substitutes for it (the two
+  field figures that look as though they might — ~42.6 KiB/article at 11.7 GB and ~21.9 KiB at
+  32.1 GB — are the *same* quantity on two different corpora, 2× apart). Needs a dbstat-enabled
+  build (DB-6). 🛠 operator
+- **C5 — the DB-10 migrate operation.** Mechanism VERIFIED and guarded
+  (`tests/test_db10_migration_mechanism.py`): ATTACH the target with its key, **declare
+  `cipher_page_size` AND `auto_vacuum` on the alias**, `sqlcipher_export` — proven up, down, and
+  rekey-plus-repage in one pass. A user-facing operation still owes a free-disk preflight, a
+  pragma self-verify that `int()`s the read-back, and an honest app-stopped cost statement
+  (~10–17 s/GB — a ledger figure only: `pagesize_bench.py` was removed under ruling 6, so a build
+  re-measures or cites the ledger, never implies the tree can reproduce it). Whether it should be
+  a button at all is still open. 🔒 ruling
+- **⚠ `VACUUM INTO` must never be used to migrate an ENCRYPTED store.** It writes its product at
+  the compiled default 4096 whatever the source is, **and reports success** — so on every corpus
+  created since 2026-08-13 (all of them at 16384) it silently produces an unopenable file. No live
+  call site today; the plan and the 2026-07-18 ruling both named it, and both are corrected.
+  Pinned by test so the next session cannot re-adopt it. ✅ closed as a trap
+- **DB-10 §2's missing backend half.** No refusal and no free-disk preflight on
+  `POST /api/database/vacuum` (a full VACUUM needs ~2× the file in scratch;
+  `src/safety/data_location.py` already has a `free_disk_bytes` helper), and nothing points at the
+  wired incremental pass. Small and self-contained. ⬜
+- **The FTS hash-sharding prototype — a costed operator job, not a caveat.** MEASURED 1,925 B of
+  FTS5 index per synthetic document at 2,692 docs/s ⇒ **89.6 GiB and 5.2 h per arm at 50 M**
+  (179.3 GiB / 10.3 h at 100 M); a single-vs-sharded comparison needs two arms. Treat 89.6 GiB as
+  an upper bound and measure the real corpus's index-bytes-per-article first. What it still has to
+  answer is the SCALE half — query-latency knee, merge behaviour, tombstone accumulation. What it
+  no longer has to answer: recall (100%, structural) and the rank divergence (per-shard thinness,
+  shrinks as shards fatten). Note for whoever runs it: FTS5's `bm25()` accepts only per-column
+  weights, so "maintain global term stats" is not available inside FTS5 — the real choices are fat
+  shards, disclosure, or scoring outside FTS5. 🛠 operator
+- **Phase B — the FTS split to a separate contentless-delete `fts.db`.** Moved **behind** the
+  sharding prototype on evidence: its "no second on-disk copy" bonus is already banked by the
+  shipped external-content table, and contentless-delete REFUSES `'rebuild'` (measured), trading a
+  minutes-to-hours engine primitive for a multi-day application re-feed at current corpus size. If
+  sharding lands, each shard is a separate file and the split comes free with it. 🎨
+- **Phase C — the packed, keyed, OOENC2 blob store.** Design unchanged; two amendments from the
+  refresh. Its working-set argument rests on **bytes-per-row through the codec**, not cache
+  economics (a benchmark built on cache-hit rate measures the wrong mechanism); and its
+  mark-and-sweep GC must be a **bounded windowed sweep from the first line** with
+  `temp_store=FILE`, because the bundled sqlcipher3 compiles `SQLITE_TEMP_STORE=2` and puts temps
+  in RAM invisibly. Gated on the footprint split above, and on C4 rulings 3–6. 🔒 ruling
+- **C4 rulings 3–6 (`STORAGE_5TB_PLAN.md` §8)** — dedup ON; OOENC2 vs `age`; keyed HMAC addressing;
+  the `sqlite3mc` benchmark trial. Standing recommendations intact and none defaulted. One input
+  moved: `cipher_memory_security` defaults to **0 (OFF)**, so "OOENC2 keeps the blob path
+  consistent with the SQL path's hygiene" is not an argument available to either side of ruling 4.
+  🔒 ruling
+- **Remaining `STORAGE_5TB_PLAN.md` §7 verification items** — items 1 and 3 closed 2026-09-07
+  (SQLite 3.51.1; `cipher_memory_security`=0). Still open: **(2)** backup live-read consistency
+  semantics, and **(4)** whether loadable FTS5 tokenizer extensions compose with SQLCipher. ⬜
+
 ### Maps & geo
 - **Hand-rolled offline vector-map renderer** — canvas 2.5D / CSS-3D, no WebGL/Three.js/tiles. 🎨
 - **Temporal-map remainder** — linear/log time-scale toggle + feed the mention layer with **event-places** (the temporal map itself is retired into `ooMap`). ⬜
@@ -286,6 +342,63 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Content-provenance class** — ✅ found SHIPPED end-to-end (ingestion stamps `source_type` + backfill; `insights_source_types` facet; reading-diet-by-channel in `concentration.py`) — S6 verify-marks against the design doc's acceptance. 
 - **Secondary-source `cited` provenance class — remaining slices** (background job at scale, denormalize `citing_source_id`, surface the citing trail, wire dormant `external_sources`). 🚧 partial
 - **Law-vertical coverage — adapter-first vs breadth-first** (2026-07-24 field-feedback Session A §3, ruled: adapter-first is (a), breadth-first is (b) and gets this ROADMAP row for later): the enumeration-adapter build (`legislation.gov.uk`, `gesetze-im-internet.de`, `EUR-Lex` ELI register — act/code-level `LawDocument`s per jurisdiction's OWN official count) is **BLOCKED this session on egress** — all three endpoints are gateway-policy-denied here (confirmed via both `curl`/`WebFetch`, per the brief's own "MUST NOT ship an unverified adapter endpoint" contingency); build it on a networked machine per the 2026-07-17 law-vertical brief S6. **Breadth-first (b), the alternative/complementary direction**: a shallow track of ONE portal/gazette per country, sourced from the already-committed `configs/legal_sources_generated.yml` (225 sources across ~162 jurisdictions, per-row verification status), rather than a deep per-jurisdiction enumeration — trades completeness (the "France has 76 codes" principle) for FAST worldwide breadth. Shipped this session (A3, buildable without egress): `adaptive_track_budget` (the per-pass tracking budget scales with the watched-doc count, so whichever direction is built next won't crawl at 5/pass forever) + the AI change-summary layer (`LawRevisionSummary`, auto for UI-language-floor jurisdictions via `advance_law_summaries`, on-demand `POST /api/law/revisions/{id}/summarize` for the rest). 🎨/🛠
+  - **UPDATE 2026-09-07 (PR #1023) — the ungated half of the law brief SHIPPED; the gated half is unchanged.**
+    ✅ **Gazettes as streams (S7/S2):** three of the four catalog `gazette_feed` values now become a real
+    `rss_url` — Georgia `matsne.gov.ge`, Vietnam `congbao.chinhphu.vn`, St Vincent `legal.gov.vc`. A feed
+    carries its OWN validator-enforced tier (`gazette_feed_verification`, vocabulary `fetched | lead`),
+    because the row-level `verification.status` is about the PORTAL: all four rows are `fetched` and
+    Uruguay's `impo.com.uy` feed was never fetched — its own notes call it the site's generic WordPress
+    news feed — so promoting on the row status would have filed Uruguayan site news as that country's
+    official gazette. It ships unwired. ⚠ These three are **not collected on seeding**: `select_sources`
+    admits only QUALIFIED sources, so they enter the qualification ladder first; what changed is that
+    they can be *judged* at all (`trial_fetch` needs an `rss_url` or a sitemap, and a gazette with
+    neither produces no evidence forever).
+    ✅ **Coverage denominators (S5/S4):** the catalog's **39** dated official counts across 32 countries
+    (the row above and the brief both said 27) now print beside the tracked count in
+    `GET /api/diagnostics/law-coverage`, together with the **31 of 32** countries that have a known
+    official enumeration and in which this install tracks nothing. **No fraction is computed** — see
+    Q-LAW-1 below. The join runs only through the country a document itself states (`uk` documents say
+    `gb`), never through the jurisdiction code.
+    ✅ **`[pdf]` narrowing said out loud (L6's stated default, applied not decided):** with the extra
+    absent — the default-install state — **63 of 275** catalog sources publish PDF only, across 54
+    countries, and **6 of the 23** tracked documents are PDFs by URL (all six Timor-Leste). Both counts
+    publish as floors; an install that HAS the extra is never told it is degraded.
+    ✅ **Vetting board (S6):** `docs/product/LAW_VETTING_BOARD.md`, generated by
+    `scripts/law_vetting_board.py` — 44 rows in four sections (2 confirmed gaps · 9 unverified leads with
+    a real domain · 29 access-blocked or bot-walled · 4 recorded down). Sections 3–4 are a keyword triage
+    over the catalog's own prose and the page says so. North Korea's honest-gap record was a YAML
+    *comment* no tool could read; it is a domain-less `lead` row now, beside the comment.
+    ✅ **Verified-present, not rebuilt:** S4b (catalog language → `LawDocument` → `Article.language`) and
+    A5 (AI change summaries, auto at the `UI_LOCALE_CODES` floor + on demand) were both already shipped
+    and were recorded as outstanding. That is the 3rd and 4th law item in a row to turn out
+    shipped-when-read — **grep this vertical before building in it.**
+  - 🔒 **Q-LAW-1 — the ruling that blocks a real coverage number.** Should each `official_count` entry
+    DECLARE whether its unit counts the same objects an act/code-level `LawDocument` is? The units run
+    over codes, acts, volumes, gazette issues, treaties and cases, and a volume or a gazette issue holds
+    many acts; deciding that from the unit STRING is what ruling 47's extensive/intensive rail forbids.
+    Recommendation: an explicit `counts_documents: true|false` on the 39 entries (a closed population,
+    reviewable in the diff), after which tracked-vs-enumerated becomes computable for the entries that
+    say true. Until then the report is honest but cannot answer "how much of France do we have".
+  - 🔒 **Q-LAW-2 (L6) — promote `[pdf]` into the default extras, or keep the disclosure?** The stated
+    default was applied, not decided. The disclosure is the right floor either way; promoting is a
+    separate call about install weight (`pypdf` only).
+  - 🛠 **Q-LAW-3 — the 44 vetting-board rows each want a one-word answer** (enable / adapter / honest gap
+    / re-check / drop). Nothing there is scraped around: a robots refusal or bot wall is the host's
+    choice, so each blocked domain is an adapter/API path or a recorded gap.
+  - 🔒 **Q-LAW-4 — should the per-endpoint verification tier generalise?** `enumeration_url` (107 of them,
+    none fetched by anyone) and `structured.api` / `structured.bulk` sit in exactly the position
+    `gazette_feed` did. An endpoint field no test can distinguish from a URL somebody wrote down is the
+    shape this vertical keeps paying for.
+  - ⬜ **The other gazette feeds are still unverified and unwired** — BOE, Dziennik Ustaw, the Federal
+    Register and the EUR-Lex OJ daily, named in the brief's S7. No feed was fetched by the 2026-09-07
+    session; the three wired ones rest entirely on the producing session's recorded 2026-07-17 evidence.
+  - 🛠 **S1 (the live enumeration adapters) is unchanged and still the gate on everything else.**
+    Re-probed 2026-09-07 with per-host evidence: `pypi.org` 200 and `github.com` 400 against `000`
+    (refused at the tunnel) for `www.legislation.gov.uk`, `eur-lex.europa.eu`,
+    `www.gesetze-im-internet.de` **and** `legal.gov.vc`. Unchanged from 2026-08-20. **The one operator
+    step:** fetch one CLML `…/data.xml` on a networked machine, run `parse_clml`, and check it clears the
+    text-recovery floor with an empty `unknown_elements`. If it does, the schema assumptions hold and the
+    enumeration is worth building; if not, the report NAMES what it did not understand.
 - **DuckDuckGo query discovery channel** (off-by-default, per-query logging, budgeted) + Wikidata generator as a scheduled refresh. 🎨
 - **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build — ✅ **BUILT (S5.1)** (`us-usgs` + `parse_mcs_csv` + `/api/stats/minerals-supply`; supply-not-prices by construction; real fetch = operator). · S&P500-is-an-index reclassification — ✅ found done (`idx_sp500` + the commodities board excludes `index` symbols per the recorded ruling in `markets.py`).
 
@@ -306,8 +419,20 @@ Surface: Settings → Advanced → *Bulletin* (folded, last).
 - **The evidence archive** ✅ — owner-only, on demand: every article a figure was computed over, so the counts can be recomputed rather than trusted. Plaintext leaving an encrypted store, disclosed as such.
 - **The annexes bundle** ✅ (2026-08-11) — one click yields the report plus a ZIP of one file per cited article, where the report's `[0007]` and `..._Article_0007.md` are guaranteed the same article (one deterministic numberer, called by both the renderer and the bundle builder). Three different dates from three different facts: the bundle takes the creation day, each article file its own publication day, an undated article is named `undated_`.
 - **Written in the UI language** ✅ (2026-08-11/12) — a server-side translation layer keyed on the English sentence; 11 locales × 347 entries, mechanically verified complete. A missing translation renders English *and is reported*; a translation whose placeholders differ from its frame is refused rather than printed with a stray brace; copies of the English are counted apart from coverage, so a catalog of copies cannot report itself complete.
-- **REMAINING** — the §14 Layer-B `BackgroundJob` with a persisted cursor (narration runs inline today: right for a bounded story cap, wrong for a long run) ⬜ · §18's export-privacy enumeration before a first evidence archive leaves a machine 🔒 · four of the five §20 open questions (section list · introduction · mail sending · review-screen UX) 🔒 · a maintainer click-through of the Settings section and review screen 🛠 (every frontend slice shipped browser-unverified per fork-3) · the §6.3 time budget still rests on a guess until `/llm-bench` is run on a GPU machine and a slow one 🛠.
-- **Open question 4** — whether Layer A should be available *below* the hardware gate (a GPU-less operator is currently denied even the deterministic document). It is ONE constant with exactly one read (`src/bulletin/gate.py:LAYER_A_REQUIRES_CAPABLE_HARDWARE`, pinned by a test that counts the reads), so answering it is a one-line change, not an audit. 🔒
+- **Layer B as a background job** ✅ (2026-09-07) — §14's `BackgroundJob` with a persisted cursor. Narration ran inline inside the generate request, which is a multi-minute synchronous handler on a long run. Each unit is written back into the record with the cursor saved beside it; resume is the default and `restart` the destructive reading; an outage never advances the cursor and, after ten in a row, the run RAISES rather than ending in a benign-looking "done".
+- **The export-privacy enumeration** ✅ (2026-09-07) — §18's list of what a reader of an exported file can see, per artifact, measured against the exact articles that export carries. Tri-state: measured-there, measured-absent, NOT MEASURED. It rides the evidence plan, renders in the review screen, and travels inside both ZIPs.
+- **All five §20 questions** ✅ RULED (2026-09-07) — the eight sections and the checkbox review screen ratified; the introduction narrated with a deterministic fallback; mail sending **never**; Layer A available below the hardware gate (the gate now covers narration only, and the verdict is two facts rather than one).
+- **The card section's period** 🚧 (2026-09-07) — `run_all_bounded` takes an `as_of` and hands it to the producers that declare one; every card states which window its figures came from, and the section's `matches_period` is measured rather than hardcoded. Measured 2026-09-07: **5 of 37** registered producers are period-anchorable (`rising_now`, `framing_split`, `ip_litigation_pulse`, `on_the_horizon`, `through_time`).
+
+**REMAINING — what is left, and who it belongs to** (five items; measured 2026-09-07, PR #1028):
+
+| # | What | Status | Belongs to |
+|---|---|---|---|
+| BUL-1 | **Click through the Settings → Bulletin section and the review screen** in a browser — the gate disclosure's two verdicts, the narrate button and its job row in the task manager, the introduction's review row, and the export-privacy panel. Every frontend slice of the Bulletin shipped **browser-unverified per fork-3**; `node --check` and the two standing frontend invariants pass, which is not the same claim. | 🛠 | maintainer (a machine with a browser) |
+| BUL-2 | **Run `/llm-bench` on a GPU machine and on a slow one.** §6.3's narration time budget is a *guess* until it rests on two measurements. Until then the number shown to an operator is an estimate that has never been checked against hardware. | 🛠 | maintainer (two machines) |
+| BUL-3 | **Rule on the annexes ZIP's full-text default.** The bundle ships each cited article's full text, which raises a question about each publisher's terms. The export-privacy enumeration *states that the text is there* and deliberately does not answer it. A ruling would change a **default**, not build a mechanism — `full_text` is already a first-class flag on the route, the builder and the enumeration. Recorded in the Open queue with its three shapes and its options. | 🔒 | maintainer |
+| BUL-4 | **Convert the remaining 32 card producers to the `as_of` seam.** Ordinary work behind a seam that exists and is optional by construction — a producer that does not declare `as_of` is called exactly as before. The ones left are not blocked, they are unwritten; nothing claims a period it does not have, which is what the per-card window line is for. | ⬜ | any session |
+| BUL-5 | **§18's *publication profile*** — the named allow-list that would let an operator declare, once, what may leave the machine. The enumeration shipped because that is what §18 says is owed *before a first archive leaves*; the profile is a mechanism the operator has not been asked about, so it was deliberately not built. | 🎨 | needs a maintainer question first |
 
 ### Convergence, watches & alerting
 - **New Home producers** — "Converging now" (`space_time_convergence`) + "watch-rules fired" (`watch_matches`) ✅ exist and register; the TWO missing are now ✅ **SHIPPED (S6.4)**: **`on_the_horizon`** (an upcoming agenda date ∩ a currently-trending keyword; bucket watch) + **`through_time`** (anniversary lens: articles published on today's date in earlier years; bucket context; cross-time recall sacred). Neither promoted into an urgent alert (the ruled boundary). 🚧→✅

@@ -1698,6 +1698,65 @@
   carried forward: run `/llm-bench` on the GPU machine and on a slow one so the §6.3 time budget
   rests on measurements rather than a guess; and run the continuous-improvement cycles (§15's
   remaining half is *running* them, not building them).
+  **THE FOUR REMAINING §20 QUESTIONS ARE RULED (maintainer, 2026-09-07, in answer to
+  `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4). The §20 list is now CLOSED: every one of the five
+  open questions has an answer.**
+  **D1 (§20 Q4) — LAYER A IS AVAILABLE BELOW THE HARDWARE GATE.**
+  `LAYER_A_REQUIRES_CAPABLE_HARDWARE` flips to `False`, so the §3 gate applies to the NARRATION
+  layer only and a GPU-less operator gets the deterministic document. This does not weaken ruling
+  (2): the justification for gating was workload shape — thousands of narration calls — and that
+  is exactly what stays gated. The recorded consequence the original ruling accepted (a GPU-less
+  operator denied even the model-free half) is what is being reversed, on the design record's own
+  note that it was "reversible in one condition". **The verdict is now TWO facts, not one:**
+  `bulletin_available()` returns the DOCUMENT verdict, and `narration_available` beside it carries
+  the model verdict with its own reason — one key could not mean both without the recorded
+  one-key-two-meanings defect, since below the bar the document is available and the narration is
+  not. The constant keeps exactly one read (the read-count test is unchanged at 2) and the
+  narration refusal reads it nowhere: it is a hardware fact, not a policy constant.
+  **D2 (§20 Q2) — THE INTRODUCTION IS NARRATED BY THE MODEL**, over the edition's own masthead and
+  section figures, with a DETERMINISTIC TEMPLATE beside it. The maintainer chose the narrated form
+  over the templated one; the fallback is not a hedge but the same §8 rule every other Layer-B
+  sentence obeys — a model failure, an empty answer or a paragraph that fails grounding resolves to
+  the template with the reason recorded, so an edition below the gate or in airplane mode still
+  opens with a paragraph and §2's "a section called AI summary would name a document containing no
+  model output" mislabelling never arises. The introduction is grounded in the edition's OWN
+  figures (not article text), so the grounding check is the numeric-support one and an invented
+  figure is dropped exactly as elsewhere.
+  **D3 (§20 Q3) — MAIL SENDING: NEVER.** No outbound mail path is added to the app. Download the
+  document plus the short paste digest stays the only exit (§10 ruling 13). The reasoning is
+  recorded rather than left to be re-derived each cycle: sending is real egress that reveals the
+  operator to a mail provider, off Tor, with stored credentials — a new egress surface for a
+  document the user can already export, against an app whose ONLY external call is the gated,
+  off-by-default DuckDuckGo discovery. This is a CLOSED question, not a deferral.
+  **D4 (§20 Q1/Q5) — THE EIGHT SHIPPED SECTIONS AND THE CHECKBOX REVIEW SCREEN ARE RATIFIED AS THE
+  RULED DESIGN.** The section list is `rising_concepts · across_channels · country_coverage ·
+  by_topic_tag · changes_of_record · alerts · through_time · cards`, in that order, with `cards`
+  deliberately LAST (it is the slowest and the only section whose figures are not the period's).
+  The review screen is the checkbox-per-section/per-story screen with per-sentence verdicts. Both
+  are now pinned by a guard, because a ratified list that nothing enforces is a list that drifts;
+  ADDING a section stays cheap (that is what the registry is for) — the guard makes an addition or
+  a removal a deliberate edit of the ruling rather than a silent one.
+  **ONE QUESTION §18's ENUMERATION RAISES AND DOES NOT ANSWER — MAINTAINER'S TO RULE (recorded
+  2026-09-07, deliberately NOT decided by the session that built the enumeration):** the annexes
+  ZIP defaults to `full_text=True`, and the evidence archive carries every article's whole stored
+  text by design. **Is redistributing a publisher's full text the operator's to do?** That is a
+  question about each publisher's terms, not about this app's behaviour, and it has three shapes
+  worth separating. (a) The EVIDENCE archive is owner-only by design and is not meant to be
+  shared — its full text is what makes the edition's counts recomputable, which is its whole
+  reason to exist; the question barely arises while it stays on the machine that made it.
+  (b) The ANNEXES bundle is what the download button hands over BESIDE the report, so it is the
+  artifact that actually travels, and its default is full text. (c) The published REPORT already
+  carries bounded excerpts only, so it is not in question. The enumeration now STATES, per
+  artifact, that the text is there and whose it is (`publisher_full_text`), and stops:
+  `src/bulletin/privacy.py`'s item says in as many words that this app does not answer it.
+  THE OPTIONS, none taken: keep full text as the annexes default and rely on the disclosure ·
+  flip the annexes default to excerpt-only and make full text the deliberate choice (one query
+  parameter, already plumbed and tested both ways) · make it an operator setting with the terms
+  question stated at the switch. **A ruling would change a default, not build a mechanism** —
+  `full_text` is already a first-class flag on the route, the builder and the enumeration.
+  Tracked on the board as **BUL-3** in [`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* →
+  REMAINING, alongside the four other Bulletin carry-overs; this entry holds the reasoning,
+  that table holds the status.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
@@ -3736,6 +3795,30 @@
   per message. A functional index over that column needs a migration AND the recorded
   NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
   `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
+- **QUESTION FOR THE MAINTAINER — PUSH CI ON `main` NEVER COMPLETES (measured 2026-09-07; no
+  ruling taken, because the fix spends the maintainer's money).** Of the 40 most recently
+  completed `ci.yml` runs on `main`: **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron.** Zero push-triggered runs on the default branch have
+  reached a conclusion. Each merge's run is killed by the next one — my own merge's run
+  (#1030, `c370d4f8`) lasted 3m43s with zero jobs allocated. The workflow ALREADY tries to
+  prevent this: `cancel-in-progress: ${{ github.ref_name !=
+  github.event.repository.default_branch }}` is meant to exempt `main`, and it is not taking
+  effect. **Why this is a question and not a fix:** the repair is a concurrency-block change,
+  which makes every merge run a full matrix (macOS + Windows + ubuntu × several lanes) instead
+  of being cancelled — real runner minutes, at the current cadence of roughly one merge every
+  four minutes. That is a cost decision, and the cheaper alternative is a ruling that the
+  nightly IS the referee for `main` and sessions must reproduce lanes locally rather than defer
+  to CI. **What it costs to leave as-is:** several standing lessons resolve a local limitation
+  with "let CI run the real test" (the CI-only/standalone-repro pattern, the columnar
+  real-httpfs round trip, the pwsh-gated installer tests, the crypto lane's `[pqc]` guard —
+  the last of which was written *because* a guard that no lane collects is a guard that never
+  runs). On `main` that referee currently reports on a cron against whatever the branch happens
+  to be at 11:33 UTC, which is nobody's merge. **UNMEASURED, deliberately:** the mechanism.
+  Whether the expression mis-evaluates or pending runs are superseded regardless of the flag
+  needs a cancellation reason the Actions API does not expose cleanly; the observation says the
+  guarantee is absent, not why, and changing the workflow on the observation alone would be
+  fixing a mechanism nobody has read.
 
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
@@ -10198,3 +10281,86 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   groups, so the cost grows with the corpus and has NOT been measured at the 500k scale. If a
   live run is slow, the fix is the explicit-action button the article-length figure already
   uses, not a cap.
+- **STORAGE PROMPT 22 (S1–S5) — THE PHASE-C DESIGN REFRESH: four rulings still open, three
+  carry-overs, one operator job (2026-09-07; refresh of record =
+  [`docs/design/STORAGE_5TB_REFRESH_2026-09-07.md`](../design/STORAGE_5TB_REFRESH_2026-09-07.md);
+  guard = `tests/test_db10_migration_mechanism.py`).** The session was scoped as a design
+  refresh and stayed one; nothing from Phase B or Phase C was built. What changed is recorded in
+  `shipped.csv` and the refresh doc. What is still the maintainer's to decide:
+
+  **C4 RULINGS 3–6 REMAIN OPEN, and two of them have new evidence since the plan's §8 table was
+  written.** They are recorded here as QUESTIONS, not answers — none was ruled this session.
+  (3) **Blob-store dedup ON?** Standing recommendation YES; unchanged by anything measured here.
+  (4) **Pack AEAD: OOENC2 or `age`?** Standing recommendation OOENC2, `age` as the recorded
+  fallback — but one input moved: `PRAGMA cipher_memory_security` **defaults to 0, OFF**
+  (MEASURED; open since 2026-07-12 as §7 item 3). The plan's §5 asks memory hygiene to "extend
+  to the blob path", which reads as though the SQL path already locks memory. It does not, so
+  "OOENC2 keeps the blob path consistent with the SQL path's hygiene" is not an argument
+  available to either side, and the choice rests where it did: one fewer dependency and already
+  tested, against audited-external and no AES-NI dependency. (5) **Keyed HMAC blob addressing +
+  opaque pack names?** Standing recommendation YES; the confirmation-attack threat model is
+  untouched. (6) **Authorise the `sqlite3mc` benchmark trial?** Standing recommendation YES,
+  benchmark-only. Its stated gate (a ChaCha20-vs-AES-CBC comparison on a no-AES-NI CPU) is
+  unchanged and is operator hardware this sandbox does not have.
+
+  **THE SEQUENCING QUESTION THE REFRESH RAISES, and it is the maintainer's rather than the
+  code's.** With the ceiling premise retired (64.00 TiB at the ruled page size, so 5 TB is 7.1%
+  of one file), Phase C is no longer a prerequisite for the 5 TB milestone. The refresh
+  re-scopes it behind **DB-10 §6's footprint measurement** — the per-table `dbstat` split of
+  `articles.content` against index and mention bytes, which has still never been taken and which
+  decides whether Phase C saves roughly half the store or most of it. **Nothing in the ledger
+  substitutes for it** — the two recorded field figures that look as though they might (~42.6 KiB
+  per article at 11.7 GB / 268,241, ~21.9 KiB at 32.1 GB / ~1.43 M) are the SAME quantity, store
+  bytes per article, on two different corpora, and they differ 2x between them; they say nothing
+  about the content-versus-index split. **Is the re-scope accepted, and is the footprint
+  measurement worth an operator run before any Phase-C code?**
+
+  **CARRY-OVER (1) — C5's remaining half.** The migration MECHANISM is verified and guarded
+  (ATTACH + declare `cipher_page_size` AND `auto_vacuum` on the alias + `sqlcipher_export`,
+  proven up, down, and rekey-plus-repage in one pass). A user-facing operation is NOT built,
+  deliberately: it still owes a free-disk preflight, a pragma self-verify that `int()`s the
+  read-back, and an honest app-stopped cost statement. **The instrument that measured that cost
+  no longer exists** — `src/monitoring/pagesize_bench.py` was removed under the 2026-07-31
+  ruling 6 once §1b was ratified, so the 10–17 s/GB figure survives only in this ledger. A build
+  must re-create the measurement or cite the ledger explicitly; it must not present the number
+  as something the tree can reproduce. Whether the operation should exist as a button at all is
+  still open (the 2026-07-18 ruling says "a user-facing migrate op is a separate build").
+
+  **CARRY-OVER (2) — DB-10 §2 is HALF shipped, found by the staleness guard while about to
+  rebuild it.** `app-settings.js:_confirmVacuum` discloses an estimated duration (10–17 s/GB)
+  and confirms before running — honest, translated, layered. Absent: any **backend** refusal
+  (`POST /api/database/vacuum` will start a full rebuild on a corpus of any size), any
+  **free-disk preflight** (a full VACUUM needs ~2× the file size in scratch; the repo already
+  has a `free_disk_bytes` helper in `src/safety/data_location.py`), and any pointer at the
+  incremental pass — which IS wired (`scheduler/maintenance.py` → `maybe_incremental_vacuum`)
+  and which was the section's actual ask. Not built here because it is outside prompt 22's
+  stated scope and this session is the design refresh; recorded so the next DB-10 slice does not
+  re-derive it.
+
+  **CARRY-OVER (3) — Phase B's FTS split moves BEHIND the sharding prototype**, on evidence
+  rather than preference: its "no second on-disk copy" bonus is already banked by the shipped
+  external-content table, and contentless-delete REFUSES `'rebuild'` (MEASURED), so the split
+  trades a minutes-to-hours engine primitive for a multi-day application-level re-feed at
+  current corpus size. If sharding lands, each shard is a separate file and the split comes free
+  with it. No ruling needed unless the maintainer wants the backup-exclusion win sooner.
+
+  **OPERATOR JOB — the 50–100 M sharding prototype, now costed rather than caveated.** MEASURED
+  here: 1,925 bytes of FTS5 index per synthetic document at 2,692 docs/s, so **89.6 GiB and
+  5.2 h per arm at 50 M** (179.3 GiB / 10.3 h at 100 M), and a single-vs-sharded comparison
+  needs two arms — against this sandbox's 30 GiB allowance that is 3.0x short for one arm at 50 M
+  and 6.0x for the comparison (6.0x and 12.0x at 100 M). Treat 89.6 GiB as an upper bound (the synthetic vocabulary is deliberately
+  tail-heavy) and measure the real corpus's index-bytes-per-article first. What the prototype
+  still has to answer is the SCALE half — query-latency knee, merge behaviour, tombstone
+  accumulation. What it no longer has to answer: recall is preserved structurally (100% in
+  44/44 cells) and the ranking divergence is per-shard statistical thinness that shrinks as
+  shards fatten toward the proposed ~1 M docs/shard. One finding for whoever runs it: FTS5's
+  `bm25()` takes column weights and nothing else, so the plan's "maintain global term stats"
+  option does not exist inside FTS5 — the real choices are fat shards, disclosure, or scoring
+  outside FTS5.
+
+  **C6 / DAT-05 — VERIFIED-PRESENT, no action.** The prompt recommended parking the httpfs
+  binaries explicitly with the reason rather than leaving them reading as pending work. That was
+  already done on 2026-09-07: `configs/external_artifacts.yml`'s `duckdb-httpfs-extension` entry
+  carries a `parked:` field naming the blocker (`extensions.duckdb.org` is not in the egress
+  allowlist, and a sha256 for a binary nobody fetched cannot be written without fabricating it)
+  and what it costs. Recorded here only so the next reader does not re-open it.

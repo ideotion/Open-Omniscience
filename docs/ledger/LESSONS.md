@@ -6056,6 +6056,77 @@
     allocation that makes the failure look like a regression somewhere else. Fixed by
     `_server_env()` setting `VLLM_USE_FLASHINFER_SAMPLER=0` whenever `cuda_toolkit_present()`
     is false (`src/llm/vllm_lifecycle.py`), an operator's explicit setting still winning.
+  - **A ONE-LINE FLIP OWES A DISCLOSURE THAT IS TRUE ON BOTH SIDES OF IT — and nothing about
+    flipping a boolean will tell you the wording did not follow (2026-09-07, the Bulletin's
+    open question 4):** the ledger had recorded for months that answering it was "one constant
+    with exactly one read … a one-line change, not an audit", and the code half was exactly
+    that. The other half was not: the caveat beside the constant said the deterministic
+    document "is withheld only because the feature is gated as a whole", which became FALSE the
+    moment the flip landed — a refusal an operator never received, printed in the one place
+    they would go to understand why. A guard counting the READS cannot see it, and neither can
+    a passing suite, because both states are internally consistent. **THE MECHANISM THAT MAKES
+    BOTH TRUE AND KEEPS THE GUARD MEANINGFUL:** read the constant ONCE into a local at the top
+    of the function and derive the verdict, the reason AND the caveat from that local — a local
+    is not a second place to flip, it is the same place read once — then pin BOTH states with
+    tests that monkeypatch the constant, plus the twin asserting the shipped state does NOT
+    claim the refusal. Three mutations redden: the caveat pinned to either state, and the
+    unmeasured-probe path claiming a gate it never measured. **THE SECOND HALF IS SHARPER AND
+    GENERALISES FURTHER: when one gate answers two questions, the verdict is two keys.**
+    `available` had to become the DOCUMENT verdict with `narration_available` beside it, because
+    below the bar those are opposite answers and a caller reading a single `available` would
+    have to guess which one it got — the recorded one-key-two-meanings defect, in a policy
+    flag. And the key that is a HARDWARE FACT must read the POLICY constant NOWHERE, or
+    flipping the policy silently changes what the app claims about the machine; the mutation
+    that makes the narration verdict read the constant reddens by name.
+  - **A WORKER WHOSE PER-ITEM FUNCTION DEGRADES INSTEAD OF RAISING WILL FINISH `complete` ON A
+    DEAD BACKEND — the abort-to-done defect wearing a graceful-degrade hat (2026-09-07, the
+    Bulletin's narration job):** `narrate_story` never raises; a model failure resolves to the
+    deterministic template with the reason recorded, which is right for the document and is
+    precisely what makes a naive loop walk every story, write a template for each, advance its
+    cursor and end `done`. Nothing in the run looks like a failure. The design record had
+    warned against exactly this three fixes running, and the warning is not enough on its own
+    because the defect arrives through the CORRECT behaviour of the callee. **THE FIX IS TO
+    CLASSIFY THE FALLBACK REASON**, not to make the callee raise: an outage does not advance
+    the cursor, is retried with backoff, and after N in a row the run RAISES so the job state
+    is genuinely `error`. **THE NEGATIVE-SPACE TWIN IS MANDATORY AND IS WHERE THE FIX GOES
+    WRONG:** not every fallback is the backend. A story whose articles carry no readable text
+    fails for a reason retrying cannot change, so treating every fallback as an outage stalls
+    the whole run on one empty item, for ever, having looked conservative. Both directions need
+    a test, and the mutation for each reddens a different one.
+  - **A MUTATION IS ONLY EVIDENCE ABOUT THE SUITE THAT COULD HAVE SEEN IT (2026-09-07):** a
+    mutation deleting a per-card disclosure line from the renderer SURVIVED, run against the
+    translation-coverage suite — and coverage genuinely cannot see it, because a line the
+    renderer stopped emitting is a line the translator is never asked for, so the catalog stays
+    100% complete while the sentence vanishes. Re-pointed at the suite that claims the property
+    it reddened immediately. The recorded `pytest -k` lesson says a selector matching zero tests
+    reads like a pass; this is the same family one level up, where the selector matches plenty
+    of tests and none of them is about the thing. Before reading a survival as a finding, name
+    the test that would have to fail. **AND THE FINDING UNDERNEATH IS WORTH ITS OWN LINE: a
+    translation-completeness guard is blind to a deleted render line by construction**, which
+    makes a behavioural render assertion the twin every new disclosure line needs — with its own
+    negative-space half, since a record written before the field existed must get NO line rather
+    than a fabricated answer.
+  - **AN EXCLUSIVE PERIOD END DOES NOT MAP ONTO EVERY CONSUMER'S CLOCK, AND THE TWO ARE ONE DAY
+    APART (2026-09-07, the card producers' period seam):** handing producers an `as_of` anchor,
+    `on_the_horizon` looks FORWARD and takes `end` directly — the first instant after the period
+    is exactly "what was on the horizon when this closed" — while `through_time` is an
+    anniversary on a CALENDAR DATE and must take `end - 1 day`, the period's own last covered
+    day. Anchoring it on `end` picks the day AFTER the edition's last, finds a different set,
+    and every ordinary fixture still passes. A fixture whose articles sit on the last covered
+    day discriminates them; nothing else does. GENERAL FORM: when one anchor is threaded through
+    several consumers, ask each one what its own clock MEANS before passing the value, and write
+    the fixture that separates the two readings — a shared parameter name is not a shared
+    semantics.
+  - **A SURVIVING MUTANT CAN SURVIVE FOR A REASON UNRELATED TO THE PROPERTY — check WHY the
+    fixture failed before writing a better assertion (2026-09-07, the same seam):** the mutant
+    that made a derived anchor override an explicit `today` survived a test written for exactly
+    that precedence. It survived because the mutated code returned `[]` too — for want of a
+    trending term inside the anchored window, not because the precedence held. The fixture had
+    seeded its mentions two months before the period, so BOTH versions took an early return and
+    the assertion could not tell them apart. Moving the mentions inside the window made the two
+    diverge and the mutation reddens by name. The recorded rule that the discriminating input is
+    never the obvious example has a corollary: when a mutant survives, run the mutated code and
+    find out which branch it took, rather than assuming the assertion is too weak.
 
 - **A TIMING HARNESS THAT DOES NOT ASSERT THE WORK HAPPENED CAN REPORT A PASS FROM A SERVER
   THAT DID NOTHING (2026-09-07, S3.6, caught before it could lie):** the concurrency
@@ -6960,3 +7031,109 @@
     nothing about which of them a given flag reaches. GENERAL FORM: a guard over an
     ordered list checks order; the CONDITIONAL membership needs its own assertion, one
     per branch the function can return on.
+  - **PUSH CI ON `main` HAS NOT COMPLETED ONCE IN 40 RUNS — "CI will catch it" is not an
+    available guarantee on this repository, and the ledger leans on it repeatedly
+    (2026-09-07, measured while trying to verify a merge):** the recorded lesson is
+    `merged ≠ green`; this is the structural version underneath it, and it is worse.
+    Of the **40 most recently COMPLETED `ci.yml` runs on `main`**: **34 `cancelled`,
+    2 `failure`, 4 `success` — and all four successes are `event: schedule`.** Not one
+    push-triggered run on the default branch reached a conclusion. Each merge's run dies
+    when the next merge lands, and under this cadence that is minutes: run 4923
+    (`c370d4f8`, my own merge) was created 17:36:09 and cancelled 17:39:52, the instant
+    #1029 merged; 4929 died at 17:43:12 when #1026 landed. 4923 had **zero jobs
+    allocated** when it was cancelled, so it never ran a line. THE CONSEQUENCE IS NOT
+    ABOUT ANY ONE PR: several standing lessons resolve a local limitation with "let CI
+    run the real test" (the CI-only/standalone-repro pattern, the columnar real-httpfs
+    round trip, the pwsh-gated installer tests, the crypto lane). On the default branch
+    that referee reports on a cron, against whatever `main` happens to be at 11:33 UTC —
+    a moving target that is nobody's merge. So a session that defers a check to CI is
+    deferring it to the nightly, and the honest move is to reproduce the lane locally
+    whenever it can be reproduced at all: the **Core-only lane can** (a clean 3.13 venv,
+    `pip install -e ".[dev]"` in a worktree, then that lane's own `pytest -q`; measured
+    here 9170 passed / 150 skipped / 0 failed against 9303/128 with the extras, the extra
+    22 skips being the analysis-gated tests doing exactly what the lane checks), and so
+    can PowerShell and sqlcipher per their own recorded entries. **WHAT IS MEASURED AND
+    WHAT IS NOT:** the 34/40 count and the cancellation timestamps are measured. The
+    MECHANISM is not, and the reason to say so is that `ci.yml` already carries
+    `cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}`
+    — i.e. the repo *intends* to exempt `main` and the exemption is not taking effect.
+    Whether that expression is mis-evaluating, or whether pending runs in a group are
+    superseded regardless of the flag, needs a check the Actions API does not expose
+    cleanly (a cancellation reason). Do not "fix" the workflow on the strength of the
+    observation alone — the observation says the guarantee is absent, not why.
+  - **A RULING CAN INVALIDATE THE PLAN THAT ASKED FOR IT, AND THE PLAN GOES ON READING AS
+    CURRENT (2026-09-07, the storage refresh):** `STORAGE_5TB_PLAN.md`'s whole priority order
+    rests on headline finding (3) -- "a default-page SQLCipher file caps at ~17.5 TB, so text
+    offload (Phase C) is MANDATORY". That ceiling is `max_page_count x page_size`, and the plan
+    itself is what asked for the DB-10 SS1b page-size measurement; when the ruling landed
+    (16384, wired 2026-08-13) the ceiling quadrupled to **64.00 TiB** and the premise died --
+    seven weeks before anyone read the plan again, with no line in it that looked stale. The 5 TB
+    milestone went from 28% of one file to 7.1%, and the plan's own "50 TB is not reachable by
+    any single-file design" became false. GENERAL FORM: the staleness guard is usually run as "is
+    this already built?" and the recorded refinement is "is the MEASUREMENT this item rests on
+    still one the code would produce today?"; this is the third form and the most expensive --
+    **a ruling changes an INPUT, and every premise COMPUTED from that input is stale the moment
+    it lands, including premises in the document that requested the ruling.** So when closing out
+    a ruling, grep the requesting document for numbers DERIVED from the value that changed, not
+    just for status lines about the ruling. The tell is a load-bearing figure with no citation to
+    a run -- "~17.5 TB" had been carried as a constant since 2026-07-12 and nobody re-derived it
+    because it did not look like a measurement.
+  - **A MECHANISM THAT WORKS ONLY AT THE OLD DEFAULT IS A TRAP THE NEW DEFAULT ARMS -- and it
+    fails toward SUCCESS (2026-09-07, `VACUUM INTO` under SQLCipher):** the plan and the
+    2026-07-18 folder-copy-parity ruling both name `VACUUM INTO` with pragmas set as an
+    alternative migration mechanism. MEASURED across the page-size ladder, it writes its product
+    at the compiled `DEFAULT_PAGE_SIZE` (4096) **whatever the source is, and reports success**:
+    usable at 4096, unopenable at 1024/2048/8192/16384/32768. So it worked on exactly the page
+    size every corpus HAD before 2026-08-13 and no corpus created since HAS -- the coincidence is
+    both why it was never noticed and why the ruling that removed it is what armed the trap.
+    (Not a plaintext leak: no plaintext runs, no table name, 261,051 of 262,144 bytes differ. The
+    source survives. No live call site, so it was a documented instruction rather than a shipped
+    bug -- which is the only reason this is cheap.) THE OBVIOUS REPAIR IS ALSO A TRAP: setting
+    `cipher_page_size` on a live keyed connection poisons the codec and the next statement fails
+    `file is not a database` **naming the SOURCE**, i.e. reporting corpus corruption that has not
+    happened; the stdlib spelling `PRAGMA page_size` is accepted SILENTLY and surfaces one
+    statement later. GENERAL FORM: when a default changes, grep for the operations that were only
+    ever exercised at the OLD value -- their correctness may have been a coincidence with that
+    default, and an operation that silently produces a wrong artifact is worse than one that
+    refuses. And scope the finding with its twin: on a PLAINTEXT store the same statement honours
+    declared pragmas exactly, which is why the Open-queue's "EMPIRICALLY PROVEN in-sandbox for
+    plaintext" was true and was never evidence about the encrypted path.
+  - **I HIT THE COINCIDENT-FIXTURE TRAP TWICE IN ONE HOUR, IN OPPOSITE DIRECTIONS, AND THE GUARD
+    CAUGHT THE PROBE (2026-09-07, same slice):** the recorded rule is that a fixture where two
+    values coincide cannot test which one is used. (a) My first C5 probe asked whether an
+    ATTACHed target INHERITS the source's pragmas, using a 4096 source against a compiled default
+    of 4096 -- so "inherited" and "took the compile default" gave the same answer and the arm
+    settled nothing. (b) Re-run from 16384 it discriminated, and I then read its result as
+    "`VACUUM INTO`'s product never opens" -- when the real rule was "the product is ALWAYS 4096",
+    which my 16384 fixture could not distinguish from "always broken". **What caught (b) was the
+    regression test failing**, not the probe: the guard used a 4096 source, the product opened,
+    and the contradiction is what produced the actual mechanism. GENERAL FORM: a probe and the
+    guard written from it are two instruments; when they disagree, the disagreement IS the
+    finding, and the answer is a matrix over the varying axis rather than a better story about
+    either run. COROLLARY, from the mutation matrix on my own guard: rewriting the negative-space
+    fixture back to the coincident 4096 made it pass again, so the fixture is what carries that
+    test -- closed with an anti-vacuity assertion that the source differs from the compile
+    default IN BOTH DIMENSIONS, because a comment saying so is exactly what the next edit will
+    not read.
+  - **VARYING ONE PARAMETER MOVES EVERYTHING THAT DEPENDS ON IT -- the sharding control inverted
+    my own finding (2026-09-07, the hash-shard BM25 measurement):** measuring cross-shard ranking
+    divergence at K = 2/8/32/128 over a FIXED 120,000-document corpus produced an alarming result
+    (top-20 overlap down to 30% at K=128, the top result itself changing) which I was one edit
+    from recording as "sharding degrades ranking". It is not: raising K over a fixed corpus also
+    THINS each shard, to 940 documents at K=128, and BM25's IDF is computed from per-shard
+    document frequency -- so the fixture had made shards statistically thin, which is not the
+    regime the plan proposes (~1,000,000 docs/shard). Holding K=32 and fattening the shards
+    instead, the divergence RECOVERS toward the proposed size: mid-frequency 60 -> 75 -> 90%,
+    rare tail 40 -> 75 -> 95% at 2k / 8k / 32k documents per shard. The control cost twelve
+    minutes and reversed the conclusion. GENERAL FORM: before recording a trend over a swept
+    parameter, list every OTHER quantity that parameter moves and hold the suspicious one fixed
+    -- this is the recorded "a probe that refutes a hypothesis is a claim about the fixture until
+    it is shown to be a claim about the system" trap, with the CONFOUND rather than the scale as
+    the varying axis. Two riders worth keeping. The RECALL half (100% of the matching set in all
+    44 cells) is structural rather than statistical -- the fan-out visits every shard with no
+    per-shard cutoff -- so it confirms the construction rather than discovering it, and saying
+    which of your numbers is which is what keeps the evidence section evidence. And FTS5's
+    `bm25()` takes column WEIGHTS and nothing else, so the plan's offer of "either maintain
+    global term stats or disclose the approximation" is not a real choice: there is no way to
+    hand FTS5 external statistics, and the options are fat shards, disclosure, or scoring
+    outside FTS5.
