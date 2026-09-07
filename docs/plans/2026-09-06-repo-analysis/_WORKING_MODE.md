@@ -5,11 +5,14 @@ twenty prompts do not carry twenty drifting copies of the same rules.
 
 ## 1. Read the ledger first
 
-`CLAUDE.md` is the binding ruling ledger and its own protocol says to read it before any work. It is large
-(~1.3 MB); read the **Non-negotiables**, the **UI invariants**, the **Session rituals** including the whole
-**Lessons** subsection, and then the Open-queue entries your prompt names. The Lessons list is not
-background reading — most of the defects it records were found the expensive way, and several of them are
-about the exact class of change you are being asked to make.
+**Restructured 2026-09-07 (ruling A3) — the ledger is now three files.** Read `CLAUDE.md` (~43 KB: the
+Non-negotiables, the UI invariants, the Session rituals) and
+[`docs/ledger/LESSONS.md`](../../ledger/LESSONS.md) (~531 KB) **in full, every session** — together they
+are the constitution, and protocol rule (1) requires both. Then open
+[`docs/ledger/OPEN_QUEUE.md`](../../ledger/OPEN_QUEUE.md) (~851 KB, 164 entries) and read only the entries
+your prompt names — it is the docket, consulted rather than memorised. The Lessons file is not background
+reading: most of the defects it records were found the expensive way, and several of them are about the
+exact class of change you are being asked to make.
 
 ## 2. The staleness guard is mandatory and it pays
 
@@ -136,12 +139,15 @@ Every session ends with, in the same PR:
 1. A row appended to `docs/ledger/shipped.csv` — **in binary** (`read_bytes`/`write_bytes`). The file is
    mixed CRLF/LF and carries `merge=union` in `.gitattributes`; a text round-trip silently rewrites untouched
    rows. Verify with `git diff --ignore-cr-at-eol --numstat`.
-2. Any new ruling recorded in `CLAUDE.md` **in the turn it was given**, as prose in the Open queue. Never
-   invent a ruling the maintainer did not give; record the question instead.
-3. Any reusable lesson appended verbatim to `docs/ledger/SHIPPED_LOG.md` **and** copied into the
-   Session-rituals "Lessons" subsection of `CLAUDE.md`.
+2. Any new ruling recorded **in the turn it was given**, as prose in `docs/ledger/OPEN_QUEUE.md` (the
+   docket; it left `CLAUDE.md` on 2026-09-07 under ruling A3(1)). A new NON-NEGOTIABLE or UI INVARIANT
+   still goes in `CLAUDE.md` itself. Never invent a ruling the maintainer did not give; record the
+   question instead.
+3. Any reusable lesson appended verbatim to `docs/ledger/SHIPPED_LOG.md` **and** copied into
+   `docs/ledger/LESSONS.md` (which is where the Session-rituals "Lessons" subsection moved on
+   2026-09-07, same ruling).
 4. An honest carry-over section in the PR body: what was not built and why, what is operator-gated, what is
    browser-gated, what a maintainer ruling still blocks. Parking something honestly is a good outcome;
    half-building a migration is not.
-5. After a merge of parallel work, `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/shipped.csv`
+5. After a merge of parallel work, `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/*.md docs/ledger/*.csv`
    — the ledger has carried committed conflict markers before.

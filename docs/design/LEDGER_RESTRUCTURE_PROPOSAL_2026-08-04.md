@@ -1,7 +1,23 @@
 # Proposal — split the ledger so rule (1) can be obeyed again
 
-**Status: PROPOSAL. Nothing here is executed.** This is the memory protocol itself, and
-rule (2) says every ruling is recorded before it is acted on. It needs a maintainer ruling.
+**Status: RULED AND EXECUTED 2026-09-07.** The maintainer answered all four §7 questions
+(recorded as A3 in `docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md`):
+**yes** to all four, and **(1) was widened** — the Lessons subsection moved out too, which
+§5 below had proposed to keep inline. Read §5 with that in mind: it is the one bullet the
+ruling overrode.
+
+**Why (1) was widened.** This proposal was written against a 797 KB file and predicted the
+move would leave ~1,940 lines / ~47k tokens. By 2026-09-07 the file was 1,345,603 bytes and
+the Lessons subsection alone had grown to 489,044 bytes / 5,583 lines — 36 % of the file —
+so moving only the queue would have left ~6,038 lines / ~132k tokens and rule (1) would
+still have been unobeyable. Measured outcome: **CLAUDE.md 1,345,603 → 36,337 bytes**, with
+`docs/ledger/LESSONS.md` (490,053) and `docs/ledger/OPEN_QUEUE.md` (822,012) beside it. The
+move was byte-exact: the original SHA-256
+`fcc4072fea11c7944ecaec2c85d80d7f70db6bb330ff1f0341ef03faffbf3107` is reconstructible from
+the three files, asserted in the split.
+
+**§6's observation on `shipped.csv` remains open** — it was explicitly left for a separate
+decision and no ruling has been given on it.
 
 **Author's position, stated once and not repeated below:** the ledger discipline is the
 single most unusual strength of this project and this proposal does not weaken it. It

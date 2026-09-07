@@ -7666,6 +7666,58 @@ def test_docs_index_covers_live_docs():
     assert not missing, f"docs/README.md must reference every top-level doc; missing: {missing}"
 
 
+#: Line ceiling for CLAUDE.md, the CONSTITUTION half of the ledger. Measured 2026-09-07
+#: immediately after ruling A3 split the Open queue and the Lessons subsection out into
+#: docs/ledger/. Zero slack by design: a ratchet with room is a ratchet that does nothing.
+#:
+#: This file is expected to be STABLE. Rule (2) sends a new pending ruling to
+#: docs/ledger/OPEN_QUEUE.md and rule (5a)(b) sends a new lesson to docs/ledger/LESSONS.md,
+#: so the only things that legitimately grow CLAUDE.md are a new non-negotiable, a new UI
+#: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
+#: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
+#: workaround.
+_CLAUDE_MD_LINE_CEILING = 544
+
+
+def _claude_md_lines() -> int:
+    return (_ROOT / "CLAUDE.md").read_bytes().count(b"\n")
+
+
+def test_claude_md_stays_within_its_ratchet():
+    """CLAUDE.md may not grow past its recorded ceiling (proposal 4.5, ruled A3(4)).
+
+    The ledger reached 15,238 lines / 1.3 MB once, at which point protocol rule (1) --
+    "read it in full before any work, every session" -- could only be obeyed by skimming,
+    which is the failure mode the rule exists to prevent. The remedy the file itself
+    reaches for in its best moments is mechanical enforcement, so here it is.
+
+    If this fails: compress per rules (5) and (5a) -- a SHIPPED entry becomes a row in
+    docs/ledger/shipped.csv (plus a verbatim entry in SHIPPED_LOG.md and, if it carries a
+    reusable lesson, a copy in LESSONS.md). NEVER compress away a pending ruling, a
+    contingency or a deliberate-omission note; those go to docs/ledger/OPEN_QUEUE.md and
+    rule (5) protects them. If the growth IS a new non-negotiable or UI invariant, raise
+    the ceiling in the same PR and say so."""
+    n = _claude_md_lines()
+    assert n <= _CLAUDE_MD_LINE_CEILING, (
+        f"CLAUDE.md is {n} lines, over its ceiling of {_CLAUDE_MD_LINE_CEILING}. "
+        "Compress per THE PROTOCOL rules (5)/(5a): shipped work goes to "
+        "docs/ledger/shipped.csv, a pending ruling to docs/ledger/OPEN_QUEUE.md, a lesson "
+        "to docs/ledger/LESSONS.md. Raise the ceiling for content that genuinely belongs "
+        "here -- a non-negotiable, a UI invariant, an amendment to the protocol itself -- "
+        "never to make room for content those rules route elsewhere."
+    )
+
+
+def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
+    """The ratchet must ratchet. Mirrors test_the_budget_is_not_left_above_the_real_count:
+    a ceiling left above the real line count is slack, and slack is where the next 1.3 MB
+    grows unseen. If this fails, LOWER _CLAUDE_MD_LINE_CEILING to the reported number."""
+    n = _claude_md_lines()
+    assert n == _CLAUDE_MD_LINE_CEILING, (
+        f"lower _CLAUDE_MD_LINE_CEILING to {n}"
+    )
+
+
 def test_library_graphs_wired_and_downloaded_section_compressed():
     """S2 (2026-07-23 field-feedback workflow): the Library tab's bare live figures
     (sources/keywords/Wikipedia+law tracked counts) become small evolution graphs

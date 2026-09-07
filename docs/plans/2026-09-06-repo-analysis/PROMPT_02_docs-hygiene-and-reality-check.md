@@ -79,7 +79,7 @@ against the tree, not against itself.
 
 Move to `docs/archive/design/` (non-lossy `git mv`, links retargeted, an entry in the archive README) the
 docs whose entire scope is executed. Before moving any of them, **lift any carry-over that exists only
-there** into `docs/ROADMAP.md` or the CLAUDE.md Open queue — the 2026-07-22 plan's own gate on this rule is
+there** into `docs/ROADMAP.md` or the Open queue (`docs/ledger/OPEN_QUEUE.md` since 2026-09-07) — the 2026-07-22 plan's own gate on this rule is
 the right one. Banner, do not archive, anything still holding an unexecuted ruling.
 
 ### S6 — Record what only the PR history knows
