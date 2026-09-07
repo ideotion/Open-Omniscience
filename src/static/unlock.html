@@ -67,6 +67,10 @@
   .legal-docs .doc-sep { border-top:2px solid var(--accent); margin:16px 0 0; }
   .accept-row { display:flex; align-items:flex-start; gap:8px; margin-top:14px; font-size:13px; color:var(--fg); }
   .accept-row input { margin-top:3px; }
+  /* A filesystem path is data, not prose: it must WRAP rather than overflow the card
+     (an absolute path on an external drive is long), and it reads as a path. */
+  .path { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px;
+    overflow-wrap:anywhere; word-break:break-all; color:var(--fg); }
   .note.danger { border-color:var(--err); }
   .note.danger p { color:var(--err); }
   input[type=text] { width:100%; padding:10px 12px; border-radius:8px;
@@ -115,6 +119,30 @@
       <button id="lg-decline-confirm" class="danger" disabled></button>
       <button type="button" id="lg-decline-cancel" class="ghost"></button>
     </div>
+  </div>
+
+  <!-- First-launch DATA LOCATION (maintainer 2026-07-14): after the language and legal
+       steps and BEFORE the passphrase, because that is the only moment at which the
+       choice is safe. src/paths.data_dir() re-reads the environment on every call while
+       DATABASE_URL/engine/SessionLocal freeze at import, so a switch made after a store
+       exists moves the keys/custody/models and leaves the corpus behind. The default is
+       one click; a chosen folder gets an "OOS data" subfolder and requires a restart,
+       which is stated rather than implied. -->
+  <div id="view-datadir" class="hidden">
+    <h1>Where should your corpus live?</h1>
+    <p>Everything this app collects — the encrypted corpus, its keys and its logs — lives in one folder. You can keep the default or put it on another drive.</p>
+    <label class="accept-row"><input type="radio" name="dl-where" id="dl-default" checked><span>Use the app's own data folder</span></label>
+    <p class="tm"><span id="dl-default-path" class="path"></span></p>
+    <label class="accept-row"><input type="radio" name="dl-where" id="dl-custom"><span>Choose another folder</span></label>
+    <div id="dl-custom-box" class="hidden">
+      <label for="dl-path">Full path to a folder on this machine</label>
+      <input type="text" id="dl-path" autocomplete="off" spellcheck="false" placeholder="For example: /media/drive">
+      <p class="tm"><span>A folder named &ldquo;OOS data&rdquo; is created inside it.</span></p>
+      <button type="button" id="dl-check" class="secondary">Check this folder</button>
+      <div class="note hidden" id="dl-report"><p id="dl-report-text"></p></div>
+    </div>
+    <button id="dl-continue">Continue</button>
+    <div class="err" id="dl-msg"></div>
   </div>
 
   <div id="view-unlock" class="hidden">
@@ -305,6 +333,104 @@
       $("view-create").classList.remove("hidden");
       const pw1 = $("pw1"); if (pw1) pw1.focus();
     }
+    // The data-location step sits BETWEEN the two. It is skipped -- silently and
+    // deliberately -- whenever the backend says the choice is not offerable: an
+    // operator who already set OO_DATA_DIR themselves, or any state but `fresh`.
+    // Showing a control that cannot be honoured would be worse than not showing one.
+    async function legalToDataLocation() {
+      const card = document.querySelector(".card"); if (card) card.classList.remove("wide");
+      $("view-legal").classList.add("hidden");
+      let info = null;
+      try { info = await (await fetch("/api/system/data-location")).json(); } catch (e) { info = null; }
+      if (!info || !info.offerable) { legalToPassphrase(); return; }
+      $("dl-default-path").textContent = info.data_dir || "";
+      $("view-datadir").classList.remove("hidden");
+      const c = $("dl-continue"); if (c) c.focus();
+    }
+    function dlToPassphrase() {
+      $("view-datadir").classList.add("hidden");
+      $("view-create").classList.remove("hidden");
+      const pw1 = $("pw1"); if (pw1) pw1.focus();
+    }
+    // A chosen folder only takes effect at the NEXT start, so this process must not go
+    // on to create a corpus: it would land in the OLD folder while the recorded choice
+    // pointed elsewhere -- the orphaning the whole step exists to prevent. So the flow
+    // ENDS here, saying what happened and what to do, with a button that stops the app.
+    function dlRestartRequired(path) {
+      const card = document.querySelector(".card");
+      card.classList.remove("wide");
+      card.innerHTML = "";
+      const h = document.createElement("h1");
+      h.textContent = t("Your corpus folder is set");
+      const p1 = document.createElement("p");
+      p1.textContent = t("Open Omniscience will use this folder the next time it starts:");
+      const p2 = document.createElement("p");
+      p2.className = "path"; p2.textContent = path || "";
+      const p3 = document.createElement("p");
+      p3.textContent = t("Nothing has been created yet. Stop the app and start it again to continue setting it up.");
+      const b = document.createElement("button");
+      b.id = "dl-stop"; b.textContent = t("Stop the app now");
+      card.appendChild(h); card.appendChild(p1); card.appendChild(p2);
+      card.appendChild(p3); card.appendChild(b);
+    }
+    // The probe answers "could the corpus live here", and its warnings are DATA
+    // (machine-readable codes + numbers) rendered here as sentences. A warning never
+    // blocks: this project does not hard-block on a judgement that belongs to the
+    // operator -- it says what it measured and lets them decide.
+    function dlWarningText(w) {
+      if (!w || !w.code) return "";
+      if (w.code === "already_has_a_corpus")
+        return t("This folder already holds an Open Omniscience corpus. Continuing will open it rather than create a new one.");
+      if (w.code === "parent_is_already_a_corpus")
+        return t("That folder looks like an existing Open Omniscience data folder. Continuing creates a new, empty corpus inside it and leaves the existing one alone.");
+      if (w.code === "volatile_filesystem")
+        return t("This folder is on a RAM-backed filesystem. Anything written here is lost when the machine restarts.");
+      if (w.code === "low_free_space")
+        return t("Little free space on this drive:") + " " + (w.free_human || "");
+      return w.text || "";
+    }
+    function dlRefusalText(out) {
+      const c = out && out.reason_code;
+      if (c === "not_absolute") return t("Enter the full path to the folder, starting from the top of the filesystem.");
+      if (c === "empty") return t("Enter a folder.");
+      if (c === "not_writable") return t("This app cannot write in that folder.");
+      if (c === "cannot_create") return t("That folder could not be created.");
+      return (out && out.reason) || t("That folder cannot be used.");
+    }
+    async function dlProbe() {
+      return await post("/api/system/data-location/check", { path: $("dl-path").value });
+    }
+    async function dlCheck() {
+      const box = $("dl-report"), txt = $("dl-report-text");
+      $("dl-msg").textContent = "";
+      try {
+        const out = await dlProbe();
+        const lines = [];
+        lines.push(out.usable
+          ? t("This folder can be used. Your corpus will live in:") + " " + (out.path || "")
+          : dlRefusalText(out));
+        (out.warnings || []).forEach((w) => { const s2 = dlWarningText(w); if (s2) lines.push(s2); });
+        txt.textContent = lines.join(" ");
+        box.classList.remove("hidden");
+        box.classList.toggle("danger", !out.usable);
+      } catch (e) {
+        txt.textContent = (e && e.message) || t("That folder cannot be used.");
+        box.classList.remove("hidden"); box.classList.add("danger");
+      }
+    }
+    async function dlContinue(btn) {
+      $("dl-msg").textContent = "";
+      if (!$("dl-custom").checked) { dlToPassphrase(); return; }
+      btn.disabled = true;
+      try {
+        const out = await post("/api/system/data-location", { path: $("dl-path").value });
+        dlRestartRequired(out && out.path);
+      } catch (e) {
+        $("dl-msg").textContent = (e && e.message) || t("That folder cannot be used.");
+        btn.disabled = false;
+      }
+    }
+
     function showUninstalling(msg) {
       const card = document.querySelector(".card");
       card.classList.remove("wide");
@@ -415,13 +541,21 @@
       if (id === "btn-create")
         go(ev.target, () => post("/api/system/create-db",
           { passphrase: $("pw1").value, confirm: $("pw2").value }));
+      // --- data-location step ---
+      if (id === "dl-default" || id === "dl-custom")
+        $("dl-custom-box").classList.toggle("hidden", !$("dl-custom").checked);
+      if (id === "dl-check") dlCheck();
+      if (id === "dl-continue") dlContinue(ev.target);
+      if (id === "dl-stop")
+        post("/api/system/shutdown", { confirm: true }).catch(() => {});
+
       // --- legal step ---
       if (id === "lg-download")
         window.location = "/api/legal/download?lang=" + encodeURIComponent(_legalLang);
       if (id === "lg-accept") {
         const b = ev.target; b.disabled = true; $("lg-msg").textContent = "";
         post("/api/legal/consent", { version: _legalVersion })
-          .then(() => legalToPassphrase())
+          .then(() => legalToDataLocation())
           .catch((e) => { $("lg-msg").textContent = e.message; b.disabled = false; });
       }
       if (id === "lg-decline") { $("lg-decline-panel").classList.remove("hidden"); $("lg-decline-input").focus(); }

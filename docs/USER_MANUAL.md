@@ -1415,8 +1415,28 @@ raw, interactive API reference stays at `/docs`.
    a passphrase; the corpus streams out as encrypted volumes + parity (any size).
 2. On the other machine, **Settings → Data & backup → Import…** — point at that folder and
    restore. The restore is additive — it complements that machine's corpus and never
-   replaces it, so you can also use it to *merge* two corpora. (An older single-file
-   `oo-backup-2` is restored via the legacy panel, with a preview.)
+   replaces it, so you can also use it to *merge* two corpora. An older single-file
+   `oo-backup-2` needs nothing special: the Import scan finds one nested anywhere in the
+   folder you point at and offers it as its own item, so old backups stay restorable.
+
+**Copy the whole folder instead — a first-class way to move or back up**
+
+The in-app tools exist to add things a file copy cannot do (a signed manifest, parity that
+repairs a damaged volume, an additive merge of two corpora, a selective restore). They are
+not a gate you have to pass. Copying the data folder is a supported path at any size, and it
+is the right one for moving a machine wholesale:
+
+1. **Stop the app** — the power button in the top bar, or Ctrl-C in its terminal. This is
+   not optional: a copy taken while it runs can catch a half-written WAL.
+2. Copy the whole **data** folder (§5.1 — `<app folder>/data/`, or whatever `OO_DATA_DIR`
+   points at). Not the app/code folder: the code is re-installable, the data is not.
+3. On the other machine, put the folder where you want it and point `OO_DATA_DIR` at it —
+   or, on a brand-new install, choose that folder at the first-launch step (§5.1).
+
+The corpus stays encrypted at rest through the copy, and the keys travel inside the folder,
+so **the passphrase is the only thing you must bring separately**. Since 2026-08 the local AI
+weights live in the data folder too, so a copy carries those as well — which is what makes it
+a genuine whole-machine move rather than a corpus-only one.
 
 ---
 
@@ -1435,6 +1455,32 @@ Resolved by `src/paths.py`, in this precedence:
 Case 2 is the normal one for an `install.sh` install: the installer clones a
 writable tree, so your data is in `<app folder>/data/` and the XDG path in case 3
 is never created. That is not a bug when you go looking for it and it is absent.
+
+**Choosing the folder at first launch.** The very first time you start the app —
+after the language and legal steps, before you set the passphrase — it asks where
+your corpus should live. Keeping the default is one click. If you pick another
+folder (an external drive, say), the app creates a folder named **`OOS data`**
+inside it and records the choice in `oo.env` at the install root, which
+`scripts/launch.sh` reads on every start.
+
+Two things about that step are deliberate and worth knowing:
+
+* **It only appears on a brand-new install.** Once a corpus exists the app refuses
+  to change the setting, because it cannot move what is already there: the keys,
+  the custody log and the model store would follow the new setting while the corpus
+  stayed behind, and the next start would find an empty folder and offer to set one
+  up. Moving an existing corpus is the plain folder copy described in §4 ("Copy the
+  whole folder instead") — stop the app, copy the data folder, point `OO_DATA_DIR`
+  at the copy.
+* **Picking another folder ends the setup and asks you to start the app again.**
+  Nothing has been created at that point; the folder only takes effect at the next
+  start, so continuing in the same session would put the corpus in the old folder
+  while the recorded choice pointed at the new one.
+
+You are told, not blocked, if the folder is unusual: a folder that already holds a
+corpus (continuing opens it rather than creating a new one), a RAM-backed
+filesystem (anything written there is lost on restart), or little free space, with
+the number. Only a folder the app genuinely cannot write in is refused.
 
 In that directory you'll find: `open_omniscience.db` (the corpus, SQLite/WAL),
 `app_settings.json` (theme, result limit), `custody_settings.json` (custody

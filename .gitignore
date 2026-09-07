@@ -142,3 +142,9 @@ logs/
 # The synthetic corpus a browser-verification run seeds on a loopback port. Always
 # synthetic: the maintainer's real corpus must never enter an agent session.
 .demo-data/
+
+# Machine-local data-location setting, written 0600 at the INSTALL ROOT by
+# install.sh (A11) and now also by the first-launch chooser. For a source
+# checkout the install root is this directory, so it would otherwise show up
+# untracked in every contributor's `git status`, naming their data path.
+oo.env

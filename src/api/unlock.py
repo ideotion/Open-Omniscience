@@ -22,11 +22,16 @@ machine or a copied file, never a compromised running session.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+# Re-exported so the first-launch page and the module that creates the folder cannot
+# disagree about the subfolder's name (the maintainer named it; see data_location.py).
+from src.safety.data_location import DATA_SUBDIR
 
 _LOG = logging.getLogger("api.unlock")
 
@@ -96,6 +101,10 @@ class PassphraseBody(BaseModel):
 class CreateBody(BaseModel):
     passphrase: str
     confirm: str
+
+
+class DataLocationBody(BaseModel):
+    path: str
 
 
 class EncryptBody(BaseModel):
@@ -181,6 +190,69 @@ def encrypt_db(body: EncryptBody) -> dict:
     dispose_engine()  # next connection opens through the keyed factory
     _LOG.info("store encrypted in place")
     return {"encrypted": True, "reports": reports, "state": app_lock_state()}
+
+
+@router.get("/data-location")
+def data_location() -> dict:
+    """Where the corpus will live, and whether that is still a choice.
+
+    ``offerable`` is the whole point: a data location may only be chosen while the state is
+    ``fresh``. ``src.paths.data_dir()`` re-reads the environment on every call while
+    ``DATABASE_URL``/``engine``/``SessionLocal`` are frozen at module import, so a switch
+    made after a store exists would move the keys, the custody log and the model store to
+    the new folder and leave the corpus behind in the old one -- and the next start would
+    follow the environment to the new, empty folder and report ``fresh``, with the
+    operator's corpus orphaned. Moving an existing corpus is the plain-folder-copy path the
+    manual documents (app stopped, copy the folder), deliberately not a button here.
+    """
+    from src.paths import data_dir
+
+    state = app_lock_state()
+    return {
+        "data_dir": str(data_dir()),
+        "explicit_override": bool(os.getenv("OO_DATA_DIR")),
+        "state": state,
+        "offerable": state == "fresh",
+        "subdir": DATA_SUBDIR,
+        "why_not_offerable": None if state == "fresh" else (
+            "A corpus already exists here. Moving it is a file copy with the app stopped, "
+            "not a setting — see the manual."
+        ),
+    }
+
+
+@router.post("/data-location/check")
+def data_location_check(body: DataLocationBody) -> dict:
+    """Could the corpus live in this folder? Read-mostly; changes no setting.
+
+    Gated on ``fresh`` like the write below: after a store exists the answer is not
+    actionable, and an ungated probe would let anything reaching loopback create
+    directories by asking questions.
+    """
+    from src.safety.data_location import preflight
+
+    if app_lock_state() != "fresh":
+        raise HTTPException(status_code=409, detail="a database already exists")
+    return preflight(body.path)
+
+
+@router.post("/data-location")
+def data_location_set(body: DataLocationBody) -> dict:
+    """Record the folder in ``oo.env`` so the NEXT launch uses it.
+
+    Refuses once a store exists (see :func:`data_location` for why that is a data-safety
+    refusal rather than a convenience one). Nothing is copied and nothing is opened: at
+    ``fresh`` there is no corpus yet, which is exactly why this is the only safe moment.
+    """
+    from src.safety.data_location import persist
+
+    if app_lock_state() != "fresh":
+        raise HTTPException(status_code=409, detail="a database already exists")
+    out = persist(body.path)
+    if not out.get("saved"):
+        raise HTTPException(status_code=400, detail=out.get("reason", "could not save"))
+    _LOG.info("data location recorded: %s", out.get("path"))
+    return out
 
 
 @router.get("/lock-state")
