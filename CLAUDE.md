@@ -5703,6 +5703,22 @@ this history it reports the merge commit rather than the authoring one, and answ
     it), so it is safe on the Core-only lane. (b) The failure MESSAGE is the whole deliverable —
     it is what a reviewer of the widening PR reads — so it names the constraint that was set,
     the version it now admits, and the inverted predicate, not just "bound changed".
+    **(c) A GUARD WHOSE SUBJECT IS THE ENVIRONMENT IS UNREACHABLE UNLESS THE LANE THAT BUILDS
+    THAT ENVIRONMENT COLLECTS IT — found in my own test, before it shipped.** The third guard
+    compares the DECLARED ceiling against what pip actually RESOLVED, and it could not run
+    anywhere: every bare `pytest -q` lane collects the file with no `[pqc]` installed, so it can
+    only reach its own skip, while `crypto` — the ONE lane that installs the extra — runs two
+    explicitly-named files and never collected it. Green in every lane, executed in none,
+    reading as coverage. Naming the file in that lane fixes it, and the fix is MEASURABLE: with
+    the extra installed the file goes 2-passed/1-skipped → 3-passed, and with pqcrypto 1.0.0
+    installed against the declared `<1.0` it fails ALONE (1 failed / 2 passed) — which is also
+    what proves it is not redundant with the twin, since the twin can only ever check a
+    `_SHIPPED` constant a human wrote down while this one checks what upstream actually
+    published. GENERAL FORM: when a test's meaning depends on an OPTIONAL extra, find the lane
+    that installs that extra and confirm it COLLECTS the file; a lane that names files
+    explicitly is where an environment-gated guard goes to die. Same class as the node-suite
+    driver ratchet, which exists because an unrun suite already cost a shipped defect — there
+    the file had no runner, here it had a runner in the one environment where it means nothing.
   - **A RESERVE SIZED FOR A MECHANISM THAT IS SWITCHED OFF IS NOT CONSERVATISM — it is a
     permanently unclaimed resource, and a "conservative" default stops being conservative
     once it decides EVERY machine (2026-09-05, the field context window; maintainer-ruled

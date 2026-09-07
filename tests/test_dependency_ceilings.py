@@ -110,9 +110,21 @@ def test_the_installed_pqcrypto_satisfies_the_declared_ceiling() -> None:
     """The declaration is only half the guarantee — check what is actually importable.
 
     Mirrors ``test_duckdb_version_coupling_holds_when_installed``: a lockfile, a stale
-    environment or a manual install can drift from pyproject, and on the PQC lane this is the
-    only guard that names the drift as drift. Without it the first symptom is a custody test
-    dying on an AttributeError, which reads as a broken test rather than a wrong version.
+    environment or a manual install can drift from pyproject, and this is the only guard that
+    names the drift as drift. Without it the first symptom is a custody test dying on an
+    AttributeError, which reads as a broken test rather than a wrong version.
+
+    ITS SUBJECT IS THE ENVIRONMENT, WHICH IS WHY IT IS NOT REDUNDANT WITH THE TWIN ABOVE.
+    The other two read pyproject and pass identically whatever is installed; measured with
+    pqcrypto 1.0.0 installed against the declared ``<1.0``, this one fails alone — 1 failed,
+    2 passed. The twin can only ever check the ``_SHIPPED`` constant a human wrote down; this
+    checks what pip actually resolved, so it still bites when upstream publishes a version the
+    constant never anticipated.
+
+    IT ONLY RUNS WHERE ``[pqc]`` IS INSTALLED, so ci.yml's ``crypto`` lane names this file
+    explicitly — it is the only lane that installs the extra, and the bare ``pytest -q`` lanes
+    that do collect the file can only reach the skip below. Dropping it from that lane's list
+    would leave this guard unreachable everywhere while still reading as coverage.
     """
     try:
         installed = importlib_metadata.version("pqcrypto")

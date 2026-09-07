@@ -5910,6 +5910,28 @@ constraint that was set, the version it now admits, and the inverted predicate, 
 stale environment can drift from pyproject and the first symptom would otherwise be a custody
 test dying on an `AttributeError`, which reads as a broken test rather than a wrong version.
 
+**AND THAT THIRD GUARD COULD NOT RUN ANYWHERE — caught in my own test before it shipped, which
+is the finding worth more than the guard.** Its subject is the ENVIRONMENT, so it is meaningful
+only where `[pqc]` is installed. Every bare `pytest -q` lane collects the file and has no
+`pqcrypto`, so it can only reach its own skip; `crypto`, the one lane that installs the extra,
+runs two explicitly-named files and never collected it. Green in every lane, executed in none,
+reading as coverage. `ci.yml`'s `crypto` lane now names the file, and the repair is measurable
+rather than asserted: with the extra installed the file goes **2 passed / 1 skipped → 3 passed**,
+and with `pqcrypto 1.0.0` installed against the declared `<1.0` it fails **alone** — 1 failed,
+2 passed — the two pyproject-reading guards being correctly indifferent to what is installed.
+That last measurement is also what proves the third guard is not redundant with the twin: the
+twin can only ever check the `_SHIPPED` constant a human wrote down, while this one checks what
+pip actually resolved, so it still bites when upstream publishes a version that constant never
+anticipated. GENERAL FORM: when a test's meaning depends on an optional extra, find the lane
+that installs that extra and confirm it COLLECTS the file — a lane that names files explicitly
+is where an environment-gated guard goes to die. Same class as the node-suite driver ratchet,
+which exists because an unrun suite already cost a shipped defect; there the file had no runner,
+here it had a runner in the one environment where it means nothing.
+
+Scope of the `ci.yml` edit, stated so it is not read as wider: the `crypto` lane's own two files
+are unchanged and still run first, and no other lane was touched — the bare `pytest -q` lanes
+already collected this file and continue to reach the skip, which is the honest outcome there.
+
 **A DEPENDABOT `ignore` RULE WAS CONSIDERED AND REFUSED**, and the reason is worth keeping:
 `pqcrypto` is not in `configs/external_artifacts.yml`, so nothing else watches it — ignoring
 major updates would blind the project to a future **security** release of it. The test catches
