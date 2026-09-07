@@ -205,7 +205,7 @@ pqc = [
     # — but it still touches PERSISTED key material in the custody chain, so it goes through
     # docs/maintenance/EXTERNAL_DEPENDENCIES.md rather than a bound widening. Same
     # unpinned-tool drift class as the bandit/mypy pins.
-    "pqcrypto>=0.3.4,<2.0",
+    "pqcrypto>=0.3.4,<1.0",
 ]
 
 # Independent "existed no later than T" timestamping via OpenTimestamps (anchors
