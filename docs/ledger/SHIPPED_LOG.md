@@ -5795,7 +5795,7 @@ and a neutered stem predicate each redden by name, restore verified green.
 
 ## 2026-09-07 — docs/hygiene: the reality check, and the shallow clone that answered every question with its own boundary
 
-PROMPT_02 of the 2026-09-06 repo-analysis plan, documentation only — not one line of `src/`.
+PROMPT_02 of the 2026-09-06 repo-analysis plan (PR #1013), documentation only — not one line of `src/`.
 Its premise is the finding that produced it: **the single largest category of "open work" in
 this repository is documents describing a past state of the tree**, which is not a tidiness
 problem but a cost — a stale claim buys a future session a whole rebuild and buys the
