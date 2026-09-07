@@ -9494,3 +9494,161 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   behind a count), D6 (pin + refuse), D7 (sweep yes; stay on `<1.0`), D8 (no build), D9 (drop),
   D10 (already in the recommended shape). Each is reversible and each is named here so a
   maintainer ruling that differs has one place to land.
+- **THE NINE V1 RULINGS ANSWERED (maintainer ruled 2026-09-07, PROMPT 23 planning session,
+  branch `claude/v1-pathway-planning-4pf6n8`; V1_PATHWAY_2026-07-14 §7 had carried V1-1..V1-9
+  open since it was written, and the 2026-07-22 audit banner recorded them still open). The
+  rulings, each as chosen, then what each one COSTS — because two of them narrow the verticals
+  and the plan must say so rather than keep the old source tables:**
+  - **V1-1 — the version train: APPROVED, with four amendments** forced by the rulings below.
+    Themes and order stand (0.3 measured-&-verified · 0.4 living sources · 0.5 investigator's
+    desk · 0.6 elections+climate · 0.7 patents+medical · 0.8 conflict+dossier · 0.9 hardening
+    RC · 1.0). The amendments are recorded in V1_PATHWAY §3.
+  - **V1-2 — user-supplied API keys: KEEP THE DEFER RULING.** No key-gated source, at all;
+    the 2026-06-16 ruling stands unchanged and the verticals adapt to it rather than the
+    reverse. This is the ruling with the widest blast radius, so the losses are named per
+    vertical below and NOT left to be rediscovered by whoever builds one.
+  - **V1-3 — restrictive-license sources: EXCLUDE ENTIRELY.** No code path at all for a
+    source whose terms forbid redistribution OR restrict it to non-commercial use — not a
+    user-fetch path, not a gated one. THE LINE, stated so it is applied consistently:
+    CC0 / public domain / CC BY / CC BY-SA are fine (share-alike and attribution are not
+    redistribution prohibitions); NC and no-redistribution are out. Out by name: ACLED,
+    OpenSanctions (CC BY-NC 4.0), International IDEA (CC BY-NC-SA), CLEA, FollowTheMoney,
+    IFES ElectionGuide (non-commercial + non-redistributable), EPO BDDS/DOCDB and EPO OPS
+    (EPO terms forbid redistribution). EM-DAT was already excluded on the same grounds.
+  - **V1-4 — PubMed: API-FIRST, corpus-driven; the bulk baseline stays behind the storage
+    phases.** Unchanged from the recommendation; the bulk-file parser is still built as the
+    preferred TRANSPORT (no per-record throttle, Tor-friendlier), it is the ~38M-record
+    baseline INGEST that waits.
+  - **V1-5 — Windows/macOS: WINDOWS FIRST-CLASS AT 1.0, macOS BEST-EFFORT.** The 0.9
+    hardening release gains a gate item: graduate the `windows-latest` CI lane from
+    `continue-on-error` observation to BLOCKING. macOS keeps its observation lane and ships
+    what it ships, stated honestly. (The premise of the old V1-5 — "de-scoped since 0.1" —
+    was already stale; see the staleness findings below.)
+  - **V1-6 — KPI bars: SET BARS ONLY WHERE MEASURED, DEFER THE REST.** This converts V1-6
+    from "pick four numbers" into a MEASUREMENT PRECONDITION, and applying it honestly
+    produces a finding rather than four bars: **no new numeric bar can be set today.** Of the
+    four metrics carrying `pending-ruling-V1-6`, K5/K7/K8 have NO resolver at all in
+    `src/monitoring/kpi.py:_RESOLVERS` (which holds exactly K2, K6, K11) and are structurally
+    `not-measurable-here` from the GET; K6 has a resolver as of PR #1019 but its own `nm`
+    says "no run has recorded one yet", so it has never produced a value in this repo.
+    K7 is the near-miss worth naming: a real field figure EXISTS (date-extraction recall
+    51.6%, recorded in this queue) but there is no resolver to read it, so it is a
+    measurement the board cannot see. **THE BAR IS THEREFORE NOT THE BLOCKER — the missing
+    persisted-measurement channel is**, and it is the exact gap PR #1019 closed for K6 alone.
+    Deliberately NOT built here (it is three resolvers plus their record-sites, and the
+    ruling asked for bars, not for instruments); recorded so the next session reads this as
+    "K5/K7/K8 need a channel before V1-6 can be applied to them", never as "the maintainer
+    declined to set bars".
+  - **V1-7 — storage: RATIFY 16384 AND RULE ALL FOUR NOW.** `page_size=16384` on create is
+    hereby a RULING, not the "FIRM recommendation" `src/database/connect.py:_FRESH_PAGE_SIZE`
+    has been resting on since it shipped — the evidence pair (2.95 GB and 22.2 GB live
+    encrypted corpora; warm index-window p50 −34% / −50%; the 4K point-lookup win at 3 GB
+    INVERTING at 22 GB, proving it was a cache-fit artifact) is the basis. The remaining four
+    (dedup · OOENC2-vs-age · keyed addressing · the sqlite3mc benchmark) are ruled in a
+    SECOND ROUND, which this session owes the maintainer as a written decision brief with
+    what evidence can be gathered offline — see the carry-over below. **THE URGENCY IS
+    SPENT:** §1a and §1b are the only create-time-irreversible seams and BOTH are shipped and
+    defaulted, so "rule early, before 0.3" no longer describes this item.
+  - **V1-8 — elections at 1.0: YES, BUT ONLY THE CALENDAR.** The sourced worldwide calendar
+    at the ruled coverage floor is the 1.0 bar; candidate ROSTERS and the poll Tier-2 method
+    audit are post-1.0. **CONSEQUENCE, recorded because it is not obvious:** manipulation
+    card #9 (event-timed operation) is composed of #3 + #6 + the agenda CANDIDATE ROSTER, so
+    it stays blocked past 1.0 too. The nine-card set is therefore complete at 1.0 minus one,
+    by ruling rather than by neglect.
+  - **V1-9 — the 1.0 Wikipedia edition bar: ≥1 FULL EDITION + THE SCALING MACHINERY PROVEN**,
+    alongside laws. Editions 2–12 land whenever their storage milestone passes, before or
+    after 1.0; the all-12 ambition is not retracted, it is un-gated from 1.0.
+  **WHAT V1-2 + V1-3 COST, PER VERTICAL (the reason these rulings are recorded with their
+  consequences rather than as four words each):**
+  - **Climate (§4.3) — SURVIVES, 6 of 8 sources.** Keyless and open: NOAA CPC ONI, USGS
+    quakes, OWID CO2+Energy, NASA GISTEMP, NSIDC Sea Ice, NOAA GHCN-Daily. LOST to V1-2:
+    NASA FIRMS (fires, free MAP_KEY) and OpenAQ v3 (air quality — and v1/v2 are retired 410,
+    so there is NO keyless path and the loss is total, not a rate-limit inconvenience).
+    The recommended first slice (ONI) is unaffected.
+  - **Medical (§4.2) — SURVIVES INTACT.** Every source in the table is keyless: PubMed/MEDLINE
+    bulk, PMC OA, Europe PMC, NCBI E-utilities (keyless 3 req/s — the key only raises it to
+    10), Crossref + Retraction Watch, ClinicalTrials.gov, openFDA (keyless 1,000/day),
+    medRxiv/bioRxiv/WHO GHO. V1-2 costs this vertical only openFDA's higher tier.
+  - **Conflict (§4.4) — SURVIVES.** UCDP GED, SIPRI, UNHCR, ReliefWeb, HDX, V-Dem are all
+    keyless; SIPRI's attribution-required and V-Dem's CC BY-SA are inside the V1-3 line.
+    LOST to V1-3: OpenSanctions. ACLED was already excluded and now has no user-fetch path
+    either.
+  - **Patents (§4.1) — AT RISK, and this is the sharp one.** V1-2 removes EPO OPS (OAuth
+    key), CourtListener/RECAP (free token), and the registration-gated national offices
+    (EUIPO/INPI/KIPRIS/JPO); V1-3 removes EPO BDDS/DOCDB outright. **What is left is USPTO
+    bulk XML (PADX/grants/TDXF, US-gov public domain) plus the CPC classification — and the
+    USPTO row's own access note says keyless direct-file download is UNCONFIRMED, with the
+    API needing a free key + ID.me.** So the whole vertical rests on one unverified fact.
+    **IT CANNOT BE CHECKED FROM A SESSION SANDBOX** (see the egress finding below), so it is
+    a PRECONDITION on 0.7 for the maintainer's networked machine: if USPTO bulk is
+    ID.me-gated, patents has no viable source under V1-2 and the 0.7 slot is re-planned
+    rather than quietly slipped. Recorded as a gate, not as a risk to discover mid-build.
+  - **Elections (§4.5) — the 1.0 bar SURVIVES; the freshness layer does not.** Wikidata (CC0,
+    keyless, bundlable), IPU Parline, ParlGov and OpenElections are inside both rulings.
+    LOST to V1-3: IFES ElectionGuide, which the §4.5 design named as the freshness half of
+    the layered calendar ("Wikidata open base + ElectionGuide freshness"). **That layering is
+    now a two-layer design, not three: Wikidata CC0 + the 23 hand-curated entries + the
+    parallel networked session's sourced recurrence-rule snapshot.** LOST to V1-2: OpenFEC
+    (US campaign finance; DEMO_KEY at 40/hr is not a path). The honest negative finding of
+    2026-07-14 — that no truly open aggregated worldwide election calendar exists — now bites
+    harder, because the freshest source found is excluded on its terms: **snap elections are
+    the known, stated gap in the 1.0 calendar**, and the projected tier's "check the official
+    source" caveat is what carries it.
+  **STALENESS FINDINGS FROM THIS SESSION'S GUARD (tree-anchored, `main` @ 965e3e54; every one
+  of these contradicts a doc's own status text, which is why the guard is run):**
+  1. **The BURY half of manipulation card #4 is SHIPPED, not open.** `buried_topic`
+     (`src/briefing/producers.py`), `find_buried_topics` + `BURY_CAVEAT`
+     (`src/analytics/concentration.py`), registered in `_PRODUCERS`, catalogued in
+     `src/briefing/catalog.py`, with an exploration surface at `src/api/signals.py`. Landed in
+     **PR #568** (merge `1287630f`). The design's "needs a real external trigger" blocker was
+     resolved by a substitution the design did not anticipate: the REST OF THE CORPUS is the
+     trigger — a two-proportion z-test of the source's topic share against the rest-of-corpus
+     share, BH-FDR corrected, with specialization stated as the innocent explanation.
+     `docs/FUTURE_DEVELOPMENTS.md` still called it open in a banner dated 2026-09-07, and so
+     did PROMPT_23; both are corrected in this PR.
+  2. **Outrage-intensity (card #8) is SHIPPED as designed** — `src/analytics/outrage.py`,
+     wired as an annotation inside `src/analytics/headline_body.py` and never a standalone
+     Lead, which IS card #8's spec ("SECONDARY — annotates, never fires alone"). It was listed
+     as "genuinely open"; its secondary status was the design, not a deferral.
+  3. **Therefore 8 of the 9 manipulation cards ship, not 6.** Only #9 (event-timed operation)
+     is open, and per V1-8 above it is now blocked past 1.0 by ruling.
+  4. **V1-7's urgency was already spent** — see the ruling above. `_FRESH_AUTO_VACUUM = 2` and
+     `_FRESH_PAGE_SIZE = 16384` are both in `src/database/connect.py`, and the idle
+     `maybe_incremental_vacuum` pass is in `src/database/maintenance.py`.
+  5. **V1-5's premise was stale** — `install.ps1` carries the ARM64→x64 interpreter ladder,
+     seven Windows rows shipped 2026-08-22/23 (installer, launcher, PATH-free interpreter
+     discovery, PowerShell 5.1 quoting, venv-vs-interpreter match, the moved-out-of-checkout
+     interpreter, the Windows file-lock restore fix), and `.github/workflows/ci.yml` runs a
+     `windows-latest` + `macos-latest` portability lane plus a BLOCKING `sqlcipher-smoke` on
+     every OS. "De-scoped since 0.1" described the plan, not the tree.
+  6. **Confirmed still-unbuilt** (the guard's inverse duty — several items recorded as shipped
+     were only half-shipped, so the negatives are stated too): the news-desert atlas and
+     "warnings existed" (zero matches anywhere in `src/`); every Plan A item (A1 claim
+     workspace, A2 corpus passport, A3 "Your lens", A6 mention-context honesty, A8 saved
+     analyses, A9 "since you last looked" — zero matches); elections beyond the 23
+     hand-curated `calendar: elections` entries in `configs/world_events.yml`; patents,
+     PubMed and conflict (no ingestion code — the only `patent` hits are the 12-term news
+     vocabulary in `ip_litigation_pulse`); and `configs/climate_events.yml` still carries
+     `verification_status: "drafted-from-training-knowledge; clearnet check pending"`.
+  **EGRESS FINDING (probed 2026-09-07, not assumed — the working mode requires the probe and
+  forbids rewriting the prompt to route around it):** `pypi.org` answers 200 as the control
+  and `github.com` 400, while EVERY host that decides a vertical's viability answers 000:
+  `data.uspto.gov`, `bulkdata.uspto.gov`, `ftp.ncbi.nlm.nih.gov`, `eutils.ncbi.nlm.nih.gov`,
+  `www.ebi.ac.uk`, `api.crossref.org`, `clinicaltrials.gov`, `catalog.ourworldindata.org`,
+  `owid-public.owid.io`, `origin.cpc.ncep.noaa.gov`, `earthquake.usgs.gov`,
+  `ucdpapi.pcr.uu.se`, `api.reliefweb.int`, `query.wikidata.org`, `dumps.wikimedia.org`.
+  **So no §4 source's licence, endpoint or access model can be confirmed from a session
+  sandbox — every 🔎 row in the V1_PATHWAY source tables stays 🔎**, and each vertical keeps a
+  networked-re-verification precondition that only the maintainer's own machine can discharge.
+  This is the seventh consecutive session to record the same per-host evidence.
+  **CARRY-OVER — WHAT THIS SESSION DID NOT DO, and why:**
+  (a) **The V1-7 second round** (dedup · OOENC2-vs-age · keyed addressing · sqlite3mc) is
+      OWED as a written decision brief and is NOT in this PR: each of the four wants a
+      measurement, three of them want one on a live corpus, and the ruling asked for them to
+      be ruled "now" on the evidence that can be gathered — gathering it is a session of its
+      own, and inventing four rulings from reasoning is exactly what rule (2) forbids.
+  (b) **The K5/K7/K8 persisted-measurement channels** — see V1-6 above.
+  (c) **No vertical INGESTION code**, per the egress finding: what shipped here is the
+      network-free half of two verticals (the elections date model + coverage floor, the
+      climate ONI parser against fixtures), each of which lands on an already-proven rail and
+      none of which asserts a licence or an endpoint this session could not verify.
