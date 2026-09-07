@@ -6243,3 +6243,69 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **THE PUBLISHER'S OWN CONFORMANCE VECTORS ARE EVIDENCE; MY HAND-WRITTEN CASES
+    MEASURE MY UNDERSTANDING OF THE SPEC (2026-09-07, the vendored Public Suffix
+    List):** implementing the PSL algorithm, I wrote ~20 cases from the spec, ran
+    them, and they were all green. The upstream's own `tests/tests.txt` (CC0, 78
+    vectors, fetchable from the same repo as the list) then found **two real
+    defects on the first run**. (a) A LEADING DOT was stripped, so `.example.com`
+    answered `example.com` where the spec says a malformed input has no
+    registrable domain. (b) The list stores internationalised rules in UNICODE
+    (`公司.cn`) while hosts arrive in PUNYCODE, so every `xn--` host fell through
+    to the wrong suffix — **and that one has no positive-space symptom at all**:
+    the answers were plausible domains, one label short, which no eyeball and no
+    self-written case would flag. GENERAL FORM: when implementing a published
+    algorithm over a published data file, look for the publisher's OWN conformance
+    suite before writing a single expectation — a vector set authored by the
+    people who define the format is a different KIND of artifact from cases
+    authored by the implementer, and the difference is exactly the cases you did
+    not think of. Vendor it beside the data (its digest pinned in the test, the
+    registry coupling requiring both to be refreshed together: a newer list judged
+    by older vectors proves nothing), and give the parse an anti-vacuity floor
+    (`len(cases) >= 70`), because a truncated fixture makes the whole guard pass
+    for free.
+  - **A MUTATION CAN APPLY TEXTUALLY AND BE SEMANTICALLY INERT, AND `assert new !=
+    old` CANNOT SEE IT (2026-09-07, the newsletter resolver's matrix):** the
+    recorded rule is that a `str.replace` whose needle is absent is a silent no-op
+    whose green run reads like a dead guard, and the prescribed check is to assert
+    the edit landed. It did land here — `_INFRA_LABELS: frozenset[str] =
+    frozenset(` became `... = frozenset() or frozenset(` — and **an empty frozenset
+    is falsy**, so `X or Y` evaluated to the untouched real set and the "mutant"
+    was the shipped code with extra characters. All 28 tests passed and I was one
+    step from recording a guard as vacuous. So the edit landing is necessary and
+    not sufficient: a mutant is only evidence once it REPRODUCES THE DEFECT, which
+    for a data structure means asserting the structure is what you think (`assert
+    not _INFRA_LABELS`) and for a branch means proving the branch changed. Re-run
+    correctly (`if publication and publication not in _INFRA_LABELS:` ->
+    `if publication:`) it reddened three tests by name. Same family as the
+    recorded "a surviving mutant may be a finding about the MUTANT", with a
+    sharper tell: a survivor whose mutation involved a boolean operator, a default
+    argument or a falsy sentinel is a suspect mutant before it is a suspect test.
+  - **A RESTORED SOURCE FILE IS NOT A RESTORED IMPORT — `__pycache__` CAN SERVE
+    THE MUTANT'S BYTECODE FOR A WHOLE SECOND (2026-09-07, same matrix):** after a
+    mutation run I restored the module with `cp`, verified the restore with a grep
+    that could only match the ORIGINAL line, and re-measured — and got the
+    mutant's numbers back, twice, for a file whose source was provably correct.
+    CPython validates a `.pyc` by comparing the source mtime it recorded against
+    the source's current mtime, and both have **one-second granularity**: a `cp`
+    landing in the same second as the mutated run's cache write produces a
+    matching pair, so the stale bytecode is served. It presents as "my fix did not
+    take" or, worse, as a real measurement. RULE: clear `__pycache__` (and any
+    scratch script's own) as part of every mutation restore, and remember that a
+    source-level restore check proves what the next run will READ, never what it
+    will EXECUTE.
+  - **A MODULE THAT DEGRADES HONESTLY WHEN ITS DATA FILE IS ABSENT IS EXACTLY THE
+    ONE WHOSE PACKAGING OMISSION IS SILENT (2026-09-07, `src/geo/data`):** adding
+    `src/catalog/data` I checked `[tool.setuptools.package-data]` and found `"src"
+    = ["static/**/*"]` — so the offline IP-to-country table under `src/geo/data`
+    had been missing from every built wheel since the day it was added, and
+    nothing said so, because `ip_geo` reports an honest unavailable-with-a-reason
+    rather than raising. The wheel installs, the app boots, and a feature is
+    simply absent with a plausible explanation — the same shape as a degrade
+    wrapper hiding the bug it was built to survive, moved into the build. TWO
+    RULES. Derive the requirement from the TREE, not from memory: the guard walks
+    every `src/*/data` directory that exists and fails naming the file no pattern
+    covers, so the next such tree cannot be forgotten. And prove it with a REAL
+    BUILD (`python -m build --wheel`, then read the zip's namelist) rather than
+    with the declaration — the existing packaging guard is config-shape only and
+    was green throughout, which is what let the gap live.

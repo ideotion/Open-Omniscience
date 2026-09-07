@@ -3477,6 +3477,45 @@
   ship; LOCAL .eml FILE import is GREENLIT (ruled 2026-06-15) — not a scraper
   (zero network), no-recovery contingency RESOLVED via anonymize-at-ingest (see
   Non-negotiables + the ".eml newsletter import" entry below).**
+- **PROMPT_19 STALENESS SWEEP + WHAT PROMPT_19 S6 LEFT PARKED (2026-09-07, tree anchor
+  `main` @ `d9ee33e`).** The working mode's staleness guard, run over the four areas the prompt
+  scopes, so the next session inherits the measurement rather than the prompt's claim:
+  **(a) VERIFIED-ABSENT** — no `rrule`/`RRULE` anywhere in `src/` (S1's RRULE expansion of
+  imported VEVENTs is genuinely unbuilt); `src/hazards/parse.py` still covers only USGS and
+  GDACS (S2's NWS/ReliefWeb/FEWS NET/EONET/WHO are unbuilt); nothing in the tree referenced a
+  public-suffix list before this session (S6's resolver was unbuilt).
+  **(b) VERIFIED-PRESENT, and the prompt is HALF right about it** — S1 says "month-span banners
+  ('Dry January') and `since:`-origin display are unbuilt". The BACKEND is shipped and has a
+  dedicated test file: `catalog._in_active_range`, `catalog._span_end_date`, `catalog._span_for`,
+  the `origin_year`/`until_year`/`end_month`/`end_day` fields and floating (nth-weekday)
+  recurrence all exist, pinned by `tests/test_event_recurrence.py`. What is unbuilt is the
+  DISPLAY — `app-agenda.js` renders none of it. Say which half, per the working mode.
+  **(c) VERIFIED-PRESENT** — `src/privacy/link_sanitizer.py` exists, so the .eml plan's S1
+  anonymisation core shipped; `ooMap` is wired in seven `app-*.js` modules.
+  **(d) THE AGENDA'S CONFIDENCE TIERS ARE UNBUILT AS A VOCABULARY.** `catalog` carries one
+  boolean `confirmed`, and `agRow` renders three pill states from it (`next_occurrence` /
+  "confirmed" / "approx · check source"). The ruled third tier — `scheduled` (official, sourced)
+  · `window` (a legal window, the France-2027 `confirmed:false` pattern) · `projected` (a sourced
+  rule plus last-held), with a passed projected date marked "status unknown — check the official
+  source" and NEVER silently re-projected, and no entry at all where there is no sourced rule —
+  is NOT expressible in that boolean. Recorded as the next slice; not started, because it is a
+  schema + display change across `world_events.yml`, the catalog loader and the agenda, and
+  half-building a schema is worse than parking it.
+  **(e) WHAT S6 DELIBERATELY DID NOT WIRE.** The resolver and its read-only preview shipped
+  (`GET /api/newsletters/publisher-preview`); the WRITE-PATH auto-attach did not. Ruling (d)
+  pairs the silent auto-attach with a dedicated import UI announcing it and an UNDO for the
+  automated attaches, and the undo is only feasible because send-domain + attached source id are
+  stored as provenance — which today they are not (`ParsedEmail` gained `list_id` this session;
+  nothing persists the send domain or an attach record). So the remaining S6 work is, in order:
+  the provenance columns (an additive migration), then the attach behind them, then the import
+  UI + undo. The preview exists so that decision can be reviewed against this corpus's real
+  senders rather than against a description.
+  **(f) A NOTE FOR WHOEVER WIRES THE ATTACH:** `resolve_newsletter_publisher` matches
+  `lower(Source.domain)`, which is a scan of a few-thousand-row table — free for a report, wrong
+  per message. A functional index over that column needs a migration AND the recorded
+  NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
+  `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
   import a folder of .eml files as Articles in the ONE unified corpus (reuse
@@ -6663,6 +6702,16 @@
   import_feed's next save persists the cleanup). KNOWN ACCEPTED LOSS: the feed's first/last
   QUARTER phases (the computed layer covers full/new only; computing quarters via the same
   verified ch.49 method is the clean follow-up if wanted).
+  **LOSS CLOSED 2026-09-07 (PROMPT_19 S3, the follow-up this note named).** `phases_for_year`
+  now publishes four buckets — new · first quarter · full · last quarter — from Meeus ch.49's
+  own quarter series plus the ±W term, so nothing is re-imported from a method-unstated feed
+  and the scope fence holds. Verified NOT by a quoted constant (a fabricated reference is
+  what the fence forbids, and I misremembered 49.a's value before reading it out of the tree)
+  but by an INDEPENDENT elongation check from ch.47/ch.25, required to sit inside the same
+  error band that checker shows on the already-pinned new/full instants: measured 1900..2200,
+  new/full 0.0217° against quarters 0.0196°. Eleven mutations redden by name. Both agenda
+  grids draw them through one label map; +2 keys ×12 locales. Full entry in SHIPPED_LOG
+  2026-09-07.
   (3) **"Internet calendars should not be manually enabled" — VERIFIED ALREADY SHIPPED** (the
   staleness guard): `auto_import_due_feeds` has ridden every online collect pass DEFAULT-ON
   since the 2026-06-15 "auto-import everything" ruling (8 feeds/pass round-robin by

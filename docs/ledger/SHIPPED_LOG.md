@@ -6555,3 +6555,80 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
+
+**Moon quarters: closing the one accepted loss of the retired moons feed (2026-09-07, PROMPT_19
+S3).** The 2026-07-17 ruling retired `monkeyness-moons` as redundant against the computed Meeus
+layer and recorded a single accepted loss — that feed carried the first/last QUARTER phases, which
+the computed layer did not have. It has them now, from the same chapter 49: the quarters carry
+their own periodic series plus the ±W term (added at first quarter, subtracted at last), and the
+planetary corrections are shared with new/full rather than copied. `phases_for_year` publishes four
+buckets; `_phase_of_k` REFUSES an off-grid k by name rather than silently computing a new moon,
+because Meeus' series are per-phase and there is no honest answer for k = 3.1.
+
+**The verification is the point, and it is not a quoted constant.** New/full are pinned against
+Meeus' own worked example 49.a. For the quarters the risk is a mistranscribed coefficient, and a
+constant written from memory would be the fabricated reference this project forbids — I confirmed
+that risk is real by misremembering 49.a's own value before reading it out of the tree. So the
+quarters are checked against an INDEPENDENT method: a principal phase IS the instant the Moon's
+apparent longitude leads the Sun's by 0/90/180/270°, computed from other chapters entirely (ch. 47
+for the Moon, ch. 25 for the Sun, no term shared with ch. 49). The anti-vacuity half is what makes
+it evidence: the same checker runs over the new and full instants, whose times are already verified
+to ~26 s, so its error there is its OWN truncation noise and the quarters must sit inside that band
+rather than under a tolerance picked by hand. Measured 1900..2200, worst elongation error: shipped
+code new/full 0.0217° · quarters 0.0196° (ratio 0.90); W sign flipped 0.1106° (5.09); leading
+coefficient mistyped 0.1137° (5.24); W dropped 0.0621° (2.86). The bars — ratio ≤ 2.0 and absolute
+≤ 0.035° — fail all three and clear the shipped code with ~2x margin both ways; the W-dropped
+mutant is the tight one, which is why the ratio bar is 2.0 rather than the 3.0 a first pass would
+have chosen. Two more mutations (the quarter branch never taken, an off-grid k accepted) and six
+over the wiring redden by name.
+
+**A guessed bound failed against correct code, again.** The interval check first asserted the four
+gaps were within ±0.8 d of a quarter synodic month; the real quarter-lunation runs **6.583..8.240 d**
+over 1900..2200, because the orbit is elliptical and the inequality itself varies. Measured, the
+bound is 6.3..8.5 with the numbers written beside it, and its job is stated: it catches a gross
+error, never a minute-scale one — the elongation guard is what has that resolution.
+
+Frontend: both agenda grids resolve every phase label through ONE map (a second hand-written
+ternary is how a month and a week view come to disagree about a glyph), four distinct glyphs, and
+two new labels keyed in all twelve locales. The non-English values are AI-drafted standard
+astronomical terms and are flagged for native review.
+
+**Newsletter publisher identity: the eTLD+1 and the inversion the list cannot give (2026-09-07,
+PROMPT_19 S6).** Every imported newsletter still lands in one bucket source, so the 2026-06-15
+ruling's question — is a newsletter from `email.bbc.com` the same publisher as the scraped
+`bbc.com`? — had no machinery behind it. Now it does: a vendored, dated, digest-verified Public
+Suffix List (registry entry, twelve-month window, refused outright on a digest mismatch so unknown
+bytes can never become publishers), then the ruled ladder — exact `Source.domain` → the alias map →
+a new DISABLED email source — and never a fuzzy merge. The list DEGRADES rather than guesses: the
+tempting two-label fallback reduces `bbc.co.uk` to `co.uk`, and a public suffix presented as a
+publisher merges every British site into one source. ICANN-vs-PRIVATE is an explicit argument at
+every entry point rather than a silent default, because both readings are defensible and picking
+one quietly is how two surfaces come to disagree about one quantity.
+
+**MEASURED, and it decides the design:** substack.com, beehiiv.com, ghost.io, mailchimp,
+buttondown.email, convertkit/kit.com and medium.com are in NEITHER section of the list, so the list
+alone performs exactly the collapse the ruling's platform-inversion clause forbids. That clause is
+load-bearing rather than a restatement, and it runs BEFORE the eTLD+1. A platform sender carrying
+no publication label — `hello@substack.com`, or an infrastructure label like `mail.` — is REFUSED,
+not attached to the platform: a refusal is a gap, a merge is a fabrication that reads as data.
+List-Id is parsed and kept (clause (a); recipient-safe by construction, which is why the same
+ruling keeps it and drops List-Unsubscribe) and rescues that case, but only when it corroborates
+the sending platform. The source lookup is case-insensitive on both sides, per the recorded
+one-sided-normalisation defect: `Source.domain` is BINARY-collated and stored as typed, and a
+match that does not fire is indistinguishable from a publisher nobody has.
+
+**What is deliberately NOT built.** The resolver decides nothing on the write path. The ruling
+pairs silent auto-attach with an import UI that announces it and an UNDO for the automated
+attaches; shipping the attach without those is half a data-placement change, which is worse than
+none. So the caller today is a read-only preview over the newsletters already imported — the
+evidence that decision needs, computed by the real function rather than described, which also
+keeps the resolver from being the dead-end shape the ledger records five times over.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** the publisher's own
+conformance vectors are evidence where hand-written cases measure the implementer's understanding
+(they found two defects, one of them invisible in the positive space); a mutation can apply
+textually and be semantically inert, so `assert new != old` is necessary and not sufficient; a
+restored source file is not a restored import, because `__pycache__` can serve the mutant's
+bytecode for a whole second; and a module that degrades honestly when its data file is absent is
+exactly the one whose packaging omission is silent (`src/geo/data` had been missing from every
+wheel since it was added).
