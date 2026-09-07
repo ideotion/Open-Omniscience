@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
+from starlette.concurrency import run_in_threadpool
 
 from src.catalog.csv_io import (
     EXPORT_COLUMNS,
@@ -252,7 +253,12 @@ async def import_csv(file: UploadFile, db: Session = Depends(get_db)) -> dict:
     if not rows and parse_errors:
         raise HTTPException(status_code=400, detail="; ".join(parse_errors[:5]))
 
-    result = upsert_sources(db, rows)
+    # S3.6: this handler MUST stay `async def` -- it awaits the upload stream -- so the
+    # synchronous upsert would run ON the single event loop, freezing every other request
+    # for its duration. A source CSV can carry thousands of rows and each one is a
+    # read-then-write through the SQLCipher codec. Same shape, same fix, as the
+    # `ingestion.py` uploaders: await the stream here, do the writing off the loop.
+    result = await run_in_threadpool(upsert_sources, db, rows)
     # Surface parse errors alongside write errors for a complete picture.
     result["parse_errors"] = parse_errors[:50]
     result["skipped"] += len(parse_errors)

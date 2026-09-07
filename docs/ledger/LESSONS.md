@@ -6056,6 +6056,61 @@
     allocation that makes the failure look like a regression somewhere else. Fixed by
     `_server_env()` setting `VLLM_USE_FLASHINFER_SAMPLER=0` whenever `cuda_toolkit_present()`
     is false (`src/llm/vllm_lifecycle.py`), an operator's explicit setting still winning.
+
+- **A TIMING HARNESS THAT DOES NOT ASSERT THE WORK HAPPENED CAN REPORT A PASS FROM A SERVER
+  THAT DID NOTHING (2026-09-07, S3.6, caught before it could lie):** the concurrency
+  reproducer for the event-loop freeze put a slow handler in flight and measured how long a
+  second, trivial request took. Its FastAPI mini-app was built inside the test function, in a
+  test file carrying `from __future__ import annotations` -- so every annotation was a STRING
+  that FastAPI resolves against the MODULE globals, and `Request`/`Session` were imported
+  inside the function. FastAPI could not resolve `Request`, silently demoted `request` to a
+  QUERY PARAMETER, and answered **422 without ever calling the handler**. The measurement
+  would then have been "the second request was fast" -- a green run produced by a server that
+  never did any work at all, in the direction that confirms the fix. What caught it was an
+  `entered.wait(timeout=5)` latch set INSIDE the handler and asserted BEFORE the clock
+  started. **GENERAL FORM: a harness that measures the effect of some work must independently
+  assert that the work RAN.** The failure mode of a silently-skipped body is indistinguishable
+  from the success it is trying to demonstrate, and it fails toward "pass". The same shape as
+  the recorded `str.replace`-with-an-absent-needle mutation (a no-op whose green run reads
+  exactly like a dead guard) -- one layer up, in the fixture rather than the mutation.
+
+- **51 OF 56 `async def` HANDLERS AWAITED NOTHING AT ALL (2026-09-07, S3.6):** the crash brief
+  recorded 56 DB-touching `async def` handlers as a freeze risk. Parsing their bodies before
+  converting them showed that 51 contained no `await`, no `async for` and no `async with` --
+  they were not handlers that needed the loop and used it wrongly, they were handlers where
+  `async def` is simply the shape people type. Of the 5 that did await, one
+  (`import_pdf_folder`) awaited ONLY its own `run_in_threadpool` hop, i.e. it went to the loop
+  purely to bounce straight off it. **GENERAL FORM: before designing a fix for a defect class,
+  count what the instances actually ARE.** The remedy for "async by habit" is a census guard
+  with a named allowlist (a new instance must argue for itself); the remedy for "needed async,
+  used it wrongly" would have been code review. The measured shape chose the mechanism, and it
+  is the cheaper one.
+
+- **"IT IS ONLY ONE ROW" IS NOT A REASON TO TOUCH THE DATABASE ON THE EVENT LOOP (2026-09-07,
+  S3.6):** `import_newsletters` was fixed on 2026-07-17 to run its heavy `ingest_emails` call
+  through `run_in_threadpool`, and a test has asserted since then that it "runs off the event
+  loop". It still called `_get_newsletter_source(db)` -- a get-or-create that **COMMITS** --
+  and `db.rollback()` on its error path, both on the loop. A commit waits on the single-writer
+  gate like any other commit, and the field measured gate waits of **6,236 s**; so a one-row
+  insert can block every request in the process for as long as the gate is held. **GENERAL
+  FORM: when a fix moves "the heavy part" off a contended resource, the leftovers inherit the
+  same WORST case, not the same average one -- their size bounds their typical cost, never
+  their blocking cost.** The rule a guard can actually hold the line on is "the session is
+  never touched on the loop", not "the big ones are not"; the AST guard added here asserts
+  exactly that, because a threshold nobody can state is a threshold nobody can test.
+
+- **A HALF-SHIPPED NUMBERED SLICE IS INVISIBLE FROM BOTH DIRECTIONS (2026-09-07, found by the
+  S3.6 staleness sweep):** crash-brief slice S3.6 had two halves -- the lock-state cache and
+  the 56-handler conversion. PR-10 shipped the cache; its commit message describes the cache
+  and nothing else, and **no `S3.6` row was ever written to `shipped.csv`**. The result read
+  both ways at once: the shipped half looked unshipped (the prompt still asked for it, and it
+  was already there with both belts), and the unshipped half looked done-by-association to
+  anyone who found the cache and stopped. **GENERAL FORM: when a PR ships PART of a numbered
+  slice, the CSV row must name WHICH part and what remains** -- the slice id alone asserts the
+  whole thing. This is the inverse of the stale-PENDING-banner failure the 2026-09-06 analysis
+  named: there a doc claimed less than the tree held; here a commit claimed a slice id and
+  delivered half of it.
+
   - **A DECLINE'S OWN PREMISE CAN BE THE ARGUMENT FOR REVERSING IT, AND THE STEP IT NAMED
     WAS 5% OF THE COST (2026-09-07, C16 / S-D — reversing the 2026-07-12 F13 decline):**
     F13 recorded that the batched collector flush holds the single-writer gate across

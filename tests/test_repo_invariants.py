@@ -6309,7 +6309,15 @@ def test_newsletter_eml_upload_runs_off_the_event_loop():
     sibling ``upload_pdfs`` handler in the SAME file already does this correctly -- this
     pins that ``import_newsletters`` now matches it."""
     api = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
-    handler = api[api.index("async def import_newsletters(") :]
+    # ASYNC-AGNOSTIC anchor (S3.6, 2026-09-07). This slice converts DB-touching
+    # `async def` handlers to plain `def`, and the recorded trap is exactly this: a
+    # source slice keyed on the literal "async def <name>(" raises ValueError the day
+    # its handler is converted -- a test failure that looks like a regression in the
+    # thing being guarded rather than in the guard. `import_newsletters` legitimately
+    # STAYS async (it awaits request.form()), so this anchor happens to still resolve;
+    # it is made independent of that anyway, because the next reader should not have to
+    # re-derive why it is safe.
+    handler = api[api.index("def import_newsletters(") :]
     handler = handler[: handler.index("\n\n\nclass RemoveNewslettersBody")]
     assert "run_in_threadpool" in handler, "the heavy ingest_emails call must run off the loop"
     assert "await run_in_threadpool(ingest_emails, db, source, raws)" in handler
