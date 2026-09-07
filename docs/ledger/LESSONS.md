@@ -6243,6 +6243,65 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A CAPABILITY PROBE THAT RUNS THE LIBRARY'S HAPPY PATH CAN STILL BE WRONG ABOUT IT — and
+    the FABRICATED-FAILURE half is the one no fixture catches (2026-09-07, D7's OTS probe):**
+    replacing `OTS_AVAILABLE`'s bare-import check with an offline round trip is the correct
+    fix, and the first version of that round trip reported OTS **unavailable on every install
+    that has it**. `opentimestamps` refuses to serialize an EMPTY `Timestamp` — by name, "An
+    empty timestamp can't be serialized" — and `anchor()` never meets that because it merges a
+    calendar's attestations in BEFORE serializing. So the probe exercised a shape production
+    never produces, and a fabricated FAIL is exactly as dishonest as the fabricated pass being
+    fixed, and much easier to believe: it looks like the library being broken rather than the
+    probe. THREE THINGS. (a) It was found by INSTALLING the optional extra and running the
+    probe, not by reading it — the recorded "run tool-gated tests with the tool" rule, which
+    on this repo means `pip install -e ".[pqc,timestamping]"` in the sandbox venv and takes a
+    minute. (b) The guard that stops it recurring must be keyed on the LIBRARY being
+    importable, never on the flag: a `skipif(not OTS_AVAILABLE)` keys a skip on the very thing
+    under test, so a probe that wrongly reports unavailable SKIPS the tests written to catch
+    that — mutation-proven, the mutation removing the attestation survived the first matrix and
+    reddens the second. (c) A probe of an optional extra needs a LANE that installs it: the
+    crypto lane installed `[pqc]` only, so the OTS positive half could not have run anywhere,
+    which is the recorded "an environment-gated guard goes to die in a lane that names files
+    explicitly" trap arriving before the guard was even written.
+  - **WITH A WORKING LIBRARY INSTALLED, AN IMPORT PROBE AND A CAPABILITY PROBE AGREE — so the
+    obvious assertion about the flag cannot fail (2026-09-07, same slice):** the natural guard
+    for "the flag is derived from the round trip" is
+    `assert PQC_AVAILABLE is _probe_mldsa(_mldsa)[0]`, and it SURVIVES the mutation that reverts
+    the flag to `_mldsa is not None`, because on a machine whose pqcrypto works both answers are
+    True. The discriminating case exists only if a library that IMPORTS and CANNOT WORK is
+    injected — which is the shipped 2026-08-20 defect itself — and injecting it means reloading a
+    module every custody test imports, so it belongs in a SUBPROCESS rather than in the shared
+    process. GENERAL FORM: when a fix replaces predicate A with predicate B, ask on which inputs
+    A and B DIFFER, and check the fixture reaches one; a fixture drawn from the healthy
+    environment usually reaches none, and the guard then measures the environment.
+  - **A "MUST BE WIRED" GUARD OVER A ZERO-ARGUMENT FUNCTION IS SATISFIED BY ITS OWN
+    DECLARATION, AND `"POST"` IS NEVER A UNIQUE NEEDLE (2026-09-07, the reader's AI lens):**
+    two source guards written in the same hour as the fix, both refuted by the mutation matrix
+    in one run. `assert "loadAiLens()" in src` cannot tell WIRED from DEFINED, because
+    `function loadAiLens() {` contains `loadAiLens()` — the recorded zero-argument trap,
+    recurring in a file where nothing had yet used the shared slicer. And
+    `assert '"POST"' in src` survived deleting the confirm request's method, because
+    `reader.js` has ANOTHER POST (summarize/translate) thirty lines away. The replacement is a
+    node suite that extracts the real functions and drives them: what is asserted is the markup
+    a reader ends up with and the request that actually leaves the page, and both mutations then
+    redden by name. Worth recording again because both traps are already in this file and were
+    still walked into — the durable fix is to reach for the behavioural shape FIRST on any
+    "is it called" claim, since that is the exact claim a substring cannot make.
+  - **AN EVIDENCE COLUMN'S HONESTY IS ITS EMPTINESS (2026-09-07, `AiKeyword.evidence`):** the
+    column is documented as "the snippet the model drew the term from" and had zero writers
+    since it was added. The tempting writer is the model — ask it for the snippet — and that
+    adds a SECOND unverifiable claim beside the first. A deterministic search of the article's
+    own stored text says something checkable instead ("this term appears HERE in your copy"),
+    and the case that carries the value is the one where it finds NOTHING: a term the model
+    produced that is not in the text was inferred, translated or invented, and only storing
+    nothing preserves that. So the mutation that matters is not "does it find the snippet" but
+    "does it invent one" — filling a miss with the article's opening line passes every
+    positive test. TWO MECHANICS worth keeping: search exact-first with `str.find` and fall
+    back to an IGNORECASE regex over the ORIGINAL string, because `"İ".lower()` is `i` plus a
+    combining dot and `"ß".casefold()` is `ss` — both change LENGTH, so lowering the text and
+    indexing back into it slices at the wrong place; and the needle is `re.escape`d, so there
+    is no pattern to backtrack (a literal search is linear, unlike the `OPEN.*?CLOSE` shape
+    that cost a 412 KB article 138 seconds).
   - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
     trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
     catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
