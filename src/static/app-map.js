@@ -2767,6 +2767,14 @@
       if (meth) meth.textContent = "";
       try {
         const d = await api(`/api/wiki/pages/${_wikiTc.id}/revisions?limit=50&flagged_only=${flagged}&include_diff=true`);
+        // A caller that knew the page named it; the ?wikitc= deep link from the
+        // article reader knows only the id, so the header is filled from the
+        // endpoint's OWN answer rather than left blank or guessed.
+        if (!_wikiTc.title && d.page && d.page.title) {
+          _wikiTc.title = d.page.title; _wikiTc.wiki = d.page.wiki || "";
+          const ttl2 = $("wiki-tc-title");
+          if (ttl2) ttl2.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
+        }
         const revs = d.revisions || [];
         if (!revs.length) {
           // Honest empty state (flagged-aware), never a blank pane.

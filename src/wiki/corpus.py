@@ -19,8 +19,13 @@ Honesty notes:
     in the per-edition source name, never passed off as the rendered page;
   * provenance: each edition gets ONE catalog source ("Wikipedia (en)",
     domain en.wikipedia.org) so wiki-derived rows are filterable forever;
-  * version anchoring slice 1: the synced revid is recorded on the page row
-    (``latest_text_revid``); per-mention revid anchoring is the next slice.
+  * version anchoring: the revision the stored TEXT came from is recorded on the
+    ARTICLE (``Article.source_revision``), written in the same transaction as the
+    content it describes, for BOTH the watched-page sync and the offline dump
+    ingest. The page row keeps ``latest_text_revid`` (the tracker's current
+    state, which can legitimately run ahead of the last successful index); the
+    article's anchor is what an analytic result can name, because every analytic
+    is recomputed from that exact text through the one ``index_article`` hook.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ import hashlib
 import logging
 import re
 from datetime import UTC, datetime
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from sqlalchemy.orm import Session
 
@@ -48,6 +53,48 @@ _KNOWN_LANGS = frozenset({
 def wiki_article_url(wiki: str, title: str) -> str:
     w = (wiki or "en").strip().lower()
     return f"https://{w}.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"
+
+
+#: Exactly the shape ``wiki_article_url`` builds. The inverse below must never
+#: accept a URL this app did not mint, or a hostile ``canonical_url`` could name a
+#: "wiki page" that is not one.
+_WIKI_URL_RE = re.compile(r"^https://([a-z0-9-]+)\.wikipedia\.org/wiki/(.+)$")
+
+
+def wiki_page_ref(canonical_url: str) -> tuple[str, str] | None:
+    """The (wiki, title) a canonical wiki URL was built FROM, or ``None``.
+
+    The exact inverse of :func:`wiki_article_url` and kept beside it, because two
+    functions answering one question from different sources drift — here into
+    disagreeing about which page an article is.
+
+    IT VERIFIES BY ROUND TRIP rather than by a hand-written rule about which
+    characters are legal. Re-minting the URL from the candidate pair and requiring
+    it back byte-for-byte accepts EXACTLY what the forward function can produce, by
+    construction: a title containing ``/`` (``A/B testing``, ``OS/2``) survives,
+    because ``quote`` leaves the slash and re-minting reproduces it, while nothing
+    this app never minted can pass. A hand-maintained character rule would have to
+    be kept in step with ``quote``'s ``safe`` set forever, and the first draft of
+    this function got exactly that wrong — it refused every slash-bearing title,
+    which would have silently withheld the history link from real pages.
+
+    THE RETURNED TITLE IS A DATABASE LOOKUP KEY, NEVER A PATH. A page could
+    legitimately be titled ``../../etc`` and the round trip therefore accepts it,
+    which is correct here (no ``WikiPage`` carries that title, so the lookup finds
+    nothing) and would be a traversal the moment a caller joined it onto a
+    directory. Any such caller must run it through the same guard the dump reader
+    uses; this function does not make it path-safe and does not claim to.
+    """
+    m = _WIKI_URL_RE.match((canonical_url or "").strip())
+    if not m:
+        return None
+    wiki, raw = m.group(1), m.group(2)
+    title = unquote(raw).replace("_", " ")
+    if not title.strip():
+        return None
+    if wiki_article_url(wiki, title) != canonical_url.strip():
+        return None
+    return wiki, title
 
 
 def plain_from_wikitext(text: str, *, max_passes: int = 4) -> str:
@@ -160,6 +207,12 @@ def upsert_wiki_corpus_article(
     content_hash = hashlib.sha256(plain.encode()).hexdigest()
     url = wiki_article_url(wiki, title)
 
+    # The version anchor travels WITH the text, in the same transaction, because it is
+    # only meaningful beside it: `source_revision` claims "this is the revision `content`
+    # came from", never "the analytics are current". A revid we were not given stays
+    # NULL rather than becoming a guess.
+    revision = str(revid) if revid is not None else None
+
     art = session.query(Article).filter(Article.canonical_url == url).first()
     created = False
     if art is None:
@@ -173,16 +226,32 @@ def upsert_wiki_corpus_article(
             language=(wiki if wiki in _KNOWN_LANGS else None),
             hash=content_hash,
             published_at=published_at or datetime.now(UTC),
+            source_revision=revision,
         )
         session.add(art)
         session.flush()
         created = True
     elif art.hash == content_hash:
-        return {"page": title, "status": "unchanged", "article_id": art.id, "revid": revid}
+        # Unchanged TEXT. The revision may still be newly known (an older row stored
+        # before this column existed, or a dump ingest that first learned the revid), so
+        # fill a NULL -- but never OVERWRITE a recorded one from an identical body: two
+        # revisions producing byte-identical text are both true answers, and replacing
+        # the recorded one would silently rewrite what a past analysis was anchored to.
+        if revision and not art.source_revision:
+            art.source_revision = revision
+            session.commit()
+        return {
+            "page": title, "status": "unchanged", "article_id": art.id, "revid": revid,
+            "source_revision": art.source_revision,
+        }
     else:
         art.content = plain
         art.hash = content_hash
         art.title = title
+        # New text, so the anchor is replaced -- including with NULL when this path did
+        # not learn a revision, because keeping the previous revid beside different text
+        # would be a fabricated version, which is worse than an honest absence.
+        art.source_revision = revision
         if published_at:
             art.published_at = published_at
     session.commit()
@@ -199,6 +268,7 @@ def upsert_wiki_corpus_article(
         "status": "created" if created else "updated",
         "article_id": art.id,
         "revid": revid,
+        "source_revision": art.source_revision,
         "mentions": tally.get("mentions", 0),
     }
 
