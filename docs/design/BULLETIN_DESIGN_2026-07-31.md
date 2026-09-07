@@ -791,3 +791,12 @@ seam; none of it is blocked.
 the Settings section and the review screen (every frontend slice in this stack is
 browser-unverified), and running `/llm-bench` on a fast and a slow machine so §6.3's
 time budget rests on measurements rather than a guess.
+
+**THE FULL CARRY-OVER LIST IS ON THE BOARD, NOT HERE.** Five items — the two
+operator steps above, the publishers'-terms ruling on the annexes full-text default
+(§18), converting the remaining 32 of 37 card producers to the `as_of` seam, and
+§18's named *publication profile* (deliberately not built: it is a mechanism the
+operator has not been asked about) — are enumerated with a status and an owner in
+[`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* → **REMAINING**, rows BUL-1 – BUL-5.
+That table is the one to update when one of them closes; this record states the
+design, the board tracks the work.

@@ -1522,6 +1522,9 @@
   parameter, already plumbed and tested both ways) · make it an operator setting with the terms
   question stated at the switch. **A ruling would change a default, not build a mechanism** —
   `full_text` is already a first-class flag on the route, the builder and the enumeration.
+  Tracked on the board as **BUL-3** in [`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* →
+  REMAINING, alongside the four other Bulletin carry-overs; this entry holds the reasoning,
+  that table holds the status.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
