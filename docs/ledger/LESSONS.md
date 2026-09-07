@@ -6359,3 +6359,25 @@
     the producing session's own words and is where a future reader looks. GENERAL FORM: when
     a project has a DATA shape for a deliberate absence, prose recording the same fact is not
     a weaker record, it is an invisible one — add the row and keep the prose beside it.
+
+- **THE `shipped.csv` UNION-MERGE DUPLICATE HAS A THIRD SHAPE, AND ITS RECORDED TELL IS SILENT ON
+  IT (2026-09-07, caught live on PR #1025 by the prescribed scan):** the ledger already records
+  this defect twice, both times as *main edited a row your branch also carries*, with the tell
+  being **"a numstat with DELETIONS on a merge you expect to be purely additive."** This time the
+  direction was reversed: **THIS branch edited two rows and main merely carried the originals
+  forward** (main's own commits touched the file, but not those rows). Union kept both sides'
+  lines, so the merge produced **two duplicates while adding four lines and deleting NONE** —
+  `4 added / 0 deleted`, exactly the "purely additive" numstat the recorded tell says is the
+  healthy case. `git merge` reported success, and a conflict-marker grep is blind by
+  construction (`.gitattributes` sets `merge=union`, so this file never produces a marker).
+  **GENERAL FORM: the numstat tell detects only the direction where the OTHER side deleted
+  something. When YOU are the editor, the duplicate arrives with a clean, additive numstat and no
+  tell at all.** So the duplicate-key scan over `(date, area, item)` against the COMMON ANCESTOR
+  is not a confirmation step to run when something looks off — it is the ONLY check that sees all
+  three shapes, and it must be run on every merge that touches this file regardless of how the
+  numstat reads. (Compared against the ancestor, never against zero: nine duplicates already
+  exist there, so a bare "are there duplicates" test accuses every merge of nine things it did
+  not do.) A corollary worth stating plainly: **editing an existing row is strictly more dangerous
+  than appending one**, because only the edit can be duplicated by union — which is why rule (5b)
+  is best obeyed in the same session that learns the PR number, when the row is still the newest
+  thing in the file and no other branch carries a copy.
