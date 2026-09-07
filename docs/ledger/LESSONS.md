@@ -7367,6 +7367,23 @@
     number out of `ci.yml`, never out of prose, and reproduce each of the three i18n commands
     separately (gate 1 passing is no evidence at all about gate 2 — it compares locale files
     against `en.json` and is structurally blind to a brand-new string with no key).
+    **RE-EARNED THE SAME DAY, ON A RATCHET THAT DID NOT EXIST WHEN THIS WAS WRITTEN
+    (2026-09-07, merging #1035):** the new advisory-ruff non-growth ratchet arrived on `main`,
+    and I ran it at **442** — the number in its PR's body and in its own design doc. `ci.yml`
+    pins **450**, and says why in a comment right above the step: shipping the tighter number
+    *"would redden main on the merge commit over findings that are not this PR's"*. So the doc
+    was not stale, it was never the gate: **the author deliberately shipped a different number
+    than the one they measured**, which is a case the "stale copy" framing does not even
+    cover. At 442 my branch read RED and I was one step from either fixing eight findings I did
+    not write or arguing a ceiling up; at the real 450 it is green. Same instruction, stronger
+    reason: `ci.yml` is the gate, and everything else is commentary about it.
+    **AND THE MEASUREMENT WORTH KEEPING: that ratchet has ZERO slack.** `main` alone measures
+    exactly 450 against its ceiling of 450, verified like-for-like in a detached worktree — so
+    ONE new style finding in any PR reddens it, and mine had one (a `SIM108` in
+    `src/civic/elections.py`). Fixed rather than argued, per the ratchet's own rule and its
+    author's precedent of fixing the finding their own first run caught. The general point:
+    when a ratchet lands at zero slack, measure the BASE BRANCH before concluding the red is
+    yours — the delta is the only number that says whose finding it is.
   - **THE `shipped.csv` UNION-MERGE DEFECT HAS A THIRD FORM, AND THE RECORDED TELL DOES NOT
     FIRE ON IT — only the duplicate-key scan does (2026-09-07, merging #1041 with main's
     #1021 sweep):** the ledger already records this collision twice, and both times the

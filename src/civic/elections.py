@@ -214,10 +214,11 @@ def projection(event: dict[str, Any], today: date | None = None) -> dict[str, An
     # Passed = the projected period is wholly behind us. With a month, that is (year,
     # month) < (now.year, now.month); with a year alone the whole year must be past,
     # because "some time in 2027" has not passed on 2027-01-02.
-    if month is not None:
-        passed = (year, month) < (today.year, today.month)
-    else:
-        passed = year < today.year
+    passed = (
+        (year, month) < (today.year, today.month)
+        if month is not None
+        else year < today.year
+    )
 
     source = str(event.get("recurrence_rule_source") or "").strip()
     return {
