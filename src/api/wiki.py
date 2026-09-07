@@ -356,6 +356,64 @@ def dumps_probe(wiki: str, kind: str = "pages-articles-multistream") -> dict:
     return {"wiki": wiki, "kind": kind, "url": dump_url(wiki, kind), "size_bytes": size}
 
 
+@router.get("/dumps/sizes")
+def dumps_sizes(
+    wikis: str,
+    kind: str = "pages-articles-multistream",
+) -> dict:
+    """Read the CURRENT published dump size for SEVERAL editions, in ONE action.
+
+    A plain ``def`` on purpose: this makes bounded, politeness-spaced network
+    calls, and a blocking body inside an ``async def`` would freeze the single
+    event loop for the whole batch. Starlette runs a ``def`` route in the
+    threadpool.
+
+    ``wikis`` is a comma-separated list of edition codes; the batch is bounded
+    (``MAX_SIZE_PROBE_EDITIONS``) and the surplus is REPORTED rather than
+    silently dropped, so a caller can never read a short answer as a complete
+    one. Each reading is one HEAD against the same ``latest`` URL the download
+    itself fetches, so the figure and the download agree by construction.
+
+    An edition whose size could not be read carries ``size_bytes: null`` and a
+    NAMED ``reason`` -- ``airplane`` (the kill switch refused it: nothing left
+    this machine), ``unreachable``, ``no-content-length`` or ``invalid-edition``
+    -- never a 0 and never an omission, because "we could not read it" and "it
+    is empty" are opposite facts.
+    """
+    from src.wiki.dumps import MAX_SIZE_PROBE_EDITIONS, get_manager
+
+    requested: list[str] = []
+    for raw in (wikis or "").split(","):
+        code = raw.strip().lower()
+        if code and code not in requested:
+            requested.append(code)
+    if not requested:
+        raise HTTPException(status_code=400, detail="no edition codes given")
+    # Validate BEFORE the manager so a traversal-shaped code is a 400 here, the
+    # same refusal /dumps/probe already makes, rather than a per-row reason.
+    for code in requested:
+        _validated_wiki(code)
+
+    granted = requested[:MAX_SIZE_PROBE_EDITIONS]
+    readings = get_manager().probe_sizes(granted, kind)
+    return {
+        "kind": kind,
+        "requested": len(requested),
+        "probed": len(readings),
+        # A cap may bound which editions were read; it may NEVER be published as
+        # though it were the whole request (anti-capping).
+        "not_probed": requested[MAX_SIZE_PROBE_EDITIONS:],
+        "max_editions": MAX_SIZE_PROBE_EDITIONS,
+        "sizes": [r.to_dict() for r in readings],
+        "method": (
+            "One HTTP HEAD per edition against the same 'latest' dump URL the "
+            "download fetches, spaced by the per-host politeness interval. The "
+            "figure is the size the dump host publishes right now; an edition "
+            "that could not be read reports a named reason, never a zero."
+        ),
+    }
+
+
 @router.post("/dumps/start")
 def dumps_start(payload: StartDump) -> dict:
     from src.wiki.dumps import get_manager

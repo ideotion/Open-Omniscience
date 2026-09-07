@@ -187,27 +187,37 @@ def _trigger(plain: str, math_rows: list[tuple[str, str]]) -> dict:
     return {"plain": plain, "math": [{"label": lb, "value": v} for lb, v in math_rows]}
 
 
-def _articles_for_term(session, keyword_id: int, *, days: int, limit: int):
+def _articles_for_term(session, keyword_id: int, *, days: int, limit: int, end=None):
     """Recent ``(Article, source_name)`` rows mentioning a keyword, newest first.
 
     Quarantined articles are excluded. Every caller of this helper turns the rows into
     a surfaced Lead card or its evidence list, so a page the screening judged
     not-an-article would otherwise become published evidence -- and a card's evidence
     is the one thing a reader clicks through to check.
+
+    ``end`` (EXCLUSIVE upper bound) anchors the window to a CLOSED period instead of
+    to today, so a producer asked for a bulletin's period returns the evidence that
+    period saw rather than whatever has arrived since. Half-open ``[end - days,
+    end)``, matching ``top_terms``/``trending``'s own ``end`` and the Bulletin's
+    period tiling -- ``_window_filter``'s inclusive convention would double-count the
+    boundary day across consecutive editions.
+
+    ``end=None`` is BYTE-IDENTICAL to the previous behaviour, including the open
+    upper bound: Home passes nothing and must keep exactly the cards it had.
     """
-    cutoff = date.today() - timedelta(days=days)
-    rows = (
+    anchor = end or date.today()
+    cutoff = anchor - timedelta(days=days)
+    q = (
         session.query(Article, Source.name)
         .join(KeywordMention, KeywordMention.article_id == Article.id)
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(KeywordMention.keyword_id == keyword_id)
         .filter(KeywordMention.observed_on >= cutoff)
         .filter(Article.quarantined.isnot(True))
-        .order_by(KeywordMention.observed_on.desc(), Article.id.desc())
-        .limit(limit)
-        .all()
     )
-    return rows
+    if end is not None:
+        q = q.filter(KeywordMention.observed_on < end)
+    return q.order_by(KeywordMention.observed_on.desc(), Article.id.desc()).limit(limit).all()
 
 
 def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
@@ -234,19 +244,26 @@ def _evidence_from_articles(rows, *, limit: int = 4) -> list[dict]:
 # --------------------------------------------------------------------------- #
 #  Rising now — trending keywords/entities (composes /api/insights/trending)
 # --------------------------------------------------------------------------- #
-def rising_now(session) -> list[Card]:
+def rising_now(session, *, as_of: "date | None" = None) -> list[Card]:
+    """``as_of`` (EXCLUSIVE) anchors every window here to a CLOSED period.
+
+    Both halves have to take it or the card is anchored in name only: the trending
+    arithmetic AND the evidence rows. Passing it to one and not the other would
+    produce a card whose numbers are the period's and whose examples are this
+    morning's -- which reads as a period card and is not one.
+    """
     from src.analytics import queries as q
     from src.signals.intervals import rate_ratio_interval
 
     young = _is_young(session)
     min_recent = 2 if young else 3
-    data = q.trending(session, limit=_MAX_RISING, min_recent=min_recent)
+    data = q.trending(session, limit=_MAX_RISING, min_recent=min_recent, end=as_of)
     note = _small_corpus_note(session) if young else ""
     scanned = data.get("scanned", 0)
     cards: list[Card] = []
     for term in data.get("terms", []):
         kw = resolve_keyword(session, term["term"])
-        rows = _articles_for_term(session, kw.id, days=14, limit=6) if kw else []
+        rows = _articles_for_term(session, kw.id, days=14, limit=6, end=as_of) if kw else []
         ci = rate_ratio_interval(
             term["recent"], term["prior"], window_days=7, baseline_days=30
         )
@@ -311,7 +328,8 @@ def rising_now(session) -> list[Card]:
 # --------------------------------------------------------------------------- #
 #  Framing split — same topic, divergent tone per source (needs [analysis])
 # --------------------------------------------------------------------------- #
-def framing_split(session) -> list[Card]:
+def framing_split(session, *, as_of: "date | None" = None) -> list[Card]:
+    """``as_of`` anchors the trending pick AND the article rows it reads tone over."""
     try:
         from src.analytics import queries as q
         from src.awareness.framing import compare_framing
@@ -320,12 +338,16 @@ def framing_split(session) -> list[Card]:
         return []
 
     young = _is_young(session)
-    trending = q.trending(session, limit=3, min_recent=2 if young else 3).get("terms", [])
+    trending = q.trending(
+        session, limit=3, min_recent=2 if young else 3, end=as_of
+    ).get("terms", [])
     for term in trending:
         kw = resolve_keyword(session, term["term"])
         if kw is None:
             continue
-        rows = _articles_for_term(session, kw.id, days=21, limit=_FRAMING_ARTICLE_CAP)
+        rows = _articles_for_term(
+            session, kw.id, days=21, limit=_FRAMING_ARTICLE_CAP, end=as_of
+        )
         by_source: dict[str, list[dict]] = {}
         for article, source_name in rows:
             if not source_name:
@@ -1214,12 +1236,15 @@ _MAX_DEAL = 4
 _IP_DAYS = 30
 
 
-def ip_litigation_pulse(session) -> list[Card]:
-    """Surface rising IP/legal terms in the news (a pulse, not a verdict)."""
+def ip_litigation_pulse(session, *, as_of: "date | None" = None) -> list[Card]:
+    """Surface rising IP/legal terms in the news (a pulse, not a verdict).
+
+    ``as_of`` anchors both the rising pick and the evidence rows to a closed period.
+    """
     from src.analytics import queries as q
 
     rising = q.trending(
-        session, limit=50, min_recent=2 if _is_young(session) else 3
+        session, limit=50, min_recent=2 if _is_young(session) else 3, end=as_of
     ).get("terms", [])
     hits = [t for t in rising if t["normalized"] in _IP_TERMS]
     if not hits:
@@ -1228,7 +1253,7 @@ def ip_litigation_pulse(session) -> list[Card]:
 
     top = max(hits, key=lambda t: t["growth"])
     kw = resolve_keyword(session, top["term"])
-    rows = _articles_for_term(session, kw.id, days=_IP_DAYS, limit=6) if kw else []
+    rows = _articles_for_term(session, kw.id, days=_IP_DAYS, limit=6, end=as_of) if kw else []
     names = ", ".join(sorted({t["term"] for t in hits}))
     ci = rate_ratio_interval(top["recent"], top["prior"], window_days=7, baseline_days=30)
     math_rows = [
@@ -2844,20 +2869,28 @@ def supergroup_rising(session) -> list[Card]:
 # --------------------------------------------------------------------------- #
 #  S6.4 — the two attention producers the board was missing.
 # --------------------------------------------------------------------------- #
-def on_the_horizon(session, *, today: "date | None" = None, events=None) -> list[Card]:
+def on_the_horizon(
+    session, *, today: "date | None" = None, events=None, as_of: "date | None" = None
+) -> list[Card]:
     """Upcoming agenda dates that touch a topic currently MOVING in the corpus — a heads-up,
     never a forecast. An agenda event (scheduled or deduced) whose title/tags contain a
     currently-trending keyword. Counts only, no score; the link is lexical (the keyword
     appears in the event), never causal. Bucket ``watch`` — NEVER an urgent alert.
 
     ``today`` / ``events`` are injectable for deterministic tests; by default it reads the
-    real agenda catalog for today."""
+    real agenda catalog for today.
+
+    ``as_of`` is the Bulletin's EXCLUSIVE period end, and it maps onto this producer's
+    clock DIRECTLY: ``end`` is the first instant after the period, so looking forward
+    from it is exactly "what was on the horizon when this period closed". An explicit
+    ``today`` still wins — it is the more specific instruction, and a derived clock
+    silently overriding a named one is the two-notions-of-one-thing defect."""
     from datetime import date, timedelta
 
     from src.analytics import queries as q
     from src.events import catalog
 
-    today = today or date.today()
+    today = today or as_of or date.today()
     horizon = (today + timedelta(days=45)).isoformat()
     all_events = catalog.agenda(today=today) if events is None else events
     events = [
@@ -2869,7 +2902,7 @@ def on_the_horizon(session, *, today: "date | None" = None, events=None) -> list
         return []
     terms = {
         t["term"].lower(): t
-        for t in q.trending(session, limit=30).get("terms", [])
+        for t in q.trending(session, limit=30, end=as_of).get("terms", [])
         if len(t.get("term", "")) >= 4
     }
     if not terms:
@@ -2928,16 +2961,27 @@ def on_the_horizon(session, *, today: "date | None" = None, events=None) -> list
     return cards
 
 
-def through_time(session, *, today: "date | None" = None) -> list[Card]:
+def through_time(
+    session, *, today: "date | None" = None, as_of: "date | None" = None
+) -> list[Card]:
     """An anniversary LENS: articles the corpus holds that were published on TODAY's calendar
     date in earlier years — a way to revisit how a day was covered over time. Counts only, no
     score; cross-time recall is SACRED, so this is a lens, NEVER a reweighting of the corpus
     toward the past. A shared calendar date is a coincidence, not a connection. ``today`` is
-    injectable for deterministic tests."""
-    from datetime import date
+    injectable for deterministic tests.
+
+    ``as_of`` is the Bulletin's EXCLUSIVE period end, and it does NOT map onto this
+    producer's clock directly: the anniversary is a CALENDAR DATE, and ``end`` is the
+    first day the period does not cover. Anchoring on it would pick the day AFTER the
+    edition's last, so the lens is taken on ``end - 1 day`` — the period's own last
+    covered day. Recorded here because the two are one day apart and nothing about a
+    passing test would say which one shipped."""
+    from datetime import date, timedelta
 
     from sqlalchemy import func
 
+    if today is None and as_of is not None:
+        today = as_of - timedelta(days=1)
     today = today or date.today()
     md = f"{today.month:02d}-{today.day:02d}"
     # A background-refresh producer (not a hot request path): the month-day match is a

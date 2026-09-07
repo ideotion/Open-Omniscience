@@ -268,3 +268,43 @@ def test_no_score_shaped_field_in_the_review(_editions):
     flat = json.dumps(review_view(_EDITION), default=str).lower()
     for banned in ("score", "ranking", "rating", "grade"):
         assert f'"{banned}"' not in flat and f'_{banned}"' not in flat
+
+
+# --------------------------------------------------------------------------- #
+#  D4 — THE RULED REVIEW SCREEN
+#
+#  §20 question 5 was answered on 2026-09-07: the checkbox-per-section /
+#  per-story screen WITH per-sentence verdicts is the ruled design, not one
+#  reading of an open question. What the ruling makes load-bearing is the SHAPE
+#  the screen needs to exist at all, so that is what is pinned — the payload must
+#  offer a per-section decision, a per-story decision, and the evidence for each.
+# --------------------------------------------------------------------------- #
+def test_the_review_payload_offers_a_decision_per_section_and_per_story():
+    view = review_view(_EDITION)
+    assert view["sections"], "a screen with no section rows has nothing to toggle"
+    for row in view["sections"]:
+        # The key the checkbox sends back, and enough to decide with: what it is,
+        # how many rows it would print, and its own window.
+        assert set(row) >= {"section", "rows", "window", "caveat", "method"}
+    for row in view["stories"]:
+        assert set(row) >= {"key", "articles", "distinct_sources", "sentences"}
+
+
+def test_the_screen_shows_per_sentence_verdicts_not_a_paragraph_labelled_validated():
+    """§13's actual requirement, and the reason the ruling names the verdicts: a
+    sentence the operator can SEE was checked is a different thing from a paragraph
+    with a badge on it."""
+    view = review_view(_EDITION)
+    sentences = [s for story in view["stories"] for s in story["sentences"]]
+    assert sentences, "the ruled screen is the one that shows the sentences"
+    for s in sentences:
+        assert set(s) >= {"text", "kept", "unsupported", "checks_applied"}
+
+
+def test_the_decision_is_an_exclusion_so_a_new_section_is_included_by_default():
+    """The ruled screen is checkbox-per-section, and the checkboxes start CHECKED.
+    A selection saved before a section existed must not silently drop it — the
+    same trap as an aggregation keyed only by observed entries, where "absent"
+    quietly reads as "judged and rejected"."""
+    stale = apply_selection(_EDITION, exclude_sections=["a_section_that_no_longer_exists"])
+    assert len(stale["sections"]) == len(_EDITION["sections"])

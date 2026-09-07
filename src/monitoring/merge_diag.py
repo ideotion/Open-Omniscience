@@ -809,6 +809,21 @@ def walk_probe() -> dict[str, Any]:
     forecasts -- ``fits_in_page_cache_hint`` is there so nobody mistakes one for
     the other.
 
+    ⚠ AMENDED 2026-09-07 -- THE MULTIPLIER IS A WARM-CACHE NUMBER AND THE RECIPE
+    ABOVE OVER-STATES. Re-measured independently at 2 and 4 GiB on the real engine,
+    n=3 per configuration (``docs/design/IMPORT_PERFORMANCE_2026-08-08.md`` §5b):
+    the ratio reproduces this probe's 2.40 while the pages are in RAM (**2.34x /
+    2.57x**) and falls to **1.29x / 1.39x** once the walk is disk-bound. The
+    mechanism is a separate, correct ruling -- a staged corpus is exported plaintext
+    and gets SQLite's 4096 default, while an encrypted store created under DB-10 §1b
+    is 16384, so the encrypted arm does a QUARTER as many reads, four times as
+    large, and once I/O dominates that pays for most of the codec. The field's
+    ``validate`` rate (17 MB/s on a 32 GB artifact) is as disk-bound as a number
+    gets, so multiplying it by this ratio over-states the encrypted walk by about
+    1.8x. Treat the multiplier as an UPPER BOUND on the codec's share, and prefer a
+    real ``verify:quick_check`` sub-timing the moment one exists. A ratio survives a
+    regime change only when BOTH arms stay in the same regime.
+
     The encrypted arm is SKIPPED WITH ITS REASON where sqlcipher3 is absent. A
     fabricated multiplier would be worse than no multiplier, since the whole
     point is to predict a cost nobody has yet observed.

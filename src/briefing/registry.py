@@ -13,10 +13,12 @@ fabricate**: if its inputs or optional dependencies are absent it returns ``[]``
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import date  # noqa: TC003 - used in a runtime annotation string
 
 from src.briefing.card import Card
 
@@ -59,9 +61,42 @@ _LOG = logging.getLogger(__name__)
 _WAL_GUARD_MIN_RELEASE_INTERVAL_S = 30.0
 
 # A producer: given a DB session, return the cards it can honestly produce now.
-Producer = Callable[[object], list[Card]]
+Producer = Callable[..., list[Card]]
 
 _REGISTRY: list[tuple[str, Producer]] = []
+
+
+def _accepts_as_of(producer: Producer) -> bool:
+    """Does this producer take an ``as_of`` period anchor?
+
+    AN OPTIONAL SEAM, not a core change. A producer that declares ``as_of`` is
+    period-anchorable; every other one is called EXACTLY as before, so passing no
+    anchor (Home's path) is byte-identical and a producer nobody has converted
+    cannot be broken by the conversion of its neighbours.
+
+    Read from the real signature rather than from a hand-kept list of names: a list
+    is a second place to update, and the one thing worse than an unanchored
+    producer is one a registry BELIEVES is anchored.
+    """
+    try:
+        params = inspect.signature(producer).parameters
+    except (TypeError, ValueError):  # a builtin or an odd callable: assume not
+        return False
+    p = params.get("as_of")
+    return p is not None and p.kind in (
+        inspect.Parameter.KEYWORD_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+
+
+def period_anchorable() -> dict[str, bool]:
+    """Which registered producers can honour a period anchor, by name.
+
+    Published so a caller can DISCLOSE the split rather than claim a period for
+    cards that were computed against today — which is the honesty problem the
+    Bulletin's card section states about itself.
+    """
+    return {name: _accepts_as_of(producer) for name, producer in _REGISTRY}
 
 
 def register(name: str, producer: Producer) -> None:
@@ -461,9 +496,18 @@ def run_all_bounded(
     *,
     on_progress: Callable[[int, int, str], None] | None = None,
     deadline: float | None = None,
+    as_of: "date | None" = None,
 ) -> tuple[list[Card], dict]:
     """Run every registered producer, isolating failures. Returns ``(cards, stats)``
-    where ``stats`` is ``{"producers_run", "producers_total", "truncated"}``.
+    where ``stats`` is ``{"producers_run", "producers_total", "truncated"}`` plus, when
+    an anchor is asked for, ``{"as_of", "anchored", "unanchored"}``.
+
+    ``as_of`` is an EXCLUSIVE period end. A producer that declares an ``as_of``
+    parameter is handed it and computes against that closed window; one that does not
+    is called exactly as before and computes against now. Both facts travel in
+    ``stats``, and each card carries the producer that made it, so a caller can say
+    per card whether its figures are the period's — rather than labelling a whole
+    section with one answer that is true of only part of it.
 
     One misbehaving producer must never blank the whole briefing, so each is run in
     its own ``try`` and its error is logged, not raised (no silent ``pass``: the
@@ -495,6 +539,9 @@ def run_all_bounded(
     disabled = _disabled_names()
     ran = 0
     truncated = False
+    anchorable = period_anchorable() if as_of is not None else {}
+    anchored_names: list[str] = []
+    unanchored_names: list[str] = []
     for i, (name, producer) in enumerate(_REGISTRY):
         if deadline is not None and time.monotonic() >= deadline:
             truncated = True
@@ -544,12 +591,25 @@ def run_all_bounded(
             # leftovers, and skipping it would let a dangling scan outlive a
             # disabled neighbour for the rest of the pass.
             with _wal_guard(session):
-                produced = [] if name in disabled else (producer(session) or [])
+                if name in disabled:
+                    produced = []
+                elif as_of is not None and anchorable.get(name):
+                    produced = producer(session, as_of=as_of) or []
+                else:
+                    produced = producer(session) or []
         except Exception:  # noqa: BLE001 - one bad producer must not abort the feed
             _LOG.warning("briefing producer %r failed", name, exc_info=True)
             produced = []
+        if as_of is not None and name not in disabled:
+            (anchored_names if anchorable.get(name) else unanchored_names).append(name)
         for card in produced:
             if isinstance(card, Card):
+                # PROVENANCE, set here and nowhere else: a card cannot know which
+                # producer made it and the registry is the only place that does. It is
+                # what lets a document say WHICH cards are the period's — without it
+                # a mixed section can only carry one verdict for all of them.
+                if not card.produced_by:
+                    card.produced_by = name
                 cards.append(card)
         if on_progress is not None:
             try:
@@ -584,8 +644,16 @@ def run_all_bounded(
         deduped.append(card)
     if dup_count:
         _LOG.info("run_all: dropped %d duplicate (type, key) card(s) across producers", dup_count)
-    return deduped, {
+    stats: dict = {
         "producers_run": ran,
         "producers_total": total,
         "truncated": truncated,
     }
+    if as_of is not None:
+        # Both lists, always, and BY NAME. A count alone would say how many were
+        # anchored and not which — and "which" is the only form a document can use
+        # to tell a reader that this card is the period's and that one is not.
+        stats["as_of"] = as_of.isoformat()
+        stats["anchored"] = anchored_names
+        stats["unanchored"] = unanchored_names
+    return deduped, stats

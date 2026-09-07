@@ -226,6 +226,38 @@ def mark_published(filename: str, *, selection: dict[str, Any] | None = None) ->
     return payload
 
 
+def update_edition(filename: str, mutate) -> dict[str, Any]:
+    """Read one edition, apply ``mutate(record)`` in place, write it back atomically.
+
+    This is the ONLY write path a long narration run has, and it is deliberately a
+    read-modify-write of the whole file rather than an append: an edition is a
+    record, and half a record is not a smaller one.
+
+    ATOMIC, so a crash mid-run never leaves an edition that parses as complete and
+    is not — the same temp + ``os.replace`` the initial write uses. A run that dies
+    between two units loses at most the unit in flight, and the persisted cursor
+    beside it says which one that was.
+
+    NOT thread-safe against a concurrent writer to the same file, and nothing here
+    pretends otherwise: exactly one narration job of a kind runs at a time
+    (``BackgroundJob.start`` refuses a second), and the operator's own publish stamp
+    goes through ``mark_published``. Saying so is the point — a lock that only one
+    caller respects is a lock that reads as protection it does not give.
+    """
+    p = safe_edition_path(filename)
+    if p is None or not p.is_file():
+        raise FileNotFoundError(filename)
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    mutate(payload)
+    tmp = p.with_name(p.name + _TMP_SUFFIX)
+    try:
+        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return payload
+
+
 def delete_edition(filename: str) -> bool:
     """Remove one edition. Returns False for an unknown or unsafe name."""
     p = safe_edition_path(filename)

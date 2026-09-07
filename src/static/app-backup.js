@@ -789,10 +789,20 @@
       queued: "Waiting", running: "Running", done: "Done", error: "Failed",
       cancelled: "Cancelled", skipped: "Skipped", stopped: "Stopped",
       interrupted: "Interrupted",
+      // CHECKPOINT INTERVAL K. "Merged, not yet saved" is the whole distinction: the
+      // articles are in this run's working copy and not in the corpus, so calling it
+      // "Done" would claim a change that has not happened, and calling it "Running"
+      // would claim work still going. Both states are unreachable at the default
+      // K = 1, where every backup commits as it finishes.
+      staged: "Merged — not yet saved",
+      discarded: "Discarded — import it again",
     };
 
     function _uxImRenderQueue(st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const box = document.getElementById("ux-imp-queue");
       const rows = document.getElementById("ux-imp-queue-rows");
       const note = document.getElementById("ux-imp-queue-note");
@@ -806,6 +816,18 @@
       if (runBtn && st.state === "running") runBtn.disabled = true;
       // The run header: what it is doing overall + the collection statement (ruling 12).
       const head = `${items.filter(i => i.state === "done").length}/${items.length} ${esc(t("imported"))}`;
+      // COMMITTED vs STAGED, at any moment (the checkpoint-interval ask). Rendered
+      // ONLY when something is actually staged: at K = 1 there never is, so this
+      // says nothing rather than printing a 0 that would read as a finding about
+      // the import. The sentence names what a Stop would cost, because that is the
+      // one thing the number alone does not say.
+      const cp = st.checkpoint || {};
+      const stagedLine = (st.items_staged > 0)
+        ? `<br><span class="note">${esc(tf(
+            "Merged, not yet saved: {n} — written to your corpus at the next checkpoint, one every {k} backups.",
+            { n: Number(st.items_staged).toLocaleString(), k: cp.k || 1 }
+          ))}</span>`
+        : "";
       // THE TAIL PHASE HAS TO HAVE A HOME (field report 2026-08-11). A run does not end
       // when its last item does: _tune_after_run then merges the search index, inside the
       // same exclusive window, for minutes on a large corpus. The per-item live block
@@ -831,6 +853,7 @@
         }
       }
       note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
+        + stagedLine
         + tailLine
         + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
         + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
@@ -840,7 +863,12 @@
         const el = it.elapsed_s != null ? ` · ${esc(_uxImDur(it.elapsed_s))}` : "";
         const err = it.error ? `<div class="note err" style="margin-left:14px">${esc(it.error)}</div>` : "";
         const live = it.state === "running" ? _uxImLive(st.live, t) : "";
-        const dot = { done: "var(--ok)", error: "var(--err)", running: "var(--accent)" }[it.state] || "var(--muted)";
+        const dot = {
+          done: "var(--ok)", error: "var(--err)", running: "var(--accent)",
+          // Not the OK green: a staged item is real progress that is not yet safe,
+          // and painting it as done would say the opposite of its own label.
+          staged: "var(--warn)", discarded: "var(--err)",
+        }[it.state] || "var(--muted)";
         return `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
           + `<b>${label}</b> <span class="muted">— ${state}${el}</span>${live}</div>${err}`;
       }).join("");
@@ -1007,6 +1035,12 @@
       stopped:     { ok: false, icon: "■", label: "Stopped",    col: "var(--muted, #888)" },
       skipped:     { ok: false, icon: "–", label: "Skipped",    col: "var(--muted, #888)" },
       interrupted: { ok: false, icon: "!", label: "Interrupted", col: "var(--warn, #e0a800)" },
+      // CHECKPOINT INTERVAL K. Both are `ok: false`, which is what keeps them OUT of
+      // the aggregate: by the time a conclusion renders, an item still `staged` is
+      // one whose group never reached a checkpoint, so it contributed nothing to the
+      // corpus and its numbers must not sit behind a success headline.
+      staged:      { ok: false, icon: "◐", label: "Merged, not saved", col: "var(--warn, #e0a800)" },
+      discarded:   { ok: false, icon: "↺", label: "Discarded",  col: "var(--err, #d9534f)" },
     };
     function _uxOutcome(state) {
       // An ABSENT state is treated as counted: the recovered-last-run path
@@ -1033,11 +1067,19 @@
         const oc = _uxOutcome(r.state);
         const pct = max > 0 ? (r.total / max) * 100 : 0;
         const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
+        // "nothing imported" is right for every state that MERGED nothing --
+        // cancelled, stopped, skipped, failed. It is wrong for the two checkpoint
+        // states, which merged something and then lost it before it was saved, so
+        // those say what actually happened to them instead.
+        const _lostIts = (r.state === "staged" || r.state === "discarded");
         const bar = r.total > 0
           ? `<div style="width:${pct.toFixed(1)}%;min-width:2px;display:flex;height:10px;border-radius:5px;overflow:hidden">`
             + seg(r.new, "var(--accent, #4a90d9)") + seg(r.dup, "var(--muted-bg, #888)")
             + seg(r.conf, "var(--err, #d9534f)") + `</div>`
-          : `<div class="muted" style="font-size:11px">${esc(r.error ? String(r.error).slice(0, 120) : t("nothing imported"))}</div>`;
+          : `<div class="muted" style="font-size:11px">${esc(
+              r.error ? String(r.error).slice(0, 120)
+                      : t(_lostIts ? _UX_IM_STATE_LABEL[r.state] : "nothing imported")
+            )}</div>`;
         const counts = r.total > 0
           ? `${num(r.new)} ${t("imported")} · ${num(r.dup)} ${t("deduplicated")}`
             + (r.conf ? ` · ${num(r.conf)} ${t("conflicts (your version kept)")}` : "")
@@ -1402,6 +1444,31 @@
           + `</div>`
         : "";
 
+      // COMMITTED vs STAGED, at the end of the run (the checkpoint-interval ask).
+      // A conclusion that still shows staged or discarded items is a run that ended
+      // before its last group reached a checkpoint, so the honest sentence is about
+      // work that was DONE and then thrown away — the durability half of K, named
+      // where it was paid. Rendered only when there is something to name; at K = 1
+      // there never is.
+      const stagedRows = perItem.filter((r) => r.state === "staged");
+      const discardedRows = perItem.filter((r) => r.state === "discarded");
+      const lostLines = [];
+      if (discardedRows.length) {
+        lostLines.push(tf(
+          "Discarded, not in your corpus: {n} — the shared working copy was never saved. Import them again.",
+          { n: discardedRows.length }
+        ));
+      }
+      if (stagedRows.length) {
+        lostLines.push(tf(
+          "Merged but never saved: {n}. Import them again.",
+          { n: stagedRows.length }
+        ));
+      }
+      const checkpointNote = lostLines.length
+        ? `<div class="card-caveat" style="margin-top:6px">${lostLines.map(esc).join("<br>")}</div>`
+        : "";
+
       // STILL INDEXING (2026-08-03). The import no longer blocks on the re-index, so
       // "import finished" no longer means "fully indexed" -- those articles carry no
       // keywords yet and are absent from analytics. Deferring it SILENTLY would trade a
@@ -1439,7 +1506,7 @@
       host.innerHTML =
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
         + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
-        + countLine + excludedNote
+        + countLine + excludedNote + checkpointNote
         + growLine + headline + bar + typeBlock + extraLine + qualBlock + metaBlock + indexingLine + refusalLine + queueBlock
         + _uxPerItemView(perItem, t, tf)
         + deltaView

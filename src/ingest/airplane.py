@@ -76,6 +76,11 @@ from typing import Any, cast
 
 from src.ingest import kill_switch_active
 from src.ingest.egress_window import any_window_open, socket_exempt_here
+from src.ingest.ssrf_guard import (
+    check_connect_target,
+    check_resolution,
+)
+from src.ingest.ssrf_guard import guard_enabled as ssrf_guard_enabled
 
 try:
     import socks as _pysocks  # type: ignore[import-untyped]
@@ -124,6 +129,12 @@ def _is_local_host(host: object) -> bool:
 def _guard(host: object) -> None:
     """Raise if the kill switch is engaged and ``host`` is non-loopback.
 
+    Returns immediately unless the AIRPLANE half was armed by
+    ``install_airplane_socket_guard`` -- the patch points below are shared with
+    the connect-time SSRF guard, which installs them on its own account, and
+    ``OO_AIRPLANE_SOCKET_GUARD=0`` must keep meaning exactly what it meant when
+    it also prevented the patching.
+
     The egress-window exemption (see the module docstring) is checked LAST and is
     two conditions, not one: this THREAD must be inside an exempted install
     request, AND a window must still be live. The thread-local read comes first
@@ -133,6 +144,8 @@ def _guard(host: object) -> None:
     ``getaddrinfo`` and every ``connect`` in the process and must never do real
     work or re-enter anything.
     """
+    if not _airplane_armed:
+        return
     if not kill_switch_active():
         return
     if _is_local_host(host):
@@ -158,6 +171,10 @@ _orig_tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
 _orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
 
 _installed = False
+#: True only when ``install_airplane_socket_guard`` armed the AIRPLANE refusal.
+#: The patch points are shared, so "patched" and "airplane is in force" are two
+#: different facts and one flag could not carry both.
+_airplane_armed = False
 
 
 def _addr_host(address: object) -> object:
@@ -169,11 +186,18 @@ def _addr_host(address: object) -> object:
 
 def _guarded_getaddrinfo(host, *args, **kwargs):  # type: ignore[no-untyped-def]
     _guard(host)
-    return _orig_getaddrinfo(host, *args, **kwargs)
+    infos = _orig_getaddrinfo(host, *args, **kwargs)
+    # The SSRF half checks the ANSWER, not the question: inside a guarded fetch a
+    # name that resolves to an internal address is refused here, which is the
+    # only place a destination lookup performed by a library that then hands the
+    # address to a proxy is visible at all.
+    check_resolution(host, infos)
+    return infos
 
 
 def _guarded_create_connection(address, *args, **kwargs):  # type: ignore[no-untyped-def]
     _guard(_addr_host(address))
+    check_connect_target(address)
     return _orig_create_connection(address, *args, **kwargs)
 
 
@@ -181,12 +205,14 @@ def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
     # AF_UNIX is local IPC (a filesystem path) — never network; always allow.
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
         _guard(_addr_host(address))
+        check_connect_target(address)
     return _orig_connect(self, address)
 
 
 def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
     if getattr(self, "family", None) != getattr(socket, "AF_UNIX", object()):
         _guard(_addr_host(address))
+        check_connect_target(address)
     return _orig_connect_ex(self, address)
 
 
@@ -213,17 +239,13 @@ def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no
     return cast(Callable[..., Any], _orig_socks_connect)(self, dest_pair, *args, **kwargs)
 
 
-def install_airplane_socket_guard() -> bool:
-    """Install the process-wide backstop. Idempotent; honoured by all later sockets.
-
-    Returns True if installed (or already installed), False if disabled by env.
-    Safe to call at every boot — transparent while online.
-    """
+def _install_patches() -> None:
+    """Patch the socket chokepoints. Idempotent, and the ONLY place they are
+    patched -- both gates ride the same layer so a call site cannot meet one and
+    miss the other, and an uninstall can never leave half of it behind."""
     global _installed
-    if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
-        return False
     if _installed:
-        return True
+        return
     socket.getaddrinfo = _guarded_getaddrinfo  # type: ignore[assignment]
     socket.create_connection = _guarded_create_connection  # type: ignore[assignment]
     socket.socket.connect = _guarded_connect  # type: ignore[assignment]
@@ -232,12 +254,47 @@ def install_airplane_socket_guard() -> bool:
     if _orig_socks_connect is not None:
         _pysocks.socksocket.connect = _guarded_socks_connect  # type: ignore[union-attr]
     _installed = True
+
+
+def install_airplane_socket_guard() -> bool:
+    """Install the process-wide backstop. Idempotent; honoured by all later sockets.
+
+    Returns True if installed (or already installed), False if disabled by env.
+    Safe to call at every boot — transparent while online.
+    """
+    global _airplane_armed
+    if os.getenv("OO_AIRPLANE_SOCKET_GUARD", "1") == "0":
+        return False
+    _install_patches()
+    _airplane_armed = True
+    return True
+
+
+def ensure_connect_guard_installed() -> bool:
+    """Install the same patch points for the connect-time SSRF guard alone.
+
+    Called by ``EthicalFetcher`` when it enters a guarded fetch, so the SSRF half
+    works in a CLI, a script, a test and a boot that never ran the app's own
+    startup -- the airplane installer runs only from ``run_deferred_startup``, and
+    a security guard whose presence depends on an unrelated boot path is a guard
+    that is absent wherever nobody thought about it.
+
+    NOT gated on ``OO_AIRPLANE_SOCKET_GUARD``: that flag is an opt-out from
+    AIRPLANE MODE's refusal for a deployment that proxies loopback, and it keeps
+    working exactly as before because ``_guard`` returns early unless
+    ``install_airplane_socket_guard`` armed it. The SSRF half has its own opt-out
+    (``OO_SSRF_CONNECT_GUARD=0``), read where the scope is entered.
+    """
+    if not ssrf_guard_enabled():
+        return False
+    _install_patches()
     return True
 
 
 def uninstall_airplane_socket_guard() -> None:
     """Restore the real socket calls (used by tests for isolation)."""
-    global _installed
+    global _installed, _airplane_armed
+    _airplane_armed = False
     if not _installed:
         return
     socket.getaddrinfo = _orig_getaddrinfo  # type: ignore[assignment]

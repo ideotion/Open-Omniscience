@@ -21,6 +21,155 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **WIKIPEDIA AS A LIVING SOURCE — THE 2026-09-07 PASS (prompt 18): TWO SLICES SHIPPED, THE
+  WHOLE-EDITION HALF STOPPED AT THE SEAM WITH ITS GATE MEASURED, AND G10 IS SMALLER THAN IT
+  LOOKS.** Read with the FUTURE_DEVELOPMENTS Wikipedia pair (the 2026-07-10 section and the
+  2026-06-12 one that carries the superseding auto-track ruling — neither replaces the other).
+
+  **SHIPPED (a) — the consented "Refresh exact sizes" (the 2026-06-16 INLINE AUTO SIZE
+  ESTIMATES entry's REMAINING, above).** The per-edition "Estimate size" probe button is
+  retired. Building its replacement found THREE defects in it, each independently real and
+  none of them the one the entry named: it egressed a live HEAD to `dumps.wikimedia.org`
+  with **no `ensureOnline` consent**, while the dump START on the same surface has one
+  (invariant #14 gated the download and not the probe that precedes it); it read only
+  `dumpSelected()[0]` from a MULTI-select picker and fell back to `"en"` when nothing was
+  selected, so the figure could describe an edition the operator had not chosen; and every
+  failure printed one `"size check failed"`, so airplane mode, a dead host and a host
+  publishing no `Content-Length` were one value — a refusal by THIS machine reading as a
+  dump host that would not answer. `DumpDownloadManager.probe_sizes` now reads the whole
+  selection in one consented action, bounded and spaced by the same per-host politeness
+  interval `WikiClient` uses, and an unread size is `None` with a NAMED reason
+  (`airplane` / `unreachable` / `no-content-length` / `invalid-edition`) — never a 0.
+  `GET /api/wiki/dumps/sizes` is a plain `def` (its network batch must not sit on the event
+  loop) and NAMES the editions the cap kept it from reading. The picker marks an exact
+  reading `=` against the bundled dated estimate's `~`.
+
+  **THE "ONE REQUEST, NOT N HEADs" MECHANISM IS PARKED, AND THE PREMISE IT RESTS ON IS
+  CORRECTED WHEREVER IT WAS STATED AS FACT.** "The dump date's `dumpstatus.json` lists every
+  edition at once" was written into `src/wiki/dump_sizes.py`'s docstring on 2026-06-16, copied
+  into this queue, and copied again into `PROMPT_18`. **Nobody read the endpoint.** Every
+  `dumps.wikimedia.org` path this repository builds is per-edition
+  (`/<code>wiki/latest/…`), which is evidence against a single cross-edition document rather
+  than for one, and the host is egress-blocked in the build sandbox (`curl` → `000`, against
+  `200` for `pypi.org`), so the shape could not be checked here. Collapsing N HEADs into one
+  request remains a real optimisation and is worth taking **once someone can read the live
+  endpoint**; shipping a parser against a guessed shape would be a fabricated endpoint. The
+  three copies now say so.
+
+  **SHIPPED (b) — the VERSION ANCHOR, and the reader's way into the history.**
+  `Article.source_revision` records which upstream revision an article's stored TEXT came
+  from, written in the same transaction as `content`/`hash` so the pair cannot drift, for BOTH
+  the watched-page sync and the offline dump ingest. It closes the gap the ledger recorded as
+  "per-mention revid anchoring": `upsert_wiki_corpus_article` had always RECEIVED the revid and
+  had nowhere to put it, so it returned the number to its caller and dropped it.
+
+  **THE MECHANISM DEVIATES FROM THE SHORTHAND, DELIBERATELY.** All of an article's mentions are
+  produced by ONE indexing pass over ONE text, so a per-mention column would store a
+  per-article constant once per mention — millions of copies at field scale, on the largest
+  table in the store, carrying no fact the article-level column does not. The mentions inherit
+  the anchor through their article. It is a `String`, not an `int`, because a law revision, a
+  statistics vintage and a gazette issue are not integers and this is the one seam every
+  versioned source will write into — which is the FUTURE_DEVELOPMENTS §1 unifying principle
+  ("a versioned source is an Article + a linked revision trail") expressed as a column rather
+  than a table, and the reason a law promoted to an Article needs no second seam.
+
+  **AND THE HALF S2 WAS MISSING.** The dedicated tracked-changes VIEW is **SHIPPED** and has
+  been since wave 5 — `openWikiTC` / `_wikiRevRow` / `loadWikiTC` in `app-map.js`, `#wiki-tc`
+  in `index.html`, over `GET /api/wiki/pages/{id}/revisions`. The 2026-09-06 analysis records
+  it as UNBUILT with "no hits", which is wrong (`INVENTORY.md` WIKI-02, fixed in the same PR).
+  What was genuinely missing is that it was reachable ONLY from the Settings watched-pages
+  table, and the reader is a standalone page — so a wiki article opened from search or
+  analytics showed no version, no history, and no way to either. The reader now states the
+  version with what it claims, links the revision as published, and offers the local history
+  **only when this machine actually holds tracked revisions for that page**, saying so plainly
+  when it does not (a link into an empty room looks like a capability and answers nothing). A
+  `?wikitc=` deep link hydrates the view through the subtab component.
+
+  **SHIPPED (c) — the wiki strip's K·N regex bomb, AND a bigger measured finding behind it
+  (nothing asked for this; it was found while scoping S3).** `plain_from_wikitext` carried the
+  recorded 2026-08-05 `OPEN.*?CLOSE` shape in THREE patterns (`<ref>…</ref>`, `{|…|}`,
+  `<!--…-->`), on the path every watched-page sync and every dump ingest runs through — and the
+  one whole-edition ingest would run millions of times. MEASURED at 400,000 chars: **0.014 s
+  well-formed against 13.440 s for unclosed-`<ref>` spam and 12.295 s for unclosed-`{|`**. The
+  proven fix already existed in the tree as a PRIVATE helper hardcoded to `<style>`/`<script>`,
+  which is exactly why it had not propagated; it is now `src/utils/markup_blocks.strip_blocks`
+  and both sites use it. Byte-identical over 20,000 randomised documents (with 6,389 / 13,731 /
+  6,720 actually exercising each strip) + 19 hand shapes; 14.16 s → 0.0030 s; honest cost +17%
+  on well-formed input.
+
+  **THE PART THAT IS A PENDING ITEM RATHER THAN A FIX: SIX MORE PATTERNS IN THE SAME FUNCTION
+  ARE QUADRATIC, AND THEY ARE THE EXPENSIVE ONES.** They wear the class differently —
+  `OPEN[^X]*CLOSE`, where the character class consumes to end-of-document and then backtracks —
+  and a 4× input costs ~16× the time. Measured, 100,000 → 400,000 chars of opener-only spam:
+  `<[^>]+>` 0.154 → **2.381 s** · `<ref[^>/]*/>` 1.052 → **16.756 s** · `[[File|Image|Category]]`
+  1.749 → **28.035 s** · `[[target|label]]` 1.614 → **26.388 s** · `[[target]]` 1.721 →
+  **27.398 s** · `[url label]` 1.420 → **22.525 s**. Only `{{templates}}` is linear (4.1×),
+  because `[^{}]*` cannot cross a brace. **NOT FIXED HERE, deliberately:** each of the six
+  CAPTURES and rewrites rather than removing, so the scanner needs a replacement callback and
+  every rewrite needs its own byte-identical differential before it goes near the ingest path —
+  its own slice. Possessive quantifiers do NOT fix them (the cost is a scan per start position,
+  not backtracking depth), and neither does a "does the closer exist at all" pre-check, which is
+  byte-identical and free but only covers the no-closer-anywhere case. The numbers are in
+  `src/wiki/corpus.py`'s `_WIKI_BLOCKS` note and in `tests/test_markup_blocks.py` so the next
+  session starts from data. **This is also a real input to S1:** whole-edition ingest over
+  millions of pages meets these on every malformed one.
+
+  **STOPPED AT THE SEAM — WHOLE-EDITION INGEST (S1), and the gate is MEASURED rather than
+  cited.** The standing ruling is "do not start before the P0 scale set lands", and prompt 18
+  restates it as "if the storage plan's Phase C is not in place, say so and stop". Checked
+  against the tree rather than against a status line, `STORAGE_5TB_PLAN.md` §9's sequencing
+  stands at: step 1 (Phase-A deltas) DONE; step 2 (CREATE-time `auto_vacuum`/`page_size`
+  seams) DONE — `src/database/connect.py` carries both, so the 2026-07-22 banner saying they
+  are "still unwired" is itself stale; step 3 (the FTS split-out to a contentless-delete
+  `fts.db`) NOT built — `src/database/fts.py` is in-corpus and no split file exists; step 4
+  (the hash-sharding prototype at 50–100M synthetic documents, which the plan requires
+  BEFORE any sharding code) NOT run; step 5 (the Phase C packed keyed text store) NOT built,
+  and a tree-wide grep finds no text-offload store, no pack format and no sharding. **Four of
+  the six maintainer rulings the store's shape depends on are still unruled** (§8 rows 3–6:
+  blob dedup, OOENC2-vs-`age`, keyed HMAC addressing, the `sqlite3mc` trial). So three of the
+  five steps preceding whole-edition ingest are unbuilt and its storage shape is undecided.
+  **Nothing was built.** Building the delta half now — wiring the existing
+  `fetch_recentchanges` client into an ingest — would be starting whole-edition ingest against
+  a store the plan has not prepared, which is exactly what the scope fence forbids; and
+  auto-tracking after a dump download is "the largest thing the app would ever start on its
+  own", so its consent surface and visible job should be designed once the store's shape is
+  ruled, not twice.
+  **WHAT EXISTS TODAY, so the next session does not re-derive it:** the BOUNDED version is
+  already shipped — `ingest_dump_pages(session, wiki, titles, limit=1000)` reads an explicit
+  operator-chosen title list out of a downloaded multistream dump, offline, through the ONE
+  `index_article` hook, keyed on the canonical wiki URL so a later live sync updates the same
+  row (`POST /api/wiki/dumps/corpus-ingest`). The DELTA half has a client
+  (`WikiClient.fetch_recentchanges`) and **no consumer**. Nothing enumerates a whole edition,
+  and nothing auto-tracks after a download.
+
+  **G10 IS TWO QUESTIONS, NOT FIVE (S6).** Read against the section that filed them, three are
+  already answered — two of them by the maintainer's own 2026-06-12 ruling recorded in that
+  same section. **Q2 (analytics mixing) — RULED, same pools, YES.** **Q3 (version storage
+  depth) — RULED per-revision FULL TEXT, and SHIPPED the same day**
+  (`WikiRevision.full_text`, batched `fetch_revision_texts`). **Q4 (change feed) — RULED, the
+  watched-pages tracker IS the feed**, with the standing caveat that the superseding auto-track
+  ruling retires per-article watching, so at edition scale the feed becomes `recentchanges`;
+  that is a consequence of the superseding ruling, not a new answer. **STILL OPEN, and
+  sharpened by what has shipped since they were filed:**
+  * **Q1 — scope of dump ingestion.** The superseding ruling says a downloaded edition is
+    TRACKED entirely; it does not say the edition is INGESTED entirely, and the two are
+    different costs (metadata for ~100k edits/day is feasible on the reference VM; keyword-
+    indexing millions of articles is the P0-gated part). The tiering already proposed under
+    that ruling — metadata + flags for ALL edits, full text and analytics only for pages in
+    the analytical corpus — is the shape awaiting a yes/no, and S1's storage gate makes it the
+    first thing to settle, because tiering is what decides how much store Phase C must carry.
+  * **Q5 — backups.** Now interacts with a shipped engine rather than a design: `wiki_dumps/`
+    is excluded from the corpus artifact BY CONSTRUCTION as re-downloadable
+    (`src/backup/artifact.py`), while the separate large-data FOLDER backup can carry it, and
+    dump-derived Articles ride the corpus backup like any article. So the question is no longer
+    "carry or reference" in the abstract: it is whether an edition's ingested Articles should
+    ride the corpus artifact at edition scale (which multiplies its size by the edition) or be
+    reconstituted from the dump on restore (which makes a restore depend on a file the backup
+    deliberately does not carry, and on the dump still being downloadable). Both directions
+    have a real cost; neither is defaulted.
+
+  Recommended defaults were offered for Q1 and Q5 in `QUESTIONS_FOR_THE_MAINTAINER.md` and are
+  NOT taken here — a ruling the maintainer did not give is not recorded as one.
 - **PROMPT 09 — THE CRASH-BRIEF REMAINDER: EXECUTED 2026-09-07 (PR #1021, #1025). WHAT REMAINS IS
   ONE OPEN QUESTION AND ONE REVERSIBLE DECISION — the code is done** (branch
   `claude/async-handlers-event-loop-qfyl1n`; five of
@@ -765,42 +914,71 @@
   only — an existing corpus keeps the tags its `Source` rows were created with, and a
   retroactive apply would be its own reviewed slice.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
-  the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
-  reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
-  `for` loop of `_run_item` → `run_restore`, so every backup pays its own
+  the MEASUREMENT shipped first, then item (b) on 2026-09-07; item (a) is still parked,
+  and the reasons are findings rather than reluctance):** the queue ran `_drive()` as a
+  strict `for` loop of `_run_item` → `run_restore`, so every backup paid its own
   **prepare** (stage A + validate + upgrade, measured 46.7 and 56.0 min on the two field
-  runs, on files that never touch the live corpus) and its own **verify_copy** (a
-  `quick_check` + `foreign_key_check` over the WHOLE working copy — the live corpus plus
-  everything merged so far). On eighteen backups that is ~14–17 h of prepare in series
-  with the merges, and eighteen structural walks of a growing multi-GB file.
-  **(a) PREFETCH — three blockers found by reading the seam, all of which raise the
-  estimate:** (i) staging lives INSIDE `VolumeBackupManager._run_restore`, on the
-  singleton manager's worker thread, and that singleton is one-job-at-a-time BY DESIGN
-  (`_reap_or_reject`) — so the queue would need to stage into its own tree and hand a
-  `StagedArtifact` across, which means a new `start_restore(..., staged=)` seam; (ii)
-  `cleanup_staging(staged)` is in a `finally` owned by the merge thread, so a
-  prefetched tree crosses an ownership boundary the current code guarantees by
-  construction — and on an encrypted corpus that tree is PLAINTEXT, so an orphan is an
-  at-rest hole, not just bytes; (iii) **decisive** — `find_completed_import` runs
-  BEFORE staging precisely so an already-merged artifact costs one small JSON read, and
-  the field log records **8 of 18 imports adding zero articles**. A prefetch that stages
-  ahead of that check burns 47–56 min per skipped item and defeats an existing
-  optimisation. Any build must run the digest check first.
-  **(b) CHECKPOINT INTERVAL — needs a RULING, not a guess:** verify+swap once per K
-  backups instead of per backup would save 17 × (verify + snapshot + swap), but nothing
-  is durable until a swap: today a kill at item 12 keeps eleven committed and skipped on
-  re-run, and at K=18 it loses twelve merges' CPU. The maintainer has killed this import
-  twice, so the trade is real. K is theirs to choose.
-  **WHAT SHIPPED INSTEAD (both merged-order-independent):** `verify_copy` sub-timings
-  (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) + the
-  `working_copy_bytes` the walk traverses, so the first completed backup converts
-  "2414 s" into a rate; and `merge_diag.walk_probe`, which measures the plaintext-vs-
-  encrypted page-walk RATIO on this machine (**2.40 / 2.39 / 2.42 across three runs**;
-  likely an upper bound at field scale, where I/O takes a larger share). `verify_copy`
-  has NEVER been observed in the field — both recorded runs ended before it — so every
-  estimate above rests on it, and the next completed backup supplies it for free.
-  SEQUENCING: read the first real verify number, THEN pick K, THEN build the prefetch if
-  the prepare side still dominates.
+  runs, on files that never touch the live corpus), its own whole-corpus **working-copy
+  snapshot**, and its own **verify_copy** (a `quick_check` + `foreign_key_check` over the
+  WHOLE working copy — the live corpus plus everything merged so far). On eighteen
+  backups that is ~14–17 h of prepare in series with the merges, eighteen copies of a
+  growing multi-GB file, and eighteen structural walks of it.
+  **(a) PREFETCH — STILL PARKED; the three blockers were RE-VERIFIED against
+  `main`@690920e on 2026-09-07 and all three still hold:** (i) staging lives INSIDE
+  `VolumeBackupManager._run_restore`, on the singleton manager's worker thread, and that
+  singleton is one-job-at-a-time BY DESIGN (`volume_job.py:196 _reap_or_reject`, which
+  raises on a genuinely-running job) — so a prefetch would need to stage into its own
+  tree and hand a `StagedArtifact` across, i.e. a new `start_restore(..., staged=)` seam;
+  (ii) `cleanup_staging(staged)` is still in a `finally` owned by the merge thread
+  (`volume_job.py:764`), so a prefetched tree crosses an ownership boundary the current
+  code guarantees by construction — and the staged corpus is PLAINTEXT by design
+  (`artifact.py:189-190`, `merge.py:1576`), so an orphan is an at-rest hole, not just
+  bytes; (iii) **decisive** — `find_completed_import` still runs BEFORE staging
+  (`volume_job.py:456` against `read_volume_backup` at `:550`) precisely so an
+  already-merged artifact costs one small JSON read, and the field log records **8 of 18
+  imports adding zero articles**. A prefetch that stages ahead of that check burns
+  47–56 min per skipped item and defeats an existing optimisation. **AND ITS OWN GATE IS
+  STILL UNMET:** C3's recommended default was "build only if the first real `verify_copy`
+  number shows prepare still dominating", and `verify_copy` has STILL never been observed
+  in the field. Note the contrast with (b), which is why (b) was the safe half to build:
+  the checkpoint's carried file is a WORKING COPY, which preserves the live at-rest state
+  — encrypted whenever the corpus is — so an orphan of it is not the at-rest hole a
+  prefetched staging tree would be, and it is swept by the same `.restore-*` janitor.
+  **(b) CHECKPOINT INTERVAL K — MECHANISM SHIPPED 2026-09-07; THE NUMBER IS STILL THE
+  MAINTAINER'S.** `run_restore` gained two optional parameters (`working_copy=` says
+  where to build or find the disposable copy, `hold_after_merge=` stops after the merge,
+  this batch's own verification and its side files), the queue drives the group, and
+  `verify_copy` split into `verify_merge` (per item: counts, the search index, the
+  sampled content comparison against the artifact — all of which need that item's staging
+  tree, which is deleted the moment it returns) and `verify_file` (per checkpoint:
+  `quick_check` + `foreign_key_check`, which ask about the FILE and therefore cover every
+  merge in it). The gate is not weakened; the WINDOW in which a crash costs work grows
+  with K, and that is the whole trade.
+  **⛔ THE OPEN RULING IS THE NUMBER, AND ONLY THE NUMBER.** `AppSettings.import_
+  checkpoint_k`, range 1..24, refused loudly outside it (never clamped — silently turning
+  a 30 into a 24 hands an operator a durability window they did not choose);
+  `OO_IMPORT_CHECKPOINT_K` overrides for one process; Settings → Data carries the control
+  with the cost on the visible surface and the long form in the hover bubble.
+  **The shipped default is 1 = today's behaviour, byte for byte, and the recommendation
+  on record is 3.** It ships at 1 because this entry itself said the trade "needs a
+  RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU that today
+  it would keep, and that is a change to what a Stop costs every operator. → **Pick K.**
+  **WHAT THE QUEUE NOW REPORTS, at any moment:** `items_committed` and `items_staged` as
+  two different numbers plus a `checkpoint` block (`k`, `open_group_items`, and a note
+  that at K > 1 names what a Stop would cost); per-item states `staged` ("Merged — not
+  yet saved") and `discarded` ("Discarded — import it again"), both `ok: false` so a
+  staged item's numbers can never sit behind a success headline; and a conclusion caveat
+  naming anything merged and never saved. A process restart rewrites `staged` →
+  `discarded`, because the working copy does not survive the process.
+  **WHAT SHIPPED IN 2026-08 INSTEAD (both merged-order-independent):** `verify_copy`
+  sub-timings (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`)
+  + the `working_copy_bytes` the walk traverses; and `merge_diag.walk_probe`, which
+  measures the plaintext-vs-encrypted page-walk RATIO on this machine (**2.40 / 2.39 /
+  2.42 across three runs**). **2026-09-07 REFINES THAT RATIO'S USE — see the Lessons
+  entry:** it is a WARM-cache number, and applying it to a field rate measured in the
+  DISK-BOUND regime over-states the encrypted walk, because a production encrypted store
+  is 16384-page (DB-10 §1b) against a staged plaintext corpus's 4096 and therefore does a
+  quarter as many, four times as large, reads.
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
   card provenance · Articles tab · Settings (maintainer; INTAKE + INVESTIGATION this session,
   code-verified against `main`@9c651ee, 47 numbered questions ANSWERED the same day; brief of
@@ -1520,6 +1698,65 @@
   carried forward: run `/llm-bench` on the GPU machine and on a slow one so the §6.3 time budget
   rests on measurements rather than a guess; and run the continuous-improvement cycles (§15's
   remaining half is *running* them, not building them).
+  **THE FOUR REMAINING §20 QUESTIONS ARE RULED (maintainer, 2026-09-07, in answer to
+  `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4). The §20 list is now CLOSED: every one of the five
+  open questions has an answer.**
+  **D1 (§20 Q4) — LAYER A IS AVAILABLE BELOW THE HARDWARE GATE.**
+  `LAYER_A_REQUIRES_CAPABLE_HARDWARE` flips to `False`, so the §3 gate applies to the NARRATION
+  layer only and a GPU-less operator gets the deterministic document. This does not weaken ruling
+  (2): the justification for gating was workload shape — thousands of narration calls — and that
+  is exactly what stays gated. The recorded consequence the original ruling accepted (a GPU-less
+  operator denied even the model-free half) is what is being reversed, on the design record's own
+  note that it was "reversible in one condition". **The verdict is now TWO facts, not one:**
+  `bulletin_available()` returns the DOCUMENT verdict, and `narration_available` beside it carries
+  the model verdict with its own reason — one key could not mean both without the recorded
+  one-key-two-meanings defect, since below the bar the document is available and the narration is
+  not. The constant keeps exactly one read (the read-count test is unchanged at 2) and the
+  narration refusal reads it nowhere: it is a hardware fact, not a policy constant.
+  **D2 (§20 Q2) — THE INTRODUCTION IS NARRATED BY THE MODEL**, over the edition's own masthead and
+  section figures, with a DETERMINISTIC TEMPLATE beside it. The maintainer chose the narrated form
+  over the templated one; the fallback is not a hedge but the same §8 rule every other Layer-B
+  sentence obeys — a model failure, an empty answer or a paragraph that fails grounding resolves to
+  the template with the reason recorded, so an edition below the gate or in airplane mode still
+  opens with a paragraph and §2's "a section called AI summary would name a document containing no
+  model output" mislabelling never arises. The introduction is grounded in the edition's OWN
+  figures (not article text), so the grounding check is the numeric-support one and an invented
+  figure is dropped exactly as elsewhere.
+  **D3 (§20 Q3) — MAIL SENDING: NEVER.** No outbound mail path is added to the app. Download the
+  document plus the short paste digest stays the only exit (§10 ruling 13). The reasoning is
+  recorded rather than left to be re-derived each cycle: sending is real egress that reveals the
+  operator to a mail provider, off Tor, with stored credentials — a new egress surface for a
+  document the user can already export, against an app whose ONLY external call is the gated,
+  off-by-default DuckDuckGo discovery. This is a CLOSED question, not a deferral.
+  **D4 (§20 Q1/Q5) — THE EIGHT SHIPPED SECTIONS AND THE CHECKBOX REVIEW SCREEN ARE RATIFIED AS THE
+  RULED DESIGN.** The section list is `rising_concepts · across_channels · country_coverage ·
+  by_topic_tag · changes_of_record · alerts · through_time · cards`, in that order, with `cards`
+  deliberately LAST (it is the slowest and the only section whose figures are not the period's).
+  The review screen is the checkbox-per-section/per-story screen with per-sentence verdicts. Both
+  are now pinned by a guard, because a ratified list that nothing enforces is a list that drifts;
+  ADDING a section stays cheap (that is what the registry is for) — the guard makes an addition or
+  a removal a deliberate edit of the ruling rather than a silent one.
+  **ONE QUESTION §18's ENUMERATION RAISES AND DOES NOT ANSWER — MAINTAINER'S TO RULE (recorded
+  2026-09-07, deliberately NOT decided by the session that built the enumeration):** the annexes
+  ZIP defaults to `full_text=True`, and the evidence archive carries every article's whole stored
+  text by design. **Is redistributing a publisher's full text the operator's to do?** That is a
+  question about each publisher's terms, not about this app's behaviour, and it has three shapes
+  worth separating. (a) The EVIDENCE archive is owner-only by design and is not meant to be
+  shared — its full text is what makes the edition's counts recomputable, which is its whole
+  reason to exist; the question barely arises while it stays on the machine that made it.
+  (b) The ANNEXES bundle is what the download button hands over BESIDE the report, so it is the
+  artifact that actually travels, and its default is full text. (c) The published REPORT already
+  carries bounded excerpts only, so it is not in question. The enumeration now STATES, per
+  artifact, that the text is there and whose it is (`publisher_full_text`), and stops:
+  `src/bulletin/privacy.py`'s item says in as many words that this app does not answer it.
+  THE OPTIONS, none taken: keep full text as the annexes default and rely on the disclosure ·
+  flip the annexes default to excerpt-only and make full text the deliberate choice (one query
+  parameter, already plumbed and tested both ways) · make it an operator setting with the terms
+  question stated at the switch. **A ruling would change a default, not build a mechanism** —
+  `full_text` is already a first-class flag on the route, the builder and the enumeration.
+  Tracked on the board as **BUL-3** in [`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* →
+  REMAINING, alongside the four other Bulletin carry-overs; this entry holds the reasoning,
+  that table holds the status.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
@@ -3558,6 +3795,30 @@
   per message. A functional index over that column needs a migration AND the recorded
   NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
   `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
+- **QUESTION FOR THE MAINTAINER — PUSH CI ON `main` NEVER COMPLETES (measured 2026-09-07; no
+  ruling taken, because the fix spends the maintainer's money).** Of the 40 most recently
+  completed `ci.yml` runs on `main`: **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron.** Zero push-triggered runs on the default branch have
+  reached a conclusion. Each merge's run is killed by the next one — my own merge's run
+  (#1030, `c370d4f8`) lasted 3m43s with zero jobs allocated. The workflow ALREADY tries to
+  prevent this: `cancel-in-progress: ${{ github.ref_name !=
+  github.event.repository.default_branch }}` is meant to exempt `main`, and it is not taking
+  effect. **Why this is a question and not a fix:** the repair is a concurrency-block change,
+  which makes every merge run a full matrix (macOS + Windows + ubuntu × several lanes) instead
+  of being cancelled — real runner minutes, at the current cadence of roughly one merge every
+  four minutes. That is a cost decision, and the cheaper alternative is a ruling that the
+  nightly IS the referee for `main` and sessions must reproduce lanes locally rather than defer
+  to CI. **What it costs to leave as-is:** several standing lessons resolve a local limitation
+  with "let CI run the real test" (the CI-only/standalone-repro pattern, the columnar
+  real-httpfs round trip, the pwsh-gated installer tests, the crypto lane's `[pqc]` guard —
+  the last of which was written *because* a guard that no lane collects is a guard that never
+  runs). On `main` that referee currently reports on a cron against whatever the branch happens
+  to be at 11:33 UTC, which is nobody's merge. **UNMEASURED, deliberately:** the mechanism.
+  Whether the expression mis-evaluates or pending runs are superseded regardless of the flag
+  needs a cancellation reason the Actions API does not expose cleanly; the observation says the
+  guarantee is absent, not why, and changing the workflow on the observation alone would be
+  fixing a mechanism nobody has read.
 
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
@@ -6824,7 +7085,10 @@
   statistics ("is a theme rising?"), a Leads family for super-groups, keyword→super-group
   navigation; brief of record =
   [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md`](../archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md);
-  execution delegated, PENDING — SEQUENCED AFTER the Leads-calibration + Families-entities
+  execution delegated — **EXECUTED AND SHIPPED 2026-07-19 in PR #721** (S1-S5 end to end; the
+  "PENDING" this entry carried until 2026-09-07 was stale for seven weeks and is what sent a later
+  prompt back to rebuild it — re-verified against `main` @ `58a4d6d`, see the closing note below;
+  it was SEQUENCED AFTER the Leads-calibration + Families-entities
   executions, whose primitives it consumes):** the ~77-group scaffold is healthy but the layer has
   NO statistics, and the export exposed the totals as broken: (1) GENERIC CONTAMINATION — "data"
   = 36,507 of the AI group's 43,067 mentions (85%); creation/sentence/marketplace/identity same
@@ -6866,6 +7130,28 @@
   largest bucket); every ⦾ chip app-wide deep-links to the map; the located-share honesty line
   states that map coverage grows as source countries are filled (the ~49% unlocated share = the
   standing Wikidata source-country generator lever, operator-side).
+  **CLOSING NOTE — VERIFIED-PRESENT 2026-09-07 against `main` @ `58a4d6d` (the staleness sweep the
+  2026-09-06 analysis prompts mandate; nothing was rebuilt):** every slice of BOTH briefs is in the
+  tree and its tests are green (76 passed as FOUND, 84 with the 8 guards this session added,
+  across `test_supergroup_stats/_rising/_index`,
+  `test_supergroups`, `test_group_stats`, `test_ring_country_split`, `test_ui_ring_map`,
+  `test_supergroup_seed`). S1 `src/analytics/supergroup_stats.py` (dedup-first member resolution +
+  mandatory dominance and cross-group-overlap disclosures) · S2 `supergroup_rising.py` (two-proportion
+  z-test on SHARE, Benjamini-Hochberg across the family, count floor, `driven_by` stated, the shared
+  DF-ubiquity gate refusing a generic-driven rise outright) · S3 `supergroup_index.py` + the
+  `.lvl-super` chip in the analysis Keywords subtab and a text note on omnibar rows (text there is
+  DELIBERATE and recorded at the call site: a command-palette row carries exactly one action) ·
+  S4 the two-tier circled browse, clickable country cells and clickable "not mapped" bucket, the
+  app-wide 🗺 deep-link, and the located-share honesty line (`index.html:1258`, keyed ×12) ·
+  S5 the four config fixes + the lint (`test_supergroup_seed.py::test_scaffold_config_lint`) ·
+  S6 both curation panels in Settings, Insights read-only, and the "only rows with a real decision"
+  filter with its honest empty state. **The one real gap the sweep found is now fixed** (see the
+  `shipped.csv` row of 2026-09-07): §D's country list was capped at 40 by `ring_country_split`, and
+  189 distinct source countries ship in the catalog, so on a broadly-covered concept (a) the
+  unlocated bucket could be truncated out of the payload — making the clickable "not mapped" drill
+  this very ruling names a dead end, surviving only because it HAPPENED to be the largest — and
+  (b) no exact country total was published, so the figure announced beside the map WAS the cap,
+  against the same day's anti-capping ruling. Both reproduced live before the fix.
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
   system's current limitations"; brief of record =
@@ -9558,6 +9844,155 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+
+**PROMPT 21 — SECURITY, NETWORK POSTURE AND THE CONSENT SURFACE: WHAT SHIPPED, WHAT IS
+STILL RULING-GATED, AND ONE STALE CLAIM CORRECTED (executed 2026-09-07, branch
+`claude/security-network-posture-consent-e7uyr5`; NO RULING IS INVENTED HERE).**
+Three of the prompt's seven slices were buildable and shipped (rows in
+[`shipped.csv`](shipped.csv)): S1 NET-01, the connect-time SSRF closure; S2 NET-02 + PRH-03,
+the sanitizer excepts and the DuckDuckGo redirect; S3's documentation half. The other four
+wait on a maintainer ruling and are recorded here with the tree state each was re-derived
+against this pass, so the next session does not re-investigate them.
+
+**S4 · I3 — Tor-exit-resolve (SOCKS RESOLVE, 0xF0). STILL DESIGN-ONLY, re-verified: zero
+code.** The design of record is already written in this queue (the 2026-07-20 amendment,
+"can't we ping the source server"), including why DIRECT contact is ruled out — ICMP cannot
+ride Tor, so a ping is clearnet by construction, and a direct probe of a just-Tor-fetched
+source hands the server and the ISP a time-correlated link between the user's real IP and
+that source. Nothing has changed about the mechanism, the provenance class
+(`dns-via-tor-exit`, never blended with socket-observed) or the free ADDRMAP upgrade once
+Stem lands. What is owed is only the go/no-go (question I3, recommended default: go, as its
+own skeptic-matrixed slice). Grep anchor for the next session: `0xF0` and `dns-via-tor-exit`
+appear nowhere under `src/`.
+
+**S5 · I4 — `oo-netcut` and Stem-controlled Tor. STILL DESIGN-ONLY, re-verified: zero code**
+(`docs/ROADMAP.md` carries both lines and nothing under `src/` imports `stem` or names
+`netcut`). Two things are worth recording before the ruling rather than after it. (a) The
+honest claim boundary is already fixed by the non-negotiables: a userspace app can never
+equal a hardware webcam light, and `oo-netcut` must name the layer it controls rather than
+implying the machine is silent. (b) **Arti must be RE-VERIFIED, not assumed.** Its Python
+bindings were nascent at the knowledge cutoff, and this project's own recorded lesson about
+prescribed remedies applies — the mature path is a `tor` process driven through Stem, and
+per-source CIRCUIT isolation (`IsolateSOCKSAuth`, already a primitive here in
+`src/ingest/__init__.py::_isolated_proxies`) compartmentalises with no clearnet exposure at
+all, which is strictly preferable to the per-source clearnet fallback. Question I4 offers
+"park both to 0.5+" as its recommended default; parking is a legitimate answer and is not
+taken here.
+
+**S6 · PRH-16 — THE CONSENT MACHINERY IS TWO-THIRDS BUILT, AND THE INVENTORY CLAIM THAT IT
+"EXISTS NOWHERE" IS STALE (corrected in `INVENTORY.md` this pass).** Re-derived from the
+tree: `CONSENT_DOC_VERSION` is **PRESENT** (`src/legal/consent.py:43`, `"1.0"`, alongside
+`is_accepted` / `needs_acceptance` / `record_consent`, re-exported from `src/legal/__init__.py`
+and read by `src/legal/documents.py`). The **web consent surface is PRESENT** too, and the
+reason it did not answer to a grep for "modal" is that a modal was deliberately NOT what was
+built: `docs/legal/IMPLEMENTATION_NOTES.md` records the choice of a dedicated pre-app page
+over an in-SPA `<dialog>` because it blocks harder — nothing of the app is reachable first —
+wired as `/api/legal/` on the locked-state allowlist (`src/api/unlock.py`) with
+`src/api/legal.py`'s consent/decline routes, and pinned by
+`tests/test_legal_documents.py::test_unlock_first_launch_inserts_legal_step_before_passphrase`.
+Only `OO_REQUIRE_CONSENT` is genuinely absent — and **that is a recorded decision, not an
+oversight**: the same notes state it is "intentionally left as a documented option, not the
+default, because hard-blocking the web entrypoint could strand a desktop-launcher or
+`curl | bash` user with no console." The prompt asked to decide whether these are wanted and,
+if not, to record the refusal where the design lives; the refusal was already there, so
+nothing is decided here. **The only open question is whether the opt-in hard block should
+ever ship** — recommended default: leave it as the documented option it is, since the
+strand-a-launcher-user reason has not changed.
+
+**S7 · G9 + NET-09 — self-update and release signing. STILL UNBUILT, re-verified: no
+`self_update` module exists** (the only tree hits for "self-update" are two unrelated
+comments about Home refreshing itself). The posture is already ruled — manual, user-driven,
+git-pull based, no signing key yet — and the mechanics are settled in
+`docs/FUTURE_DEVELOPMENTS.md` §"In-app self-update" (line 993, promoted to active
+2026-06-16, mechanics only): snapshot → verify → staged migrate → atomic swap → rollback, with the
+data directory living outside the code tree as the property that makes the corpus, settings
+and keys survive by construction, and **never a silent decrypt across an update**. What is
+owed is G9's five questions (channel, trust root, cadence, `curl|bash` versus git, mirror
+anchoring) and NET-09. **Re-verified this pass and worth stating because it is the honest
+half:** `.github/workflows/release.yml` computes `SHA256SUMS` and publishes them with the
+artifacts, and its own header comment already says "checksums-only for now — signing is a
+tracked FUTURE_DEVELOPMENTS item", so the release path does not over-claim today. NET-09 is
+only the question of whether that changes.
+
+**DELIBERATE OMISSION — the DuckDuckGo RESULT-LINK regex is NOT widened, and the reason is
+an environment finding.** `_parse_results` matches `<a class="result__a" href="…">`, which
+requires `class` to be the FIRST attribute and `href` to follow it immediately; an
+`href`-first anchor, or one carrying `rel="nofollow"` before `class`, does not match. That
+is real fragility in the one sanctioned external channel, and it is deliberately left alone,
+because widening it blind could start admitting sponsored anchors as discovered sources and
+**the live markup could not be observed**: `html.duckduckgo.com` answers `CONNECT … 403`
+through this sandbox's proxy, against a `pypi.org` 200 control (probed 2026-09-07, this
+session probing first rather than assuming, per the working mode). The `uddg` unwrap that DID ship is
+justified by the URL shape alone and is strictly additive, so it cannot lose a result that
+resolves today. Re-open with either an allowlist entry for `html.duckduckgo.com` or a
+captured sample of a real response.
+
+**STATED RESIDUALS of the NET-01 closure, so they are not read as covered.** (a) A fetch
+whose proxy endpoint is a HOSTNAME rather than an address stands the connect-time check down
+for that request: allowlisting it would mean resolving it from inside a socket hook on every
+fetch, and a security guard may not break a working configuration in order to protect it.
+`_guard_target`'s policy there is unchanged, so such a deployment is exactly as protected as
+before. (b) An address that is publicly routable but internal to the operator's own network
+perimeter is out of reach of any address-shape rule, here and in `_guard_target` alike.
+(c) A remote-resolving proxy (`socks5h`/`socks4a`) never resolves the destination in this
+process at all, so there is nothing local to validate — which is the same reason
+`_guard_target` skips its hostname branch there.
+
+**SEQUENCING — NET-04's nonce CSP stays blocked, and the blocker is now measured.**
+`src/api/main.py::_CSP` still carries `script-src 'self' 'unsafe-inline'`. It cannot leave
+until the inline handlers do, and the count re-derived by the 2026-09-06 analysis is roughly
+**590** (~331 in `index.html`, ~259 across the seventeen `app-*.js` modules) — not the 295
+the ledger recorded, which counted `index.html` only and predates the module split. Prompt 15
+S2 owns the retirement; landing the nonce first breaks the app. Recorded here so the
+sequencing survives the two prompts being executed by different sessions.
+**CARRY-OVER FROM THE PROMPT-17 SWEEP (2026-09-07, PR #1027 — four items, each measured; none
+of them blocks the PR, and none of them was silently dropped).** The sweep found prompt 17's
+S1-S7 already shipped and fixed the one real defect it turned up (the concept map's country cap);
+these are what it deliberately did NOT do, recorded here because a carry-over that lives only in a
+PR body is a carry-over nobody will read.
+
+1. **THE `--min 100` i18n GATE HAS ONE KEY OF ROUNDING SLACK — a ruling is wanted on whether to
+   close it.** `scripts/i18n_report.py` computes `pct = round(100 * covered / n, 1)`, so at today's
+   n = 3040 a locale missing exactly ONE key scores 99.967 -> **100.0**, prints
+   `complete 3039/3040 (100.0%)` and exits 0. Measured, not reasoned: deleting the newly-added key
+   from `fr.json` alone left the gate green. The blind spot WIDENS with every key the project adds,
+   so a check that was exact at 500 keys silently stopped being exact. **Tightening is free today** —
+   all 11 non-English locales are at the full count, verified — so the cost is only the risk of
+   reddening a parallel session mid-flight, which is the gate doing its job. NOT done in the slice
+   that found it because it changes a shared BLOCKING gate that every session depends on, and the
+   standing rule is that a reporting fix and a behaviour change do not ship on one line. The lesson
+   is in `LESSONS.md`; what is missing is the decision.
+
+2. **THE CONCEPT MAP'S NEW DISCLOSURE IS BROWSER-UNVERIFIED (fork-3).** PR #1027 changed what the
+   ring map announces (`n_countries`, never the polygon count) and added a visible
+   "Countries listed: N of M" line plus the matching aria label. Every guard is a source or payload
+   assertion; nothing rendered it. This sandbox CAN drive Chromium (the recorded 2026-08-04 lesson —
+   the fork-3 caveat is a habit, not a limit), so the honest close is a real click-through at a
+   corpus wide enough to truncate, checking the note against the map, the dumbbell and the table it
+   governs, and in Arabic for the RTL placement. The strings carry no punctuation-joined LTR run, so
+   no bidi isolate is expected to be needed — that expectation is exactly what a render would confirm
+   or refute.
+
+3. **`ring_country_article_ids`'s `total` IS THE CAP WHEN `bounded` IS TRUE — a name, not a hole.**
+   Noticed while auditing the sibling call and deliberately left alone. It is not the defect #1027
+   fixed: the cap is DISCLOSED (`bounded` rides beside it, and the drill's one caller reads neither),
+   so nothing published is secretly a bound. What is wrong is the FIELD NAME — `total` names a value
+   that is `min(real, limit)` — and the standing rule is that when a name and a measurement disagree
+   the NAME is the part you are allowed to change. A rename with readers is its own slice; doing it
+   inside an anti-capping fix would have made that fix's blast radius unreviewable.
+
+4. **RULING 22 NEVER REACHED THIS DOCKET, AND THAT IS WHY PROMPT 17 ASKED FOR THE THING IT
+   REMOVED.** The 2026-08-07 field ruling that RETIRED the per-row Summarize/Translate from the
+   analysis Articles list (absorbed by the reader, which runs both on the same endpoints and shows
+   the original URL as its own visible text, invariant #6) is recorded in a `shipped.csv` summary
+   (2026-08-20, rulings 20-22) and in a comment at the call site (`app-analysis.js`) — and nowhere a
+   reader looking for RULINGS would find it. Prompt 17's S7 duly listed AI-19 as work to do, and
+   building it would have undone a maintainer ruling. `INVENTORY.md` now records the closure; the
+   general question this raises is whether a ruling whose whole content is a REMOVAL needs an entry
+   here even though it ships no pending work, since the shipped-log row is written in the vocabulary
+   of what was built rather than of what may not be rebuilt. Recorded for a ruling rather than
+   answered.
 - **PROMPT_11 EXECUTED 2026-09-07 (the AI layer: model supply, capability probes, and the honest
   gaps). FOUR OF ITS SEVEN SLICES WERE ALREADY BUILT, and the staleness guard is what said so —
   the prompt's own scoping was written from doc status lines that had aged past the tree.** What
