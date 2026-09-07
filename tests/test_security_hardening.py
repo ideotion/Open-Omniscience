@@ -170,3 +170,19 @@ def test_injection_style_search_returns_400_not_500(client, q):
     r = client.get("/api/articles", params={"query": q})
     assert r.status_code in (200, 400)  # rejected or empty match — never a 500
     assert r.status_code != 500
+
+
+@pytest.mark.parametrize("bad", [b"https://example.com", 12, object()])
+def test_a_non_str_input_already_raised_BEFORE_the_narrowing(bad):
+    """PARKED.md parked this narrowing on the blocker "changes behaviour for
+    non-str inputs of an app-wide sanitizer". Measured on the pre-fix code, that
+    is not true of either function: both run ``re.sub`` (``safe_href``) or a
+    ``.lower()`` chain (``sanitize_url``) on the input BEFORE the ``try``, so a
+    truthy non-str already raised ``TypeError``/``AttributeError`` OUTSIDE the
+    block and the broad except never covered it. Recorded as a test rather than
+    an argument, because the blocker is why the item sat parked from 2026-08-20.
+    """
+    with pytest.raises((TypeError, AttributeError)):
+        safe_href(bad)
+    with pytest.raises((TypeError, AttributeError)):
+        sanitize_url(bad)

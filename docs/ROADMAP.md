@@ -78,7 +78,10 @@ scaling failures now cause crashes and data loss, not just slowness.** So 0.2's 
 (was 735 s of full scans → index-only, #588) ✅ · corpus-epoch mechanism (`derived_meta`) ✅ ·
 **corpus-epoch wired into the restore-merge** (was DB-7; A7) ✅ · **alembic stamp self-heals to
 head** (was DB-8; A8) ✅ · covering mention indexes / FTS optimize / batched commits / the
-single-writer gate ✅ · storage-composition diagnostic ✅.
+single-writer gate ✅ · storage-composition diagnostic ✅ · **Postgres parity vs honest
+SQLite-only (was ARCH-06 / question J3) — RULED SQLite-only and documented 2026-09-07** ✅: the
+implication of dual support is out of `ARCHITECTURE.md` and `session.py`, and a non-SQLite
+`DATABASE_URL` now warns rather than silently losing at-rest encryption, FTS and the write gate.
 
 ---
 
@@ -587,13 +590,15 @@ anchoring), Node 0 = the maintainer's own machine. **User corpora never touch th
 ### Structural debt — measured 2026-08-04, deferred by ruling
 
 Recorded, not scheduled. Measured during the 2026-08-04 critical review; none is a defect on
-its own, and all three are the kind of change this project's own rules say not to attempt
-without a browser and a runnable suite in the same session.
+its own, and each is the kind of change this project's own rules say not to attempt without a
+browser and a runnable suite in the same session. (The board said "all three" until
+2026-09-07 — it was written when there were three rows, and has carried five since S-4 and
+S-5 joined it.)
 
 | # | Item | Measurement | Why deferred | What would unblock it |
 |---|---|---|---|---|
-| S-1 | `src/api/diagnostics.py` holds **108 routes / 150 functions in 5,276 lines** — 18 % of the app's 607 endpoints in one module | 108 `@router.*` decorators; next-largest router is `insights.py` at 70 | A split touches the all-diagnostics bundle, its completeness ratchet, and the tests that slice this file by source anchors | `tests/js_source_helper.py` landing first (done 2026-08-04), so anchor-based tests survive a move |
-| S-2 | **1,865 function-level `from src.…` imports across 241 of 445 files (54 %)**; only 49 carry a circular-import comment | grep of imports indented ≥4 spaces | Cannot distinguish deliberate lazy-loading (deferring `duckdb` via `columnar` serves the lean-boot goal) from undocumented cycle-breaking without resolving each | An import-graph probe reporting true cycles, so the legitimate lazy imports can be annotated and the rest hoisted |
+| S-1 | `src/api/diagnostics.py` holds **128 routes / 176 functions in 6,291 lines** — 19 % of the app's 663 endpoints in one module. **Re-measured 2026-09-07; the previous row said 108 / 150 / 5,276, so this grew by ~1,000 lines and 20 routes while recorded as deferred** | 128 `@router.*` decorators, **100 of them GET**; next-largest router is `insights.py` at 75 | A split touches the all-diagnostics bundle, its completeness ratchet, and the tests that slice this file by source anchors | **Re-scoped 2026-09-07 (PROMPT_20 S1, J1 answered "yes"; NOT attempted).** Two of the three blockers are already gone: the completeness ratchet EXISTS (`test_all_diagnostics_bundle_covers_every_get_diagnostic`, importing its covered/exempt maps from `src.api.diagnostics` so CI-time and runtime cannot diverge), and `js_source_helper` landed. What is NOT solved is the third: that ratchet is **one of 20 source-read sites across 4 test files** that read `diagnostics.py` **as a file**, and a package makes that path a directory. **So the split's FIRST commit is a concatenating reader** returning the package's modules in load order, read from the package rather than hard-coded — the 2026-08-20 `app.js` lesson, where a positive assertion fails loudly and a NEGATIVE one passes for free, and 151 went vacuous in one commit |
+| S-2 | **2,231 function-level `from src.…` imports across 282 of 502 files (56 %)** — re-measured 2026-09-07, up from 1,865 / 241 / 445 | grep of imports indented ≥4 spaces; `TRUE_CYCLE_CEILING = 0` in `tests/test_import_graph.py` | The unblocker below SHIPPED: the import-graph probe exists and the true-cycle ceiling is **zero**, so what remains is not a measurement problem. **Six modules import `src.api.main`** — `api/diagnostics.py`, `api/llm.py`, `api/ai.py`, `api/insights.py`, `api/unlock.py`, `testing/scale_bench.py` — surviving as annotated lazy imports, plus four unannotated cycle-breakers in `ingest/__init__.py`, `safety/settings.py`, `backup/volumes.py` | **PRH-26**, which is the actual next step: `src/api/main.py` still holds inline endpoints belonging in the `core` router, and `observability.py` (the Prometheus globals + middleware order) was scoped for extraction and never extracted. ⚠ The claim that this extraction also fixes a duplicate-registration collision making test files fail when they share a process **did not reproduce** on 2026-09-07 (full suite green in one process) — establish that symptom before extracting for it |
 | S-3 | ~~a single 23,896-line indented global scope~~ **DONE 2026-08-20** — `src/static/app.js` is now **17 ordered modules**, split with byte-identical concatenation and verified in a browser | seam map, evidence and the measured numbers: [`docs/design/APPJS_DECOMPOSITION_2026-08-20.md`](design/APPJS_DECOMPOSITION_2026-08-20.md) | — | — |
 
 | S-4 | **233 hand-rolled source-slicing sites** across the test tree, and **588 UI strings / 307 `t()` literals** with no `en.json` key | AST walk in `test_source_slicing_discipline`; `i18n_report.py --audit-chrome` | None is a defect — each is real debt now *measured* rather than invisible, and each is held by a ratchet that may only fall. The slicing sites were reported as **0** until 2026-08-04, when the detector turned out to be keyed to five helper names | Ordinary attrition: migrate a slice to `tests/js_source_helper`, or key a string ×12, and lower the ratchet in the same PR — the tooling prints the new floor |
@@ -607,6 +612,54 @@ rather than silently reclaimed inside a merge commit: tightening it would redden
 branch that legitimately adds a string, and this repository merges several in parallel. It is
 still a free slot for the next drift to land in unseen, so lower it in a PR that owns the
 change — the tooling prints the new floor.
+
+*Numbers re-measured 2026-09-07 on the merged tree, because the note's argument outlived its
+figures: the gates `ci.yml` actually runs are `--max-untranslatable` **555** against a real
+**554**, and `--max-unkeyed-t-calls` **296** against a real **295** — one slot of slack each,
+as the note says, at values one lower than it names. The reasoning is unchanged and the slack
+was again left rather than reclaimed inside a merge commit, on the note's own grounds.*
+
+**What PROMPT_20 closed on 2026-09-07, and what it leaves — the to-do, in the order a next
+session should take it** ([PR #1035](https://github.com/ideotion/Open-Omniscience/pull/1035); the
+full carry-over with reasons is the last entry in [`OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md)).
+
+*Closed:* **J2** (`structlog`, an orphaned core dependency with zero call sites, dropped —
+which also closes PARKED MAINT-04 in both directions, since that item's migration TARGET was
+structlog and its migration SET was already empty) · **J3** (SQLite-only ruled, documented, and
+`_build_engine` now degrades loudly on a non-SQLite URL) · **the ruff style-lane verdict** (stays
+advisory, may no longer grow — [`RUFF_STYLE_LANE.md`](maintenance/RUFF_STYLE_LANE.md)) ·
+**PRH-04** from `PARKED.md` · **L8** — which turned out to need sweeping
+after all: it measured **0** at this session's start and `main` grew **six** new `PR pending`
+rows in one repository day, each resolved here by rule (5b)'s own first-parent search with the
+clone confirmed non-shallow and every answer corroborated independently. L8 is not a backlog to
+clear once but a placeholder that REFILLS, and the question it raises — a test forbidding it
+outright, at the cost of making every session open its PR before writing its ledger row — is in
+[`OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md) with a recommendation · **PRH-27**, refuted rather than fixed — a full suite run leaves no
+`oo.env`, so the item had no subject.
+
+*Closed by a PARALLEL session while this branch was open, not by it:* **PRH-03** and
+**NET-02** landed in [PR #1031](https://github.com/ideotion/Open-Omniscience/pull/1031)
+hours before this merge. Both sessions found them, built them, and mutation-checked them
+independently; #1031 merged first, so its implementation is the one in the tree and this
+branch's was dropped rather than re-landed. Two things survived the yield because #1031
+does not carry them: the measurement that PARKED's own stated blocker for NET-02 was
+false, and four negative-space cases on the redirect host check. **The reusable lesson is
+the scheduling one** — `PARKED.md` items carry no owner, PROMPT_20 §S5 and `INVENTORY.md`
+disagreed about whether these were P20's or P21's, this PR flagged that disagreement in
+its own body, and the disagreement still cost a full duplicate build. A parked item is
+claimable; nothing in the repository lets a session claim one.
+
+*Left, each with what would unblock it:*
+
+| Item | What is left | What it needs |
+|---|---|---|
+| **S-1** | the split itself | the concatenating reader first, per the re-scoped row above. A whole session; a half-moved package is worse than an unsplit file |
+| **S-2 / PRH-26** | the `core`-router endpoints and the `observability.py` extraction | a reproduction of the duplicate-registration symptom, or an honest note that the extraction is worth doing without it |
+| **S-4** | the 1,063 source assertions never audited beyond the 2026-08-04 sweep's 41 | attrition, and the standing rule: prefer being stopped by the ratchet over lowering it. PROMPT_20's three new test files — five before two were deleted in the #1031 yield — went through the existing helpers without moving the budget |
+| **STR-05** | `view_article` — **611 lines**, not the 197 `PARKED.md` claimed until 2026-09-07 — plus `build_families` and the rest of the cc≥C list | its own slice with the endpoint's own tests. `radon` is not in the `[analysis]` extra, so every cc figure on that list is a HISTORICAL reading until someone installs it and re-measures |
+| **PRH-29** | the Windows `pytest` hang itself | a bisect against the suite, as its own task, on a real Windows runner. 2026-09-07 shipped only a `timeout-minutes: 45` cost cap — the hang is unchanged, and a Windows failure at ~45 min is that cap working, not a regression |
+| **the ruff burn-down** | **242** of the 450 findings are auto-fixable by `--fix` and a further 70 only with `--unsafe-fixes`; 132 are `I001` | **a maintainer decision**, because a tree-wide import reorder is not behaviour-neutral here: import order is load-bearing in named places, and the honest shape is a dedicated PR with a full-suite diff, not a drive-by `--fix` |
+| **test hygiene (the S6 family)** | `test_export_sources_to_yaml` against the legacy shared engine, `test_get_source_statistics`, the port-8001 collision between the two vLLM files | one at a time. The member fixed on 2026-09-07 was found by running the suite on clean `main` first — a baseline run is what makes this family visible at all |
 
 **Honest note on S-3 (closed 2026-08-20).** The row is done, and the premise it was written
 around — "the real cost is parse/compile on the 2-core field VMs" — turned out to be **half
@@ -635,9 +688,15 @@ end of `<body>`, so they do not block first paint. `guis/boot.js` in `<head>` *i
 render-blocking, but it is 6 KB and exists to avoid a flash of the default skin — that trade is
 correct.
 
-**Related, and awaiting a ruling:** the ledger's own size is measured and proposed on in
-[`docs/design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md`](design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md)
-— `CLAUDE.md` is ~215k tokens and rule (1) requires reading it in full every session.
+**Related — RULED AND SHIPPED, 2026-09-07 (ruling A3), so this paragraph no longer describes
+the tree.** It read: *"the ledger's own size is measured and proposed on in
+[`LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md`](design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md)
+— `CLAUDE.md` is ~215k tokens and rule (1) requires reading it in full every session."* The
+restructure landed: `CLAUDE.md` is **44 KB**, the Lessons moved verbatim to
+[`docs/ledger/LESSONS.md`](ledger/LESSONS.md) and the Open queue to
+[`OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md), rule (1) now names the constitution (this file plus
+Lessons) as the mandatory read with the queue consulted on demand, and a size ratchet in
+`tests/test_repo_invariants.py` enforces it in both directions.
 
 ---
 
