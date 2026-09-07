@@ -288,12 +288,69 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
 - **Home dashboard + "Latest in your corpus"** — ✅ verified SHIPPED (B8: `/api/insights/latest` + `src/analytics/latest.py` with user-set-and-seen gates, near-dup collapse, script-aware length; `#home-latest-panel` + trends + recent-by-tag). Remaining: the **synthesized-Leads carousel** (pausable/a11y — the one deferred nicety). 🚧
 - **Clickable in-article keywords — stats hover** — ✅ verified SHIPPED (B9: `keyword-stats` endpoint + reader/SPA #oo-tip hovers; mentions · spread · windowed trend rate · top co-occurrences, counts-only).
 - **Editable keybindings panel** — ✅ verified SHIPPED (B11b: Settings → Shortcuts).
-- **Remove the Insights search bar** — 🔒 gated (B11a): first verify the omnibar Enter→analysis-window fully absorbs `exploreTerm()`'s 4-endpoint view (trend + associations + context + mindmap); a browser-unverified removal risks losing a tool (the Desk lesson).
+- **Remove the Insights search bar** — 🔒 gated (B11a / H3, re-confirmed live 2026-09-07: `#ins-term` and `exploreTerm` are still wired): first verify the omnibar Enter→analysis-window fully absorbs `exploreTerm()`'s 4-endpoint view (trend + associations + context + mindmap); a browser-unverified removal risks losing a tool (the Desk lesson). The hide is additionally blocked by INTERLEAVING, not just absorption: `#ins-explore` mixes the retirable search bar with a NON-searchable corpus-landscape that must stay and with the shared `#mm-kit`, which relocates into the corpus window and back. A blind `display:none` is the interleaved-shared-component hazard. Port, guard the absorption, then hide — with a browser open.
 - **Guided-setup wizard remaining slices** — the **sources-by-theme step shipped (S4.7, 2026-07-12)**: real tag taxonomy via loopback `/api/scheduler/coverage`, themes default-all (cover-everything), language emphasis → `language_equilibrium`, loopback config write, never egress. The encryption-choice step is on **unlock.html** (chosen pre-DB at first launch), so it is architecturally moot in the post-unlock wizard. Remaining: a country-emphasis picker (`country_priority` lever exists) + browser click-through. 🚧
 - **Onboarding & training** — first-run tour as dismissible Home cards + contextual "why" notes + a supervised training curriculum (in-repo, never hosted). 🎨
 - **First-launch data-location chooser** (*lifted 2026-09-07 from `docs/design/FIX_SESSION_PROMPT_2026-07-14.md` Slice 2, where it was the only live record*) — maintainer-asked 2026-07-14: default = the app data folder, or "choose a folder" in which an **"OOS data"** subfolder is created; decided at first launch AFTER language + legal acceptance and BEFORE the passphrase. Reuses the shipped A11 `OO_DATA_DIR`/`oo.env` persistence seam, with an honest writable / free-disk / tmpfs preflight. Verified 2026-09-07: nothing in `unlock.html` or the setup path offers this today. 🎨
-- **i18n long tail** — the 44 new B5/B14/B15 strings are keyed ×12 (B10, #629) ✅; **composite-string format support** (`OOI18N.tf` template + interpolation) **and server-built Home-card title translation** (design + first producer) **shipped (S4.5, 2026-07-12)** ✅ — `Card.title_i18n`/`title_vars`, `rising_now` the reference producer, the template key in all 12 locales. Remaining: extend translatable titles to the other producers + key more dynamic JS rows via `tf` + the pre-existing ~105–140 chrome tail. 🚧 ongoing
+- **i18n long tail** — the 44 new B5/B14/B15 strings are keyed ×12 (B10, #629) ✅; **composite-string format support** (`OOI18N.tf` template + interpolation) **and server-built Home-card title translation** (design + first producer) **shipped (S4.5, 2026-07-12)** ✅ — `Card.title_i18n`/`title_vars`, `rising_now` the reference producer, the template key in all 12 locales. Remaining: extend translatable titles to the other producers + key more dynamic JS rows via `tf` + the chrome tail, MEASURED 2026-09-07 rather than estimated — **557 untranslatable UI strings and 297 unkeyed `t("…")` call sites, both ratchets at ZERO SLACK** (`ci.yml`), so any new `title=`/label/paragraph reddens CI unless it is keyed in the same commit. Known specifics: the eight `guis/` skins are outside the gate's scope entirely; `reader.js` calls `t()` zero times; the `{action} failed: {error}` template was considered and REJECTED in favour of full-sentence keys (do not re-propose it); the uninstall dynamic preview/confirm dialogs stay English (PRH-19). Lower a ratchet in the same PR that frees the slack. 🚧 ongoing
 - **Human click-through of all browser-unverified UI** — now including the whole B wave (B3/B5/B14/B15 + storage panels + backup dialogs). 🛠
+
+**The browser-verified UI burn-down (prompt 15) — what is left after PR #1029.** The type
+scale (PRH-32), dialog theming and the three Library labels (PRH-33) shipped 2026-09-07,
+Chromium-verified on all 17 themes. The rest of that prompt is untouched and is tracked here
+so it is not re-derived from the prompt file each time:
+- **`var(--line)` is defined nowhere the SPA loads — 41 fallback-less references** across ten
+  files. A `var()` with no fallback that resolves to nothing voids its WHOLE declaration, so
+  each does nothing: measured, all eleven dialogs' declared border computed `0px none`.
+  Ratcheted (`tests/test_dialog_theming.py`) so nothing new lands. 🔒 **ruling-gated — the
+  question is simply whether those 41 borders were ever wanted**; if yes the repair is one line
+  plus a browser pass, if no the declarations should be deleted rather than left looking like
+  styling. Full measurement in `docs/ledger/OPEN_QUEUE.md`, 2026-09-07.
+- **The five axe-core P2s** from the 2026-08-20 matrix §11.1 — Home card-back chip/tier-badge
+  contrast · agenda inline-link distinguishability (a convention decision) · `.an-tab`
+  nested-interactive · the tasks top bar's grounds (`#llm`, `#tm-conn`, `.muted`) · reader
+  `.deduced > h3` / `.dup-pill`. 🛠
+- **No layout media query between 900 px and desktop** — `max-width:900px` is still the widest.
+  🎨
+- **~590 inline `on*=` handlers** (~331 in `index.html`, ~259 across the `app-*.js` modules)
+  against ~103 `addEventListener`. This is what blocks a nonce-based CSP; `'unsafe-inline'`
+  stays in `script-src` until it is paid down. The ledger's recorded "295 as of 2026-06-15"
+  counted `index.html` only and predates the module split. Do it in bounded passes with
+  byte-parity discipline — a green walk does not prove each of 590 handlers works when clicked.
+  🚧 browser-gated
+- **Dead UI, deleted with a browser open** — the retired temporal-map cluster (`loadTimemap`,
+  `renderTimemap`, `showTmapDetail`) is unreachable but INTERLEAVED with live helpers `ooMap`
+  still uses (`kindColor`, `TMAP_KINDS`, `fmtYear`, `fmtDate`, `dateToT`, `lon2x`/`lat2y`,
+  `tmapFindCoverage`); a wrong deletion passes `node --check` and breaks the map at runtime.
+  Also the retired `#corpus-win` modal, the orphaned `loadIndicesData`/`loadMarketData`, the
+  orphaned `#onboard` locale keys, and **PRH-14**, the unwired `#vitals-pop` popover, which is
+  in the tree and absent from the recorded dead-UI worklist. Do NOT delete `firstRun` — it is
+  test-pinned and intentionally retained. 🛠 browser-gated
+- **PRH-31 — `_window_daily_series` omits zero-count days**, so the index axis compresses (day 1
+  and day 5 render adjacent). Re-confirmed live 2026-09-07 at `src/analytics/queries.py:1714`,
+  with `app-corpus.js:1293` carrying a comment that acknowledges the omission. The repair is
+  zero-FILLING (for keyword mentions an absent day is a real zero, never a null) and it touches
+  the trending sparklines. 🚧
+- **Backends with no surface** — Leads 2.0 grading on Home (evidence chips, a sort control wired
+  to `sort_leads` with the `explain_order` hover, lifecycle deltas — browser-gated because it
+  visibly reorders the flagship feed) · the Conjunction-lens deeper views (conditional trend,
+  vocabulary contrast, per-article intensity, lead/lag — needs a payload extension) · the
+  subjectivity reader highlight panel (spans are emitted, nothing renders them) · corpus facet
+  filters in the Articles subtab, with an id-seeded corpus INTERSECTING rather than clearing on
+  refine · eleven unwired `ooViz` primitives (note the recorded correction: the namespace is
+  **`ooViz`**, not `ooviz`, and a case-sensitive grep for a name you did not read out of the
+  file is not evidence of absence) · **L5**, the `_SPARSE_BAR_MAX` reach decision for
+  `commodityOverlaySvg` / `ringDumbbellSvg` / `ooDonut`. 🚧
+- **The 2026-07-22 GUI report's residue** — three P1s still open (the Home glance strip mixing
+  languages; Lead titles frozen in the locale they first rendered in — the interpolated-`tf()`
+  class, where an already-interpolated string is no longer a key, so a render-once surface must
+  register with `oo:langchange`; unsegmented zh keywords on the Insights map). **Its P2 tier was
+  never closed** — 12 open, 8 partial, 5 unchecked — although a `shipped.csv` row describes that
+  report as closed out; correct the row and work the tier. 🚧
+- **L2 — settle the verification bar.** Every stamp currently reads "Chromium-verified (remote
+  sandbox) · awaiting human UX pass". The 12-locale sweep covers four; rule 9 (adversarial
+  screenshot reading) has never run; the Gecko/AppVM bar has never been met. Whatever L2 rules,
+  make the stamp mean one thing and apply it consistently. 🔒 ruling-gated
 
 ### Network / transport / Tor
 - **Reliable Tor & per-source transport** — optional in-app Stem-controlled `tor` process; per-source circuit isolation by default; clearnet-for-Tor-hostile sources only as an explicit consented per-source opt-in. 🎨
