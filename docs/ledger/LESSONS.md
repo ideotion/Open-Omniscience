@@ -6791,6 +6791,77 @@
     then ASSERT the NULL is there, or the branch is untested while looking covered. Same
     family as the recorded fixture-missing-a-field-production-always-stamps entry, arriving
     from the opposite direction: here production stamps a default the fixture cannot refuse.
+  - **A CODEC MULTIPLIER MEASURED IN THE PAGE CACHE OVER-STATES A DISK-BOUND WALK, AND
+    THE RULED PAGE SIZE IS WHY (2026-09-07, the S5 measurement of the two whole-corpus
+    PRAGMA checks):** `merge_diag.walk_probe` publishes a plaintext-versus-encrypted
+    page-walk RATIO precisely because a probe small enough to sit in a bundle is small
+    enough to sit in RAM, and its docstring's recipe is to take the field's own measured
+    `prepare_staged:validate` rate and apply the multiplier. Measured independently at
+    2 and 4 GiB on the real engine, n=3 per configuration, the multiplier reproduces
+    **warm** — 2.34x/2.57x against the recorded 2.40/2.39/2.42 — and falls to
+    **1.29x/1.39x cold**. THE MECHANISM IS THE RULING ITSELF: a staged corpus is
+    exported plaintext and gets SQLite's 4096 default, while an encrypted store created
+    under DB-10 §1b is **16384**, so the encrypted arm does a QUARTER as many reads,
+    four times as large, and once I/O dominates that pays for most of the codec — and
+    the field's `validate` rate (17 MB/s on a 32 GB artifact) is as disk-bound as a
+    number gets. So the recipe over-states by about 1.8x on exactly the input it names.
+    GENERAL FORM: a ratio survives a regime change only when BOTH arms stay in the same
+    regime; before applying one measured in RAM to a rate measured on a disk, ask what
+    ELSE differs between the arms — here a page size that a separate, correct ruling had
+    already changed. TWO MORE FACTS FROM THE SAME RUN, recorded so they are not
+    re-derived: both checks are **LINEAR in bytes** (encrypted `quick_check` 8.2 → 8.4
+    s/GiB cold as the corpus doubles, `foreign_key_check` 3.1 → 2.8, flat to within the
+    noise), and `foreign_key_check` is **CODEC-NEUTRAL** (0.84-0.98x per byte in both
+    regimes) and costs about a THIRD of `quick_check` — it is index-driven and never
+    walks the pages `quick_check` walks, so it is not the place to look first.
+    **AND THE MEASUREMENT TOOK THREE PASSES, WHICH IS THE OTHER HALF OF THE LESSON.**
+    Pass 1 ran ONE repetition per configuration while this session was also running
+    pytest, mypy and a mutation matrix; its cold ratios came out 1.51x/1.08x/0.95x/1.58x
+    — no trend — and a story was nearly written around the 0.95. Pass 2 fixed the
+    repetitions and interleaved AT THE CONDITION LEVEL (all arms cold, then all arms
+    warm), which spreads machine drift across arms and **destroys any condition that
+    depends on what ran immediately before**: by the time the first arm's "warm" run
+    happened, three later arms had each dropped the page cache and read gigabytes
+    through it, so its 2 GiB warm `quick_check` measured 14.6 s against a
+    genuinely-warm 5.2 s. Interleave one level OUT — a round visits every arm, and
+    within an arm the dependent conditions run back to back — and both properties
+    survive. The tell for both passes was the same: a per-configuration spread that made
+    the differences unreadable, against 1.19x worst-case once it was measured properly.
+  - **"DID IT COPY?" IS ANSWERED BY THE CONTENT, NEVER BY THE CLOCK — a timing
+    assertion at fixture scale is the lookalike trap wearing a test's clothes
+    (2026-09-07, the checkpoint's carried working copy):** the whole saving of the
+    import checkpoint is that the second item of a group REUSES the working copy
+    instead of re-snapshotting the corpus, so the obvious guard is that the second
+    item's `snapshot_working_copy` stage is faster than the first's. The mutation that
+    re-snapshots unconditionally **SURVIVED it**: on a fixture this small both numbers
+    are noise, and a comparison between two noise samples passes about half the time in
+    each direction. The exact, load-independent question is what a re-snapshot actually
+    DOES — it throws the previous merge away and starts again from the live corpus — so
+    the discriminator is `SELECT COUNT(*) FROM merge_batches` in the carried file: two
+    after two held items, one after a re-snapshot. GENERAL FORM: when a change's win is
+    that some work is SKIPPED, do not assert the duration; assert the state that only
+    the skipped path can produce. Same family as the recorded "a probe's scale is part
+    of the lookalike", with the fixture rather than the measurement as the subject.
+    **SECOND SURVIVOR FROM THE SAME MATRIX, and it was a finding about the CODE:**
+    deleting `self._checkpoint_k <= 1` from the hold decision changed nothing, because
+    the group-full check beside it (`open_items + 1 >= k`) independently returns False
+    for every item at K = 1. Neither deleting the clause nor writing a test for it is
+    right: it is a belt on the shipped default (an off-by-one turning `>=` into `>`
+    would let K = 1 hold an item), so it stays, the measurement goes in a comment beside
+    it, and the mutation matrix reverts BOTH clauses together — the recorded 2026-08-02
+    "revert every mechanism" lesson, met for the first time on a guard being written
+    rather than one being audited.
+  - **A STAGE LIST THAT SAYS WHERE A DRY RUN STOPS IS A CLAIM ABOUT AN EARLY RETURN,
+    AND THE RETURN MOVED FIRST (2026-09-07, `restore_stage_plan`):** the plan's own
+    docstring and its test both said "a dry run stops AFTER `corpus_delta_before`", and
+    `_RESTORE_STAGES_ALWAYS` duly counted that stage — while `run_restore`'s
+    `if not commit: return` sits directly ABOVE it, so a preview's published
+    denominator was one larger than the number of stages a preview walks. The drift
+    guard could not see it: it compares the declared list against the ORDER of
+    `timings.stage(...)` calls in the source, which is a claim about sequence and says
+    nothing about which of them a given flag reaches. GENERAL FORM: a guard over an
+    ordered list checks order; the CONDITIONAL membership needs its own assertion, one
+    per branch the function can return on.
   - **PUSH CI ON `main` HAS NOT COMPLETED ONCE IN 40 RUNS — "CI will catch it" is not an
     available guarantee on this repository, and the ledger leans on it repeatedly
     (2026-09-07, measured while trying to verify a merge):** the recorded lesson is

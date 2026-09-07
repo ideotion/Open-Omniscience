@@ -914,42 +914,71 @@
   only — an existing corpus keeps the tags its `Source` rows were created with, and a
   retroactive apply would be its own reviewed slice.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
-  the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
-  reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
-  `for` loop of `_run_item` → `run_restore`, so every backup pays its own
+  the MEASUREMENT shipped first, then item (b) on 2026-09-07; item (a) is still parked,
+  and the reasons are findings rather than reluctance):** the queue ran `_drive()` as a
+  strict `for` loop of `_run_item` → `run_restore`, so every backup paid its own
   **prepare** (stage A + validate + upgrade, measured 46.7 and 56.0 min on the two field
-  runs, on files that never touch the live corpus) and its own **verify_copy** (a
-  `quick_check` + `foreign_key_check` over the WHOLE working copy — the live corpus plus
-  everything merged so far). On eighteen backups that is ~14–17 h of prepare in series
-  with the merges, and eighteen structural walks of a growing multi-GB file.
-  **(a) PREFETCH — three blockers found by reading the seam, all of which raise the
-  estimate:** (i) staging lives INSIDE `VolumeBackupManager._run_restore`, on the
-  singleton manager's worker thread, and that singleton is one-job-at-a-time BY DESIGN
-  (`_reap_or_reject`) — so the queue would need to stage into its own tree and hand a
-  `StagedArtifact` across, which means a new `start_restore(..., staged=)` seam; (ii)
-  `cleanup_staging(staged)` is in a `finally` owned by the merge thread, so a
-  prefetched tree crosses an ownership boundary the current code guarantees by
-  construction — and on an encrypted corpus that tree is PLAINTEXT, so an orphan is an
-  at-rest hole, not just bytes; (iii) **decisive** — `find_completed_import` runs
-  BEFORE staging precisely so an already-merged artifact costs one small JSON read, and
-  the field log records **8 of 18 imports adding zero articles**. A prefetch that stages
-  ahead of that check burns 47–56 min per skipped item and defeats an existing
-  optimisation. Any build must run the digest check first.
-  **(b) CHECKPOINT INTERVAL — needs a RULING, not a guess:** verify+swap once per K
-  backups instead of per backup would save 17 × (verify + snapshot + swap), but nothing
-  is durable until a swap: today a kill at item 12 keeps eleven committed and skipped on
-  re-run, and at K=18 it loses twelve merges' CPU. The maintainer has killed this import
-  twice, so the trade is real. K is theirs to choose.
-  **WHAT SHIPPED INSTEAD (both merged-order-independent):** `verify_copy` sub-timings
-  (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) + the
-  `working_copy_bytes` the walk traverses, so the first completed backup converts
-  "2414 s" into a rate; and `merge_diag.walk_probe`, which measures the plaintext-vs-
-  encrypted page-walk RATIO on this machine (**2.40 / 2.39 / 2.42 across three runs**;
-  likely an upper bound at field scale, where I/O takes a larger share). `verify_copy`
-  has NEVER been observed in the field — both recorded runs ended before it — so every
-  estimate above rests on it, and the next completed backup supplies it for free.
-  SEQUENCING: read the first real verify number, THEN pick K, THEN build the prefetch if
-  the prepare side still dominates.
+  runs, on files that never touch the live corpus), its own whole-corpus **working-copy
+  snapshot**, and its own **verify_copy** (a `quick_check` + `foreign_key_check` over the
+  WHOLE working copy — the live corpus plus everything merged so far). On eighteen
+  backups that is ~14–17 h of prepare in series with the merges, eighteen copies of a
+  growing multi-GB file, and eighteen structural walks of it.
+  **(a) PREFETCH — STILL PARKED; the three blockers were RE-VERIFIED against
+  `main`@690920e on 2026-09-07 and all three still hold:** (i) staging lives INSIDE
+  `VolumeBackupManager._run_restore`, on the singleton manager's worker thread, and that
+  singleton is one-job-at-a-time BY DESIGN (`volume_job.py:196 _reap_or_reject`, which
+  raises on a genuinely-running job) — so a prefetch would need to stage into its own
+  tree and hand a `StagedArtifact` across, i.e. a new `start_restore(..., staged=)` seam;
+  (ii) `cleanup_staging(staged)` is still in a `finally` owned by the merge thread
+  (`volume_job.py:764`), so a prefetched tree crosses an ownership boundary the current
+  code guarantees by construction — and the staged corpus is PLAINTEXT by design
+  (`artifact.py:189-190`, `merge.py:1576`), so an orphan is an at-rest hole, not just
+  bytes; (iii) **decisive** — `find_completed_import` still runs BEFORE staging
+  (`volume_job.py:456` against `read_volume_backup` at `:550`) precisely so an
+  already-merged artifact costs one small JSON read, and the field log records **8 of 18
+  imports adding zero articles**. A prefetch that stages ahead of that check burns
+  47–56 min per skipped item and defeats an existing optimisation. **AND ITS OWN GATE IS
+  STILL UNMET:** C3's recommended default was "build only if the first real `verify_copy`
+  number shows prepare still dominating", and `verify_copy` has STILL never been observed
+  in the field. Note the contrast with (b), which is why (b) was the safe half to build:
+  the checkpoint's carried file is a WORKING COPY, which preserves the live at-rest state
+  — encrypted whenever the corpus is — so an orphan of it is not the at-rest hole a
+  prefetched staging tree would be, and it is swept by the same `.restore-*` janitor.
+  **(b) CHECKPOINT INTERVAL K — MECHANISM SHIPPED 2026-09-07; THE NUMBER IS STILL THE
+  MAINTAINER'S.** `run_restore` gained two optional parameters (`working_copy=` says
+  where to build or find the disposable copy, `hold_after_merge=` stops after the merge,
+  this batch's own verification and its side files), the queue drives the group, and
+  `verify_copy` split into `verify_merge` (per item: counts, the search index, the
+  sampled content comparison against the artifact — all of which need that item's staging
+  tree, which is deleted the moment it returns) and `verify_file` (per checkpoint:
+  `quick_check` + `foreign_key_check`, which ask about the FILE and therefore cover every
+  merge in it). The gate is not weakened; the WINDOW in which a crash costs work grows
+  with K, and that is the whole trade.
+  **⛔ THE OPEN RULING IS THE NUMBER, AND ONLY THE NUMBER.** `AppSettings.import_
+  checkpoint_k`, range 1..24, refused loudly outside it (never clamped — silently turning
+  a 30 into a 24 hands an operator a durability window they did not choose);
+  `OO_IMPORT_CHECKPOINT_K` overrides for one process; Settings → Data carries the control
+  with the cost on the visible surface and the long form in the hover bubble.
+  **The shipped default is 1 = today's behaviour, byte for byte, and the recommendation
+  on record is 3.** It ships at 1 because this entry itself said the trade "needs a
+  RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU that today
+  it would keep, and that is a change to what a Stop costs every operator. → **Pick K.**
+  **WHAT THE QUEUE NOW REPORTS, at any moment:** `items_committed` and `items_staged` as
+  two different numbers plus a `checkpoint` block (`k`, `open_group_items`, and a note
+  that at K > 1 names what a Stop would cost); per-item states `staged` ("Merged — not
+  yet saved") and `discarded` ("Discarded — import it again"), both `ok: false` so a
+  staged item's numbers can never sit behind a success headline; and a conclusion caveat
+  naming anything merged and never saved. A process restart rewrites `staged` →
+  `discarded`, because the working copy does not survive the process.
+  **WHAT SHIPPED IN 2026-08 INSTEAD (both merged-order-independent):** `verify_copy`
+  sub-timings (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`)
+  + the `working_copy_bytes` the walk traverses; and `merge_diag.walk_probe`, which
+  measures the plaintext-vs-encrypted page-walk RATIO on this machine (**2.40 / 2.39 /
+  2.42 across three runs**). **2026-09-07 REFINES THAT RATIO'S USE — see the Lessons
+  entry:** it is a WARM-cache number, and applying it to a field rate measured in the
+  DISK-BOUND regime over-states the encrypted walk, because a production encrypted store
+  is 16384-page (DB-10 §1b) against a staged plaintext corpus's 4096 and therefore does a
+  quarter as many, four times as large, reads.
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
   card provenance · Articles tab · Settings (maintainer; INTAKE + INVESTIGATION this session,
   code-verified against `main`@9c651ee, 47 numbered questions ANSWERED the same day; brief of
