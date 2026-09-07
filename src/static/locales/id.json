@@ -1769,6 +1769,8 @@
   "Top": "Teratas",
   "What to include": "Apa yang disertakan",
   "Wikipedia dumps": "Dump Wikipedia",
+  "Carry them inside the encrypted backup": "Sertakan di dalam cadangan terenkripsi",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Di dalam artefak, berkas ini terenkripsi dan dapat diperbaiki seperti korpus, sehingga pemulihan hanya membutuhkan satu hal; disalin di sebelahnya, berkas tetap terbaca sendiri dan tidak menambah biaya penulisan.",
   "Offline maps (OSM)": "Peta luring (OSM)",
   "Download ALL keywords (.zip)": "Unduh SEMUA kata kunci (.zip)",
   "Download scaling benchmark (.json)": "Unduh benchmark penskalaan (.json)",

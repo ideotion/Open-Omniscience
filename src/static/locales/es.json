@@ -1769,6 +1769,8 @@
   "Top": "Top",
   "What to include": "Qué incluir",
   "Wikipedia dumps": "Volcados de Wikipedia",
+  "Carry them inside the encrypted backup": "Incluirlos en la copia de seguridad cifrada",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Dentro del artefacto quedan cifrados y reparables como el corpus, así que una restauración solo necesita una cosa; copiados al lado siguen siendo legibles por sí mismos y no cuestan nada al escribirlos.",
   "Offline maps (OSM)": "Mapas sin conexión (OSM)",
   "Download ALL keywords (.zip)": "Descargar TODAS las palabras clave (.zip)",
   "Download scaling benchmark (.json)": "Descargar el benchmark de escalado (.json)",

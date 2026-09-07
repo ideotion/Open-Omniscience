@@ -589,6 +589,9 @@ class VolumeBackupBody(BaseModel):
     passphrase: str
     include_newsletters: bool = True
     parity_fraction: float = 0.1
+    # S6.2: large public categories to carry INSIDE the artifact rather than copied
+    # alongside it. Empty = the behaviour that shipped, byte for byte.
+    include_blobs: list[str] = []
 
 
 class VolumeRestoreBody(BaseModel):
@@ -628,6 +631,7 @@ def volume_backup_start(body: VolumeBackupBody) -> dict:
             body.passphrase,
             include_newsletters=body.include_newsletters,
             parity_fraction=body.parity_fraction,
+            include_blobs=body.include_blobs,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

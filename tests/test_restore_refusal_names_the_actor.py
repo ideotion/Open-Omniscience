@@ -26,6 +26,7 @@ import time
 import pytest
 
 from src.backup.volume_job import VolumeBackupManager
+from tests.backup_helper import staged_artifact
 
 
 def _wait(mgr: VolumeBackupManager, timeout: float = 10.0) -> dict:
@@ -48,7 +49,7 @@ def staged_restore(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged_artifact())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     src = tmp_path / "src"

@@ -36,7 +36,7 @@ import re
 import secrets
 import sqlite3
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -148,6 +148,10 @@ class StagedArtifact:
     signature_state: str  # verified | bad-signature | unsigned
     origin_fingerprint: str  # signer pubkey hex or "unsigned"
     members: list[dict] = field(default_factory=list)
+    # S6.2: where the artifact's large public files (wiki dumps / OSM extracts / model
+    # weights) go back to, when it carries any. Empty for every artifact written before
+    # they could ride inside one, and for every restore that is not asked to place them.
+    file_members: list[dict] = field(default_factory=list)
     hash_failures: list[str] = field(default_factory=list)
     # True when the uploaded artifact was OOENC1-wrapped (AES-256-GCM at rest) and
     # had to be decrypted to read it. Surfaced in the restore preview so the operator
@@ -517,6 +521,7 @@ def write_volume_backup(
     parity_fraction: float = 0.1,
     should_stop: "Callable[[], bool] | None" = None,
     progress_cb: "Callable[[dict], None] | None" = None,
+    include_blobs: "Iterable[str] | None" = None,
 ) -> dict:
     """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
     server-side directory ``dest_dir``.
@@ -529,6 +534,11 @@ def write_volume_backup(
     RESUMABLE (an interrupted run continues; a partial set can never be mistaken
     for a complete one — it has no final manifest). Always encrypted (a passphrase
     is required). ``should_stop``/``progress_cb`` drive the task-manager job.
+
+    ``include_blobs`` (S6.2, default none): categories of large public files
+    (``wiki_dumps``/``osm_regions``/``models``/``hf_models``) to carry INSIDE the
+    artifact instead of alongside it. Opt-in — see
+    :func:`src.backup.stream_backup.collect_blob_members` for the trade.
     Returns a measured summary dict."""
     from src.backup.stream_backup import write_stream_backup
 
@@ -542,6 +552,7 @@ def write_volume_backup(
         parity_fraction=parity_fraction,
         should_stop=should_stop,
         progress_cb=progress_cb,
+        include_blobs=include_blobs,
     )
 
 

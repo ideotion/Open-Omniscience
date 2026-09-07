@@ -1769,6 +1769,8 @@
   "Top": "Топ",
   "What to include": "Что включить",
   "Wikipedia dumps": "Дампы Википедии",
+  "Carry them inside the encrypted backup": "Включить их в зашифрованную резервную копию",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Внутри архива они зашифрованы и восстановимы, как и корпус, поэтому для восстановления нужна одна вещь; скопированные рядом, они остаются читаемыми сами по себе и ничего не стоят при записи.",
   "Offline maps (OSM)": "Офлайн-карты (OSM)",
   "Download ALL keywords (.zip)": "Скачать ВСЕ ключевые слова (.zip)",
   "Download scaling benchmark (.json)": "Скачать бенчмарк масштабирования (.json)",

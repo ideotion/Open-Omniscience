@@ -94,12 +94,35 @@
           `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
           opt("models", t("LLM models"), inv.models || {}) +
           opt("maps", t("Offline maps"), inv.maps || {}) +
-          opt("wiki", t("Wikipedia dumps"), inv.wiki || {});
+          opt("wiki", t("Wikipedia dumps"), inv.wiki || {}) +
+          // S6.2: the same three categories, one artifact instead of two things. Not a
+          // better option -- a different trade, so it is a choice and the hover says what
+          // it costs. Disabled without a corpus because there would be no artifact to
+          // carry them in, and an ignored tickbox is worse than a disabled one.
+          `<label class="switch" style="margin:0" title="${esc(t("Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write."))}"><input type="checkbox" id="ux-c-inside"> ${esc(t("Carry them inside the encrypted backup"))}</label>`;
+        _uxSyncInside();
+        box.addEventListener("change", _uxSyncInside);
         st.textContent = t("What do you want to back up?");
       } catch (e) {
         st.textContent = t("Could not load the inventory — see console");
         console.error("ux inventory", e);
       }
+    }
+
+    // The "inside" choice only means something when there IS an artifact and there ARE
+    // files to put in it. Rather than silently ignoring the box in the other cases, it is
+    // disabled and unticked, so what the run will do is what the dialog shows.
+    function _uxSyncInside() {
+      const inside = document.getElementById("ux-c-inside");
+      if (!inside) return;
+      const corpus = document.getElementById("ux-c-corpus");
+      const any = ["models", "maps", "wiki"].some((k) => {
+        const el = document.getElementById("ux-c-" + k);
+        return el && el.checked;
+      });
+      const usable = (!corpus || corpus.checked) && any;
+      inside.disabled = !usable;
+      if (!usable) inside.checked = false;
     }
 
     function _uxEta(secs, t, approx) {
@@ -347,6 +370,10 @@
       // re-downloadable blobs copied as-is (which is what makes 100 GB feasible), so
       // demanding one for a models-only export would be asking for a secret that
       // protects nothing.
+      // S6.2: carry them INSIDE the artifact instead of copying them alongside it. Only
+      // when a corpus is being written, because the artifact is what carries them.
+      const insideBox = document.getElementById("ux-c-inside");
+      const inside = !!(insideBox && insideBox.checked && !insideBox.disabled && wantCorpus && blobs.length);
       const pass = document.getElementById("ux-pass").value || "";
       if (wantCorpus && !pass) {
         toast(t("Enter a passphrase for the encrypted corpus."), "err"); return;
@@ -357,7 +384,7 @@
         if (wantCorpus) {
           _uxPhase = "volumes";
           const s1 = await _uxStartThenPoll(
-            () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) }),
+            () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify(inside ? { dest, passphrase: pass, include_blobs: blobs } : { dest, passphrase: pass }) }),
             "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") },
             { mode: "backup", dest });
           if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
@@ -374,7 +401,9 @@
             throw new Error(t("The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."));
           }
         }
-        if (blobs.length) {
+        // Skipped when they rode INSIDE: copying them a second time alongside the
+        // artifact would double the bytes on the drive to deliver the same files.
+        if (blobs.length && !inside) {
           _uxPhase = "folder";
           const s2 = await _uxStartThenPoll(
             () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) }),

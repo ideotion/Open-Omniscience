@@ -1769,6 +1769,8 @@
   "Top": "শীর্ষ",
   "What to include": "কী অন্তর্ভুক্ত করবেন",
   "Wikipedia dumps": "উইকিপিডিয়া ডাম্প",
+  "Carry them inside the encrypted backup": "সেগুলি এনক্রিপ্ট করা ব্যাকআপের ভিতরে রাখুন",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "আর্কাইভের ভিতরে এগুলি কর্পাসের মতোই এনক্রিপ্ট করা ও মেরামতযোগ্য থাকে, তাই পুনরুদ্ধারের জন্য একটিমাত্র জিনিস লাগে; পাশে কপি করলে সেগুলি নিজে থেকেই পড়া যায় এবং লিখতে বাড়তি খরচ হয় না।",
   "Offline maps (OSM)": "অফলাইন মানচিত্র (OSM)",
   "Download ALL keywords (.zip)": "সব কীওয়ার্ড ডাউনলোড করুন (.zip)",
   "Download scaling benchmark (.json)": "স্কেলিং বেঞ্চমার্ক ডাউনলোড করুন (.json)",

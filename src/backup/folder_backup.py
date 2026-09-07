@@ -41,7 +41,7 @@ import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 MANIFEST_NAME = "oo-folder-backup.json"
 BACKUP_SCHEMA = "oo-folder-backup-1"
@@ -490,6 +490,154 @@ def write_folder_backup(
     }
 
 
+def live_targets(overrides: dict[str, Path] | None = None) -> dict[str, Path]:
+    """The live directory each category is restored INTO.
+
+    Hoisted out of :func:`restore_folder_backup` when the volume artifact learned to carry
+    the same files (S6.2): two restore paths resolving "where do models live" separately
+    is how one of them ends up writing an older backup's ``manifests/`` somewhere new.
+    One owner, both callers."""
+    tgt = dict(overrides or {})
+    if "wiki_dumps" not in tgt or "osm_regions" not in tgt:
+        from src.paths import data_dir
+
+        tgt.setdefault("wiki_dumps", data_dir() / "wiki_dumps")
+        tgt.setdefault("osm_regions", data_dir() / "osm_regions")
+    if "models" not in tgt:
+        from src.backup.ollama_models import default_store
+
+        tgt.setdefault("models", default_store())
+    if "hf_models" not in tgt:
+        # The Hugging Face cache vLLM is spawned pointed at. A SEPARATE category rather
+        # than a second root under "models": the existing category's on-disk layout IS
+        # the Ollama store root, and folding a second store under it would send an
+        # older backup's manifests/ and blobs/ somewhere new on the way back.
+        from src.llm.model_store import hf_home
+
+        tgt.setdefault("hf_models", hf_home())
+    return tgt
+
+
+def _unsafe_placement_reason(name: str, rel: str) -> str | None:
+    """Why this entry may not be placed, or None. Both fields become paths -- ``name``
+    under the staging dir (an arbitrary READ), ``rel`` under a live directory (an
+    arbitrary WRITE) -- so both are checked, and the answer says WHICH one was wrong."""
+    for label, value in (("name", name), ("rel", rel)):
+        if not value:
+            return f"empty {label}"
+        p = PurePosixPath(value.replace("\\", "/"))
+        if (
+            p.is_absolute()
+            or ".." in p.parts
+            or value.startswith("/")
+            or "\\" in value
+            or ":" in value.split("/", 1)[0]
+        ):
+            return f"unsafe {label}"
+    return None
+
+
+def place_artifact_file_members(
+    staging_dir: str | os.PathLike,
+    file_members: Iterable[dict],
+    *,
+    targets: dict[str, Path] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict:
+    """Put an oo-volumes-2 artifact's large public files back into their live homes.
+
+    The counterpart of :func:`restore_folder_backup` for the files that rode INSIDE the
+    signed artifact (S6.2). Same additive rule -- an existing destination file is never
+    overwritten -- and the same atomic temp-then-rename, so an interrupted placement
+    leaves no half-written dump for the app to read as its own.
+
+    IT DOES NOT RE-HASH, and that is a statement about where the check happened rather
+    than a gap: ``read_stream_backup`` reassembles every member from its volumes and
+    refuses the whole restore unless the bytes match the ``plaintext_sha256`` the manifest
+    recorded, so a file reaching ``staging_dir`` has already been verified against a
+    SIGNED index. The folder backup hashes here because its files are copied as-is onto an
+    editable drive and nothing verified them earlier; these were verified earlier.
+
+    THE PATH GUARDS ARE THE POINT (the 2026-07-10 lesson). ``category`` and ``rel`` come
+    from a manifest anyone can self-sign and are composed into the LIVE data directory --
+    a field not called "name" becoming a path is exactly how that class failed before.
+    ``_require_safe_manifest_names`` refuses traversal in ``rel``/``name`` and an unknown
+    ``category`` before a restore ever reaches here -- and this function re-checks all of
+    it anyway, because a guard that has to be reached from somewhere else is not a guard
+    on this function, and this one is public. ``name`` matters as much as ``rel``: it is
+    joined onto the staging dir to find the bytes, so an unguarded one is an arbitrary
+    READ copied into the live data directory under an innocuous destination name. The
+    composed destination is then checked for CONTAINMENT (``is_relative_to``, never a
+    string prefix -- a sibling directory shares one).
+
+    Every refusal carries its OWN reason. Reporting "unknown category" for an entry whose
+    category was fine and whose path was hostile sends a reader looking for the wrong
+    thing -- the same mislabelling the pre-swap barriers were fixed for."""
+    staging = Path(staging_dir)
+    tgt = live_targets(targets)
+    placed = skipped = 0
+    placed_bytes = 0
+    refused: list[dict] = []
+    missing: list[dict] = []
+    stopped = False
+    for fm in file_members:
+        if should_stop is not None and should_stop():
+            stopped = True
+            break
+        category, rel, name = (
+            str(fm.get("category") or ""),
+            str(fm.get("rel") or ""),
+            str(fm.get("name") or ""),
+        )
+        root = tgt.get(category)
+        if root is None:
+            refused.append({"category": category, "rel": rel, "why": "unknown category"})
+            continue
+        why = _unsafe_placement_reason(name, rel)
+        if why is not None:
+            refused.append({"category": category, "rel": rel, "why": why})
+            continue
+        src_path = staging / name
+        dst = root / rel
+        try:
+            contained = dst.resolve().is_relative_to(root.resolve())
+        except (OSError, ValueError):  # pragma: no cover - defensive
+            contained = False
+        if not contained:
+            refused.append({"category": category, "rel": rel, "why": "outside its category"})
+            continue
+        if not src_path.is_file():
+            # The member is named in the index but its bytes are not in staging. The
+            # reassembly would have raised on a checksum failure, so this is an index
+            # that names a member the artifact does not carry -- reported, never invented.
+            missing.append({"category": category, "rel": rel})
+            continue
+        if dst.exists():
+            skipped += 1  # never overwrite a local file
+            continue
+        if not _atomic_copy(src_path, dst, should_stop=should_stop):
+            stopped = True
+            break
+        placed += 1
+        placed_bytes += src_path.stat().st_size
+    return {
+        "placed": placed,
+        "placed_bytes": placed_bytes,
+        "skipped": skipped,
+        "refused": refused[:_PROBLEM_CAP],
+        "refused_total": len(refused),
+        "missing": missing[:_PROBLEM_CAP],
+        "missing_total": len(missing),
+        "stopped": stopped,
+        "method": (
+            "Files carried inside the artifact are placed additively: an existing local "
+            "file is kept and counted in `skipped`, never replaced. Their bytes were "
+            "checksum-verified against the signed manifest during reassembly, so they "
+            "are not re-hashed here."
+        ),
+    }
+
+
 def restore_folder_backup(
     src_root: str | os.PathLike,
     *,
@@ -528,24 +676,7 @@ def restore_folder_backup(
     own ``_safe_member_path`` guard for the identical untrusted-input threat model."""
     src = Path(src_root)
     cats = set(categories) if categories is not None else set(_CATEGORIES)
-    tgt = dict(targets or {})
-    if "wiki_dumps" not in tgt or "osm_regions" not in tgt:
-        from src.paths import data_dir
-
-        tgt.setdefault("wiki_dumps", data_dir() / "wiki_dumps")
-        tgt.setdefault("osm_regions", data_dir() / "osm_regions")
-    if "models" not in tgt:
-        from src.backup.ollama_models import default_store
-
-        tgt.setdefault("models", default_store())
-    if "hf_models" not in tgt:
-        # The Hugging Face cache vLLM is spawned pointed at. A SEPARATE category rather
-        # than a second root under "models": the existing category's on-disk layout IS
-        # the Ollama store root, and folding a second store under it would send an
-        # older backup's manifests/ and blobs/ somewhere new on the way back.
-        from src.llm.model_store import hf_home
-
-        tgt.setdefault("hf_models", hf_home())
+    tgt = live_targets(targets)
 
     # The checksums this backup recorded when it wrote the bytes. Empty for a backup
     # written before they existed, and for one whose manifest is missing or damaged --

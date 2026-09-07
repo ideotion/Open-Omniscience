@@ -1769,6 +1769,8 @@
   "Top": "Top",
   "What to include": "What to include",
   "Wikipedia dumps": "Wikipedia dumps",
+  "Carry them inside the encrypted backup": "Carry them inside the encrypted backup",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.",
   "Offline maps (OSM)": "Offline maps (OSM)",
   "Download ALL keywords (.zip)": "Download ALL keywords (.zip)",
   "Download scaling benchmark (.json)": "Download scaling benchmark (.json)",

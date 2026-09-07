@@ -1769,6 +1769,8 @@
   "Top": "トップ",
   "What to include": "含める対象",
   "Wikipedia dumps": "Wikipedia ダンプ",
+  "Carry them inside the encrypted backup": "暗号化バックアップの中に含める",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "アーカイブ内では、これらはコーパスと同じように暗号化され修復可能になるため、復元に必要なものは一つで済みます。隣に複製した場合は単体で読めるままで、書き込みの負担も増えません。",
   "Offline maps (OSM)": "オフライン地図（OSM）",
   "Download ALL keywords (.zip)": "すべてのキーワードをダウンロード（.zip）",
   "Download scaling benchmark (.json)": "スケーリングのベンチマークをダウンロード（.json）",

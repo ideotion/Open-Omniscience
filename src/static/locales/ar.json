@@ -1769,6 +1769,8 @@
   "Top": "الأعلى",
   "What to include": "ما الذي يُضمَّن",
   "Wikipedia dumps": "تفريغات ويكيبيديا",
+  "Carry them inside the encrypted backup": "تضمينها داخل النسخة الاحتياطية المشفَّرة",
+  "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "داخل الأرشيف تكون هذه الملفات مشفَّرة وقابلة للإصلاح مثل المجموعة، فتحتاج الاستعادة إلى شيء واحد فقط؛ وإذا نُسخت بجانبه تبقى قابلة للقراءة بمفردها ولا تكلّف شيئًا عند الكتابة.",
   "Offline maps (OSM)": "خرائط دون اتصال (OSM)",
   "Download ALL keywords (.zip)": "تنزيل كل الكلمات المفتاحية (.zip)",
   "Download scaling benchmark (.json)": "تنزيل اختبار قياس التوسّع (.json)",
