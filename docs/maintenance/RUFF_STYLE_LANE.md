@@ -17,7 +17,8 @@ was produced by the command printed beside it, on the tree anchor named.
 
 ## What the advisory lane actually holds
 
-Measured on `main` @ `d9ee33e7` (2026-09-07) with **ruff 0.16.6**
+Re-measured on the MERGED tree (2026-09-07) with **ruff 0.16.6** — not on `main` @ `d9ee33e7`,
+which measured 432; see the note under the table
 (`python scripts/ruff_ratchet.py --max 442 --show-composition`):
 
 | Count | Rule | What it is |
@@ -33,9 +34,15 @@ Measured on `main` @ `d9ee33e7` (2026-09-07) with **ruff 0.16.6**
 | 18 | `SIM115` | file opened without a context manager |
 | 18 | `C408` | `dict()` / `list()` call instead of a literal |
 | 11 | `UP035` | deprecated import |
-| 60 | *(tail)* | `SIM108/102`, `E741`, `C420`, `UP032/017/047/034/031`, `E711`, `SIM103/110/222`, `C401` |
+| 63 | *(tail)* | `SIM102`(9) `C420`(8) `SIM108`(8) `E741`(8) `UP032`(5) `UP017`(4) `E711`(4) `SIM103`(3) `C401`(3) `UP047`(2) `SIM110`(2) `E402`(2) `UP031`(1) `UP034`(1) `E714`(1) `SIM222`(1) `SIM114`(1) |
 
-305 of the 442 are auto-fixable (`--fix`).
+**235** of the 442 are auto-fixable by `--fix`; a further **70** need `--unsafe-fixes`, for 305
+total. The earlier figure of 305 conflated the two, and the distinction is the whole point here:
+an unsafe fix is one ruff itself says may change behaviour, and this lane's verdict rests on the
+claim that converging it is not behaviour-neutral.
+
+*(The named rows sum to 379 and the tail to 63, which closes at 442 — stated so a future reader
+can check the table rather than trust it.)*
 
 **The count moved while this was being written, and that is worth recording rather than
 smoothing over.** It was 432 at `d9ee33e7`; about forty commits from parallel branches
@@ -50,12 +57,12 @@ deliberate act: it is here, with its measurement, not made quietly.
 The prompt that asked the question is explicitly behaviour-neutral, and the largest block
 is the one that is least behaviour-neutral in **this** codebase:
 
-* **`I001` (128, 30% of the lane) reorders imports.** This tree has import order that is
+* **`I001` (132, 30% of the lane) reorders imports.** This tree has import order that is
   load-bearing in named places — the airplane socket guard installs at a point in the boot
   path; `src/database/session.py` binds the write gate at module scope after the engine;
   36 files carry the legacy GPL-header-plus-second-docstring pattern that already has its
   own closed `E402` carve-out in `pyproject.toml`; and several tests monkeypatch a symbol
-  by the module that imported it. A tree-wide `--fix` is a 128-site reordering whose blast
+  by the module that imported it. A tree-wide `--fix` is a 132-site reordering whose blast
   radius is exactly what "if a refactor changes an output, it is not this prompt's"
   excludes. It is a real slice; it is not a drive-by.
 * **`SIM105` (57) is not free either.** `contextlib.suppress` is the right shape for most

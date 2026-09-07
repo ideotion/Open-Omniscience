@@ -545,6 +545,12 @@ branch that legitimately adds a string, and this repository merges several in pa
 still a free slot for the next drift to land in unseen, so lower it in a PR that owns the
 change — the tooling prints the new floor.
 
+*Numbers re-measured 2026-09-07 on the merged tree, because the note's argument outlived its
+figures: the gates `ci.yml` actually runs are `--max-untranslatable` **555** against a real
+**554**, and `--max-unkeyed-t-calls` **296** against a real **295** — one slot of slack each,
+as the note says, at values one lower than it names. The reasoning is unchanged and the slack
+was again left rather than reclaimed inside a merge commit, on the note's own grounds.*
+
 **What PROMPT_20 closed on 2026-09-07, and what it leaves — the to-do, in the order a next
 session should take it** ([PR #1035](https://github.com/ideotion/Open-Omniscience/pull/1035); the
 full carry-over with reasons is the last entry in [`OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md)).
@@ -554,8 +560,13 @@ which also closes PARKED MAINT-04 in both directions, since that item's migratio
 structlog and its migration SET was already empty) · **J3** (SQLite-only ruled, documented, and
 `_build_engine` now degrades loudly on a non-SQLite URL) · **the ruff style-lane verdict** (stays
 advisory, may no longer grow — [`RUFF_STYLE_LANE.md`](maintenance/RUFF_STYLE_LANE.md)) ·
-**PRH-04** from `PARKED.md` · **L8** (verified already swept: no `PR pending`
-remains in `shipped.csv`) · **PRH-27**, refuted rather than fixed — a full suite run leaves no
+**PRH-04** from `PARKED.md` · **L8** — which turned out to need sweeping
+after all: it measured **0** at this session's start and `main` grew **six** new `PR pending`
+rows in one repository day, each resolved here by rule (5b)'s own first-parent search with the
+clone confirmed non-shallow and every answer corroborated independently. L8 is not a backlog to
+clear once but a placeholder that REFILLS, and the question it raises — a test forbidding it
+outright, at the cost of making every session open its PR before writing its ledger row — is in
+[`OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md) with a recommendation · **PRH-27**, refuted rather than fixed — a full suite run leaves no
 `oo.env`, so the item had no subject.
 
 *Closed by a PARALLEL session while this branch was open, not by it:* **PRH-03** and
@@ -576,11 +587,12 @@ claimable; nothing in the repository lets a session claim one.
 |---|---|---|
 | **S-1** | the split itself | the concatenating reader first, per the re-scoped row above. A whole session; a half-moved package is worse than an unsplit file |
 | **S-2 / PRH-26** | the `core`-router endpoints and the `observability.py` extraction | a reproduction of the duplicate-registration symptom, or an honest note that the extraction is worth doing without it |
-| **S-4** | the 1,063 source assertions never audited beyond the 2026-08-04 sweep's 41 | attrition, and the standing rule: prefer being stopped by the ratchet over lowering it. PROMPT_20's five new test files went through the existing helpers without moving the budget |
+| **S-4** | the 1,063 source assertions never audited beyond the 2026-08-04 sweep's 41 | attrition, and the standing rule: prefer being stopped by the ratchet over lowering it. PROMPT_20's three new test files — five before two were deleted in the #1031 yield — went through the existing helpers without moving the budget |
 | **STR-05** | `view_article` — **611 lines**, not the 197 `PARKED.md` claimed until 2026-09-07 — plus `build_families` and the rest of the cc≥C list | its own slice with the endpoint's own tests. `radon` is not in the `[analysis]` extra, so every cc figure on that list is a HISTORICAL reading until someone installs it and re-measures |
 | **PRH-29** | the Windows `pytest` hang itself | a bisect against the suite, as its own task, on a real Windows runner. 2026-09-07 shipped only a `timeout-minutes: 45` cost cap — the hang is unchanged, and a Windows failure at ~45 min is that cap working, not a regression |
-| **the ruff burn-down** | 305 of the 442 findings are auto-fixable, 132 of them `I001` | **a maintainer decision**, because a tree-wide import reorder is not behaviour-neutral here: import order is load-bearing in named places, and the honest shape is a dedicated PR with a full-suite diff, not a drive-by `--fix` |
+| **the ruff burn-down** | **235** of the 442 findings are auto-fixable by `--fix` and a further 70 only with `--unsafe-fixes`; 132 are `I001` | **a maintainer decision**, because a tree-wide import reorder is not behaviour-neutral here: import order is load-bearing in named places, and the honest shape is a dedicated PR with a full-suite diff, not a drive-by `--fix` |
 | **test hygiene (the S6 family)** | `test_export_sources_to_yaml` against the legacy shared engine, `test_get_source_statistics`, the port-8001 collision between the two vLLM files | one at a time. The member fixed on 2026-09-07 was found by running the suite on clean `main` first — a baseline run is what makes this family visible at all |
+
 **Honest note on S-3 (closed 2026-08-20).** The row is done, and the premise it was written
 around — "the real cost is parse/compile on the 2-core field VMs" — turned out to be **half
 right, for a reason the row did not name**.
