@@ -7253,3 +7253,26 @@ operational tell: a comment that editorialises about PROCESS ("firm recommendati
 ruling", "provisional until X") is a claim about a conversation the code cannot observe, and is
 stale from the moment that conversation moves — where evidence ("the 4K point-lookup win at 3 GB
 inverts at 22 GB") stays true wherever the decision goes.
+
+### 2026-09-07 addendum 3 — the new ruff ratchet, measured on the base branch first
+
+`main`'s advisory-ruff non-growth ratchet (`scripts/ruff_ratchet.py`, arrived with #1035) reddened
+on this branch at **451**. Two facts came out of checking it rather than reacting to it.
+
+**The ceiling is 450, not the 442 printed in the introducing PR's body and in
+`docs/maintenance/RUFF_STYLE_LANE.md`.** `ci.yml` pins 450 with a comment saying why: shipping the
+tighter number *"would redden main on the merge commit over findings that are not this PR's"*. So
+the doc is not a stale copy of the gate — **the author deliberately shipped a different number than
+the one they measured**, which is a case the recorded "stale copy" framing does not cover. Read at
+442 this branch was red and the next step would have been fixing eight findings it did not write.
+
+**The ratchet has ZERO slack.** `main` alone measures exactly **450 against its ceiling of 450**,
+verified like-for-like in a detached worktree at `bcc80990`. One new style finding in any PR
+reddens it. This branch had one — a `SIM108` in `src/civic/elections.py` — fixed rather than argued
+up, per the ratchet's own rule and its author's precedent of fixing the finding their own first run
+caught. The branch now contributes zero: 450 with it, 450 without.
+
+**LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b), as a rider on the existing ratchet
+entry:** read the gate out of `ci.yml`, never out of prose — and when a ratchet lands at zero slack,
+**measure the BASE BRANCH before concluding the red is yours**, because the delta is the only number
+that says whose finding it is.
