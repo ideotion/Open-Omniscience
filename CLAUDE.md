@@ -472,6 +472,15 @@ this history it reports the merge commit rather than the authoring one, and answ
   COMMON ANCESTOR rather than against zero — nine duplicates already existed there, so a bare
   "are there duplicates" test would have accused this merge of nine things it did not do. The
   tell in the diff is a numstat with DELETIONS on a merge you expect to be purely additive.
+  **AND IT RECURRED ON THE VERY NEXT BRANCH, WITH THE TELL FIRING AND A CHECK THAT WAS NOT THIS
+  ONE (2026-09-07, the same row):** any branch cut BEFORE a `PR pending` sweep re-creates the
+  duplicate on its own merge, because its stale copy and main's corrected one are both legitimate
+  lines — and one did, on this same 2026-09-06 row. The numstat tell FIRED (17 added / 11 deleted)
+  and was investigated by PAIRING each deleted row with its replacement; that came back clean and
+  was not the prescribed scan. Pairing accounts for the rows main edited that the branch does NOT
+  also carry, and is structurally blind to the one it DOES, because there each copy legitimately
+  belongs to one side and neither is unpaired. So run the duplicate-key scan ITSELF: a different
+  check that plausibly explains the same tell is not a substitute for the one named here.
   Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
@@ -6104,6 +6113,52 @@ this history it reports the merge commit rather than the authoring one, and answ
     makes both failures end in the same place — ordinary resolution, plus a sentence saying
     the choice was not applied. Validate a selector against the set it claims to select
     from, rather than trusting it and hoping the value is still real.
+  - **A REFACTOR THAT PRESERVES *WHAT* IS FOUND NEEDS A DIFFERENTIAL, BECAUSE A NAME-LEVEL
+    ASSERTION CANNOT SEE THE FIELD THAT BROKE (2026-09-07, the location extractor's
+    dispatch):** splitting `extract_locations` from one-scan-per-pattern into a scan half
+    plus an indexed half changes HOW candidates are found and must change nothing about
+    WHAT is found, so old and new ran side by side over ~22,000 (text x source_country)
+    pairs at both gazetteer scales. The first draft's NAMES were all correct and it was
+    still wrong: the result dict's `snippet` still read the loop variable `m` from the scan
+    half, so every indexed hit carried some other pattern's snippet, and with no scan match
+    at all it raised `UnboundLocalError`. Every assertion I would plausibly have written —
+    names, kinds, mention counts — passes against that; the differential compares the WHOLE
+    structure, which is why it showed up on the first run. THREE MEASURED FACTS, each
+    load-bearing: (a) `rx.match(text, pos)` DOES honour a leading `\b` against
+    `text[pos-1]`, so an anchored candidate check is exact and the index needs no boundary
+    logic of its own; (b) `re.IGNORECASE` and `str.lower()` DISAGREE on real input —
+    `"İ".lower()` is `i` plus a combining dot while IGNORECASE matches `İSTANBUL` against
+    `istanbul`, and `ſ` folds to `s` for the engine and to itself for `lower()` — so an
+    exact-token index over case-INSENSITIVE patterns is a false-NEGATIVE hazard, which is
+    why the ~140 case-insensitive patterns keep their scan and only the case-SENSITIVE half
+    is indexed; (c) **the ratio is the wrong headline**: 2,173 -> 86 ms at 4,500 cities
+    reads as "25x", but what describes the fix is that 86 ms at 4,500 cities is within noise
+    of 82 ms at 21 — the cost stopped scaling with the gazetteer. A ratio is a claim about
+    one fixture; a removed dimension is a claim about the next one. COROLLARY: two of four
+    mutations SURVIVED and both were test gaps, not redundant code — the discriminating
+    input is the one where the obvious simplification and the correct rule differ, and it is
+    never the obvious example. Position-order and pattern-order replay AGREE on "Northern
+    Ireland" (the longer name also starts first) and differ on "New Mexico City", where the
+    shorter guard opens at 0, claims the span, and the city silently disappears; trusting the
+    index without re-confirming with the pattern is harmless for every single-token name and
+    FABRICATES a place for a multi-word one ("New arrivals were reported." yields New York).
+    When a mutation survives, find the input on which the two versions actually differ before
+    concluding the mechanism is redundant.
+  - **A COMPLETENESS RATCHET WHOSE PARSER CANNOT READ A LOOP IS EXEMPTING WHOLE MIGRATIONS
+    (2026-09-07, found when a new column tripped the guard meant to catch it):**
+    `test_migration_self_heal_drift` exists so a migration adding a column without a boot
+    self-heal fails in CI instead of breaking a user's store at upgrade. Its AST parser read
+    `op.add_column` with literal or module-constant arguments and could not resolve a LOOP
+    VARIABLE — and four real migrations add their columns from a loop over a module-level
+    table, so those four resolved to ZERO columns and were silently exempt: 12 columns across
+    four tables that a reader would have read the guard as covering. Nothing was broken (all
+    four were genuinely self-healed; only the registry was blind), which is exactly why it
+    survived — a detector blind spot has no symptom. The recorded "a ratchet is only as good
+    as its detector" lesson with a new, one-grep tell: **compare what the parser resolves
+    against a crude textual count of the construct it looks for** (34 `.add_column(` calls
+    against 30 pairs resolved — the gap IS the blind spot). And when you extend such a
+    detector, put the newly-seen form into its own anti-vacuity assertion, or it can go blind
+    again while the guard it feeds keeps passing.
   - **A SESSION CLONE IS SHALLOW UNTIL PROVEN OTHERWISE, AND A BOUNDED HISTORY ANSWERS EVERY
     ARCHAEOLOGY QUESTION WITH ITS OWN BOUNDARY (2026-09-07, resolving twelve `PR pending`
     rows in `shipped.csv`):** the honest way to find which PR landed a ledger row is to
@@ -6285,6 +6340,64 @@ this history it reports the merge commit rather than the authoring one, and answ
     accumulated can happen in parallel with itself — and pin it, because the symmetry of the
     two field names is exactly what invites the second division.
 ## Open queue (when maintainer says proceed)
+- **KEYWORD-ENGINE QUALITY — PROMPT 05 EXECUTION (2026-09-07; branch
+  `claude/oos-backfill-cursor`, one draft PR onto `main`; three code slices shipped, the rest
+  recorded with the reason and, where it is a decision, as a QUESTION rather than a ruling):**
+  SHIPPED: the backfill wedge (PRH-01), the location extractor's dispatch (PRH-05), the
+  self-heal drift guard's loop-form blind spot, and the four standing stoplist refusals
+  (PRH-11) — per-slice detail in the four 2026-09-07 `docs/ledger/shipped.csv` rows.
+  **STILL RULING-GATED, unchanged: B2** (the (1)-vs-(2) stoplist ruling) and therefore **B3**
+  (the English 11,263 + French 881 batch, which can only enter the GLOBAL channel because
+  `get_stopwords` tests `language_stopwords` first and `en`/`fr` are its only two keys),
+  **B4** (the 64,910 `kind_overrides`, measured ~50% precision) and **PRH-13** (the dual-use
+  platform names). Nothing was globalised without the ruling.
+  **PRH-06 (the quarantine filter) IS A QUESTION, NOT A BUILD — and the measurement is the
+  useful half.** Reproduced on a fixture of 6 indexed articles with 3 quarantined: the
+  denormalised counter still reports `Keyword.article_count = 6` and `top_terms` reports 6
+  articles / 24 mentions, so every keyword aggregate served from the counters, the rollup or
+  the columnar store counts quarantined articles (`queries.py` holds 9 `quarantined`
+  references; `store.py`, `rollup_serve.py` and `columnar.py` hold 0 each). Three things make
+  this a ruling rather than a fix. (a) **The counters are maintained INCREMENTALLY at index
+  time**, so excluding quarantined articles means the quarantine job must apply counter deltas
+  when it stamps AND when it un-stamps — quarantine is reversible — on the counter this ledger
+  already records as drift-prone. (b) **A partial fix is worse than none**: the read side
+  (rollup/columnar) is a cheap index-only filter on `idx_article_quarantined`, but gating it
+  alone would make the same `top_terms` call answer differently depending on whether the
+  rollup served it; today the three at least AGREE. (c) `src/database/snapshots.py` already
+  records a DELIBERATE decision that the per-language series and `corpus_language_shares` do
+  NOT exclude quarantined articles and that **the two must move TOGETHER** — the keyword
+  aggregates are a third member of that same family, and `furniture_share` (which feeds the
+  qualification gate) reads a denominator that would move with them. So: should quarantined
+  articles leave the keyword aggregates, and if so does that ruling cover the language series
+  and the equilibrium lever in the same pass? Recommended default if a default is wanted:
+  yes for the aggregates, decided together with the language pair, shipped as ONE slice with
+  one disclosure and the `furniture_share` effect measured first — never piecemeal.
+  **A STALE LEDGER CLAIM CORRECTED, with evidence:** the standing line "the quarantine
+  remainder: omnibar/watches/reporting/framing exclusion (only `_query_articles` is gated
+  today)" is now wrong in three of its four parts — `search_omni`, `watches` and `framing` all
+  pass `exclude_quarantined=True` today. **`src/api/reporting.py` (lines 40 and 84, the SIGNED
+  EVIDENCE export) does not**, so an evidence bundle can carry an article the app itself has
+  quarantined as "not an article". Left alone deliberately: changing what a signed artifact
+  contains is not a session's call, and the honest options (exclude, or include with the
+  quarantine state stated in the bundle) differ in what they claim.
+  **S6 (skeleton fingerprint persistence) IS STILL GATED and the prompt's premise is stale.**
+  `src/analytics/skeleton.py`'s own docstring names two gates — OPERATOR-gated (schema +
+  migration + a corpus-scale backfill on the live encrypted corpus) and "this tier lands AFTER
+  the §8 triage batch cleans the worst junk (a cleaner keyword layer sharpens skeleton
+  matching)". The second has NOT lifted: only the 20-word 2026-09-05 batch landed (measured in
+  `CURATED_SCOPED_STOPWORDS` / `PUBLISHING_BOILERPLATE_SCOPED`), and the English/French batch
+  is B2/B3-gated above. Persisting fingerprints now would fingerprint exactly the junk the
+  cleanup exists to remove and then need a corpus-scale re-backfill after it.
+  **S7 (the measurement-gated tail) IS BLOCKED ON TEN MINUTES OF OPERATOR TIME, verified:**
+  `configs/ir_eval/` contains only `gold_set.example.json`, a template whose own text says it
+  is not bundled with real data. So P5.2 static embeddings, P6 entity->QID and the BM25F
+  default weights all still wait on a human-graded gold set over the maintainer's own corpus —
+  the builder is one click away in Settings -> Diagnostics, and picking weights without it
+  would be the fabricated-pass shape.
+  **NOT ATTEMPTED, honestly:** S5 (the review-loop panel that would consume
+  `analyze_keyword_log.py --generic-terms` proposals) and PRH-15 (a source-scoped boilerplate
+  channel, distinct from the language-scoped stoplist) — both are new surfaces rather than
+  fixes, and both i18n ratchets sit at zero slack, so each is its own slice.
 - **PROMPT-04 EXECUTION 2026-09-07 — source qualification, discovery, and ONE NEW RULING (B11).
   Three slices shipped; S1 stays blocked on B1 and the promotion frontier is PARKED WHOLE (branch
   `claude/source-qualification-frontier-00n7gr`; per-slice detail = the four 2026-09-07

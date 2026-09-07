@@ -255,6 +255,7 @@ def init_db() -> None:
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_detected_language_column,
+        ensure_article_keyword_indexed_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
         ensure_external_source_discovery_columns,
@@ -299,6 +300,10 @@ def init_db() -> None:
     # Own-top-keyword precompute columns (rulings 23/38/39; self-heal, no backfill) --
     # BEFORE ensure_hot_indexes, whose idx_article_top_keyword is built over them.
     ensure_article_top_keyword_columns(engine)
+
+    # The keyword pass's attempt record (PRH-01; self-heal, no backfill) -- what lets
+    # the backfill queue rotate past an article that legitimately yields zero terms.
+    ensure_article_keyword_indexed_column(engine)
 
     # Denormalised keyword_mentions.source_id (flood/bury card; self-heal, no backfill).
     ensure_keyword_mention_source_column(engine)

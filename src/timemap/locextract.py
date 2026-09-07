@@ -112,6 +112,65 @@ def _patterns() -> list[tuple[re.Pattern, str, str]]:
     return pats
 
 
+# A name can only begin where a word begins, because every pattern above is
+# ``\b<literal>\b`` and every name starts with a word character (asserted at index
+# build time; one that does not is routed to the scan list instead of being dropped).
+_WORD_RUN = re.compile(r"\w+")
+
+
+@lru_cache(maxsize=1)
+def _dispatch() -> tuple[list[tuple[int, re.Pattern, str, str]], dict[str, list[tuple[int, re.Pattern, str, str]]]]:
+    """``(scan, index)`` — how each pattern is looked for, without changing WHAT is found.
+
+    THE COST THIS REMOVES. Every pattern used to be run over the whole article
+    independently, so the work was O(patterns x text): with the bundled 21-city sample
+    that is ~160 scans and invisible, but the gazetteer ``build_city_gazetteer.py``
+    generates carries thousands of cities, and at 4,500 the same article costs 4,661
+    scans -- measured at 2,264 ms for a 5,000-word body, against ~48 ms for the whole
+    when/where/who precompute at sample scale. Only installs that built the gazetteer
+    ever paid it, which is why it survived.
+
+    THE SPLIT, and why it is drawn where it is:
+
+    * ``scan`` keeps the per-pattern ``finditer`` for the CASE-INSENSITIVE half -- the
+      span guards and the country table. That half is a module constant of ~140 entries,
+      so it does not scale with anything, and ``re.IGNORECASE`` does not agree with
+      ``str.lower()`` in every case (``"İ".lower()`` is ``i`` + a combining dot, yet
+      IGNORECASE matches ``İSTANBUL`` against ``istanbul``; ``ſ`` folds to ``s``
+      for the engine and to itself for ``lower()``). Any token index over it would be a
+      false-NEGATIVE hazard for exotic input, and buying ~92 ms of a 2,264 ms article at
+      that price is a bad trade.
+    * ``index`` covers the CASE-SENSITIVE half -- the cities, which is the half that
+      scales. Case-sensitive means an EXACT token key, so the folding hazard above cannot
+      arise at all: the key is a plain string comparison. It maps a name's leading word
+      run to the patterns that begin with it, so a word in the text costs one dict lookup
+      instead of thousands of scans.
+
+    IDENTICAL RESULTS, not merely similar. The index only proposes CANDIDATES; each is
+    confirmed by ``rx.match(text, pos)`` with the same compiled pattern the old loop used,
+    and ``\b`` still sees the character before ``pos`` (verified, not assumed). The
+    candidate set is provably the same: if a pattern matches at ``pos`` then the text's
+    word run at ``pos`` equals the name's leading word run exactly -- the name either ends
+    there (so ``\b`` forces a non-word character next) or continues with a non-word
+    character of its own. Both halves' candidates are then merged and replayed in the
+    ORIGINAL pattern order, so the longest-match-claims-the-span rule below decides
+    exactly what it decided before.
+    """
+    scan: list[tuple[int, re.Pattern, str, str]] = []
+    index: dict[str, list[tuple[int, re.Pattern, str, str]]] = {}
+    for i, (rx, name, kind) in enumerate(_patterns()):
+        head = _WORD_RUN.match(name)
+        # Case-insensitive patterns, and any name that does not begin with a word
+        # character, keep the whole-text scan. The second case does not arise in the
+        # bundled data and is handled rather than assumed away: dropping such a name
+        # would silently lose a place, which is the one outcome worse than being slow.
+        if rx.flags & re.IGNORECASE or head is None or head.start() != 0:
+            scan.append((i, rx, name, kind))
+        else:
+            index.setdefault(head.group(0), []).append((i, rx, name, kind))
+    return scan, index
+
+
 def _display_name(iso2: str) -> str:
     """The canonical English name for a country code, so every surface form that
     matched ("uk", "britain", "united kingdom") renders as one place.
@@ -161,45 +220,70 @@ def extract_locations(
 
     index = cached_index()
     found: dict[str, dict] = {}
-    for rx, name, kind in _patterns():
+
+    # CANDIDATES FIRST, CLAIMS SECOND. The claim rule below is unchanged and still
+    # decides everything; all that changed is how the candidates are found (see
+    # ``_dispatch``). They are replayed in the original pattern order, so the longest
+    # name still runs first and still wins the span.
+    scan_pats, name_index = _dispatch()
+    cands: list[tuple[int, int, int, str, str]] = []
+    for i, rx, name, kind in scan_pats:
         for m in rx.finditer(text):
-            start, end = m.start(), m.end()
-            if any(claimed[start:end]):
-                continue  # nested inside a longer name that already won this span
-            claimed[start:end] = b"\x01" * (end - start)
-            if kind == "guard":
-                # The span is spent and nothing is asserted. A sea is not a country,
-                # and a place named after one is not that one.
-                continue
-            # CANONICALISE a country by its ISO code, not by the surface form that
-            # happened to match. The same field report showed "Uk (gb)", "United Kingdom
-            # (gb)" and "Britain (gb)" as three separate places in one document; they are
-            # one country mentioned three ways, and summing them is both truer and what a
-            # reader expects. Cities keep their gazetteer name as the key — two cities can
-            # legitimately share a name, and collapsing those would lose a real distinction.
-            iso2 = _COUNTRY_NAMES[name] if kind == "country" else None
-            key = f"country:{iso2}" if iso2 else f"{kind}:{name.lower()}"
-            if key in found:
-                found[key]["mentions"] += 1
-                continue
-            entry: dict = {
-                "name": _display_name(iso2) if iso2 else name,
-                "kind": kind,
-                "mentions": 1,
-                "snippet": _snippet(text, m.start(), m.end()),
-                "note": "deduced from the text — a name match, not a confirmed event site",
-            }
-            if kind == "country":
-                entry["country"] = iso2
-            else:
-                hit = lookup(index, name, source_country)
-                if hit:
-                    entry["country"] = hit.country
-                    entry["lat"], entry["lon"] = hit.lat, hit.lon
-                    if source_country and hit.country == (source_country or "").lower():
-                        entry["note"] += "; disambiguated by the source's country"
-                    else:
-                        entry["note"] += "; most-populous namesake assumed"
-            found[key] = entry
+            cands.append((i, m.start(), m.end(), name, kind))
+    for w in _WORD_RUN.finditer(text):
+        bucket = name_index.get(w.group(0))
+        if not bucket:
+            continue
+        pos = w.start()
+        for i, rx, name, kind in bucket:
+            # `confirmed`, not `hit`: `hit` is taken further down for the gazetteer
+            # lookup's City, and a long function that reuses one name for two types is
+            # how a later reader ends up holding the wrong one. mypy caught the collision.
+            confirmed = rx.match(text, pos)  # anchored; \b still reads text[pos-1]
+            if confirmed:
+                cands.append((i, pos, confirmed.end(), name, kind))
+    # (pattern order, then left-to-right) reproduces the old nested loop exactly: the
+    # outer loop walked patterns longest-first and the inner one walked that pattern's
+    # matches in text order.
+    cands.sort(key=lambda c: (c[0], c[1]))
+
+    for _i, start, end, name, kind in cands:
+        if any(claimed[start:end]):
+            continue  # nested inside a longer name that already won this span
+        claimed[start:end] = b"\x01" * (end - start)
+        if kind == "guard":
+            # The span is spent and nothing is asserted. A sea is not a country,
+            # and a place named after one is not that one.
+            continue
+        # CANONICALISE a country by its ISO code, not by the surface form that
+        # happened to match. The same field report showed "Uk (gb)", "United Kingdom
+        # (gb)" and "Britain (gb)" as three separate places in one document; they are
+        # one country mentioned three ways, and summing them is both truer and what a
+        # reader expects. Cities keep their gazetteer name as the key — two cities can
+        # legitimately share a name, and collapsing those would lose a real distinction.
+        iso2 = _COUNTRY_NAMES[name] if kind == "country" else None
+        key = f"country:{iso2}" if iso2 else f"{kind}:{name.lower()}"
+        if key in found:
+            found[key]["mentions"] += 1
+            continue
+        entry: dict = {
+            "name": _display_name(iso2) if iso2 else name,
+            "kind": kind,
+            "mentions": 1,
+            "snippet": _snippet(text, start, end),
+            "note": "deduced from the text — a name match, not a confirmed event site",
+        }
+        if kind == "country":
+            entry["country"] = iso2
+        else:
+            hit = lookup(index, name, source_country)
+            if hit:
+                entry["country"] = hit.country
+                entry["lat"], entry["lon"] = hit.lat, hit.lon
+                if source_country and hit.country == (source_country or "").lower():
+                    entry["note"] += "; disambiguated by the source's country"
+                else:
+                    entry["note"] += "; most-populous namesake assumed"
+        found[key] = entry
     out = sorted(found.values(), key=lambda e: -e["mentions"])
     return out[:limit]

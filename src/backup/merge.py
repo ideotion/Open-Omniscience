@@ -1808,6 +1808,15 @@ _MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
     # machine's crawl clock says nothing about when THIS one last crawled, and adopting it
     # would defer a crawl that is genuinely due.
     "sources.last_crawled_at": "per-machine crawl clock; the other instance's value is not a fact about this one",
+    # articles.keyword_indexed_at is the same shape, and adopting it would do active harm
+    # rather than merely be meaningless: it records when THIS instance last ran the keyword
+    # pass, and the backfill queue orders by it NULLS FIRST. A merged-in article that this
+    # instance has never indexed must sort at the FRONT of that queue; carrying the other
+    # machine's stamp would sort it behind every genuinely-never-attempted article and
+    # claim an examination that never happened here -- the exact inversion the column
+    # exists to prevent. NULL is the true value, and the post-swap re-index sets it from
+    # local evidence in the same pass that produces the mentions.
+    "articles.keyword_indexed_at": "per-machine index clock; a NULL correctly means this instance has never indexed the article, and adopting a foreign stamp would sort it behind articles that have never been looked at",
     # (c) CARRIED ELSEWHERE, not by the INSERT -- so an AST reading of the INSERT alone
     # under-reports coverage here. `parent_id` is a SELF-referential FK, so it cannot be
     # resolved in the same statement that creates the rows it points at; `_merge_keyword_
@@ -2288,6 +2297,15 @@ _NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
     "top_keyword_id": "an id in the incoming corpus's keyword space, and map_keywords does not exist yet in the articles step; the post-swap re-index recomputes it locally",
     "top_keyword_count": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it locally",
     "top_keyword_tied_n": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it locally",
+    # THE KEYWORD PASS'S ATTEMPT RECORD (PRH-01). Not adoptable, and for the strongest
+    # reason in this table: the local NULL is not merely a real value, it is the ONLY
+    # correct one. The column says when THIS instance last ran the keyword pass, and the
+    # backfill queue orders by it NULLS FIRST, so a duplicate whose local twin has never
+    # been indexed here must keep sorting at the front. Filling it from the incoming copy
+    # would state an examination this machine never performed and push the article behind
+    # every never-attempted one -- the wedge the column was added to remove, re-created
+    # by the fill-a-local-NULL rule. The re-index fills it from local evidence.
+    "keyword_indexed_at": "records when THIS instance last indexed the article; a foreign stamp would claim an examination that never happened here and sort the article behind never-attempted ones",
 }
 
 
