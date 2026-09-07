@@ -5853,3 +5853,68 @@ archival list, because its S4 (in-app review of analyzer proposals) is genuinely
 ledger's recorded "295 as of 2026-06-15" counted `index.html` alone and predates the module
 split, so it under-stated the debt by roughly half. Recorded as a correction, not fixed here:
 the retirement is browser-verify-gated and belongs to its own prompt.
+
+## 2026-09-07 — security/deps: the [pqc] ceiling stops being a comment and starts being a mechanism
+
+PR #1013, alongside the documentation reality check. One new test file, one pyproject byte
+unchanged — the bound was already correct; what it lacked was anything that would notice.
+
+**THE OCCASION.** Dependabot #1012 proposed widening `pqcrypto>=0.3.4,<1.0` to `<2.0` — the
+identical change #996 made on 2026-09-03, which merged and blocked the whole repository. The
+ledger had already written the diagnosis: *prose addresses humans; only a CI-visible mechanism
+addresses a bot, and this bound had no test.* A third proposal of the same widening is the
+point at which "we wrote the reason in a comment" stops being a defence.
+
+**RE-MEASURED BEFORE WRITING ANY CLAIM INTO THE FAILURE MESSAGE**, both wheels installed side
+by side, because this very comment's history contains a fabricated elaboration the ledger later
+had to retract:
+
+| call site (`src/custody/signing.py`) | 0.4.0 | 1.0.0 |
+|---|---|---|
+| `generate_keypair()` | present | **ABSENT** — renamed `keygen` |
+| `verify(pk, data, GOOD_sig)` | `True` | **`None`** → `bool()` is `False` |
+| `verify(pk, data, BAD_sig)` | `False` | raises `InvalidSignatureError` |
+| `PUBLIC_KEY_SIZE` / key type | 1952 / `bytes` | 1952 / `bytes` — identical |
+
+Every claim in the pyproject comment held, the corrected key-format one included. The second
+row is why this is a data-safety ceiling and not housekeeping: `signing.py:318` verifies with
+`bool(_mldsa.verify(...))`, so under 1.0.0 every **genuine** ML-DSA signature verifies as a
+forgery — silently, in the tamper-evidence path, on any install whose keys already exist. That
+path never reaches `generate_keypair`, so the loud `AttributeError` never fires, the module
+still imports, `PQC_AVAILABLE` stays `True`, and the honest-degrade path never runs either.
+
+**THE LESSON — THE NEGATIVE-SPACE TWIN IS LOAD-BEARING ON A VERSION CEILING, BECAUSE
+OVER-NARROWING SATISFIES THE CEILING ASSERTION.** The obvious guard is "the specifier must not
+admit 1.0.0". `pqcrypto==0.3.4` and `<0.4` both satisfy it, and both drop the release a real
+install resolves to — so the cheapest way to turn a lone ceiling guard green would be to make
+the extra useless. Mutation-proven in both directions, each mutation asserted-applied first:
+widening to `<2.0` reddens **only** the ceiling test; over-narrowing to `==0.3.4` reddens
+**only** the twin **while the ceiling test still passes**; deleting the requirement trips an
+anti-vacuity helper, because an absent requirement parses as an **empty** `SpecifierSet`, which
+admits everything — a guard that tolerated it would pass hardest at exactly the moment the
+ceiling stopped existing.
+
+**THREE RIDERS.** Assert containment via `packaging.SpecifierSet`, never the literal constraint
+string: a lower-bound bump is legitimate and must not redden, and `packaging` ships wherever
+pytest runs (pytest requires it), so it is safe on the Core-only lane. The failure **message**
+is the deliverable — it is what a reviewer of the widening PR reads — so it names the
+constraint that was set, the version it now admits, and the inverted predicate, rather than
+"bound changed". And a third guard checks the **installed** version against the declaration
+(the `test_duckdb_version_coupling_holds_when_installed` precedent), since a lockfile or a
+stale environment can drift from pyproject and the first symptom would otherwise be a custody
+test dying on an `AttributeError`, which reads as a broken test rather than a wrong version.
+
+**A DEPENDABOT `ignore` RULE WAS CONSIDERED AND REFUSED**, and the reason is worth keeping:
+`pqcrypto` is not in `configs/external_artifacts.yml`, so nothing else watches it — ignoring
+major updates would blind the project to a future **security** release of it. The test catches
+a widening from any source and costs none of that visibility. Recorded rather than done.
+
+**SCOPE, stated rather than implied.** `pqcrypto` is the only upper-bounded requirement
+anywhere in pyproject (measured); `mypy==2.3.1` and the workflows' `bandit==1.9.4` are exact
+pins, where a bump is a one-line version change a reviewer reads. So this is one guarded
+ceiling, not a table with one row. Two things stay **open** and are not settled here: whether
+the ceiling owes an `external_artifacts.yml` entry (recorded as an open scope decision), and
+the CLASS underneath the instance — `PQC_AVAILABLE` is set from import success alone, so a
+module that imports but lacks `generate_keypair` still reports itself available and crashes
+instead of degrading. That is a `src/custody/signing.py` change on a tamper-evidence path and
+belongs to its own reviewed slice.
