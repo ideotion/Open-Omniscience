@@ -79,7 +79,7 @@ claim lives · owning prompt.
 | KW-14 | P6 entity→QID (OpenTapioca) | OPERATOR-GATED + licence check | same | strategy doc | P05 |
 | KW-15 | BM25F default weights (A/B harness built, no chosen weights) — needs the graded gold set | OPERATOR-GATED | strategy doc; Settings → Diagnostics gold-set builder | strategy doc | P05 |
 | KW-16 | Entity families: caps-furniture batch, Roman-numeral exclusion, cross-script alias rings, kind-dropdown honesty | BUILT (2026-07-19..21, per the 2026-07-22 audit) | `ACTION_PLAN_2026-07-22` §0 | — | — |
-| KW-17 | Clickable-keyword stats hover (slice 2) — "which stats" undecided | RULING-GATED (soft) | FUTURE_DEVELOPMENTS §"Clickable in-article keywords" | FD | P17 |
+| KW-17 | Clickable-keyword stats hover (slice 2) — "which stats" undecided | **VERIFIED-PRESENT 2026-09-07** (`58a4d6d`) — shipped, not ruling-gated: `GET /api/insights/keyword-stats` (`src/api/insights.py:1240`) behind the reader's `kwStatLine` (`src/static/reader.js:130`) and the SPA `#oo-tip` hover (`src/static/app-boot.js:206`); mentions · spread · windowed trend rate · top co-occurrences, counts only. `docs/ROADMAP.md` already recorded it as shipped | FUTURE_DEVELOPMENTS §"Clickable in-article keywords" | FD | P17 |
 | KW-18 | Per-language month scoping (a stopwords-ARCHITECTURE change; complement to slice 3) | UNBUILT — and RECORDED 2026-09-07 at the code that makes it impossible (`services/stopwords.get_stopwords`'s docstring + a behavioural branch-order guard), so the next reader meets the constraint where they would act on it rather than in a design doc | design doc §8 last row | design doc | P06 |
 
 ## LAW — the law vertical
@@ -102,10 +102,10 @@ claim lives · owning prompt.
 |---|---|---|---|---|---|
 | GOV-01 | 36 WB indicator codes never fetched — `scripts/verify_worldbank_indicators.py` is ONE command on a networked machine | OPERATOR-GATED (F1) | script docstring | CLAUDE.md | P14 |
 | GOV-02 | Bloc rosters (Task 4) — registry deliberately EMPTY; own networked session | OPERATOR-GATED (G3) | `src/catalog/blocs.py` docstring | CLAUDE.md | P14 |
-| GOV-03 | OECD SDMX-JSON 1.0 / IMF message support (parser handles one message shape; "SDMX-JSON 2.1" docstring corrected) | UNBUILT (needs a real fetched body) | `src/stats/sdmx.py:143-154` | CLAUDE.md 2026-08-13 lesson | P14 |
+| GOV-03 | OECD SDMX-JSON 1.0 / IMF message support | PART-BUILT 2026-09-07 @ `58a4d6df`: the 1.0 `AllDimensions` CONTAINER (`dataSets[].observations`, no `series` key) parsed to ZERO rows and logged nothing — fixed, with an unreadable dataSet now logged and a 2.0 message refused BY NAME. SDMX-JSON **2.0** remains unbuilt and still needs a real fetched body. | `src/stats/sdmx.py`; `tests/test_sdmx_parse.py` | CLAUDE.md 2026-08-13 lesson | P14 |
 | GOV-04 | Agencies directory 29 → ~152 with `news_url` (networked research pass) | OPERATOR-GATED (G5) | `src/stats/agencies.py` 29 entries | CLAUDE.md | P14 |
-| GOV-05 | CSV/OWID + JSON-stat/PxWeb + bulk-ZIP parsers (V-Dem/UCDP) | UNCHECKED (`src/stats/bulk.py` exists) | FUTURE_DEVELOPMENTS §"Statistical-data ingestion" | FD | P14 |
-| GOV-06 | Revision-anomaly detector over `StatFigure` vintages | UNCHECKED (`src/stats/revision.py` exists) | FD | FD | P14 |
+| GOV-05 | CSV/OWID + JSON-stat/PxWeb + bulk-ZIP parsers (V-Dem/UCDP) | VERIFIED-PRESENT 2026-09-07 @ `58a4d6df` — all three families ship: `parse_csv`/`parse_jsonstat` (`sdmx.py`), `parse_csv_wide` + `zip_csv_members`/`read_zip_member` (`bulk.py`), tested in `test_stats_csv_jsonstat_parse.py` + `test_stats_bulk.py`. Do not rebuild. | `src/stats/sdmx.py`, `src/stats/bulk.py` | FD | P14 |
+| GOV-06 | Revision-anomaly detector over `StatFigure` vintages | VERIFIED-PRESENT 2026-09-07 @ `58a4d6df` — shipped AND wired end to end: `find_revision_anomalies` → `store.py:267` → `/api/stats/revision-anomalies` → `app-map.js:2143`, with `test_stats_revision.py`, `test_stats_revision_store.py` and a `test_repo_invariants.py` guard. Do not rebuild. | `src/stats/revision.py` | FD | P14 |
 | GOV-07 | IPCC as a source + forecast/prediction tracking | RULING-GATED (G4) | FD §"IPCC" | FD | P14 |
 | GOV-08 | Key-gated sources (EIA API v2, FRED, Comtrade, FIRMS, OpenAQ) — V1-2 | RULING-GATED (G1) | V1_PATHWAY §7 | V1 | P14 |
 | GOV-09 | BRICS Joint Statistical Publication; AfDB/UNECA continental endpoints | OPERATOR-GATED | CLAUDE.md 2026-08-07 rulings 2/46 | CLAUDE.md | P14 |
@@ -134,7 +134,7 @@ claim lives · owning prompt.
 | AI-16 | Qualification-assist per-source button | BUILT (STALE-CLAIM in Session-B carry-over (c)) | `src/static/app-sources.js:396` | CLAUDE.md | P02 |
 | AI-17 | The ~50-anchor triage grading sitting + the real roster bench run on the rig | OPERATOR-GATED | CLAUDE.md Session E remaining | CLAUDE.md | P11 |
 | AI-18 | Deep-model tier / whole-corpus cited synthesis / corpus Q&A / per-surface LLM lenses (2026-06-17 expansion rulings) | UNBUILT (design-only) | CLAUDE.md IN-APP OLLAMA entry "REMAINING" | CLAUDE.md | P11 |
-| AI-19 | Per-article Summarize/Translate on the analysis Articles list | UNCHECKED | same | CLAUDE.md | P17 |
+| AI-19 | Per-article Summarize/Translate on the analysis Articles list | **CLOSED BY RULING, checked 2026-09-07** (`58a4d6d`) — not a gap to build: maintainer ruling 22 (field feedback 2026-08-07, shipped 2026-08-20) REMOVED the per-row buttons as an absorption, because the reader runs both on the same endpoints and shows the original URL as its own visible text (invariant #6); the bulk Summarize-all / Translate-all actions are untouched. Recorded at the call site (`src/static/app-analysis.js:1243`) and in the `shipped.csv` row for rulings 20-22 | same | CLAUDE.md | P17 |
 
 ## UI — browser-verified backlog
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
@@ -230,11 +230,12 @@ claim lives · owning prompt.
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
 |---|---|---|---|---|---|
 | WIKI-01 | Whole-edition ingest: dump-as-baseline + `recentchanges` delta + auto-track after a dump download | UNBUILT (only title-list `ingest_dump_pages` + `fetch_recentchanges` client exist) | `src/wiki/corpus.py:237,275`; `client.py:81` | FD §1/§22; V1-9 | P18 |
-| WIKI-02 | Dedicated tracked-changes TAB in the reader | UNBUILT | no hits | CLAUDE.md WIKIPEDIA entry | P18 |
-| WIKI-03 | Wikitext rendering | UNBUILT | no renderer | CLAUDE.md | P18 |
-| WIKI-04 | Per-mention revid anchoring | UNBUILT | — | CLAUDE.md | P18 |
-| WIKI-05 | One consented "refresh exact sizes" replacing the per-edition probe button | UNBUILT | CLAUDE.md INLINE AUTO SIZE remaining | CLAUDE.md | P18 |
-| WIKI-06 | Questions 1–5 | RULING-GATED (G10) | FD §988 | FD | P18 |
+| WIKI-02 | Dedicated tracked-changes TAB in the reader | **CORRECTED 2026-09-07 — the VIEW was already SHIPPED, the READER was not**; the "no hits" evidence was wrong. Now complete: the reader states the version and links the local history. | `src/static/app-map.js` `openWikiTC`/`_wikiRevRow`/`loadWikiTC`; `index.html` `#wiki-tc`; `GET /api/wiki/pages/{id}/revisions`; reader + `?wikitc=` deep link 2026-09-07 | CLAUDE.md WIKIPEDIA entry | P18 |
+| WIKI-03 | Wikitext rendering | UNBUILT — design written 2026-09-07, deliberately not half-built (a new HTML-emitting surface over untrusted markup; its safety argument is the whole slice) | no renderer | CLAUDE.md | P18 |
+| WIKI-04 | Per-mention revid anchoring | **SHIPPED 2026-09-07 as a per-ARTICLE anchor** (`Article.source_revision`) — per-mention would store a per-article constant once per mention; deviation recorded | `src/database/models.py`; `src/wiki/corpus.py`; migration `b5684999c1e1` | CLAUDE.md | P18 |
+| WIKI-05 | One consented "refresh exact sizes" replacing the per-edition probe button | **SHIPPED 2026-09-07**; the single-request `dumpstatus.json` mechanism is PARKED — the premise was never verified and the host is egress-blocked here | `src/wiki/dumps.py` `probe_sizes`; `GET /api/wiki/dumps/sizes` | CLAUDE.md | P18 |
+| WIKI-06 | Questions 1–5 | **CORRECTED 2026-09-07 — THREE OF THE FIVE ARE ALREADY RULED** (Q2 same pools · Q3 per-revision full text, shipped · Q4 the tracker is the feed), all by the maintainer's own 2026-06-12 ruling recorded in the section that filed them. Q1 (ingest scope) and Q5 (backups) remain RULING-GATED (G10). | FD §22's ruling block | FD | P18 |
+| WIKI-07 | `plain_from_wikitext` carried the recorded K·N `OPEN.*?CLOSE` bomb in three patterns, on the wiki INGEST path | **FIXED 2026-09-07** — measured 13.4 s per 400 KB of unclosed-`<ref>` spam against 0.014 s well-formed; now 0.0030 s, byte-identical over 20,000 randomised documents | `src/utils/markup_blocks.py`; `src/wiki/corpus.py`; `src/analytics/extract.py` | found this session | P18 |
 
 ## MAP — maps and geo
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
@@ -311,9 +312,9 @@ would look.
 | PRH-28 | `natural-earth-geometry` carries a blank `sha256` in the external-artifact registry (existence-only check) — the same one-line fix Alpine's entry got | UNBUILT | PR #976; `configs/external_artifacts.yml` | PR history | P02 |
 | PRH-29 | The Windows `pytest` lane HANGS (3 h 21 m → failure; ~6 h → cancelled) | **PARTIAL 2026-09-07**: `timeout-minutes: 45` caps the cost and makes the hang diagnosable (a log that stops at a known minute). The BISECT is still unbuilt and still deserves its own task — no Windows runner here | `.github/workflows/ci.yml` `portability` | PR #977 | P20 |
 | PRH-30 | `RestoreAborted` labels the outcome `cancelled` and journals "stopped-by-operator" when the operator cancelled nothing (also the quiesce barrier) | UNBUILT (re-labelling slice) | PR #987, recorded in a source comment | PR history | P07 |
-| PRH-31 | `_window_daily_series` omits zero-count days, so the index axis compresses (day 1 and day 5 render adjacent); repair is zero-FILLING and touches the trending sparklines | UNBUILT | PR #850 / #863 | PR history | P15 |
-| PRH-32 | The `h3`-over-`h2` type inversion fixed for `#tab-settings` still exists on Home, Insights, Markets panels and the two Export/Import dialogs | UNBUILT | PR #921 | PR history | P15 |
-| PRH-33 | Three Library subtab labels (`Activity`, `Tracked`, `Database & storage`) are unkeyed | UNBUILT | PR #867 | PR history | P15 |
+| PRH-31 | `_window_daily_series` omits zero-count days, so the index axis compresses (day 1 and day 5 render adjacent); repair is zero-FILLING and touches the trending sparklines | UNBUILT (re-confirmed live 2026-09-07: `src/analytics/queries.py:1714`, and `app-corpus.js:1293` carries a comment acknowledging the omission) | PR #850 / #863 | PR history | P15 |
+| PRH-32 | The `h3`-over-`h2` type inversion fixed for `#tab-settings` still exists on Home, Insights, Markets panels and the two Export/Import dialogs | **SHIPPED 2026-09-07 (PR #1029)** — measured in Chromium on all 17 themes first (Home's section title 12.5px `--muted` at 4.56-12.71:1 under a 15px full-`--fg` card title at 6.07-18.10:1), then lifted app-wide through a zero-specificity `:where()` default so the deliberately-small labels still win. The two dialogs were a SEPARATE defect: they alone of eleven omitted `background`/`color`, so the theme never reached them — fixed by one `dialog{}` rule | PR #921; PR #1029 | PR history | P15 |
+| PRH-33 | Three Library subtab labels (`Activity`, `Tracked`, `Database & storage`) are unkeyed | **SHIPPED 2026-09-07 (PR #1029)** — keyed x12 by textual insert (3 added / 0 deleted per file), verified rendering live in all twelve locales through `OOI18N.setLang()`; untranslatable ratchet 560 -> 557 in the same PR | PR #867; PR #1029 | PR history | P15 |
 | PRH-34 | The 2026-06-17 supervised-training track (curriculum, facilitator guide, train-the-trainer, synthetic exercise corpus, safety self-check) is recorded only in PR #49 | UNBUILT (design) | PR #49 | PR history | P23 |
 | PRH-35 | The never-merged PR #16 (the maintainer's own idea file) lists a language-manipulation detector — formal/informal fallacies, sophism, euphemism, dysphemism, doublespeak, gaslighting, weasel claims, framing effect, slippery slope, false analogy, circular reasoning, red herring — and an article↔source publication-date delta | UNBUILT (idea) | PR #16 diff | PR history | P23 |
 

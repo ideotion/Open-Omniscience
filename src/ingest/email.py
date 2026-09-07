@@ -34,6 +34,7 @@ from sqlalchemy import Table
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
+from src.ingest.newsletter_source import parse_list_id
 from src.database.write import is_locked_error, run_write_with_retry
 from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
 from src.utils.url_utils import generate_content_hash
@@ -66,6 +67,12 @@ class ParsedEmail:
     # forwarder may sit between it and the true origin (stated in the reason).
     sender_ip: str | None = None
     sender_ip_reason: str | None = None
+    # RFC 2919 List-Id -- the ruled KEEP metadata field (2026-06-15 clause (a)) and
+    # the stable newsletter key. Recipient-SAFE by construction: it names the LIST,
+    # never a subscriber, which is exactly why the same ruling keeps it and drops
+    # List-Unsubscribe (that one carries a per-recipient token). ``None`` when the
+    # message carries no such header -- absent, never an invented identifier.
+    list_id: str | None = None
     # Per-URL sanitiser outcomes for every link found in the body (SOURCE-MANAGEMENT
     # ASKS ruling #1: cleaned newsletter links must be able to become sources). A
     # tracker-wrapped entry's ``url`` is the bare wrapper ``scheme://host`` -- the
@@ -232,7 +239,8 @@ def parse_email(raw: bytes) -> ParsedEmail:
     the recipient from the subject and body, then discarded. Links are de-tracked
     (recipient query-tokens stripped, server-side wrappers flagged) before storage
     so the corpus carries no per-subscriber identifiers. ``from_addr`` is the
-    sender, which is recipient-safe and kept.
+    sender, which is recipient-safe and kept; so is ``list_id``, which identifies
+    the LIST and not the subscriber.
     """
     msg = email.message_from_bytes(raw)
     date = None
@@ -263,6 +271,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
         redactions=r1 + r2,
         sender_ip=sender_ip,
         sender_ip_reason=sender_ip_reason,
+        list_id=parse_list_id(_header(msg, "List-Id") or None),
         links=links,
     )
 

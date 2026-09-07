@@ -7,7 +7,8 @@ PROMPT_20 S7 "decide whether it converges or stays advisory, and record which").
 
 The verdict is: stays advisory. The mechanism is: it may not GROW. PARKED.md
 recorded the lane at 344 findings on 2026-08-20 and it measured 432 on
-2026-09-07 -- 88 findings of drift nobody saw, because a lane that is allowed to
+2026-09-07 (442 by the time this PR merged, all of the growth from parallel
+branches and none of it this PR's -- verified like-for-like) -- 88 findings of drift nobody saw, because a lane that is allowed to
 fail says nothing when it fails a little more. Prose had already been tried.
 
 DELIBERATELY UNLIKE ``_ADHOC_SLICER_BUDGET``, this ratchet permits SLACK. That

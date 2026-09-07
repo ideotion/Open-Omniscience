@@ -150,7 +150,106 @@ the source file had moved; corrected rather than repeated:**
   direct-function coverage), framing gains its limit-422s + the zero-match full-shape contract,
   keyword_management its 4 uncovered routes, and `tests/test_api_wiring.py` anchors llm in _SPINE
   plus framing/keyword_management in the optional-[analysis] block.
+- **The Observatory's remaining tiers** (design of record:
+  [`docs/design/OBSERVATORY_DESIGN.md`](docs/design/OBSERVATORY_DESIGN.md) §9; ruled 2026-07-18).
+  **PARTLY SHIPPED 2026-09-07 (PR #1033):** S0 + S1 (the `domain:` scaffold field and the
+  universe/galaxy payload endpoint, 2026-07-20) and S2 + S3 + most of S6 (the `ooSky` canvas
+  renderer, the Observatory tab, interactions, a11y, the 17-theme sweep). UI invariant #31
+  records what may not regress. **What is left, and why each is blocked on the same thing — the
+  endpoint emits the universe and galaxy tiers only, so every item below needs payload before it
+  needs pixels:**
+  - **S5 · spiral ARMS** — the Item-AC topic tags within a galaxy, with the cardinality guard the
+    ruling asked for *by construction* (top-K ≤ 6 arms by member count, each above a member floor,
+    with a labelled "untagged / other (N)" disc carrying the remainder). Needs the keyword-tags
+    facet per super-group in the payload. Design §11 threads 3 and 4 (**K = 6** and the **member
+    floor ≥ 5**, both still only *proposed*) cannot be settled until this exists to measure.
+  - **S5 · STAR SYSTEMS and PLANETS** — rings (cross-language concepts) as the tier below a
+    galaxy, and their per-language members as literal planetary rings segmented by language share.
+    Needs the ring list + `language_breakdown` per galaxy.
+  - **S4 · NOVAE** — trending spikes gated with the `supergroup_rising` discipline (count floors +
+    FDR across the sky), never a bare spike. The payload carries a per-galaxy `rate` but no
+    per-star series and no gate output.
+  - **S4 · the TIME SCRUB** — the ooTimeScope window, with novae flaring in their spike weeks.
+    Default must stay full corpus time (cross-time recall is sacred); the scrub is the lens.
+  - **The TELESCOPE** — the per-corpus mini-sky inside the analysis window. Explicitly *not v1*
+    by the ruling itself; the name is reserved for it.
+  **Two questions carried for the maintainer, recorded in `docs/ledger/OPEN_QUEUE.md`
+  (2026-09-07) rather than decided:** (a) the twelve **domain wedge labels render in English in
+  every locale**, because they are corpus data and this app never translates data — but they are
+  bundled scaffold rather than user content, so they could reasonably be keyed; (b) the tab
+  **autoloads** its payload, which is `_deadlined` and 120 s-cached and measured 0.26-0.28 s on a
+  440-article corpus, but runs `supergroup_stats` for all 77 groups and is **unmeasured at 500k
+  scale** — if a live run is slow the fix is the explicit-action button the article-length figure
+  already uses, never a cap.
+  **The human UX pass** the surface awaits is not a separate item: it is
+  [`RELEASE_0.4_GATE.md`](docs/product/RELEASE_0.4_GATE.md) row F, which covers every
+  Chromium-in-sandbox stamp.
 - **Rate-limit timing test** (TEST-04): fake-clock assertion on the politeness delay.
   **SHIPPED (0.0.8 WP3; found-resolved 2026-08-20):** `tests/test_rate_limit_timing.py` is exactly
   this (its docstring names the finding). This PR adds the two properties it did not pin: the
   shipped default stays polite (≥ 1s), and the per-host stamp survives a transport failure.
+
+## Wikipedia as a living source — what the 2026-09-07 pass left (prompt 18)
+
+Recorded here so the backlog carries them; the reasoning and the full measurements are in the
+Open queue entry (`docs/ledger/OPEN_QUEUE.md`, "WIKIPEDIA AS A LIVING SOURCE — THE 2026-09-07
+PASS") and in `docs/plans/2026-09-06-repo-analysis/PROMPT_18_wikipedia-living-source.md`.
+
+- **Six quadratic patterns in `plain_from_wikitext`** (found this pass; three sibling patterns
+  were fixed in it). They wear the recorded K·N class as `OPEN[^X]*CLOSE`, where an opener with
+  no closer makes the character class consume to end-of-document and then backtrack. MEASURED on
+  the real function, 100,000 → 400,000 chars of opener-only spam: `<[^>]+>` 0.154 → **2.381 s** ·
+  `<ref[^>/]*/>` 1.052 → **16.756 s** · `[[File|Image|Category]]` 1.749 → **28.035 s** ·
+  `[[target|label]]` 1.614 → **26.388 s** · `[[target]]` 1.721 → **27.398 s** · `[url label]`
+  1.420 → **22.525 s**. Only `{{templates}}` is linear. This is on the wiki INGEST path, so
+  whole-edition ingest meets it on every malformed page. Not fixed in the same pass because each
+  CAPTURES and rewrites rather than removing, so `strip_blocks` needs a replacement callback and
+  every rewrite needs its own byte-identical differential before it goes near ingest. The
+  differential harness and the numbers are in `tests/test_markup_blocks.py`; the constants and
+  their measurements are beside `_WIKI_BLOCKS` in `src/wiki/corpus.py`. Recorded refutations:
+  possessive quantifiers do not fix these (the cost is a scan per start position, not
+  backtracking depth), and a "does the closer exist at all" pre-check is byte-identical and free
+  but only covers the no-closer-anywhere case.
+- **S3 — wikitext rendering.** DESIGNED, not built:
+  `docs/plans/2026-09-06-repo-analysis/WIKI_S3_RENDERER_DESIGN.md`. Its deciding constraint is
+  verified: the raw wikitext is not in `Article.content` and must not be put there, so the
+  renderer must render ON READ from `WikiPage.latest_text` and degrade honestly for a
+  dump-ingested page that has none. It is a new HTML-emitting surface over untrusted markup, so
+  its safety argument (escape everything, a fixed tag allowlist, no raw HTML pass-through) is the
+  slice rather than a detail of it.
+- **S1 — whole-edition ingest.** STORAGE-GATED and stopped at the seam, with the gate measured
+  against the tree rather than read off a status line: of `docs/design/STORAGE_5TB_PLAN.md` §9's
+  five sequencing steps preceding it, steps 1–2 are done and steps 3–5 are not (the FTS split-out
+  to a contentless-delete `fts.db`; the hash-sharding prototype at 50–100M synthetic documents,
+  which the plan requires BEFORE any sharding code; the Phase C packed keyed text store). Four of
+  the six §8 rulings are unruled (blob dedup · OOENC2-vs-`age` · keyed HMAC addressing · the
+  `sqlite3mc` trial). What exists today: the bounded ingest already ships
+  (`ingest_dump_pages` over an operator-chosen title list); the delta half has a client
+  (`WikiClient.fetch_recentchanges`) and **no consumer**; nothing enumerates a whole edition and
+  nothing auto-tracks after a dump download.
+- **One consented request instead of N HEADs for dump sizes.** The shipped refresh is one
+  consented, bounded, politeness-spaced read over the operator's SELECTION. Folding it into a
+  single request would be a real win, and the premise it was proposed on — "the dump date's
+  `dumpstatus.json` lists every edition at once" — is UNVERIFIED: it has one origin (an
+  assistant-written docstring) and two echoes, every `dumps.wikimedia.org` path this repo builds
+  is per-edition, and the host is egress-blocked in the build sandbox. **Needs someone who can
+  reach the live endpoint**; shipping a parser against a guessed shape would be a fabricated
+  endpoint.
+- **G10, and it is TWO questions rather than five.** Q2 (analytics mixing), Q3 (version storage
+  depth) and Q4 (change feed) were answered by the maintainer's own 2026-06-12 ruling recorded in
+  the same FUTURE_DEVELOPMENTS section that filed them, and Q3 shipped the same day. **Q1 —
+  scope of dump ingestion:** the superseding ruling says a downloaded edition is TRACKED
+  entirely; it does not say INGESTED entirely, and the tiering already proposed under it
+  (metadata + flags for all edits, full text and analytics only for pages in the analytical
+  corpus) is what decides how much store Phase C must carry. **Q5 — backups:** whether an
+  edition's ingested Articles ride the corpus artifact at edition scale, or are reconstituted
+  from the dump on restore — which makes a restore depend on a file the backup deliberately
+  excludes as re-downloadable. Recommended defaults exist in
+  `docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md` and are NOT taken.
+- **Browser pass.** The dump picker's `=`/`~` size marking, the reader's version row and the
+  `?wikitc=` deep link are guarded behaviourally (a node suite drives the tracked-changes view)
+  but are Chromium-unverified in that pass.
+- **`Article.source_revision` fills forward only.** Existing wiki articles keep `NULL` until a
+  re-sync or a re-ingest; there is deliberately no backfill, because a revision that was never
+  recorded cannot be recovered from the text. If a backfill is wanted for watched pages, the
+  honest source is `WikiPage.latest_text_revid`, and it would claim less than the column does.

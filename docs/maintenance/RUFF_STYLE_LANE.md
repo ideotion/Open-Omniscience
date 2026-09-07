@@ -12,19 +12,19 @@ was produced by the command printed beside it, on the tree anchor named.
 | Lane | Command | Status |
 |---|---|---|
 | Correctness | `ruff check --select=F,B --extend-ignore=B008 src/ tests/` | **BLOCKING**, and green |
-| Style | `ruff check src/ tests/` | advisory (`continue-on-error`), **432 findings** |
+| Style | `ruff check src/ tests/` | advisory (`continue-on-error`), **442 findings** |
 | Style non-growth | `python scripts/ruff_ratchet.py --max <N>` | **BLOCKING** (new, 2026-09-07) |
 
 ## What the advisory lane actually holds
 
 Measured on `main` @ `d9ee33e7` (2026-09-07) with **ruff 0.16.6**
-(`python scripts/ruff_ratchet.py --max 432 --show-composition`):
+(`python scripts/ruff_ratchet.py --max 442 --show-composition`):
 
 | Count | Rule | What it is |
 |---:|---|---|
-| 128 | `I001` | import block un-sorted / un-formatted |
+| 132 | `I001` | import block un-sorted / un-formatted |
 | 57 | `SIM105` | `try/except/pass` that could be `contextlib.suppress` |
-| 41 | `E702` | multiple statements on one line (semicolon) |
+| 44 | `E702` | multiple statements on one line (semicolon) |
 | 22 | `SIM300` | Yoda condition |
 | 20 | `C416` | unnecessary comprehension |
 | 20 | `SIM905` | split a literal string |
@@ -35,7 +35,15 @@ Measured on `main` @ `d9ee33e7` (2026-09-07) with **ruff 0.16.6**
 | 11 | `UP035` | deprecated import |
 | 60 | *(tail)* | `SIM108/102`, `E741`, `C420`, `UP032/017/047/034/031`, `E711`, `SIM103/110/222`, `C401` |
 
-231 of the 432 are auto-fixable (`--fix`), 70 more with `--unsafe-fixes`.
+305 of the 442 are auto-fixable (`--fix`).
+
+**The count moved while this was being written, and that is worth recording rather than
+smoothing over.** It was 432 at `d9ee33e7`; about forty commits from parallel branches
+landed during the PR and took it to 442. The ceiling is calibrated to the tree that
+actually lands, because a ceiling below the merge result reddens `main` immediately —
+and it was verified like-for-like that none of the growth belonged to that PR (main
+alone 442, main plus the branch 442). This is the raise the last section calls a
+deliberate act: it is here, with its measurement, not made quietly.
 
 ## Why it does not converge in this prompt
 
@@ -72,7 +80,7 @@ fails *by design* cannot report that it is failing worse.
 So the count is ratcheted the way this repo ratchets everything else — the two i18n gates,
 `_ADHOC_SLICER_BUDGET`, `TRUE_CYCLE_CEILING`. It may only be **lowered**; growth reddens a
 blocking step; a drop prints the new floor to set. The advisory verdict is untouched:
-nobody is asked to fix the 432.
+nobody is asked to fix the 442.
 
 ## Why ruff is version-bounded
 
@@ -87,7 +95,7 @@ itself rather than as mystery debt.
 ## How to move the number
 
 ```bash
-python scripts/ruff_ratchet.py --max 432 --show-composition   # what is in there
+python scripts/ruff_ratchet.py --max 442 --show-composition   # what is in there
 ruff check src/ tests/ --fix                                   # the 231 safe autofixes
 python scripts/ruff_ratchet.py --max <the new, lower number>   # then lower the ceiling
 ```

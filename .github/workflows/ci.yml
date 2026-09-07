@@ -107,17 +107,25 @@ jobs:
       # "decide whether it converges or stays advisory, and record which"). The verdict
       # is: stays advisory -- see docs/maintenance/RUFF_STYLE_LANE.md for the measured
       # composition and why converging it is not a behaviour-neutral change (I001 alone
-      # is 128 findings and reorders imports in a tree with load-bearing import order).
+      # is 132 findings and reorders imports in a tree with load-bearing import order).
       #
       # What was missing is that "advisory" had quietly become "unwatched": PARKED.md
-      # recorded this lane at 344 findings on 2026-08-20 and it measured 432 on
+      # recorded this lane at 344 findings on 2026-08-20 and it measured 432-442 on
       # 2026-09-07, because a lane that is ALLOWED to fail says nothing when it fails a
       # little more. A ratchet, like the two i18n gates below: it may only be LOWERED,
       # and the script prints the new floor when it can drop. ruff is version-bounded in
       # pyproject for the same reason mypy is pinned -- a new rule set would otherwise
       # redden every PR through no code change.
+      #
+      # CEILING CALIBRATED AT THE MERGE POINT, not when this step was written. It was
+      # measured at 432 against main @ d9ee33e7; roughly forty commits from parallel
+      # branches landed while that PR was open and took the lane to 442. Verified
+      # like-for-like that NONE of the growth was that PR's -- main alone measured 442
+      # and main-plus-the-branch measured 442, with no file where the branch had more.
+      # Shipping the older, tighter number would simply have reddened main on the merge
+      # commit, which is worse than a ceiling that reflects the tree it guards.
       - name: Lint — style non-growth ratchet (may only be lowered)
-        run: python scripts/ruff_ratchet.py --max 432
+        run: python scripts/ruff_ratchet.py --max 442
 
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session
@@ -137,7 +145,7 @@ jobs:
       # A RATCHET, not a target: it may only be lowered. Lower it in the same PR
       # that adds the keys -- the script prints the new floor when it can drop.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 558
+        run: python scripts/i18n_report.py --max-untranslatable 555
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says

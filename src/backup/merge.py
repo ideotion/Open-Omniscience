@@ -2274,6 +2274,20 @@ _ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("content_multihash", ("content_multihash",)),
     ("sentiment_score", ("sentiment_score", "sentiment_label")),
     ("server_ip", ("server_ip", "ip_observed_at", "server_ip_reason")),
+    # THE VERSION ANCHOR (S4). Adoptable, and the safety argument is the dedup predicate
+    # itself: a duplicate matches on HASH, so the incoming row's text is BYTE-IDENTICAL
+    # to the local one, and a revision that produced this exact body is a true answer for
+    # this body. A local NULL means "we never recorded which revision this text came
+    # from", so filling it is pure information gain and can never overwrite a local
+    # recording. It is unrecoverable any other way -- the text is amendable, so a
+    # re-fetch reads a LATER revision and can never rebuild which one this body is.
+    # HONEST LIMIT, stated because the field is a provenance claim: two different
+    # revisions can strip to identical text (a template- or whitespace-only edit), so an
+    # adopted value names a revision that produced this body, not necessarily the one
+    # THIS instance fetched. That is the same standing the adopted server_ip has, and it
+    # is exactly what the column claims -- "the revision this stored text came from" --
+    # never "when this instance fetched it".
+    ("source_revision", ("source_revision",)),
 )
 
 #: Every other Article column, and why it is NOT adoptable. This exists because the
@@ -2483,14 +2497,21 @@ def _merge_articles(con, batch_id, results) -> None:
         # additive-restore exactly like sentiment_score/sentiment_label above (a
         # quarantined article stays quarantined after a restore; never silently
         # un-quarantined by import, never dropped).
-        " quarantined, quarantine_reason, quarantine_criteria_version, quarantined_at)"
+        " quarantined, quarantine_reason, quarantine_criteria_version, quarantined_at,"
+        # S4 (2026-09-07): the VERSION ANCHOR -- which upstream revision an article's
+        # stored TEXT came from. Unrecoverable like server_ip: the text is amendable,
+        # so a re-fetch reads a LATER revision and can never rebuild which one this
+        # body is, and the recorded 2026-08-03 lesson is exactly that a dropped column
+        # arrives as a plausible NULL nothing reports.
+        " source_revision)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
         " i.sentiment_score, i.sentiment_label,"
         " i.detected_language, i.server_ip, i.ip_observed_at, i.server_ip_reason,"
         " i.content_multihash, i.canon_version,"
-        " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at"
+        " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
+        " i.source_revision"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"
         + _WINDOW_MARK,
