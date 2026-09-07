@@ -1,6 +1,11 @@
 # UI shell & navigation redesign — action plan
 
-> **Status:** maintainer-commissioned 2026-06-13 (field session); awaiting
+> **Status:** maintainer-commissioned 2026-06-13 (field session); ~~awaiting~~ **— largely EXECUTED;**
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** §1's universal subtab grammar is invariant #18, §2's minimal top bar
+> and §3's airplane-button move are invariants #4/#14d, §6's auto-indexing Insights is invariant #21,
+> and the §5 Enter→analysis-window absorption shipped as the `#an` flagship. The one item this plan
+> gates that is still open is §5's removal of the Insights search bar, which stays browser-verify-
+> gated precisely as the plan's own Desk-lesson caveat requires. Original status text follows: awaiting
 > review. Planning only — nothing implemented yet. Companion to
 > `SCRAPING_AUTOMATION_PLAN.md` (the content-first backend) — this is the
 > content-first *front end*. Ledger pointer: CLAUDE.md UI invariants + queue.

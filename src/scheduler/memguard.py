@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from datetime import UTC, datetime
 
 _LOG = logging.getLogger("scheduler.memguard")
@@ -127,6 +128,15 @@ class MemoryGuard:
         self._lock = threading.Lock()
         self._engaged = False
         self._since: str | None = None
+        # Process-cumulative engage CYCLES and engaged TIME. A soak's question is "how
+        # often did this machine hit the wall, and for how long", and the guard until now
+        # published only its current state -- from which a three-day run and a three-day
+        # run with forty pauses in it look identical. The transition is rare by
+        # construction (``trip_after`` consecutive over-threshold samples), so counting it
+        # costs nothing on any path that runs often.
+        self._engagements = 0
+        self._total_engaged_s = 0.0
+        self._engaged_since_mono: float | None = None
         self._reason: str | None = None
         self._over = 0
         self._under = 0
@@ -201,6 +211,8 @@ class MemoryGuard:
                     self._over += 1
                     if self._over >= self.trip_after:
                         self._engaged = True
+                        self._engagements += 1
+                        self._engaged_since_mono = time.monotonic()
                         self._since = datetime.now(UTC).isoformat(timespec="seconds")
                         self._reason = self._describe(rss_frac_pct, mem_avail_mb, over_rss, over_avail)
                         self._over = 0
@@ -289,6 +301,9 @@ class MemoryGuard:
 
     def _resume_locked(self) -> None:
         # Caller logs OUTSIDE the lock (see observe/reset).
+        if self._engaged_since_mono is not None:
+            self._total_engaged_s += time.monotonic() - self._engaged_since_mono
+            self._engaged_since_mono = None
         self._engaged = False
         self._reason = None
         self._since = None
@@ -312,6 +327,13 @@ class MemoryGuard:
                 "engaged": self._engaged,
                 "since": self._since,
                 "reason": self._reason,
+                # Since THIS PROCESS started -- a restart resets them, which is correct
+                # for a soak (a restart ends the soak) and must be read that way.
+                "engagements": self._engagements,
+                # Closed episodes only: an episode still open is ``engaged``/``since``
+                # above, and folding it in here would make a currently-paused machine
+                # report a completed duration it has not finished serving.
+                "total_engaged_s": round(self._total_engaged_s, 1),
                 "thresholds": {
                     "rss_pct_of_total": self.rss_pct,
                     "avail_floor_mb": self.avail_floor_mb,

@@ -339,7 +339,7 @@ Public License Version 3 (GPLv3). It applies to the working software as shipped.
 
 **License:** GNU General Public License Version 3 (GPLv3)  
 **Copyright:** © 2026 Ideotion  
-**License File:** [LICENSE](LICENSE)
+**License File:** [LICENSE](../LICENSE)
 
 Open Omniscience is fully licensed under GPLv3, which provides users with the
 following freedoms (the software is a working, tested pre-alpha — these apply now):
@@ -355,13 +355,13 @@ following freedoms (the software is a working, tested pre-alpha — these apply 
 
 #### For Open Omniscience Project
 
-- [x] **License File**: Full GPLv3 text included in [LICENSE](LICENSE)
+- [x] **License File**: Full GPLv3 text included in [LICENSE](../LICENSE)
 - [x] **Source Code Availability**: All source code is publicly available in this repository
 - [x] **Copyright Notices**: Source modules carry a `Copyright (C) 2026 Ideotion`
-  notice; the project [LICENSE](LICENSE) governs the work as a whole
+  notice; the project [LICENSE](../LICENSE) governs the work as a whole
 - [x] **License Headers**: Most source modules carry a `GPL-3.0-or-later` SPDX-style
   header (a handful of empty package `__init__.py` markers and a few small modules do
-  not). GPLv3 does **not** require a per-file header — the [LICENSE](LICENSE) file is
+  not). GPLv3 does **not** require a per-file header — the [LICENSE](../LICENSE) file is
   authoritative for the whole work; the per-module notices are a courtesy, not a claim
   that every file carries one
 - [x] **No Additional Restrictions**: No further restrictions beyond GPLv3 are imposed
@@ -474,7 +474,7 @@ If you have questions or concerns about GPLv3 compliance:
 
 ### 📚 Resources
 
-- [Full GPLv3 License Text](LICENSE)
+- [Full GPLv3 License Text](../LICENSE)
 - [GNU GPLv3 Official Website](https://www.gnu.org/licenses/gpl-3.0.html)
 - [GNU GPLv3 FAQ](https://www.gnu.org/licenses/gpl-faq.html)
 - [Third-Party Notices](ETHICS.md)

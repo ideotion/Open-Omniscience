@@ -19,9 +19,9 @@ ruling-gated (V1-6/V1-7).
 1. **`CLAUDE.md` in full** (the protocol demands it; the Lessons subsection contains the traps
    this brief cites by name).
 2. This brief.
-3. [`V1_PATHWAY_2026-07-14.md`](V1_PATHWAY_2026-07-14.md) §2 (the loop + R-items) + §7.1.
-4. [`../ROADMAP.md`](../ROADMAP.md) §2 (P1 board — the carry-over rows quoted below).
-5. [`PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`](PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md)
+3. [`V1_PATHWAY_2026-07-14.md`](../../design/V1_PATHWAY_2026-07-14.md) §2 (the loop + R-items) + §7.1.
+4. [`../ROADMAP.md`](../../ROADMAP.md) §2 (P1 board — the carry-over rows quoted below).
+5. [`PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`](../../design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md)
    §1/§2/§7 (the Conjunction-Lens/Leads-2.0/power-profile designs of record — slices L/M/K
    implement THEIR specs, not new ones).
 

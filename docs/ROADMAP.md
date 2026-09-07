@@ -28,6 +28,16 @@ see the 2026-07-10/11 rows in the ledger).
 progress · ⬜ planned/pending · 🎨 design-only (spec exists, not built) · 🔒 blocked on a
 maintainer ruling · 🛠 operational (maintainer runs it — networked machine / live corpus).
 
+> **Reconciliation note (2026-09-07, docs-hygiene + reality-check pass).** The header above still says
+> "reconciled 2026-07-11", and that is the last time this board was walked row by row. This pass did
+> **not** repeat that walk — it corrected the rows the 2026-09-06 repo analysis and this session had
+> independently verified against the tree, and lifted three carry-overs that existed only inside a
+> design doc onto this board (marked *lifted 2026-09-07*). **So treat a row's status as evidence of
+> what was true when it was written, not of what is true now** — the tree is the authority, and the
+> single most expensive recurring mistake in this repository is trusting a status line over a grep.
+> A full row-by-row reconciliation is still owed; `docs/plans/2026-09-06-repo-analysis/INVENTORY.md`
+> is the nearest thing to a current picture.
+
 ---
 
 ## 0. Where we are — the 0.2 "data safety at scale" cycle
@@ -187,6 +197,8 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Backups include downloaded Wikipedia dumps** — dedup-by-checksum, additive restore must place FILE members into `wiki_dumps`. 🎨 (reverses design D3)
 - **Remove the legacy single-file backup RESTORE** once the format is fully retired (keep the additive-merge engine). 🎨
 - **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — shipped earlier; the B5 wave (⏳ #624) added job-state-as-truth polling, the paused-state label and verify/pause-resume wiring. Remaining: click-through 🛠 + key the new strings ×12. 🚧
+- **Unified import/export — the browser-gated cleanup** (*lifted 2026-09-07 from `docs/archive/design/UNIFIED_IMPORT_EXPORT.md`, where it was the only live record*) — after a click-through, retire the orphaned volume/folder JS handlers (`folderBackupStart` / `volBackupStart` in `src/static/app-backup.js`, whose panels the unified dialogs replaced) and the capped single-file-CREATE remnant. Verified 2026-09-07: single-file CREATE is already retired (`src/api/backup_v2.py` header); what survives is `POST /legacy/restore` + the 2 GiB `_MAX_RESTORE_BYTES` upload cap, which stay until the legacy format is retired (the row above). Belongs on the browser-verify burn-down, not to a blind removal — the interleaved-shared-helper hazard. 🛠 browser-gated
+
 - **Collector write-batching** — ✅ SHIPPED as P1.8 (`src/ingest/batch.py` + `tests/test_collect_batching.py`; this row lagged §2's own ✅) — S6 verify-marks the no-loss battery.
 
 ### Database / scaling (columnar & rollups)
@@ -279,6 +291,7 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
 - **Remove the Insights search bar** — 🔒 gated (B11a): first verify the omnibar Enter→analysis-window fully absorbs `exploreTerm()`'s 4-endpoint view (trend + associations + context + mindmap); a browser-unverified removal risks losing a tool (the Desk lesson).
 - **Guided-setup wizard remaining slices** — the **sources-by-theme step shipped (S4.7, 2026-07-12)**: real tag taxonomy via loopback `/api/scheduler/coverage`, themes default-all (cover-everything), language emphasis → `language_equilibrium`, loopback config write, never egress. The encryption-choice step is on **unlock.html** (chosen pre-DB at first launch), so it is architecturally moot in the post-unlock wizard. Remaining: a country-emphasis picker (`country_priority` lever exists) + browser click-through. 🚧
 - **Onboarding & training** — first-run tour as dismissible Home cards + contextual "why" notes + a supervised training curriculum (in-repo, never hosted). 🎨
+- **First-launch data-location chooser** (*lifted 2026-09-07 from `docs/design/FIX_SESSION_PROMPT_2026-07-14.md` Slice 2, where it was the only live record*) — maintainer-asked 2026-07-14: default = the app data folder, or "choose a folder" in which an **"OOS data"** subfolder is created; decided at first launch AFTER language + legal acceptance and BEFORE the passphrase. Reuses the shipped A11 `OO_DATA_DIR`/`oo.env` persistence seam, with an honest writable / free-disk / tmpfs preflight. Verified 2026-09-07: nothing in `unlock.html` or the setup path offers this today. 🎨
 - **i18n long tail** — the 44 new B5/B14/B15 strings are keyed ×12 (B10, #629) ✅; **composite-string format support** (`OOI18N.tf` template + interpolation) **and server-built Home-card title translation** (design + first producer) **shipped (S4.5, 2026-07-12)** ✅ — `Card.title_i18n`/`title_vars`, `rising_now` the reference producer, the template key in all 12 locales. Remaining: extend translatable titles to the other producers + key more dynamic JS rows via `tf` + the pre-existing ~105–140 chrome tail. 🚧 ongoing
 - **Human click-through of all browser-unverified UI** — now including the whole B wave (B3/B5/B14/B15 + storage panels + backup dialogs). 🛠
 
@@ -317,6 +330,8 @@ without a browser and a runnable suite in the same session.
 | S-3 | ~~a single 23,896-line indented global scope~~ **DONE 2026-08-20** — `src/static/app.js` is now **17 ordered modules**, split with byte-identical concatenation and verified in a browser | seam map, evidence and the measured numbers: [`docs/design/APPJS_DECOMPOSITION_2026-08-20.md`](design/APPJS_DECOMPOSITION_2026-08-20.md) | — | — |
 
 | S-4 | **233 hand-rolled source-slicing sites** across the test tree, and **588 UI strings / 307 `t()` literals** with no `en.json` key | AST walk in `test_source_slicing_discipline`; `i18n_report.py --audit-chrome` | None is a defect — each is real debt now *measured* rather than invisible, and each is held by a ratchet that may only fall. The slicing sites were reported as **0** until 2026-08-04, when the detector turned out to be keyed to five helper names | Ordinary attrition: migrate a slice to `tests/js_source_helper`, or key a string ×12, and lower the ratchet in the same PR — the tooling prints the new floor |
+
+| S-5 | **`natural-earth-geometry` carries a BLANK `sha256` in the external-artifact registry** — `configs/external_artifacts.yml` pins `{path: src/static/world_countries.json, sha256: ""}`, so the freshness check confirms the file EXISTS and never that it is the file we vendored (*lifted 2026-09-07; it was recorded only in PR #976's body*) | one entry, one field | Not deferred by ruling — simply never done. Its sibling `vendored-alpine` entry received exactly this one-line fix on 2026-08-22 and its own comment states the reason: *"a BLANK pin left this entry at status `info` ('present') … filled, drift now reports `stale`"* | Measure the digest from the committed file and fill the pin — a real measured value, never a fabricated one, and then `last_verified` moves with it |
 
 **Honest note on S-3 (closed 2026-08-20).** The row is done, and the premise it was written
 around — "the real cost is parse/compile on the 2-core field VMs" — turned out to be **half

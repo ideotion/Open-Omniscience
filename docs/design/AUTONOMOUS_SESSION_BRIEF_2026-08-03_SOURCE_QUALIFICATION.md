@@ -1,6 +1,10 @@
 # Autonomous session brief — the source selection engine (qualification + quality audit)
 
-**Status:** PENDING execution · one CLI session · draft-PR-only
+**Status:** ~~PENDING execution~~ — **EXECUTED 2026-08-03** (re-verified 2026-09-07): slices 1–5 plus the
+§1b/§1c panel all shipped. **Slice 5 is the deliberate exception and is a MAINTAINER DECISION, not an
+oversight** — the measurement shipped and the `PATHOLOGY_ABS_FLOOR` threshold did not, because no source
+in the field corpus can currently reach it; lowering it to make the gate fire would be tuning a
+data-safety threshold to make a number move. Original status: one CLI session · draft-PR-only
 **Evidence:** two real `source-quality` exports from the maintainer's merged 8-instance corpus,
 2026-08-03 (`oo-source-quality-2`, 457 and 473 sources with articles, 34,263 / 35,345 articles).
 **Companion brief:** `AUTONOMOUS_SESSION_BRIEF_2026-08-03_MERGE_TABLES.md` (disjoint file scope —

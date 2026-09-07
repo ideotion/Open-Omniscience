@@ -24,6 +24,22 @@ lesson into the Session-rituals "Lessons" subsection (so first-readers see it).
 Do NOT grow a "## Shipped batch log" wall in this file again. Pending rulings,
 contingencies, and deliberate-omissions STILL go in the Open queue as prose
 (rule 5 protects them — never moved to the CSV).
+(5b) **THE `refs` COLUMN CONVENTION (settled 2026-09-07 under question L8, whose recommended
+default was "sweep them once, then record the convention"):** a row written before its PR number
+exists may say `PR pending`, but that is a PLACEHOLDER, not a value — **sweep it to the real number
+in the next session that touches the ledger.** Twelve rows (2026-07-18 … 2026-09-06) had carried it
+for up to seven weeks; they now read `PR #706 #707 #708 #709 #711 #712 #716 #718 #724 #726 #955
+#1011`. **HOW TO RESOLVE ONE, and the trap that makes it worth writing down:** binary-search `main`'s
+FIRST-PARENT history for the earliest commit whose `shipped.csv` contains the row, then read the PR
+number out of that merge's subject — and CHECK THE CLONE IS NOT SHALLOW FIRST (`git rev-parse
+--is-shallow-repository`). This session's first attempt ran against a 56-commit shallow clone whose
+OLDEST commit already contained all ten July rows, so the search returned that boundary and answered
+`#944` for every one of them — ten identical, wrong, authoritative-looking PR numbers, about to be
+written into the project's permanent shipped record. `git fetch --unshallow` then gave twelve
+DISTINCT numbers, each independently corroborated by its merge's BRANCH NAME matching the row's
+subject (`#706 claude/lemma-default-on-brief` ↔ the lemmatization row; `#726
+claude/pagesize-evidence-db10` ↔ the DB-10 §1b row). A `git log -S` pickaxe is NOT a substitute — on
+this history it reports the merge commit rather than the authoring one, and answered `#944` too.
 
 ## Non-negotiables (project §0.5 + maintainer rulings)
 - Local-first, loopback-only; the ONLY external service call is the gated,
@@ -425,13 +441,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   rebase onto the FRESH default tip before merging.)
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 - Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close, every session.
+- **PER-RELEASE: RE-CONFIRM THE NO-TELEMETRY CLAIM (recorded 2026-09-07; it existed in no memory
+  file, only in a PR body).** `docs/legal/POLITIQUE_DE_CONFIDENTIALITE.md` and its 11 translations,
+  plus `docs/USER_MANUAL.md`, state to the user that the app sends no telemetry. That is a
+  LEGALLY-BINDING claim about the software's behaviour, made in a first-launch-gated document the
+  user must accept — and nothing in the release process re-confirms it, so it is a claim the code
+  could silently outgrow. Before a tag: run the socket-importer RATCHET (the
+  `test_network_consent.py` guard that no new module may import `requests`/`httpx`) and re-read the
+  outbound call sites, then say in the release notes that it was checked. This is a CHECK, not a
+  new mechanism: the structural guards exist and the boot-makes-zero-network-calls non-negotiable
+  is tested; what was missing is anyone being told to look at the claim itself each cycle. The
+  legal `[À VÉRIFIER]` markers are NOT in the same position — they are recorded in
+  `docs/legal/IMPLEMENTATION_NOTES.md` §3 and test-guarded by `tests/test_legal_documents.py`
+  (which asserts no document in any of the 12 languages still carries an unresolved bracket); the
+  professional-verification gap those notes describe is a permanent, stated choice, never a to-do.
 - Lessons that cost a bug: duplicate top-level JS function names silently
   override — grep before declaring. Sizes lie, diffs don't (`git diff
   --numstat` before fearing loss). A ledger merge is NOT resolved until
   `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/shipped.csv`
   returns nothing — the 2026-07-18 b9dcbcc merge committed unresolved conflict
   markers INTO CLAUDE.md on main because only shipped.csv was verified (fixed
-  same day; both sides were kept additively, as the ledger rule requires). Agent findings get hand-re-verified before
+  same day; both sides were kept additively, as the ledger rule requires). **AND THAT GREP IS
+  BLIND TO `shipped.csv`, WHICH IS THE FILE IT NAMES (2026-09-07):** `.gitattributes` sets
+  `merge=union` on it, so it NEVER produces a conflict marker — union keeps both sides' lines
+  and reports success. That is correct for an append-only file and silently WRONG for any row
+  the other side EDITED: main's docs reality-check rewrote eleven historical rows, and the one
+  this branch also carried came out as TWO rows — the stale `PR pending` text beside main's
+  corrected `PR #1011`. A marker grep cannot see it and neither can a clean `git merge`. The
+  check that works is a DUPLICATE-KEY scan over `(date, area, item)`, compared against the
+  COMMON ANCESTOR rather than against zero — nine duplicates already existed there, so a bare
+  "are there duplicates" test would have accused this merge of nine things it did not do. The
+  tell in the diff is a numstat with DELETIONS on a merge you expect to be purely additive.
+  Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
   SUBPROCESS-spawning determinism test import the OLD code from the mutated
@@ -5657,6 +5698,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a bound exists, install both versions and write down what you MEASURED — here 1.0.0 → 16
     failed / 23 passed in this repo's own suite against 0.4.0 → 39 passed, which is checkable,
     where a changelog paraphrase arrives at the same confidence and is where the error will be.
+    **THE BOUND HAS A TEST NOW (2026-09-07, PR #1016) — and writing it produced a finding the
+    obvious version of the guard would have missed: THE NEGATIVE-SPACE TWIN IS LOAD-BEARING ON A
+    VERSION CEILING, because over-narrowing SATISFIES the ceiling assertion.** `pqcrypto==0.3.4`
+    and `<0.4` both exclude 1.0.0, so both make a lone "the ceiling refuses 1.0.0" guard GREEN
+    while dropping the release a real install resolves to — i.e. the cheapest way to fix the
+    guard would be to make the extra useless. Mutation-proven in both directions: widening to
+    `<2.0` (dependabot's exact change) reddens ONLY the ceiling test, over-narrowing to
+    `==0.3.4` reddens ONLY the twin **while the ceiling test still passes**, and deleting the
+    requirement trips an anti-vacuity helper — an absent requirement parses as an EMPTY
+    `SpecifierSet`, which admits everything, so a guard that tolerated it would pass hardest at
+    exactly the moment the ceiling stopped existing. Two riders. (a) Assert CONTAINMENT via
+    `packaging.SpecifierSet`, never the literal constraint string: a lower-bound bump is
+    legitimate and must not redden, and `packaging` ships wherever pytest runs (pytest requires
+    it), so it is safe on the Core-only lane. (b) The failure MESSAGE is the whole deliverable —
+    it is what a reviewer of the widening PR reads — so it names the constraint that was set,
+    the version it now admits, and the inverted predicate, not just "bound changed".
+    **(c) A GUARD WHOSE SUBJECT IS THE ENVIRONMENT IS UNREACHABLE UNLESS THE LANE THAT BUILDS
+    THAT ENVIRONMENT COLLECTS IT — found in my own test, before it shipped.** The third guard
+    compares the DECLARED ceiling against what pip actually RESOLVED, and it could not run
+    anywhere: every bare `pytest -q` lane collects the file with no `[pqc]` installed, so it can
+    only reach its own skip, while `crypto` — the ONE lane that installs the extra — runs two
+    explicitly-named files and never collected it. Green in every lane, executed in none,
+    reading as coverage. Naming the file in that lane fixes it, and the fix is MEASURABLE: with
+    the extra installed the file goes 2-passed/1-skipped → 3-passed, and with pqcrypto 1.0.0
+    installed against the declared `<1.0` it fails ALONE (1 failed / 2 passed) — which is also
+    what proves it is not redundant with the twin, since the twin can only ever check a
+    `_SHIPPED` constant a human wrote down while this one checks what upstream actually
+    published. GENERAL FORM: when a test's meaning depends on an OPTIONAL extra, find the lane
+    that installs that extra and confirm it COLLECTS the file; a lane that names files
+    explicitly is where an environment-gated guard goes to die. Same class as the node-suite
+    driver ratchet, which exists because an unrun suite already cost a shipped defect — there
+    the file had no runner, here it had a runner in the one environment where it means nothing.
   - **A RESERVE SIZED FOR A MECHANISM THAT IS SWITCHED OFF IS NOT CONSERVATISM — it is a
     permanently unclaimed resource, and a "conservative" default stops being conservative
     once it decides EVERY machine (2026-09-05, the field context window; maintainer-ruled
@@ -6077,7 +6150,64 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     against 30 pairs resolved — the gap IS the blind spot). And when you extend such a
     detector, put the newly-seen form into its own anti-vacuity assertion, or it can go blind
     again while the guard it feeds keeps passing.
+  - **A SESSION CLONE IS SHALLOW UNTIL PROVEN OTHERWISE, AND A BOUNDED HISTORY ANSWERS EVERY
+    ARCHAEOLOGY QUESTION WITH ITS OWN BOUNDARY (2026-09-07, resolving twelve `PR pending`
+    rows in `shipped.csv`):** the honest way to find which PR landed a ledger row is to
+    binary-search `main`'s FIRST-PARENT history for the earliest commit whose `shipped.csv`
+    contains it, then read the PR number out of that merge's subject. Run against this
+    session's clone that method returned **`#944` for ten different rows spanning seven
+    weeks** — because the clone was 56 commits deep and its oldest commit already contained
+    all ten, so the search was reporting the truncation point, once per row, with no error
+    and nothing to distinguish it from a real answer. Ten identical, wrong,
+    authoritative-looking numbers, one commit away from the project's permanent shipped
+    record. `git fetch --unshallow` (56 → 1,789 commits) then produced twelve DISTINCT
+    numbers. THREE RULES. (a) `git rev-parse --is-shallow-repository` costs nothing and is
+    the precondition for any claim about when something first appeared — check it BEFORE the
+    search, not after a suspicious result. (b) **The cheap self-test is to ask whether the
+    OLDEST reachable commit already satisfies the predicate**: if it does, the answer is a
+    boundary artifact whatever the search returns, and that check generalises to every
+    bisect-shaped question over a history you did not clone yourself. (c) CORROBORATE from a
+    second, independent field — each resolved merge's BRANCH NAME had to match its row's
+    subject (`#706 claude/lemma-default-on-brief` ↔ the lemmatization row; `#726
+    claude/pagesize-evidence-db10` ↔ the DB-10 §1b row), which is what turned twelve
+    plausible numbers into twelve checkable ones. AND THE OBVIOUS SHORTCUT IS NOT ONE: a
+    `git log -S` pickaxe over the same needle reports the MERGE commit rather than the
+    authoring one on this history, so it agreed with the wrong answer — an agreement between
+    two methods that share a defect is not corroboration.
 
+  - **A REPORT WHOSE EVERY BLOCK DEGRADES HONESTLY HAS THE SAME SHAPE WHEN IT WAS HANDED
+    NOTHING — so a shape assertion cannot tell a working member from a broken one
+    (2026-09-07, the soak-window bundle member):** the recorded K2 lesson names a degrade
+    wrapper becoming the hiding place for the bug it survives, and the FastAPI-sentinel
+    lesson names `Query(False)` being truthy when a route is called directly. This is
+    where the two meet: a composed report in which each block reports `{measured: false,
+    reason}` on failure produces a payload with all the right KEYS whether it got a real
+    Session or a `Depends` object, so `assert "window" in payload` passes on exactly the
+    defect it was written for. Measured, not reasoned: the mutation that replaced
+    `soak_window_report(db=db)` with `soak_window_report()` left the guard GREEN. The
+    assertion has to be on a VALUE only the real path can produce — here a `wal_bytes` row
+    the test itself inserted, read back out through the member. GENERAL FORM: the better
+    your degrade discipline, the weaker a shape assertion is, and the two are related by
+    construction rather than by accident.
+  - **FILTERING A BUCKETED SERIES TO A SUB-BUCKET WINDOW IS A CHOICE OF WHICH WAY TO BE
+    WRONG — pick the direction the hazard makes safe, and disclose it (2026-09-07, same
+    slice):** `wal_bytes` is stamped with its HOUR BUCKET, so a snapshot genuinely taken at
+    10:45 by a process that started at 10:30 carries the timestamp 10:00. A strict `t >=
+    started_at` drops a reading that really is in the window and UNDER-reports the maximum;
+    widening the boundary to the containing hour can include up to 59 minutes of a previous
+    session. Neither is free. For a GROWTH hazard the under-report is the dangerous half —
+    a hidden WAL spike is the thing the series exists to show — so widen, and publish the
+    boundary plus the first point's timestamp so a reader can see exactly which reading is
+    the borderline one. The general question to ask is not "which is correct" but "which
+    error does this metric's failure mode punish".
+  - **NOT EVERY CUMULATIVE SECOND MAY BE DIVIDED BY A WINDOW (2026-09-07, same slice):** the
+    write gate publishes `total_held_s` and `total_wait_s` side by side and only ONE of them
+    is a share of wall time. The gate is exclusive, so at most one holder exists at a time
+    and held time is bounded by elapsed time; waiting is summed ACROSS waiters, so on a
+    contended gate it exceeds the window and a "share" computed from it would exceed 1.
+    Before dividing an accumulated duration by a window, ask whether the thing being
+    accumulated can happen in parallel with itself — and pin it, because the symmetry of the
+    two field names is exactly what invites the second division.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-ENGINE QUALITY — PROMPT 05 EXECUTION (2026-09-07; branch
   `claude/oos-backfill-cursor`, one draft PR onto `main`; three code slices shipped, the rest
@@ -6475,7 +6605,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **THE INSTANCE IS CLOSED, AND IT RE-OPENED ONCE** — `2617037c` + `e112e04f` upper-bounded it
   to `pqcrypto>=0.3.4,<1.0` with the reason in a comment; **dependabot #996 widened it straight
   back to `<2.0` on 2026-09-03 and it merged** (a bot does not read comments), and it was
-  re-narrowed the same day. That round MEASURED a second breakage the first pass missed: 1.0.0's
+  re-narrowed the same day. **AND ON 2026-09-07 DEPENDABOT #1012 PROPOSED THE IDENTICAL WIDENING
+  A THIRD TIME AND IT MERGED (06:56:37) — measured: `<2.0` resolves to 1.0.0 — so it was
+  re-narrowed again and the instance is now defended by a MECHANISM rather than by prose (#1016):
+  `tests/test_dependency_ceilings.py` reddens on the PR that widens the ceiling, naming the
+  inverted predicate, instead of the repository going red later on somebody else's unrelated
+  change.** The 1.0.0 API was re-measured that day against both real wheels installed side by
+  side and every claim in the pyproject comment held, the corrected key-format one included
+  (`keygen()` returns plain `bytes`; `PUBLIC_KEY_SIZE` is 1952 in both). The guard covers the
+  DECLARATION and the INSTALLED version; it does NOT close the CLASS below, and it does not
+  settle the registry question below either. That round MEASURED a second breakage the first
+  pass missed: 1.0.0's
   `verify` returns `None` for a VALID signature and raises `InvalidSignatureError` for an invalid
   one, where 0.4.0 returns True/False — so `signing.py`'s `bool(_mldsa.verify(...))` reports every
   genuine ML-DSA signature as a verification FAILURE on an install whose keys already exist, a
@@ -6932,7 +7072,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   at member 26 of 54, leaving a `.part`). Both halves are closed by the F1–F4 fix — but note
   the ORDER of blame: the import would not have completed regardless (entry above), so a
   future session must not read "the OOM is fixed" as "the import is fixed".
-- **`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06 — found in a field
+- **~~`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06~~ — FIXED; re-verified
+  2026-09-07.** `src/briefing/card_audit.py:_sanitise_non_finite` replaces `inf`/`-inf`/`NaN`
+  with `None` AND lists each offender's dotted path under `non_finite` (capped by
+  `_NON_FINITE_NAME_LIMIT = 50`), which is the fix shape this entry specified — including the
+  load-bearing half, so the next bundle identifies the producer rather than silently surviving.
+  The finding below is kept as the record of how it was found. ORIGINAL ENTRY: found in a field
   bundle, NOT fixed (a different subsystem from the vLLM chain that surfaced it, and the
   root cause needs a real corpus to locate):** the member computes for **112 seconds**
   and is then thrown away whole by the JSON encoder — `Out of range float values are not
@@ -8600,8 +8745,8 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (`created_at` order + min_words/min_sources + tag/content_type facets + script-aware length rule + near-dup
   collapse) → S2 Home panel → S3 per-type defaults/followed-scope/dim-toggle. FOLD into the content-provenance
   + keyword-engine P4 facet track. (Only anchor before S0: ~190 content-words/article avg.)
-- **FIELD DIAGNOSTICS 2026-06-27 — measured findings (full record in `docs/FUTURE_DEVELOPMENTS.md` →
-  "Field diagnostics 2026-06-27"):** from the maintainer's exports on a live 2,259-article / 99,662-kw /
+- **FIELD DIAGNOSTICS 2026-06-27 — measured findings (full record archived 2026-09-07 to
+  `docs/archive/future-developments/FIELD_DIAGNOSTICS_2026-06-27.md`, verbatim):** from the maintainer's exports on a live 2,259-article / 99,662-kw /
   179,395-mention corpus (2-core 4.4GB Qubes, encrypted, columnar in-memory). ENGINE HEALTHY (selftest
   42/42, noise 0.5%, Heaps β=0.756). ACTIONABLE: **F1 (BUG, shippable, prioritise)** — 6/25 Home cards
   LOSE their corpus on click; the producers `lonely_signal`/`ownership_change`/`recipe_promise`/
@@ -9890,6 +10035,14 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   REMAINING: inline-handler retirement (295 inline on*= as of 2026-06-15 —
   229 onclick + 35 onchange + 15 onkeydown + 14 oninput + 2 onmouse*; the earlier
   onclick-only audit figure is stale — needs a browser-verified sweep); a11y batch.
+  **COUNT RE-MEASURED 2026-09-07 — the 295 is badly stale and the debt is ~2×:** the 295 counted
+  `index.html` ALONE and predates the `app.js` decomposition, so it has been an undercount twice
+  over. Measured now over quoted inline handler attributes against a fixed DOM event-name list:
+  **331 in `index.html` + 280 across the seventeen `app-*.js` modules = 611**, plus 7 in
+  `taskmanager.html`/`unlock.html`, against **131** `addEventListener` call sites. (The 2026-07-28
+  GUI audit's 556 was the same measurement at that date, before the module split settled; both
+  are floors — an interpolated handler name would evade either regex.) The retirement itself
+  stays browser-verify-gated; only the FIGURE is corrected here.
 - **De-US-centring — REMAINING (first batch shipped 2026-06-11: ISO-2
   canonical storage via src/catalog/countries.py, migration a3b4c5d6e7f8
   fixed the fabricated US default + the `[:2]` country-truncation corruption;
@@ -11869,7 +12022,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   stacked draft PRs onto 0.2, staleness-verified against origin/0.2 @13223498):** the first execution
   cycle of the 2026-07-12 optimization program (the Fable-5 planning designs-of-record above), run
   under full autonomy / draft-PR-only (nothing auto-merges — the PR review is the gate). Delivered:
-  (i) **PR #643 the per-phase ACTION PLAN** (`docs/design/OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md`
+  (i) **PR #643 the per-phase ACTION PLAN** (`docs/archive/session-briefs/OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md`
   — every phase §1–§8 tagged BUILDABLE-NOW / OPERATOR-GATED / BROWSER-GATED / DESIGN-ONLY /
   VERIFIED-PRESENT + a shared-foundations REUSE MAP [minhash_signature(set[int]) for §2/§3 · the
   head-by-article-spread SELECT for §6/§8 · `_forensic_timer`/`_append_jsonl` for §4/§8 ·
@@ -12830,7 +12983,14 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (maintainer asked 2026-07-20; INVESTIGATED same session, code-verified; builds PENDING —
   assessment-first, nothing built this turn):** three asks, each checked against the tree
   (staleness guard) before answering.
-  (1) **NEWSLETTER LINKS → NEW SOURCES: NOT the case today — a real, well-bounded gap.** The
+  (1) **~~NEWSLETTER LINKS → NEW SOURCES: NOT the case today~~ — BUILT; re-verified 2026-09-07.**
+  `src/ingest/email.py:_email_link_rows` now turns the SANITIZED external links into
+  `ArticleLink` rows (`_link_rows(article_id, _email_link_rows(links))`), with the
+  fully-recovered-destinations-only rule this entry made a condition carried in the module's own
+  comment — a tracker-wrapped link whose destination could not be recovered is filtered out
+  before it can seed a source. Both funnels read `article_links` generically, so they picked
+  newsletters up with no further change, exactly as the BUILD SHAPE predicted. The original
+  finding is kept below as the record. ORIGINAL ENTRY: The
   .eml/mailbox ingest de-tracks links in the BODY (`privacy/link_sanitizer.sanitize_text`) but
   writes NO `ArticleLink` rows — only the web ingest paths do (`src/ingest/pipeline.py:317`,
   `src/ingest/batch.py:398`) — and BOTH source funnels read exclusively `article_links`: the
@@ -13165,10 +13325,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   no grandfathering per the same-day seed ruling; catalog failures = catalog-review work
   items) before the switch; this row
   EXPLICITLY doubles as the backup/restore-AT-SCALE validation — RESTATED 2026-07-30 with
-  row 3's withdrawn 5M bar: at ~1M articles this is a restore at roughly 2× the P0-validated
-  2.5 GB scale, NOT the ~10× the 5M framing claimed. State the REAL multiple in the gate
-  evidence; carrying the old 10× wording over a 1M run would be a fabricated pass on a bar
-  that was never tested. (5) **an
+  row 3's withdrawn 5M bar: at ~1M articles this is a restore well short of the ~10× the 5M
+  framing claimed. State the REAL multiple in the gate evidence; carrying the old 10× wording
+  over a 1M run would be a fabricated pass on a bar that was never tested. **⚠ CORRECTED
+  2026-09-07: this line read "roughly 2× the P0-validated 2.5 GB scale", and that estimate was
+  superseded TWICE inside this same ledger entry before anyone noticed** — by 6.2× for the
+  2026-08-03 run (794,333 articles / 16.5 GB) and by **8.3×** for the 2026-08-12 one
+  (1,048,725 articles / 21.0 GB), which is the figure the gate doc carries. The estimate was
+  written before either run existed; the general point is that a sentence instructing a reader
+  to "state the REAL multiple" must not itself carry a guessed one, because the guess is what
+  gets quoted. (5) **an
   ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
   execution) → implemented → EXECUTED** on the real ~1M corpus (per row 3's withdrawn 5M
   bar), removing the undesired-article
@@ -13269,19 +13435,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   9 honesty rules standing as instruments; still open there: the 12-locale sweep (4
   covered), rule 9 (adversarial screenshot reading), and the Gecko/AppVM bar — every stamp
   stays "Chromium-verified (remote sandbox) · awaiting human UX pass".
-  ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
-  `criteria-calibration.json` is already an all-diagnostics bundle member
-  (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
-  execution is gated on — sequence = bundle → session proposes criteria against real specimens
-  → maintainer agrees → operator runs the quarantine pass with `write=True` → re-index clears
-  the junk keywords.
+  ~~ROW 5's remaining step is a DECISION~~ — **it was TAKEN 2026-08-23 (maintainer: "proceed
+  with tier A"), so the remaining step is the RUN.** The sequence (bundle → session proposes
+  criteria against real specimens → maintainer agrees → operator runs the quarantine pass with
+  `write=True` → re-index clears the junk keywords) is complete through the agreement;
+  `criteria-calibration.json` rides the all-diagnostics bundle (`src/api/diagnostics.py`, the
+  `criteria-calibration.json` member) and delivered the specimens the proposal was built on.
+  **The invocation is NOT the default one** — `?write=true&include_prose_gate=false`, because
+  the write path applies three independent criteria and only the URL-shape one is Tier A; the
+  four commands are `RELEASE_0.3_GATE.md` §7.1.
   **P0 VALIDATION RUN ON THE BIG CORPUS — MAINTAINER, 2026-08-03 (report
   `oo-p0-validation-20260803000812.json`, app 0.3.0, engine `oo-volumes-2`): 5 pass · 0 fail ·
   0 not-measurable.** REAL SCALE, stated as measured rather than as the bar's own wording:
   **16.5 GB / 794,333 articles**, i.e. **6.2× the 2,522 MB corpus v0.2.0 was validated at** —
   NOT the "100 GB" three acceptance-bar strings still say, and in the ~1M band the 2026-07-30
   ruling withdrew row 3 to. (Row 4's earlier "roughly 2×" estimate was low; the real multiple
-  is 6.2×. Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.)
+  is 6.2×. ~~Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.~~
+  **ALREADY DONE 2026-08-03, and this sentence was the stale half — found independently by
+  the repo-analysis pass and by the 2026-09-07 docs reality-check, which is itself the tell
+  that a stale to-do outlives the fix it asks for.** `_acceptance_bars()` no longer names a
+  size at all: each bar is now the PROPERTY being tested (RAM does not scale with the corpus)
+  and the run's own `measurements` carry the size it was at, with the reasoning recorded in
+  the docstring verbatim — *"These said 'the maintainer's real 100 GB corpus' until
+  2026-08-03. No run has ever been at 100 GB."* — because a bar naming a scale no run reaches
+  makes every verdict read as though it cleared that scale. `kpi.py`'s K1 still names
+  "100 GB+" and that is CORRECT, not a leftover: it is a KPI TARGET, not a bar a report
+  claims to have met, and it reports `not-measurable` without one.)
   • **P0.1 backup — a genuinely strong pass.** Peak RSS grew **53.9 MB over a 15,699 MiB
     corpus (0.34 %)**, against v0.2.0's +440 MB over 2,522 MiB (17.45 %): RAM did not merely
     stay under a bar, it stopped tracking corpus size. 47 volumes / 18.2 GB in 1,040 s, parity
@@ -13493,9 +13672,14 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   DB-IP geolocation (CC BY 4.0), the `server_locations` aggregation
   (`queries.py`/`insights.py`) and the ooMap "Server IPs" point layer (browser-unverified).
   The per-article observation model ALREADY yields multiple IPs per source over time
-  (CDN/rotation) — no schema change needed, the asks are SURFACES: (1) the article/reader
-  view does NOT show the captured IP (verified: `server_ip` absent from `src/api/main.py`) —
-  add it to the reader's app-deduced metadata class with the standing caveats
+  (CDN/rotation) — no schema change needed, the asks are SURFACES: ~~(1) the article/reader
+  view does NOT show the captured IP~~ — **BUILT; re-verified 2026-09-07:** `src/api/main.py`
+  renders `a.server_ip` in the reader with `server_ip_reason` beside it and an honest
+  "unavailable — <reason>" line when it is absent. ~~(2) a per-SOURCE aggregated IP view~~ —
+  **BUILT:** `src/analytics/queries.py` groups distinct `server_ip`/`server_ip_reason` per
+  `source_id` with first/last seen, over the existing article columns, no new capture. **(3) the
+  per-country observed-IP choropleth dimension REMAINS OPEN.** ORIGINAL ENTRY: (1) add the IP to
+  the reader's app-deduced metadata class with the standing caveats
   (`server_ip_reason`; "may be a relay/CDN edge, never proof of origin"; Tor-fetched →
   honestly unavailable since the socket is the proxy); (2) a per-SOURCE aggregated IP view
   (distinct observed IPs + first/last seen + geolocated country each) in the source-
@@ -14046,9 +14230,14 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   only, never claimed live-verified; the maintainer's GPU-equipped VM is the real validation gate.
   (b) every frontend slice (the AI pill, the B5/B6 toggle buttons, the language-gate preview) is
   node-checked + invariant-guarded but BROWSER-UNVERIFIED — a click-through is owed (fork-3/Q6a).
-  (c) qualification-assist has NO dedicated frontend trigger yet (reachable via the API/diagnostics
+  (c) ~~qualification-assist has NO dedicated frontend trigger yet~~ — BUILT; re-verified
+  2026-09-07: `src/static/app-sources.js` posts to `/api/diagnostics/qualification-assist/run`
+  from the per-source control, which is the follow-up this line named. ORIGINAL ENTRY:
+  reachable via the API/diagnostics
   bundle only) — its natural home is a per-source button inside the source-management UI, a
-  follow-up. (d) the Ollama `num_ctx` RAM-auto-tune gap (above) is a small, well-scoped follow-up
+  follow-up. (d) ~~the Ollama `num_ctx` RAM-auto-tune gap (above)~~ — BUILT; re-verified
+  2026-09-07: `src/ai_layer/context.py:recommend_num_ctx` carries it under the heading "The
+  Ollama num_ctx auto-tune (the documented B7 gap)". ORIGINAL ENTRY: a small, well-scoped follow-up
   mirroring `compute_server_args`. Full test suite green (py3.13 venv), ruff F/B clean, mypy
   ratchet unchanged (127≤127), bandit clean, i18n 100% (2130/2130 ×12, no new frontend keys — the
   new panels follow the established un-keyed-diagnostics-panel convention).

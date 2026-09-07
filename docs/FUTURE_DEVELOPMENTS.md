@@ -1,6 +1,28 @@
 # Future developments
 
+> **What this file is for, and the discipline it keeps slipping on.** This is DESIGN INTENT — the *why*
+> behind a feature, the rulings that constrain it, the questions still open. It is not a status board
+> (`docs/ROADMAP.md`) and not the ledger (`CLAUDE.md`, which wins on every conflict). Its own rule is
+> that shipped material is condensed to a pointer rather than carried as a stale status note.
+>
+> **Reality-check pass, 2026-09-07.** That rule had slipped badly: sections dated ≥2026-06-15 were still
+> claiming "designed-only" for things that had been in `src/` for months. Every section below was
+> re-checked against the tree and the ones that had drifted now carry a dated **Status re-check** line
+> naming what shipped and where. Four embedded historical LEDGERS were moved verbatim to
+> [`docs/archive/future-developments/`](archive/future-developments/) (nothing dropped — checked
+> line-by-line), leaving their headings behind as pointers.
+>
+> **Three pairs of sections cover overlapping ground and were deliberately NOT merged** (question A4,
+> option (b); (c) was refused): Wikipedia — the [2026-07-10 section](#versioned-sources-as-first-class-articles--wikipedia--laws-2026-07-10-maintainer-directed-mark-for-the-future-version--not-now)
+> and the [2026-06-12 section](#wikipedia-as-a-first-class-living-source--the-law-model-maintainer-concept-2026-06-12-supersedes-the-earlier-stub);
+> official statistics — the 2026-06-12 and 2026-06-25 sections; legacy single-file backup — the
+> RESTORE and IMPORT removals. Each carries a cross-reference. **Merging them would risk exactly what
+> protocol rule 5 forbids: the 2026-06-12 Wikipedia section carries the SUPERSEDING auto-track ruling,
+> which must survive verbatim.** A duplicate pair is cheaper than a lost ruling.
+
 ## Versioned sources as first-class Articles — Wikipedia + laws (2026-07-10, maintainer-directed; MARK FOR THE FUTURE VERSION — not now)
+
+> **Cross-reference (2026-09-07):** this is the NEWER of the two Wikipedia sections. Its 2026-06-12 predecessor, *"Wikipedia as a first-class LIVING source — the law model"*, is further down this file and is **not** superseded wholesale — it carries the superseding auto-track ruling (track a whole edition after a dump download, retiring per-article tracking) that this section builds on. Read both; merge neither.
 
 **The directive (maintainer, verbatim intent).** Significantly revamp Wikipedia article
 handling. Today it "seems that we're downloading entire language-based corpora" (dumps) and the
@@ -58,7 +80,7 @@ statistics vintages, tracked gazettes, case-law) can reuse it later.
    watched pages already do).
 3. **This is SCALE-CRITICAL and collides with the 0.2 mandate.** Ingesting all UI editions is tens of
    millions of articles — this is squarely the 5 TB / snappiness / storage-hygiene problem
-   (`SCALE_ROADMAP.md`). Tiered depth (which editions, article namespace only, size honesty per
+   ([`docs/product/SCALE_ROADMAP.md`](product/SCALE_ROADMAP.md)). Tiered depth (which editions, article namespace only, size honesty per
    edition), the keyword-junk/segmentation rulings (zh/ja/th), and the persisted-columnar/rollup work
    are all prerequisites. Do NOT start this before the P0 scale set lands.
 4. **Version layer honesty.** The audit trail is stored + shown with provenance (revid, timestamp,
@@ -113,6 +135,8 @@ would leave the misleading framing while breaking the machinery that currently w
 
 ## Remove the legacy single-file backup RESTORE (2026-07-01, maintainer-flagged)
 
+> **Cross-reference (2026-09-07):** pairs with *"Legacy single-file import — scheduled for REMOVAL"* (2026-07-29) further down — the RESTORE half and the IMPORT half of one retirement. Verified 2026-09-07: single-file CREATE is already retired; `POST /legacy/restore` and the 2 GiB upload cap survive by design until the format is fully gone.
+
 The size-capped single-file backup **create** was retired 2026-07-01 (the `POST
 /api/backup/v2` endpoint + the `v2Backup` UI are gone; backups are made by the unified
 volume/folder export). The **restore** of an existing single-file backup was KEPT as the
@@ -150,232 +174,26 @@ future release**, once the single-file format is fully retired. When doing so:
 
 ---
 
-## FIELD-TEST REMARKS 2026-06-24 (maintainer; PARKED — the diagnostics fix comes first)
+## FIELD-TEST REMARKS 2026-06-24 (maintainer; PARKED — the diagnostics fix comes first) — ARCHIVED
 
-> Captured VERBATIM from a live test of the ~60K-article corpus. These are FEATURE / UX
-> directions to address LATER. Maintainer instruction this session: *"capture all my
-> preliminary remarks into future developments, we'll address them later on, and focus on
-> the debugging now"* + *"we just want the diagnostics to be resolved for now."* So nothing
-> here is built yet; the log-DIAGNOSED bugs are the active work (CLAUDE.md shipped-log /
-> queue 2026-06-24). Two of the remarks (7, 8) are ALSO diagnosed performance bugs and are
-> being fixed, not merely parked — noted inline.
+> Moved verbatim on 2026-09-07 to
+> [`docs/archive/future-developments/FIELD_TEST_REMARKS_2026-06-24.md`](archive/future-developments/FIELD_TEST_REMARKS_2026-06-24.md) — it was an
+> embedded historical ledger, not design intent. Nothing was dropped. Its still-open items are
+> tracked on the live boards (`CLAUDE.md` Open queue · `docs/ROADMAP.md`).
 
-**A. Local LLM / Ollama**
-1. *"Add an ollama installer into the settings / AI subtab, with hardware based scenarios
-   for user messages and model download choice. We want to prioritize Mistral open-models
-   (mistral-small:latest, mistral:7b)."*
-   — Builds on the existing read-only Settings → Models subtab (pull/remove shipped; the
-   binary-installer half is the open Q7=B work). Add hardware-tiered scenario messaging + a
-   guided model-download choice; lead the catalog with `mistral-small:latest` + `mistral:7b`.
+## CONSOLIDATED TO-DO (rechecked & complete, captured 2026-06-24) — ARCHIVED
 
-**B. ONE unified import / export / backup section**
-2. *"Merge all import types and all export / backup types to have just a single import /
-   export (or backup) section and user interface ; for each (import and export) there would
-   be a follow-up user interaction (like a pop-up ?) to gather necessary information such as
-   import / export options."*
-5. *"Can we fuse both types of newsletter import in the same coherent way we will do for
-   import/export backups ? one UI with pop-up with options ending up with a file/folder
-   selection ?"*
-6. *"All import / export should be a visually appealing experience, we should see a progress
-   bar very clearly. If it could be possible, show analytics such as live amount of data
-   imported/exported."*
-   — **Build on the NEW backup direction (read PR #449/#450, 2026-06-24):** the backup layer
-   is mid-migration to **OOENC2 streaming volumes** (`src/safety/crypto.py`
-   `encrypt_file`/`decrypt_file`; `src/backup/volumes.py` = <600 MB independently-authenticated
-   volumes + a signed manifest; Reed–Solomon parity = slice 2; wiring into create/restore =
-   slice 1b). The unified UI MUST sit on the OOENC2/volumes path (NOT the legacy OOENC1 2 GiB
-   path) and reuse the folder-backup + folder-import job progress for the "clear progress bar +
-   live data-volume readout" ask. Fuse the TWO newsletter import paths (the small-file upload
-   `POST /api/newsletters/import` + the server-side folder job) behind one pop-up → file/folder
-   selection.
+> Moved verbatim on 2026-09-07 to
+> [`docs/archive/future-developments/CONSOLIDATED_TODO_2026-06-24.md`](archive/future-developments/CONSOLIDATED_TODO_2026-06-24.md) — it was an
+> embedded historical ledger, not design intent. Nothing was dropped. Its still-open items are
+> tracked on the live boards (`CLAUDE.md` Open queue · `docs/ROADMAP.md`).
 
-**C. Performance / freezes at scale (ALSO diagnosed — being fixed, not just parked)**
-7. *"At 60K articles, the home tab seems to not launch \"Loading the briefing…\" indefinitely.
-   If there's a lot going on in the background, we should show it to the user, same as import
-   export, there should be a pleasing progress bar."*
-8. *"All insights are freezed, content analysis either takes too long or is broken. When
-   searching for a keyword, the analysis screen says \"Loading...\" indefinitely."*
-   — Root-caused 2026-06-24: the briefing recompute + the grouped keyword aggregation
-   (`top_terms(group=True)` measured **17 s for 50 rows** on the live 61,635-article /
-   932,031-keyword corpus) run SYNCHRONOUSLY on the request with no background offload / cache /
-   progress. Fix = background warm + cache + statement deadline + a real progress UI (the
-   shared "pleasing progress bar" deliverable). In the debug queue.
+## The 0.0.9 sequencing (maintainer-agreed 2026-06-11) — ARCHIVED
 
-**D. Search → new analysis window**
-9. *"Searching for a term then clicking enter does not open a new browser window / tab. It
-   should."*
-   — Ties to the analysis-window-per-query work (spawned, named, closeable tabs).
-
-**E. Library world map**
-10. *"The world coverage in the \"library\" tab should be a world map with per country amount
-    of articles. All \"no country\" articles should be shown with a circular graph with per
-    language quantity, language names should be written fully."*
-    — Reuse `ooMap` (choropleth) for per-country article counts; a per-language donut for the
-    uncountried bucket, FULL language names via `ooLangName`/CLDR.
-
-**F. Settings layout**
-11. *"i Settings, both Appearance and GUIs should be assembled together into one, unified
-    single subtab named Graphics"*
-12. *"In each of the Settings subtabs, there's a top box with \"Settings / Everything that
-    shapes how the app looks and behaves on this machine. Pick a section — your choices stay
-    local.\" Remove it everywhere, it will bring all content up and increase display space."*
-
-**G. AI prompt localization (added 2026-06-24)**
-13. *"The prompts in the AI setting tab don't translate while changing language. Two points
-    there: 1) they should, and 2) verify that the AI engine does use the translated prompts.
-    Synthesis, summaries and translation should be made in the UI language."*
-    — TWO asks: (a) the editable prompt textareas in Settings → AI (the summary / translate /
-    synthesis / keyword system prompts) must re-render in the active UI language on a language
-    switch; (b) VERIFY the engine actually applies the translated prompt AND emits output in
-    the UI language. Context: an `output_language` / `_NATIVE_DIRECTIVE` mechanism already
-    forces the OUTPUT language for summary/synthesis/bulk (shipped) — but a PRIOR decision
-    deliberately kept the English prompt BODY (translating multi-sentence prompts risked
-    degrading a weak local model's compliance). This remark re-opens that: localize the prompt
-    UI, and re-confirm end-to-end that synthesis/summaries/translation come out in the UI
-    language. Reconcile with the body-translation trade-off when built.
-
-**H. Chrome — status bar + left tab bar (added 2026-06-24)**
-14. *"The status bar is currently transparent. As a consequence, we can see content when
-    scrolling down. Taskbar should have the same background color as the left tab bar."*
-    — Give the top status bar / taskbar an opaque background matching the left sidebar's
-    background colour (theme-aware across all 17 themes) so scrolled content never shows
-    through it.
-15. *"Clicking on the empty space of the left tab bar should minimize / maximize it. Add a
-    maximize button for clarity when the bar is minimized, equivalent to the existing minimize
-    button that is shown when the bar is maximized."*
-    — Make the sidebar's empty area a click target that toggles collapse/expand, and ensure a
-    clearly-visible expand (maximize) affordance in the collapsed rail mirroring the existing
-    collapse button. Context: the rail already ships two CSS-toggled buttons (`#sb-collapse`
-    when expanded / `#sb-expand` when collapsed); this asks for the empty-space click-toggle +
-    making the expand affordance as clear as the collapse one.
-
-**I. Library tab = the central view of everything downloaded + extrapolated (added 2026-06-24)**
-16. *"The library tab should show statistics about everything downloaded and about secondary
-    metadata. It should show maps, wikipedia, amount of summaries / translations / synthesis, as
-    well as indices, laws, and so forth. This should be the central view for everything downloaded
-    and everything extrapolated."*
-    — Make Library the at-a-glance DASHBOARD for the whole local corpus + its derived layers:
-    counts + sizes for downloaded MAPS (OSM regions) and WIKIPEDIA dumps; the AI artifacts
-    (summaries / translations / synthesis counts from `article_analyses`); market INDICES +
-    commodities; LAW documents/revisions; official statistics; events/agenda; etc. — i.e.
-    EVERYTHING downloaded (the public/raw layer) AND everything EXTRAPOLATED (the derived /
-    secondary-metadata layer). Pairs with remark 10 (the per-country world map + per-language
-    donut for uncountried articles) as the same tab's content. Most counters already exist (the
-    database-stats endpoint + the per-domain download managers); this is a presentation /
-    aggregation surface — honest counts only, never a score.
-
-## CONSOLIDATED TO-DO (rechecked & complete, captured 2026-06-24)
-
-> The maintainer's own rechecked checklist (reconciled with the parallel testing session).
-> Overlaps the detailed **CLAUDE.md Open queue** (the authoritative ledger) — kept here as a
-> single glanceable list. Status: `[x]` done · `[~]` in progress · `[ ]` not started.
-> **Verify against current `0.09` before starting** — the parallel BACKUP workstream (OOENC2
-> streaming volumes + large-data folder backup, #450/#454/#456) and the 2026-06-24 diagnostics
-> fixes have advanced the tree.
-
-### Your field-test remarks, 24 Jun
-- [~] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b) — PARTIAL (2026-06-24): the model CATALOG now leads with Mistral (mistral:7b + mistral-small:latest). DEFERRED: the binary installer (blocked on per-OS checksums, networked machine) + the hardware-tier scenario messaging.
-- [~] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in — DESIGN DONE (`docs/design/UNIFIED_IMPORT_EXPORT.md`): one Import + one Export dialog reusing the shipped backends (OOENC2 volumes + folder backup + the two newsletter paths). Build deferred to a click-through session (large frontend, browser-unverifiable).
-- [x] 7. Home "Loading the briefing…" hang + progress bar — DONE (#455: non-blocking background recompute + determinate progress bar)
-- [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread; the 2026-06-24 autonomous session added a STATEMENT-DEADLINE guard on associations/graph/framing → typed 503 within 60s instead of an infinite hang, surfaced by the existing subtab error-notes. LEFT: the cold FIRST-open speed — the keyword_daily rollup [5A-bis D2], gated on the persisted encrypted DuckDB store [D1])
-- [x] 9. Search: pressing Enter should open a new analysis window/tab — DONE (2026-06-24 autonomous session): the palette Enter now calls `openAnalysisInNewTab(raw)` → `window.open("/?analyze=…")`, hydrated by the existing `_hydrateCardCorpus` boot deep-link; in-SPA `openAnalysisFor` kept for results/cards. Browser-unverified (fork-3).
-- [x] 10. Library tab world map: per-country article counts + a per-language donut for "no country" articles (full language names) — DONE (2026-06-24): the Library "World coverage" now leads with an ooMap choropleth of per-country article counts + a new `ooDonut` of the unlocated-by-language bucket (full names via ooLangName). Backend `source_country_counts` gained the column-projected `by_language` breakdown. Browser-unverified (fork-3).
-- [x] 11. Settings: fuse Appearance + GUIs into one "Graphics" subtab — DONE (2026-06-24): one `data-tab="graphics"` subtab holds both the Appearance controls + the GUIs gallery (`#guis-gallery` kept). Browser-unverified (fork-3).
-- [x] 12. Settings: remove the top intro box on every subtab (reclaim space) — DONE (2026-06-24): the h2+intro panel removed, the subtab nav un-wrapped. Browser-unverified (fork-3).
-- [x] 13. AI prompts: translate the prompt textareas on language switch + verify output comes out in the UI language — DONE (2026-06-24): the labels auto-translate (static, keyed) + loadLlmPrompts re-renders on langchange; the prompt BODIES stay English by design; closed the 3 output-language gaps so single-article summarize (ui_lang) + translate (defaults to UI language) come out in the UI language like bulk/synthesis. Browser-unverified (fork-3).
-- [~] 14. Status bar: opaque background matching the left sidebar (content shows through when scrolling) — first fix 2026-06-24 (`.topbar` + `.subtab-strip` → `var(--bg2)`, backdrop-blur dropped) **REOPENED 2026-06-25 (field report: STILL transparent).** Root cause: the bg was on the CHILDREN only; the sticky `.chrome` WRAPPER (`app.css:127`) had no background, so when the facet strip is hidden (most tabs) or a seam exists, scrolled content shows through. Candidate fix applied 2026-06-25 (`background:var(--bg2)` on `.chrome` itself + guard in `test_settings_chrome_cleanups`); **browser-unverified — confirm on click-through.** If still see-through after this build: the deployed app may predate the fix, a theme's `--bg2` may be translucent, or a GUI skin restyles the bar.
-- [x] 15. Sidebar: click empty space to collapse/expand + a clear maximize button in the collapsed rail — DONE (2026-06-24): empty-space click → `toggleSidebar()` (ignoring nav items/controls); the #sb-collapse/#sb-expand affordances already existed. Browser-unverified (fork-3).
-- [x] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts) — DONE (2026-06-24): new `GET /api/library/overview` rolls up the downloaded layer (wiki dumps/OSM/markets/laws/stats/models, counts + on-disk bytes) + the AI-derived layer (article_analyses by kind + ai_keyword + watches); a top "Library" dashboard panel renders both. Reuses cached database_stats + the download managers; honest counts/sizes, no score. Browser-unverified (fork-3).
-
-### Bugs
-- [x] Folder newsletter import: `UNIQUE constraint failed: articles.hash` on large multi-folder .eml imports — **fix-merged (#453)**: the hardened `ingest_emails` dedup keys on the real unique column + recovers per-message, fixing BOTH the upload endpoint AND the folder-import job (both call it). The 17:55 debug bundle confirms only HISTORICAL occurrences (locked/unique errors this session = 0) — **verify on a fresh live re-import of the 5 GB tree**.
-- [~] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)* — DESIGN DONE (`docs/design/COLLECTOR_WRITER_BATCHING.md`: safe per-source batched store+index via `index_article(commit=False)` + the `ingest_emails` fallback; `synchronous=NORMAL` already in place). Implementation DEFERRED to a session that can run the full suite + measure on the live corpus (a blind refactor of the keystone-#1 writer hot path violates "entirely reliable or it should not exist").
-
-### Keyword engine cleanup (on your live corpus)
-- [ ] Run "Clean up keywords (re-index, then prune)" + measure the drop
-- [ ] Run baseline-tag backfill (tag coverage is 0%)
-- [ ] Generate translation rings from the exported keyword log (networked machine)
-- [x] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket — DONE (2026-06-24): `gd_combo_table` (underscore template id) already drops via the shipped §2.6 `_is_code_token` rule; `govdelivery` STAYS content per ruling #4. Added a self-test golden case pinning both. The bucket's undetected-English half is the shipped §2.6 langdetect.
-- [ ] Decide zh/ja segmentation (currently no keywords for those)
-
-### Manipulation-pattern cards (7 of 9 measures built; 6 standalone producers + outrage as secondary)
-- [x] astroturf / copypasta — DONE (2026-06-25): a SPAN-level card distinct from echo_chamber (verbatim phrase across many distinct sources in NON-duplicate articles; wire republish excluded). `src/signals/near_dup.py:shared_word_ngrams` + `src/analytics/copypasta.py` + producer + `GET /api/insights/copypasta`.
-- [x] outrage-intensity — DONE (2026-06-25): the 9th measure, built SECONDARY per the ruling (annotates another card, never a standalone Lead). `src/analytics/outrage.py:outrage_intensity` (loaded/intensifier density + `!` + ALL-CAPS runs; structure-not-intent; English-only with an honest gap, never a fabricated 0; no score) wired as an `outrage` component on the headline-body card. 6 sandbox tests.
-- [ ] #4 "bury" half (needs an external trigger) · event-timed-op (needs elections roster)
-
-### Release / housekeeping
-- [ ] Human click-through of all browser-unverified UI
-- [ ] Flip 0.0.9 → 0.1 when RC-blocking items are green
-- [ ] App self-update (manual git-pull: snapshot → verify → migrate → swap → rollback)
-- [~] i18n: key the remaining English-fallback panel strings ×12 — IN PROGRESS (2026-06-25): keyed 35 across three slices — the new Library/Governments/Graphics + backup labels, the 12 diagnostics download buttons + large-backup label + world-map drag hint, then 5 clean help paragraphs (volume-restore honesty line, diagnostics-archive + all-keywords + keyword-growth descriptions, technical tokens preserved). audit 140→105, gate 100%. Remaining ~105 are mostly data/examples/URLs that stay literal + the most security-/technically-dense paragraphs (custody IP/timing, AES-GCM/Reed-Solomon volume backup — left for native review) + the mid-`<a>`-link sentence fragments (de-tagging tail).
-
-### Bigger / deferred (design-only)
-- [ ] Elections & civic vertical (needs a sourced candidate roster)
-- [ ] Persisted encrypted columnar store (per-OS httpfs crypto-extension packaging decision)
-- [ ] LLM who/where/when + sentiment eval harness
-- [ ] Tor integration + per-source transport
-- [ ] Voice-only mode
-- [ ] Open Commons Mirror (separate sister project, when mature)
-- [ ] Content-provenance class — descriptive ingestion-channel/format metadata (newsletter · web-article · wiki · official-statistic · law · market · discovery), asserted-at-ingest, exposed as a facet + reading-diet-by-type (full design + backward-compat analysis in the section below)
-
-### AUTONOMOUS BRIEF 2026-06-24 — UNRESOLVED & PARTIAL (audited against the code 2026-06-25)
-
-> Authoritative status of the `docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` scope,
-> verified item-by-item against the actual tree by a 6-agent parallel audit (not from memory).
-> SHIPPED + merged into `0.09` this session: Tier 1.1 (statement-deadline guard), 2.3 (search
-> Enter→new tab), 2.4 (Library world map + donut), 2.5 (Library dashboard), 3.7–3.11 (intro-box
-> removal · Graphics fuse · opaque status bar · sidebar click-toggle · AI output-language),
-> 4.13a (copypasta card), 4.15 (gov-newsletter keyword filter), 5A-bis.D0 (scaling design doc),
-> 5B httpfs build recipe, and the 5C design docs (LLM-perception eval · Tor · voice · Mirror).
-> **Also merged this session — the whole §5B statistical-data → honest-viz arc** (see the
-> "Statistical-data ingestion + diversified honest visualization" section's BUILD STATUS block):
-> CSV/JSON-stat/bulk parsers, the `to_chart_series` adapter + `ooViz` honest-chart primitives + the
-> Settings → Statistics time-series chart, the `choroplethData` comparability gate + `symbolRadii` +
-> the `/api/stats/map` feed + the ooMap stats choropleth, the OWID + JSON-stat live fetch clients,
-> the **revision-anomaly detector** (+ store/endpoint/UI), and **4.13b outrage-intensity** (secondary).
-> Everything below is what remains.
-
-**NOT STARTED (design/spec exists, no code wired):**
-- [ ] **Tier 1.2 — collector write-batching** (`docs/design/COLLECTOR_WRITER_BATCHING.md`; `Status: DESIGN, not built`). `ingest/pipeline.py` still commits per-article; `store.index_article()` has no `commit=` param. REMAINS: `index_article(commit=False)` + batch in the ingest loop + per-article fallback on batch failure + a no-loss test + `OO_COLLECT_COMMIT_BATCH`. (Deferred: needs the full suite + a live-corpus measurement — a blind refactor of keystone-#1 is too risky.)
-- [ ] **Tier 2.6 — unified Import + unified Export/Backup** (`docs/design/UNIFIED_IMPORT_EXPORT.md`; design only). Import/export controls are still scattered (`importNewsletters`, `modelsBackupImport`, `v2Backup`, `v2Preview`…). REMAINS: one Import dialog (6a) + one Export/Backup dialog (6b) on the OOENC2 streaming path, an absorption test (no capability lost), retire the scattered controls. (Deferred: large browser-unverifiable frontend.)
-- [x] **Tier 4.13b — outrage-intensity annotation** — DONE (2026-06-25). `src/analytics/outrage.py:outrage_intensity` (loaded/intensifier density + `!` + ALL-CAPS runs; structure-not-intent; English-only with an honest gap, never a fabricated 0; no score) wired as a SECONDARY `outrage` component on the headline-body card (never a standalone Lead). 6 sandbox tests + the headline-body test extended.
-- [ ] **Tier 4.16 — app self-update mechanics** (snapshot→verify→migrate→swap→rollback, default OFF) — design-only; the maintainer's 5 open questions are unresolved. REMAINS: the whole mechanism. (Deferred: can't be end-to-end validated in-sandbox — brick risk.)
-- [ ] **5A-bis.D2 — `keyword_daily` rollup** — no `keyword_daily` in code (only `keyword_agg` counters in `columnar.py`); `readmodel.py` still delegates to live queries. REMAINS: the table, the SQLCipher→DuckDB stream+group build, the incremental MERGE, and the readmodel wiring. (Gated on D1.)
-- [ ] **5A-bis.D3 — incremental refresh + epoch full-rebuild gate** — no `last_mention_id`/`built_epoch`/`corpus_epoch`. REMAINS: the watermark + epoch tracking + the re-index/prune→force-full-rebuild gate (the double-count trap) + the append-only correctness proof. (Gated on D2.)
-- [x] **5A-bis.D4 — `source_coverage` rollup** — DONE. The table + watermark/epoch build + parity shipped earlier (`columnar.py:build_source_coverage`/`refresh_source_coverage`/`source_coverage_rows`/`source_coverage_parity`, `tests/test_source_coverage_rollup.py`), and the SERVE-wiring shipped Wave 4 J: `src/analytics/map_serve.py` serves `/api/insights/map-coverage` from an OPT-IN (`OO_COLUMNAR_MAP_SERVE=1`, default off), bind-aware, in-memory rollup with a `basis` disclosure and fallback-to-live (numbers byte-identical; the unlocated per-language donut is computed live via the shared `queries.unlocated_language_breakdown`). `tests/test_map_serve.py`.
-- [ ] **5A-bis.D5 — Roaring co-occurrence bitmaps** (pyroaring) — absent. REMAINS: the dependency (new optional extra), per-keyword bitmaps in DuckDB blobs, precomputed top-K neighbours, registry entry. (Optional, off the critical path.)
-- [ ] **5B — zh/ja keyword segmentation** — no segmenter; tokenizer is space-based. REMAINS: a decision on a bundled offline segmenter (jieba/pkuseg/MeCab — license-clean, no-network) + the seam + registry entry.
-- [ ] **event-timed-op manipulation card + elections & civic VERTICAL** — the generic events/calendar substrate (`src/events/`, `/api/events`, civic categories) IS shipped, but the *manipulation card* (#3+#6+agenda composition) and the civic vertical (candidate roster, poll-analysis tiers) are NOT built. REMAINS: the card/schema + the maintainer-supplied candidate roster (a data seam).
-
-**PARTIAL (some shipped, a named piece missing):**
-- [~] **Tier 4.14 — manipulation card #4 BURY half** — the FLOOD half (`concentration.find_flooded_topics`) is shipped; the BURY half (a source UNDER-covering a topic big elsewhere) is deferred in the module docstring. REMAINS: the under-coverage detector (needs a real external trigger so it isn't corpus-bias-driven).
-- [~] **5A-bis.D1 — persisted encrypted DuckDB store** — the offline-load SCAFFOLD exists (`columnar.py` `encryption_gate`/`secure_crypto_available`/`_offline_config`, graceful in-memory fallback) + the design doc + the `external_artifacts.yml` coupling entry. REMAINS: the per-OS/arch httpfs binaries (`duckdb_ext/`, SHA-256 pins currently blank) + the pin-verify-before-LOAD code path. (Blocked: needs a networked multi-arch build — maintainer's step; never fabricate a checksum.)
-- [~] **5B — Ollama binary installer** — the Mistral-led catalog + model-pull/queue UI are shipped; the binary download-verify-run installer is NOT. REMAINS: the Settings→AI installer UI + per-OS installer checksums. (Blocked: checksums need a networked machine.)
-- [~] **Tier 3.12 — i18n keying** — 35 strings keyed this session (`--audit-chrome` 140→105, gate 100%). REMAINS: ~105 strings — mostly data/URLs/proper-nouns that correctly stay literal, the security-/technically-dense paragraphs (custody IP/timing, AES-GCM/Reed-Solomon volume backup — native review), and the mid-`<a>`-link fragments whose tags are deliberately kept (e.g. the discovery "Your query leaves this machine." privacy emphasis) — de-tagging would undo intentional emphasis, so it needs browser verification.
-
-**Operational (not code — the maintainer runs these):** keyword cleanup / baseline-tag backfill on the live corpus · translation-ring generation (networked machine, Wikidata blocked in CI) · the per-OS httpfs + Ollama binary builds · the 0.0.9→0.1 flip · human click-through of every browser-unverified UI.
-
----
-
-
-## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)
-
-1. **Database reliability batch** — the mandate below, designed TOGETHER with
-   SQLCipher at-rest encryption (standing ruling: a fresh, dedicated session;
-   crypto and data-integrity deserve full attention, not a session tail).
-   Deliverables: gap analysis → design doc → implementation with a torture-test
-   suite (interrupted imports, duplicate floods, cross-version restores).
-2. **Newsletter scraper** — only after (1) is solid (see its section below).
-3. **Convergence flagship** (space-time layers 3+4) built on the
-   When×Where×Who ingest-time anchoring substrate.
-4. **Audit remediation queue** — `docs/audit/06_FULL_AUDIT_0_0_9.md` (ranked;
-   two items await a maintainer ruling: the "stays on this machine" wording and
-   caveats-visible-by-default vs calm UI). Rides along in normal sessions.
-5. Standing queue items (CLAUDE.md) continue as session work between batches:
-   agenda views/depth, corpora system, global search rework, download/task
-   manager, interactive charts + SI formatter, i18n long tail.
-
----
+> Moved verbatim on 2026-09-07 to
+> [`docs/archive/future-developments/SEQUENCING_0.0.9_2026-06-11.md`](archive/future-developments/SEQUENCING_0.0.9_2026-06-11.md) — it was an
+> embedded historical ledger, not design intent. Nothing was dropped. Its still-open items are
+> tracked on the live boards (`CLAUDE.md` Open queue · `docs/ROADMAP.md`).
 
 ## DATABASE RELIABILITY MANDATE — backup/restore as an OS-grade tool (maintainer-ruled 2026-06-11)
 
@@ -491,6 +309,8 @@ their reading life. The bar:
 
 ## When × Where × Who anchoring — persist the extractors at ingest (maintainer question 2026-06-11; CONFIRMED GO in field report #2 same day — at scrape for every article incl. wiki, + backfill; sequenced after the DB batch)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** Persisted at ingest through the one `index_article` hook — `article_mentioned_places` and `article_entities` are real tables in `src/database/models.py`, dates via `src/timemap/datestore.py`. Deduced stays labelled deduced. Read below for the design rationale, not for status.
+
 **Honest state today (code-verified):** every keyword mention is anchored to an
 article + a time (`observed_on`) + the SOURCE's place (country/city — coverage
 origin, corrected by the 0.09 migration). The When/Where/Who extractors
@@ -516,6 +336,8 @@ its method note and is displayed as deduced — never promoted to fact.
 ---
 
 ## Space–time layers 3+4 — convergence detection + the watch-rule engine (the 0.0.9 flagship)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** `src/analytics/convergence.py` (independence measured by DISTINCT SOURCES, the shared-origin flag, the non-causation caveat) and `src/analytics/watches.py` + the `watch_matches` producer, on by default per the 2026-06-17 ruling.
 
 > Layers 1–2 (the unified Signal lens over map + timeline) shipped in 0.07.
 > What remains is the payoff. Strengthened since the original design by the new
@@ -555,6 +377,8 @@ contributing signals.
 ---
 
 ## Hazard & news alerting layer (parked from the climate/weather vertical)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED, and superseded in shape by the 2026-07-24 ruling A9** — hazards are INGESTED AS ARTICLES with a distinct HAZARD provenance class, not held as an ephemeral snapshot: `src/hazards/parse.py` + `src/analytics/alerts.py` + the compact Home strip and the map rings.
 
 The hazards relay (GDACS/USGS, map layer) shipped in 0.07. Still future: the
 **local, severity-tiered alert layer** — triggers from high-severity hazard
@@ -626,6 +450,8 @@ ICS feeds store year-pinned instances**, which is where single-dated
 ---
 
 ## Network switch — layered guarantees, stated honestly (field report #2, 2026-06-11)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **PARTLY SHIPPED.** The airplane-mode socket-level guarantee is real and is a non-negotiable (`src/ingest/airplane.py`), with the ONE consent popup (invariant #14). What remains design-only is the OPT-IN privileged OS layer (`oo-netcut`) — no such module exists.
 
 The maintainer asked for airplane-mode clarity and "physical kill-switch"
 reliability, including no *inbound* packets, "linked to the hardware driver
@@ -770,6 +596,8 @@ boot is untouched — nothing moves before the operator says go).
 
 ## Seven remaining space-time scenario cards (3 of 10 shipped)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **MOSTLY SHIPPED.** `src/briefing/producers.py` now carries ~45 producer functions; the manipulation half is listed in that section's own re-check below. Treat the count in the heading as historical.
+
 Shipped as recipes: **Promises-due** (card 2), **Edit-war seismograph** (card 8),
 **Region gone quiet** (card 4's corpus-blind-spot core). Still future — each a
 candidate recipe over the existing substrate, same bar (signals with provenance,
@@ -794,6 +622,8 @@ every Home card is clickable into a dashboard.
 
 ## Article corpora — the flagship analysis object (maintainer-ruled 2026-06-11)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED** as the `#an` analysis window with its subtabs; the two-parallel-windows debt this section predates was consolidated (see `CLAUDE.md`'s UI-rethink item 4).
+
 The reader rework and the corpora system are ONE design (ledger entries
 2026-06-11): the dedicated article window gains tabs — **Mindmap · Related
 articles · Source description · Keyword analysis · Sentiment analysis** (the
@@ -811,6 +641,8 @@ corpus views).
 ---
 
 ## Clickable in-article keywords → the keyword analysis window, with a stats hover (maintainer concept 2026-07-01; DESIGN-ONLY)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED, both slices.** Slice 1 (2026-07-02): `src/static/reader.js:markArticleBody` marks the article's REAL indexed terms and opens `?analyze=<term>&tab=keywords`. Slice 2, the stats hover, shipped later as the `keyword-stats` endpoint + the `#oo-tip` hovers (counts only, no score).
 
 **Concept (maintainer):** inside an article the user should SEE its keywords and be
 able to CLICK them; a click opens the unified analysis window on the **Keyword** tab,
@@ -905,6 +737,8 @@ RULED 2026-06-12: caveats by design — visible by default, "informed consent" a
 
 ## Trans-language keyword equivalence — the LIVE-analytics layer
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** `src/analytics/equivalence.py` merges rings inside grouped `top_terms`, `trending` and `associations`, language-qualified so a ring never fabricates a merge.
+
 Groundwork shipped (language signatures in the diagnostics log; curated
 `configs/keyword_equivalents.yml`; first 10 real rings from field log #1).
 **WIRED INTO ANALYTICS 2026-06-16 (slice 1):** `src/analytics/equivalence.py` is
@@ -925,6 +759,8 @@ candidates from the diagnostics logs.
 ---
 
 ## Automated source discovery — the gated external channel
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** `src/catalog/discover.py` + the world-discovery job (`discover_job.py`) + the citation channel (`src/discovery/cited_sources.py`). Every find still registers DISABLED for review; the auto-PROMOTION frontier is the part that remains (ruling B1, `PROMPT_04`).
 
 Offline channels shipped (citation promotion + catalog refresh, staged
 candidates, budgets, activity log). Still future, by ruling only after the
@@ -948,9 +784,21 @@ Unchanged design, still unbuilt; revisit within 0.0.9:
    train-the-trainer material, a synthetic exercise corpus, threat-model-first
    framing. In-repo and printable, never hosted.
 
+> **Provenance note (2026-09-07).** The 2026-09-06 repo analysis listed the supervised-training track
+> as recorded ONLY in PR #49 (item PRH-34). Re-checked: it is **not** lost — every element that item
+> names (curriculum, facilitator guide, train-the-trainer material, synthetic exercise corpus, the
+> safety self-check) is in point 2 above, and has been since this section was written. Recording the
+> refutation rather than duplicating the item, because a second copy of a design is how two copies
+> start to drift. The still-open half is that none of it is BUILT; `docs/ROADMAP.md` §4 carries the
+> tracking row.
+
 ---
 
 ## Wikipedia as a first-class LIVING source — the law model (maintainer concept 2026-06-12; supersedes the earlier stub)
+
+> **Cross-reference (2026-09-07):** this is the OLDER of the two Wikipedia sections (2026-06-12) and is kept because of what only it holds — the superseding auto-track ruling. The 2026-07-10 section at the top of this file is the newer framing (a versioned source = an Article + a linked revision trail); it does not replace this one.
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **PARTLY SHIPPED and this is the section that carries the SUPERSEDING auto-track ruling** — do not read it as a duplicate of the 2026-07-10 section at the top of this file and do not merge the two (protocol rule 5). Watched pages DO become corpus Articles (`src/wiki/corpus.py`); whole-edition ingest from a downloaded dump does not, and stays P0-scale-gated.
 
 **The maintainer's concept (recorded):** Wikipedia articles must be ingested
 with the SAME aggregation rules as journal-sourced articles — rich metadata,
@@ -1069,6 +917,40 @@ not asked now):*
    Wikimedia EventStreams (SSE) is acceptable within the single-fetch-path
    ethics (it is HTTP, robots-checkable, one connection — likely yes).
 
+## Custody key lifecycle — rotation, revocation, hardware-backed keys (PR #18, recorded 2026-09-07)
+
+> **Recorded, not designed — and recorded because it existed NOWHERE.** PR #18 was closed unmerged and
+> its content re-landed as `src/custody`, but three of its forward-looking notes did not travel with the
+> code and were found only by reading the PR body in the 2026-09-06 repo analysis (item PRH, "the three
+> closed-unmerged PRs"). Written down here so they are a design question a future session can pick up
+> rather than an idea the project silently lost.
+
+The shipped chain of custody (`src/custody/`) signs with a locally-generated Ed25519 key plus the
+optional post-quantum ML-DSA layer, and anchors through OpenTimestamps. Three lifecycle questions it
+does not answer:
+
+1. **Key ROTATION.** There is no rotation path today: the signing key is generated once and used
+   forever. Rotation matters here in the specific way it matters for a tamper-evidence log — a
+   signature made under an old key must stay verifiable AFTER rotation, or rotating destroys the
+   evidence value of everything signed before it. So the design question is not "how do we make a new
+   key" but "how does a verifier learn which key was current when a given entry was signed", which is
+   a transparency-log question, not a key-management one.
+2. **A Key Revocation List.** The mirror of rotation: what a holder does when a key is believed
+   compromised, and how a verifier finds out. The honest constraint is the standing one — this app has
+   no server and no accounts, so any revocation mechanism has to work offline, from artifacts the user
+   already holds, or it is theatre.
+3. **Hardware-backed keys (YubiKey / TPM).** Attractive because it moves the private key out of the
+   at-rest-encrypted corpus, and squarely inside the standing threat model's stated limit: at-rest
+   encryption protects a seized or copied machine, never a compromised running session, and a
+   hardware key is one of the few things that still helps in the second case. Would need a real
+   dependency and a real "what happens when the token is absent" degrade path — the app must never
+   refuse to open a corpus because a token is not plugged in.
+
+**Nothing here is ruled.** All three touch the no-fabricated-security non-negotiable, so each needs its
+own maintainer decision before anything is built; a half-built revocation surface is worse than none.
+
+---
+
 ## Offline LLM kit (RM-08 release artifact)
 
 A checksummed GitHub *release artifact* (never repo content): Ollama binary +
@@ -1159,6 +1041,8 @@ ethos — should each update anchor its release hash?
 ---
 
 ## Geo / offline mapping (PROMOTED TO ACTIVE 2026-06-16)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **LARGELY SHIPPED.** The OSM region download manager (`src/geo/osm_downloads.py`) and the dependency-free in-browser `.osm.pbf` reader (`src/static/osmpbf.js`, the `OOPBF` global, wired from `app-map.js`) both exist — the no-WebGL ruling held. The temporal-map remainder (linear/log toggle, the event-places mention layer) is the open part.
 
 Two pieces, both LOCAL-first and zero-network at boot:
 - **OSM per-region download manager** — download OpenStreetMap extracts (e.g. Geofabrik
@@ -1274,6 +1158,8 @@ bundling Python/runtimes in the repo (the 100 MB rule — release artifacts only
 
 ## Voice-only mode — accessibility-first, useful to everyone (maintainer input 2026-06-12; designed-only, NOT committed work)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Still designed-only** (verified: no STT/TTS surface in `src/`). Unchanged.
+
 **The ask (maintainer, recorded):** a "voice only" mode designed for disabled
 and handicapped users and useful for everyone. A big ask deserving deep
 thought. It must carry **all the ethical constraints the GUI has** (informed
@@ -1336,6 +1222,8 @@ prerequisites need serious thinking. Priority stays on current work.
 
 ## IPCC as a source + prediction-tracking (maintainer concept 2026-06-12; designed-only)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Still designed-only** (verified: no IPCC ingestion path in `src/`). Unchanged.
+
 **The ask (recorded):** ingest IPCC material as articles — reliable-seeming
 but treated like ANY other source (the Wikipedia discipline: no assumed
 authority), with the same When×Where×Who extraction. IPCC is climate-focused
@@ -1368,6 +1256,8 @@ could analyze **whether their anticipations were right after all**.
 
 ## Agenda ↔ Wikipedia linking (maintainer ask 2026-06-12; designed-only)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Still designed-only** (verified). Unchanged.
+
 Each agenda entry (astronomy, climate episodes, world events) can carry an
 optional wiki page reference: one click opens the LOCAL wiki baseline (if
 watched/ingested) or offers to WATCH the page (consented fetch) — never an
@@ -1379,6 +1269,8 @@ Wikipedia-as-living-source design; the event→page mapping ships as data
 ---
 
 ## Lunar-effects testing framework (maintainer concept 2026-06-12; series shipped, framework designed)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Unchanged and correctly stated** — the astronomy series ships (`src/events/astronomy.py`); the testing framework is designed-only.
 
 **The ask (recorded):** people around the maintainer are certain the moon
 affects mood; old agricultural practice plants/harvests by waxing/waning.
@@ -1415,6 +1307,10 @@ correlation≠causation caveat in its own payload.
 ---
 
 ## Worldwide official-statistics ingestion (maintainer concept 2026-06-12; designed-only)
+
+> **Cross-reference (2026-09-07):** the historical PRECURSOR (2026-06-12) of *"Statistical-data ingestion + diversified honest visualization"* (2026-06-25) further down. Kept because it records the producing-state / vintage / comparability-guard rulings in their original form.
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** `src/stats/` carries the agency directory, the SDMX/World-Bank parsers, the vintaged `StatFigure` store and the triangulation that shows producers side by side and never averages them. The `controversial` verdict this section proposes was REMOVED by the 2026-06-19 ruling 50 — a producer is a stanced source stated as a descriptive caveat, never a verdict label.
 
 **The ask (recorded):** ingest government and international statistical data
 worldwide — BLS (US), INSEE (France), Eurostat (EU), the World Bank, the
@@ -1489,6 +1385,8 @@ the reference VM scale.
 ---
 
 ## Open-Meteo weather context — the When×Where corroboration layer (maintainer concept 2026-06-12; designed-only)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SLICE 1 SHIPPED (2026-06-12).** `src/analytics/corroboration.py` scans locally and emits suggest-to-fetch cards that state they made no network call; `src/api/weather.py` performs the ONE bounded consented fetch. Anomaly baselines, signal-keywords and the reader row remain.
 
 **The ask (recorded):** ingest Open-Meteo data into the when/where/who
 approach — when articles talk about a drought, the claim might be checked
@@ -1927,6 +1825,8 @@ per decision, my commentary, acceptance criteria, dependencies — lives in
 
 ## Elections & the civic vertical — evidence trails, never a verdict (maintainer concept 2026-06-15; designed-only)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Still designed-only** (verified: no elections module in `src/`). The 2026-07-14 coverage-floor and projected-date-honesty rulings in `CLAUDE.md` extend this section and are binding on whoever builds it.
+
 **The concept (maintainer):** make elections the flagship civic use case for the
 everyday person — list upcoming election dates and campaign windows in the agenda,
 and a LOCAL, LLM-LESS analytics layer (keyword + When×Where×Who + the corpora
@@ -2011,6 +1911,8 @@ scoreboard anyway). The UX is the ethical load-bearing wall, not polish.
 
 ## Poll analysis — auditing METHOD (near-neutral), never adjudicating RESULTS (maintainer concept 2026-06-15; designed-only)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Still designed-only — and an earlier reality-check got this one WRONG.** The 2026-07-17 T9 spec listed poll analysis as stale, citing `poll_transparency.py`; no such file exists. The name it matched is `src/analytics/poll_cache.py`, which memoises the POLLED alert strip and has nothing to do with opinion polls. Recorded because a false positive in a staleness sweep is exactly as expensive as the staleness — it invites a session to 'stop' work that was never started.
+
 **The seam that makes it tractable:** critiquing a poll's METHODOLOGY rests on survey
 science (Schuman & Presser, AAPOR), not political values — "double-barrelled" is a
 linguistic fact, "3 favourable options vs 1" is arithmetic, "a +2 'lead' inside ±3
@@ -2076,6 +1978,8 @@ Tier-2 finding):
 ---
 
 ## Manipulation-pattern card models — detect STRUCTURE, never deception (maintainer ask 2026-06-15; designed-only)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **MOSTLY SHIPPED — 6 of the 9 card models exist as producers.** `src/analytics/`: `laundering.py` (#6), `recycled_claim.py` (#1), `headline_body.py` (#7), `emergence.py` (#3), `concentration.py` (`find_flooded_topics`, the flood half of #4) and `copypasta.py`. Genuinely open: the BURY half of #4 (needs a real external trigger), event-timed-op (needs the elections roster) and outrage-intensity (secondary by design — it annotates another card, never a standalone Lead).
 
 **The necessary reframe** (the literal premise "autonomously detect disinformation"
 is both impossible and unethical): you cannot detect manipulation/deception with
@@ -2218,6 +2122,8 @@ question"); (c) whether the everyday-person promise should answer "who's winning
 more directly than the evidence-trail-only stance.
 
 ## LLM-assisted PERCEPTION — who/where/who extraction, sentiment, and an eval harness (maintainer brainstorm 2026-06-18; EVALUATION — reconciliation pending the maintainer's PARALLEL internet research)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED, eval-gated as this section demanded.** `src/ai_layer/perception.py` is the harness and `perception_extract.py` the extraction, writing ONLY `ai_keyword` candidates under `ai-who` / `ai-place` / `ai-date` — never the trusted index. A language or field that fails the hallucination floor is honestly gated rather than attempted; the never-evaluated case refuses too.
 
 A long evaluative session on where small LOCAL models genuinely help. The maintainer is
 running a parallel research pass with full internet access; this records what we
@@ -2405,6 +2311,10 @@ tertiary tier, labelled "AI-derived · unreliable".
 ---
 
 ## Statistical-data ingestion + diversified honest visualization (maintainer-directed research 2026-06-25; designed-only)
+
+> **Cross-reference (2026-09-07):** the NEWER (2026-06-25) statistics section; *"Worldwide official-statistics ingestion"* (2026-06-12) above is its precursor and holds the original rulings.
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **PARTLY SHIPPED.** The ingestion half is in `src/stats/`; the `ooviz.js` primitives are in the tree AND wired (22 `ooViz.` call sites — the audit that reported zero was searching the wrong casing). The honest-gaps rendering, the sparse-bar rule and the chart-decision framework's REJECT list are live conventions now, not proposals.
 
 **Origin.** A maintainer-directed research push (2026-06-25) ran several internet-connected
 sessions and folded their outputs in here. It started from "how reliable is TimesFM, and what
@@ -2629,6 +2539,8 @@ Recommended order: A1 → A-CSV → B → C → D → E. The revision-anomaly de
 
 ## Content-provenance class — descriptive ingestion-channel metadata (maintainer concept 2026-06-26; designed-only)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** `src/catalog/provenance.py` carries the closed set (`WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED, LAW, HAZARD`) plus the channel-implied tags and the idempotent boot heal.
+
 > **The idea (maintainer):** ingest a metadata dimension for *content provenance* — classify each
 > item by WHAT KIND of content/channel it is: newsletter, online article, online statistics, etc.
 > **Verdict: worth doing, and unusually well-aligned** — provenance is already a core value prop here,
@@ -2776,6 +2688,8 @@ default (newsletters cite few links — the same calibration point as the "Lates
 
 ## Home "Latest in your corpus" section — a recency LENS + a transparent substance FILTER (maintainer concept 2026-06-26/27; designed-only, shaped over discussion)
 
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SHIPPED.** `src/analytics/latest.py` + `/api/insights/latest` + `#home-latest-panel`, with the script-aware length rule, the near-dup collapse and the user-set gates this section argued for. The S0 calibration diagnostic (`src/analytics/article_length.py`) also shipped.
+
 > **The idea (maintainer):** a "latest news" section on the Home tab that **avoids very short
 > click-bait** by selecting on **article length** + **the number of in-article sources**, with the
 > **criteria clearly marked** and **user-adjustable by tag + content type**. Anticipated by the UI-rethink
@@ -2867,64 +2781,16 @@ content-provenance + keyword-engine P4 facet track.**
 
 ---
 
-## Field diagnostics 2026-06-27 — measured findings & actionable items (a ~2,259-article live scrape)
+## Field diagnostics 2026-06-27 — measured findings & actionable items (a ~2,259-article live scrape) — ARCHIVED
 
-> Captured from the maintainer's diagnostic exports (self-test, growth, engine-report, scaling-benchmark,
-> performance-report, home-cards, date-diagnostics, debug-bundle) on a live corpus of **2,259 articles /
-> 99,662 keywords / 179,395 mentions / 3,177 sources**, DB **103 MB**, **2-core / 4.4 GB Qubes VM**,
-> SQLCipher-encrypted, columnar engine **in-memory (D1 unavailable)**. **Headline: the keyword ENGINE is
-> healthy** (self-test 42/42; extraction noise 0.5%; Heaps β=0.756 = healthy saturation). The findings
-> below are **contention, scale, and one card bug** — recorded here for later implementation. Counts +
-> milliseconds only, never a score.
-
-### F1 — BUG (shippable): 6 Home cards LOSE their corpus on click ("no hard-linking")
-The card-click diagnostic shows **6 of 25 cards "mismatched":** clicking runs a text search on a
-**synthetic seed** that matches **0 articles** though the card is about N — "the exact corpus is LOST."
-The four producers that **don't carry `article_ids`:** **`lonely_signal`** (seed = a truncated title →
-0), **`ownership_change`** (seed `"ownership-change"` → 0, card n=4), **`recipe_promise`** (seed
-`"2294:2026-06-27"` → 0, ×3), **`story_lineage`** (seed `"lineage:1575"` → 0, card n=3). **Fix
-(established pattern):** have each producer carry its exact `article_ids` so the click uses
-`openAnalysisForIds` (already done for echo_chamber / source_laundering / space_time_convergence /
-headline_body_mismatch, which are all hard-linked). **Acceptance:** the home-cards diagnostic reports **0
-mismatched.** Backend + producer change; testable. *(A genuine bug, not a design idea — prioritise.)*
-
-### F2 — PERF: live validation of the keyword-engine strategy (record the baseline; build in the strategy)
-Two measured problems, both already addressed by `docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md` —
-the numbers here **validate + unblock** that work, they don't need a new plan:
-- **Writer-gate SATURATED during the scrape (validates + UNBLOCKS the deferred COLLECTOR-path
-  batching).** `collect_perf`: `adjust_reason:"writer-saturated"`, **34 fetch workers queued** behind the
-  one encrypted writer, **max_wait 210 s** for a single write, total_wait 6,716 s, contended 2,127, and
-  the scrape **throttled to 161 kbps vs a 500 target** — *write-bound, not network-bound* (the next
-  sample hit 1,481 kbps). The `CLAUDE.md` ledger deferred the full COLLECTOR-path write-batching
-  "pending a live measurement" — **this IS that measurement.** → build strategy **P1.3** (batched commits
-  via the `index_article(commit=False)` primitive + the `COLLECTOR_WRITER_BATCHING` store_fetched
-  restructure).
-- **Analytics "freeze" at only 2,259 articles** (NOT a big-corpus problem). Measured: `insights_trending`
-  **26–29 s**, `keyword_export` **34 s**, `insights_map` 6–16 s, `supergroups` **12 s**,
-  `trending_windows` (the **Home poll**) **5–13 s**, `associations` 4–7 s, `layered_graph` 6 s, `map_data`
-  4–8 s — while `columnar: available:false` (these hit raw SQLite GROUP-BY over 179 k mentions on 2
-  cores, encrypted). Fast paths for contrast: `top_terms_grouped` 69 ms, FTS 12 ms, `/api/articles` 17
-  ms, who/where ~100 ms. → build strategy **P2** (maintained `keyword_daily`/`source_coverage` rollups) +
-  **P2.4** (verify DuckDB-1.4 GCM → unblock the persisted store, which is `available:false` today).
-
-### F3 — keyword quality: stoplist leaks in "rising" cards
-Rising-card terms include **`annons`** (Swedish *advertisement* = ad boilerplate), **`koji`** / **`ali`**
-(Serbian function words "which"/"but"). → strategy **P4.2** (`reconcile_keyword_language`) + the
-evidence-grown stoplist pass; also a nice tie-in to the "Latest" substance filter (boilerplate is exactly
-what length/source gating catches).
-
-### F4 — date-extraction recall gap (When/Where/Who)
-Date diagnostics: **36.6 % coverage**, but **401 articles carry date-like text yet got no extraction**
-(of 1,500 scanned), including **45 unextracted `cjk_date`** runs. → improve the `dateextract` recall
-(and the CJK case ties to the segmentation gap, strategy P4.4). Lower priority than F1/F2.
-
-### F5 — UI polling storm (compounds the contention)
-This session accumulated ~**2,192** `GET /api/scheduler/activity` + **1,525** `/api/system/vitals` +
-**699** `/api/scheduler/status` requests — thousands of polls contending with the single encrypted
-connection (a long-standing finding). → consolidate into one status poll / SSE push + adaptive backoff
-when idle (the airplane/scheduler responses already push state to lean on).
+> Moved verbatim on 2026-09-07 to
+> [`docs/archive/future-developments/FIELD_DIAGNOSTICS_2026-06-27.md`](archive/future-developments/FIELD_DIAGNOSTICS_2026-06-27.md) — it was an
+> embedded historical ledger, not design intent. Nothing was dropped. Its still-open items are
+> tracked on the live boards (`CLAUDE.md` Open queue · `docs/ROADMAP.md`).
 
 ## 2026-07-12 planning program — storage 5 TB v2 + the optimization designs (maintainer↔Fable-5 planning session; DESIGN-ONLY)
+
+> **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **EXECUTED, despite this section's "DESIGN-ONLY" banner.** Every buildable-now core landed: `src/analytics/conjunction.py` (the Conjunction Lens), `src/briefing/leads.py` (Leads 2.0), `src/analytics/skeleton.py` (fingerprints) and `src/ingest/tor_throughput.py` (the Tor ladder). What remains is operator- and browser-gated, not undesigned.
 
 A dedicated planning-only dialogue (held while the S1–S6 autonomous program ran; the
 maintainer's instruction was "don't code — only planning") produced a coherent optimization
@@ -2982,6 +2848,8 @@ the tree before building).
 
 ## Legacy single-file import — scheduled for REMOVAL (maintainer ruled 2026-07-29)
 
+> **Cross-reference (2026-09-07):** pairs with *"Remove the legacy single-file backup RESTORE"* (2026-07-01) near the top of this file.
+
 **Ruling (verbatim intent): "the legacy imports will soon be removed. no need to touch them."**
 Recorded here so the removal is not lost and so no future session invests in that path.
 
@@ -3012,7 +2880,7 @@ Recorded here so the removal is not lost and so no future session invests in tha
 - `read_artifact` accepts legacy formats FOREVER (D7, wired into restore at `backup_v2.py:118`) —
   that acceptance is a separate, load-bearing guarantee and must NOT be removed with the endpoint.
 - The 2 GiB legacy *create* path is already UI-unreachable and is tracked separately in
-  [`docs/design/UNIFIED_IMPORT_EXPORT.md`](design/UNIFIED_IMPORT_EXPORT.md); the two removals
+  [`docs/archive/design/UNIFIED_IMPORT_EXPORT.md`](archive/design/UNIFIED_IMPORT_EXPORT.md); the two removals
   should land together.
 
 Until then: **do not invest in the legacy import path** — no progress plumbing, no pause/stop, no

@@ -2,7 +2,7 @@
 
 Enrich `configs/sources.yml` so sources carry real multi-dimensional metadata
 instead of a lone `news` tag. Full rationale + taxonomy:
-[`../SOURCE_METADATA_ENRICHMENT_STRATEGY.md`](../SOURCE_METADATA_ENRICHMENT_STRATEGY.md).
+[`../SOURCE_METADATA_ENRICHMENT_STRATEGY.md`](../../design/SOURCE_METADATA_ENRICHMENT_STRATEGY.md).
 
 There are **two ways to run the LLM classification** (Strategy 4). Both produce the
 same result rows; both feed the same additive merge.

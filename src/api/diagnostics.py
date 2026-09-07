@@ -1664,6 +1664,8 @@ def criteria_calibration(
     top_n: int = Query(100, ge=1, le=1000),
     prose_gate_limit: int = Query(2000, ge=1, le=20000),
     prose_gate_after_id: int = Query(0, ge=0),
+    prose_gate_scope: str = Query("all"),
+    resume: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """S3.1 (2026-07-23 field-feedback workflow) — the TEMPORARY criteria-calibration report:
@@ -1678,11 +1680,28 @@ def criteria_calibration(
     report has been reviewed and the criteria agreed (0.3 gate row 5). Bounded: at most
     ``top_n`` article rows decrypted for detail + one bounded, resumable prose-gate batch
     (``prose_gate_limit``, chunked via ``prose_gate_after_id``). Plain ``def`` → threadpool.
-    ``download=1`` returns a dated attachment."""
-    from src.analytics.criteria_calibration import calibration_report
+    ``download=1`` returns a dated attachment.
 
+    ``prose_gate_scope`` picks the population that arm walks — ``all`` (every ≥100-word body,
+    what a DEFAULT quarantine run's prose gate would reach) or ``index_pages`` (only those
+    whose URL is also listing-shaped, the population row 5's Tier B is about). ``resume=1``
+    carries the cursor across calls so repeated runs advance through the population instead
+    of re-measuring the first batch; the running totals ride in ``prose_gate_progress``."""
+    from src.analytics.criteria_calibration import calibration_report
+    from src.analytics.non_article_scan import PROSE_GATE_SCOPES
+
+    if prose_gate_scope not in PROSE_GATE_SCOPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"prose_gate_scope must be one of {list(PROSE_GATE_SCOPES)}",
+        )
     report = calibration_report(
-        db, top_n=top_n, prose_gate_limit=prose_gate_limit, prose_gate_after_id=prose_gate_after_id,
+        db,
+        top_n=top_n,
+        prose_gate_limit=prose_gate_limit,
+        prose_gate_after_id=prose_gate_after_id,
+        prose_gate_scope=prose_gate_scope,
+        resume=resume,
     )
     headers = {}
     if download:
@@ -3149,6 +3168,28 @@ def write_gate_report() -> dict:
     }
 
 
+@router.get("/soak-window")
+def soak_window_report(db: Session = Depends(get_db)) -> dict:
+    """The multi-day soak reading: five signals, each with the window it actually read.
+
+    The 0.3 gate's row 7 and the 0.4 board both ask for a multi-day collector soak, and
+    nothing here could answer it after the fact -- collect_perf is a ring covering about
+    one pass, the latency reservoir keeps the last 512 requests per route, the error log
+    is a rolling 2,000 records. This composes the DURABLE readings instead and states,
+    per block, what window it covers: process uptime is the soak's clock, the
+    memory-guard and write-gate counters are process-cumulative and align with it, the
+    hourly wal_bytes series is filtered back down to it, and the two rolling windows say
+    so rather than being read as if they spanned the soak.
+
+    Verdict-free by construction: ``window.reaches_bar`` says whether the window is long
+    enough to be read against the gate's 72-hour bar, and what the numbers mean inside it
+    is the maintainer's reading. Read-only, local, counts and timings only.
+    """
+    from src.monitoring.soak_window import soak_window as _soak
+
+    return _soak(db)
+
+
 @router.get("/request-latency")
 def request_latency() -> dict:
     """Per-route latency percentiles + the event-loop-block watchdog events (log #2).
@@ -3653,6 +3694,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.
         ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
         ("windows-locks.json", lambda: windows_locks_report(download=False)),
+        # S4 (2026-09-07): the soak window -- the durable readings composed with the
+        # window each one actually covers, so a multi-day run can be read after it ends.
+        ("soak-window.json", lambda: soak_window_report(db=db)),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
         # §6 recursive-improvement loop instruments: the two cheap, decrypt-light DATA reports
@@ -3702,8 +3746,18 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # report. A smaller prose_gate_limit than the endpoint's own default (500 vs 2000)
         # keeps this bundle member's content-decrypt bounded — the standalone endpoint
         # still defaults fuller for a direct diagnostic run.
+        #
+        # ``resume=True`` and the ``index_pages`` scope are what make this member's prose arm
+        # able to FINISH. It used to pass ``prose_gate_after_id=0`` literally, so every bundle
+        # re-measured the same lowest-id 500 articles: ``done`` could not become true on any
+        # corpus over 500, and both 2026-08-23 field reports stopped at ``last_id: 695``
+        # having flagged 0. The scope points it at the population the article clean-up is
+        # actually about (0.3 gate row 5's Tier B — listing-shaped URLs the word guard keeps,
+        # 451 articles at release scale) rather than at whatever ascending id ordered first.
+        # The ``all`` scope stays reachable on the endpoint, with its own cursor.
         ("criteria-calibration.json", lambda: criteria_calibration(
-            download=False, top_n=100, prose_gate_limit=500, prose_gate_after_id=0, db=db,
+            download=False, top_n=100, prose_gate_limit=500, prose_gate_after_id=0,
+            prose_gate_scope="index_pages", resume=True, db=db,
         )),
         ("lemma-preview.json", lambda: lemma_preview(top_n=500, db=db)),
         # The bulletin's own language coverage + the render-integrity checks. Renders a
@@ -4035,6 +4089,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/windows-locks": "windows-locks.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
+    "/soak-window": "soak-window.json",  # S4 (2026-09-07): the multi-day soak reading
     "/write-gate": "write-gate.json",  # S2.6 (2026-09-02): who holds the gate / a connection
     "/stall-forensics": "stall-forensics.json",
     "/slow-queries": "slow-queries.json",

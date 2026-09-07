@@ -10,7 +10,7 @@ the first batch on 2026-07-10, the 2026-07-11 A/B + S1–S6 program briefs + the
 conventions on 2026-07-13, and a third batch on 2026-07-22 — after a subagent-fanned-out
 audit of the whole `docs/design/` tree verified, against live `main`, that these 7 briefs
 had every slice actually executed (not just merged — see
-[`../design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](../design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md)
+[`docs/design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](../../design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md)
 for the verification detail).
 
 | file | was at |
@@ -42,3 +42,12 @@ for the verification detail).
 
 Older prose in `CLAUDE.md` and `docs/ledger/SHIPPED_LOG.md` may still cite the original
 `docs/design/…` paths as historical records; this table is the old→new map.
+
+- [`OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md`](OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md) —
+  the per-phase bridge between the 2026-07-12 planning session and the sessions that executed it.
+  **Archived 2026-09-07**: its §1–§8 buildable-now cores plus R1/R2/R4 all shipped, and the two tails
+  it correctly left gated are both covered elsewhere — R3 (the `ui_walk` runner) was BUILT on
+  2026-08-13 as `src/monitoring/ui_walk_playwright.py`, and R6 (a graded IR gold set) is an operator
+  step carried in `CLAUDE.md`'s consolidated operator list. The design of record it bridges from,
+  [`PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`](../../design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md),
+  stays live.

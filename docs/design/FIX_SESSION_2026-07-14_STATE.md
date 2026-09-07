@@ -1,3 +1,16 @@
+> **Status update (2026-09-07, docs-hygiene + reality-check pass) — this file's remaining carry-overs
+> are now on a LIVE board, so it is a record rather than the only home for pending work.** Re-verified:
+> **Slice 3 (laws as first-class Articles) is DONE** — `src/law/corpus.py` ships the `index_article`
+> wiring, `LawDocument.latest_text` / `LawRevision.full_text` are in `models.py`, and
+> `POST /api/law/documents` (the add-by-URL endpoint the later remediation plan called 3.1) exists too;
+> **Slice 4a's quarantine ACTION is DONE** — `src/analytics/quarantine_job.py` carries the real
+> `write: bool = False` parameter with `write=True` stamping `Article.quarantined`, exposed through
+> `src/api/quarantine.py`, and its execution is now row 5 of the 0.3 close gate. **Slice 2 (the
+> first-launch data-location chooser) is the one thing still open and still unbuilt** — it was lifted to
+> `docs/ROADMAP.md` §4 (UI / UX & onboarding) on 2026-09-07 so it stops depending on this file being
+> read. NOTE this document's line 5 cites a base doc `FIX_SESSION_2026-07-14.md` that does not exist;
+> the base is `FIX_SESSION_PROMPT_2026-07-14.md`, in the same folder.
+
 > **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — this file's own "laws-as-Articles NOT built" note is now stale and superseded — `src/law/corpus.py` ships that wiring (see the FIX_SESSION_PROMPT_2026-07-14.md banner for detail). The other two carry-overs (data-location chooser, the quarantine action) remain open exactly as this file describes. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # Fix session 2026-07-14 — execution state + carry-over

@@ -784,7 +784,7 @@
   test_repo_invariants::test_ai_output_in_ui_language_and_prompt_relocalization. node --check + i18n 100%. REMAINING:
   human click-through (fork-3).
   **TIER 2.6 — UNIFIED IMPORT/EXPORT = DESIGN DOC (remarks 2/5/6; a large frontend consolidation, browser-unverifiable
-  + big, deferred per §8 to a click-through session):** `docs/design/UNIFIED_IMPORT_EXPORT.md` specifies ONE Import +
+  + big, deferred per §8 to a click-through session):** `docs/archive/design/UNIFIED_IMPORT_EXPORT.md` specifies ONE Import +
   ONE Export/Backup entry, each → an options pop-up → file/folder pick, REUSING the shipped backends (no new backend):
   6a Import routes to restore/volume/folder + the TWO newsletter paths (upload + folder job) + mailbox + models; 6b
   Export mandates the OOENC2 streaming-volume path for the encrypted corpus (NOT the legacy 2 GiB single-file) + the
@@ -5842,3 +5842,232 @@ reconciles as 74 tag lines plus 6 opened headers. A separate check asserts every
 PROPOSED for that exact domain: its only two hits are the two rendered into the catalog's own
 vocabulary (fortune.com `finance` → `financial`, labiotech.eu `health` → `healthcare`). Mutation matrix: a reintroduced synonym pair
 and a neutered stem predicate each redden by name, restore verified green.
+- **THE 0.3 GATE MADE CLOSABLE, AND THE 0.4 BOARD STOOD UP (2026-09-07, prompt 01 of
+  `docs/plans/2026-09-06-repo-analysis`; branch `claude/close-0.3-stand-up-0.4-0icshi`; three
+  `shipped.csv` rows):** the gate cannot be closed from a session — rows 5 and 7 and the tag
+  are the maintainer's hands — so the work was to make each of those a single unambiguous
+  action, build the instruments that make the 0.4 rows closable, and leave a board that reads
+  correctly whether or not the tag happens.
+  **ROW 5's DECISION WAS ALREADY TAKEN AND THE BOARD DID NOT SAY SO.** The maintainer agreed
+  Tier A on 2026-08-23 (*"proceed with tier A"*); four places still described the criteria as
+  proposed and awaiting sign-off, so the one thing genuinely left — the RUN — read as blocked
+  on someone who had already answered. §7.1 is now four `curl` calls in order, and the
+  invocation is deliberately **not** the default one: `POST /api/quarantine/start` applies
+  three independent criteria, and the nav-soup prose gate fires on bodies the ≥100-word guard
+  KEEPS — a different, larger population than the URL rules reach — so a bare "run the pass"
+  would have stamped the 8 agreed articles plus an unmeasured number more. Hence
+  `include_prose_gate=false`, a status poll that confirms `dry_run:false` AND the criteria
+  actually applied (both are in the payload, and the mode is persisted across pause/resume and
+  restart), the keyword re-index that clears what the stamp leaves behind, and the composition
+  read that reports the count under `nav-soup-v2` — plus a decline branch and a reversal note.
+  Every endpoint and parameter re-derived from the routers rather than copied from the board.
+  **THE TIER-B EVIDENCE ARM COULD NOT FINISH**, which is why that half of row 5 had no
+  evidence at all. `criteria_calibration`'s prose arm was resumable by design and had no way
+  to carry its cursor: the bundle member passed `prose_gate_after_id=0, limit=500` literally,
+  so every export re-measured the same lowest-id 500 articles, `done` could never become true
+  on any corpus over 500, and both 2026-08-23 field reports stopped at `last_id: 695` having
+  flagged 0. Nothing was mislabelled — the per-batch denominator was honest — but *resumable*
+  reads as *will finish*. It also walked by ascending id, which samples whatever that key
+  orders first rather than the 451 index pages the decision is about. Now: a per-scope cursor
+  persisted under `data_dir()` (atomic `os.replace`, best-effort, `persisted: false` when it
+  cannot be written) and invalidated by a `CRITERIA_VERSION` change so two detectors' verdicts
+  are never summed; a `prose_gate_scope` of `all` or `index_pages`, collected in the base loop
+  that was already visiting those rows (no second codec-paying scan) and bounded by a heap of
+  negated ids so memory cannot grow with the corpus; an exact `remaining` that upgrades `done`
+  from a heuristic; and the population named in the report.
+  **ROW 7b HAD NO ARTIFACT TO CLOSE ON.** Six instruments held the soak's answer across six
+  different windows, several far shorter than the bar and none documented where a reader would
+  look: `collect_perf` is a 5,000-line ring over roughly one pass (which is why the 2026-07
+  multi-hour stalls were undiagnosable once they ended), the latency reservoir keeps 512
+  requests per route, the error log 2,000 rolling records. `GET /api/diagnostics/soak-window`
+  (bundle member `soak-window.json`) adds no sampler: it composes the durable readings and
+  states, per block, the window it actually read — process uptime as the clock, the
+  memory-guard and write-gate process-cumulative counters which align with it exactly, the
+  hourly `wal_bytes` series filtered down to it, and the two rolling windows saying so rather
+  than being read as if they spanned the soak. Verdict-free: `reaches_bar` is a fact about the
+  window's LENGTH. Three counters became durable to make it possible (write-gate
+  `total_held_s` accumulated on release with an in-flight hold left in `held_for_s`;
+  memory-guard `engagements`/`total_engaged_s` over closed episodes only; both shapes of an
+  aborted statement) and the error log now publishes `records_cap` beside every count.
+  `forensics.session_uptime()` measures from this process's own stamp and refuses the
+  timestamp on disk, which belongs to whichever session wrote it last.
+  **TWO OF THE FIRST SEVENTEEN MUTATIONS SURVIVED AND BOTH WERE FINDINGS ABOUT THE TESTS.** The
+  `records_cap` guard ran against the sandbox's EMPTY log, so `summary()` took its early-return
+  branch and never reached the counts the mutation removed. The bundle-member guard asserted
+  the payload's SHAPE, which a member handed a `Depends` sentinel also satisfies — every block
+  degrades honestly, so the degrade became the hiding place for the bug; it now inserts a
+  `wal_bytes` row and asserts the member reads that value back. Final matrix 21/21 red, each
+  asserting it applied first. **LESSONS** (also in CLAUDE.md's Session-rituals list): a report
+  whose every block degrades honestly has the same shape when handed nothing, so a shape
+  assertion cannot discriminate; filtering a bucketed series to a sub-bucket window is a choice
+  of which way to be wrong, and for a growth hazard the safe direction is to widen and
+  disclose; and not every cumulative second may be divided by a window — `total_held_s` is a
+  share because the gate is exclusive, `total_wait_s` sums across waiters and would exceed 1.
+  **A RATCHET-DRIFT FINDING THAT IS NOT THIS BRANCH'S:** the i18n ratchets were run at the
+  561/298 the board's §7.4 records and the report offered to lower both; measured at the branch
+  base `fb51d7b` first, they were already 560/297 — `ci.yml` had been lowered on `main` by
+  whatever keyed the strings, and the board's table was the stale half. §7.4 is a RECORD of a
+  run at `917e809`, so its figures are left exactly as measured and a note points a reader at
+  the workflow rather than at the table. **VERIFIED HERE:** full suite 8985 passed / 124
+  skipped / 0 failed (18:54); mypy 0 errors across 498 files; ruff and bandit clean; the three
+  i18n gates green at their true ratchets; collected-test delta base→head **9064 → 9107 = 43**,
+  exactly the 11 + 32 tests added, which is the cheap form of the pass-count-delta proof.
+  `test_diagnostics.py::test_doctor_healthy_returns_zero` fails in a mixed subset and was
+  reproduced identically on a clean `fb51d7b` worktree — the recorded 2026-07-12 subset-order
+  pollution, green alone and green in full-suite order. **REMAINING:** row 5's run, the ≥72 h
+  soak, the committed import and the tag are all the maintainer's; the soak member is BUILT and
+  UNREAD, which is not the same as closed.
+
+## 2026-09-07 — docs/hygiene: the reality check, and the shallow clone that answered every question with its own boundary
+
+PROMPT_02 of the 2026-09-06 repo-analysis plan (PR #1013), documentation only — not one line of `src/`.
+Its premise is the finding that produced it: **the single largest category of "open work" in
+this repository is documents describing a past state of the tree**, which is not a tidiness
+problem but a cost — a stale claim buys a future session a whole rebuild and buys the
+maintainer a decision they already made. Six slices: mark the two 2026-07 action plans done
+where they are done *with the anchor that proves it*; backfill four missing audits into
+`AUDIT_TRAIL.md`; reality-check `docs/FUTURE_DEVELOPMENTS.md` (25 status banners, four embedded
+ledgers archived, the three duplicate pairs **cross-linked and deliberately NOT merged** —
+protocol rule 5 forbids compressing away a ruling and §22 carries the superseding auto-track
+one); correct eight stale claims the tree refutes; archive two spent design docs after lifting
+their only-here carry-overs into `docs/ROADMAP.md`; and record six things known only to the PR
+history.
+
+**THE REUSABLE LESSON — A SESSION CLONE IS SHALLOW UNTIL PROVEN OTHERWISE, AND A BOUNDED
+HISTORY ANSWERS EVERY ARCHAEOLOGY QUESTION WITH ITS OWN BOUNDARY.** Twelve `shipped.csv` rows
+had carried `PR pending` for up to seven weeks, and the honest way to resolve one is to
+binary-search `main`'s FIRST-PARENT history for the earliest commit whose `shipped.csv`
+contains the row, then read the PR number out of that merge's subject. Run against this
+session's clone, that method returned **`#944` for ten different rows spanning seven weeks** —
+because the clone was 56 commits deep and its oldest commit already contained all ten, so the
+search was reporting the truncation point, once per row, with no error and nothing to
+distinguish it from a real answer. Ten identical, wrong, authoritative-looking numbers, one
+commit away from the project's permanent shipped record. `git fetch --unshallow` (56 → 1,789
+commits) then produced twelve DISTINCT numbers. THREE RULES. (a) `git rev-parse
+--is-shallow-repository` costs nothing and is the precondition for any claim about when
+something first appeared — check it BEFORE the search, not after a suspicious result. (b) **The
+cheap self-test is to ask whether the OLDEST reachable commit already satisfies the
+predicate**: if it does, the answer is a boundary artifact whatever the search returns, and
+that check generalises to every bisect-shaped question over a history you did not clone
+yourself. (c) CORROBORATE from a second, independent field — each resolved merge's BRANCH NAME
+had to match its row's subject (`#706 claude/lemma-default-on-brief` ↔ the lemmatization row;
+`#726 claude/pagesize-evidence-db10` ↔ the DB-10 §1b row), which is what turned twelve
+plausible numbers into twelve checkable ones. AND THE OBVIOUS SHORTCUT IS NOT ONE: a `git
+log -S` pickaxe over the same needle reports the MERGE commit rather than the authoring one on
+this history, so it agreed with the wrong answer — an agreement between two methods that share
+a defect is not corroboration.
+
+**A SECOND FABRICATION, CAUGHT THE SAME WAY.** Writing the 2026-07-22 plan's banner I typed
+that the egress gateway "answers `CONNECT … 403`" — copied from the recorded shape of earlier
+sessions rather than measured. Probed: it returns curl code **`000`** (the connection is never
+established at all) against a `200` control on `https://pypi.org/`. Both readings mean
+"blocked" and only one of them is what this environment does, so the banner now carries the
+measured value and the control beside it. A claim inherited from a sibling session's record is
+not a measurement, however true it was there.
+
+**THREE REFUTATIONS OF THE ANALYSIS'S OWN ITEMS**, recorded so nobody re-chases them: PRH-18
+(the install docs already say "promptless" — the claimed gap does not exist); PRH-34 (the
+training track is already fully described in `FUTURE_DEVELOPMENTS`, so there was nothing to
+add); and the 2026-07-17 T9 spec's `poll_transparency.py` finding, which is a NAME COLLISION
+with `poll_cache.py` — that module is about polling cadence, not poll transparency.
+`docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md` was **kept live** against T8.2's own
+archival list, because its S4 (in-app review of analyzer proposals) is genuinely unbuilt.
+
+**MEASURED, NOT ASSERTED:** inline `on*=` handlers re-counted at **331 in `index.html` +
+280 across the seventeen `app-*.js` modules = 611**, against 131 `addEventListener` — the
+ledger's recorded "295 as of 2026-06-15" counted `index.html` alone and predates the module
+split, so it under-stated the debt by roughly half. Recorded as a correction, not fixed here:
+the retirement is browser-verify-gated and belongs to its own prompt.
+
+## 2026-09-07 — security/deps: the [pqc] ceiling stops being a comment and starts being a mechanism
+
+PR #1016, opened right after the documentation reality check merged as #1013. One new test file, one pyproject byte
+unchanged — the bound was already correct; what it lacked was anything that would notice.
+
+**THE OCCASION, AND IT STOPPED BEING HYPOTHETICAL MID-SESSION.** Dependabot #1012 proposed
+widening `pqcrypto>=0.3.4,<1.0` to `<2.0` — the identical change #996 made on 2026-09-03,
+which merged and blocked the whole repository — and then **#1012 MERGED TOO, at 06:56:37**,
+with the entire multi-paragraph explanation still sitting untouched directly above the line it
+changed. Three occurrences, one file, one comment nobody responsible for the change can read.
+Measured rather than inferred: `>=0.3.4,<2.0` resolves to **1.0.0** (`pip install --dry-run`),
+the release whose `verify()` returns `None` for a valid signature, so `main` was broken the
+moment it merged. **The guard then caught the real thing on its first contact with it** — not
+a synthetic mutation but the actual merged state, pulled into this branch: one FAILED naming
+the constraint, the version it now admits, and the inverted predicate. The bound is re-narrowed
+in the same PR. That is the whole argument for the file: prose had three chances.
+
+**RE-MEASURED BEFORE WRITING ANY CLAIM INTO THE FAILURE MESSAGE**, both wheels installed side
+by side, because this very comment's history contains a fabricated elaboration the ledger later
+had to retract:
+
+| call site (`src/custody/signing.py`) | 0.4.0 | 1.0.0 |
+|---|---|---|
+| `generate_keypair()` | present | **ABSENT** — renamed `keygen` |
+| `verify(pk, data, GOOD_sig)` | `True` | **`None`** → `bool()` is `False` |
+| `verify(pk, data, BAD_sig)` | `False` | raises `InvalidSignatureError` |
+| `PUBLIC_KEY_SIZE` / key type | 1952 / `bytes` | 1952 / `bytes` — identical |
+
+Every claim in the pyproject comment held, the corrected key-format one included. The second
+row is why this is a data-safety ceiling and not housekeeping: `signing.py:318` verifies with
+`bool(_mldsa.verify(...))`, so under 1.0.0 every **genuine** ML-DSA signature verifies as a
+forgery — silently, in the tamper-evidence path, on any install whose keys already exist. That
+path never reaches `generate_keypair`, so the loud `AttributeError` never fires, the module
+still imports, `PQC_AVAILABLE` stays `True`, and the honest-degrade path never runs either.
+
+**THE LESSON — THE NEGATIVE-SPACE TWIN IS LOAD-BEARING ON A VERSION CEILING, BECAUSE
+OVER-NARROWING SATISFIES THE CEILING ASSERTION.** The obvious guard is "the specifier must not
+admit 1.0.0". `pqcrypto==0.3.4` and `<0.4` both satisfy it, and both drop the release a real
+install resolves to — so the cheapest way to turn a lone ceiling guard green would be to make
+the extra useless. Mutation-proven in both directions, each mutation asserted-applied first:
+widening to `<2.0` reddens **only** the ceiling test; over-narrowing to `==0.3.4` reddens
+**only** the twin **while the ceiling test still passes**; deleting the requirement trips an
+anti-vacuity helper, because an absent requirement parses as an **empty** `SpecifierSet`, which
+admits everything — a guard that tolerated it would pass hardest at exactly the moment the
+ceiling stopped existing.
+
+**THREE RIDERS.** Assert containment via `packaging.SpecifierSet`, never the literal constraint
+string: a lower-bound bump is legitimate and must not redden, and `packaging` ships wherever
+pytest runs (pytest requires it), so it is safe on the Core-only lane. The failure **message**
+is the deliverable — it is what a reviewer of the widening PR reads — so it names the
+constraint that was set, the version it now admits, and the inverted predicate, rather than
+"bound changed". And a third guard checks the **installed** version against the declaration
+(the `test_duckdb_version_coupling_holds_when_installed` precedent), since a lockfile or a
+stale environment can drift from pyproject and the first symptom would otherwise be a custody
+test dying on an `AttributeError`, which reads as a broken test rather than a wrong version.
+
+**AND THAT THIRD GUARD COULD NOT RUN ANYWHERE — caught in my own test before it shipped, which
+is the finding worth more than the guard.** Its subject is the ENVIRONMENT, so it is meaningful
+only where `[pqc]` is installed. Every bare `pytest -q` lane collects the file and has no
+`pqcrypto`, so it can only reach its own skip; `crypto`, the one lane that installs the extra,
+runs two explicitly-named files and never collected it. Green in every lane, executed in none,
+reading as coverage. `ci.yml`'s `crypto` lane now names the file, and the repair is measurable
+rather than asserted: with the extra installed the file goes **2 passed / 1 skipped → 3 passed**,
+and with `pqcrypto 1.0.0` installed against the declared `<1.0` it fails **alone** — 1 failed,
+2 passed — the two pyproject-reading guards being correctly indifferent to what is installed.
+That last measurement is also what proves the third guard is not redundant with the twin: the
+twin can only ever check the `_SHIPPED` constant a human wrote down, while this one checks what
+pip actually resolved, so it still bites when upstream publishes a version that constant never
+anticipated. GENERAL FORM: when a test's meaning depends on an optional extra, find the lane
+that installs that extra and confirm it COLLECTS the file — a lane that names files explicitly
+is where an environment-gated guard goes to die. Same class as the node-suite driver ratchet,
+which exists because an unrun suite already cost a shipped defect; there the file had no runner,
+here it had a runner in the one environment where it means nothing.
+
+Scope of the `ci.yml` edit, stated so it is not read as wider: the `crypto` lane's own two files
+are unchanged and still run first, and no other lane was touched — the bare `pytest -q` lanes
+already collected this file and continue to reach the skip, which is the honest outcome there.
+
+**A DEPENDABOT `ignore` RULE WAS CONSIDERED AND REFUSED**, and the reason is worth keeping:
+`pqcrypto` is not in `configs/external_artifacts.yml`, so nothing else watches it — ignoring
+major updates would blind the project to a future **security** release of it. The test catches
+a widening from any source and costs none of that visibility. Recorded rather than done.
+
+**SCOPE, stated rather than implied.** `pqcrypto` is the only upper-bounded requirement
+anywhere in pyproject (measured); `mypy==2.3.1` and the workflows' `bandit==1.9.4` are exact
+pins, where a bump is a one-line version change a reviewer reads. So this is one guarded
+ceiling, not a table with one row. Two things stay **open** and are not settled here: whether
+the ceiling owes an `external_artifacts.yml` entry (recorded as an open scope decision), and
+the CLASS underneath the instance — `PQC_AVAILABLE` is set from import success alone, so a
+module that imports but lacks `generate_keypair` still reports itself available and crashes
+instead of degrading. That is a `src/custody/signing.py` change on a tamper-evidence path and
+belongs to its own reviewed slice.
