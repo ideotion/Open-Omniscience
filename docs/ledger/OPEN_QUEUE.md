@@ -9435,3 +9435,63 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+---
+
+## 2026-09-07 — PRH-32/33 (PR #1029): what the browser measured and what is parked
+
+**QUESTION FOR THE MAINTAINER — should 41 invisible borders start rendering?**
+`var(--line)` is referenced **41 times fallback-lessly** across ten files of the SPA bundle
+(app.css 7 · index.html 14 · taskmanager.html 2 · app-analysis.js 5 · app-corpus.js 5 ·
+app-ai-tools.js 2 · app-core.js 2 · app-map.js 2 · app-insights.js 1 · app-settings.js 1) and
+is defined **nowhere the SPA loads**. It exists only in the two SERVER-RENDERED pages, each of
+which carries its own `:root` block (`src/api/main.py`'s reader, `src/api/law.py`) — so
+`reader.css` is correct and every SPA reference is not. A `var()` with no fallback that
+resolves to nothing makes the WHOLE declaration invalid at computed-value time, so each of
+those 41 silently does nothing: measured live, all eleven `<dialog>` elements declared
+`border:1px solid var(--line)` and `getComputedStyle` reported `border-top-style: none` on
+every one — nine of them have declared a border that has never once rendered.
+
+Twelve FURTHER references in `taskmanager.html` carry a fallback (`var(--line, …)`) and are
+valid by design. The raw grep says 53; the defect count is 41. Recorded because the first cut
+of the census flagged the fallback-carrying ones too (`--hover`, `--lead-h`, `--muted-bg` are
+all deliberate defaults, and `--lead-h` is set by JS at runtime), and a fabricated FAIL is
+exactly as dishonest as a fabricated pass.
+
+**NOT REPAIRED IN #1029, deliberately.** Defining the token (or sweeping the call sites to
+`--border`) makes 41 currently-invisible 1px borders appear at once across the shell, the task
+manager and seven JS modules. That is a visible change the maintainer should see on its own
+terms, not one riding inside a type-scale PR. Ratcheted meanwhile by
+`tests/test_dialog_theming.py::test_every_custom_property_the_spa_uses_is_defined_somewhere`:
+a NEW undefined token fails immediately, and `--line` can neither grow past 41 nor be left
+above the real count. **The ruling needed is simply: were those borders wanted?** If yes the
+repair is one line (`--line: var(--border)` beside the other tokens) plus a browser pass; if
+no, the 41 declarations should be deleted rather than left looking like styling.
+
+**ONE INSTANCE OF THE SAME CLASS WAS REPAIRED**, because its failure direction is worse than
+cosmetic: `app-diagnostics.js` drew its two chart axis titles with `fill="var(--text)"`, and
+`fill` INHERITS rather than falling back to nothing, so they rendered `rgb(0,0,0)` on a
+`rgb(20,24,31)` panel — **1.09:1**, effectively invisible, on all twelve dark themes. Fixed to
+`var(--fg)` and pinned by the same census.
+
+**DELIBERATE OMISSION — the dialog `::backdrop` change is visible and is called out in #1029.**
+The new `dialog::backdrop` gives the ten dialogs that had none the same `rgba(0,0,0,.5)` scrim
+`#guide-wizard` had already chosen for itself, so opening a dialog now dims the page behind it.
+Standard modal behaviour and consistent with the app's own precedent, but it is a change a
+reviewer will see rather than an invisible fix.
+
+**COVERAGE THIS SESSION DID NOT REACH** (stated rather than left to look covered):
+the five axe-core P2s from the 2026-08-20 worklist §11.1 are untouched; the S6 "no layout media
+query between 900 px and desktop" item is untouched (`max-width:900px` is still the widest);
+`#tab-help` and an Insights `keywords` subtab were **probe coordinate errors of mine**, not app
+findings — Help has no `.nav-item` (it is reached by `showTab('help')`) and Insights has no
+`keywords` subtab — and the standalone Reader is a server-rendered page with its own `:root`,
+outside the SPA scale's scope entirely. Commodities WAS measured once its real coordinate was
+found (`nav_tab="markets"`, not an Indices subtab) and is clean.
+
+**TWO S6 CLAIMS IN `PROMPT_15_ui-browser-backlog.md` WERE ALREADY STALE** and are corrected in
+the same PR, per the working mode's staleness rule: `prefers-contrast` IS handled (`app.css`,
+`@media (prefers-contrast: more)`, from the 2026-07-28 audit's finding G-3, and the 2026-08-20
+matrix measured it applying live under `emulate_media(contrast="more")`), and `.sr-only` IS
+present (`app.css:161`, used by `app-markets.js`, `app-map.js` and `app-library.js` for their
+chart data tables). Both VERIFIED-PRESENT.
