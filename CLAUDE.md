@@ -472,6 +472,15 @@ this history it reports the merge commit rather than the authoring one, and answ
   COMMON ANCESTOR rather than against zero — nine duplicates already existed there, so a bare
   "are there duplicates" test would have accused this merge of nine things it did not do. The
   tell in the diff is a numstat with DELETIONS on a merge you expect to be purely additive.
+  **AND IT RECURRED ON THE VERY NEXT BRANCH, WITH THE TELL FIRING AND A CHECK THAT WAS NOT THIS
+  ONE (2026-09-07, the same row):** any branch cut BEFORE a `PR pending` sweep re-creates the
+  duplicate on its own merge, because its stale copy and main's corrected one are both legitimate
+  lines — and one did, on this same 2026-09-06 row. The numstat tell FIRED (17 added / 11 deleted)
+  and was investigated by PAIRING each deleted row with its replacement; that came back clean and
+  was not the prescribed scan. Pairing accounts for the rows main edited that the branch does NOT
+  also carry, and is structurally blind to the one it DOES, because there each copy legitimately
+  belongs to one side and neither is unpaired. So run the duplicate-key scan ITSELF: a different
+  check that plausibly explains the same tell is not a substitute for the one named here.
   Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
