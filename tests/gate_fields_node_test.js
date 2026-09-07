@@ -217,4 +217,69 @@ check("the reason is escaped, not injected", () => {
   assert.ok(html.includes("&lt;img"));
 });
 
+// --- D5: the refused-field list collapses behind a VISIBLE count ------------------- //
+//
+// The 2026-08-12 report shape refused `who` in all thirteen languages, i.e. THIRTY
+// caveat lines on one screen. Collapsing is only honest if the caveat itself stays
+// visible, so these assert what a reader sees WITHOUT expanding, what survives inside,
+// and that nothing is silently dropped -- a cap may bound which examples are listed, it
+// may never bound a reported number.
+
+function _thirty() {
+  const langs = ["ar","bn","de","en","es","fr","hi","id","ja","pt","ru","zh","el"];
+  const out = [];
+  langs.forEach((l) => {
+    out.push({ language: l, field: "who", reason: l + " who hallucination 1.0 above 0.5" });
+  });
+  out.push({ language: "fr", field: "when", reason: "fr when recall 0.0" });
+  out.push({ language: "hi", field: "when", reason: "hi when recall 0.0" });
+  return out;
+}
+
+check("the count and the SHAPE of the refusals are visible without expanding", () => {
+  const rf = _thirty();
+  const html = render({
+    cleared: ["en"], refused: [], unmeasured: [],
+    by_field: { who: { cleared: [], refused: rf.map((r) => r.language), unmeasured: [] } },
+    refused_fields: rf, partly_cleared: [],
+    field_counts: { cleared: 0, refused: rf.length, unmeasured: 0, total: rf.length },
+  });
+  const summary = html.slice(html.indexOf("<summary"), html.indexOf("</summary>"));
+  assert.ok(/class="card-caveat"/.test(summary),
+    "the summary IS the caveat -- visible by default, never a calm-UI toggle");
+  assert.ok(summary.includes(String(rf.length)),
+    "the EXACT count is on screen; a reader must not have to expand to learn how many");
+  assert.ok(/who ×13/.test(summary) && /when ×2/.test(summary),
+    "and WHICH FIELDS they fall on -- 'who is refused thirteen times' is the actionable fact");
+});
+
+check("every refusal survives inside -- the list is collapsed, never capped", () => {
+  const rf = _thirty();
+  const html = render({
+    cleared: ["en"], refused: [], unmeasured: [],
+    by_field: { who: { cleared: [], refused: rf.map((r) => r.language), unmeasured: [] } },
+    refused_fields: rf, partly_cleared: [],
+    field_counts: { cleared: 0, refused: rf.length, unmeasured: 0, total: rf.length },
+  });
+  rf.forEach((r) => {
+    assert.ok(html.includes(r.reason),
+      "every harness reason must still be reachable: " + r.reason);
+  });
+  const lines = (html.match(/class="card-caveat"/g) || []).length;
+  assert.strictEqual(lines, rf.length + 1,
+    "one line per refusal plus the summary -- no truncation, no 'and N more'");
+});
+
+check("a single refusal is still collapsed, so the grammar never changes", () => {
+  const html = render({
+    cleared: [], refused: [], unmeasured: [],
+    by_field: { who: { cleared: [], refused: ["hi"], unmeasured: [] } },
+    refused_fields: [{ language: "hi", field: "who", reason: "r" }],
+    partly_cleared: [], field_counts: { cleared: 0, refused: 1, unmeasured: 0, total: 1 },
+  });
+  assert.ok(html.includes("<details"), "one shape for one refusal and for thirty");
+  assert.ok(/class="card-caveat"[^>]*>[^<]*hi[^<]*who/.test(html),
+    "and the refusal itself is unchanged -- still a caveat naming language and field");
+});
+
 console.log(passed + " passed");

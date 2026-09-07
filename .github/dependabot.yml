@@ -24,6 +24,24 @@ updates:
       prefix: "deps"
     # A DuckDB bump has a version COUPLING (the per-OS crypto extension + the on-disk
     # store format) — see EXTERNAL_DEPENDENCIES.md; review the checklist before merging.
+    ignore:
+      # pqcrypto MAJORS only. Dependabot has proposed the identical widening of
+      # `pqcrypto>=0.3.4,<1.0` to `<2.0` THREE times (#996 on 2026-09-03, #1012 on
+      # 2026-09-07, and once before), and every one of them merged: a bot does not read
+      # the reason in the pyproject comment. 1.0.0 renames generate_keypair AND inverts
+      # verify(), which returns None for a VALID signature — so signing.py's
+      # bool(verify(...)) reports every genuine ML-DSA signature as a forgery, silently,
+      # in the tamper-evidence path. The migration goes through
+      # docs/maintenance/EXTERNAL_DEPENDENCIES.md, not through a bound widening.
+      #
+      # THIS IS THE BELT, NOT THE BRACES. tests/test_dependency_ceilings.py is what
+      # actually defends the bound — it reddens on any PR that widens the ceiling,
+      # naming the inverted predicate — and it keeps working if this stanza is ever
+      # deleted or mis-scoped. This only stops the PR being opened a fourth time, so the
+      # guard is not the thing anyone has to notice. MINOR and PATCH bumps still come
+      # through, so a 0.4.x security release is not muted.
+      - dependency-name: "pqcrypto"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Action SHAs (we pin to a SHA + a tag comment; Dependabot bumps the SHA).
   - package-ecosystem: "github-actions"

@@ -1510,22 +1510,27 @@
       }
     }
 
-    async function startVllm(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const model = ($("vllm-model-input") || {}).value || "";
-      const status = $("vllm-action-status");
-      if (!model.trim()) { toast(t("Enter a model id first."), "err"); return; }
-      if (btn) btn.disabled = true;
-      if (status) status.textContent = t("Starting the local AI backend…");
-      try {
-        await api("/api/llm/vllm/start", {method: "POST", body: JSON.stringify({model: model.trim()})});
-        setTimeout(() => { loadVllmStatusPanel(); loadLlmHealth(); }, 3000);
-      } catch (e) {
-        if (status) status.textContent = "Start: " + e.message;
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    }
+    // RETIRED 2026-09-07 (PRH-09, resolved as RETIRE rather than the recorded
+    // "prefill it"). `startVllm` read a model id out of `#vllm-model-input` -- an
+    // element that exists NOWHERE in the tree -- so the read yielded "" and the
+    // function's own guard toasted "Enter a model id first." on every possible click.
+    // It had no callers either: the 2026-08-04 maintainer rework ("much more simple and
+    // intuitive ... vLLM and Ollama installers should be fused together and
+    // automatically installed based on hardware") made the Local AI card THE one
+    // control, and it starts through `/api/llm/activation/start`, which decides the
+    // backend server-side. So the inventory item read as a papercut ("the field is
+    // never prefilled from the stored llm_model_vllm") and was really a dead function
+    // reading a dead id.
+    //
+    // WHY NOT BUILD THE FIELD. Adding a model input plus a second start button beside
+    // the fused card would put TWO surfaces in charge of which backend starts with
+    // which model -- the routing-vs-provisioning confusion that shipped a field bug two
+    // days before the fusion, and the reason the fusion happened. The operator's own
+    // model still has its home: Settings -> Advanced -> AI -> "Run your own model",
+    // which is where the one-model ruling asks for it.
+    //
+    // `POST /api/llm/vllm/start` is UNCHANGED and still reachable (activation calls
+    // `start()` directly); only this unreachable caller is gone.
 
     async function stopVllm(btn) {
       if (btn) btn.disabled = true;
