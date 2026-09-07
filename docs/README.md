@@ -44,8 +44,11 @@ one that matches what you need.
   (the 0.2 cycle's P0/P1 acceptance detail).
 - **[product/RELEASE_0.3_GATE.md](product/RELEASE_0.3_GATE.md)** — the tickable board for
   closing the current cycle: eight rows, per-row status against named artifacts, and an
-  amendment log. **[product/RELEASE_0.2_GATE.md](product/RELEASE_0.2_GATE.md)** is the
-  equivalent record for the tagged `v0.2.0`, reconstructed after the fact and marked as such.
+  amendment log. **[product/RELEASE_0.4_GATE.md](product/RELEASE_0.4_GATE.md)** is the next
+  cycle's board, standing already because `0.3` moved three required rows onto it by ruling —
+  its carried rows are ruled, its proposed rows are marked as proposals.
+  **[product/RELEASE_0.2_GATE.md](product/RELEASE_0.2_GATE.md)** is the equivalent record for
+  the tagged `v0.2.0`, reconstructed after the fact and marked as such.
 - **[ledger/shipped.csv](ledger/shipped.csv)** + **[ledger/SHIPPED_LOG.md](ledger/SHIPPED_LOG.md)**
   — the index and verbatim log of shipped work (with reusable lessons).
 - **[design/](design/)** — per-feature design-of-record specs.

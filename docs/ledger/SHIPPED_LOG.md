@@ -5792,6 +5792,81 @@ reconciles as 74 tag lines plus 6 opened headers. A separate check asserts every
 PROPOSED for that exact domain: its only two hits are the two rendered into the catalog's own
 vocabulary (fortune.com `finance` → `financial`, labiotech.eu `health` → `healthcare`). Mutation matrix: a reintroduced synonym pair
 and a neutered stem predicate each redden by name, restore verified green.
+- **THE 0.3 GATE MADE CLOSABLE, AND THE 0.4 BOARD STOOD UP (2026-09-07, prompt 01 of
+  `docs/plans/2026-09-06-repo-analysis`; branch `claude/close-0.3-stand-up-0.4-0icshi`; three
+  `shipped.csv` rows):** the gate cannot be closed from a session — rows 5 and 7 and the tag
+  are the maintainer's hands — so the work was to make each of those a single unambiguous
+  action, build the instruments that make the 0.4 rows closable, and leave a board that reads
+  correctly whether or not the tag happens.
+  **ROW 5's DECISION WAS ALREADY TAKEN AND THE BOARD DID NOT SAY SO.** The maintainer agreed
+  Tier A on 2026-08-23 (*"proceed with tier A"*); four places still described the criteria as
+  proposed and awaiting sign-off, so the one thing genuinely left — the RUN — read as blocked
+  on someone who had already answered. §7.1 is now four `curl` calls in order, and the
+  invocation is deliberately **not** the default one: `POST /api/quarantine/start` applies
+  three independent criteria, and the nav-soup prose gate fires on bodies the ≥100-word guard
+  KEEPS — a different, larger population than the URL rules reach — so a bare "run the pass"
+  would have stamped the 8 agreed articles plus an unmeasured number more. Hence
+  `include_prose_gate=false`, a status poll that confirms `dry_run:false` AND the criteria
+  actually applied (both are in the payload, and the mode is persisted across pause/resume and
+  restart), the keyword re-index that clears what the stamp leaves behind, and the composition
+  read that reports the count under `nav-soup-v2` — plus a decline branch and a reversal note.
+  Every endpoint and parameter re-derived from the routers rather than copied from the board.
+  **THE TIER-B EVIDENCE ARM COULD NOT FINISH**, which is why that half of row 5 had no
+  evidence at all. `criteria_calibration`'s prose arm was resumable by design and had no way
+  to carry its cursor: the bundle member passed `prose_gate_after_id=0, limit=500` literally,
+  so every export re-measured the same lowest-id 500 articles, `done` could never become true
+  on any corpus over 500, and both 2026-08-23 field reports stopped at `last_id: 695` having
+  flagged 0. Nothing was mislabelled — the per-batch denominator was honest — but *resumable*
+  reads as *will finish*. It also walked by ascending id, which samples whatever that key
+  orders first rather than the 451 index pages the decision is about. Now: a per-scope cursor
+  persisted under `data_dir()` (atomic `os.replace`, best-effort, `persisted: false` when it
+  cannot be written) and invalidated by a `CRITERIA_VERSION` change so two detectors' verdicts
+  are never summed; a `prose_gate_scope` of `all` or `index_pages`, collected in the base loop
+  that was already visiting those rows (no second codec-paying scan) and bounded by a heap of
+  negated ids so memory cannot grow with the corpus; an exact `remaining` that upgrades `done`
+  from a heuristic; and the population named in the report.
+  **ROW 7b HAD NO ARTIFACT TO CLOSE ON.** Six instruments held the soak's answer across six
+  different windows, several far shorter than the bar and none documented where a reader would
+  look: `collect_perf` is a 5,000-line ring over roughly one pass (which is why the 2026-07
+  multi-hour stalls were undiagnosable once they ended), the latency reservoir keeps 512
+  requests per route, the error log 2,000 rolling records. `GET /api/diagnostics/soak-window`
+  (bundle member `soak-window.json`) adds no sampler: it composes the durable readings and
+  states, per block, the window it actually read — process uptime as the clock, the
+  memory-guard and write-gate process-cumulative counters which align with it exactly, the
+  hourly `wal_bytes` series filtered down to it, and the two rolling windows saying so rather
+  than being read as if they spanned the soak. Verdict-free: `reaches_bar` is a fact about the
+  window's LENGTH. Three counters became durable to make it possible (write-gate
+  `total_held_s` accumulated on release with an in-flight hold left in `held_for_s`;
+  memory-guard `engagements`/`total_engaged_s` over closed episodes only; both shapes of an
+  aborted statement) and the error log now publishes `records_cap` beside every count.
+  `forensics.session_uptime()` measures from this process's own stamp and refuses the
+  timestamp on disk, which belongs to whichever session wrote it last.
+  **TWO OF THE FIRST SEVENTEEN MUTATIONS SURVIVED AND BOTH WERE FINDINGS ABOUT THE TESTS.** The
+  `records_cap` guard ran against the sandbox's EMPTY log, so `summary()` took its early-return
+  branch and never reached the counts the mutation removed. The bundle-member guard asserted
+  the payload's SHAPE, which a member handed a `Depends` sentinel also satisfies — every block
+  degrades honestly, so the degrade became the hiding place for the bug; it now inserts a
+  `wal_bytes` row and asserts the member reads that value back. Final matrix 21/21 red, each
+  asserting it applied first. **LESSONS** (also in CLAUDE.md's Session-rituals list): a report
+  whose every block degrades honestly has the same shape when handed nothing, so a shape
+  assertion cannot discriminate; filtering a bucketed series to a sub-bucket window is a choice
+  of which way to be wrong, and for a growth hazard the safe direction is to widen and
+  disclose; and not every cumulative second may be divided by a window — `total_held_s` is a
+  share because the gate is exclusive, `total_wait_s` sums across waiters and would exceed 1.
+  **A RATCHET-DRIFT FINDING THAT IS NOT THIS BRANCH'S:** the i18n ratchets were run at the
+  561/298 the board's §7.4 records and the report offered to lower both; measured at the branch
+  base `fb51d7b` first, they were already 560/297 — `ci.yml` had been lowered on `main` by
+  whatever keyed the strings, and the board's table was the stale half. §7.4 is a RECORD of a
+  run at `917e809`, so its figures are left exactly as measured and a note points a reader at
+  the workflow rather than at the table. **VERIFIED HERE:** full suite 8985 passed / 124
+  skipped / 0 failed (18:54); mypy 0 errors across 498 files; ruff and bandit clean; the three
+  i18n gates green at their true ratchets; collected-test delta base→head **9064 → 9107 = 43**,
+  exactly the 11 + 32 tests added, which is the cheap form of the pass-count-delta proof.
+  `test_diagnostics.py::test_doctor_healthy_returns_zero` fails in a mixed subset and was
+  reproduced identically on a clean `fb51d7b` worktree — the recorded 2026-07-12 subset-order
+  pollution, green alone and green in full-suite order. **REMAINING:** row 5's run, the ≥72 h
+  soak, the committed import and the tag are all the maintainer's; the soak member is BUILT and
+  UNREAD, which is not the same as closed.
 
 ## 2026-09-07 — docs/hygiene: the reality check, and the shallow clone that answered every question with its own boundary
 

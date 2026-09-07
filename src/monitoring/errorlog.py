@@ -297,6 +297,7 @@ def summary() -> dict:
     if not records:
         return {
             "records": 0,
+            "records_cap": _CAP,
             "first_at": None,
             "last_at": None,
             "last_session_started_at": None,
@@ -304,6 +305,8 @@ def summary() -> dict:
             "problems_this_session": 0,
             "locked_errors_total": 0,
             "locked_errors_this_session": 0,
+            "interrupted_errors_total": 0,
+            "interrupted_errors_this_session": 0,
             "http_errors_total": 0,
             "http_errors_this_session": 0,
             "http_status_breakdown": {},
@@ -321,6 +324,20 @@ def summary() -> dict:
     def _is_locked(r: dict) -> bool:
         blob = (r.get("message", "") + r.get("traceback_tail", "")).lower()
         return "database is locked" in blob
+
+    def _is_interrupted(r: dict) -> bool:
+        """A statement that was ABORTED mid-flight, either shape.
+
+        Two things produce it and both matter to the same reader. ``statement_deadline``
+        raises a typed ``StatementTimeout`` when a read overruns its budget; and SQLite
+        itself raises "interrupted" when a progress handler returns non-zero, which is how
+        that abort reaches the driver and also how a handler left armed on a POOLED
+        connection interrupts the NEXT checkout on the first holder's clock. Counting them
+        together is deliberate: the question a soak asks is "was work being cut short", and
+        splitting the two would make each look rarer than the condition is.
+        """
+        blob = (r.get("message", "") + r.get("traceback_tail", "")).lower()
+        return "interrupted" in blob or ("exceeded the" in blob and "deadline" in blob)
 
     def _is_http(r: dict) -> bool:
         return r.get("level") == _HTTP_LEVEL
@@ -342,6 +359,11 @@ def summary() -> dict:
 
     return {
         "records": len(records),
+        # The retention that bounds every count below, travelling WITH them: this log
+        # is a rolling ring, so ``records == records_cap`` means older records were
+        # trimmed and each total is a FLOOR, not a census. A count published without
+        # its own ceiling is the shape of a figure that is secretly a cap.
+        "records_cap": _CAP,
         "first_at": min(ats) if ats else None,
         "last_at": max(ats) if ats else None,
         "last_session_started_at": last_boot,
@@ -350,6 +372,10 @@ def summary() -> dict:
         "locked_errors_total": sum(1 for r in records if _is_locked(r)),
         "locked_errors_this_session": sum(
             1 for r in records if _is_locked(r) and _this_session(r)
+        ),
+        "interrupted_errors_total": sum(1 for r in records if _is_interrupted(r)),
+        "interrupted_errors_this_session": sum(
+            1 for r in records if _is_interrupted(r) and _this_session(r)
         ),
         "http_errors_total": sum(1 for r in records if _is_http(r)),
         "http_errors_this_session": sum(1 for r in records if _is_http(r) and _this_session(r)),

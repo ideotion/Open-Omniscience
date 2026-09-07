@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -184,6 +185,16 @@ _PREV_AT_BOOT: dict[str, Any] | None = None
 _PREV_LOADED = False
 # This boot's -wal reading, taken before any connection can exist (S0.1).
 _WAL_AT_BOOT: dict[str, Any] | None = None
+# When THIS process stamped itself running, and the monotonic reading beside it.
+#
+# Deliberately in-process rather than read back from session_state.json: that file is
+# written by every session, so a reader that took ``started_at`` from disk would
+# attribute the PREVIOUS process's start to this one whenever this one never stamped
+# itself -- the exact misattribution ``session_hwm`` exists to prevent. Absent here
+# means "this process never called record_session_start", which is a state a caller
+# must be able to see rather than a number it can guess.
+_SESSION_STARTED_AT: str | None = None
+_SESSION_STARTED_MONO: float | None = None
 
 
 def _read_state() -> dict[str, Any] | None:
@@ -215,6 +226,7 @@ def record_session_start() -> dict[str, Any] | None:
     ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
     every retry after the first would otherwise be blind."""
     global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT
+    global _SESSION_STARTED_AT, _SESSION_STARTED_MONO
     # Read the -wal FIRST: before the previous state is even parsed, so nothing
     # between here and the probe can grow into a database open.
     boot_reading = wal_state_before_open()
@@ -223,10 +235,13 @@ def record_session_start() -> dict[str, Any] | None:
     if not _PREV_LOADED:
         _PREV_AT_BOOT = prev
         _PREV_LOADED = True
+    started_at = _now()
+    _SESSION_STARTED_AT = started_at
+    _SESSION_STARTED_MONO = time.monotonic()
     _write_state(
         {
             "state": "running",
-            "started_at": _now(),
+            "started_at": started_at,
             "pid": os.getpid(),
             # What the PREVIOUS session left on disk, measured before this one could
             # touch it. It describes that session, not this one.
@@ -248,6 +263,32 @@ def wal_at_boot() -> dict[str, Any] | None:
     st = _read_state() or {}
     got = st.get("wal_at_boot")
     return got if isinstance(got, dict) else None
+
+
+def session_uptime() -> dict[str, Any]:
+    """How long THIS process has been running, or why that cannot be said.
+
+    ``seconds`` is elapsed monotonic time since ``record_session_start()`` stamped this
+    process -- monotonic so a wall-clock correction mid-soak cannot inflate or shrink
+    it. A process that never stamped itself (a test, a CLI entry point) reports
+    ``measured: False`` with the reason; it does NOT fall back to the timestamp on
+    disk, which belongs to whichever session wrote it last.
+    """
+    if _SESSION_STARTED_MONO is None:
+        return {
+            "measured": False,
+            "started_at": None,
+            "seconds": None,
+            "reason": (
+                "this process never called record_session_start(), so it has no start "
+                "of its own to measure from"
+            ),
+        }
+    return {
+        "measured": True,
+        "started_at": _SESSION_STARTED_AT,
+        "seconds": round(time.monotonic() - _SESSION_STARTED_MONO, 1),
+    }
 
 
 # The signal that initiated this stop, if any (set by install_signal_handlers).
