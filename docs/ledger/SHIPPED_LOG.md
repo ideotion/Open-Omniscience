@@ -6596,6 +6596,73 @@ operator step it is gated on is not actually available, which is a different sen
 doc's "Nothing built" and the one worth recording. **The general form: when an inventory says
 UNBUILT, the three questions are whether it is built, whether its premise still holds, and
 whether the thing that is missing is the one named.**
+**2026-09-07 — the law vertical's ungated half (S2/S4/S6/S7 of PROMPT_13), branch
+`claude/law-enumeration-coverage-1txthg`.** Full row in `shipped.csv`. Four lessons worth
+keeping, each copied into `LESSONS.md`:
+
+  - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
+    trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
+    catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
+    `verification.status: fetched`, and one of those feeds had never been asked for. The
+    status is about the PORTAL — impo.com.uy's row records loading `/contenido/`, while the
+    row's OWN notes call the feed URL the site's generic WordPress `/feed/` of news posts,
+    "not confirmed to carry each day's Diario Oficial issue individually, so verify before
+    relying on it for gazette monitoring". Promoting on the row status would have filed
+    Uruguayan site news in the corpus **as that country's official gazette**: not a broken
+    fetch, which announces itself, but a plausible wrong corpus, which does not. GENERAL
+    FORM: a verification tier covers the thing the verifying session actually looked at, and
+    every OTHER URL in that record is a claim nobody checked — so a field that will be
+    fetched needs its own tier, and the vocabulary should be narrower than the row's where
+    the middle tiers cannot mean anything (a search snippet can say a site exists, never
+    that a URL serves a parseable feed). The same catalog has 107 `enumeration_url` values
+    and a `structured.api`/`structured.bulk` pair in the identical position. COROLLARY on
+    reading the evidence: the row-level `evidence` sentence is what settles it, and it did —
+    three of the four record fetching the feed, one records fetching something else. Read
+    the sentence, not the enum.
+  - **A DENOMINATOR IN AN UNDECLARED UNIT IS NOT A DENOMINATOR, AND THE JOIN KEY IS THE
+    SECOND TRAP (2026-09-07, law coverage):** 39 dated official counts sat in the law
+    catalog as the completeness principle's missing denominators, and the obvious move —
+    print `tracked / enumerated` — is a fabricated statistic: a tracked document is
+    act/code-level while the recorded units run over codes, acts, volumes, gazette issues,
+    treaties and cases, and a volume or a gazette issue holds many acts. Deciding
+    commensurability from the unit STRING is the exact move ruling 47's extensive/intensive
+    rail already forbids for aggregation, so the two numbers are published side by side with
+    the reason attached and the declaration is raised as a ruling. SECOND HALF, and it would
+    have been silent: the counts key on ISO-2 `country` while documents key on an "ISO-ish"
+    `jurisdiction`, and `uk` documents state `gb` — so reading the jurisdiction code as a
+    country BOTH misses that pair AND risks attaching some other country's enumeration to a
+    code that collides with its ISO-2. The honest join runs only through the country a
+    document itself states, and a document stating none gets its own third state rather than
+    being reported as "no enumeration exists". GENERAL FORM: before dividing two numbers
+    from different files, check the UNIT and the JOIN KEY separately — either one alone can
+    make the quotient a number nobody measured.
+  - **A MECHANISM BUILT TO SURFACE CAVEATS IS BLIND TO THE CAVEATS IT WAS NOT SHAPED FOR —
+    carry the raw field too (2026-09-07, same slice):** a derived check (is the figure's
+    `source_url` on the publisher's own domain?) correctly flags the Council of Europe's
+    treaty count, which cites Wikipedia, and Mauritania's, which cites a news site. It
+    STRUCTURALLY cannot flag the African Union's 80, whose `source_url` is perfectly
+    on-domain and whose caveat lives in the row's `notes`: "a manual tally ... treat this as
+    approximate, not authoritative". Extracting that with a prose heuristic is the move this
+    project refuses, so the notes ride along verbatim beside the figure. GENERAL FORM: when
+    you build an instrument to expose disclosures, ask what it is structurally unable to
+    see, and keep the unprocessed field beside it — the same shape as the recorded
+    two-harvest-instruments lesson, at the level of one payload.
+  - **AN HONEST GAP RECORDED AS A COMMENT IS OUTSIDE THE SYSTEM, NOT A LESSER VERSION OF ONE
+    (2026-09-07, the law catalog's two confirmed gaps):** the catalog has a deliberate shape
+    for "we looked and there is no official portal" — a domain-less `lead` row, which the
+    validator sees and the loader drops, so a gap can never become a `Source`. Yemen is one.
+    North Korea's identically-reasoned, better-evidenced gap was a **YAML comment block**, so
+    the validator could not count it, the vetting board could not list it, and nothing that
+    reads the catalog as data knew it existed. Nobody was wrong at the time; the comment is
+    the producing session's own words and is where a future reader looks. GENERAL FORM: when
+    a project has a DATA shape for a deliberate absence, prose recording the same fact is not
+    a weaker record, it is an invisible one — add the row and keep the prose beside it.
+
+**AND THE PROCESS FACT, which is the reason two slices cost a grep instead of a rebuild:**
+S3/S4b and S5/A5 were both recorded as outstanding by the prompt and both were already
+shipped — the third and fourth law item in a row to turn out shipped-when-read (rulings 36
+and 37 were the first two, 2026-08-20). This vertical's status text ages faster than any
+other area's in the repo, so grep before building here, always.
 
 ## 2026-09-07 -- PROMPT_20 (structural debt, dependencies, test hygiene): the parked URL backlog, the orphaned dependency, the SQLite-only ruling, and an order-dependent red on main
 

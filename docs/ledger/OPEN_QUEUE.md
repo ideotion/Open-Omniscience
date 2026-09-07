@@ -21,8 +21,9 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
-- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
-  AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
+- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: EXECUTED 2026-09-07 (PR #1021, #1025). WHAT REMAINS IS
+  ONE OPEN QUESTION AND ONE REVERSIBLE DECISION — the code is done** (branch
+  `claude/async-handlers-event-loop-qfyl1n`; five of
   the prompt's seven slices were ALREADY BUILT and are recorded as such in
   [`../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md`](../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md)
   and `INVENTORY.md` PERF-01/PRH-23; NO RULING IS INVENTED HERE):**
@@ -58,6 +59,22 @@
   never again — a pass on which the corpus is empty, so the lane's whole-corpus scan has nothing
   to scan. If the maintainer reads R5 more strictly than that, the reversal is one line: run the
   job's worker inline instead of kicking it, keeping the registry entry for visibility.
+  **WHAT SHIPPED, so the next session does not re-derive it.** S1: the 56 DB-touching `async def`
+  handlers are 4, and `tests/test_handlers_off_the_event_loop.py` is the AST guard that stops the
+  57th — three mechanisms (a census against a named allowlist; an allowlisted handler must await
+  something OTHER than its own `run_in_threadpool` hop; and no async handler may reach the DB around
+  the dependency via `session_scope`/`SessionLocal`). The four that remain each await the request
+  stream and none touches its session on the loop. S7: `src/monitoring/preflight_job.py` registers
+  `first-run-preflight`, kicked from the pass tail under the `first-run-preflight` tail phase.
+  **NOTHING ELSE IN PROMPT 09 IS OPEN.** Its S2–S6 were already built before this session (anchors
+  in the prompt file's staleness banner), and its own PERF-02 row is the operator-gated field twins
+  tracked in the crash-brief entry below — not a second, separate obligation.
+  **THREE MEASUREMENTS TAKEN HERE, none of them from a field machine, stated so they are not
+  mistaken for effect evidence:** async-vs-sync dispatch under a concurrent second request
+  (1,159.6 ms → 4.8 ms, this sandbox, a synthetic handler); the handler census (56 → 4, by parsing
+  signatures); and the full-suite baseline diff (9,180 → 9,192 passed, delta = the 12 tests added,
+  empty failure- and skip-name diffs). The field numbers this batch is meant to move are in the
+  crash-brief entry's field-twins bullet and remain unmeasured.
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
   chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
@@ -9279,7 +9296,38 @@
     so the next report carries the kernel verdict beside the app's own account.
   **OPERATOR STEPS (in the brief's §8, none guessable from here):** the A/B host checks + the
   kernel-log capture at the next crash; nothing else in the plan is gated on them.
-  PENDING: the brief's execution (14 sequenced PRs, S0.1 first).
+  **THE CODE HALF IS COMPLETE (2026-09-07). All 29 slices of the brief are shipped** — verified by
+  matching every `#### S<n>.<m>` heading in the brief against `shipped.csv`, not by reading a status
+  line. S3.6 was the last, and it was the one that looked done and was not: PR-10 shipped its
+  lock-state cache and left its 56-handler half, with no `S3.6` row written at all (see the
+  PROMPT 09 entry above). **WHAT REMAINS IS NOT CODE**, and it is these four things:
+  • **OPERATOR-GATED — the §8 host checks, and they expire.** `journalctl --list-boots`,
+    `-k -b -1` / `-b 0` greps, `last -x`, `coredumpctl list`, `free -m`/`swapon --show`, and the
+    journald `Storage=` + `adm`/`systemd-journal` membership checks, on machines A and B. **A boot
+    rotation destroys the `-b -1` journal**, so this is the one item that gets less answerable with
+    time. Also §8's six questions only the maintainer can answer (how the app is started and
+    stopped; whether the process was frozen or gone; whether the machine itself froze; whether a
+    browser tab was on Home; whether `install.sh` was re-run between crashes; whether `OO_AUTOSTART`
+    could have launched two instances).
+  • **OPERATOR-GATED — the field twins, which are the acceptance numbers.** Nothing in this batch
+    was measured on a field machine, and the brief says so: one pass on B at
+    `collect_parallelism=50` reporting `rss_max` / `mem_avail_min` (today 6,767 MB / 94 MB); a 72 h
+    soak on C with Home open reporting engage-cycles/day, `wal_history` max, the checkpoint `busy`
+    share, `/api/database/stats` p95, and `interrupted` on `/api/scheduler/activity` (today 37); one
+    bundle from A, whose `locked_errors_total` should fall from 234 toward 0. **Until these run, the
+    batch has mechanism evidence and no effect evidence** — and per the brief, a P0-style validation
+    run reads as not-measurable unless ≥1 full pass ran, and contaminates the collect_perf window.
+  • **RULING-GATED — the polled-GET admission cap** (recorded in full in the PROMPT 09 entry above).
+  • **DELIBERATELY DEFERRED, recorded so they are not rediscovered as new** (brief §9): the
+    engine-level `BEGIN IMMEDIATE` recipe, as its own measured slice (ruling R6 scoped this batch to
+    the two call sites); `wal_autocheckpoint=0` + a writer-side PASSIVE tick, MEASURE FIRST — with
+    1–6 h passes a boundary-only tick would remove the only in-pass growth bound; the btrfs
+    `chattr +C` recommendation for machine B, to DOCUMENT and never automate; and a source guard so
+    a future boot-time wiki-dump scan cannot land silently (B's 6.8 GB of dumps are verified inert
+    at boot and per pass today, and that is a property worth keeping by construction).
+  **AND THE HONEST LIMIT THE BRIEF OPENED WITH STILL HOLDS: none of this establishes what killed any
+  of the four sessions.** Phase 0 shipped so the NEXT one is answerable; it cannot recover the four
+  that are gone. Nothing here licenses writing a crash cause into a user-facing string.
 - **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
   look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
   anything marked in the memory as something to do later. Sort everything into a detailed action plan
@@ -9494,6 +9542,69 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   behind a count), D6 (pin + refuse), D7 (sweep yes; stay on `<1.0`), D8 (no build), D9 (drop),
   D10 (already in the recommended shape). Each is reversible and each is named here so a
   maintainer ruling that differs has one place to land.
+- **LAW VERTICAL — S2/S4/S6/S7 EXECUTED 2026-09-07 (branch `claude/law-enumeration-coverage-1txthg`,
+  one draft PR onto `main`); FOUR QUESTIONS FOR THE MAINTAINER, and two prompt claims corrected.**
+  Per-slice detail is in the `docs/ledger/shipped.csv` row; this entry holds only what needs a
+  ruling and what a later session must not re-derive.
+  **STALENESS FIRST, because two of the six slices did not exist as work.** `S3`/`S4b` (thread the
+  catalog's language to the corpus) and `S5`/`A5` (AI change summaries) were both recorded as
+  outstanding by `PROMPT_13` and both were already shipped at `main` @ `690920e2` — the columns are
+  at `src/database/models.py:2187-2188`, the summary ride-along at `src/scheduler/runner.py:1263`.
+  Neither was rebuilt; both prompt sections and the 2026-07-17 brief now carry the anchor. That is
+  the third and fourth law item in a row to turn out shipped-when-read (36 and 37 were the first
+  two, 2026-08-20), which is itself the finding: **this vertical's status text ages faster than any
+  other area's, so grep before building here, always.**
+  **F1 RE-PROBED AND STILL BLOCKED (2026-09-07, per-host evidence, so nobody re-runs it):**
+  `curl -o /dev/null -w '%{http_code}'` gives `pypi.org` 200 and `github.com` 400 (both reachable),
+  against `000` — connection refused at the tunnel — for `www.legislation.gov.uk`,
+  `eur-lex.europa.eu`, `www.gesetze-im-internet.de` AND `legal.gov.vc`. Unchanged from 2026-08-20.
+  S1 stays untouched; the one operator step (fetch one CLML `data.xml`, run `parse_clml`, check the
+  recovery floor and an empty `unknown_elements`) is still the thing that unblocks the enumeration.
+  **Q-LAW-1 (the one that actually blocks a number): should each `official_count` entry DECLARE
+  whether its unit counts the same objects an act/code-level tracked document is?** S4 put the
+  catalog's 39 dated counts (32 countries) into the coverage report and deliberately computes NO
+  fraction, because the units run over codes, acts, volumes, gazette issues, treaties and cases and
+  a volume or a gazette issue holds many acts. Deciding that from the unit STRING is the exact move
+  ruling 47's extensive/intensive rail forbids. Options: (a) add an explicit
+  `counts_documents: true|false` to each of the 39 entries, hand-decided and reviewable in the diff,
+  after which a real tracked-vs-enumerated fraction becomes computable for the entries that say
+  true; (b) leave it undeclared permanently and keep publishing the two numbers side by side;
+  (c) rule that the fraction is never wanted at all, since "covering a jurisdiction" is about
+  breadth rather than a percentage. Recommendation: **(a)** — it is ruling 47's own precedent
+  applied one vertical over, the population is 39 rows and closed, and until it lands the report is
+  honest but cannot answer "how much of France do we have".
+  **Q-LAW-2 (L6, and the stated default was APPLIED not decided): `[pdf]` stays optional and the
+  coverage report now says so, with the numbers.** Measured at this anchor: **63 of 275 catalog
+  sources declare a format list of exactly `[pdf]`, across 54 countries, and 6 of the 23 registrable
+  tracked documents are PDFs by URL** — all six Timor-Leste. So a default install cannot read a
+  quarter of the documents this vertical tracks. The question stands: promote `[pdf]` into the
+  default extras, or keep the disclosure? Recommendation: the disclosure is the right FLOOR either
+  way and is now shipped; promoting is a separate call about install weight (`pypdf` only).
+  **Q-LAW-3: 44 rows are on the vetting board and every one wants a one-word answer** —
+  `docs/product/LAW_VETTING_BOARD.md`, generated by `scripts/law_vetting_board.py`, in four
+  sections: 2 confirmed gaps (kp, ye — acknowledge or re-open), 9 unverified leads with a real
+  domain (enable / adapter / gap / drop), 29 access-blocked or bot-walled (adapter / API / honest
+  gap — never scraped around), 4 recorded down (re-check / park / drop). Sections 3 and 4 are a
+  KEYWORD TRIAGE over the catalog's own prose and the page says so; they are a starting point, not
+  an exhaustive list of blocked domains.
+  **Q-LAW-4: is a `gazette_feed` a first-class endpoint tier?** S2 gave each of the four
+  `gazette_feed` values its own `gazette_feed_verification` block, validator-enforced, vocabulary
+  `fetched | lead` only. This was necessary rather than tidy: all four rows are
+  `verification.status: fetched` at ROW level and one of them (impo.com.uy) has a feed nobody ever
+  fetched, which the row's own notes call the site's generic WordPress news feed — promoting on the
+  row status would have filed Uruguayan site news as that country's official gazette. Ruling asked
+  for: does this tier generalise to `enumeration_url` (107 of them, none fetched by anyone) and to
+  `structured.api`/`structured.bulk`? Recommendation: **yes, and the same way** — an endpoint field
+  that no test can distinguish from a URL somebody wrote down is the shape this vertical keeps
+  paying for.
+  **RECORDED SO IT IS NOT RE-DISCOVERED:** the DPRK honest-gap record lived ONLY in a YAML comment
+  while Yemen's identically-reasoned one was a domain-less `lead` row, so no tool could read it.
+  It is a row now (the comment kept beside it, verbatim); the loader still returns 275 sources
+  because a domain-less row can never become a `Source`. **And what S2 does NOT buy:**
+  `select_sources` admits only QUALIFIED sources, so the three wired feeds are not collected on
+  seeding — they enter the qualification ladder, which they previously could not, because
+  `trial_fetch` falls back to sitemap discovery without an `rss_url` and a gazette with neither
+  produces no evidence and stays unqualified forever.
 
 ---
 
