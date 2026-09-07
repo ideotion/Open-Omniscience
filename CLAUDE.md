@@ -6096,6 +6096,64 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     data and count the rows it would touch; a zero is a finding about the item, and asking what the
     item was a proxy for is usually worth more than the item.
 
+  - **A NUMBER THAT DESCRIBES WHAT A FUNCTION DOES MUST BE CAPTURED FROM THAT FUNCTION, NEVER
+    FROM A REBUILD OF ITS INPUTS (2026-09-07, the catalogue-collision figure):** the seeder's
+    real loss is measured by `seed_default_sources`, which concatenates five catalogue files.
+    I re-assembled that list from the same five paths and got **494**; a skeptic re-assembled
+    it and got **475**; the truth is 475, because the shipped path loads the CURATED legal file
+    while my reconstruction merged the GENERATED one — a 224-entry difference in an input list
+    that looked identical at the level of "which files". Spying on the callee
+    (`ss.seed_sources = capture`) and driving the real function settles it in four lines and
+    cannot drift. This is the recorded "a standalone SQL probe is a lookalike" lesson one layer
+    up from SQL: the lookalike axis here is not table stats or ANALYZE state, it is **which
+    inputs the production path actually assembles**, and a reconstruction is wrong precisely
+    where the function has a detail you did not read. Corollary for the guard: make the FIXTURE
+    the capture, so the number can never be pinned against a rebuild again.
+  - **A RATCHET SCOPED TO ONE INPUT FILE CANNOT SEE THE CLASS IT NAMES WHEN PRODUCTION READS
+    FIVE (2026-09-07, same slice):** the budget pinned 54 domains / 227 entries measured on
+    `configs/sources.yml`, and its own docstring named the general class — "adding a second
+    entry for a domain the catalogue already claims is silently discarded". Production seeds
+    five catalogues, so **248 cross-catalogue collisions sat outside the guard entirely**,
+    including 220 that are the whole political-lean catalogue losing to the curated one: 192
+    shadowed entries carry a `lean-*` tag the survivor lacks (`cnn.com` loses
+    `lean-center-left`), so a vocabulary `src/catalog/taxonomy.py` defines barely reaches the
+    database it was written for. The tell is the mismatch between a guard's DOCSTRING (which
+    names a class) and its FIXTURE (which names one file); pin the number the production path
+    produces, and where a narrower figure is also worth keeping, say which is which rather than
+    letting the smaller one stand for the loss.
+  - **LOWERCASING THE NEEDLE AGAINST A CASE-SENSITIVE COLUMN IS WORSE THAN NOT NORMALISING AT
+    ALL (2026-09-07, `is_disqualified_domain`):** `Source.domain == domain.lower()` reads as
+    defensive and is not. The column is compared with SQLite's BINARY collation and
+    `POST /api/sources` stores the domain as typed, so a source added as `Example.COM` and later
+    disqualified became unrefusable by **every** spelling **including its own** — the
+    one-sided normalisation broke the exact-match caller that worked before it. And the failure
+    direction is the bad one: a refusal that does not fire looks exactly like a domain nobody
+    judged. Normalise both sides or neither; where the stored side cannot be normalised without
+    a write-path change, seek the SPELLINGS the caller can legitimately supply (`in_()` over a
+    unique index is still seeks, not a scan) and STATE the residual gap rather than implying it
+    is closed. The negative twin is mandatory — widening the spellings must not start refusing
+    a domain nobody judged.
+  - **"IT ALREADY PASSES" AND "IT CANNOT FAIL" ARE DIFFERENT CLAIMS, AND ONLY A PER-TEST
+    MUTATION TELLS YOU WHICH YOU WROTE (2026-09-07, same slice):** the new test file classified
+    its own tests — the two end-to-end ones as non-discriminating ("their value is that they
+    KEEP passing"), the chokepoint as "the only level where the refusal is discriminating".
+    Mutating each refusal separately showed one of the two end-to-end tests **fails without the
+    change**, because that funnel used to report a disqualified domain under the wrong reason
+    and the base commit has no such counter at all. A taxonomy of one's own guards is a claim
+    like any other; a mutation matrix is cheap and it is the only thing that measures it.
+  - **AN EXACT-DICT ASSERTION ENCODES EVERY FIELD THAT HAPPENED TO BE ABSENT — AND N RED NAMES
+    ARE NOT N CAUSES (2026-09-07, the torture suite):** filling in a report field that had
+    always been empty broke `test_t6_divergent_merge_full`, which compared the whole plan dict
+    and was therefore only ever satisfiable BECAUSE the field was dead — the test had encoded
+    the defect. It then broke `test_t2_duplicate_flood_is_idempotent` too, which touches none of
+    the changed code: t6 aborts at its assertion **before** its `--commit`, so t2's first
+    re-merge became the initial merge and legitimately created rows. **One regression, two red
+    names, in a module-scoped fixture chain.** Before triaging a suite diff, ask how many CAUSES
+    the failures have — a shared fixture makes the first failure a cause of the rest — and check
+    the baseline for each, because here the baseline was green on both and the temptation was to
+    read the second as an unrelated flake. The repair belongs in the assertion, not the code:
+    compare the fields the test is about, and pin the newly-live field by name.
+
 ## Open queue (when maintainer says proceed)
 - **PROMPT-04 EXECUTION 2026-09-07 — source qualification, discovery, and ONE NEW RULING (B11).
   Three slices shipped; S1 stays blocked on B1 and the promotion frontier is PARKED WHOLE (branch
@@ -6107,25 +6165,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   class of claim rule 2 of the working mode exists for. Corrections landed in the prompt and the inventory
   in the same PR.
   **NEW RULING NEEDED — B11, WHAT IDENTIFIES A SOURCE: A DOMAIN, OR A FEED?** `Source.domain` is UNIQUE and
-  the seeder is create-only, so **227 of the 3,429 entries in `configs/sources.yml` have never been
-  registered on any install**, silently. They are not redundant rows: measured, **108 are in a DIFFERENT
-  language than the surviving sibling** — `bbc.com` carries 31 entries and the 30 that lose are BBC Arabic,
-  Hausa, Swahili, Persian and the rest; `dw.com` shadows DW Arabic, Deutsch, Español and Brasil; `rfi.fr`
-  its English, Spanish, Portuguese and Chinese services. So the catalogue describes multilingual coverage
-  the app cannot hold, and the prompt's own "fix the data" instruction would have DELETED precisely the
-  breadth the de-US-centring and language-equilibrium work exists to build — **refused, and raised as a
-  question rather than decided.** The loss is now counted, reported apart from an idempotent skip, and
-  ratcheted. THE OPTIONS: (a) leave it with the count visible (one feed per outlet; the ratchet stops it
-  growing); (b) key a source on its FEED — reaches the alias-aware dedup, the restore-merge's `m.domain =
-  i.domain` joins, the `configs/source_qualification.yml` overlay, the citations tally and
-  `is_disqualified_domain`, i.e. a migration plus a data-safety review; (c) split only the clear cases into
-  their real distinct hosts in the catalogue data (`feeds.bbci.co.uk/arabic` IS a distinct host), leaving
-  shared-domain journal families alone. **Recommendation: (c) as a reviewed data batch for the language
-  services, then (a) for the remainder** — it recovers the mission-relevant half with no schema change.
+  the seeder is create-only, so an entry whose domain an earlier sibling already claims is never registered
+  on any install, silently: **475 of the 3,870 entries a real boot seeds, across 299 domains** — 227 of them
+  inside `configs/sources.yml` alone, which is the only figure the first cut of this entry quoted (the
+  per-file number a reader of that file would compute, not the number `POST /api/sources/seed-defaults`
+  returns). They are not redundant rows, and they are TWO losses, not one: **75 shadowed entries declare a
+  language and declare a DIFFERENT one than the survivor** (`bbc.com` carries 31 and the 30 that lose are
+  BBC Arabic, Hausa, Swahili, Persian and the rest; `dw.com` shadows DW Arabic/Deutsch/Español/Brasil), and
+  **192 carry a `lean-*` tag the survivor does not have** — 220 of the cross-catalogue losses are
+  `sources_spectrum.yml` losing to `sources.yml`, so the political-lean catalogue is 79% shadowed and the
+  `src/catalog/taxonomy.py` scale barely reaches the database it was written for. (An earlier "108 differ in
+  language" counted a missing field as a value; 33 of those are absent-vs-present artifacts on shared-domain
+  journal families, so 75 is the figure that carries the argument.) The prompt's own "fix the data"
+  instruction would have DELETED precisely the breadth the de-US-centring and language-equilibrium work
+  exists to build — **refused, and raised as a question rather than decided.** The loss is now counted at
+  BOTH scopes, reported apart from an idempotent skip, and ratcheted. THE OPTIONS: (a) leave it with the
+  count visible (one feed per outlet; the ratchet stops it growing); (b) key a source on its FEED — reaches
+  the alias-aware dedup, the restore-merge's `m.domain = i.domain` joins, the
+  `configs/source_qualification.yml` overlay, the citations tally and `is_disqualified_domain`, i.e. a
+  migration plus a data-safety review; (c) split the cases that genuinely live on distinct hosts into their
+  own catalogue rows. **Recommendation: (a) now, and (b) is the real question — because (c) CANNOT RECOVER
+  THE LANGUAGE SERVICES AT ALL.** This entry first recommended (c) on the premise that
+  `feeds.bbci.co.uk/arabic` "IS a distinct host". **It is not — it is a PATH**, and a skeptic pass caught it
+  the same day: measured, all 31 `bbc.com` entries share the one host `feeds.bbci.co.uk`, all 22 `dw.com`
+  share `rss.dw.com`, all 11 `rfi.fr` share `www.rfi.fr`; only **3 of the 54** colliding domains have
+  pairwise-distinct RSS hosts (`arxiv.org`, `edition.cnn.com`, `abcnews.go.com` — section families, not
+  language services), and **zero** catalogue entries carry a path in `domain`. So (c) was unexecutable for
+  exactly the set it claimed to recover, and the honest question is whether per-outlet multilingual coverage
+  is worth a source-identity migration.
   **SHIPPED:** the restore report's `samples` (empty at THREE sites since they were written — sources,
-  articles, wiki_pages — now read from `merged_rows`); the catalogue-collision count + ratchet; and the
-  clause-(d) disqualified-domain skip moved from EMERGENT to ENFORCED at the `_add_candidate` chokepoint
-  with its reason reported apart from `already_a_source`.
+  articles, wiki_pages — now read from `merged_rows`, and rendered in the markdown import report, because a
+  populated field that stops at the JSON is the dead-end shape); the catalogue-collision count + ratchet at
+  BOTH scopes; and the clause-(d) disqualified-domain skip moved from EMERGENT to ENFORCED at the
+  `_add_candidate` chokepoint with its reason reported apart from `already_a_source`.
+  **THE SKEPTIC ROUND CHANGED FOUR THINGS AND CAUGHT ONE REGRESSION — it is the reason this entry's own
+  numbers moved:** (1) the B11 recommendation rested on a FALSE premise (above); (2) `227` was the
+  per-file figure, not what an install reports — 475, with the 220-entry political-lean loss nobody had
+  named; (3) `is_disqualified_domain` lowercased the needle against a BINARY-collated column, so a
+  disqualified `Example.COM` was unrefusable by every spelling including its own — a real defect in new
+  code, fixed with its negative twin; (4) the refusal ran one indexed seek per candidate domain on an
+  `async def` handler for a question only already-known domains can answer, now asked once per known
+  domain. AND the full suite caught what the change itself broke: `test_t6_divergent_merge_full` compared
+  the WHOLE plan dict, which was only ever satisfiable because `samples` was dead, and its early abort
+  then failed `test_t2_duplicate_flood_is_idempotent` as collateral — one regression, two red names, both
+  green on the baseline. Five lessons recorded.
   **VERIFIED-PRESENT, DO NOT REBUILD (the stale half):** the discovery TRAIL and the citations TALLY are
   shipped end to end (`src/discovery/source_trail.py`, both endpoints, `app-sources.js:437`,
   `tests/test_source_trail.py`), carrying the both-directions caveat verbatim and no score-shaped key; the

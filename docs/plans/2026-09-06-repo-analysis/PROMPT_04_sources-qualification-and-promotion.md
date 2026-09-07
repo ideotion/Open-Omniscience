@@ -133,13 +133,19 @@ its own before/after on both consumers.
   `merged_rows`, which also removes a drift the obvious repair would keep (the `articles` INSERT joins
   `temp.map_sources`, so a restated predicate could name a row the INSERT then skipped).
 - ~~**54 duplicate domains → 227 entries unreachable.** Fix the data, add the guard.~~ — **GUARD DONE
-  2026-09-07; "fix the data" is the WRONG DIRECTION and is now a maintainer ruling (B11).** Measured: 108 of
-  the 227 shadowed entries are in a DIFFERENT language than the surviving sibling. `bbc.com` carries 31
-  entries and the 30 that lose are BBC Arabic, Hausa, Swahili, Persian and the rest; `dw.com` shadows DW
-  Arabic, Deutsch, Español and Brasil. Deleting them to make the catalogue "clean" would delete exactly the
-  multilingual breadth the language-equilibrium work exists to build. `seed_sources` now reports
-  `shadowed` apart from `skipped_existing`, and `tests/test_catalog_domain_collisions.py` ratchets the count.
-  RECOVERY needs the source-identity ruling (a domain, or a feed) — see B11.
+  2026-09-07; "fix the data" is the WRONG DIRECTION and is now a maintainer ruling (B11).** The prompt's
+  "54 / 227" is the figure for `configs/sources.yml` alone; a real boot seeds five catalogues, so the loss
+  an install takes is **299 domains / 475 of 3,870 entries**, and both are now ratcheted. It is two losses:
+  **75** shadowed entries declare a language and declare a DIFFERENT one than the survivor (`bbc.com`
+  carries 31 and the 30 that lose are BBC Arabic, Hausa, Swahili, Persian; `dw.com` shadows DW Arabic,
+  Deutsch, Español, Brasil), and **192** carry a `lean-*` tag the survivor lacks — 220 of the
+  cross-catalogue losses are `sources_spectrum.yml` losing to `sources.yml`, so the political-lean
+  catalogue is 79% shadowed. Deleting any of it to make the catalogue "clean" would delete exactly the
+  breadth the language-equilibrium work exists to build. `seed_sources` now reports `shadowed` apart from
+  `skipped_existing`, and `tests/test_catalog_domain_collisions.py` ratchets both counts.
+  RECOVERY needs the source-identity ruling (a domain, or a feed) — see B11, whose first recommendation
+  was refuted the same day: the language services do NOT live on distinct hosts (all 31 `bbc.com` entries
+  share `feeds.bbci.co.uk`; they differ by feed PATH), so splitting the catalogue data cannot recover them.
 - ~~**A NULL-only backfill migration** for the `country_from_title` recoveries~~ — **NON-ITEM (measured
   2026-09-07): it would migrate nothing.** `country_from_title` recovers **0** of the 1,599 catalogue entries
   that carry no explicit `country`, because the 2026-06-16 batch promoted all 68 `(Country)`-suffix entries

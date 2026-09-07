@@ -5855,3 +5855,67 @@ and unmeasured: the seeder is create-only, so NO catalogue metadata improvement 
 tags — ever reaches an existing install. GENERAL FORM: before writing a migration, run its own predicate
 over the real data and count the rows it would touch; a zero is a finding about the item, and asking what
 the item was a proxy for is usually more valuable than the item.
+
+### 2026-09-07 — lessons from the prompt-04 skeptic round
+
+Three adversarial passes (negative-space, data-safety/write-path, honesty/guard-vacuity)
+ran read-only before the push. Two of their findings changed a number in a maintainer-facing
+ruling; one was a real defect in new code; one was a regression the change itself caused.
+
+  - **A NUMBER THAT DESCRIBES WHAT A FUNCTION DOES MUST BE CAPTURED FROM THAT FUNCTION, NEVER
+    FROM A REBUILD OF ITS INPUTS (2026-09-07, the catalogue-collision figure):** the seeder's
+    real loss is measured by `seed_default_sources`, which concatenates five catalogue files.
+    I re-assembled that list from the same five paths and got **494**; a skeptic re-assembled
+    it and got **475**; the truth is 475, because the shipped path loads the CURATED legal file
+    while my reconstruction merged the GENERATED one — a 224-entry difference in an input list
+    that looked identical at the level of "which files". Spying on the callee
+    (`ss.seed_sources = capture`) and driving the real function settles it in four lines and
+    cannot drift. This is the recorded "a standalone SQL probe is a lookalike" lesson one layer
+    up from SQL: the lookalike axis here is not table stats or ANALYZE state, it is **which
+    inputs the production path actually assembles**, and a reconstruction is wrong precisely
+    where the function has a detail you did not read. Corollary for the guard: make the FIXTURE
+    the capture, so the number can never be pinned against a rebuild again.
+  - **A RATCHET SCOPED TO ONE INPUT FILE CANNOT SEE THE CLASS IT NAMES WHEN PRODUCTION READS
+    FIVE (2026-09-07, same slice):** the budget pinned 54 domains / 227 entries measured on
+    `configs/sources.yml`, and its own docstring named the general class — "adding a second
+    entry for a domain the catalogue already claims is silently discarded". Production seeds
+    five catalogues, so **248 cross-catalogue collisions sat outside the guard entirely**,
+    including 220 that are the whole political-lean catalogue losing to the curated one: 192
+    shadowed entries carry a `lean-*` tag the survivor lacks (`cnn.com` loses
+    `lean-center-left`), so a vocabulary `src/catalog/taxonomy.py` defines barely reaches the
+    database it was written for. The tell is the mismatch between a guard's DOCSTRING (which
+    names a class) and its FIXTURE (which names one file); pin the number the production path
+    produces, and where a narrower figure is also worth keeping, say which is which rather than
+    letting the smaller one stand for the loss.
+  - **LOWERCASING THE NEEDLE AGAINST A CASE-SENSITIVE COLUMN IS WORSE THAN NOT NORMALISING AT
+    ALL (2026-09-07, `is_disqualified_domain`):** `Source.domain == domain.lower()` reads as
+    defensive and is not. The column is compared with SQLite's BINARY collation and
+    `POST /api/sources` stores the domain as typed, so a source added as `Example.COM` and later
+    disqualified became unrefusable by **every** spelling **including its own** — the
+    one-sided normalisation broke the exact-match caller that worked before it. And the failure
+    direction is the bad one: a refusal that does not fire looks exactly like a domain nobody
+    judged. Normalise both sides or neither; where the stored side cannot be normalised without
+    a write-path change, seek the SPELLINGS the caller can legitimately supply (`in_()` over a
+    unique index is still seeks, not a scan) and STATE the residual gap rather than implying it
+    is closed. The negative twin is mandatory — widening the spellings must not start refusing
+    a domain nobody judged.
+  - **"IT ALREADY PASSES" AND "IT CANNOT FAIL" ARE DIFFERENT CLAIMS, AND ONLY A PER-TEST
+    MUTATION TELLS YOU WHICH YOU WROTE (2026-09-07, same slice):** the new test file classified
+    its own tests — the two end-to-end ones as non-discriminating ("their value is that they
+    KEEP passing"), the chokepoint as "the only level where the refusal is discriminating".
+    Mutating each refusal separately showed one of the two end-to-end tests **fails without the
+    change**, because that funnel used to report a disqualified domain under the wrong reason
+    and the base commit has no such counter at all. A taxonomy of one's own guards is a claim
+    like any other; a mutation matrix is cheap and it is the only thing that measures it.
+  - **AN EXACT-DICT ASSERTION ENCODES EVERY FIELD THAT HAPPENED TO BE ABSENT — AND N RED NAMES
+    ARE NOT N CAUSES (2026-09-07, the torture suite):** filling in a report field that had
+    always been empty broke `test_t6_divergent_merge_full`, which compared the whole plan dict
+    and was therefore only ever satisfiable BECAUSE the field was dead — the test had encoded
+    the defect. It then broke `test_t2_duplicate_flood_is_idempotent` too, which touches none of
+    the changed code: t6 aborts at its assertion **before** its `--commit`, so t2's first
+    re-merge became the initial merge and legitimately created rows. **One regression, two red
+    names, in a module-scoped fixture chain.** Before triaging a suite diff, ask how many CAUSES
+    the failures have — a shared fixture makes the first failure a cause of the rest — and check
+    the baseline for each, because here the baseline was green on both and the temptation was to
+    read the second as an unrelated flake. The repair belongs in the assertion, not the code:
+    compare the fields the test is about, and pin the newly-live field by name.
