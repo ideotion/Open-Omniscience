@@ -69,6 +69,14 @@ const src = [
   extract("function _uxImRenderQueue("),
   extract("function _jobRow("),
   extract("function _fmtBytes("),
+  // _jobRow calls these two (PERF-09's rate line). Extracted rather than stubbed,
+  // for the reason this whole harness exists: a stand-in would let the copy under
+  // test drift from the shipped code. Adding a call to a function this suite
+  // extracts in ISOLATION makes every such suite part of that change -- this one
+  // went red on CI with "ReferenceError: _rateNote is not defined" the moment
+  // _jobRow gained the call.
+  extract("function _rateNote("),
+  extract("function _fmtDur("),
   extract("function fmtNum("),
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function fmtDateTime(ms){return 'DATE';}",
