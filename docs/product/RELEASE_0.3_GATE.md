@@ -628,7 +628,16 @@ Recorded so a future reader does not mistake absence for oversight:
   [`PARKED.md`](../../PARKED.md); the human UX pass the surface awaits is
   [`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md) row F, not a row here.
 - **Windows / macOS install paths** — Debian is the target (ruled 2026-06-17); the macOS CI
-  lane stays observation-only.
+  lane stays observation-only. **STILL TRUE FOR 0.3, BUT ITS FORWARD HALF IS SUPERSEDED
+  (V1-5, ruled 2026-09-07): Windows is FIRST-CLASS AT 1.0 and macOS is best-effort.** The
+  premise that sentence rested on had gone stale — `install.ps1` carries an ARM64→x64
+  interpreter ladder, seven Windows rows shipped 2026-08-22/23, and CI already runs a
+  `windows-latest` lane beside the macOS one. Nothing changes for this tag: both lanes stay
+  `continue-on-error` observation here. What changes is downstream — **graduating the
+  `windows-latest` lane from observation to BLOCKING is a 0.9 hardening gate row**, per
+  [`V1_PATHWAY`](../design/V1_PATHWAY_2026-07-14.md) §3's fourth amendment. Recorded here
+  because this line is where a reader looks for the install scope, and left un-amended it
+  would carry "Debian is the target" forward past the ruling that narrowed it to 0.3.
 - **Tor-exit-resolve** — assessed, zero code, ruling-gated.
 - **The 5M-scale diagnostics** — deferred with row 3's amendment, not abandoned.
 - **Row 8's fuller matrix** — **largely discharged 2026-08-20**
