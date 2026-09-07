@@ -116,10 +116,10 @@ claim lives · owning prompt.
 ## AI — the AI layer and the Bulletin
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
 |---|---|---|---|---|---|
-| AI-01 | Bulletin S1: Layer-B narration as a `BackgroundJob` with a persisted cursor | UNBUILT | FD §"The Bulletin" REMAINING (S1); `src/bulletin/narration.py` inline | FD | P12 |
-| AI-02 | Bulletin S2: §18 export-privacy enumeration before a first evidence ZIP leaves a machine | UNBUILT | FD REMAINING (S2); `src/bulletin/evidence.py:7` | FD | P12 |
-| AI-03 | Bulletin Q4: `LAYER_A_REQUIRES_CAPABLE_HARDWARE = True` (one read) | RULING-GATED (D1) | `src/bulletin/gate.py:34,76` | FD §20 | P12 |
-| AI-04 | Bulletin Q1/Q2/Q3/Q5 | RULING-GATED (D2–D4) | FD §20 | FD | P12 |
+| AI-01 | Bulletin S1: Layer-B narration as a `BackgroundJob` with a persisted cursor | SHIPPED 2026-09-07 | `src/bulletin/narration_job.py`; `POST /api/bulletin/editions/{f}/narrate` | FD | P12 |
+| AI-02 | Bulletin S2: §18 export-privacy enumeration before a first evidence ZIP leaves a machine | SHIPPED 2026-09-07 | `src/bulletin/privacy.py`; rides the evidence plan, the review screen and both ZIPs | FD | P12 |
+| AI-03 | Bulletin Q4: `LAYER_A_REQUIRES_CAPABLE_HARDWARE` | RULED False 2026-09-07 (D1) — the gate covers narration only; two verdicts | `src/bulletin/gate.py` | FD §20 | P12 |
+| AI-04 | Bulletin Q1/Q2/Q3/Q5 | RULED 2026-09-07 (D2–D4) — sections + review screen ratified; introduction narrated; mail never | FD §20 | FD | P12 |
 | AI-05 | Bulletin S4: `/llm-bench` on a GPU machine and a slow one (the §6.3 time budget) | OPERATOR-GATED | FD REMAINING (S4) | FD | P12 |
 | AI-06 | Model-weights revision pin in the registry + refuse-on-mismatch | RULING-GATED (D6) | CLAUDE.md 2026-08-05 finding | CLAUDE.md | P11 |
 | AI-07 | `X_AVAILABLE` capability probes (PQC/OTS) probe a round trip, not an import; pqcrypto stays `<1.0` | RULING-GATED (D7) | `src/custody/signing.py:61`, `timestamp.py:62`; pyproject bound | CLAUDE.md `PQC_AVAILABLE` entry | P11 |

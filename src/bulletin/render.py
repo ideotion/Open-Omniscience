@@ -793,6 +793,19 @@ def _cards_blocks(section: dict, T: Translator) -> list[tuple[str | None, str, l
                 lines.append(T.f("- n: {n}", n=_fmt(card.get("n"))))
             if card.get("bucket"):
                 lines.append(T.f("- Bucket: {bucket}", bucket=T.t(str(card["bucket"]))))
+            # WHICH WINDOW THIS CARD'S FIGURES CAME FROM. Printed per card because
+            # the section is mixed: some producers honour the edition's period and
+            # some compute against generation time, and one line at the top of the
+            # section would be true of only part of what is under it. Absent on an
+            # edition written before the seam existed, where the field does not
+            # exist and inventing an answer for it would be a fabricated one.
+            anchored = card.get("period_anchored")
+            if anchored is True:
+                lines.append(T.t("- Window: this edition's period"))
+            elif anchored is False:
+                lines.append(
+                    T.t("- Window: as observed when this edition was generated, not the period")
+                )
             if card.get("method"):
                 lines.append(T.f("- Method: {method}", method=T.t(str(card["method"]))))
             arts = card.get("article_rows") or []

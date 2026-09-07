@@ -1,6 +1,11 @@
 # The Bulletin — periodic corpus document
 
-Design record · 2026-07-31 · **nothing built yet**
+Design record · 2026-07-31 · **built; §20 closed 2026-09-07**
+
+> STATUS: the build order (§21) shipped 2026-07-31/08-01, and the three items
+> this record still called open — §14's background job, §18's enumeration, and
+> all five §20 questions — closed on 2026-09-07. Each section below carries its
+> own amendment where a ruling changed it; nothing was rewritten in place.
 
 Supersedes the 2026-07-30 "Weekly Synthesis" draft. Every code claim below was
 re-derived from `main` @ `0d76fac` by a verification pass; claims that did not
@@ -91,11 +96,22 @@ covers interactive, occasional inference (summarise one article on demand), whic
 a GPU-less 4-core box handles acceptably. The Bulletin's narration is a bulk
 multi-hour workload of thousands of calls (§6), which the same box does not.
 
-**Consequence the maintainer should know:** Layer A (§4) is pure SQL and would
-run correctly on any machine. Gating the whole feature means a GPU-less operator
-gets no document at all, not even the deterministic one. That is the instruction
-as given and is implemented as such; making Layer A available below the bar is a
-one-condition change if it is ever wanted.
+**AMENDED 2026-09-07 — THE GATE COVERS NARRATION ONLY (maintainer's answer to open
+question 4).** Layer A (§4) is pure SQL and runs correctly on any machine, so it is
+now offered on any machine; only Layer B stays gated. This does not weaken the
+justification above — it *is* that justification, applied exactly: the reason for
+gating was workload shape, thousands of narration calls, and that is what remains
+behind the bar.
+
+`bulletin_available()` therefore returns **two verdicts**: `available` (the
+document) and `narration_available` (the model), each with its own reason and its
+own caveat. One key could not carry both, because below the bar they are opposite
+answers. `LAYER_A_REQUIRES_CAPABLE_HARDWARE` is now `False` and still has exactly
+one read; the narration verdict is a hardware fact and reads it nowhere, so
+flipping it back gates the document again and cannot change what is true of the
+machine. Both states of the constant have a correct disclosure, pinned by tests
+that drive the flipped state — a caveat that only reads correctly in the state that
+happens to ship turns a one-line change into a false statement.
 
 ## 4. Two layers
 
@@ -511,6 +527,20 @@ back to a template. Review can drop an item, drop a section, or toggle a produce
   run survives restart. It must **not** repeat the abort-to-done bug this repo
   has fixed three times: a transient LLM error must retry with backoff, never
   end the run in a benign-looking "done".
+  **SHIPPED 2026-09-07** (`src/bulletin/narration_job.py`, registered in
+  `src/api/bulletin.py`, `POST /api/bulletin/editions/{filename}/narrate`).
+  Narration had been running INLINE inside the generate request, which is a
+  multi-minute synchronous handler on a long run. Each unit — one story, and the
+  introduction last — is written back into the edition record atomically with the
+  cursor saved beside it, so a killed run loses at most the unit in flight. Resume
+  is the DEFAULT and `restart=true` the destructive reading. An outage does not
+  advance the cursor, is retried with backoff, and after ten in a row the run
+  RAISES so the job state is `error`; a fallback that is *not* the backend (a story
+  with no readable text) does advance, or one empty story would stall a run for
+  ever. Two refusals rather than guesses: a paused run for a different edition, and
+  one whose stories were re-clustered under a positional cursor. The run's mode
+  (language, budget, story cap) is persisted with the cursor and re-applied on
+  resume.
 - **Idempotence.** An edition either exists on disk or does not. Enumerate the
   cases that break it: generated mid-period; a period that gains articles later
   via import or backfill; a re-index that changes counts; a machine off for two
@@ -640,6 +670,33 @@ prints which profile produced it so a recipient knows what was withheld. A
 key-based scrubber is a net, never the mechanism — every item above is
 legitimate content under an innocuous key.
 
+**THE ENUMERATION SHIPPED 2026-09-07** (`src/bulletin/privacy.py`), per artifact —
+the published report, the annexes ZIP, the owner-only evidence archive — and
+measured against the exact set of articles each export would carry. It rides the
+evidence **plan** (so the decision is made with the numbers in front of the
+operator), renders in the review screen against the same selection the download
+uses, and travels as `WHAT-A-READER-CAN-SEE.md` inside both ZIPs. `present` is
+TRI-STATE: `True` measured-and-there, `False` measured-and-absent, `None` NOT
+MEASURED — an unmeasured item publishes no count at all, because an unknown
+reported as absent is a fabricated all-clear on a file about to be handed to
+someone. The synthetic-URI figure is published as a FLOOR (it comes from a fixed
+vocabulary of schemes this app mints). The signing-key item is measured-absent
+*with the condition that would change it*, so whoever adds a signature meets this
+section rather than rediscovering it.
+
+**THE PUBLICATION PROFILE IS NOT BUILT**, deliberately: the enumeration is what §18
+says is owed before a first archive leaves a machine, and a whitelist is a
+mechanism the operator has not yet been asked about.
+
+**ONE QUESTION THE ENUMERATION RAISES AND DOES NOT ANSWER — the maintainer's.** The
+annexes ZIP defaults to `full_text=True` and the evidence archive carries whole
+stored text by design, so a file that travels carries publishers' words in full.
+Whether that is the operator's to pass on is a question about each publisher's
+terms; the enumeration states that the text is there and stops. Recorded in
+`docs/ledger/OPEN_QUEUE.md` with its options — a ruling would change a default, not
+build a mechanism, since `full_text` is already a first-class flag on the route, the
+builder and the enumeration.
+
 ## 19. PR and documentation tone
 
 Neutral and feature-only. No mention of publishing, monetisation or personal
@@ -647,16 +704,44 @@ motivation in PR titles, bodies, commit messages, code comments or docs. The
 feature is generically useful — any operator may want a periodic document over
 their own corpus — so descriptions can be honest without being personal.
 
-## 20. Open questions
+## 20. Open questions — **ALL FIVE ANSWERED (maintainer, 2026-09-07)**
 
-1. Final section list (§11 is a proposal).
-2. Introduction: include one? Generated from edition facts, templated, or none?
-3. Mail sending: never / opt-in later? (Current design is download plus a short
-   digest for paste. Sending is real egress that reveals the operator to a mail
-   provider, off Tor, with stored credentials.)
-4. Should Layer A be available below the hardware gate (§3), given it needs no
-   model?
-5. Review-screen UX detail.
+This list is CLOSED. The questions are kept verbatim with their answers beside
+them, because a closed question that vanishes is one the next session re-opens.
+
+1. **Final section list** (§11 was a proposal). → **RULED: the eight shipped
+   sections, in this order — `rising_concepts · across_channels ·
+   country_coverage · by_topic_tag · changes_of_record · alerts · through_time ·
+   cards`**, with `cards` deliberately LAST (it is the slowest and the only one
+   whose figures may not be the period's). Pinned by
+   `tests/test_bulletin_sections.py`; adding one stays a one-line registry edit,
+   the guard only makes it a deliberate edit of the ruling.
+2. **Introduction: include one? Generated from edition facts, templated, or
+   none?** → **RULED: NARRATED BY THE MODEL**, over the edition's own masthead and
+   period figures, with the deterministic template beside it that every Layer-B
+   sentence has (`src/bulletin/introduction.py`). The fallback is not a hedge: it
+   is §8's rule, and without it a document produced below the hardware gate or in
+   airplane mode would open with nothing. The grounding evidence is the fact
+   bundle itself, so an invented figure is dropped; the prompt forbids naming a
+   leading subject, because that is the composite judgement §11 refuses.
+3. **Mail sending: never / opt-in later?** → **RULED: NEVER.** No outbound mail
+   path is added. Download plus the short paste digest stays the only exit
+   (ruling 13). The reasoning is recorded rather than left to be re-derived:
+   sending is real egress that reveals the operator to a mail provider, off Tor,
+   with stored credentials — a new egress surface for a document the user can
+   already export, in an app whose only external call is the gated,
+   off-by-default DuckDuckGo discovery. A CLOSED question, not a deferral.
+4. **Should Layer A be available below the hardware gate (§3), given it needs no
+   model?** → **RULED: YES.** See §3's amendment: the gate covers narration only,
+   the verdict is now two facts rather than one, and the disclosure is correct in
+   both states of the constant.
+5. **Review-screen UX detail.** → **RULED: the checkbox-per-section /
+   per-story screen with per-sentence verdicts, as shipped**, is the design rather
+   than one reading of an open question. What the ruling makes load-bearing is the
+   shape the screen needs — a per-section decision, a per-story decision, and the
+   evidence for each — and that is what `tests/test_bulletin_review.py` pins. The
+   introduction joined it as a reviewable unit in the same pass, so the one
+   model-written passage a reader meets first is not the one nobody reviews.
 
 ## 21. Build order
 
@@ -691,3 +776,18 @@ their own corpus — so descriptions can be honest without being personal.
 9. Settings section, review screen, renders.
 
 Steps 1–3 are worth doing whether or not the Bulletin is built.
+
+**STATUS 2026-09-07.** Steps 1–9 shipped 2026-07-31/2026-08-01. What this record
+called remaining is now closed too: §14's `BackgroundJob` with a persisted cursor,
+§18's export-privacy enumeration, and all five §20 questions. The card section's
+own honesty problem — producers took no period — is **partly** fixed rather than
+wholly: `run_all_bounded` now takes an `as_of` and hands it to the producers that
+declare one, five of them do, and every card states which window its figures came
+from (§11's card section says so per card rather than carrying one verdict for a
+mixed set). Converting the remaining producers is ordinary work behind an existing
+seam; none of it is blocked.
+
+**WHAT IS STILL OPERATOR-GATED, and neither is a build:** a human click-through of
+the Settings section and the review screen (every frontend slice in this stack is
+browser-unverified), and running `/llm-bench` on a fast and a slow machine so §6.3's
+time budget rests on measurements rather than a guess.

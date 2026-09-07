@@ -220,6 +220,11 @@ def sample_edition() -> dict:
                                 "bucket": "overtold",
                                 "method": "MinHash over stored keywords.",
                                 "caveat": "Absence of a flag is not absence of coordination.",
+                                # Anchored, so the sample exercises the "this period"
+                                # line; its sibling below carries the other one. A
+                                # sample that showed only one of a pair reports full
+                                # coverage for chrome nobody translated.
+                                "period_anchored": True,
                                 "corpus_articles": 9,
                                 "article_rows": [article],
                             }
@@ -236,6 +241,7 @@ def sample_edition() -> dict:
                                 # edition written before pairs existed, so the fallback is
                                 # exercised on every run rather than only in a unit test.
                                 "signal_line": "top three share 0.14 · sources 21",
+                                "period_anchored": False,
                                 "corpus_articles": 0,
                                 "method": "A whole-corpus distribution.",
                             }
@@ -243,7 +249,22 @@ def sample_edition() -> dict:
                     },
                 ],
                 "window": {"days": 7, "matches_period": False},
-                "caveat": "AS OBSERVED WHEN THIS EDITION WAS GENERATED.",
+                # The REAL mixed-section caveat, not a stand-in: one card above is
+                # anchored and one is not, which is exactly the state this wording
+                # exists for, and a synthetic short string would leave the shipped
+                # sentence untranslated and unmeasured.
+                "caveat": (
+                    "Some cards here are anchored to the period above and some are AS "
+                    "OBSERVED WHEN THIS EDITION WAS GENERATED. Each card says which it "
+                    "is, because a single verdict for the section would be true of only "
+                    "part of it. An unanchored producer uses its own window and states it "
+                    "in its own method, so asking again tomorrow would give different "
+                    "cards for those. What makes both kinds reproducible is the record: "
+                    "this edition holds them, so re-rendering it shows exactly these. "
+                    "Every card carries the measurement that surfaced it, never a blended "
+                    "score, and a card is a prompt to look rather than a finding: absence "
+                    "of a card is not absence of the thing it would have surfaced."
+                ),
             },
             {"section": "skipped_example", "skipped": "no data in this period"},
             {"section": "broken_example", "error": "ValueError: synthetic"},
