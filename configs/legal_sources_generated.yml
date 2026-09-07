@@ -2796,6 +2796,40 @@ sources:
 # Legislation), the private "Law and North Korea" translation site, and the
 # WIPO Lex / FAOLEX / NATLEX aggregators. Per the "aggregators are fallbacks,
 # never the country's own" rule, none of these is catalogued as a kp source.
+
+# 2026-09-07: recorded ALSO as a domain-less `lead` row below, mirroring Yemen's honest-gap
+# record. The comment above stays because it is the producing session's own words; the row
+# exists because a gap kept only in a comment is invisible to the validator, to the vetting
+# board and to every other tool that reads this catalog as data.
+- name: North Korea — no state legal database, gazette portal or enumeration page (confirmed gap)
+  native_name: 조선민주주의인민공화국
+  country: kp
+  languages:
+  - ko
+  legal_system: civil_law
+  source_type: legal
+  kind: gap
+  tags:
+  - law
+  - official
+  - gap
+  verification:
+    status: lead
+    retrieved_at: '2026-07-17'
+    evidence: >-
+      No DPRK government body operates a public online legal database, gazette portal or
+      enumeration page. NYU Globalex's "Overview of the North Korean Legal System", the US
+      Library of Congress Guide to Law Online, and 38 North's NK TechLab project (2025-26)
+      all independently confirm this.
+  confidence: low
+  notes: >-
+    The only texts that reach researchers arrive via captured devices, print compendia, or
+    third-party/foreign efforts — South Korea's Unification Legislation Database (Ministry
+    of Unification/Justice/Government Legislation), the private "Law and North Korea"
+    translation site, and the WIPO Lex / FAOLEX / NATLEX aggregators. Per the "aggregators
+    are fallbacks, never the country's own" rule, none of these is catalogued as a kp
+    source. Domain intentionally omitted — an honest gap rather than an invented portal.
+
 - name: Adilet Legal Information System (Ministry of Justice of the Republic of Kazakhstan)
   native_name: Әділет ақпараттық-құқықтық жүйесі / ИПС «Әділет»
   domain: adilet.zan.kz
@@ -4683,6 +4717,13 @@ sources:
     as_of: '2026-07-17'
     source_url: https://matsne.gov.ge/en/active-codes
   gazette_feed: https://matsne.gov.ge/en/document/feed
+  gazette_feed_verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: The producing session loaded /en/document/feed directly and it returned
+      content-type application/xml. Item-level content was NOT inspected, so the feed is
+      confirmed to exist and serve XML; that its items are per-document legislative
+      entries is inferred from the document-scoped path, not observed.
   structured:
     api: none confirmed (no public REST/JSON API documentation found; site is a Drupal 7 application)
     bulk: none confirmed
@@ -5145,6 +5186,14 @@ sources:
     as_of: '2026-07-17'
     source_url: https://www.impo.com.uy/contenido/
   gazette_feed: https://www.impo.com.uy/feed/
+  gazette_feed_verification:
+    status: lead
+    evidence: >-
+      NOT FETCHED. The row's verification.evidence records loading impo.com.uy/contenido/,
+      never this feed, and the row's own notes say the URL is the site's generic WordPress
+      /feed/ (news posts), "not confirmed to carry each day's Diario Oficial issue
+      individually, so verify before relying on it for gazette monitoring". A lead ships
+      disabled — wiring it would publish site news posts as Uruguay's official gazette.
   structured:
     api: none
     bulk: an open-data page exists at impo.com.uy/datos-abiertos/, not independently verified this session
@@ -5756,6 +5805,12 @@ sources:
   source_type: gazette
   kind: gazette
   gazette_feed: https://congbao.chinhphu.vn/cac-van-ban-moi-ban-hanh.rss
+  gazette_feed_verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: The producing session fetched this feed and confirmed well-formed RSS 2.0
+      XML with live, dated items through May 2026 — the only one of the four whose ITEMS
+      were observed.
   structured:
     api: none
     bulk: none
@@ -6472,6 +6527,11 @@ sources:
   kind: gazette
   enumeration_url: https://legal.gov.vc/legal/index.php/publications
   gazette_feed: https://legal.gov.vc/legal/index.php/publications?format=feed&type=rss
+  gazette_feed_verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: The producing session fetched the site's Joomla RSS export and it returned
+      200 with content-type application/rss+xml. Item-level content was not inspected.
   structured:
     api: none
     bulk: none
