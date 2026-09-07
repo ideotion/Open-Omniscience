@@ -78,6 +78,39 @@ def load_legal_catalog(path: Path | None = None, generated_path: Path | None = N
     return merged
 
 
+#: A ``gazette_feed`` becomes a live ``rss_url`` only at this tier. See
+#: ``FEED_VERIFICATION_STATUSES`` in ``scripts/validate_legal_catalog.py`` for why a feed
+#: carries its own tier rather than inheriting the row's: the row status is about the
+#: PORTAL, and one of the four rows carrying a feed (impo.com.uy) has a feed nobody ever
+#: fetched, which its own notes describe as the site's generic WordPress news feed.
+_WIREABLE_FEED_STATUS = "fetched"
+
+
+def feed_rss_url(source: dict) -> str | None:
+    """Pure: the ``rss_url`` this catalog row contributes, or ``None``.
+
+    S2 of the law-vertical brief (2026-07-17), built 2026-09-07. Four generated rows
+    carry a ``gazette_feed`` — an official gazette's own RSS — and none of them ever
+    became an ``rss_url``, so the cheapest real coverage in the vertical sat in the
+    catalog unused while the normal ingest pipeline was right there.
+
+    A feed is promoted ONLY when its own ``gazette_feed_verification.status`` is
+    ``fetched``, i.e. the producing session actually asked that URL and recorded what
+    came back. A ``lead`` feed is kept in the catalog (it is a real research lead) and
+    is never fetched, exactly as a ``lead`` source is. An explicit ``rss_url`` already
+    on the row always wins — this only ever fills an absence.
+    """
+    if source.get("rss_url"):
+        return None
+    feed = source.get("gazette_feed")
+    if not feed:
+        return None
+    ver = source.get("gazette_feed_verification") or {}
+    if ver.get("status") != _WIREABLE_FEED_STATUS:
+        return None
+    return str(feed)
+
+
 def registration_source_rows(catalog: dict) -> list[dict]:
     """Pure: the Source rows a catalog registers, with provenance applied.
 
@@ -85,12 +118,22 @@ def registration_source_rows(catalog: dict) -> list[dict]:
     ``via:legal-generated`` provenance and — maintainer ruling 2026-07-17 —
     ENABLE BY DEFAULT like curated entries: the maintainer's review of the
     committed catalog file IS the vetting gate, and the end user never has to
-    hand-enable sources ("everything background and automated"). This is
-    network-safe by construction: legal portals carry no rss_url so collect
-    passes never fetch them, robots stays fail-closed, and the bounded
-    preflight verifies each domain automatically (a dead/robots-blocked lead
-    gets an honest verdict, not a fetch). Runtime-DISCOVERED candidates (the
-    discovery funnel) are a DIFFERENT channel and still register disabled."""
+    hand-enable sources ("everything background and automated"). Robots stays
+    fail-closed and the bounded preflight verifies each domain automatically (a
+    dead/robots-blocked lead gets an honest verdict, not a fetch).
+    Runtime-DISCOVERED candidates (the discovery funnel) are a DIFFERENT channel
+    and still register disabled.
+
+    AMENDED 2026-09-07 (S2): this used to say "legal portals carry no rss_url so
+    collect passes never fetch them" and that is no longer true of every row — the
+    three rows whose OWN ``gazette_feed_verification`` records a fetched feed now
+    contribute an ``rss_url`` (see :func:`feed_rss_url`), so a collect pass polls
+    those three gazettes like any other feed. That is the point of the change; the
+    claim is corrected here rather than left standing, because a stale safety
+    sentence is read as a guarantee. Everything the sentence was protecting is
+    unchanged and still applies to these three: the network consent gate, the
+    kill switch, fail-closed robots and per-host politeness all sit on the one
+    fetch path, and 222 of the 225 generated rows still carry no feed at all."""
     rows = []
     for s in catalog["sources"]:
         s = dict(s)
@@ -98,6 +141,9 @@ def registration_source_rows(catalog: dict) -> list[dict]:
             s.setdefault("_provenance", "legal-generated")
         else:
             s.setdefault("_provenance", "legal")
+        rss = feed_rss_url(s)
+        if rss:
+            s["rss_url"] = rss
         rows.append(s)
     return rows
 
