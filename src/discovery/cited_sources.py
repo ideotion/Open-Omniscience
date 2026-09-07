@@ -99,7 +99,11 @@ def promote_cited_sources(
     from src.catalog.normalize import is_social
     from src.catalog.provenance import CITED
     from src.database.models import Source
-    from src.discovery.channels import is_commerce_domain, is_infrastructure_domain
+    from src.discovery.channels import (
+        is_commerce_domain,
+        is_disqualified_domain,
+        is_infrastructure_domain,
+    )
     from src.utils.url_utils import is_equivalent_domain
 
     threshold = _min_sources() if min_source_citers is None else max(1, min_source_citers)
@@ -111,7 +115,15 @@ def promote_cited_sources(
     stats = cited_domain_stats(session)
     created: list[dict] = []
     candidates: list[dict] = []
-    skipped = {"below_gate": 0, "commerce": 0, "social": 0, "infrastructure": 0, "already_a_source": 0}
+    skipped = {
+        "below_gate": 0, "commerce": 0, "social": 0, "infrastructure": 0,
+        "already_a_source": 0,
+        # Told apart from `already_a_source` because they mean opposite things: one is
+        # "we already collect this", the other "this instance judged it and refused it"
+        # (ruling 2026-07-20 clause (d)). Reported so a reader can see the funnel
+        # declining to re-propose known-bad domains rather than infer it from a silence.
+        "disqualified": 0,
+    }
 
     # Most-cited (by distinct sources) first, so a capped run keeps the strongest.
     for dom, s in sorted(stats.items(), key=lambda kv: -len(kv[1]["sources"])):
@@ -128,7 +140,19 @@ def promote_cited_sources(
         if is_infrastructure_domain(dom):  # CDN / analytics / boilerplate-legal (field 2026-07-10)
             skipped["infrastructure"] += 1
             continue
-        if dom in existing_set or any(is_equivalent_domain(dom, e) for e in existing):
+        # A disqualified domain IS a source domain, so it is always in `existing_set`;
+        # asking the database first cost one indexed seek per candidate domain -- on an
+        # `async def` handler, i.e. on the event loop -- for a question only the known
+        # ones can answer. Split the reason INSIDE the branch instead: same two counters,
+        # one query per already-known domain rather than per domain, and no query at all
+        # on the path that stages a candidate (which also keeps this loop from touching
+        # the database after a `session.add`, where an autoflush-enabled session would
+        # flush mid-loop and take the single-writer gate).
+        if dom in existing_set:
+            reason = "disqualified" if is_disqualified_domain(session, dom) else "already_a_source"
+            skipped[reason] += 1
+            continue
+        if any(is_equivalent_domain(dom, e) for e in existing):
             skipped["already_a_source"] += 1
             continue
         if len(created) >= cap:

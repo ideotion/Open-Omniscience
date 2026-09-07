@@ -153,6 +153,28 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             )
         lines.append("")
 
+        # A few of the rows this run actually added, by name. The counts above say how
+        # much arrived; a reader checking whether the right corpus was imported needs to
+        # see WHAT. The merge has always computed these (`DomainResult.samples`) and
+        # until 2026-09-07 always computed them empty, so nothing rendered them -- the
+        # field being populated is worth nothing if it stops at the JSON.
+        examples = [
+            (t, c["samples"])
+            for t, c in sorted(plan.items())
+            if isinstance(c, dict) and not t.startswith("_") and c.get("samples")
+        ]
+        if examples:
+            lines.append("### Examples of what was added")
+            lines.append("")
+            lines.append(
+                "A few per table, not a full list — the count above is the exact figure."
+            )
+            lines.append("")
+            for table_name, samples in examples:
+                shown = ", ".join(str(x) for x in samples)
+                lines.append(f"- **{table_name}**: {shown}")
+            lines.append("")
+
     delta = report.get("corpus_delta")
     if delta and "before" in delta and "after" in delta:
         lines.append("## Corpus growth (before → after)")

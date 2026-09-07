@@ -1071,6 +1071,55 @@ def _window_ids_for(con: sqlite3.Connection, src: str, lo: int, hi: int, key: st
     return max(_MERGE_WINDOW_MIN_IDS, min(_MERGE_WINDOW_MAX_IDS, ids))
 
 
+def _new_row_samples(
+    con: sqlite3.Connection, batch_id: int, table: str, expr: str
+) -> list[str]:
+    """A few examples of the rows THIS batch actually inserted into ``table``.
+
+    Read back from ``merged_rows`` -- the provenance :func:`_insert_window` writes for
+    every inserted row -- and never by re-running the INSERT's own ``WHERE NOT EXISTS``
+    predicate. Two reasons, and the first is a real defect this replaces (2026-09-07):
+
+      * **Re-running the predicate after the INSERT always returns nothing.** The three
+        callers each ran their sample query *after* ``_insert_tracked``, with the same
+        ``NOT EXISTS`` the INSERT had just made false for exactly the rows it copied, so
+        ``samples`` came back empty on every restore that has ever run. ``as_dict`` emits
+        the key only when the list is non-empty, so the report simply had no examples
+        block -- indistinguishable from "this merge added nothing", which is the
+        omitted-field-vs-zero confusion the honesty rules exist to prevent.
+      * **It cannot drift from the statement.** A sample query that restates the INSERT's
+        predicate is a second copy of it: the ``articles`` INSERT additionally joins
+        ``temp.map_sources``, so a restated predicate COULD name rows the INSERT then
+        skipped. Stated as a hazard rather than an observation, because it is currently
+        unreachable -- ``map_sources`` is built after the sources INSERT and
+        ``Article.source_id`` is NOT NULL with an FK, so every incoming article maps in
+        a schema-valid corpus. Provenance reports what LANDED, which is the claim the
+        report makes, and it stays true if either statement changes.
+
+    ``expr`` must be NON-NULLABLE over the target table aliased ``m``: the ``None``
+    filter below runs *after* ``LIMIT``, so a nullable expression could drop five rows
+    and report an empty list while real rows sat below the limit. It holds for all
+    three callers (``sources.domain`` and both ``wiki_pages`` columns are NOT NULL, and
+    the articles expression is a ``COALESCE``), which is what makes the filter a
+    vestigial belt rather than something load-bearing. Both ``expr`` and ``table`` are
+    module-local literals from the callers below, never input.
+    """
+    if not _SAFE_KEY_NAME.fullmatch(table):
+        raise ValueError(f"unsafe sample table {table!r}")
+    return [
+        row[0]
+        for row in _q(
+            con,
+            f"SELECT {expr} FROM merged_rows r"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f' JOIN "{table}" m ON m.rowid = r.row_id'
+            " WHERE r.batch_id = ? AND r.table_name = ?"
+            f" ORDER BY r.row_id LIMIT {_SAMPLE_LIMIT}",
+            (batch_id, table),
+        )
+        if row[0] is not None
+    ]
+
+
 def _insert_window(
     con: sqlite3.Connection,
     batch_id: int,
@@ -2031,12 +2080,7 @@ def _merge_sources(con, batch_id, results) -> None:
         " FROM inc.sources i"
         " WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)",
     )
-    for row in _q(
-        con,
-        "SELECT i.domain FROM inc.sources i WHERE NOT EXISTS"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        f" (SELECT 1 FROM sources m WHERE m.domain = i.domain) LIMIT {_SAMPLE_LIMIT}",
-    ):
-        r.samples.append(row[0])
+    r.samples = _new_row_samples(con, batch_id, "sources", "m.domain")
 
     # ---- ADOPTION: a never-judged local row takes the incoming verdict ----
     # Field report 2026-08-10: "Export and import should integrate source having been
@@ -2412,12 +2456,9 @@ def _merge_articles(con, batch_id, results) -> None:
         + _WINDOW_MARK,
         src="articles",
     )
-    for row in _q(
-        con,
-        "SELECT i.title FROM inc.articles i WHERE NOT EXISTS"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        f" (SELECT 1 FROM articles m WHERE m.hash = i.hash) LIMIT {_SAMPLE_LIMIT}",
-    ):
-        r.samples.append(row[0] or "(untitled)")
+    r.samples = _new_row_samples(
+        con, batch_id, "articles", "COALESCE(NULLIF(m.title, ''), '(untitled)')"
+    )
     _build_map(
         con, "map_articles",
         "SELECT i.id, m.id FROM inc.articles i JOIN articles m ON m.hash = i.hash",
@@ -2854,13 +2895,7 @@ def _merge_wiki(con, batch_id, results) -> None:
         " i.created_at, i.latest_text, i.latest_text_revid FROM inc.wiki_pages i"
         " WHERE NOT EXISTS (SELECT 1 FROM wiki_pages m WHERE m.wiki = i.wiki AND m.title = i.title)",
     )
-    for row in _q(
-        con,
-        "SELECT i.wiki || ':' || i.title FROM inc.wiki_pages i WHERE NOT EXISTS"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        " (SELECT 1 FROM wiki_pages m WHERE m.wiki = i.wiki AND m.title = i.title)"
-        f" LIMIT {_SAMPLE_LIMIT}",
-    ):
-        r.samples.append(row[0])
+    r.samples = _new_row_samples(con, batch_id, "wiki_pages", "m.wiki || ':' || m.title")
     _build_map(
         con, "map_wiki",
         "SELECT i.id, m.id FROM inc.wiki_pages i"

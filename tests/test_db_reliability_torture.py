@@ -104,7 +104,19 @@ def test_t6_divergent_merge_full(corpora):
     preview = _run(a, "merge", str(art), "--passphrase", "pw-torture")["report"]
     assert preview["committed"] is False
     assert preview["verification"]["ok"] is True
-    assert preview["plan"]["articles"] == {"new": 2, "duplicate": 1, "conflict": 0}
+    arts = preview["plan"]["articles"]
+    assert {k: arts[k] for k in ("new", "duplicate", "conflict")} == {
+        "new": 2,
+        "duplicate": 1,
+        "conflict": 0,
+    }
+    # The plan carries EXAMPLES of what it added, and this is the only place that
+    # proves it end to end -- through the real CLI, a real encrypted artifact and a
+    # real committed merge, rather than a fixture. Until 2026-09-07 the list was
+    # always empty (the sample query ran after its own INSERT, with the predicate
+    # that INSERT had just falsified), which is the only reason the assertion above
+    # could once compare the whole dict.
+    assert sorted(arts["samples"]) == ["B filler", "Only in B"], arts.get("samples")
     # The commodity disagreement is REPORTED with both values, local kept (never averaged).
     cp = preview["plan"]["commodity_prices"]
     assert cp["conflict"] == 1 and cp["conflicts"][0]["incoming"] != cp["conflicts"][0]["local"]
