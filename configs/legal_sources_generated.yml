@@ -2796,6 +2796,40 @@ sources:
 # Legislation), the private "Law and North Korea" translation site, and the
 # WIPO Lex / FAOLEX / NATLEX aggregators. Per the "aggregators are fallbacks,
 # never the country's own" rule, none of these is catalogued as a kp source.
+
+# 2026-09-07: recorded ALSO as a domain-less `lead` row below, mirroring Yemen's honest-gap
+# record. The comment above stays because it is the producing session's own words; the row
+# exists because a gap kept only in a comment is invisible to the validator, to the vetting
+# board and to every other tool that reads this catalog as data.
+- name: North Korea — no state legal database, gazette portal or enumeration page (confirmed gap)
+  native_name: 조선민주주의인민공화국
+  country: kp
+  languages:
+  - ko
+  legal_system: civil_law
+  source_type: legal
+  kind: gap
+  tags:
+  - law
+  - official
+  - gap
+  verification:
+    status: lead
+    retrieved_at: '2026-07-17'
+    evidence: >-
+      No DPRK government body operates a public online legal database, gazette portal or
+      enumeration page. NYU Globalex's "Overview of the North Korean Legal System", the US
+      Library of Congress Guide to Law Online, and 38 North's NK TechLab project (2025-26)
+      all independently confirm this.
+  confidence: low
+  notes: >-
+    The only texts that reach researchers arrive via captured devices, print compendia, or
+    third-party/foreign efforts — South Korea's Unification Legislation Database (Ministry
+    of Unification/Justice/Government Legislation), the private "Law and North Korea"
+    translation site, and the WIPO Lex / FAOLEX / NATLEX aggregators. Per the "aggregators
+    are fallbacks, never the country's own" rule, none of these is catalogued as a kp
+    source. Domain intentionally omitted — an honest gap rather than an invented portal.
+
 - name: Adilet Legal Information System (Ministry of Justice of the Republic of Kazakhstan)
   native_name: Әділет ақпараттық-құқықтық жүйесі / ИПС «Әділет»
   domain: adilet.zan.kz
