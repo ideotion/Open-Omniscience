@@ -6555,6 +6555,47 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
+---
+
+## 2026-09-07 — PROMPT_11: model supply, capability probes, and the honest gaps
+
+Row: `docs/ledger/shipped.csv` 2026-09-07 · `llm/weights-pin + custody/probes + ai_layer/lens`.
+Findings, refutations and the rulings taken: `docs/ledger/OPEN_QUEUE.md`, same date. The four
+reusable lessons are copied into `docs/ledger/LESSONS.md` per protocol rule (5a)(b); they are
+kept verbatim here because each cost a real wrong turn inside this session rather than being
+harvested from a report.
+
+**MODEL WEIGHTS WERE THE ONE DOWNLOADED ARTIFACT WITH NO INTEGRITY CHECK (D6).** Everything
+else this app downloads is verified before use — the DuckDB `httpfs` extension against a SHA
+pin before every `LOAD`, the Ollama installer against GitHub's own attested `digest: sha256:…`
+with a refusal when none is attested — and weights escaped all three: `snapshot_download(repo)`
+took whatever `main` pointed at and `ollama pull tag` took whatever the tag pointed at, so the
+bytes could change under an operator between two installs with nothing to say so. A Hugging
+Face revision IS a content commitment, so the pin is passed as `revision=` (which makes the
+download fetch those bytes) and verified against the `snapshots/<sha>` the download itself
+reports — no second pass over several gigabytes, and nothing re-derived from a name we chose.
+**The refusal is at the DOWNLOAD and nowhere else**, deliberately: refusing to SERVE a cache
+that predates a pin would turn a working install into a failed one for every operator who
+downloaded before pinning, which is the recorded hazard of letting a new floor override a value
+the field has already served. So `model_cache_state` discloses the cached revision and never
+gates — and OMITS `revision_matches_pin` when nothing is pinned, because a `False` there reads
+as "the bytes are wrong" rather than "nothing was compared". **The pins ship blank and that is
+the honest state**: `huggingface.co` and `ollama.com` both answer this sandbox's proxy
+`CONNECT … 403` with `pypi.org` at 200 as the control, so no session that edits the file can
+verify a value to write into it, and a digest nobody fetched is exactly the fabricated checksum
+the non-negotiables forbid.
+
+**A DEAD END IS NOT ALWAYS A MISSING FEATURE (PRH-07, PRH-09, PRH-21, D8).** Four items from
+the inventory reduced to four different answers, and only one of them was "build it". PRH-07
+was wired. PRH-09's `#vllm-model-input` does not exist and its only reader had no callers, so
+it was retired rather than prefilled. PRH-21's premise was refuted outright: the function is a
+SHELL function whose uninvoked state is a maintainer ruling, and wiring it would have run
+`sudo chmod` during an install the 2026-06-20 field test made ask nothing. D8's harness turned
+out to be BUILT and unstartable — `run_shape` has no caller outside the test tree — so the
+operator step it is gated on is not actually available, which is a different sentence from the
+doc's "Nothing built" and the one worth recording. **The general form: when an inventory says
+UNBUILT, the three questions are whether it is built, whether its premise still holds, and
+whether the thing that is missing is the one named.**
 
 **Moon quarters: closing the one accepted loss of the retired moons feed (2026-09-07, PROMPT_19
 S3).** The 2026-07-17 ruling retired `monkeyness-moons` as redundant against the computed Meeus

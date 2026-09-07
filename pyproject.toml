@@ -208,6 +208,10 @@ pqc = [
     # — but it still touches PERSISTED key material in the custody chain, so it goes through
     # docs/maintenance/EXTERNAL_DEPENDENCIES.md rather than a bound widening. Same
     # unpinned-tool drift class as the bandit/mypy pins.
+    # TWO MECHANISMS DEFEND THIS CEILING, because this comment is not one of them (a bot
+    # widened it three times while the reason sat right here): tests/test_dependency_
+    # ceilings.py reddens the PR that widens it, and .github/dependabot.yml ignores
+    # pqcrypto MAJORS so the PR is not opened at all. The test is the load-bearing half.
     "pqcrypto>=0.3.4,<1.0",
 ]
 
