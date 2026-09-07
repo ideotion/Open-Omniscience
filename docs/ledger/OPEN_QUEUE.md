@@ -6779,7 +6779,8 @@
   standing Wikidata source-country generator lever, operator-side).
   **CLOSING NOTE — VERIFIED-PRESENT 2026-09-07 against `main` @ `58a4d6d` (the staleness sweep the
   2026-09-06 analysis prompts mandate; nothing was rebuilt):** every slice of BOTH briefs is in the
-  tree and its tests are green (76 passed across `test_supergroup_stats/_rising/_index`,
+  tree and its tests are green (76 passed as FOUND, 84 with the 8 guards this session added,
+  across `test_supergroup_stats/_rising/_index`,
   `test_supergroups`, `test_group_stats`, `test_ring_country_split`, `test_ui_ring_map`,
   `test_supergroup_seed`). S1 `src/analytics/supergroup_stats.py` (dedup-first member resolution +
   mandatory dominance and cross-group-overlap disclosures) · S2 `supergroup_rising.py` (two-proportion
