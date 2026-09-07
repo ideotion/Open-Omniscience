@@ -337,3 +337,44 @@ def test_the_census_does_not_over_reach():
     assert not (flagged & {"_lock_gate", "monitor_requests", "unlock_page"}), (
         "the census is naming middleware/page handlers that hold no session"
     )
+
+
+#: How an async handler could reach the database WITHOUT ``Depends(get_db)`` — i.e.
+#: how it could slip past the census above. Zero handlers do this today; the guard
+#: exists so that stays true, because dropping the dependency and opening a session
+#: by hand is the obvious way around a census keyed on the dependency.
+_DB_BACK_DOORS = ("session_scope", "SessionLocal", "get_db()", "engine.connect")
+
+
+def test_an_async_handler_cannot_reach_the_database_around_the_dependency():
+    """Mechanism 3 — close the census's one structural escape.
+
+    :func:`test_no_db_handler_runs_on_the_event_loop` finds handlers by their
+    ``Depends(get_db)`` parameter, which is exactly how all 56 reached the DB. A
+    handler that opened its own ``session_scope()`` instead would do the same blocking
+    codec work on the same event loop and the census would not see it. Verified empty
+    when written: of the 28 ``async def``s in ``src/api/``, none reaches the database
+    by any route other than the dependency.
+
+    Deliberately NOT extended to ``.query(``/``.execute(``: those appear on plenty of
+    non-DB objects, and a guard that fires on an unrelated ``.execute(`` is a
+    fabricated failure that teaches people to weaken it. The four names below are
+    unambiguous.
+    """
+    offenders: list[str] = []
+    for path in sorted(_API.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef) or _takes_db(node):
+                continue  # the census already owns the Depends(get_db) ones
+            body = ast.unparse(node)
+            found = [d for d in _DB_BACK_DOORS if d in body]
+            if found:
+                rel = path.relative_to(_API.parents[1])
+                offenders.append(f"{rel}:{node.lineno} {node.name} uses {found}")
+
+    assert not offenders, (
+        "async def handler(s) opening a database session WITHOUT Depends(get_db), so "
+        f"the census cannot see them -- but the loop still blocks: {offenders}. Make the "
+        "handler a plain `def`, or hand the session work to run_in_threadpool."
+    )
