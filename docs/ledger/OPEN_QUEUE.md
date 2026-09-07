@@ -9460,3 +9460,51 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+**CARRY-OVER FROM THE PROMPT-17 SWEEP (2026-09-07, PR #1027 — four items, each measured; none
+of them blocks the PR, and none of them was silently dropped).** The sweep found prompt 17's
+S1-S7 already shipped and fixed the one real defect it turned up (the concept map's country cap);
+these are what it deliberately did NOT do, recorded here because a carry-over that lives only in a
+PR body is a carry-over nobody will read.
+
+1. **THE `--min 100` i18n GATE HAS ONE KEY OF ROUNDING SLACK — a ruling is wanted on whether to
+   close it.** `scripts/i18n_report.py` computes `pct = round(100 * covered / n, 1)`, so at today's
+   n = 3040 a locale missing exactly ONE key scores 99.967 -> **100.0**, prints
+   `complete 3039/3040 (100.0%)` and exits 0. Measured, not reasoned: deleting the newly-added key
+   from `fr.json` alone left the gate green. The blind spot WIDENS with every key the project adds,
+   so a check that was exact at 500 keys silently stopped being exact. **Tightening is free today** —
+   all 11 non-English locales are at the full count, verified — so the cost is only the risk of
+   reddening a parallel session mid-flight, which is the gate doing its job. NOT done in the slice
+   that found it because it changes a shared BLOCKING gate that every session depends on, and the
+   standing rule is that a reporting fix and a behaviour change do not ship on one line. The lesson
+   is in `LESSONS.md`; what is missing is the decision.
+
+2. **THE CONCEPT MAP'S NEW DISCLOSURE IS BROWSER-UNVERIFIED (fork-3).** PR #1027 changed what the
+   ring map announces (`n_countries`, never the polygon count) and added a visible
+   "Countries listed: N of M" line plus the matching aria label. Every guard is a source or payload
+   assertion; nothing rendered it. This sandbox CAN drive Chromium (the recorded 2026-08-04 lesson —
+   the fork-3 caveat is a habit, not a limit), so the honest close is a real click-through at a
+   corpus wide enough to truncate, checking the note against the map, the dumbbell and the table it
+   governs, and in Arabic for the RTL placement. The strings carry no punctuation-joined LTR run, so
+   no bidi isolate is expected to be needed — that expectation is exactly what a render would confirm
+   or refute.
+
+3. **`ring_country_article_ids`'s `total` IS THE CAP WHEN `bounded` IS TRUE — a name, not a hole.**
+   Noticed while auditing the sibling call and deliberately left alone. It is not the defect #1027
+   fixed: the cap is DISCLOSED (`bounded` rides beside it, and the drill's one caller reads neither),
+   so nothing published is secretly a bound. What is wrong is the FIELD NAME — `total` names a value
+   that is `min(real, limit)` — and the standing rule is that when a name and a measurement disagree
+   the NAME is the part you are allowed to change. A rename with readers is its own slice; doing it
+   inside an anti-capping fix would have made that fix's blast radius unreviewable.
+
+4. **RULING 22 NEVER REACHED THIS DOCKET, AND THAT IS WHY PROMPT 17 ASKED FOR THE THING IT
+   REMOVED.** The 2026-08-07 field ruling that RETIRED the per-row Summarize/Translate from the
+   analysis Articles list (absorbed by the reader, which runs both on the same endpoints and shows
+   the original URL as its own visible text, invariant #6) is recorded in a `shipped.csv` summary
+   (2026-08-20, rulings 20-22) and in a comment at the call site (`app-analysis.js`) — and nowhere a
+   reader looking for RULINGS would find it. Prompt 17's S7 duly listed AI-19 as work to do, and
+   building it would have undone a maintainer ruling. `INVENTORY.md` now records the closure; the
+   general question this raises is whether a ruling whose whole content is a REMOVAL needs an entry
+   here even though it ships no pending work, since the shipped-log row is written in the vocabulary
+   of what was built rather than of what may not be rebuilt. Recorded for a ruling rather than
+   answered.
