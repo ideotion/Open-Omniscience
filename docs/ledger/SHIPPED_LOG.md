@@ -7148,6 +7148,63 @@ trap hit twice in one hour in opposite directions, with the regression guard cat
 and varying one parameter moves everything that depends on it -- the sharding control inverted my
 own finding.
 
+## 2026-09-07 -- PROMPT_20 (structural debt, dependencies, test hygiene): the parked URL backlog, the orphaned dependency, the SQLite-only ruling, and an order-dependent red on main
+
+Four slices, all from PROMPT_20. The details are in `shipped.csv`; what follows is what a later
+session would otherwise re-derive.
+
+**PRH-03 and NET-02 were YIELDED, not shipped, and the collision is the entry.** Both were built
+here in full -- implementation, forty-three tests, an eight-mutant matrix -- and while this branch
+was open, [PR #1031](https://github.com/ideotion/Open-Omniscience/pull/1031) built the same two
+items independently and merged first. Its code is the code in the tree; this branch's was dropped
+rather than re-landed. What survived the yield is the five things #1031 does not carry, each
+mutation-checked against ITS implementation rather than against the one that was discarded:
+
+* **The NET-02 blocker refutation** (below), now a test beside #1031's own NET-02 block.
+* **Four negative-space cases on the redirect host check.** The `html.duckduckgo.com` SUBDOMAIN
+  hop -- which is the host this app actually fetches (`SEARCH_URL`), so the `endswith` branch is
+  the production path rather than a generality. A `duckduckgo.com.evil.example` LOOKALIKE, which
+  is what makes the `!=` / `endswith` PAIR load-bearing: a substring test accepts it and hands
+  discovery whatever it names. `uddg` arriving AFTER `rut`, the discriminating input for reading
+  the query after the `&amp;` unescape rather than before. And an EMPTY `uddg`. **Three of the
+  four are the SOLE failure under their own mutant** -- host check widened to a substring,
+  `endswith` branch dropped, unescape moved after the parse -- so #1031's thirty tests
+  demonstrably do not reach them, and "additive" here is a measurement rather than a courtesy.
+  The fourth pins `keep_blank_values=False`, whose mutant is genuinely equivalent, and its
+  docstring says so rather than implying a kill.
+
+**Measured during the yield and deliberately NOT changed:** through the redirect a target is
+percent-decoded exactly ONE MORE TIME than through a direct href -- `parse_qsl` decodes,
+`_unwrap_search_redirect` decodes again, `_clean_url` decodes a third -- so `/%2561` arrives as
+`/a` via the hop and as `/%61` direct. Recorded in `PARKED.md` rather than repaired: the consumer
+keeps only the DOMAIN, which is unaffected, and a merge resolution is the wrong place to edit
+another session's just-merged code over a judgement it made deliberately.
+
+**PRH-04 -- the item understated it.** `scripts/setup_llm.py` was recorded as "dead code calling a
+method on a module that no longer exists"; running it shows both its imports name modules that are
+gone, so it died at import before parsing an argument, while `scripts/README.md` advertised it as
+the way to provision the local model. Deleted, with the removal recorded in the README the way that
+file already records a previous one.
+
+**NET-02 -- the parked BLOCKER was false.** PARKED.md had parked the narrowing on "changes
+behaviour for non-str inputs of an app-wide sanitizer". Both functions touch the input BEFORE the
+`try` -- `re.sub` in `safe_href`, a `.lower()` chain in `sanitize_url` -- so a truthy non-str
+already raised outside the block; the broad except never covered that case at all. That blocker is
+why the item sat parked from 2026-08-20, and #1031's block does not record it, so the refutation
+ships here as `test_a_non_str_input_already_raised_BEFORE_the_narrowing`. Its mutant is the world
+the blocker feared: move the pre-`try` work inside a re-widened except, and it reddens by name.
+
+**J2, J3, S7, S6 -- see the four lessons below.**
+
+**SEVEN LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a "must be gone" guard over a
+MARKDOWN document trips on the sentence recording the removal, and the narrowing that works is
+fenced code blocks; a memory or RATIO assertion taken over a SHARED path is a claim about the whole
+pytest session; an ADVISORY lane cannot report that it is failing worse; a parked item's stated
+BLOCKER is a claim like any other; a document can be right at the top and wrong a hundred lines
+down; a "dead code" claim is a claim about a line when the file may not import at all; and two
+sessions built the same parked item on the same day, because a parked item is claimable and
+nothing in this repository lets a session claim one.
+
 ## 2026-09-07 — PROMPT 23: the nine V1 rulings, and the verticals' network-free halves
 
 Branch `claude/v1-pathway-planning-4pf6n8`. The full shipped record is the `shipped.csv` row of the

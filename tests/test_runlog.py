@@ -832,9 +832,23 @@ def _boot_peak(d, run_id, *, beats, milestones):
     return total, peak
 
 
-def test_the_boot_pass_costs_the_SAME_whatever_the_journal_size(tmp_path):
+def test_the_boot_pass_costs_the_SAME_whatever_the_journal_size(tmp_path, monkeypatch):
     """CONSTANT memory is the claim, so measure at two sizes rather than against a
     fixed ceiling.
+
+    THE MEASUREMENT RUNS IN ITS OWN DIRECTORY (2026-09-07, S6). It used to read the
+    session-wide ``run_logs_dir()``, and ``promote_incomplete_runs`` scans up to 50
+    journals there -- so what this test measured included whatever every OTHER test in
+    the session had left behind, and the ratio it asserts moved with them. It PASSED
+    alone, PASSED as a whole file, and FAILED in the full suite on clean main
+    @ d9ee33e7 (small 1.74 MB -> 6.05 MB, big 20.8 MB -> 21.43 MB against an 18.15 MB
+    bar) -- the order-dependent-pollution family, with this test's own subject as the
+    thing polluted. Driven through the same production function over a directory
+    holding only its own two journals, the peaks are 0.39 MB and 0.40 MB and FLAT
+    across a 12x size difference, which is the property the docstring below claims.
+    The signature to recognise: a memory or ratio assertion over a SHARED path is a
+    claim about the whole session, not about itself. It already took ``tmp_path`` and
+    never used it.
 
     An absolute bar encodes this badly and is not portable: it really measures
     "fixed overhead + streaming cost", and the fixed overhead belongs to the
@@ -845,7 +859,10 @@ def test_the_boot_pass_costs_the_SAME_whatever_the_journal_size(tmp_path):
 
     Whole-file reading cannot satisfy this: its peak is ~9x the file, so a 12x
     bigger journal costs ~12x more."""
-    d = runlog.run_logs_dir()
+    d = tmp_path / "run_logs"
+    d.mkdir()
+    monkeypatch.setattr(runlog, "run_logs_dir", lambda: d)
+
     small_bytes, small_peak = _boot_peak(d, "imp-20260806T050000Z-a", beats=3000, milestones=2500)
     big_bytes, big_peak = _boot_peak(d, "imp-20260806T050000Z-b", beats=36000, milestones=30000)
 

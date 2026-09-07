@@ -7137,6 +7137,159 @@
     global term stats or disclose the approximation" is not a real choice: there is no way to
     hand FTS5 external statistics, and the options are fat shards, disclosure, or scoring
     outside FTS5.
+
+  - **A "MUST BE GONE" GUARD OVER A MARKDOWN DOCUMENT TRIPS ON THE SENTENCE THAT RECORDS
+    THE REMOVAL -- and the narrowing that works is FENCED CODE BLOCKS (2026-09-07, the
+    J3 SQLite-only sweep):** the ledger records this trap three times for source
+    (`//` comments in JS, docstrings in Python, `/* */` in CSS) and each time the fix is
+    "strip comments, never reword the explanation, because that explanation is what a
+    future session reads before deciding the removal was a mistake". Markdown has no
+    comment syntax, so the same guard looks unfixable: my rewritten Full-Text Search
+    section necessarily NAMES the `to_tsvector` recipe it deleted, and the store section
+    has named the `tsvector` path as what parity would require since the v0.0.7 audit --
+    so `assert "to_tsvector" not in doc` failed against correct prose. The distinction
+    that saves it is not about comments at all, it is about the CLAIM: the page may NAME
+    PostgreSQL and must not INSTRUCT anyone to run it, and **an instruction is a command
+    in a code block**. Extract the ``` fences and assert over those. GENERAL FORM: when a
+    negative source guard fires on the text explaining the absence, do not look for the
+    document's comment syntax -- look for the syntactic form the FORBIDDEN THING takes,
+    and scope to that. And give the extractor its own anti-vacuity assertion (a fence
+    reader that returned `""` would pass against any document ever written).
+  - **A MEMORY, TIMING OR RATIO ASSERTION TAKEN OVER A SHARED PATH IS A CLAIM ABOUT THE
+    WHOLE PYTEST SESSION -- and the tell can be an UNUSED `tmp_path` (2026-09-07, S6):**
+    the full suite on clean `main` was 1 failed / 9221 passed, and the failure --
+    `test_the_boot_pass_costs_the_SAME_whatever_the_journal_size` -- passed alone AND as
+    a whole file. It asserts a RATIO (the boot pass must allocate no more for a 20.8 MB
+    journal than 3x what it allocates for a 1.7 MB one) and took that reading over the
+    session-wide `run_logs_dir()`, which `promote_incomplete_runs` scans up to FIFTY
+    journals of. So the measurement included whatever every other test had left there,
+    and the ratio moved with them: 1.74 MB -> 6.05 MB and 20.8 MB -> 21.43 MB against an
+    18.15 MB bar. Over a directory holding only its own two journals the peaks are 0.39
+    and 0.40 MB and FLAT across the 12x difference -- i.e. the streaming property the
+    test exists to prove was intact the whole time and what was broken was the
+    measurement's environment. THE FIX IS ISOLATION, NOT A LOWER BAR (raising the input
+    strengthens a guard; lowering the bar weakens it, and only one of those is a
+    legitimate response to a red lane) -- and the test already TOOK `tmp_path` and never
+    used it, which is a cheap thing to grep for. It still discriminates: reverting
+    `_iter_jsonl` to the whole-file read reddens it by name at 1.30 MB and 15.46 MB.
+    This is the third distinct shape in the order-dependent family, after the lifespan
+    `TestClient` fixture and the test poisoned by its own background thread; the common
+    factor is not "another test wrote something" but "this assertion is about a resource
+    the session shares".
+  - **AN "ADVISORY" LANE CANNOT REPORT THAT IT IS FAILING WORSE (2026-09-07, S7's ruff
+    decision):** the recorded freshness-issue lesson says a gate that ALWAYS fires decays
+    into noise. The inverse is quieter and costs more: a lane marked
+    `continue-on-error` fails by design, so growth inside it is indistinguishable from
+    the failure it is expected to have. PARKED.md recorded the ruff style lane at **344**
+    findings on 2026-08-20, in the session that had just zeroed 164 of them; it measured
+    **432** on 2026-09-07 -- 88 of drift in eighteen days, in a file whose own contract is
+    "statuses are the file's contract: keep them truthful". Prose had already been tried
+    on exactly this number. The answer is a NON-GROWTH ratchet beside the advisory lane:
+    the verdict stays "advisory" (nobody is asked to fix the 432) while growth reddens a
+    blocking step. TWO RIDERS. A count-over-a-TOOL ratchet needs the tool VERSION bounded,
+    for the reason the `mypy==2.3.1` pin already states in its own comment, and the script
+    should print that version in its failure message so a rule-set change presents as
+    itself rather than as mystery debt. And unlike `_ADHOC_SLICER_BUDGET` this one must
+    PERMIT SLACK -- the slicer budget's zero-slack twin is right for a number only this
+    repo can move, and wrong here, where a legitimate tool bump would otherwise redden a
+    tree nobody touched. It caught its own author on its first run (a new test file added
+    a SIM102, 432 -> 433); the finding was fixed rather than the ceiling raised.
+  - **A PARKED ITEM'S STATED BLOCKER IS A CLAIM LIKE ANY OTHER -- measure it before
+    honouring it (2026-09-07, NET-02):** the entry had sat parked with a specific,
+    plausible reason: narrowing `safe_href`'s broad except "changes behaviour for non-str
+    inputs of an app-wide sanitizer, so it wants its own reviewed slice". The reviewed
+    slice found the premise false in one reading: both functions run `re.sub` on the
+    input BEFORE the `try`, so a truthy non-str already raised `TypeError` outside the
+    block and the broad except never covered that case. The blocker had been protecting
+    nothing for as long as it had been written down. GENERAL FORM: the staleness guard is
+    usually run against an item's STATUS ("is this already built?") and against its
+    MEASUREMENT ("would the code still produce that number?"); run it against the stated
+    REASON FOR NOT DOING IT too, because a blocker is the one part of a parked entry that
+    nobody re-checks -- it reads as the conclusion of work already done. Ship the
+    refutation as a test, so the next reader sees it was measured rather than overruled.
+    ATTRIBUTION, because the lesson outlived the code that occasioned it: the narrowing
+    itself shipped in PR #1031, from a session that found NET-02 in parallel and merged
+    first. This branch's implementation was dropped; the refutation was not, because
+    #1031's own block does not carry it, and it now rides beside that block as
+    `test_a_non_str_input_already_raised_BEFORE_the_narrowing` (mutation-checked against
+    #1031's code: move the pre-`try` work inside a re-widened except and it reddens).
+  - **A DOCUMENT CAN BE RIGHT AT THE TOP AND WRONG A HUNDRED LINES DOWN, AND THAT IS
+    WORSE THAN BEING WRONG THROUGHOUT (2026-09-07, J3):** the ruling asked to "document
+    SQLite-only and remove the implication of dual support", and `docs/ARCHITECTURE.md`
+    ALREADY did -- correctly, in detail, with the three reasons and the sentence "until
+    that lands, this page will not pretend". The same file then handed out a PostgreSQL
+    `to_tsvector` recipe, `psql` monitoring commands, a troubleshooting section and
+    `pg_dump` backup instructions as parallel supported choices. A reader who lands in
+    the middle has no way to tell which half is current, and the honest-looking top is
+    what makes the bottom credible. So a staleness sweep over a DOC must not stop at the
+    section that answers the question -- grep the whole file for the thing being retired,
+    and treat "documented" as a claim about the document rather than about a paragraph.
+    COROLLARY, from the same sections: the SQLite half was stale too, telling the reader
+    to hand-build a virtual table the app already ships under a DIFFERENT name, and to
+    back up by copying a WAL-mode, by-default-ENCRYPTED database file. Wrong advice about
+    the supported path hides behind a correct statement about the unsupported one.
+  - **A "DEAD CODE" CLAIM IS A CLAIM ABOUT A LINE, AND THE FILE MAY NOT IMPORT AT ALL
+    (2026-09-07, PRH-04):** the item read "`scripts/setup_llm.py::start_ollama` is dead
+    code calling `self.model_manager.start_ollama()` on a module that no longer exists",
+    which describes a live script with one rotten branch and invites a one-line repair.
+    Running it takes four seconds and says something else: BOTH of its imports name
+    modules that are gone, so it raises `ModuleNotFoundError` at line 48 and
+    `start_ollama` was never reachable from anywhere. The whole script had been
+    advertised in `scripts/README.md` as the way to provision the local model. The
+    difference decides the fix -- a rotten branch is repaired, a script that cannot start
+    and whose capability now lives in the app is deleted, because repairing it means a
+    second untested provisioning path beside the one that runs. GENERAL FORM: before
+    acting on an item that names a FUNCTION, execute the module; "dead" is a spectrum and
+    the item's author may have read the line without running the file.
+
+  - **TWO SESSIONS BUILT THE SAME PARKED ITEM ON THE SAME DAY, AND THE PAPERWORK THAT
+    WOULD HAVE PREVENTED IT DOES NOT EXIST (2026-09-07, PRH-03 + NET-02, PR #1035 vs
+    PR #1031):** both sessions read `PARKED.md`, found the same two items, built them in
+    full -- implementation, tests, a mutation matrix each -- and one merged hours before
+    the other. Roughly a session of work was duplicated and then thrown away. WHAT MAKES
+    THIS A LESSON RATHER THAN BAD LUCK IS THAT THE COLLISION WAS VISIBLE IN ADVANCE AND
+    STILL HAPPENED: `INVENTORY.md` filed both items under **P21** while `PROMPT_20` S5
+    claimed them by name, `00_INDEX.md` sets no fence between the two prompts, and the
+    losing PR flagged that disagreement in its own body as "one cross-reference
+    disagreement, surfaced rather than silently resolved" -- and then built them anyway,
+    because a flagged disagreement is not a lock. A parked item is CLAIMABLE and nothing
+    in this repository lets a session claim one: no owner column, no in-flight marker, no
+    convention of opening the PR first. GENERAL FORM, for a repo that runs several
+    sessions in parallel: before starting a slice whose subject is a NAMED item in a
+    shared backlog, read the open PRs and the last day of `main` for that item's name --
+    `git log --oneline -20 origin/main` and a `search_pull_requests` for the item id cost
+    a minute, against a session of rebuilt work. AND WHEN YOU LOSE THE RACE, YIELD: take
+    the merged implementation whole rather than re-landing yours over it, then keep only
+    what yours has that theirs does not, and mutation-check each survivor against THEIR
+    code so "additive" is a measurement rather than a courtesy. Here that came to five
+    tests out of forty-three -- four negative-space cases on the redirect host check
+    (three of which are the sole failure under their own mutant, so #1031's thirty tests
+    demonstrably do not reach them) and the blocker refutation above. The rest was
+    deleted, which is the right outcome and takes about an hour to reach honestly.
+
+  - **THE `merge=union` DUPLICATE-ROW TRAP FIRED ON THE SWEEP THAT WARNED ABOUT IT, AND
+    ITS TELL WAS THE OPPOSITE OF THE RECORDED ONE (2026-09-07, `shipped.csv`, PR #1035):**
+    this session swept six `PR pending` placeholders to real numbers, and wrote into
+    `OPEN_QUEUE.md` that a sweep is itself a duplicate generator because any branch cut
+    BEFORE it still carries the stale text. Four hours later its own second merge of
+    `main` produced exactly that: **860 rows against an expected 856**, four exact pairs
+    differing in ONE column — the swept `PR #1031` beside another branch's `PR pending`
+    copy of the same row. WHAT MAKES THIS WORTH A SEPARATE ENTRY is that the recorded
+    TELL did not fire. The ledger says to suspect "a numstat with DELETIONS on a merge you
+    expect to be purely additive"; this merge's numstat was **6 added / 0 deleted**,
+    purely additive, because both sides were APPENDING their own copy rather than one side
+    editing a row the other kept. A reader who had memorised the tell instead of the check
+    would have shipped four duplicate rows into the project's permanent record. GENERAL
+    FORM: a heuristic that has caught a bug once is not the check — it is one signature of
+    the check's subject, and the subject can present differently. Run the DUPLICATE-KEY
+    SCAN over `(date, area, item)` against the COMMON ANCESTOR with multiplicity preserved
+    on every merge, whatever the numstat says. COROLLARY, learned in the same pass:
+    fixing duplicates means DELETING rows, which is how a real row vanishes — so assert
+    both directions, `introduced == 0` AND `keys present on either side but absent from
+    the merge == 0`, and refuse to delete a `PR pending` row that has no
+    identical-except-refs swept twin, because then it is not a duplicate but somebody's
+    real, unswept row.
+
   - **A STATUS RE-CHECK IS ITSELF A CLAIM, AND ONE DATED TODAY CAN BE WRONG ABOUT WORK THAT
     SHIPPED TWO MONTHS AGO — search for the CAPABILITY, never for the design's own vocabulary
     (2026-09-07, PROMPT 23's staleness guard):** `docs/FUTURE_DEVELOPMENTS.md` carried a
