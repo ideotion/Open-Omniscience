@@ -4,6 +4,20 @@
 > **Gated on:** D5, D6, D7, D8, D9, D10, AI-15 (one lookup), L9.
 > **Sequencing:** independent. Its S1 is a supply-chain gap; its S6 is a live CI risk.
 
+> **EXECUTED 2026-09-07.** Built: S1 (the weights pin, D6), S2 (round-trip capability probes,
+> D7), S3's missing half (a dependabot `ignore` for pqcrypto MAJORS — the CI guard had already
+> shipped in #1016), S5 (both dead ends wired), S7's D5 collapse. **Four of the seven slices were
+> already built** and the staleness guard is what said so: S6's roster reduction, AI-14's buried
+> custom-model field, S4/D10's whole per-field rollout, and S3's guard. **Two of this prompt's own
+> premises are wrong and are corrected in `INVENTORY.md`**: PRH-21's `configure_ollama_store_access`
+> is a SHELL function in `install.sh`, not in `src/llm/installer.py`, and its uninvoked state is a
+> deliberate maintainer ruling (wiring it would run `sudo chmod` during an install the 2026-06-20
+> field test made ask nothing); PRH-09's `#vllm-model-input` does not exist anywhere in the tree and
+> its only reader had no callers, so it was RETIRED rather than prefilled. D8/D9/AI-15 are recorded
+> in `docs/ledger/OPEN_QUEUE.md`, 2026-09-07. Rulings D5–D10 were taken on their **recorded
+> recommended defaults**, not by the maintainer, and each is named there so a differing ruling has
+> one place to land.
+
 ## 0. Working mode
 
 Read `_WORKING_MODE.md`, then the CLAUDE.md entries **"ONE MODEL, MINISTRAL 3B, THROUGHOUT THE ENTIRE APP"**,
