@@ -3510,6 +3510,32 @@
   the provenance columns (an additive migration), then the attach behind them, then the import
   UI + undo. The preview exists so that decision can be reviewed against this corpus's real
   senders rather than against a description.
+  **(b2) MORE VERIFIED-PRESENT, and two of these matter because the prompt reads as though
+  they are pending.** The **lunar-effects framework is BUILT AND FULLY WIRED** —
+  `src/analytics/lunar.py` correlates any stored daily series against the moon's illuminated
+  fraction, with Benjamini-Hochberg FDR (`src/stats/fdr.py`) MANDATORY on a screen and a
+  DETERMINISTIC circular-shift permutation test (no scipy, no RNG) that preserves the
+  autocorrelation of both series, correlation-is-not-causation on every result and the null
+  outcome named as the expected one; served by `/api/insights/lunar-correlation`
+  (`src/api/insights.py:1404`) and drawn by `app-insights.js` `loadLunar()` with limit and
+  `fdr_q` controls. The only piece genuinely absent is the PRE-REGISTRATION hypothesis step:
+  the screen exists, "declare what you expect before you look" does not.
+  **Weather signal-keywords are BUILT** — `src/analytics/weather_signals.py` derives
+  `kind="signal"` rows into a SEPARATE store (its own design note says why it is not the
+  keyword table), read by `/api/signals`. The **anomaly baseline is HALF-BUILT and honest
+  about it**: the module names the baseline ("climatology of <vars> (Open-Meteo ERA5 daily)
+  for this place & window") and publishes the gap — "Not yet checked against a baseline:
+  confirming an anomaly requires the consented Open-Meteo reanalysis fetch" — so it is
+  operator-gated, not unbuilt. The **`_hazard_tier` no-promotion rule** lives at
+  `src/analytics/alerts.py:71` (not under `src/hazards/`), with its own comment "a magnitude
+  still never becomes urgency" and a test in `tests/test_alert_selection.py`.
+  **STILL ABSENT, checked:** the reader weather-context row (no weather reference in
+  `app-corpus.js`/`app-library.js`); any OSM preprocessing into boundary/gazetteer artifacts
+  (`src/geo` holds only `ip_geo.py`, `osm_downloads.py`, `osm_regions.py`, and the single
+  "gazetteer" mention is a comment at `ip_geo.py:217`); and a job-shaped live mailbox pull
+  (`import_mailbox` at `src/api/ingestion.py:511` is still synchronous, taking the password
+  in the request body and storing nothing — I1 is untouched).
+
   **(f) A NOTE FOR WHOEVER WIRES THE ATTACH:** `resolve_newsletter_publisher` matches
   `lower(Source.domain)`, which is a scan of a few-thousand-row table — free for a report, wrong
   per message. A functional index over that column needs a migration AND the recorded
