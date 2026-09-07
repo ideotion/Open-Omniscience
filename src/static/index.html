@@ -2718,8 +2718,9 @@
             <option value="semester">Semester</option>
             <option value="yearly">Yearly</option>
           </select></div>
-          <label class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
+          <label id="bul-narrate-label" class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
             <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
+          <div id="bul-narrate-gate" class="hint" hidden></div>
           <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
           <div id="bulletin-status" class="hint" style="align-self:end"></div>
         </div>

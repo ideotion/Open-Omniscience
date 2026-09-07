@@ -27,7 +27,15 @@ router = APIRouter(prefix="/api/bulletin", tags=["bulletin"])
 
 
 def _require_gate() -> dict:
-    """The hardware gate, as a 403 with its reason rather than a bare refusal."""
+    """The DOCUMENT verdict, as a 403 with its reason rather than a bare refusal.
+
+    Since the maintainer's 2026-09-07 answer to open question 4 this refuses only
+    when the constant is flipped back to gate the document; on the ruled setting a
+    machine that cannot run a model still gets every route here. The NARRATION
+    verdict travels in the same payload and is enforced where narration is asked
+    for — never by this function, because refusing a deterministic read for want of
+    a GPU is exactly what the ruling removed.
+    """
     from src.bulletin.gate import bulletin_available
 
     gate = bulletin_available()
@@ -81,7 +89,12 @@ def generate(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    edition = build_edition(db, period, narrate=narrate)
+    # The narration verdict is the model one, not the document one. A machine below
+    # the bar still builds the edition; asking it to narrate is refused HERE, before
+    # a call is attempted, so the reason the operator reads is the hardware fact
+    # rather than a connection error standing in for it.
+    refusal = None if gate.get("narration_available") else gate.get("narration_reason")
+    edition = build_edition(db, period, narrate=narrate, narration_refusal=refusal)
     edition["gate"] = gate
     if persist:
         try:

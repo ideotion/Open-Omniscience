@@ -1466,6 +1466,44 @@
   carried forward: run `/llm-bench` on the GPU machine and on a slow one so the §6.3 time budget
   rests on measurements rather than a guess; and run the continuous-improvement cycles (§15's
   remaining half is *running* them, not building them).
+  **THE FOUR REMAINING §20 QUESTIONS ARE RULED (maintainer, 2026-09-07, in answer to
+  `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4). The §20 list is now CLOSED: every one of the five
+  open questions has an answer.**
+  **D1 (§20 Q4) — LAYER A IS AVAILABLE BELOW THE HARDWARE GATE.**
+  `LAYER_A_REQUIRES_CAPABLE_HARDWARE` flips to `False`, so the §3 gate applies to the NARRATION
+  layer only and a GPU-less operator gets the deterministic document. This does not weaken ruling
+  (2): the justification for gating was workload shape — thousands of narration calls — and that
+  is exactly what stays gated. The recorded consequence the original ruling accepted (a GPU-less
+  operator denied even the model-free half) is what is being reversed, on the design record's own
+  note that it was "reversible in one condition". **The verdict is now TWO facts, not one:**
+  `bulletin_available()` returns the DOCUMENT verdict, and `narration_available` beside it carries
+  the model verdict with its own reason — one key could not mean both without the recorded
+  one-key-two-meanings defect, since below the bar the document is available and the narration is
+  not. The constant keeps exactly one read (the read-count test is unchanged at 2) and the
+  narration refusal reads it nowhere: it is a hardware fact, not a policy constant.
+  **D2 (§20 Q2) — THE INTRODUCTION IS NARRATED BY THE MODEL**, over the edition's own masthead and
+  section figures, with a DETERMINISTIC TEMPLATE beside it. The maintainer chose the narrated form
+  over the templated one; the fallback is not a hedge but the same §8 rule every other Layer-B
+  sentence obeys — a model failure, an empty answer or a paragraph that fails grounding resolves to
+  the template with the reason recorded, so an edition below the gate or in airplane mode still
+  opens with a paragraph and §2's "a section called AI summary would name a document containing no
+  model output" mislabelling never arises. The introduction is grounded in the edition's OWN
+  figures (not article text), so the grounding check is the numeric-support one and an invented
+  figure is dropped exactly as elsewhere.
+  **D3 (§20 Q3) — MAIL SENDING: NEVER.** No outbound mail path is added to the app. Download the
+  document plus the short paste digest stays the only exit (§10 ruling 13). The reasoning is
+  recorded rather than left to be re-derived each cycle: sending is real egress that reveals the
+  operator to a mail provider, off Tor, with stored credentials — a new egress surface for a
+  document the user can already export, against an app whose ONLY external call is the gated,
+  off-by-default DuckDuckGo discovery. This is a CLOSED question, not a deferral.
+  **D4 (§20 Q1/Q5) — THE EIGHT SHIPPED SECTIONS AND THE CHECKBOX REVIEW SCREEN ARE RATIFIED AS THE
+  RULED DESIGN.** The section list is `rising_concepts · across_channels · country_coverage ·
+  by_topic_tag · changes_of_record · alerts · through_time · cards`, in that order, with `cards`
+  deliberately LAST (it is the slowest and the only section whose figures are not the period's).
+  The review screen is the checkbox-per-section/per-story screen with per-sentence verdicts. Both
+  are now pinned by a guard, because a ratified list that nothing enforces is a list that drifts;
+  ADDING a section stays cheap (that is what the registry is for) — the guard makes an addition or
+  a removal a deliberate edit of the ruling rather than a silent one.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;

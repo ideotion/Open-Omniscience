@@ -35,6 +35,7 @@ def build_edition(
     cluster_stories: bool = True,
     model: str | None = None,
     client=None,
+    narration_refusal: str | None = None,
 ) -> dict:
     """Assemble one edition.
 
@@ -53,11 +54,46 @@ def build_edition(
 
     Everything degrades independently: a clustering failure leaves the deterministic
     record intact, and a narration failure leaves the clusters intact.
+
+    ``narration_refusal`` is the §3 hardware gate's own words for why Layer B may
+    not run here. It is threaded in rather than probed for, because the gate is
+    policy and this module is assembly — and it is recorded IN the edition, so a
+    document produced on a machine that could not narrate says so instead of
+    reading like one nobody asked to narrate. Passing it with ``narrate=False``
+    changes nothing: a refusal only means something against a request.
     """
     from src.bulletin.facts import layer_a
 
     edition = layer_a(session, period, rising_limit=rising_limit, target_lang=target_lang)
     edition["narration_requested"] = bool(narrate)
+
+    # The refusal is applied HERE rather than at the call site so exactly one place
+    # composes the document's account of its own narration — the recorded defect was
+    # three paths building that block and disagreeing.
+    if narrate and narration_refusal:
+        narrate = False
+        edition["narration"] = {
+            "layer": "B",
+            "available": False,
+            "refused_by_hardware_gate": True,
+            "reason": narration_refusal,
+            "paragraphs": [],
+            "stories_narrated": 0,
+            "method": (
+                "narration was requested and refused before any call was made; the "
+                "refusal is a hardware verdict, not a model failure"
+            ),
+            "caveat": (
+                "No model output is present. The document is complete without it — "
+                "that is what makes this layer removable rather than required."
+            ),
+        }
+        edition["caveat"] = (
+            edition.get("caveat", "")
+            + " Narration was requested and refused by the hardware gate, so no "
+            "sentence here was written by a model. Every figure was computed without "
+            "one, which is why the document is whole rather than short."
+        )
 
     if not cluster_stories:
         return edition

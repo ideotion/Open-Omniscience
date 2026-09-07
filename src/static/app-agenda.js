@@ -210,7 +210,30 @@
       }
       gate.hidden = true;
       controls.hidden = false;
+      // TWO VERDICTS (ruled 2026-09-07, open question 4): the document is produced
+      // on any machine and only the NARRATION layer is gated. Reading `available`
+      // for both would draw a checkbox that cannot work and say nothing about why,
+      // so the model verdict is rendered on its own control -- disabled, unticked,
+      // with the hardware reason beside it rather than a failure at build time.
+      _bulPaintNarrationGate(g);
       await loadBulletinEditions();
+    }
+
+    function _bulPaintNarrationGate(g) {
+      const box = $("bul-narrate-gate"), cb = $("bul-narrate"), lbl = $("bul-narrate-label");
+      if (!cb) return;
+      const ok = g.narration_available !== false;
+      cb.disabled = !ok;
+      if (!ok) cb.checked = false;
+      if (lbl) lbl.style.opacity = ok ? "" : ".6";
+      if (!box) return;
+      box.hidden = ok;
+      if (ok) { box.textContent = ""; return; }
+      // The reason is the gate's own words. Paraphrasing a hardware fact into a
+      // second wording is how two surfaces come to disagree about one machine.
+      box.textContent = _bulT("Narration is unavailable on this machine: ")
+        + (g.narration_reason || _bulT("this machine cannot practically run a local model"))
+        + " " + _bulT("The document is complete without it.");
     }
 
     async function loadBulletinEditions() {
