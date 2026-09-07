@@ -218,3 +218,243 @@ def test_the_lens_never_merges_into_the_trusted_keyword_list() -> None:
     assert "r-ailens" in lens, "and the lens must render into it"
     assert "AI-derived — unreliable" in lens, "labelled at the point of display"
     assert "r-kn" not in lens, "the trusted list's own row furniture must not be reused here"
+
+
+# ---------------------------------------------------------------------------
+# READ-TIME EVIDENCE RESOLUTION (the three-state fix).
+#
+# The defect these guard: `AiKeyword.evidence` is written only at insert time, so every
+# row stored before that writer existed holds NULL -- and the reader rendered NULL as
+# "Not found in your stored copy of this article", stating a search that never ran.
+# Resolving at read time removes the ambiguity instead of describing it.
+# ---------------------------------------------------------------------------
+
+
+def _article_with(session, *, title, body, compressed=False):
+    """An article whose text lives where a real one's does."""
+    from src.database.models import Article, Source
+
+    src = Source(name="s", domain="e.invalid")
+    session.add(src)
+    session.flush()
+    url = f"https://e.invalid/{abs(hash((title, body, compressed)))}"
+    a = Article(
+        source_id=src.id,
+        url=url,
+        canonical_url=url,
+        title=title,
+        content=body,
+        hash=url[-12:],
+    )
+    if compressed:
+        a.compress_content()
+        a.content = ""  # a compressed row leaves the column empty
+    session.add(a)
+    session.flush()
+    return a
+
+
+def test_a_legacy_row_is_searched_at_read_time_not_reported_absent():
+    """The defect itself: a row written with no evidence must not be reported as
+    'searched and not found' -- it must be searched, and found."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(session, title="Water policy", body="The aquifer is falling.")
+    store.record_keywords(
+        session, a.id, ["aquifer"], model="m"
+    )  # NO evidence_text -> legacy shape, evidence stays NULL
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    assert rows[0].evidence is None, "fixture must reproduce the legacy NULL"
+
+    found, has_text = store.evidence_for_rows(session, a.id, rows)
+    assert has_text is True
+    assert rows[0].id in found and "aquifer" in found[rows[0].id]
+
+
+def test_a_term_absent_from_the_text_stays_absent():
+    """The informative case must NOT be filled in -- absence is the finding."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(session, title="Water policy", body="The aquifer is falling.")
+    store.record_keywords(session, a.id, ["Montenegro"], model="m")
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    found, has_text = store.evidence_for_rows(session, a.id, rows)
+    assert has_text is True
+    assert found == {}, "a term not in the text must get no snippet"
+
+
+def test_an_article_with_no_text_reports_the_third_state():
+    """`has_text=False` is a DIFFERENT fact from 'searched and not found'. Collapsing
+    them is the defect; this is the guard that keeps them apart."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(session, title=None, body="")
+    store.record_keywords(session, a.id, ["anything"], model="m")
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    found, has_text = store.evidence_for_rows(session, a.id, rows)
+    assert has_text is False
+    assert found == {}
+
+
+def test_compressed_articles_are_searched_through_get_content():
+    """Searching `Article.content` directly would report every term of every COMPRESSED
+    article as absent -- fabricating the exact absence this lens exists to report."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(
+        session, title="Water policy", body="The aquifer is falling.", compressed=True
+    )
+    assert a.content == "" and a.compressed_content, "fixture must be compressed"
+    store.record_keywords(session, a.id, ["aquifer"], model="m")
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    found, has_text = store.evidence_for_rows(session, a.id, rows)
+    assert has_text is True, "a compressed article HAS text"
+    assert rows[0].id in found
+
+
+def test_a_headline_term_is_grounded_in_the_title():
+    """The extractor is shown title + body, so a term taken from the headline must not
+    be reported absent from the article."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(session, title="Aquifer collapse", body="Rain fell.")
+    store.record_keywords(session, a.id, ["Aquifer"], model="m")
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    found, _ = store.evidence_for_rows(session, a.id, rows)
+    assert rows[0].id in found
+
+
+def test_resolution_never_writes():
+    """Read-only by design: persisting would make a GET mutate, and the nearest
+    precedent (autoIndexInsights) needed a cooldown after the P0-5 write storm."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(session, title="Water policy", body="The aquifer is falling.")
+    store.record_keywords(session, a.id, ["aquifer"], model="m")
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    store.evidence_for_rows(session, a.id, rows)
+    session.commit()
+    fresh = store.keywords_for_article(session, a.id)
+    assert fresh[0].evidence is None, "resolution must not persist"
+
+
+def test_a_stored_snippet_is_preferred_and_agrees_with_recomputation():
+    """New rows already carry evidence; the resolver must reuse it, and because both
+    paths go through evidence_for they cannot disagree."""
+    from src.ai_layer import store
+
+    session = _session()
+    a = _article_with(session, title="Water policy", body="The aquifer is falling.")
+    store.record_keywords(
+        session, a.id, ["aquifer"], model="m",
+        evidence_text="Water policy\n\nThe aquifer is falling.",
+    )
+    session.commit()
+    rows = store.keywords_for_article(session, a.id)
+    assert rows[0].evidence, "writer must have stored one"
+    found, _ = store.evidence_for_rows(session, a.id, rows)
+    assert found[rows[0].id] == rows[0].evidence
+
+
+# ---------------------------------------------------------------------------
+# THE HTTP CONTRACT — the three states as the reader actually receives them.
+# The store-level tests above pin the resolution; these pin what the endpoint SAYS,
+# which is where the false sentence was rendered from.
+# ---------------------------------------------------------------------------
+
+
+def _seed(title: str, body: str) -> int:
+    import uuid
+
+    from src.database.models import Article, Source
+    from src.database.session import init_db, session_scope
+
+    init_db()
+    with session_scope() as s:
+        domain = f"ev-{uuid.uuid4().hex[:8]}.example"
+        src = Source(name=domain, domain=domain, language="en")
+        s.add(src)
+        s.flush()
+        a = Article(
+            url=f"https://{domain}/a", canonical_url=f"https://{domain}/a",
+            source_id=src.id, title=title, content=body, language="en",
+            hash=uuid.uuid4().hex + uuid.uuid4().hex,
+        )
+        s.add(a)
+        s.flush()
+        return a.id
+
+
+def _lens(aid: int) -> list[dict]:
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    r = TestClient(app).get(f"/api/ai/articles/{aid}/keywords")
+    assert r.status_code == 200, r.text
+    return r.json()["keywords"]
+
+
+def _legacy_row(aid: int, term: str) -> None:
+    """A row exactly as it was written before the evidence writer existed."""
+    from src.ai_layer.store import record_keywords
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        record_keywords(s, aid, [term], model="m")  # no evidence_text -> NULL
+
+
+def test_http_a_grounded_legacy_row_carries_evidence() -> None:
+    aid = _seed("Water policy", "The aquifer is falling fast this year.")
+    _legacy_row(aid, "aquifer")
+    (k,) = _lens(aid)
+    assert "aquifer" in k["evidence"]
+    assert "evidence_absent" not in k
+
+
+def test_http_an_ungrounded_term_is_reported_as_searched_and_absent() -> None:
+    aid = _seed("Water policy", "The aquifer is falling fast this year.")
+    _legacy_row(aid, "Montenegro")
+    (k,) = _lens(aid)
+    assert "evidence" not in k
+    assert k["evidence_absent"] is True, (
+        "the copy WAS searched and the term is not in it — the informative case"
+    )
+
+
+def test_http_an_untextual_article_asserts_no_search_at_all() -> None:
+    """THE DEFECT. With no text to search, the endpoint must emit NEITHER key, so the
+    reader cannot say 'not found in your stored copy' about a search nobody ran."""
+    aid = _seed("", "")
+    _legacy_row(aid, "Montenegro")
+    (k,) = _lens(aid)
+    assert "evidence" not in k
+    assert "evidence_absent" not in k, (
+        "claiming absence here would state a search that never happened"
+    )
+
+
+def test_http_reading_the_lens_does_not_write() -> None:
+    """The endpoint's docstring promises a read never writes. Persisting evidence would
+    break that and make a GET mutate — the P0-5 storm is the precedent against it."""
+    from src.database.models import AiKeyword
+    from src.database.session import session_scope
+
+    aid = _seed("Water policy", "The aquifer is falling fast this year.")
+    _legacy_row(aid, "aquifer")
+    _lens(aid)
+    with session_scope() as s:
+        row = s.query(AiKeyword).filter_by(article_id=aid).one()
+        assert row.evidence is None, "resolution is read-only"

@@ -19,7 +19,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.database.models import AiKeyword
+from src.database.models import AiKeyword, Article
 
 #: Bounds for the stored evidence snippet: enough context to judge a term, short enough
 #: that a lens over twenty terms stays readable.
@@ -71,6 +71,60 @@ def evidence_for(text: str | None, term: str) -> str | None:
     if hi < len(text):
         snippet += "…"
     return snippet[:_EVIDENCE_MAX] or None
+
+
+def article_evidence_text(article) -> str:
+    """The text a stored term was drawn from -- title + body, in the SHAPE the extractor
+    was actually shown (``jobs.py``'s combined text), so a term the model took from the
+    headline is never reported absent from the article.
+
+    Reads through ``Article.get_content()``, NOT ``Article.content``. A compressed row
+    keeps its text in ``compressed_content`` and leaves ``content`` empty, so searching
+    the column directly would report every term of every compressed article as absent --
+    fabricating exactly the absence this lens exists to report honestly.
+    """
+    if article is None:
+        return ""
+    body = article.get_content() or ""
+    title = (article.title or "").strip()
+    return f"{title}\n\n{body}" if title else body
+
+
+def evidence_for_rows(session: Session, article_id: int, rows) -> tuple[dict[int, str], bool]:
+    """Resolve where each row's term occurs in the article's stored copy.
+
+    Returns ``({row_id: snippet}, article_has_text)``. THE SECOND VALUE IS THE POINT.
+    ``AiKeyword.evidence`` is written only at insert time, so every row stored before that
+    writer existed holds ``NULL`` -- and a ``NULL`` cannot say whether the term was searched
+    for and missing, or never searched at all. Rendering both as "not found in your stored
+    copy" states a search that never happened, which is the same three-state collapse
+    ``weights_pin.py`` refuses when it omits ``revision_matches_pin`` for a cache nothing
+    compared.
+
+    Resolving at READ time removes the ambiguity rather than describing it: every row in the
+    answer has just been searched, so an absent snippet IS "searched and not found" -- unless
+    the stored copy has no text at all, which is what ``article_has_text=False`` reports and
+    is a third fact, not a weaker version of the second.
+
+    Read-only BY DESIGN: nothing is written back. Persisting would make a GET mutate, and
+    the nearest precedent is a warning rather than a licence -- ``autoIndexInsights`` needed a
+    cooldown after the P0-5 storm (``/api/insights/reindex`` 1,326x in 369 s, each batch a
+    heavy write contending with the live scrape). The stored value is preferred when present
+    and agrees with recomputation, because both go through :func:`evidence_for`.
+    """
+    rows = list(rows)
+    if not rows:
+        return {}, True
+    article = session.get(Article, article_id)
+    text = article_evidence_text(article)
+    if not text.strip():
+        return {}, False
+    found: dict[int, str] = {}
+    for r in rows:
+        snippet = r.evidence or evidence_for(text, r.term)
+        if snippet:
+            found[r.id] = snippet
+    return found, True
 
 
 def record_keywords(

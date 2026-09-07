@@ -10381,8 +10381,28 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   deterministic offline top-up**, not a schema change — `evidence_for` needs only the stored
   article text, is idempotent, and the repo already has the precedent in invariant #21's silent
   `autoIndexInsights` backlog top-up. A `evidence_checked` column would also work and costs a
-  migration for a distinction a re-scan removes. Until one ships, the reader's absence line is
-  overclaiming and should be read as "no snippet stored", not as a finding.
+  migration for a distinction a re-scan removes.
+  **FIXED 2026-09-07 (maintainer asked), AND NOT BY THE RECOMMENDED DEFAULT — the precedent I
+  cited turned out to be an argument AGAINST it.** `autoIndexInsights` carries a cooldown
+  because of the P0-5 storm (`/api/insights/reindex` called 1,326× in 369 s, "each batch a heavy
+  write contending with the live scrape"), so citing it as a licence to write was backwards. The
+  fix RESOLVES AT READ TIME instead and persists nothing, which removes the ambiguity rather
+  than describing it: `store.evidence_for_rows` searches the stored copy for every row the
+  endpoint is about to return, so an absent snippet IS "searched and not found". No migration,
+  no write inside a GET, no backfill window during which the answer is still wrong, and the
+  endpoint's "a read never writes anything" docstring stays TRUE.
+  **THREE STATES SHIP, because two were the defect:** `evidence` (occurs here), `evidence_absent`
+  (searched, not in your copy — the informative case), and NEITHER KEY when the stored copy has
+  no text, which is a different fact rather than a weaker "not found". +1 string ×12
+  ("Your stored copy has no text to search").
+  **ONE THING THE FIX ONLY JUST AVOIDED, worth keeping:** a compressed article keeps its text in
+  `compressed_content` and leaves `content` EMPTY, so searching the column directly would have
+  reported every term of every compressed article as absent — fabricating the exact absence this
+  lens exists to report. `article_evidence_text` goes through `Article.get_content()`, and
+  `test_compressed_articles_are_searched_through_get_content` is the guard.
+  Seven mutations, each reddening by name; the endpoint mutation that always claims absence
+  reproduces the original defect. Both i18n ratchets lowered to the measured values (555→554,
+  296→295).
   **(2) BOTH PIN VALUES SHIP BLANK — the mechanism is complete, only the values are missing.**
   `HF_REVISION_PINS` and `OLLAMA_DIGEST_PINS` in `src/llm/weights_pin.py` are empty dicts, so the
   pin reports "not pinned, nothing was checked" — the honest third state, not a silent pass.
