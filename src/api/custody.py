@@ -91,8 +91,13 @@ def _settings_status() -> dict:
         **prefs.to_dict(),
         "anchoring_modes": list(VALID_ANCHORING),
         "pqc_available": avail["pqc_available"],
+        # Why, not just whether: a build with no [pqc] extra and one whose pqcrypto
+        # cannot complete a sign/verify round trip both report False, and only one of
+        # them is fixed by installing something.
+        "pqc_reason": avail["pqc_reason"],
         "pqc_effective": signer.is_hybrid,  # signed as hybrid only if truly available
         "ots_available": avail["ots_available"],
+        "ots_reason": avail["ots_reason"],
         "ots_effective": prefs.anchoring_mode == "opentimestamps" and avail["ots_available"],
         "key_protection": signer.key_protection,
         "signer": signer.public_identity().to_dict(),

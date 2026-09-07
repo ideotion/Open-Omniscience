@@ -9483,3 +9483,62 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+- **PROMPT_11 EXECUTED 2026-09-07 (the AI layer: model supply, capability probes, and the honest
+  gaps). FOUR OF ITS SEVEN SLICES WERE ALREADY BUILT, and the staleness guard is what said so —
+  the prompt's own scoping was written from doc status lines that had aged past the tree.** What
+  was VERIFIED-PRESENT at `main` @ 690920e, with the anchor that proves it: (a) **S6's roster
+  reduction** — `DEFAULT_ROSTER` is `_incumbents()`, `BENCH_ROSTER_AS_OF` is gone and
+  `src/llm/ollama.py:144` records that `MINISTRAL_AS_OF` INHERITED its dated-registry duty; the
+  prompt's "six roster tests are about the dropped entries, so a blind delete takes working guards
+  with it" was a live CI risk that is already spent. (b) **AI-14, the buried custom-model field** —
+  `index.html` Settings → Advanced → AI → "Run your own model", inside `<details class="adv-sec"
+  data-adv="ai">`, with the 2026-08-12 ruling quoted verbatim in the comment above it. (c) **S4 /
+  D10, the perception rollout** — `ai_sweep_perception_extract` defaults True, `field_gate` stores
+  only `active is True` and refuses the unmeasured, and BOTH structural points the prompt asks to
+  preserve are pinned by `test_repo_invariants.py::test_perception_extraction_is_eval_gated_and_
+  never_touches_the_trusted_tables` (only `ai-who`/`ai-place`/`ai-date` reach `ai_keyword`, never
+  the trusted tables; WHO stays ONE combined kind, with `ai-person`/`ai-org`/`ai-event` asserted
+  ABSENT). Only the numeric floors remain, and they are the operator's graded gold set (R6).
+  (d) **S3's CI-visible mechanism** — `tests/test_dependency_ceilings.py` shipped in #1016 and the
+  corrected migration measurements are already in the pyproject comment (16 failed/23 passed at
+  1.0.0 against 39 at 0.4.0; `keygen()` returns plain `bytes`; `PUBLIC_KEY_SIZE` 1952 in both).
+  **TWO INVENTORY ITEMS WERE REFUTED RATHER THAN BUILT, and both would have been damaging:**
+  **PRH-21** says to call `configure_ollama_store_access` "from `src/llm/installer.py`, where it is
+  defined, test-pinned and never invoked". Two of those three facts are wrong: it is a SHELL
+  function in `install.sh:495`, and its uninvoked state is a deliberate maintainer ruling, recorded
+  in the comment directly above it and pinned by `test_repo_invariants.py::test_seamless_install_
+  and_language_first_first_launch` — the 2026-06-20 field test moved Ollama provisioning ENTIRELY
+  to Settings → AI so the installer "asks NOTHING and never provisions Ollama". Wiring it would run
+  `sudo chmod` during install, which is exactly what that ruling removed. NOT DONE; the premise is
+  the defect. **PRH-09** says to prefill `#vllm-model-input` from the stored `llm_model_vllm`. That
+  element exists NOWHERE in the tree, and its only reader — `startVllm` in `app-ai-tools.js` — had
+  ZERO callers, so the function's own guard toasted "Enter a model id first." on every possible
+  click. Resolved as RETIRE, not prefill: the 2026-08-04 rework made the fused Local AI card THE
+  one control and it starts through `/api/llm/activation/start`. Adding a model input plus a second
+  start button beside it would re-create the routing-vs-provisioning confusion that fusion removed.
+  `POST /api/llm/vllm/start` is untouched and still reachable through activation.
+  **D8 IS A THIRD KIND OF STALE, and it is the interesting one:** `docs/design/MULTI_MODEL_
+  SPECIALISATION_2026-08-10.md` says "Nothing built" and the INVENTORY repeats it, while
+  `src/ai_layer/specialisation.py` ships 476 lines with `tests/test_specialisation.py` beside it.
+  What is genuinely missing is not the harness but any way to START it: `run_shape` has no caller
+  outside the test tree — no endpoint, no script, no button — so the OPERATOR STEP D8 defers to is
+  not actually available on the rig. Recorded, deliberately NOT built here, because D8's
+  recommendation is "no build" and adding an invocation path is a build; but the deferral should be
+  read as "the harness cannot be run yet", not as "the harness is missing".
+  **D9 — the live ollama.com library browse: DROPPED, with the reason.** Grep-verified that no
+  browse code exists (`ollama.com` appears only as a static download/library LINK in
+  `app-settings.js` and `installer.py`). The curated dated catalog plus the free-text tag box in
+  "Run your own model" covers the need; a live browse is a network surface with a maintenance tail,
+  against a one-model ruling whose whole point is that the default is not a menu.
+  **AI-15 IS STILL OPERATOR-GATED, and the evidence is per-host rather than a shrug:**
+  `ollama.com` answers this sandbox's proxy `CONNECT ... 403 Forbidden`, as does `huggingface.co`,
+  with `pypi.org` at 200 as the control (probed 2026-09-07). So "is the Ollama account `LiquidAI`
+  the publisher's own?" cannot be answered here and is deliberately NOT guessed — the same refusal
+  the 2026-08-02 entry recorded, now on its seventh consecutive session. It joins F1's list.
+  **WHAT WAS BUILT:** S1 (the model-weights pin, D6), S2 (round-trip capability probes, D7), S3's
+  missing half (a dependabot `ignore` for pqcrypto MAJORS), S5 (the two dead ends wired), and S7's
+  D5 collapse. Details in `docs/ledger/shipped.csv` (2026-09-07, `llm/weights-pin`).
+  **RULINGS TAKEN ON THE RECORDED RECOMMENDED DEFAULTS, not by the maintainer** — D5 (collapse
+  behind a count), D6 (pin + refuse), D7 (sweep yes; stay on `<1.0`), D8 (no build), D9 (drop),
+  D10 (already in the recommended shape). Each is reversible and each is named here so a
+  maintainer ruling that differs has one place to land.
