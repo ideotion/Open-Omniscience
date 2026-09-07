@@ -6844,3 +6844,61 @@ all three parser families (`GOV-05`) were recorded as UNCHECKED/on-mission-to-bu
 → `app-map.js:2143` with three test files guarding it. `PRH-24` (the "Registered statistics sources"
 view) really is unbuilt. `S4` (the default aggregation strategy) was **not** flipped: which figure a
 reader sees first is an editorial decision, so it is recorded as question `G11` instead.
+## 2026-09-07 — insights/observatory — the Observatory ships, and the real corpus picked both refusals
+
+The design of record (`docs/design/OBSERVATORY_DESIGN.md`, ruled 2026-07-18) had been carried as
+"DESIGN-ONLY — nothing built" since the backend S0/S1 landed on 2026-07-20; question **H1** asked
+whether to build the renderer in-session and Chromium-verify it, and the maintainer answered *build
+now*. So: `src/static/oosky.js` (the pure polar geometry, dual node/browser like `ooviz.js`) +
+`src/static/app-observatory.js` (the wiring) + a dedicated main tab + **UI invariant #31**.
+
+**The honesty spine is one measure per channel and nothing blended:** angle is the domain wedge
+(now labelled — see below), with stable-hash jitter inside it disclosed on the surface as
+meaningless; radius is ONE chosen measure with labelled orbit rings; size is mentions through
+`ooViz.sqrtAreaScale` so AREA carries the value, with a reference-star legend; colour is the
+dominant language or a trend lens, and never the only signal, because the ranked table beside the
+sky names every value. Deterministic by construction (`ooViz.mulberry32`, never `Math.random`), so
+the same corpus draws the same sky and CHANGE becomes the signal.
+
+**BOTH LOAD-BEARING REFUSALS CAME FROM MEASURING A REAL CORPUS, NOT FROM THE DESIGN.** Seeded 440
+articles through the real `index_article` and read the live payload:
+
+* `mentions` tops out at **263** — 2.4 decades, so a log radius is honest and the decade orbits are
+  real. But `distinct_sources` tops out at **7** across all 77 galaxies, `distinct_languages` at 5,
+  `distinct_keywords` at 8. A log radius on those spreads five sixths of a decade across an entire
+  sky and labels orbits nothing can occupy — the recorded `ooChart` `logY` defect, one geometry
+  over. `radialScale` therefore chooses the mode from the data, and the surface PRINTS which scale
+  it drew and why, because a hint claiming "equal ratios are equal distances" above a linear render
+  is two statements at once.
+* **52 of 77 galaxies have a measure of ZERO.** `log10(0)` is `-Infinity` and the natural guard
+  (`Math.max(v, 1e-9)`) plants a fabricated observation on the outermost orbit. So a zero gets no
+  coordinate at all: `r(v)` returns `null` rather than a number, which is what stops a caller that
+  ignored `mode` from plotting anyway, and the absent majority goes to a labelled band outside the
+  value scale. On a young corpus the gap is the common case, not an edge case.
+
+**CHROMIUM-VERIFIED IN THE REMOTE SANDBOX (awaiting the human UX pass), and it found four defects
+that no amount of source reading would have.** (1) The twelve domain wedges had **no labels at
+all** — a categorical axis a reader could see and never learn. (2) The i18n DOM walker was
+reverting the dynamic `aria-label` to its static placeholder, because the walker caches an
+element's attribute on first sight as "the original English"; `data-i18n-dyn` is its own opt-out
+and the fix. (3) The readout printed `Mentions: 263 · Mentions: 263` whenever mentions was also the
+radial measure. (4) The nebula band overlapped the not-observed marks, rendering two different
+facts on top of each other, and was the loudest thing on screen while carrying no quantity.
+
+A **16-mutation matrix** ran over every new guard: all caught by name, and the one survivor was a
+finding about a fixture rather than about the code (see the lessons). Also fixed here, because it
+was the one live defect in `PROMPT_16` §3's own list: `article_length_report` was the last
+analytics path still measuring **quarantined** rows, so the junk the quarantine condemns was
+setting the thresholds the Home substance filter uses to exclude junk.
+
+**STALENESS (working mode §2), both corrected in this PR:** §3's article-length histogram was
+already built to spec on 2026-08-04 (`814e5dc1`), and the `domain:` field §2 calls a prerequisite
+shipped 2026-07-20 (`ae066e10`) across all 77 groups. **NOT BUILT and honestly deferred**, each
+needing payload the endpoint does not emit: the arm/tag tier, star systems, planets, novae, and the
+time scrub.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a polar "importance" axis is
+a log axis waiting to fabricate itself, and the real corpus picks the fallback; a size channel with
+a minimum radius has a cap, and the legend will quietly teach a scale the canvas does not use; a
+second `oo:langchange` listener is a second enumerator, and two existing guards find "the" listener
+by first occurrence; and an ORM column default makes a `None` fixture unable to test the NULL branch.

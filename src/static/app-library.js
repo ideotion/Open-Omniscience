@@ -879,6 +879,12 @@
           ? OOI18N.tf("{scanned} articles scanned · {counted} had a word count · {excluded} excluded as not space-separated",
                       {scanned: fmtNum(d.scanned), counted: fmtNum(d.with_word_count), excluded: fmtNum(ex.n || 0)})
           : `${d.scanned} scanned · ${d.with_word_count} counted · ${ex.n || 0} excluded`)}</div>` +
+        (d.excluded_quarantined
+          ? `<div class="hint">${esc(OOI18N && OOI18N.tf
+              ? OOI18N.tf("Quarantined articles are held out of this distribution: {n} excluded.",
+                          {n: fmtNum(d.excluded_quarantined)})
+              : `${d.excluded_quarantined} quarantined articles excluded`)}</div>`
+          : "") +
         ((ex.languages || []).length
           ? `<div class="hint muted">${esc(t("Excluded languages"))}: ` +
             (ex.languages || []).map(l => esc(ooLangName(l, l))).join(", ") + `</div>`

@@ -117,6 +117,40 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   direct-function coverage), framing gains its limit-422s + the zero-match full-shape contract,
   keyword_management its 4 uncovered routes, and `tests/test_api_wiring.py` anchors llm in _SPINE
   plus framing/keyword_management in the optional-[analysis] block.
+- **The Observatory's remaining tiers** (design of record:
+  [`docs/design/OBSERVATORY_DESIGN.md`](docs/design/OBSERVATORY_DESIGN.md) §9; ruled 2026-07-18).
+  **PARTLY SHIPPED 2026-09-07 (PR #1033):** S0 + S1 (the `domain:` scaffold field and the
+  universe/galaxy payload endpoint, 2026-07-20) and S2 + S3 + most of S6 (the `ooSky` canvas
+  renderer, the Observatory tab, interactions, a11y, the 17-theme sweep). UI invariant #31
+  records what may not regress. **What is left, and why each is blocked on the same thing — the
+  endpoint emits the universe and galaxy tiers only, so every item below needs payload before it
+  needs pixels:**
+  - **S5 · spiral ARMS** — the Item-AC topic tags within a galaxy, with the cardinality guard the
+    ruling asked for *by construction* (top-K ≤ 6 arms by member count, each above a member floor,
+    with a labelled "untagged / other (N)" disc carrying the remainder). Needs the keyword-tags
+    facet per super-group in the payload. Design §11 threads 3 and 4 (**K = 6** and the **member
+    floor ≥ 5**, both still only *proposed*) cannot be settled until this exists to measure.
+  - **S5 · STAR SYSTEMS and PLANETS** — rings (cross-language concepts) as the tier below a
+    galaxy, and their per-language members as literal planetary rings segmented by language share.
+    Needs the ring list + `language_breakdown` per galaxy.
+  - **S4 · NOVAE** — trending spikes gated with the `supergroup_rising` discipline (count floors +
+    FDR across the sky), never a bare spike. The payload carries a per-galaxy `rate` but no
+    per-star series and no gate output.
+  - **S4 · the TIME SCRUB** — the ooTimeScope window, with novae flaring in their spike weeks.
+    Default must stay full corpus time (cross-time recall is sacred); the scrub is the lens.
+  - **The TELESCOPE** — the per-corpus mini-sky inside the analysis window. Explicitly *not v1*
+    by the ruling itself; the name is reserved for it.
+  **Two questions carried for the maintainer, recorded in `docs/ledger/OPEN_QUEUE.md`
+  (2026-09-07) rather than decided:** (a) the twelve **domain wedge labels render in English in
+  every locale**, because they are corpus data and this app never translates data — but they are
+  bundled scaffold rather than user content, so they could reasonably be keyed; (b) the tab
+  **autoloads** its payload, which is `_deadlined` and 120 s-cached and measured 0.26-0.28 s on a
+  440-article corpus, but runs `supergroup_stats` for all 77 groups and is **unmeasured at 500k
+  scale** — if a live run is slow the fix is the explicit-action button the article-length figure
+  already uses, never a cap.
+  **The human UX pass** the surface awaits is not a separate item: it is
+  [`RELEASE_0.4_GATE.md`](docs/product/RELEASE_0.4_GATE.md) row F, which covers every
+  Chromium-in-sandbox stamp.
 - **Rate-limit timing test** (TEST-04): fake-clock assertion on the politeness delay.
   **SHIPPED (0.0.8 WP3; found-resolved 2026-08-20):** `tests/test_rate_limit_timing.py` is exactly
   this (its docstring names the finding). This PR adds the two properties it did not pin: the

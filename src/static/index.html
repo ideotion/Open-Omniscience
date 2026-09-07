@@ -62,6 +62,10 @@
              the other tabs. #tab-analyze + #tab-search stay registered and reachable via
              showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
         <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+        <!-- OBSERVATORY (maintainer-ruled 2026-07-18): a dedicated main tab, whole-corpus
+             v1. The invariant-#2 roster grows by one. It shows DATA (#8) and is a
+             REDUNDANT lens: Insights' tabular views stay the canonical access path. -->
+        <button class="nav-item" data-tab="observatory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="9" ry="3.6"/><ellipse cx="12" cy="12" rx="3.6" ry="9"/></svg><span>Observatory</span></button>
         <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
         <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01"/></svg><span>Governments</span></button>
         <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
@@ -1338,6 +1342,47 @@
         <div style="flex:0 0 auto"><button class="secondary" onclick="lunarTestTerm()">Test one keyword</button></div>
       </div>
       <div id="lunar-single" class="hint" style="margin-top:8px"></div>
+    </section>
+    </div>
+
+    <!-- ========================= OBSERVATORY ========================= -->
+    <!-- The corpus as a night sky (docs/design/OBSERVATORY_DESIGN.md). The geometry
+         and its two refusals live in oosky.js; the wiring in app-observatory.js.
+         EVERY honesty statement on this surface is printed, never hovered: which
+         radial scale is in force, the populations the picture leaves out, and the
+         full ranked table -- which is the canonical view, not a caption. -->
+    <div class="tab-page" id="tab-observatory">
+    <section class="panel">
+      <h2>Observatory <span class="muted" style="font-weight:400">&mdash; your corpus as a night sky</span></h2>
+      <p class="hint">Each galaxy is a super-group of keywords; each wedge is one of the twelve scaffold domains. Angle carries the domain only &mdash; a galaxy&rsquo;s position within its wedge is a stable hash, so it stays put between visits and means nothing in itself.</p>
+      <div class="row" id="sky-controls" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <label class="small">Distance from centre
+          <select id="sky-measure" title="Which single measure the distance from the centre carries. Never a blend of several."></select></label>
+        <label class="small">Colour
+          <select id="sky-lens" title="What the colour of a galaxy carries. Colour is never the only signal — every galaxy also carries its name, its distance and its row in the table below.">
+            <option value="language">Language</option>
+            <option value="trend">Trend</option>
+          </select></label>
+        <button class="secondary" id="sky-reset" title="Return the view to its starting position and zoom">Reset view</button>
+      </div>
+      <div id="sky-status" class="hint" role="status"></div>
+      <div id="sky-stage">
+        <!-- data-i18n-dyn: this element owns its own aria-label and translates it
+             itself (_obsAria composes it through OOI18N.tf). Without the opt-out
+             the walker caches the placeholder below as "the original English" on
+             first sight and reverts every dynamic value written after it. -->
+        <canvas id="sky-canvas" role="img" tabindex="0" data-i18n-dyn
+                aria-label="The corpus as a sky."></canvas>
+      </div>
+      <div id="sky-readout" class="sky-readout" aria-live="polite"></div>
+      <div id="sky-legend"></div>
+      <div id="sky-disclosure"></div>
+      <!-- Caveat VISIBLE by default (the informed-consent non-negotiable): never
+           behind a toggle, never only in a hover bubble. -->
+      <div class="card-caveat" id="sky-caveat">Counts and ratios only &mdash; there is no composite score here, and no channel blends two measures. Star size is drawn as area, which readers systematically under-estimate, so it is a secondary cue: the distance from the centre and the table below are what carry the reading. Constellation lines are drawn from a shared member keyword, never from how close two galaxies appear.</div>
+      <h3 class="lib-sub">Ranked table</h3>
+      <p class="hint">Every galaxy, in full &mdash; including those the sky cannot place. This table is the canonical view; the sky is a second way of reading it.</p>
+      <div id="sky-table" class="sky-table-wrap"></div>
     </section>
     </div>
 
@@ -3152,6 +3197,7 @@
   <script src="/static/osmpbf.js"></script>
   <!-- ooViz: zero-dependency honest-chart primitives (loaded before app.js as window.ooViz) -->
   <script src="/static/ooviz.js"></script>
+  <script src="/static/oosky.js"></script>
   <script src="/static/app-core.js"></script>
   <script src="/static/app-shell.js"></script>
   <script src="/static/app-home.js"></script>
@@ -3163,6 +3209,7 @@
   <script src="/static/app-sources.js"></script>
   <script src="/static/app-markets.js"></script>
   <script src="/static/app-insights.js"></script>
+  <script src="/static/app-observatory.js"></script>
   <script src="/static/app-diagnostics.js"></script>
   <script src="/static/app-corpus.js"></script>
   <script src="/static/app-map.js"></script>
