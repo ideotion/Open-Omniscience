@@ -36,8 +36,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
+import shutil
 import threading
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +54,90 @@ _STATE_FILE = "import_queue.json"
 # order matters: the corpus merge must land before the newsletter import, so the
 # .eml articles are screened against the corpus the backups just contributed.
 KINDS = ("corpus", "legacy", "blobs", "newsletters")
+
+# --------------------------------------------------------------------------- #
+#  The checkpoint interval K (the 2026-08-08 queue entry's item (b))
+# --------------------------------------------------------------------------- #
+#: The highest K this code will honour. Not a safety limit -- the mechanism is the
+#: same at any K -- but a stated ceiling, because K is a DURABILITY choice and a
+#: number nobody meant (a fat-fingered 500) should read as "never checkpoint", which
+#: is not a thing anyone would ask for. Twenty-four is comfortably above the largest
+#: queue the field has run (eighteen).
+CHECKPOINT_K_MAX = 24
+CHECKPOINT_K_DEFAULT = 1
+
+
+def import_checkpoint_k() -> int:
+    """How many corpus backups share ONE verify + snapshot + swap.
+
+    THE TRADE, in one paragraph, because this is the whole decision. Today (K = 1)
+    every backup pays its own working-copy snapshot of the entire corpus, its own
+    whole-file ``quick_check`` + ``foreign_key_check``, and its own atomic swap --
+    on an eighteen-item queue that is eighteen copies of a growing multi-GB file and
+    eighteen structural walks of it. At K > 1 the working copy is CARRIED across up
+    to K consecutive backups and paid for once. What that buys in time it spends in
+    durability: nothing is durable until a swap, so a kill, a Stop or a failure part
+    way through a group discards every merge in it. At K = 1 a kill at item 12 keeps
+    eleven; at K = 18 it loses twelve merges' CPU.
+
+    THE DEFAULT IS 1 -- today's behaviour exactly, byte for byte -- because the
+    trade is the maintainer's to make and the ledger records it as needing a ruling
+    rather than a guess (CLAUDE.md open queue, 2026-08-08, item (b)). **The
+    recommendation on record is 3.** Setting it is one value:
+    ``AppSettings.import_checkpoint_k``, or ``OO_IMPORT_CHECKPOINT_K`` for a run
+    that should not touch stored settings.
+
+    Resolution order is settings first, env second, so an operator's stored choice
+    is authoritative and the env var stays what it is elsewhere in this module: an
+    override for a single process. An unreadable or out-of-range value falls back to
+    the default rather than to a guess -- the safe direction here is fewer items per
+    checkpoint, never more.
+    """
+    raw = os.getenv("OO_IMPORT_CHECKPOINT_K", "").strip()
+    if not raw:
+        try:
+            from src.config.app_settings import load_settings
+
+            raw = str(load_settings().import_checkpoint_k)
+        except Exception:  # noqa: BLE001 - an unreadable setting is not a licence to guess
+            _LOG.debug("could not read import_checkpoint_k; using the default", exc_info=True)
+            return CHECKPOINT_K_DEFAULT
+    try:
+        k = int(raw)
+    except ValueError:
+        return CHECKPOINT_K_DEFAULT
+    if k < 1 or k > CHECKPOINT_K_MAX:
+        return CHECKPOINT_K_DEFAULT
+    return k
+
+
+@dataclass
+class _CheckpointGroup:
+    """The working copy a K > 1 run carries across consecutive corpus items.
+
+    It lives under ``data_dir()`` with the engine's own ``.restore-`` prefix, so the
+    existing stale-staging janitor reclaims it if this process dies -- and, unlike a
+    prefetched STAGING tree (the reason C3's prefetch is harder than it looks), the
+    file it holds preserves the live corpus's at-rest state, so an orphan is
+    encrypted whenever the corpus is and is not an at-rest hole.
+    """
+
+    dir: Path
+    #: Ids of the items merged into ``working`` and not yet committed.
+    item_ids: list[str] = field(default_factory=list)
+    #: Their artifact digests, so a duplicate later in the SAME group is skipped
+    #: rather than merged twice -- the live corpus cannot answer that question yet.
+    digests: set[str] = field(default_factory=set)
+
+    @property
+    def working(self) -> Path:
+        return self.dir / "working.db"
+
+
+def _new_group_dir() -> Path:
+    d = data_dir() / f".restore-group-{secrets.token_hex(8)}"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _state_path() -> Path:
@@ -83,6 +170,14 @@ class ImportQueueManager:
         self._tuning_done = False
         # Live progress of the sub-job currently in flight (mirrored, never authored).
         self._live: dict[str, Any] | None = None
+        # THE CHECKPOINT GROUP (K > 1). None whenever no working copy is being
+        # carried, which at the default K = 1 is always -- so every attribute below
+        # is inert on the shipped default and the run is byte-identical to before.
+        self._group: _CheckpointGroup | None = None
+        self._group_guard: Any = None
+        #: The K this RUN resolved, captured once at its start rather than read per
+        #: item -- an operator changing the setting mid-run must not split a group.
+        self._checkpoint_k: int = CHECKPOINT_K_DEFAULT
         self._load_persisted()
 
     # -- persistence -------------------------------------------------------- #
@@ -134,6 +229,18 @@ class ImportQueueManager:
                     it["state"] = "interrupted"
         else:
             self._state = state
+        # A STAGED item is one whose merge landed in a working copy that was never
+        # swapped in. That copy does not survive this process, so on the next boot
+        # the item did not import -- and leaving it "staged" would show it as work
+        # in flight forever, while calling it "done" would claim an import that
+        # never reached the corpus. It is discarded, by name.
+        for it in self._items:
+            if it.get("state") == "staged":
+                it["state"] = "discarded"
+                it["discarded_reason"] = (
+                    "merged into this run's working copy, which the app did not "
+                    "survive to commit — import it again"
+                )
 
     # -- lifecycle ---------------------------------------------------------- #
     def start(self, items: list[dict], *, passphrase: str = "") -> dict:
@@ -261,29 +368,59 @@ class ImportQueueManager:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
         plain ``with`` block -- the courtesy pause must never be able to skip the
         import it was only meant to make faster."""
-        for idx, item in enumerate(self._items):
-            if self._stop.is_set():
-                break
-            with self._lock:
-                self._cursor = idx
-                item["state"] = "running"
-                item["started_at"] = time.time()
-                self._save()
-            try:
-                summary = self._run_item(item)
-                state = "stopped" if self._stop.is_set() else "done"
+        with self._lock:
+            self._checkpoint_k = import_checkpoint_k()
+        try:
+            for idx, item in enumerate(self._items):
+                if self._stop.is_set():
+                    break
+                hold = self._decide_hold(idx, item)
                 with self._lock:
-                    item["state"] = state
-                    item["summary"] = summary
-            except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
-                _LOG.exception("import item %s failed", item.get("id"))
-                with self._lock:
-                    item["state"] = "error"
-                    item["error"] = str(exc)
-            finally:
-                with self._lock:
-                    item["ended_at"] = time.time()
+                    self._cursor = idx
+                    item["state"] = "running"
+                    item["started_at"] = time.time()
                     self._save()
+                try:
+                    summary = self._run_item(item, hold=hold)
+                    state = "stopped" if self._stop.is_set() else "done"
+                    if summary.get("held"):
+                        # NOT "done": the merge landed in a working copy nothing has
+                        # swapped in yet, so calling it imported would claim a corpus
+                        # change that has not happened.
+                        state = "staged"
+                    with self._lock:
+                        item["state"] = state
+                        item["summary"] = summary
+                    self._after_item(item, summary)
+                except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
+                    _LOG.exception("import item %s failed", item.get("id"))
+                    with self._lock:
+                        item["state"] = "error"
+                        item["error"] = str(exc)
+                    # A failure ANYWHERE in an item that had an open group taints the
+                    # group: windowed merge steps commit mid-merge, so the working
+                    # copy may carry a half-merged artifact, and a half-merged copy
+                    # must never become the live corpus. Discarding is the only safe
+                    # answer, and it costs the group's other merges -- which is the
+                    # durability half of the K trade, stated where it is paid.
+                    self._discard_group(
+                        f"the import of {item.get('label') or item.get('id')} failed, "
+                        "so the shared working copy could not be trusted"
+                    )
+                finally:
+                    with self._lock:
+                        item["ended_at"] = time.time()
+                        self._save()
+        finally:
+            # A group still open here never reached a checkpoint (a Stop, or a queue
+            # whose remaining corpus items all turned out to be already merged). It
+            # is discarded rather than committed: committing would mean running the
+            # whole-file verification and the swap from a path that has no artifact
+            # to check the merge against, and a silent nothing-happened would be
+            # worse than either.
+            self._discard_group(
+                "the run ended before this group of backups reached a checkpoint"
+            )
         self._tune_after_run()
         with self._lock:
             stopped = self._stop.is_set()
@@ -354,10 +491,167 @@ class ImportQueueManager:
                 # it), so a stopped run leaves this False and never reads as complete.
                 self._tuning_done = True
 
-    def _run_item(self, item: dict) -> dict:
+    # -- the checkpoint group ------------------------------------------------ #
+    def _decide_hold(self, idx: int, item: dict) -> bool:
+        """Should THIS item stop short of the swap and leave its merge in the
+        carried working copy?
+
+        Four conditions, all of them necessary:
+
+        * K > 1 -- at the shipped default this returns False for every item and
+          nothing below ever runs.
+        * the item is a CORPUS backup. The other kinds (legacy archives, large-data
+          folders, newsletters) do not go through ``run_restore``'s working copy at
+          all, and the newsletter import in particular reads the live corpus to
+          screen against it, so a group must be committed before one runs.
+        * the group would not be FULL -- K counts the backups that share one
+          checkpoint, so the K-th item of a group is the one that commits it.
+        * something after this item will actually MERGE. Not merely "another corpus
+          item exists": an artifact this corpus has already merged is answered from
+          one small JSON read and never opens a working copy, so if every remaining
+          corpus item is a repeat, this item is the last one that can commit the
+          group and holding it would strand the whole group.
+        """
+        # MEASURED, not assumed: at K = 1 the group-full check below ALSO returns
+        # False for every item (`open_items + 1 >= 1` holds for any non-negative
+        # count), so a mutation that deletes this line alone changes nothing. It
+        # stays as a belt on the shipped default rather than as the mechanism: an
+        # off-by-one in that comparison (`>` for `>=`) would otherwise let K = 1 hold
+        # an item, which is the one behaviour the default exists to make unreachable.
+        # The mutation matrix reverts BOTH together, because reverting one proves
+        # nothing about a property two clauses hold (the recorded 2026-08-02 lesson).
+        if self._checkpoint_k <= 1 or item.get("kind") != "corpus":
+            return False
+        with self._lock:
+            open_items = len(self._group.item_ids) if self._group is not None else 0
+        if open_items + 1 >= self._checkpoint_k:
+            return False
+        return self._another_item_will_merge(idx)
+
+    def _another_item_will_merge(self, idx: int) -> bool:
+        """True when some corpus item AFTER ``idx`` would open a working copy.
+
+        Uses the SAME two questions the item itself will ask (the artifact's digest,
+        and whether this corpus already carries it), rather than a second rule that
+        could disagree with the one that decides. A digest that cannot be read is
+        treated as "will merge", because an unknown digest never matches the
+        already-merged skip either -- the two answers stay consistent.
+        """
+        from src.backup.merge import artifact_source_digest, find_completed_import
+
+        with self._lock:
+            in_group = set(self._group.digests) if self._group is not None else set()
+        for later in self._items[idx + 1 :]:
+            if later.get("kind") != "corpus":
+                # A non-corpus item ENDS the group, so nothing beyond it can commit
+                # this one -- see _decide_hold.
+                return False
+            if later.get("force"):
+                return True
+            try:
+                digest = artifact_source_digest(later.get("path") or "")
+            except Exception:  # noqa: BLE001 - unreadable reads as "will merge"
+                return True
+            if not digest:
+                return True
+            if digest in in_group:
+                continue
+            try:
+                if find_completed_import(digest) is None:
+                    return True
+            except Exception:  # noqa: BLE001 - same direction: assume it will merge
+                return True
+        return False
+
+    def _open_group(self) -> _CheckpointGroup:
+        """Create the run's carried working-copy directory and register it as a LIVE
+        staging path, so the stale-staging janitor's age guard can never reclaim it
+        mid-run (the same protection the pre-restore snapshot takes)."""
+        from contextlib import ExitStack
+
+        from src.backup.stream_backup import active_staging
+
+        group = _CheckpointGroup(dir=_new_group_dir())
+        guard = ExitStack()
+        guard.enter_context(active_staging(group.dir))
+        with self._lock:
+            self._group = group
+            self._group_guard = guard
+        return group
+
+    def _release_group(self) -> _CheckpointGroup | None:
+        with self._lock:
+            group, guard = self._group, self._group_guard
+            self._group, self._group_guard = None, None
+        if guard is not None:
+            try:
+                guard.close()
+            except Exception:  # noqa: BLE001 - a registry release must never fail a run
+                _LOG.warning("releasing the checkpoint group's staging guard failed", exc_info=True)
+        return group
+
+    def _discard_group(self, reason: str) -> None:
+        """Throw the carried working copy away and SAY which items went with it."""
+        group = self._release_group()
+        if group is None:
+            return
+        shutil.rmtree(group.dir, ignore_errors=True)
+        if not group.item_ids:
+            return
+        _LOG.warning(
+            "discarding %d staged import(s) with the checkpoint group: %s",
+            len(group.item_ids), reason,
+        )
+        with self._lock:
+            for it in self._items:
+                if it.get("id") in group.item_ids and it.get("state") == "staged":
+                    it["state"] = "discarded"
+                    it["discarded_reason"] = reason
+            self._save()
+
+    def _commit_group(self) -> None:
+        """The checkpoint landed: the swap MOVED the working copy onto the live
+        corpus, so every item that had been staged into it is now imported."""
+        group = self._release_group()
+        if group is None:
+            return
+        shutil.rmtree(group.dir, ignore_errors=True)
+        if not group.item_ids:
+            return
+        with self._lock:
+            for it in self._items:
+                if it.get("id") in group.item_ids and it.get("state") == "staged":
+                    it["state"] = "done"
+            self._save()
+
+    def _after_item(self, item: dict, summary: dict) -> None:
+        """Fold one finished item into the group's bookkeeping."""
+        if summary.get("held"):
+            group = self._group
+            if group is not None:
+                with self._lock:
+                    group.item_ids.append(str(item.get("id")))
+                    if summary.get("source_digest"):
+                        group.digests.add(str(summary["source_digest"]))
+            return
+        if item.get("kind") != "corpus":
+            return
+        report = summary.get("report") or {}
+        if report.get("committed"):
+            self._commit_group()
+        elif report.get("refused"):
+            # The merge landed and the verification refused it, so the copy carries
+            # rows nothing has vouched for. Same answer as a raised failure.
+            self._discard_group(
+                "post-merge verification refused "
+                f"{item.get('label') or item.get('id')}, so the shared working copy "
+                "could not be trusted"
+            )
+
+    def _run_item(self, item: dict, *, hold: bool = False) -> dict:
         kind = item["kind"]
         if kind == "corpus":
-            return self._run_corpus(item)
+            return self._run_corpus(item, hold=hold)
         if kind == "legacy":
             return self._run_legacy(item)
         if kind == "blobs":
@@ -390,15 +684,33 @@ class ImportQueueManager:
                     _LOG.warning("cancelling a sub-job failed", exc_info=True)
             time.sleep(poll)
 
-    def _run_corpus(self, item: dict) -> dict:
+    def _run_corpus(self, item: dict, *, hold: bool = False) -> dict:
         from src.backup.volume_job import get_volume_manager
 
         mgr = get_volume_manager()
-        mgr.start_restore(item["path"], self._passphrase, force=bool(item.get("force")))
+        # THE GROUP is opened lazily, by the first item that is going to use it --
+        # so a K > 1 run that happens to contain a single corpus backup never
+        # creates a directory it does not need, and a K = 1 run never reaches here
+        # at all (``_decide_hold`` returns False before any of this).
+        group = self._group
+        if group is None and hold:
+            group = self._open_group()
+        working_copy = group.working if group is not None else None
+        already = frozenset(group.digests) if group is not None else frozenset()
+        mgr.start_restore(
+            item["path"], self._passphrase, force=bool(item.get("force")),
+            working_copy=working_copy, hold_after_merge=hold,
+            already_merged_digests=already,
+        )
         st = self._await(mgr.status, mgr.cancel)
         summary = st.get("summary") or {}
         rep = summary.get("report") or {}
-        out = {"report": rep, "state": st.get("state")}
+        out = {
+            "report": rep,
+            "state": st.get("state"),
+            "held": bool(summary.get("held")),
+            "source_digest": summary.get("source_digest"),
+        }
         # An artifact already merged completes in milliseconds with no report. Say so
         # explicitly: a fast, empty success is otherwise indistinguishable from a
         # failure that produced nothing, and the queue's own log is where the
@@ -456,11 +768,20 @@ class ImportQueueManager:
             paused = self._collection_paused
             tuned = self._tuned
             tuning_done = self._tuning_done
+            k = self._checkpoint_k
+            open_group = len(self._group.item_ids) if self._group is not None else 0
         now = time.time()
         for it in items:
             s, e = it.get("started_at"), it.get("ended_at")
             it["elapsed_s"] = round((e or now) - s, 1) if s else None
-        done = sum(1 for it in items if it["state"] in ("done", "skipped"))
+        # An item whose own work is FINISHED, which at K > 1 includes one that has
+        # merged into the carried working copy: the queue really has walked past it,
+        # and a bar that stalled while three backups merged would be as wrong as one
+        # that claimed a corpus change. What has actually reached the corpus is the
+        # separate `items_committed` below, so the two facts stay two facts.
+        done = sum(1 for it in items if it["state"] in ("done", "skipped", "staged"))
+        committed = sum(1 for it in items if it["state"] in ("done", "skipped"))
+        staged = sum(1 for it in items if it["state"] == "staged")
         return {
             "state": state,
             "items": items,
@@ -469,6 +790,30 @@ class ImportQueueManager:
             "live": dict(live) if isinstance(live, dict) else None,
             "items_done": done,
             "items_total": len(items),
+            # COMMITTED vs STAGED, at any moment (the 2026-08-08 checkpoint entry).
+            # At the default K = 1 `staged` is always 0 and `items_committed` equals
+            # `items_done`, so this says nothing new until an operator chooses to
+            # trade durability for time -- and then it says exactly what that trade
+            # is costing them right now.
+            "items_committed": committed,
+            "items_staged": staged,
+            "checkpoint": {
+                "k": k,
+                "open_group_items": open_group,
+                # Stated rather than left for the reader to derive from K: at K = 1
+                # there is nothing to explain, and above it the sentence IS the
+                # disclosure of what a Stop or a crash would cost.
+                "note": (
+                    "Every backup is written to your corpus as soon as it finishes."
+                    if k <= 1
+                    else (
+                        f"Backups are written to your corpus once every {k}. Until "
+                        "that happens their merges live in a working copy that a "
+                        "Stop, a failure or a crash discards — they would need "
+                        "importing again."
+                    )
+                ),
+            },
             # STAGES, for anything that draws a BAR. Items alone reach "all done" while
             # the run is still working -- the search-index merge is a real final stage
             # inside the same exclusive window, and on a large corpus it is minutes of

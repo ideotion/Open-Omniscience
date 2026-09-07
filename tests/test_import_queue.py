@@ -78,7 +78,7 @@ def test_every_item_keeps_its_own_identity_state_and_elapsed(queue, monkeypatch)
     """THE reported defect: six backups, one bar, no idea which one was running or
     which had finished."""
     vol = _FakeJob()
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {"ok": item["label"]})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {"ok": item["label"]})
     queue.start([
         {"kind": "corpus", "path": "/b/one", "label": "one"},
         {"kind": "corpus", "path": "/b/two", "label": "two"},
@@ -95,7 +95,7 @@ def test_every_item_keeps_its_own_identity_state_and_elapsed(queue, monkeypatch)
 def test_the_run_reports_no_fabricated_overall_eta(queue, monkeypatch):
     """The items are different kinds of work over different units, so extrapolating a
     whole-run ETA from one of them would be an invented number."""
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
     queue.start([{"kind": "corpus", "path": "/b/one"}])
     st = _drain(queue)
     blob = repr(st).lower()
@@ -108,7 +108,7 @@ def test_the_run_reports_no_fabricated_overall_eta(queue, monkeypatch):
 def test_collection_is_paused_once_for_the_whole_run_not_per_item(queue, monkeypatch):
     """The defect ruling item 10 names: a 6-backup run paused and RESUMED five times
     mid-import, re-opening the very race the pause exists to close."""
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
     queue.start([{"kind": "corpus", "path": f"/b/{i}"} for i in range(4)])
     _drain(queue)
     assert queue._calls["pause"] == 1, "one window, not one per backup"
@@ -118,7 +118,7 @@ def test_collection_is_paused_once_for_the_whole_run_not_per_item(queue, monkeyp
 def test_the_status_states_that_collection_is_paused(queue, monkeypatch):
     """Ruling item 12: the UI states that collection is paused for the import — it
     must not be something the user has to infer."""
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
     queue.start([{"kind": "corpus", "path": "/b/one"}])
     st = _drain(queue)
     assert "paused" in st["collection_note"].lower()
@@ -131,7 +131,7 @@ def test_stop_cancels_the_running_item_and_every_queued_one(queue, monkeypatch):
     """A queued item left as "queued" after a stop would read as work still pending."""
     gate = threading.Event()
 
-    def _slow(item):
+    def _slow(item, *, hold=False):
         gate.wait(timeout=5)
         return {}
 
@@ -175,7 +175,7 @@ def test_one_manager_refusing_to_cancel_never_blocks_the_others(queue, monkeypat
 #  one bad item never loses the rest
 # --------------------------------------------------------------------------- #
 def test_a_failing_item_is_recorded_and_the_run_continues(queue, monkeypatch):
-    def _run(item):
+    def _run(item, *, hold=False):
         if item["label"] == "bad":
             raise RuntimeError("that archive is corrupt")
         return {}
@@ -198,7 +198,7 @@ def test_a_failing_item_is_recorded_and_the_run_continues(queue, monkeypatch):
 def test_the_run_survives_a_page_reload(queue, monkeypatch, tmp_path):
     """A reload used to decapitate the sequencing. The state now lives on the server,
     so a fresh reader sees the same run."""
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
     queue.start([{"kind": "corpus", "path": "/b/1", "label": "one"}])
     _drain(queue)
     fresh = ImportQueueManager(state_path=tmp_path / "q.json")
@@ -210,7 +210,7 @@ def test_the_run_survives_a_page_reload(queue, monkeypatch, tmp_path):
 def test_the_passphrase_is_never_written_to_disk(queue, monkeypatch, tmp_path):
     """A queue file sits on the same disk as the encrypted corpus. Writing the key
     beside the lock would defeat at-rest encryption entirely."""
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
     queue.start([{"kind": "corpus", "path": "/b/1"}], passphrase="correct horse battery")
     _drain(queue)
     assert "correct horse battery" not in (tmp_path / "q.json").read_text(encoding="utf-8")
@@ -242,7 +242,7 @@ def test_a_corrupt_state_file_is_simply_no_previous_run(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_two_runs_at_once_are_refused(queue, monkeypatch):
     gate = threading.Event()
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: gate.wait(timeout=5))
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: gate.wait(timeout=5))
     queue.start([{"kind": "corpus", "path": "/b/1"}])
     with pytest.raises(RuntimeError):
         queue.start([{"kind": "corpus", "path": "/b/2"}])
@@ -258,7 +258,7 @@ def test_an_unknown_kind_is_refused_before_anything_starts(queue):
 
 def test_clear_refuses_while_a_run_is_in_flight(queue, monkeypatch):
     gate = threading.Event()
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: gate.wait(timeout=5))
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: gate.wait(timeout=5))
     queue.start([{"kind": "corpus", "path": "/b/1"}])
     with pytest.raises(RuntimeError):
         queue.clear()
@@ -307,7 +307,7 @@ def test_the_index_tuning_pass_runs_once_at_the_end_of_a_run(queue, monkeypatch)
     when the run ends, never per item, or a per-item index-scaled cost would be right
     back in the middle of the queue this fix exists for."""
     seen: list[int] = []
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
     monkeypatch.setattr(
         queue, "_tune_after_run", lambda: seen.append(1) or setattr(queue, "_tuned", {"fts": True})
     )
@@ -325,7 +325,7 @@ def test_the_index_tuning_pass_runs_once_at_the_end_of_a_run(queue, monkeypatch)
 def test_a_failed_tuning_pass_never_fails_the_run(queue, monkeypatch):
     """Tuning is never load-bearing: the imports themselves are committed and additive
     by the time it runs, so a failure here must not turn a good run into a failed one."""
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
 
     def _boom(session):
         raise RuntimeError("optimize exploded")
@@ -342,14 +342,14 @@ def test_a_stop_skips_the_tuning_pass(queue, monkeypatch):
     minutes of work the user just asked to end; the committed items' index entries are
     correct without it, and the next run's pass merges them."""
     seen: list[int] = []
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: queue._stop.set())
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: queue._stop.set())
     monkeypatch.setattr(queue, "_tune_after_run", lambda: seen.append(1))
     queue.start([{"kind": "corpus", "path": "/b/one"}])
     _drain(queue)
     assert seen == [1], "the hook still runs; the guard is INSIDE it"
 
     queue2 = ImportQueueManager(state_path=queue._path().with_name("q2.json"))
-    monkeypatch.setattr(queue2, "_run_corpus", lambda item: queue2._stop.set())
+    monkeypatch.setattr(queue2, "_run_corpus", lambda item, *, hold=False: queue2._stop.set())
     called: list[int] = []
     monkeypatch.setattr("src.database.fts.optimize_after_bulk", lambda s: called.append(1) or {})
     queue2.start([{"kind": "corpus", "path": "/b/one"}])
@@ -362,7 +362,7 @@ def test_the_tuning_pass_reports_itself_instead_of_freezing_the_bar(queue, monke
     "running" with no item in flight and the last item's numbers frozen on screen --
     which reads as a hang, the exact defect the post-merge re-index used to be."""
     seen: list[dict] = []
-    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(queue, "_run_corpus", lambda item, *, hold=False: {})
 
     def _slow(session):
         seen.append(dict(queue.status()))

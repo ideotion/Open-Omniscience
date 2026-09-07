@@ -923,6 +923,13 @@
         const s = await api("/api/settings");
         $("set-limit").value = s.default_result_limit;
         DEFAULT_LIMIT = s.default_result_limit;
+        // The import checkpoint interval. Absent on an older server: leave the
+        // control alone rather than writing a 1 the server never said, which would
+        // then be POSTed back as an operator choice they did not make.
+        const _ck = $("set-checkpoint-k");
+        if (_ck && typeof s.import_checkpoint_k === "number") {
+          _ck.value = s.import_checkpoint_k;
+        }
         // The local "Customize" theme is authoritative; on first ever run, seed it
         // from the server preference so existing users keep their dark/light choice.
         if (!localStorage.getItem(UI_KEY)) {
@@ -1140,6 +1147,30 @@
         loadCardCatalog();   // re-read so the inputs show what is actually stored
       } catch (e) {
         msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+      }
+    }
+
+    // THE IMPORT CHECKPOINT INTERVAL K (2026-09-07). Saved on its own rather than
+    // folded into saveSettings(): that one belongs to the General panel and posts
+    // the theme, and a durability knob in the Data panel must not be able to carry
+    // an unrelated preference along with it. The backend applies only the fields it
+    // is sent, so a one-field PUT is the whole convention here.
+    async function saveImportCheckpointK(el) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const msg = $("set-checkpoint-k-msg");
+      const k = Number(el.value);
+      try {
+        const s = await api("/api/settings", {
+          method: "PUT", body: JSON.stringify({ import_checkpoint_k: k }),
+        });
+        // Read the STORED value back rather than trusting the input: the backend
+        // refuses an out-of-range K loudly instead of clamping, and showing the
+        // number it actually kept is what stops the control from claiming a
+        // setting the server declined.
+        el.value = s.import_checkpoint_k;
+        if (msg) msg.innerHTML = `<span class="note ok">${esc(t("Preferences saved."))}</span>`;
+      } catch (e) {
+        if (msg) msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
       }
     }
 

@@ -1733,6 +1733,21 @@
         <button onclick="openUnifiedExport()">Export / Back up…</button>
         <button onclick="openUnifiedImport()">Import…</button>
       </div>
+      <!-- THE IMPORT CHECKPOINT INTERVAL K (2026-09-07). A durability knob, so the
+           cost is on the VISIBLE surface and the long form is layered into the hover
+           bubble (informed consent by layering, never by hiding). Default 1 = today's
+           behaviour; the recommendation on record is 3, and the choice is the
+           maintainer's. -->
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <div style="flex:0 0 auto">
+          <label for="set-checkpoint-k">Backups per save point</label>
+          <input id="set-checkpoint-k" type="number" min="1" max="24" step="1" style="width:6em"
+                 title="1 saves every backup to your corpus as soon as it finishes. Higher copies and checks your corpus once per group instead of once per backup, which is faster — and everything merged since the last save point is lost if the import is stopped or the app crashes, so those backups have to be imported again."
+                 onchange="saveImportCheckpointK(this)">
+        </div>
+        <div style="flex:0 0 auto;align-self:end"><span id="set-checkpoint-k-msg" class="hint" role="status" aria-live="polite"></span></div>
+      </div>
+      <p class="hint" style="margin-top:6px">Higher is faster and loses more work if an import is stopped or crashes.</p>
     </section>
     <!-- Newsletter / document IMPORT (2026-07-31 Settings review): moved here from its
          own subtab. Importing .eml and PDF files is bringing data IN, which is exactly
