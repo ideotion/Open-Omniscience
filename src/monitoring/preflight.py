@@ -24,7 +24,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -143,8 +143,27 @@ def _apply_to_metadata(session, source, rec: dict) -> None:
     meta.robots_txt_url = f"https://{source.domain}/robots.txt"
 
 
-def preflight_sources(session, fetcher=None, *, limit: int = _DEFAULT_LIMIT) -> dict:
-    """Check up to ``limit`` enabled sources; log, apply, and summarise."""
+def preflight_sources(
+    session,
+    fetcher=None,
+    *,
+    limit: int = _DEFAULT_LIMIT,
+    progress: Callable[[int, int, str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict:
+    """Check up to ``limit`` enabled sources; log, apply, and summarise.
+
+    ``progress(done, total, domain)`` is called after each source so the task manager
+    can name what is being checked (PRH-23: the first-run preflight is up to 50 hosts
+    over Tor, and with no progress a first launch looks stalled). ``should_stop()`` is
+    consulted between sources.
+
+    ALL-OR-NOTHING on a stop, deliberately: the log is what :func:`has_run_before`
+    reads, so writing a partial log would mark the preflight "done" with most sources
+    unchecked and nothing would ever go back for them. A stopped run writes NO log and
+    reports ``complete: False``; the caller rolls back and the next pass retries the
+    whole bounded set. Same reason the caller must not commit a partial run.
+    """
     from src.database.models import Source
 
     if fetcher is None:
@@ -160,10 +179,23 @@ def preflight_sources(session, fetcher=None, *, limit: int = _DEFAULT_LIMIT) -> 
         .all()
     )
     records = []
-    for src in sources:
+    complete = True
+    for i, src in enumerate(sources):
+        if should_stop is not None and should_stop():
+            complete = False
+            break
         rec = _check_one(fetcher, src)
         _apply_to_metadata(session, src, rec)
         records.append(rec)
+        if progress is not None:
+            progress(i + 1, len(sources), rec.get("domain") or "")
+    if not complete:
+        return {
+            "checked": len(records),
+            "complete": False,
+            "stopped": "cancelled before every source was checked; nothing was logged, "
+            "so the next pass retries the whole set",
+        }
     session.flush()
 
     path = _log_path()
@@ -174,6 +206,7 @@ def preflight_sources(session, fetcher=None, *, limit: int = _DEFAULT_LIMIT) -> 
 
     summary: dict[str, Any] = {
         "checked": len(records),
+        "complete": True,
         "ok": sum(1 for r in records if r["verdict"] == "ok"),
         "robots_denied": sorted(r["domain"] for r in records if r["verdict"] == "robots_denied"),
         "unreachable": sorted(r["domain"] for r in records if r["verdict"] == "unreachable"),
