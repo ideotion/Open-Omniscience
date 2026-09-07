@@ -186,7 +186,10 @@ columnar = [
 # alone if this is absent (and labels itself honestly); installing this upgrades
 # new signatures to hybrid Ed25519 + ML-DSA (FIPS 204) for quantum resistance.
 pqc = [
-    # Upper-bounded on purpose, and RE-NARROWED after #996 widened it to <2.0 — with no
+    # Upper-bounded on purpose, and RE-NARROWED TWICE — after #996 (2026-09-03) and again
+    # after #1012 (2026-09-07) each widened it to <2.0. THE COMMENT YOU ARE READING DID NOT
+    # STOP EITHER OF THEM, so the ceiling is now enforced by tests/test_dependency_ceilings.py,
+    # which fails on the PR that widens it. Do not widen this to green that test. With no
     # upper bound the resolver takes 1.0.0 (2026-08-15), which breaks src/custody/signing.py
     # in TWO ways. Both measured against the real wheels, not read off a changelog:
     #   * ``generate_keypair`` was renamed ``keygen``, so signing.py:246 raises
@@ -205,7 +208,7 @@ pqc = [
     # — but it still touches PERSISTED key material in the custody chain, so it goes through
     # docs/maintenance/EXTERNAL_DEPENDENCIES.md rather than a bound widening. Same
     # unpinned-tool drift class as the bandit/mypy pins.
-    "pqcrypto>=0.3.4,<2.0",
+    "pqcrypto>=0.3.4,<1.0",
 ]
 
 # Independent "existed no later than T" timestamping via OpenTimestamps (anchors

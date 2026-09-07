@@ -5687,7 +5687,7 @@ this history it reports the merge commit rather than the authoring one, and answ
     a bound exists, install both versions and write down what you MEASURED — here 1.0.0 → 16
     failed / 23 passed in this repo's own suite against 0.4.0 → 39 passed, which is checkable,
     where a changelog paraphrase arrives at the same confidence and is where the error will be.
-    **THE BOUND HAS A TEST NOW (2026-09-07, PR #1013) — and writing it produced a finding the
+    **THE BOUND HAS A TEST NOW (2026-09-07, PR #1016) — and writing it produced a finding the
     obvious version of the guard would have missed: THE NEGATIVE-SPACE TWIN IS LOAD-BEARING ON A
     VERSION CEILING, because over-narrowing SATISFIES the ceiling assertion.** `pqcrypto==0.3.4`
     and `<0.4` both exclude 1.0.0, so both make a lone "the ceiling refuses 1.0.0" guard GREEN
@@ -6442,7 +6442,8 @@ this history it reports the merge commit rather than the authoring one, and answ
   to `pqcrypto>=0.3.4,<1.0` with the reason in a comment; **dependabot #996 widened it straight
   back to `<2.0` on 2026-09-03 and it merged** (a bot does not read comments), and it was
   re-narrowed the same day. **AND ON 2026-09-07 DEPENDABOT #1012 PROPOSED THE IDENTICAL WIDENING
-  A THIRD TIME, so the instance is now defended by a MECHANISM rather than by prose (PR #1013):
+  A THIRD TIME AND IT MERGED (06:56:37) — measured: `<2.0` resolves to 1.0.0 — so it was
+  re-narrowed again and the instance is now defended by a MECHANISM rather than by prose (#1016):
   `tests/test_dependency_ceilings.py` reddens on the PR that widens the ceiling, naming the
   inverted predicate, instead of the repository going red later on somebody else's unrelated
   change.** The 1.0.0 API was re-measured that day against both real wheels installed side by

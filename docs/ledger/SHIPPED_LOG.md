@@ -5856,14 +5856,20 @@ the retirement is browser-verify-gated and belongs to its own prompt.
 
 ## 2026-09-07 — security/deps: the [pqc] ceiling stops being a comment and starts being a mechanism
 
-PR #1013, alongside the documentation reality check. One new test file, one pyproject byte
+PR #1016, opened right after the documentation reality check merged as #1013. One new test file, one pyproject byte
 unchanged — the bound was already correct; what it lacked was anything that would notice.
 
-**THE OCCASION.** Dependabot #1012 proposed widening `pqcrypto>=0.3.4,<1.0` to `<2.0` — the
-identical change #996 made on 2026-09-03, which merged and blocked the whole repository. The
-ledger had already written the diagnosis: *prose addresses humans; only a CI-visible mechanism
-addresses a bot, and this bound had no test.* A third proposal of the same widening is the
-point at which "we wrote the reason in a comment" stops being a defence.
+**THE OCCASION, AND IT STOPPED BEING HYPOTHETICAL MID-SESSION.** Dependabot #1012 proposed
+widening `pqcrypto>=0.3.4,<1.0` to `<2.0` — the identical change #996 made on 2026-09-03,
+which merged and blocked the whole repository — and then **#1012 MERGED TOO, at 06:56:37**,
+with the entire multi-paragraph explanation still sitting untouched directly above the line it
+changed. Three occurrences, one file, one comment nobody responsible for the change can read.
+Measured rather than inferred: `>=0.3.4,<2.0` resolves to **1.0.0** (`pip install --dry-run`),
+the release whose `verify()` returns `None` for a valid signature, so `main` was broken the
+moment it merged. **The guard then caught the real thing on its first contact with it** — not
+a synthetic mutation but the actual merged state, pulled into this branch: one FAILED naming
+the constraint, the version it now admits, and the inverted predicate. The bound is re-narrowed
+in the same PR. That is the whole argument for the file: prose had three chances.
 
 **RE-MEASURED BEFORE WRITING ANY CLAIM INTO THE FAILURE MESSAGE**, both wheels installed side
 by side, because this very comment's history contains a fabricated elaboration the ledger later
