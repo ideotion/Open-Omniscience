@@ -9607,8 +9607,33 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   half is built and test-pinned; the floors are a measurement nobody in a sandbox can take.
   **(7) FOUR CI LANES HAD NOT REPORTED WHEN #1024 MERGED**, on the maintainer's instruction with
   the full `test` suite and the `PQC signing path` lane already green: Core-only install, Columnar
-  store, Portability (windows-latest), SQLCipher wheel smoke (ubuntu-latest). They now run against
-  `main`. Core-only is the one to read first — it is the lane that proves the new probes report
-  UNAVAILABLE rather than raising when `pqcrypto`/`opentimestamps` are absent. It was reproduced
-  locally with a `builtins.__import__` shim (81 passed, 8 skipped, 0 failed); that is evidence,
-  not CI's verdict, and the two are not interchangeable.
+  store, Portability (windows-latest), SQLCipher wheel smoke (ubuntu-latest). Core-only is the one
+  to read — it is the lane that proves the new probes report UNAVAILABLE rather than raising when
+  `pqcrypto`/`opentimestamps` are absent. It was reproduced locally with a `builtins.__import__`
+  shim (81 passed, 8 skipped, 0 failed); that is evidence, not CI's verdict, and the two are not
+  interchangeable. **CORRECTION, same session, ~1h after this item was written: the sentence "they
+  now run against `main`" was WRONG, and item (8) is why.** The verdict has to come from a PR run;
+  for these four it will come from #1036's, whose head carries #1024's code via the merge.
+  **(8) `main` ITSELF HAS HAD NO CI VERDICT FOR FIFTEEN CONSECUTIVE MERGES — found 2026-09-07
+  while trying to read item (7)'s lanes, and it is a repo-level gap rather than a PROMPT_11
+  item.** Every one of the fifteen most recent COMPLETED push-to-`main` runs of `ci.yml` concluded
+  **`cancelled`**, unbroken from #1009 (2026-09-05) through #1024 and #1023 today. None of them
+  ran: `list_workflow_jobs` returns **zero jobs** for the ones checked (#1024's `34146578254`,
+  #1023's `34146815483`), so they were killed while still PENDING, before a single job dispatched.
+  The mechanism is the concurrency block at `ci.yml:22-24`, group `${{ github.workflow }}-${{
+  github.ref }}`. `cancel-in-progress` is correctly FALSE on the default branch, but that setting
+  only spares a RUNNING run: GitHub keeps at most ONE pending run per group and cancels the
+  previous pending one when a new run enters. The maintainer merges faster than the ~30-minute
+  suite, so every main run is superseded before it starts. The timestamps are exact — #1024's run
+  updated at 17:15:08 and #1023's was created at 17:15:07; #1022's updated at 17:11:50 and #1024's
+  created at 17:11:49. **What this means: the repo's entire CI protection is PR runs.** Nothing
+  verifies the merge COMMIT — so a semantic conflict between two PRs that are each green alone
+  would land on `main` unseen, which is exactly what a merge queue exists to catch and exactly
+  what the fast-merge ritual makes likely. NEEDS A RULING, and the honest options are not equal:
+  (a) adopt a merge queue, which is the real fix and changes the merge ritual; (b) keep push runs
+  but let them queue rather than supersede, which needs a per-SHA concurrency group (`${{
+  github.sha }}`) and will run many suites at once on a busy day; (c) accept PR-run-only coverage
+  as DELIBERATE and say so in the ritual, so nobody again reads a cancelled main run as a pass.
+  Do NOT read (c) as the cheap default: it is only honest if the ledger stops implying main is
+  verified. Recorded rather than changed, because `ci.yml`'s concurrency is a workflow-policy
+  decision and this session found it, it was not asked to set it.
