@@ -373,7 +373,7 @@ class VolumeBackupManager:
             return self.status()
 
     def _run_restore(self, srcp, passphrase, allow_unverified, corpus_passphrase, restore_fn):
-        from src.backup.merge import RestoreAborted
+        from src.backup.merge import RestoreAborted, RestoreRefused
 
         # ONE run journal per queue item, opened before anything expensive. Eight
         # sequential imports at ~10 h each sharing one run_id would wrap the beat
@@ -647,6 +647,26 @@ class VolumeBackupManager:
                     _LOG.warning(
                         "resuming background collection after the restore failed", exc_info=True
                     )
+        except RestoreRefused as exc:
+            # NOT the operator: a swap barrier refused because another job still held
+            # the corpus. Same disposable-staging, byte-identical-live-corpus outcome
+            # as a Stop -- which is why it subclasses RestoreAborted and must be caught
+            # BEFORE it -- but a different ACTOR, so it gets MergeError's treatment: a
+            # well-formed refusal the user must read, carrying its own honest message.
+            #
+            # Two things were wrong with reporting it as `cancelled`. It sent an
+            # operator who cancelled nothing looking for a job they never started; and
+            # the cancelled branch below clears `_error`, while the SPA rejects a
+            # cancelled state with `s.error || view.text || state` -- so the one
+            # actionable sentence ("another job is still writing to your corpus (...)",
+            # naming the holder) was dropped on the way to the UI and the operator got
+            # a bare "cancelled".
+            _LOG.warning("volume restore refused before the swap: %s", exc)
+            runlog.end("refused", detail=str(exc)[:500])
+            with self._lock:
+                self._state = "error"
+                self._error = str(exc)
+                self._progress = {"phase": "refused", "detail": str(exc)}
         except RestoreAborted as exc:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is

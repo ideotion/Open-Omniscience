@@ -153,6 +153,25 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             )
         lines.append("")
 
+        # A few NAMES of what actually arrived, beside the counts. The merge has always
+        # collected these for sources, articles and wiki pages; until 2026-09-07 it read
+        # them AFTER the INSERT, where the query's own `NOT EXISTS` can never match, so
+        # the list was empty on every import ever taken and nothing rendered it. They are
+        # examples, never a total -- `_SAMPLE_LIMIT` bounds the list and the count column
+        # above is the number.
+        sampled = [
+            (name, counts["samples"])
+            for name, counts in sorted(plan.items())
+            if isinstance(counts, dict) and not name.startswith("_") and counts.get("samples")
+        ]
+        if sampled:
+            lines.append("### Examples of what was added")
+            lines.append("")
+            for name, samples in sampled:
+                shown = ", ".join(f"`{str(x)}`" for x in samples)
+                lines.append(f"- **{name}** — {shown}")
+            lines.append("")
+
     delta = report.get("corpus_delta")
     if delta and "before" in delta and "after" in delta:
         lines.append("## Corpus growth (before → after)")

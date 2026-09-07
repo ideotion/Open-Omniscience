@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
-from src.backup.merge import MergeError, run_restore
+from src.backup.merge import MergeError, RestoreRefused, run_restore
 from src.jobs.background import BackgroundJob, register_job
 from src.scheduler.runner import exclusive_window_open
 
@@ -238,7 +238,11 @@ def _commit_sync(staged: StagedArtifact, *, allow_unverified: bool) -> dict:
             if defer_reindex():
                 hand_off_reindex(report)
             return report
-    except MergeError as exc:
+    except (MergeError, RestoreRefused) as exc:
+        # A RestoreRefused is a swap barrier declining because another job still held
+        # the corpus: nothing was written, and its own message names the holder and
+        # the way out. Classified with MergeError so that sentence reaches the caller
+        # verbatim rather than being re-worded into a generic 500.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
         raise
@@ -360,7 +364,8 @@ def restore_legacy_path(
             if defer_reindex():
                 hand_off_reindex(report)
             return report
-    except MergeError as exc:
+    except (MergeError, RestoreRefused) as exc:
+        # See restore_commit above: a refusal keeps its own message.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
         raise
