@@ -1113,6 +1113,42 @@
     const _isDownloadKind = (k) => k === "wiki-dump" || k === "osm-map";
     const _dlKey = (j) => j.id.slice(j.id.indexOf(":") + 1);
     const _reorderEndpoint = (k) => k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder";
+    // PERF-09. The rate is the OWNER's measurement (the download loop's own
+    // bytes-over-time), never a client-side division of two polled counters —
+    // that would be measuring the task manager's adaptive poll as much as the
+    // transfer, and could not see a pause at all.
+    //
+    // WHAT IT DELIBERATELY DOES NOT DRAW: an unmeasured rate renders NOTHING.
+    // A "0 B/s" or a "—" beside a download that simply started a second ago
+    // would be a number where there is no measurement, and a "not measured yet"
+    // label on every row is noise nobody reads. The ONE not-measured case worth
+    // drawing is a STALL — a running download whose bytes stopped — because
+    // that is a real measurement of a different quantity and it is exactly what
+    // an operator staring at a stuck transfer needs to see.
+    function _rateNote(j, t) {
+      const tf = (window.OOI18N && window.OOI18N.tf)
+        ? window.OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const r = j && j.rate;
+      if (!r) return "";
+      if (r.measured && r.bytes_per_s != null) {
+        const speed = tf("{rate}/s", { rate: _fmtBytes(r.bytes_per_s) });
+        const eta = r.eta_seconds != null
+          ? " · " + tf("{time} left", { time: _fmtDur(r.eta_seconds) }) : "";
+        const why = t("Measured by the download itself: bytes it received, over the wall clock since the measurement window opened. Not an estimate made in the browser.");
+        return ` · <span title="${esc(why)}">${esc(speed)}${esc(eta)}</span>`;
+      }
+      // A stall is only meaningful for a download that is supposed to be moving.
+      // The hover carries a KEYED explanation rather than the server's own
+      // reason string: that reason is value-bearing (it names a window in
+      // seconds), so no fixed key could ever match it and t() would fall back to
+      // English on all eleven other locales while looking translated.
+      if (r.idle_s != null && j.state === "running") {
+        const why = t("No bytes have arrived for a while. The download is still open — it may be a slow or stalled server — and it resumes from where it stopped.");
+        return ` · <span title="${esc(why)}">${esc(
+          tf("no data for {time}", { time: _fmtDur(r.idle_s) }))}</span>`;
+      }
+      return "";
+    }
     function _jobRow(j, queuedKeysByKind, t) {
         const pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
         let prog = "";
@@ -1127,7 +1163,7 @@
             ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
             : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)} ${esc(t(unit))}`;
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
-                 `<div class="muted" style="font-size:11px">${amount} · ${pct}%</div>`;
+                 `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${pct}%</div>`;
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);

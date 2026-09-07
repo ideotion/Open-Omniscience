@@ -76,6 +76,16 @@ def collect_batch_size() -> int:
         return 8
 
 
+def _pk(index: int) -> int:
+    """The surrogate key for a staged article in one flush's derivative map.
+
+    NEGATIVE by construction (C16): a staged row has no id until the flush, and
+    ``reindex_parallel`` prints this key as "article %s" in its watchdog and
+    error logs -- a positive surrogate would name an unrelated REAL article to a
+    future session reading that log."""
+    return -(index + 1)
+
+
 def _available_mem_mb() -> float | None:
     """Best-effort available-RAM reading (MEASURED, never fabricated) --
     mirrors src.scheduler.memguard's own resilience: any failure (no psutil, a
@@ -294,6 +304,12 @@ class ArticleBatch:
                 continue
             to_store.append((e, self._article_row(e)))
         if to_store:
+            # C16 (2026-07-24 throughput brief, S-D): STAGE, then gate. Every
+            # DB-FREE step of index_article -- keyword extraction, sentiment, and
+            # the when/where/who EXTRACTION half -- runs HERE, before the gate
+            # window opens, so the window holds only DML. Nothing about WHAT is
+            # computed changes; only where. See _precompute.
+            derivs = self._precompute(to_store)
             for _, a in to_store:
                 self._session.add(a)
             # The ONE gate window for the whole batch opens at this flush (ids
@@ -303,8 +319,8 @@ class ArticleBatch:
                 from src.analytics.extract import get_extractor
 
                 extractor = get_extractor("baseline")
-                for e, a in to_store:
-                    self._index_one(a, extractor)
+                for i, (e, a) in enumerate(to_store):
+                    self._index_one(a, extractor, content=e.text, deriv=derivs.get(_pk(i)))
                     self._links_one(a.id, e.links)
             self._session.commit()
         # Tally ONLY after the commit succeeded (skeptic finding D1): a failed
@@ -318,6 +334,87 @@ class ArticleBatch:
             # front so a near-future re-check of the same content (the
             # field-measured re-served-feed-item case) skips the DB entirely.
             mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
+
+    def _precompute(self, to_store: list) -> dict:
+        """The DB-free half of ``index_article`` for the whole batch, computed
+        BEFORE the gate window opens (C16 / S-D).
+
+        Returns ``{surrogate_key: ArticleDerivatives}``. Runs in THIS thread --
+        the ``reindex_parallel`` PROCESS POOL is deliberately not wired here; see
+        the note at the bottom of this docstring.
+
+        Why it is safe to run before the flush: every input is read off the
+        staged entry or the still-TRANSIENT ``Article`` row, so nothing touches
+        the session (no query, hence no autoflush, hence no chance of handing the
+        gate to a read -- the 2026-07-09 ETA/P1.8 lesson).
+
+        BYTE-IDENTICAL BY CONSTRUCTION. Each argument is the same value
+        ``index_article`` would have computed inline, from the same object:
+
+          * ``_resolve_known_language(a, e.text)`` is the SAME function
+            index_article calls, and it MUTATES ``a.detected_language`` -- which
+            is why calling it here is not merely equivalent but better: the
+            deduction now rides the INSERT instead of becoming an UPDATE inside
+            the gate, and index_article's own second call short-circuits on the
+            value this one stored. (When detection is INCONCLUSIVE nothing is
+            stored, so that one case pays a second ``detect_language`` inside the
+            gate; this mirrors ``reindex_articles``, which has the same shape.)
+          * the extractor gets ``lang or "en"``; sentiment gets ``lang``.
+          * ``extract_dates`` gets ``a.language`` -- the article's OWN column,
+            exactly what ``datestore.store_for_article`` passes on the inline
+            path. NOT ``lang``: feeding it the deduced language would raise
+            recall (the tables are language-gated) and is therefore a BEHAVIOUR
+            change, which this move must not smuggle in. Recorded as an open
+            item instead.
+          * ``extract_locations`` gets ``a.country`` (None on this path, as
+            ``_article_row`` sets no country -- the same None the inline
+            ``whostore.store_places_for_article`` reads off the article).
+          * the anchor is ``a.published_at or a.created_at``, as
+            ``store_for_article`` computes it; ``today`` stays the store's own
+            default.
+
+        THE SURROGATE KEY IS NEGATIVE. These rows have no id until the flush, so
+        the derivative map is keyed by ``-(index + 1)``. Negative because a real
+        article id is always positive: ``reindex_parallel``'s watchdog and error
+        logs print the key as "article %s", and a positive surrogate would name
+        an unrelated real row in a log a future session reads.
+
+        THE PROCESS POOL IS A DELIBERATE OMISSION, not an oversight. Two measured
+        reasons: (a) ``collect_batch_size()`` defaults to 8, below
+        ``reindex_parallel._MIN_PARALLEL_BATCH`` (16), so ``precompute_batch``
+        would take its serial path on every shipped configuration -- a dormant
+        mechanism that still LOOKS wired; and (b) above that default the
+        collector runs up to ``collect_parallelism`` (default 50) source workers
+        concurrently, each of which would spawn its own pool of up to 8 worker
+        processes with nothing arbitrating between them. ``reindex_parallel``'s
+        pool is safe precisely because it has ONE caller at a time (an import or
+        re-index that has taken the exclusive hold). The recoverable win here is
+        the gate window, and that is recovered in full by running serially
+        OUTSIDE it.
+        """
+        from src.analytics.extract import get_extractor
+        from src.analytics.reindex_parallel import compute_derivatives_with_www
+        from src.analytics.store import _resolve_known_language
+
+        if os.getenv("OO_NO_INDEX") == "1":
+            return {}
+        extractor = get_extractor("baseline")
+        out: dict = {}
+        for i, (e, a) in enumerate(to_store):
+            lang = _resolve_known_language(a, e.text)
+            observed = a.published_at or a.created_at
+            out[_pk(i)] = compute_derivatives_with_www(
+                extractor,
+                _pk(i),
+                e.text,
+                title=a.title or "",
+                extraction_language=lang or "en",
+                sentiment_language=lang,
+                date_language=a.language,
+                country=a.country,
+                anchor_iso=observed.date().isoformat() if observed else None,
+            )
+        return out
 
     def _article_row(self, e: _StagedArticle):
         from src.database.models import Article
@@ -340,15 +437,27 @@ class ArticleBatch:
             ip_observed_at=e.fetched_at,
         )
 
-    def _index_one(self, article, extractor) -> None:
+    def _index_one(self, article, extractor, *, content=None, deriv=None) -> None:
         """Keyword/WWW indexing inside the batch transaction, isolated by a
         SAVEPOINT: an extractor bug costs THAT article its indexing (as the
         legacy best-effort path does), never the batch. A transient lock is
         re-raised so the whole batch takes the rollback-and-redo path (where
-        the retry lives)."""
+        the retry lives).
+
+        ``deriv`` (C16) carries the DB-free half already computed OUTSIDE the
+        gate by :meth:`_precompute`, so only DML runs in this window. ``None``
+        -- or a derivative whose own precompute FAILED -- means "not
+        precomputed", which index_article reads as "compute it inline": correct
+        and slower for that one article, never silently empty. This is the same
+        three-way read ``reindex_articles._derived_args`` performs."""
         from src.analytics.store import index_article
         from src.database.write import is_locked_error
 
+        terms = sentiment = www = None
+        if deriv is not None and deriv.error is None:
+            terms = deriv.terms
+            sentiment = (deriv.sentiment_score, deriv.sentiment_label)
+            www = deriv.www
         try:
             with self._session.begin_nested():
                 index_article(
@@ -358,6 +467,10 @@ class ArticleBatch:
                     country=self._source.country,
                     city=self._city,
                     commit=False,
+                    content=content,
+                    precomputed_terms=terms,
+                    precomputed_sentiment=sentiment,
+                    precomputed_www=www,
                 )
         except Exception as exc:  # noqa: BLE001 - indexing is auxiliary per article
             if is_locked_error(exc):
