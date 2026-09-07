@@ -10355,11 +10355,23 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   **`cancelled`**, unbroken from #1009 (2026-09-05) through #1024 and #1023 today. None of them
   ran: `list_workflow_jobs` returns **zero jobs** for the ones checked (#1024's `34146578254`,
   #1023's `34146815483`), so they were killed while still PENDING, before a single job dispatched.
-  The mechanism is the concurrency block at `ci.yml:22-24`, group `${{ github.workflow }}-${{
-  github.ref }}`. `cancel-in-progress` is correctly FALSE on the default branch, but that setting
-  only spares a RUNNING run: GitHub keeps at most ONE pending run per group and cancels the
-  previous pending one when a new run enters. The maintainer merges faster than the ~30-minute
-  suite, so every main run is superseded before it starts. The timestamps are exact — #1024's run
+  The concurrency block at `ci.yml:22-24` is where it happens, group `${{ github.workflow }}-${{
+  github.ref }}` with `cancel-in-progress` written to be FALSE on the default branch.
+  **CORRECTION, SAME SESSION — I ASSERTED A MECHANISM MY EVIDENCE DOES NOT ESTABLISH.** This entry
+  first said GitHub keeps at most one PENDING run per group and supersedes it, so every main run
+  dies before starting. Zero jobs plus a cancellation timestamp matching the next run's creation is
+  consistent with that — and EQUALLY consistent with the `cancel-in-progress` expression evaluating
+  TRUE on `main`, i.e. the exemption simply not working. The two are indistinguishable from what I
+  measured, and PR #1040 reached the same finding independently and was RIGHT to mark the mechanism
+  **"UNMEASURED, deliberately"**: the cancellation reason that would separate them is not cleanly
+  exposed by the Actions API. Read #1040's entry as the primary record — its sample is larger and
+  its restraint is better. **The one argument that does bear on it, for whoever resolves this:**
+  under pure pending-supersession a run that has actually STARTED survives, so some push run should
+  eventually complete — and #1040 measures that ZERO ever have. That leans against supersession,
+  except that the observed queue depth (this session's own jobs sat queued over forty minutes)
+  means a run rarely reaches "running" before the next merge arrives, which rescues it. So the
+  question is genuinely open, and the fix must not be chosen from either story until someone reads
+  the mechanism rather than the symptom. The timestamps are exact — #1024's run
   updated at 17:15:08 and #1023's was created at 17:15:07; #1022's updated at 17:11:50 and #1024's
   created at 17:11:49. **What this means: the repo's entire CI protection is PR runs.** Nothing
   verifies the merge COMMIT — so a semantic conflict between two PRs that are each green alone
@@ -10371,4 +10383,13 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   as DELIBERATE and say so in the ritual, so nobody again reads a cancelled main run as a pass.
   Do NOT read (c) as the cheap default: it is only honest if the ledger stops implying main is
   verified. Recorded rather than changed, because `ci.yml`'s concurrency is a workflow-policy
-  decision and this session found it, it was not asked to set it.
+  decision and this session found it, it was not asked to set it. **AND PR #1040 ADDS THE ARGUMENT
+  THIS ENTRY WAS MISSING: the fix spends the maintainer's money.** A concurrency change makes every
+  merge run a full macOS + Windows + ubuntu matrix instead of being cancelled, at roughly one merge
+  every four minutes — so option (a)/(b) is a COST decision, not merely a correctness one, and #1040
+  names the cheap alternative I did not: rule that the nightly cron IS the referee for `main` and
+  require sessions to reproduce lanes locally. Its measurement also supplies what mine lacked —
+  of the 40 most recent completed runs, **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron**, so the cron referee already exists in fact. TWO ENTRIES NOW
+  DESCRIBE ONE FINDING (this one and #1040's, from parallel sessions); both are kept per the
+  additive rule, and #1040's is the one to cite.
