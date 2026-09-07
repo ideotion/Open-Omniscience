@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Buka kata kunci ini sebagai jendela korpus: tren, artikel anggota, dan tautan keluar bersama (sumber dari sumber).",
   "Full moon": "Bulan purnama",
   "New moon": "Bulan baru",
+  "First quarter moon": "Bulan perbani awal",
+  "Last quarter moon": "Bulan perbani akhir",
   "Fetch weather context": "Ambil konteks cuaca",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Mengambil potongan Open-Meteo terbatas untuk tempat dan jendela waktu ini — hanya setelah persetujuan Anda.",
   "Fetch weather context for one place and time window (Open-Meteo)": "Ambil konteks cuaca untuk satu tempat dan jendela waktu (Open-Meteo)",

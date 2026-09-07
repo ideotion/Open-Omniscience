@@ -6596,6 +6596,150 @@ operator step it is gated on is not actually available, which is a different sen
 doc's "Nothing built" and the one worth recording. **The general form: when an inventory says
 UNBUILT, the three questions are whether it is built, whether its premise still holds, and
 whether the thing that is missing is the one named.**
+**2026-09-07 — the law vertical's ungated half (S2/S4/S6/S7 of PROMPT_13), branch
+`claude/law-enumeration-coverage-1txthg`.** Full row in `shipped.csv`. Four lessons worth
+keeping, each copied into `LESSONS.md`:
+
+  - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
+    trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
+    catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
+    `verification.status: fetched`, and one of those feeds had never been asked for. The
+    status is about the PORTAL — impo.com.uy's row records loading `/contenido/`, while the
+    row's OWN notes call the feed URL the site's generic WordPress `/feed/` of news posts,
+    "not confirmed to carry each day's Diario Oficial issue individually, so verify before
+    relying on it for gazette monitoring". Promoting on the row status would have filed
+    Uruguayan site news in the corpus **as that country's official gazette**: not a broken
+    fetch, which announces itself, but a plausible wrong corpus, which does not. GENERAL
+    FORM: a verification tier covers the thing the verifying session actually looked at, and
+    every OTHER URL in that record is a claim nobody checked — so a field that will be
+    fetched needs its own tier, and the vocabulary should be narrower than the row's where
+    the middle tiers cannot mean anything (a search snippet can say a site exists, never
+    that a URL serves a parseable feed). The same catalog has 107 `enumeration_url` values
+    and a `structured.api`/`structured.bulk` pair in the identical position. COROLLARY on
+    reading the evidence: the row-level `evidence` sentence is what settles it, and it did —
+    three of the four record fetching the feed, one records fetching something else. Read
+    the sentence, not the enum.
+  - **A DENOMINATOR IN AN UNDECLARED UNIT IS NOT A DENOMINATOR, AND THE JOIN KEY IS THE
+    SECOND TRAP (2026-09-07, law coverage):** 39 dated official counts sat in the law
+    catalog as the completeness principle's missing denominators, and the obvious move —
+    print `tracked / enumerated` — is a fabricated statistic: a tracked document is
+    act/code-level while the recorded units run over codes, acts, volumes, gazette issues,
+    treaties and cases, and a volume or a gazette issue holds many acts. Deciding
+    commensurability from the unit STRING is the exact move ruling 47's extensive/intensive
+    rail already forbids for aggregation, so the two numbers are published side by side with
+    the reason attached and the declaration is raised as a ruling. SECOND HALF, and it would
+    have been silent: the counts key on ISO-2 `country` while documents key on an "ISO-ish"
+    `jurisdiction`, and `uk` documents state `gb` — so reading the jurisdiction code as a
+    country BOTH misses that pair AND risks attaching some other country's enumeration to a
+    code that collides with its ISO-2. The honest join runs only through the country a
+    document itself states, and a document stating none gets its own third state rather than
+    being reported as "no enumeration exists". GENERAL FORM: before dividing two numbers
+    from different files, check the UNIT and the JOIN KEY separately — either one alone can
+    make the quotient a number nobody measured.
+  - **A MECHANISM BUILT TO SURFACE CAVEATS IS BLIND TO THE CAVEATS IT WAS NOT SHAPED FOR —
+    carry the raw field too (2026-09-07, same slice):** a derived check (is the figure's
+    `source_url` on the publisher's own domain?) correctly flags the Council of Europe's
+    treaty count, which cites Wikipedia, and Mauritania's, which cites a news site. It
+    STRUCTURALLY cannot flag the African Union's 80, whose `source_url` is perfectly
+    on-domain and whose caveat lives in the row's `notes`: "a manual tally ... treat this as
+    approximate, not authoritative". Extracting that with a prose heuristic is the move this
+    project refuses, so the notes ride along verbatim beside the figure. GENERAL FORM: when
+    you build an instrument to expose disclosures, ask what it is structurally unable to
+    see, and keep the unprocessed field beside it — the same shape as the recorded
+    two-harvest-instruments lesson, at the level of one payload.
+  - **AN HONEST GAP RECORDED AS A COMMENT IS OUTSIDE THE SYSTEM, NOT A LESSER VERSION OF ONE
+    (2026-09-07, the law catalog's two confirmed gaps):** the catalog has a deliberate shape
+    for "we looked and there is no official portal" — a domain-less `lead` row, which the
+    validator sees and the loader drops, so a gap can never become a `Source`. Yemen is one.
+    North Korea's identically-reasoned, better-evidenced gap was a **YAML comment block**, so
+    the validator could not count it, the vetting board could not list it, and nothing that
+    reads the catalog as data knew it existed. Nobody was wrong at the time; the comment is
+    the producing session's own words and is where a future reader looks. GENERAL FORM: when
+    a project has a DATA shape for a deliberate absence, prose recording the same fact is not
+    a weaker record, it is an invisible one — add the row and keep the prose beside it.
+
+**AND THE PROCESS FACT, which is the reason two slices cost a grep instead of a rebuild:**
+S3/S4b and S5/A5 were both recorded as outstanding by the prompt and both were already
+shipped — the third and fourth law item in a row to turn out shipped-when-read (rulings 36
+and 37 were the first two, 2026-08-20). This vertical's status text ages faster than any
+other area's in the repo, so grep before building here, always.
+
+**Moon quarters: closing the one accepted loss of the retired moons feed (2026-09-07, PROMPT_19
+S3).** The 2026-07-17 ruling retired `monkeyness-moons` as redundant against the computed Meeus
+layer and recorded a single accepted loss — that feed carried the first/last QUARTER phases, which
+the computed layer did not have. It has them now, from the same chapter 49: the quarters carry
+their own periodic series plus the ±W term (added at first quarter, subtracted at last), and the
+planetary corrections are shared with new/full rather than copied. `phases_for_year` publishes four
+buckets; `_phase_of_k` REFUSES an off-grid k by name rather than silently computing a new moon,
+because Meeus' series are per-phase and there is no honest answer for k = 3.1.
+
+**The verification is the point, and it is not a quoted constant.** New/full are pinned against
+Meeus' own worked example 49.a. For the quarters the risk is a mistranscribed coefficient, and a
+constant written from memory would be the fabricated reference this project forbids — I confirmed
+that risk is real by misremembering 49.a's own value before reading it out of the tree. So the
+quarters are checked against an INDEPENDENT method: a principal phase IS the instant the Moon's
+apparent longitude leads the Sun's by 0/90/180/270°, computed from other chapters entirely (ch. 47
+for the Moon, ch. 25 for the Sun, no term shared with ch. 49). The anti-vacuity half is what makes
+it evidence: the same checker runs over the new and full instants, whose times are already verified
+to ~26 s, so its error there is its OWN truncation noise and the quarters must sit inside that band
+rather than under a tolerance picked by hand. Measured 1900..2200, worst elongation error: shipped
+code new/full 0.0217° · quarters 0.0196° (ratio 0.90); W sign flipped 0.1106° (5.09); leading
+coefficient mistyped 0.1137° (5.24); W dropped 0.0621° (2.86). The bars — ratio ≤ 2.0 and absolute
+≤ 0.035° — fail all three and clear the shipped code with ~2x margin both ways; the W-dropped
+mutant is the tight one, which is why the ratio bar is 2.0 rather than the 3.0 a first pass would
+have chosen. Two more mutations (the quarter branch never taken, an off-grid k accepted) and six
+over the wiring redden by name.
+
+**A guessed bound failed against correct code, again.** The interval check first asserted the four
+gaps were within ±0.8 d of a quarter synodic month; the real quarter-lunation runs **6.583..8.240 d**
+over 1900..2200, because the orbit is elliptical and the inequality itself varies. Measured, the
+bound is 6.3..8.5 with the numbers written beside it, and its job is stated: it catches a gross
+error, never a minute-scale one — the elongation guard is what has that resolution.
+
+Frontend: both agenda grids resolve every phase label through ONE map (a second hand-written
+ternary is how a month and a week view come to disagree about a glyph), four distinct glyphs, and
+two new labels keyed in all twelve locales. The non-English values are AI-drafted standard
+astronomical terms and are flagged for native review.
+
+**Newsletter publisher identity: the eTLD+1 and the inversion the list cannot give (2026-09-07,
+PROMPT_19 S6).** Every imported newsletter still lands in one bucket source, so the 2026-06-15
+ruling's question — is a newsletter from `email.bbc.com` the same publisher as the scraped
+`bbc.com`? — had no machinery behind it. Now it does: a vendored, dated, digest-verified Public
+Suffix List (registry entry, twelve-month window, refused outright on a digest mismatch so unknown
+bytes can never become publishers), then the ruled ladder — exact `Source.domain` → the alias map →
+a new DISABLED email source — and never a fuzzy merge. The list DEGRADES rather than guesses: the
+tempting two-label fallback reduces `bbc.co.uk` to `co.uk`, and a public suffix presented as a
+publisher merges every British site into one source. ICANN-vs-PRIVATE is an explicit argument at
+every entry point rather than a silent default, because both readings are defensible and picking
+one quietly is how two surfaces come to disagree about one quantity.
+
+**MEASURED, and it decides the design:** substack.com, beehiiv.com, ghost.io, mailchimp,
+buttondown.email, convertkit/kit.com and medium.com are in NEITHER section of the list, so the list
+alone performs exactly the collapse the ruling's platform-inversion clause forbids. That clause is
+load-bearing rather than a restatement, and it runs BEFORE the eTLD+1. A platform sender carrying
+no publication label — `hello@substack.com`, or an infrastructure label like `mail.` — is REFUSED,
+not attached to the platform: a refusal is a gap, a merge is a fabrication that reads as data.
+List-Id is parsed and kept (clause (a); recipient-safe by construction, which is why the same
+ruling keeps it and drops List-Unsubscribe) and rescues that case, but only when it corroborates
+the sending platform. The source lookup is case-insensitive on both sides, per the recorded
+one-sided-normalisation defect: `Source.domain` is BINARY-collated and stored as typed, and a
+match that does not fire is indistinguishable from a publisher nobody has.
+
+**What is deliberately NOT built.** The resolver decides nothing on the write path. The ruling
+pairs silent auto-attach with an import UI that announces it and an UNDO for the automated
+attaches; shipping the attach without those is half a data-placement change, which is worse than
+none. So the caller today is a read-only preview over the newsletters already imported — the
+evidence that decision needs, computed by the real function rather than described, which also
+keeps the resolver from being the dead-end shape the ledger records five times over.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** the publisher's own
+conformance vectors are evidence where hand-written cases measure the implementer's understanding
+(they found two defects, one of them invisible in the positive space); a mutation can apply
+textually and be semantically inert, so `assert new != old` is necessary and not sufficient; a
+restored source file is not a restored import, because `__pycache__` can serve the mutant's
+bytecode for a whole second; and a module that degrades honestly when its data file is absent is
+exactly the one whose packaging omission is silent (`src/geo/data` had been missing from every
+wheel since it was added).
 
 ## 2026-09-07 — insights/observatory — the Observatory ships, and the real corpus picked both refusals
 
