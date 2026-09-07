@@ -36,7 +36,7 @@ import re
 import secrets
 import sqlite3
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -82,6 +82,7 @@ _WIKI_DUMPS_DIR = "wiki_dumps"
 _OSM_DIR = "osm_regions"  # offline-map downloads (src/geo/osm_downloads.py)
 _MODELS_DIR = "models"  # local AI weights (src/llm/model_store.py, 2026-08-04 move)
 _CACHE_DIR = "cache"  # the vLLM server's compute caches (src/llm/vllm_lifecycle.py)
+_RUN_LOGS_DIR = "run_logs"  # the import/export run journal (src/backup/runlog.py)
 
 # Source domains under which imported newsletters live (src/api/ingestion.py). A
 # backup can EXCLUDE them (maintainer 2026-06-21: re-import fixed .eml to replace
@@ -147,6 +148,10 @@ class StagedArtifact:
     signature_state: str  # verified | bad-signature | unsigned
     origin_fingerprint: str  # signer pubkey hex or "unsigned"
     members: list[dict] = field(default_factory=list)
+    # S6.2: where the artifact's large public files (wiki dumps / OSM extracts / model
+    # weights) go back to, when it carries any. Empty for every artifact written before
+    # they could ride inside one, and for every restore that is not asked to place them.
+    file_members: list[dict] = field(default_factory=list)
     hash_failures: list[str] = field(default_factory=list)
     # True when the uploaded artifact was OOENC1-wrapped (AES-256-GCM at rest) and
     # had to be decrypted to read it. Surfaced in the restore preview so the operator
@@ -243,6 +248,30 @@ def _excluded_inventory() -> list[dict]:
         (_CACHE_DIR, "the vLLM server's compute caches (Triton, torch Inductor, CUDA JIT, "
                      "vLLM's own roots) — rebuilt automatically on the next run, so there "
                      "is nothing to restore"),
+        # DAT-09, decided 2026-09-07. This was excluded by construction and UNDECIDED in
+        # writing ("probably no"), which is not a state a data-safety boundary should be
+        # left in -- so it is decided here and named, for four reasons, the last of which
+        # is the one that makes carrying it actively wrong rather than merely wasteful:
+        #   * SIZE. The journal's size tracks how much there was to diagnose, not how much
+        #     corpus there is: one 24 h merge took this directory from 11 MB to 1.6 GB.
+        #     An artifact whose weight is set by someone else's worst night is not a
+        #     backup of anything.
+        #   * SCOPE. It is a MACHINE-LOCAL forensic record -- this box's beats, its child
+        #     CPU samples, its stalls. It says nothing about the corpus, which is what a
+        #     restore is for.
+        #   * REACH. It already leaves the machine the way it should: the diagnostics
+        #     bundle carries the bounded reads (run-journal.json, merge-diag.json), which
+        #     is a channel with a ceiling and a reader.
+        #   * AND THE DECIDING ONE. `promote_incomplete_runs` reads this directory AT BOOT
+        #     to mark journals that never reached `run_end`. A restored FOREIGN journal
+        #     would therefore make another machine's crashed run read as this one's -- and
+        #     the absence of a terminal marker IS the evidence, so the damage is to the
+        #     one signal the journal exists to carry.
+        (_RUN_LOGS_DIR, "this machine's own import/export run journal — forensics about "
+                        "THIS box, not about the corpus; unbounded in size (one 24 h merge "
+                        "wrote 1.6 GB); already exported, bounded, in the diagnostics "
+                        "bundle. Restoring a foreign journal would make another machine's "
+                        "crashed run read as this one's at the next boot"),
     ):
         d = data_dir() / name
         if d.is_dir():
@@ -492,6 +521,7 @@ def write_volume_backup(
     parity_fraction: float = 0.1,
     should_stop: "Callable[[], bool] | None" = None,
     progress_cb: "Callable[[dict], None] | None" = None,
+    include_blobs: "Iterable[str] | None" = None,
 ) -> dict:
     """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
     server-side directory ``dest_dir``.
@@ -504,6 +534,11 @@ def write_volume_backup(
     RESUMABLE (an interrupted run continues; a partial set can never be mistaken
     for a complete one — it has no final manifest). Always encrypted (a passphrase
     is required). ``should_stop``/``progress_cb`` drive the task-manager job.
+
+    ``include_blobs`` (S6.2, default none): categories of large public files
+    (``wiki_dumps``/``osm_regions``/``models``/``hf_models``) to carry INSIDE the
+    artifact instead of alongside it. Opt-in — see
+    :func:`src.backup.stream_backup.collect_blob_members` for the trade.
     Returns a measured summary dict."""
     from src.backup.stream_backup import write_stream_backup
 
@@ -517,6 +552,7 @@ def write_volume_backup(
         parity_fraction=parity_fraction,
         should_stop=should_stop,
         progress_cb=progress_cb,
+        include_blobs=include_blobs,
     )
 
 

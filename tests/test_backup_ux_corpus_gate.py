@@ -43,6 +43,31 @@ def test_ux_run_gates_the_folder_phase_on_a_confirmed_corpus_backup():
     )
 
 
+def test_carrying_the_large_files_inside_the_artifact_replaces_the_folder_phase():
+    """S6.2, and the half that would be a real defect if it were wrong: when they ride
+    INSIDE the artifact, the folder phase must not ALSO copy them next to it -- that would
+    double the bytes on the drive to deliver the same files, silently."""
+    run = _fn_body(_APP_JS, "_uxRun")
+    assert "include_blobs: blobs" in run, "the categories must reach the volumes job"
+    assert "if (blobs.length && !inside) {" in run, "the folder phase must be skipped"
+    # It only applies when a corpus is actually being written: with no artifact there is
+    # nothing to carry them in, so the request must be the one that shipped.
+    assert "wantCorpus && blobs.length" in run
+
+
+def test_the_inside_choice_is_disabled_rather_than_ignored():
+    """A tickbox whose state the run ignores is worse than one that is disabled: the
+    dialog would be showing a choice that does not exist. Asserted on the sync helper,
+    which is the only thing that decides it."""
+    sync = _fn_body(_APP_JS, "_uxSyncInside")
+    assert "inside.disabled = !usable" in sync
+    assert "if (!usable) inside.checked = false" in sync, (
+        "a disabled box must also be unticked, or a later re-enable restores a choice "
+        "the operator never made"
+    )
+    assert "corpus.checked" in sync and '"models", "maps", "wiki"' in sync
+
+
 def test_ux_start_then_poll_re_throws_an_unrelated_masked_job():
     poll = _fn_body(_APP_JS, "_uxStartThenPoll")
     # a 409 masked-start must only be adopted when the live job is OURS (mode/dest match) — an

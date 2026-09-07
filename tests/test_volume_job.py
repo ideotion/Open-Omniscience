@@ -18,6 +18,7 @@ import pytest
 
 from src.backup.volume_job import VolumeBackupManager
 from src.backup.volumes import VolumeStopped
+from tests.backup_helper import staged_artifact as _staged
 
 
 def _wait(mgr: VolumeBackupManager, timeout: float = 5.0) -> dict:
@@ -55,7 +56,13 @@ def _own_the_machine(monkeypatch, owned: bool) -> None:
 
 
 def test_backup_runs_to_done_and_strips_envelope(tmp_path):
-    def fake(dest, pw, *, include_newsletters, parity_fraction, should_stop, progress_cb):
+    def fake(
+        dest, pw, *, include_newsletters, parity_fraction, should_stop, progress_cb, include_blobs
+    ):
+        # S6.2 default, asserted where the job actually passes it: a backup nobody asked
+        # to carry the large public files must ask the engine for none of them, so the
+        # artifact this build writes is the one it wrote before the option existed.
+        assert include_blobs is None
         progress_cb({"phase": "volumes", "volumes_written": 2})
         return {"volumes": 2, "parity_available": True, "dest": str(dest), "envelope": {"k": 1}}
 
@@ -252,7 +259,7 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     _own_the_machine(monkeypatch, True)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     src = tmp_path / "src"
@@ -306,7 +313,7 @@ def test_restore_pauses_collection_around_the_whole_operation_and_resumes(tmp_pa
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
     monkeypatch.setattr(
         artifact_mod, "read_volume_backup",
-        lambda *a, **k: (events.append("reassemble"), object())[1],
+        lambda *a, **k: (events.append("reassemble"), _staged())[1],
     )
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: events.append("cleanup"))
 
@@ -335,7 +342,7 @@ def test_restore_resumes_collection_even_when_the_restore_itself_fails(tmp_path,
         sched_mod, "resume_after_exclusive_operation",
         lambda was_paused: events.append("resume"),
     )
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     def _boom(*a, **k):
@@ -351,6 +358,115 @@ def test_restore_resumes_collection_even_when_the_restore_itself_fails(tmp_path,
     assert st["state"] == "error"
     assert "simulated merge failure" in st["error"]
     assert events == ["pause", "resume"]  # resumed despite the failure
+
+
+def test_an_artifact_carrying_large_files_places_them_after_the_merge_commits(
+    tmp_path, monkeypatch
+):
+    """S6.2. The placement lives HERE rather than in the merge because it is not a
+    database operation and must not be undone by a merge abort -- so this is the one
+    place that proves an artifact carrying files actually puts them back.
+
+    It also pins the ORDER: after the commit, because a restore that failed should leave
+    the machine as it found it, and a placement is not rolled back by a transaction."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.folder_backup as fb_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    order: list[str] = []
+    staged = _staged(tmp_path / "staging")
+    staged.file_members = [{"name": "blobs/wiki_dumps/x", "category": "wiki_dumps", "rel": "x"}]
+
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged)
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
+    monkeypatch.setattr(
+        merge_mod, "run_restore",
+        lambda *a, **k: (order.append("merge"), {"committed": True})[1],
+    )
+
+    def fake_place(staging_dir, file_members, **kw):
+        order.append("place")
+        assert Path(staging_dir) == tmp_path / "staging"
+        assert list(file_members) == staged.file_members
+        return {"placed": 1, "skipped": 0}
+
+    monkeypatch.setattr(fb_mod, "place_artifact_file_members", fake_place)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "done"
+    assert order == ["merge", "place"], "placed only once the corpus merge has committed"
+    assert st["summary"]["report"]["file_members"] == {"placed": 1, "skipped": 0}
+
+
+def test_a_failed_placement_never_costs_the_restore_that_already_committed(
+    tmp_path, monkeypatch
+):
+    """The negative twin, and the reason it is best-effort: the corpus is the thing that
+    must not be lost, and a wiki dump that did not land is re-downloadable. So a raising
+    placement leaves the run DONE -- and says so in the report, because a silent partial
+    placement is exactly the failure the folder restore's own caveat exists to prevent."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.folder_backup as fb_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    staged = _staged(tmp_path / "staging")
+    staged.file_members = [{"name": "blobs/wiki_dumps/x", "category": "wiki_dumps", "rel": "x"}]
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged)
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
+    monkeypatch.setattr(merge_mod, "run_restore", lambda *a, **k: {"committed": True})
+
+    def _boom(*a, **k):
+        raise OSError("the external drive went away")
+
+    monkeypatch.setattr(fb_mod, "place_artifact_file_members", _boom)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "done", "a good merge is not thrown away over a file copy"
+    fmr = st["summary"]["report"]["file_members"]
+    assert fmr["placed"] == 0 and "the external drive went away" in fmr["error"]
+
+
+def test_an_artifact_carrying_nothing_does_not_reach_the_placement(tmp_path, monkeypatch):
+    """Every artifact written before S6.2, and every one written since without the option:
+    the placement must not run at all, so a restore of an ordinary backup is byte for byte
+    the operation it was."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.folder_backup as fb_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged(tmp_path))
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda s: None)
+    monkeypatch.setattr(merge_mod, "run_restore", lambda *a, **k: {"committed": True})
+
+    def _never(*a, **k):
+        raise AssertionError("the placement must not run for an artifact carrying nothing")
+
+    monkeypatch.setattr(fb_mod, "place_artifact_file_members", _never)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "done"
+    assert "file_members" not in st["summary"]["report"]
 
 
 def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
@@ -384,7 +500,7 @@ def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", _boom_pause)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     _own_the_machine(monkeypatch, False)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
 
@@ -443,7 +559,7 @@ def test_restore_passes_a_wide_reindex_commit_batch_only_when_it_owns_the_machin
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     _own_the_machine(monkeypatch, exclusive)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: _staged())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     src = tmp_path / "src"

@@ -104,6 +104,15 @@ def test_t6_divergent_merge_full(corpora):
     preview = _run(a, "merge", str(art), "--passphrase", "pw-torture")["report"]
     assert preview["committed"] is False
     assert preview["verification"]["ok"] is True
+    # The COUNTS, not the whole dict. `DomainResult.as_dict` is additive by design (it
+    # omits an empty `samples`/`conflicts` and includes them when there is something to
+    # say), so an equality assertion here breaks the day a plan gains a field -- which it
+    # did on 2026-09-07, when `samples` stopped being an always-empty list.
+    #
+    # NB the name: `art` above is the ARTIFACT PATH, still needed by the --commit run
+    # below. A first draft of this amendment reused it for the plan, and `str(art)` then
+    # handed the stringified dict to the helper as a path -- FileNotFoundError naming a
+    # dict, with every later test in this module inheriting an unmerged corpus.
     arts = preview["plan"]["articles"]
     assert {k: arts[k] for k in ("new", "duplicate", "conflict")} == {
         "new": 2,

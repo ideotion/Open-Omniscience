@@ -227,6 +227,7 @@ class VolumeBackupManager:
         *,
         include_newsletters: bool = True,
         parity_fraction: float = 0.1,
+        include_blobs: list[str] | None = None,
         _backup_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
@@ -247,14 +248,23 @@ class VolumeBackupManager:
             self._progress = {"phase": "starting"}
             self._thread = threading.Thread(
                 target=self._run_backup,
-                args=(destp, passphrase, include_newsletters, parity_fraction, _backup_fn),
+                args=(
+                    destp,
+                    passphrase,
+                    include_newsletters,
+                    parity_fraction,
+                    include_blobs,
+                    _backup_fn,
+                ),
                 daemon=True,
                 name="volume-backup",
             )
             self._thread.start()
             return self.status()
 
-    def _run_backup(self, destp, passphrase, include_newsletters, parity_fraction, backup_fn):
+    def _run_backup(
+        self, destp, passphrase, include_newsletters, parity_fraction, include_blobs, backup_fn
+    ):
         from src.backup.volumes import VolumeStopped
 
         # The export "seems to work fine" (maintainer, 2026-07-31) -- which is
@@ -263,6 +273,7 @@ class VolumeBackupManager:
         runlog.begin(
             "export", label=destp.name, dest=str(destp),
             include_newsletters=include_newsletters, parity_fraction=parity_fraction,
+            include_blobs=list(include_blobs or ()),
         )
         try:
             fn = backup_fn
@@ -277,6 +288,7 @@ class VolumeBackupManager:
                 parity_fraction=parity_fraction,
                 should_stop=self._stop.is_set,
                 progress_cb=self._on_prog,
+                include_blobs=include_blobs,
             )
             with self._lock:
                 self._state = "done"
@@ -373,7 +385,7 @@ class VolumeBackupManager:
             return self.status()
 
     def _run_restore(self, srcp, passphrase, allow_unverified, corpus_passphrase, restore_fn):
-        from src.backup.merge import RestoreAborted
+        from src.backup.merge import RestoreAborted, RestoreRefused
 
         # ONE run journal per queue item, opened before anything expensive. Eight
         # sequential imports at ~10 h each sharing one run_id would wrap the beat
@@ -629,6 +641,34 @@ class VolumeBackupManager:
                         # when collection is confirmed paused and rude when it is not.
                         exclusive=_owned,
                     )
+                    # S6.2: an artifact that CARRIES the large public files puts them
+                    # back once the corpus merge has committed -- after, because a
+                    # placement is not undone by the merge aborting, and a restore that
+                    # failed should leave the machine as it found it. Best-effort by
+                    # design: the corpus is the thing that must not be lost, and a
+                    # wiki dump that did not land is re-downloadable. It is REPORTED
+                    # either way, because a silent partial placement is the failure the
+                    # folder restore's own caveat exists to prevent.
+                    if staged.file_members:
+                        from src.backup.folder_backup import place_artifact_file_members
+
+                        try:
+                            report["file_members"] = place_artifact_file_members(
+                                staged.staging_dir,
+                                staged.file_members,
+                                should_stop=self._stop.is_set,
+                            )
+                        except Exception as exc:  # noqa: BLE001 - never lose a good merge
+                            _LOG.warning("placing the artifact's large files failed", exc_info=True)
+                            report["file_members"] = {
+                                "placed": 0,
+                                "error": str(exc),
+                                "method": (
+                                    "The corpus restored; putting the large public files "
+                                    "back did not. They are re-downloadable, and the "
+                                    "artifact still carries them."
+                                ),
+                            }
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
                         self._progress = {"phase": "done"}
@@ -647,6 +687,26 @@ class VolumeBackupManager:
                     _LOG.warning(
                         "resuming background collection after the restore failed", exc_info=True
                     )
+        except RestoreRefused as exc:
+            # NOT the operator: a swap barrier refused because another job still held
+            # the corpus. Same disposable-staging, byte-identical-live-corpus outcome
+            # as a Stop -- which is why it subclasses RestoreAborted and must be caught
+            # BEFORE it -- but a different ACTOR, so it gets MergeError's treatment: a
+            # well-formed refusal the user must read, carrying its own honest message.
+            #
+            # Two things were wrong with reporting it as `cancelled`. It sent an
+            # operator who cancelled nothing looking for a job they never started; and
+            # the cancelled branch below clears `_error`, while the SPA rejects a
+            # cancelled state with `s.error || view.text || state` -- so the one
+            # actionable sentence ("another job is still writing to your corpus (...)",
+            # naming the holder) was dropped on the way to the UI and the operator got
+            # a bare "cancelled".
+            _LOG.warning("volume restore refused before the swap: %s", exc)
+            runlog.end("refused", detail=str(exc)[:500])
+            with self._lock:
+                self._state = "error"
+                self._error = str(exc)
+                self._progress = {"phase": "refused", "detail": str(exc)}
         except RestoreAborted as exc:
             # The operator's own Stop, honoured before the swap -- a normal outcome,
             # never an error. The live corpus is byte-identical; the staging dir is

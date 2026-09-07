@@ -171,7 +171,10 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             )
             lines.append("")
             for table_name, samples in examples:
-                shown = ", ".join(str(x) for x in samples)
+                # Code-spanned, because these are arbitrary strings off the web: an
+                # article title carrying `*` or `_` would otherwise render as emphasis
+                # and the name SHOWN would not be the name stored.
+                shown = ", ".join(f"`{str(x)}`" for x in samples)
                 lines.append(f"- **{table_name}**: {shown}")
             lines.append("")
 

@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from src.backup.volume_job import _RESTORE_MANAGER_PHASES, VolumeBackupManager
+from tests.backup_helper import staged_artifact
 from tests.js_source_helper import app_js
 
 _STATIC_DIR = Path(__file__).resolve().parents[1] / "src" / "static"
@@ -66,7 +67,7 @@ def test_restore_stage_pings_carry_their_position_offset_by_the_manager_phases(
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged_artifact())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     src = tmp_path / "src"
@@ -123,7 +124,7 @@ def test_the_position_survives_the_two_longest_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged_artifact())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     src = tmp_path / "src"
@@ -232,7 +233,7 @@ def test_a_deferred_import_never_pings_a_reindex_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
-    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: staged_artifact())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
 
     src = tmp_path / "src"

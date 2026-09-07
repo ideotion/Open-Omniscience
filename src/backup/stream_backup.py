@@ -69,7 +69,7 @@ import secrets
 import shutil
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -220,6 +220,17 @@ def _require_safe_volume_name(name: str) -> None:
         raise VolumeError(f"unsafe volume file name in the volume manifest: {name!r}")
 
 
+def _require_safe_file_category(category: str) -> None:
+    """A file member's destination root is CHOSEN, never composed. An allowlist is the
+    right shape here (unlike ``rel``, where any relative path is legitimate): the set of
+    live directories a restore may write into is fixed and known, so anything else is a
+    manifest describing a placement this build does not perform."""
+    from src.backup.folder_backup import _CATEGORIES
+
+    if category not in _CATEGORIES:
+        raise VolumeError(f"unknown file-member category in the volume manifest: {category!r}")
+
+
 def _require_safe_manifest_names(m: dict[str, Any]) -> None:
     """Reject traversal/absolute names ANYWHERE a manifest names a file. A
     signature only proves internal consistency with the EMBEDDED key — anyone
@@ -229,7 +240,14 @@ def _require_safe_manifest_names(m: dict[str, Any]) -> None:
     per-member volume references, plus the top-level ``corpus_member`` /
     ``wal_member`` (the restore corpus-fold path turns those into ``staging /
     <name>`` and unlinks them — an unguarded ``..`` escapes the staging dir into
-    the data dir, i.e. an arbitrary-file delete of the live corpus)."""
+    the data dir, i.e. an arbitrary-file delete of the live corpus).
+
+    ``file_members`` adds TWO more path-bearing fields and they are the reason the
+    2026-07-10 lesson is quoted above: the placement step composes ``targets[category] /
+    rel`` into the LIVE data directory, so a field not called "name" becomes a path there.
+    ``category`` is checked against a fixed allowlist rather than for traversal — it
+    selects a destination root, so the only safe values are the ones we know, and an
+    unknown one is refused rather than joined."""
     for v in m.get("volumes") or []:
         _require_safe_volume_name(str(v.get("name") or ""))
     for pv in (m.get("parity") or {}).get("volumes") or []:
@@ -242,6 +260,10 @@ def _require_safe_manifest_names(m: dict[str, Any]) -> None:
         _require_safe_member_name(str(m.get("corpus_member")))
     if m.get("wal_member") is not None:
         _require_safe_member_name(str(m.get("wal_member")))
+    for fm in m.get("file_members") or []:
+        _require_safe_member_name(str(fm.get("name") or ""))
+        _require_safe_member_name(str(fm.get("rel") or ""))
+        _require_safe_file_category(str(fm.get("category") or ""))
 
 
 def _vol_name(member: str, i: int, run_token: str) -> str:
@@ -486,6 +508,68 @@ class MemberFile:
     name: str  # artifact member name (zip-member-style relative path)
     role: str
     path: Path  # stable source file on disk
+
+
+#: Member-name prefix for the optional large public blobs. A namespace of its own so a
+#: blob can never collide with a side member's name, and so the restore's placement step
+#: can be keyed on the manifest rather than on a name convention.
+_BLOB_PREFIX = "blobs"
+
+
+def collect_blob_members(categories: Iterable[str]) -> list[tuple[MemberFile, dict[str, Any]]]:
+    """The wiki dumps / OSM extracts / model weights, as artifact members.
+
+    S6.2, the top parked item of the 2026-07-12 closeout: one portable artifact should be
+    able to carry these, so that a restore of a machine needs one thing rather than an
+    encrypted artifact PLUS a folder copy whose association with it is the operator's
+    memory.
+
+    Enumeration is ``folder_backup.collect_items`` unchanged, which is what makes the
+    skip-non-``done`` rule true here by construction rather than by a second
+    implementation: it reads each download manager's OWN done state, so a partial file is
+    never a member, and the model stores are deduped by content-addressed name.
+
+    OPT-IN, and the reason is a ruling rather than caution. The 2026-06-21 large-data
+    design copies these AS-IS, never encrypted, because that is what makes a 100 GB backup
+    feasible and what keeps the in-app path at plain-folder-copy parity. Putting them in
+    the volume artifact encrypts and parity-codes public, re-downloadable bytes -- which
+    buys one artifact and costs the whole point of that ruling. Both are legitimate and
+    they are not the same trade, so the caller chooses and the default is the behaviour
+    that shipped: no categories, byte-identical output.
+
+    Returns each member WITH its placement entry rather than leaving the caller to derive
+    one from the member name: the name is built here from the pair, so splitting it back
+    apart later would be re-deriving a fact this function already holds, and the two could
+    drift the day the naming changes.
+
+    THE SOURCES ARE LIVE FILES, not staged copies -- unlike every other member. In
+    practice they are immutable (a completed download is never rewritten; model blobs are
+    content-addressed), so the stability :func:`_emit_member` requires holds. A file
+    DELETED mid-backup (an operator removing a model) fails the run loudly rather than
+    writing an artifact whose index names bytes it does not carry, which is the direction
+    to fail in: the run is repeatable, a quietly incomplete artifact is not.
+    """
+    from src.backup.folder_backup import _CATEGORIES, collect_items
+
+    cats = [c for c in categories if c in _CATEGORIES]
+    if not cats:
+        return []
+    items = collect_items(
+        include_wiki="wiki_dumps" in cats,
+        include_osm="osm_regions" in cats,
+        include_models="models" in cats,
+        include_hf="hf_models" in cats,
+    )
+    out: list[tuple[MemberFile, dict[str, Any]]] = []
+    for it in items:
+        name = f"{_BLOB_PREFIX}/{it.category}/{it.rel}"
+        out.append(
+            (
+                MemberFile(name, "blob", it.src),
+                {"name": name, "category": it.category, "rel": it.rel},
+            )
+        )
+    return out
 
 
 def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
@@ -837,12 +921,17 @@ def write_stream_backup(
     progress_cb: Callable[[dict[str, Any]], None] | None = None,
     corpus_source: CorpusSource | None = None,
     side_members: list[MemberFile] | None = None,
+    include_blobs: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """Build (or incrementally refresh / resume) an oo-volumes-2 set at ``dest_dir``.
 
     See the module docstring for the guarantees. ``corpus_source``/``side_members``
     are seams for tests and benches; production uses the live store + data dir.
-    Returns a measured summary (volumes reused/emitted, gate-held seconds, wall)."""
+    Returns a measured summary (volumes reused/emitted, gate-held seconds, wall).
+
+    ``include_blobs`` (S6.2, default none) names the large public categories to carry
+    INSIDE the artifact -- see :func:`collect_blob_members` for why it is opt-in and what
+    it costs. Passing none leaves the output byte-identical to before it existed."""
     if not passphrase:
         raise VolumeError("the volume backup is always encrypted: a passphrase is required")
     explicit_vsize = volume_size is not None  # an explicit size is honoured; else DB-9 adapts
@@ -890,6 +979,12 @@ def write_stream_backup(
             st.phase = "collecting"
             st.progress()
             side = side_members if side_members is not None else _collect_side_members(tmp_dir)
+            # Blobs ride the SAME emit path as any other member -- sliced, encrypted,
+            # parity-covered, checksum-verified on reassembly -- so nothing about the
+            # artifact's guarantees is special-cased for them. They are collected apart
+            # only so the manifest can carry the placement index the restore needs.
+            blob_pairs = collect_blob_members(include_blobs or ())
+            blobs = [mf for mf, _ in blob_pairs]
             src = (
                 corpus_source
                 if corpus_source is not None
@@ -897,6 +992,13 @@ def write_stream_backup(
             )
             corpus_bytes = src.path.stat().st_size
             side_sizes = [m.path.stat().st_size for m in side]
+            blob_sizes = [m.path.stat().st_size for m in blobs]
+            # Blob bytes enter BOTH the adaptive volume sizing and the disk preflight.
+            # They are the largest members by orders of magnitude, so omitting them from
+            # the sizing would blow the GF(2^8) N+M ceiling that sizing exists to respect,
+            # and omitting them from the preflight would promise a backup the drive cannot
+            # hold -- a refusal after 20 GB of writing is not a refusal.
+            side_sizes = [*side_sizes, *blob_sizes]
             side_bytes = sum(side_sizes)
             if not explicit_vsize:
                 # DB-9: size volumes so N+M stays under the GF(2^8) parity ceiling at any scale
@@ -935,6 +1037,35 @@ def write_stream_backup(
                 members_out.append(e)
 
             _ms("stage_end", "export:side_members")
+
+            # THE PLACEMENT INDEX. `members` carries the bytes (and is what reassembly
+            # reads); `file_members` says where each one goes back on a restore. Kept as
+            # a separate block rather than extra keys on `members` so the restore's
+            # placement step iterates exactly the members it is allowed to place -- a
+            # loop over `members` filtered by role would place whatever a hostile manifest
+            # chose to label "blob", including the corpus.
+            file_members: list[dict[str, Any]] = []
+            if blob_pairs:
+                _ms("stage_begin", "export:blob_members", n=len(blob_pairs))
+                st.phase = "large files"
+                for mf, where in blob_pairs:
+                    e = _emit_member(st, mf)
+                    members_out.append(e)
+                    file_members.append(
+                        {
+                            **where,
+                            "bytes": e["plaintext_bytes"],
+                            "sha256": e["plaintext_sha256"],
+                        }
+                    )
+                _ms("stage_end", "export:blob_members")
+                notes.append(
+                    f"{len(blob_pairs)} large public files ("
+                    + ", ".join(sorted({fm["category"] for fm in file_members}))
+                    + ") ride inside this artifact; they are encrypted and parity-covered "
+                    "like every other member, which is what makes it one portable thing "
+                    "and what it costs over copying them as-is"
+                )
             st.phase = "corpus (writes paused)"
             st.progress()
             # THE GATE WINDOW, split three ways. It is one `with src.freeze()`
@@ -994,6 +1125,7 @@ def write_stream_backup(
                 "wal_member": wal_member,
                 "plaintext_bytes": sum(int(m["plaintext_bytes"]) for m in members_out),
                 "members": members_out,
+                "file_members": file_members,
                 "volumes": st.volumes,
                 "parity": None,
                 "notes": notes,
@@ -1404,6 +1536,11 @@ def read_stream_backup(
             )
             stage_a_timings["finalize"] = round(time.monotonic() - t3, 3)
             staged.stage_a_timings = stage_a_timings
+            # The placement index travels with the staged artifact so the caller that
+            # commits the restore can put the large files back without re-reading (or
+            # re-trusting) the volume manifest. The bytes themselves are already in
+            # staging AND already checksum-verified by the reassembly loop above.
+            staged.file_members = list(m.get("file_members") or [])
             return staged
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)

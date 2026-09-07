@@ -334,6 +334,28 @@ class RestoreAborted(RuntimeError):
     than implying an undo that does not exist."""
 
 
+class RestoreRefused(RestoreAborted):
+    """The engine REFUSED to swap because your corpus was still being written to.
+
+    Nothing was applied -- exactly as for the operator's own Stop -- and that
+    shared property is why this subclasses :class:`RestoreAborted`: every handler
+    that already treats a RestoreAborted as "the live corpus is byte-identical,
+    the staging dir is disposable" stays correct without learning a new class.
+
+    What it does NOT share is the ACTOR. Both swap barriers (the quiescence wait
+    and the pre-swap WAL checkpoint) raised a bare RestoreAborted, whose one
+    handler labels the run ``cancelled`` and journals ``stopped-by-operator`` --
+    so a restore that refused because another job held the corpus was reported
+    as the operator's own cancellation. The operator then goes looking for a job
+    they never started, and (because the cancelled branch clears ``_error``) the
+    honest reason is dropped on the way to the UI. A refusal is the engine's, and
+    the message it carries is the actionable half.
+
+    Handled like :class:`MergeError` at every surface: a well-formed refusal the
+    user must read, never a crash and never a cancellation. Recorded in the run
+    journal as ``refused``."""
+
+
 @functools.lru_cache(maxsize=1)
 def _db_integrity_error_types() -> tuple[type, ...]:
     """The IntegrityError classes a UNIQUE/FK/NOT-NULL violation can surface as.
@@ -5155,7 +5177,7 @@ def run_restore(
             still_held = wait_for_quiescence(_SWAP_QUIESCE_S, should_stop=should_stop)
             _abort_point("swap")
             if still_held:
-                raise RestoreAborted(
+                raise RestoreRefused(
                     "another job is still writing to your corpus ("
                     + ", ".join(still_held)
                     + f") after waiting {_SWAP_QUIESCE_S:.0f}s — nothing was written to "
@@ -5171,14 +5193,14 @@ def run_restore(
             #     failing to finish the replace would lose exactly those. Checkpoint
             #     first and the abort below is free at every point: the database file
             #     is complete on its own and nothing has been written to it.
-            # RestoreAborted, deliberately, to match the quiesce barrier just above:
+            # RestoreRefused, deliberately, to match the quiesce barrier just above:
             # both refuse for the same reason (another writer is active) and an
             # operator who meets one should not be told a different story from the
-            # other. Its handler labels that "cancelled" while the operator cancelled
-            # nothing -- a real wrinkle, but one this barrier already had, so
-            # re-labelling belongs to a slice that changes both, not to a file-lock fix.
+            # other. Both said "cancelled" until the slice that changes them BOTH
+            # (2026-09-07) gave the refusal its own class -- the operator cancelled
+            # nothing, and the honest reason is the actionable half of the message.
             if not _checkpoint_before_swap():
-                raise RestoreAborted(
+                raise RestoreRefused(
                     "your corpus is still being written to, so its write-ahead log "
                     f"could not be flushed within {_SWAP_CHECKPOINT_S:.0f}s — nothing "
                     "was written to your corpus. Let the running job finish, and "

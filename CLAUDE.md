@@ -6385,7 +6385,207 @@ this history it reports the merge commit rather than the authoring one, and answ
     because a QID ABSENT from a batch response is re-fetched ALONE before classification
     — a truncated reply and a deleted item are opposite facts, and reading the first as
     the second manufactures upstream drift out of a short answer.
+  - **A `git worktree` BASELINE RUN SILENTLY TESTS *HEAD* UNDER AN EDITABLE INSTALL — so the
+    strongest possible excuse for a regression ("the base is red too") is available for free
+    and is false (2026-09-07, the t6 torture failure):** the discipline is right — before
+    calling a red test yours, run it on a clean base and diff. `git worktree add --detach
+    $SP/base-wt <sha>` then `pytest` inside it duly reproduced the failure at the merge-base,
+    which would have filed a real regression as pre-existing. It reproduced because
+    `pip install -e .` leaves a PATH HOOK that resolves `src` back to the ORIGINAL repo, and
+    this suite drives SUBPROCESSES (`tests/torture_helper.py`) that therefore imported the
+    mutated tree no matter which directory pytest ran in. With `PYTHONPATH=$SP/base-wt` the
+    base is GREEN and the failure is mine. TWO RULES. (a) Any baseline run in a worktree must
+    set `PYTHONPATH` to that worktree and PRINT which tree it resolved — the recorded "a
+    baseline diff must prove the head side ran the changed tree" lesson, pointing the other
+    way: here it is the BASE side that must be proven. (b) The tell is a base that reproduces
+    a failure whose mechanism you can trace to a line you just wrote; when the story and the
+    baseline disagree, suspect the baseline's imports before believing it.
+  - **A LOCAL THAT SHADOWS A FIXTURE VALUE THE TEST STILL NEEDS IS A `str(dict)` HANDED TO
+    SOMETHING PATH-SHAPED — and a module-scoped fixture then reddens a LATER test for a
+    reason that has nothing to do with it (2026-09-07, same failure):** `art` held the
+    artifact PATH; an amendment reused it for the articles plan dict four lines above
+    `_run(a, "merge", str(art), ...)`, so the helper was handed
+    `"{'new': 2, 'duplicate': 1, 'conflict': 0, 'samples': [...]}"` as a filename. The
+    recorded shadowing lesson is about a long `src/` function and mypy catching it; mypy does
+    not check tests, and in a 20-line test the two uses ARE on screen together and it still
+    happened. THE TELL IS THE ERROR TEXT: a `FileNotFoundError` whose path is a stringified
+    dict names the shadowing directly — read the failure's own words before opening the
+    module it seems to accuse. AND THE CASCADE IS THE EXPENSIVE HALF: the `corpora` fixture is
+    `scope="module"`, so t6 dying before its `--commit` left a later idempotency test looking
+    at an unmerged corpus and failing on its own terms. Two red tests, one cause; before
+    diagnosing the second failure in a module-scoped file, check whether an earlier test
+    aborted mid-setup.
+  - **A ROOT-GUARDED SKIP CAN MAKE A REAL ASSERTION UNREACHABLE, AND ONLY A SURVIVING MUTANT
+    SAYS SO (2026-09-07, the 0600 env file):** `test_the_env_file_is_owner_only` skipped under
+    `os.geteuid() == 0` by analogy with a sibling that legitimately does — and the two are
+    different claims. Root ignores mode bits when it WRITES (so "an unwritable folder is
+    refused" really is untestable as root), while the mode a file CARRIES is set and read back
+    exactly as for any user. In a root sandbox the guard therefore never ran, which is how a
+    mutation removing the `chmod` came back green. GENERAL FORM: a skip guard is a claim about
+    what the environment makes unobservable; check it against the specific assertion rather
+    than the neighbouring test's. COROLLARY, and a case of the recorded "a surviving mutant may
+    be a finding about the MUTANT or the CODE": once the skip was gone the mutation STILL
+    survived, and measuring said why — `tempfile.mkstemp` already creates the file 0600, so a
+    defensive `chmod` after it cannot change an outcome and cannot be killed by any fixture.
+    Kept anyway, with the measurement written into the comment, because it states OUR
+    requirement rather than inheriting the stdlib's; the comment is what stops the next matrix
+    re-finding it and someone writing a vacuous test for it.
+  - **`t\("..."\)` ALSO MATCHES THE TAIL OF `createElement("button")` (2026-09-07):** a guard
+    harvesting a page's translatable literals to check them against all twelve locales failed
+    on `button`, which is not chrome and is not translatable. Any regex for a one-or-two-letter
+    function name needs an identifier boundary (`(?<![A-Za-z0-9_$.])t\(`), because short names
+    are substrings of longer ones far more often than they look. Same family as the recorded
+    non-unique-needle trap, at the level of the token rather than the string.
+  - **AN AUDIT THAT COUNTS A PLACEHOLDER AS CHROME IS RIGHT — the fix is a FRAME, never an
+    exemption (2026-09-07):** the untranslatable ratchet flagged `placeholder="/media/drive"`,
+    an example path. Translating a path is meaningless, and adding a skip rule for it would
+    have blinded the ratchet a little for everyone. Making it `For example: /media/drive` keys
+    the SENTENCE while the path stays data inside it — the frame-translates-data-does-not
+    discipline — and a locale that wants a Windows example can now supply one. The Arabic value
+    wraps the path in `U+2068`/`U+2069`, because a punctuation-joined LTR run inside RTL text
+    renders in visual order otherwise.
+  - **A PUBLIC FUNCTION'S GUARDS CAN LIVE ENTIRELY IN ITS CALLER, AND THE DOCSTRING WILL SAY
+    OTHERWISE (2026-09-07, the artifact file-member placement — found by reading my own diff
+    adversarially, not by a failing test):** `place_artifact_file_members` documented the path
+    guards it relies on, and every one of them was enforced upstream in
+    `_require_safe_manifest_names` — correct for the restore path that reaches it, and false
+    for the function itself, which is public and joins `name` onto the staging dir to FIND the
+    bytes. An unguarded `name` is therefore an arbitrary READ copied into the live data
+    directory under an innocuous destination name, reachable by any second caller and by any
+    future one. RULE: a guard that has to be reached from somewhere else is not a guard on this
+    function — re-check at the boundary you are documenting, and say in the docstring that it is
+    a re-check rather than implying it is the only one. COROLLARY, and the reason it is here:
+    the same pass reported `unknown category` for an entry whose category was fine and whose
+    PATH was hostile — the wrong-actor mislabelling this very session had just fixed in the
+    pre-swap barriers, written again three commits later, one subsystem over. Every refusal
+    carries its own reason, and "a lesson recorded against one assertion does not propagate
+    itself to the one beside it" applies to lessons you wrote yourself an hour ago.
+  - **A GUARD ADDED EARLIER IN A CHAIN MAKES THE LATER GUARDS UNREACHABLE BY THEIR OWN TESTS —
+    the test keeps passing and stops meaning anything (2026-09-07, same slice):** the
+    containment belt (`is_relative_to`, never a string prefix) was covered by a fixture whose
+    `rel` was `../live-old/x`. Adding the `rel` traversal guard in front of it made that fixture
+    refuse one step EARLIER, so the belt was never executed and its test proved only that
+    something refused. The only shape that still reaches a containment check once traversal is
+    refused upstream is a SYMLINKED root — a `rel` with no `..` in it at all, resolving out of
+    its category because the category directory is a link. GENERAL FORM: after inserting a
+    guard, re-ask which fixtures still reach the guards BEHIND it; a defence-in-depth layer that
+    nothing can reach is decoration, and the mutation matrix is what says so (removing the belt
+    reddened exactly one test — the new one).
+  - **`object()` IS NOT A WEAK TEST DOUBLE, IT IS ONE THAT CANNOT DESCRIBE ANY REAL VALUE — and
+    the pressure it creates lands on production code (2026-09-07, same slice):** six tests built
+    their staged-artifact double as a bare `object()`, so adding one field to the real
+    `StagedArtifact` raised `AttributeError` in six places at once. The one-line fix is a
+    `getattr(staged, "file_members", [])` in the production path — which reads as defensive and
+    is a permanent hole, because every real object HAS the field and the only caller that could
+    lack it is a fixture. Make the double real instead (one helper building the actual
+    dataclass); the tests then also stop being able to describe an artifact the engine could
+    never produce. Same family as the recorded resolver-stub lesson, one step further down: there
+    the double omitted a field, here it could not have had one. **AND FIXING THE SIX I COULD SEE
+    WAS NOT FIXING IT — I wrote this lesson and the full suite then found three more an hour
+    later.** They live in `test_import_phase_progress.py`, a file about ETA counters that no
+    search for "backup" reaches, and a tenth in a file I had written MYSELF that same day stayed
+    green only because its own double raises before the job reads that far — so it would have
+    bitten the NEXT field instead of this one. The enumeration to run is not "which backup tests
+    are there" but a grep for the PATCH TARGET (`read_volume_backup`) across the whole test tree,
+    and the durable close is a comment-stripped guard with an anti-vacuity floor (assert it finds
+    the doubles at all), because the next such file will be about something else again.
+  - **TWO SESSIONS CAN FIX ONE DEFECT TWO WAYS, AND GIT MERGES BOTH WITHOUT A CONFLICT
+    MARKER ANYWHERE NEAR THE DAMAGE — the assignment operator is the only thing that
+    hid it (2026-09-07, merging #1020 with main's #1018/#1019):** this branch and main
+    independently found the same defect (the merge's `samples` were read AFTER their own
+    INSERT, with the predicate that INSERT had just falsified, so the list was empty on
+    every restore ever taken) and fixed it differently — this side moved the read BEFORE
+    the INSERT, main's added `_new_row_samples`, reading back from `merged_rows`. Git
+    reported three tiny conflicts, each with an EMPTY `HEAD` side, because the two fixes
+    touch DIFFERENT LINES: my loops merged in as ordinary context and main's assignments
+    merged in as additions, so the resolved file ran both. It was harmless ONLY because
+    main's line is `r.samples = ...`; had it been `.extend(...)` — an equally natural way
+    to write it — every sample would have been listed twice, in a report whose whole
+    purpose is to say what an import added. GENERAL FORM: when a conflict hunk has an
+    empty side, that is not "nothing to decide" — it means the other side ADDED something
+    where you CHANGED something nearby, so read what your side already does in that
+    function before taking theirs; a semantic double-fix leaves no marker at the place it
+    hurts. THE TIE-BREAK, once both were on the table, was not seniority but which claim
+    each could support: a restated predicate is a second copy of the INSERT (the
+    `articles` INSERT additionally joins `temp.map_sources`, so a restatement could name
+    a row the INSERT then skipped), while a provenance read reports what LANDED and
+    cannot drift from the statement. Both sides' test files were kept — their fixtures
+    differ (an empty local corpus and a re-merge, against shared-row discrimination) and
+    both pass against the one surviving implementation — but the LOSING side's docstring
+    had to be corrected in the same commit, because it described the mechanism that lost
+    and would otherwise have read as a live claim about how the code works.
 ## Open queue (when maintainer says proceed)
+- **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
+  chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
+  = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
+  sixth is REPORTED AND STOPPED, on the prompt's own instruction.
+  **⛔ S2 (C1) — THE LEGACY SINGLE-FILE RESTORE CANNOT BE REMOVED, and the proof came out the
+  opposite of clean.** The slice was conditioned on proving the unified Import path does not
+  reach `restore_legacy_path`. It reaches it DELIBERATELY: `import_scan` discovers a legacy
+  archive nested anywhere in a scanned folder (`legacy_backup`), the dialog offers it as a
+  first-class checkbox (`ux-i-legacy`), the queue carries `kind: "legacy"` in `KINDS`, and
+  `ImportQueue._run_legacy` calls the SAME extracted helper the `/legacy/restore` endpoint
+  calls — one code path, on purpose, so the queue cannot drift from the single-archive route.
+  `tests/test_unified_backup_ui.py` already pins that whole chain under a docstring saying
+  restoring an existing single-file backup "stays reachable (data-safety)", so a removal would
+  redden a guard that exists for exactly this. NOTHING WAS REMOVED and no new guard was added
+  (the existing one is stronger than one written now would be). What a future removal actually
+  needs, since "the panel is gone" is not the same as "the path is unreachable": a decision
+  about what happens to an operator whose only backup is a pre-volumes archive — the unified
+  Import is currently the thing that saves them. `read_artifact`'s forever-acceptance of old
+  formats was not touched.
+  **S1 (DAT-01) — BUILT, OPT-IN, and the reason it is opt-in is a TRADE rather than caution.**
+  The wiki dumps, OSM regions and model blobs can now ride INSIDE the signed, parity-protected
+  volume artifact (`include_blobs`, a `file_members` block in the manifest, placed additively on
+  restore). The default is byte-identical, because the 2026-06-21 ruling that public
+  re-downloadable blobs are copied AS-IS is what makes a 100 GB folder backup feasible and is
+  not superseded here: on a drive those files are cheap and re-fetchable; inside the artifact
+  they are encrypted, checksummed and parity-repairable like the corpus, at the cost of paying
+  for them on every refresh. So the operator chooses per backup and the UI states which trade
+  they picked. The enumerator is reused, not reinvented (`folder_backup.collect_items` —
+  done-only, checksum-deduped), and the placement is its counterpart: additive, atomic
+  temp-then-rename, never overwriting a local file. THE GUARDS ARE THE SLICE, per the 2026-07-10
+  lesson — `name`, `rel` AND `category` all become filesystem paths, all three go through the one
+  manifest guard on BOTH the verify and the restore path, and the public placement function
+  re-checks them itself. The 9-case hostile manifest is driven against both paths; it needs no
+  re-signing, because the name guard runs BEFORE the signature check. Placement happens after
+  `run_restore` commits, inside a try/except, so a drive that went away costs the file copy and
+  never the merge that already succeeded.
+  **The folder backup's own residual cost, stated rather than implied (the S1 prerequisite).**
+  Checksums are recorded during the copy, so a BACKUP costs one SHA-256 over bytes it was
+  already streaming — no extra read. A VERIFY now reads every byte instead of `stat`ing all but
+  the model blobs: on a large folder backup that is a full pass over the drive rather than a
+  directory walk. Bounded in RAM and cancellable, and it is the price of the check being real.
+  Two revisions of one Hugging Face repo still cost one copy per revision (the 2026-08-11 note)
+  — unchanged here, and unchanged by S1: the artifact stores them the same way.
+  **C6 — PARKED, with the reason in the registry** (`configs/external_artifacts.yml`, the
+  `duckdb-httpfs-extension` entry now carries a `parked:` field). It has read as an open to-do
+  since 2026-06-19 and is not one: `extensions.duckdb.org` is not in the sandbox egress
+  allowlist, and a sha256 for a binary nobody fetched cannot be written down without
+  fabricating it. Blank is the honest state until an operator runs the networked per-platform
+  build; what it costs (the persisted encrypted columnar store, D1/D2/D3) is written down
+  beside it.
+  **C7 — BUILT, and two design choices are recorded here because they are the ones a future
+  session would otherwise re-litigate.** (a) The choice is offered ONLY at `fresh`, and that is
+  a data-safety refusal rather than a convenience one: `data_dir()` re-reads the environment
+  per call while `DATABASE_URL`/`engine`/`SessionLocal` freeze at import, so a switch after a
+  store exists moves the keys, the custody log and the model store while the corpus stays
+  behind — and the next start follows the environment to the new, empty folder and reports
+  `fresh`, with the corpus orphaned. Moving an existing corpus stays the documented
+  app-stopped folder copy, deliberately not a button. (b) A chosen folder ENDS the first-launch
+  flow with a restart notice instead of continuing to the passphrase, because `oo.env` is read
+  by the launcher: continuing in the same process would create the corpus in the OLD folder
+  while the recorded choice pointed at the new one. The alternative — restarting the server
+  from inside itself — was not built: nothing restarts it, so a "restart now" button would only
+  stop it, which is what the notice offers honestly instead.
+  **REMAINING / OPERATOR:** the S5 check's RUN is Row A's (read `qualification-integrity.json`
+  out of an all-diagnostics bundle taken after the committed import at scale — the 0.4 gate's
+  Row E now says so); every frontend slice here is BROWSER-UNVERIFIED per fork-3/Q6a (the
+  first-launch data-location step, the folder-restore refusal lines and S1's carry-them-inside
+  tickbox all want a click-through); and the S2 removal stays blocked on the ruling above. S1's
+  own remainder is honest and small: nothing yet REPORTS the artifact's file members before a
+  restore commits (the plan/preview surfaces the corpus tables, not the carried files), so an
+  operator learns what rode inside from the placement result rather than beforehand.
 - **KEYWORD-ENGINE QUALITY — PROMPT 05 EXECUTION (2026-09-07; branch
   `claude/oos-backfill-cursor`, one draft PR onto `main`; three code slices shipped, the rest
   recorded with the reason and, where it is a decision, as a QUESTION rather than a ruling):**

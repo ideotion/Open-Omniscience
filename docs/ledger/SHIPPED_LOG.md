@@ -6071,7 +6071,6 @@ module that imports but lacks `generate_keypair` still reports itself available 
 instead of degrading. That is a `src/custody/signing.py` change on a tamper-evidence path and
 belongs to its own reviewed slice.
 
-
 ## 2026-09-07 — prompt 04: source qualification, discovery and the restore report
 
 **A REPORT THAT RE-DERIVES WHAT A WRITE JUST DID DESCRIBES THE WORLD AFTER THE WRITE — and when the
@@ -6265,3 +6264,184 @@ second would manufacture upstream drift out of a short answer, and "this ring's 
 wrong" is the single most valuable thing the refresh can report. The same discipline gives the
 pass four buckets that partition its input exactly — `unchanged`, additions, `unresolved`,
 `not_checked` — so a run whose network flaked can never report a clean bill of health.
+
+---
+
+## 2026-09-07 — prompt 07: backup completeness, restore honesty, the data-location chooser
+
+**Branch** `claude/backup-restore-safety-04dict`. Five slices shipped; S2 reported and stopped.
+
+### A refusal that names its own actor
+
+Both pre-swap barriers — the quiescence wait and the WAL checkpoint — raised a bare
+`RestoreAborted` when another job still held the corpus. Its one handler labels the run
+`cancelled`, journals `stopped-by-operator` and clears `_error` in the same branch. So a refusal
+nobody asked for was reported as the operator's own cancellation, and because the SPA renders a
+cancelled state as `s.error || view.text || state`, the single actionable sentence — *another job
+is still writing to your corpus*, naming the holder — was dropped on the way to the UI. `merge.py`
+carried the finding in a source comment and deferred it: *"re-labelling belongs to a slice that
+changes both, not to a file-lock fix."*
+
+`RestoreRefused` **subclasses** `RestoreAborted` deliberately. The property every existing handler
+relies on — nothing applied, the live corpus byte-identical, the staging dir disposable — is
+exactly as true for a refusal as for a cancellation, so no handler has to learn a new class to stay
+correct. What differs is the ACTOR, so it is surfaced like `MergeError` (a well-formed refusal the
+operator must read) and journalled `refused`.
+
+The same slice fixes a field no import ever carried. All three sample collectors — sources,
+articles, wiki pages — ran their sample query AFTER their own INSERT, and each query selects the
+incoming rows that do NOT yet exist locally, so by the time it ran, every one of them did. Measured
+on a real merge: 2 sources, 3 articles and 2 wiki pages added, `samples` absent from all three. Read
+BEFORE the INSERT the set is exactly the set that lands, because each identity column is UNIQUE in
+the incoming corpus's own schema. The report renders those names now — a value with no reader would
+not have been a fix.
+
+The mutation matrix's first run found a survivor and that is the useful part: the handler tests
+inject the exception themselves, so reverting a raise site left them green. An AST guard scoped to
+the raises the swap stage's own barriers make is what closes it.
+
+### The folder backup learns integrity, and says what it refused
+
+The large-data ("folder") backup carries the public, re-downloadable blobs — wiki dumps, OSM
+extracts, model weights — AS-IS and unencrypted, which is the 2026-06-21 ruling and is what
+makes 100 GB feasible. What it did not carry was any integrity record for them: a bit-rotted
+dump restored silently over a good one, and the only content check anywhere was the Ollama
+blobs, which are content-ADDRESSED and so check themselves.
+
+Write now hashes each file **in the same stream that copies it**, so a backup costs one
+SHA-256 over bytes it was already moving and no extra read; the digest is recorded per member
+and the manifest is Ed25519-signed. Verify checks the recorded digests and reports
+`signature_state` (`verified` / `bad-signature` / `unsigned`). Restore hashes while copying and
+**unlinks a mismatch** rather than letting it land beside good data.
+
+Three honesty properties are load-bearing, and each has a test that fails without it:
+
+* **An older backup is old, not tampered with.** One written before this existed carries no
+  digests and no signature; it must verify as SOUND with the gap stated (`size_only`,
+  `signature_state: unsigned`), never as broken. That is the negative twin of the amendment to
+  `test_verify_ok_on_a_fresh_backup`, whose `size_only == 2` legitimately became `0` — amended
+  deliberately, with the reason in the test, because the property it names (a fresh backup
+  verifies clean) is now checked on a stronger basis.
+* **"Refused" and "not verifiable" are different facts.** `corrupt_refused` (bytes that did not
+  match a recorded checksum, so they were NOT restored) and `restored_unverified` (an older
+  backup recorded no checksum for them) are separate counts, rendered as two lines with the
+  refusal first. Collapsing them would tell an operator neither what they lost nor what they
+  cannot check.
+* **The operator is told.** A refusal that only reaches a log is not a refusal anyone acts on,
+  so both facts render in the two frontend consumers of a folder restore and both ride the run
+  journal. The node suite drives the real `_fbRefusalLines` extracted from the shipped module.
+
+### The large public files can ride inside the artifact
+
+The top parked data-safety item since 2026-07-12, and the reason both the wiki-dump and the
+models-in-backup rulings sat unbuilt: one portable artifact should carry the wiki dumps, the OSM
+regions and the model blobs, and only the separate folder backup did.
+
+It ships **opt-in**, and that is a trade rather than caution. The 2026-06-21 ruling — public
+re-downloadable blobs are copied AS-IS, never whole-file encrypted — is what makes a 100 GB folder
+backup feasible, and it is not superseded. On a drive those files are cheap and re-fetchable; inside
+the artifact they are encrypted, checksummed and parity-repairable exactly like the corpus, at the
+cost of paying for them again on every refresh. Both are right for different operators, so the
+operator chooses per backup and the UI says which trade they picked. With nothing ticked the default
+path is byte-identical.
+
+Nothing about the enumeration is new. `folder_backup.collect_items` already walked the download
+managers' own `done` state (a partial download can never ride into a backup) and deduped model blobs
+by content-addressed name; `write_stream_backup` already sliced any `MemberFile` into volumes and
+`read_stream_backup` already reassembled every member and refused the restore unless the bytes
+matched the `plaintext_sha256` the SIGNED manifest recorded. What is new is a `file_members` block
+saying where each one goes back, and its guards.
+
+**The guards are the slice.** The 2026-07-10 lesson names exactly how this class fails: a manifest
+field that becomes a filesystem path, not caught because it was not called `name`. Here there are
+three — `name` (joined onto the staging dir, an arbitrary READ), `rel` (joined onto a live directory,
+an arbitrary WRITE) and `category` (which live directory at all) — so all three go through the one
+manifest guard, on BOTH the verify and the restore path, and the composed destination is then checked
+for containment with `is_relative_to` rather than a string prefix, because a sibling directory shares
+one. The hostile-manifest fixture runs nine shapes against both paths and needs no re-signing: the
+name guard runs BEFORE the signature check, which is the point of putting it there.
+
+Two things were found by reading the diff adversarially rather than by a failing test. The public
+placement function documented guards that lived entirely in its caller — correct for the restore path
+that reaches it, false for the function itself, so it re-checks them now. And a refusal for a hostile
+path reported `unknown category`: the wrong-actor mislabelling this very session had just fixed in
+the pre-swap barriers, written again three commits later.
+
+Placement runs after `run_restore` commits, inside a try/except. A drive that went away costs the
+file copy and never the merge that already succeeded — and the placement is additive in the same way
+the folder restore is: an existing local file is kept and counted in `skipped`, never replaced, and
+the copy is atomic temp-then-rename so an interrupted one leaves no half-written dump for the app to
+read as its own. It does not re-hash, and that is a statement about where the check happened rather
+than a gap: the bytes were verified against the signed index at reassembly.
+
+### Row A's closing clause becomes a number
+
+`docs/product/RELEASE_0.4_GATE.md` Row A closes on a committed import at scale *and a
+spot-check confirming a previously-disqualified source is still disqualified*, because the
+2026-07-24 defect was invisible: the merge's column allowlist dropped the qualification stamp
+and a known-bad source arrived carrying `server_default='unqualified'` — a plausible legal
+value, not a NULL and not an error. Row E asked for tooling, on the grounds that a by-hand
+spot-check over tens of thousands of sources is the shape of check reported as done without
+being done.
+
+The design point that makes it cheap: **the attempt log is the "before".**
+`source_qualification_attempts` is append-only, the merge carries it with ids remapped, and
+`evaluate_and_stamp` writes the attempt row and `Source.status` in one transaction — so for any
+judged source, `status` must equal the verdict of its newest judging attempt, and a violation
+is exactly the inversion. No before/after snapshot is needed, which means an operator who has
+already run the import can still answer the clause months later.
+
+`src/catalog/qualification_integrity.py` publishes both directions apart (`laundered` — judged
+disqualified, no longer disqualified, the direction Row A names; `demoted` — the same stamp
+loss starving a source out of collection), each NAMED up to a cap with the exact total beside
+it, the examined disqualified sources named, and `checked.with_judging_attempt` as the
+denominator: a corpus with no judgements reports `not-measurable-here`, because "nothing wrong"
+and "nothing to look at" are opposite findings. What it cannot see is stated in the payload — a
+regression that dropped the stamp columns AND the attempt rows leaves no history to compare
+against, and the denominator is what shows it. Candidates come from a grouped `MAX`, then each
+is re-read exactly, because a same-timestamp tie cannot be broken by the grouped query and the
+candidate set is small by construction on a healthy corpus.
+
+### The data location, chosen once, before anything is written
+
+Maintainer ask 2026-07-14, reusing the A11 seam rather than inventing one: `install.sh` already
+writes `export OO_DATA_DIR=` into a 0600 `oo.env` that `scripts/launch.sh` sources. What was
+missing was a way to make that choice from the app.
+
+The load-bearing constraint is why it is offered only at `fresh` and why a chosen folder ENDS
+the flow. `src.paths.data_dir()` re-reads the environment on every call while `DATABASE_URL`,
+`engine` and `SessionLocal` freeze at module import (and three modules bind `engine` into their
+own scope at import), so there is no rebind that reaches every holder. A switch made after a
+store exists would move the keys, the custody log, annotations and the model store to the new
+folder while the corpus stayed in the old one — and the next start would follow the environment
+to the new, empty folder and report `fresh`, with the operator's corpus orphaned beside keys
+that no longer sit next to it. For the same reason a recorded folder cannot continue to the
+passphrase in the same process: `oo.env` is read by the launcher, so the corpus would be created
+in the OLD folder while the recorded choice pointed elsewhere. The flow therefore ends with a
+notice saying nothing has been created and offering to stop the app.
+
+Warnings are told, never blocking — an existing corpus in the folder, a RAM-backed filesystem,
+low free space with the number — and only a folder the app cannot write in is refused. Moving
+an existing corpus stays the plain app-stopped folder copy, now documented in the manual.
+
+### DAT-09 and C6: two boundaries decided rather than left "probably"
+
+`run_logs/` is excluded from the encrypted artifact and now NAMED as excluded, for four reasons
+of which the last decides it: its size tracks how much there was to diagnose (11 MB to 1.6 GB
+in one 24 h merge); it is machine-local forensics rather than corpus data; the diagnostics
+bundle already carries the bounded reads; and `promote_incomplete_runs` reads the directory AT
+BOOT, so a restored foreign journal would make another machine's crashed run read as this one's
+— and the absence of a terminal marker IS the evidence.
+
+The DuckDB `httpfs` binaries are PARKED with the blocker and the cost written into the registry.
+The pins stay blank because `extensions.duckdb.org` is not in the sandbox egress allowlist and a
+sha256 for a binary nobody fetched cannot be recorded without fabricating it — the one thing the
+entry exists to prevent.
+
+### S2: the proof did not come out clean
+
+The legacy single-file restore is not removable. The unified Import discovers a legacy archive
+nested in a scanned folder, offers it as a first-class item, and `ImportQueue._run_legacy` calls
+the same extracted helper the `/legacy/restore` endpoint calls — one code path, deliberately.
+`tests/test_unified_backup_ui.py` already pins that chain as a data-safety property. Nothing was
+removed; the finding is the deliverable.

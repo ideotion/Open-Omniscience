@@ -23,6 +23,7 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
 
+import re
 import threading
 import time
 
@@ -188,8 +189,24 @@ def test_the_swap_waits_and_refuses_rather_than_replacing_under_a_writer() -> No
     assert src.index(CALL) < src.index(SWAP)
     # And it refuses through the PRE-SWAP abort, where the live corpus is byte-identical
     # -- not through a raise that lands past the commit point, where there is no undo.
+    #
+    # Re-anchored 2026-09-07 (deliberately, per the guard-that-anticipates-its-own-
+    # supersession rule) when both barriers moved to `RestoreRefused`: the property is
+    # the FAMILY, not one class name. A substring match on "RestoreAborted" could not
+    # see that RestoreRefused is one of them -- and, more to the point, it would have
+    # been satisfied by a comment mentioning the class. Resolving the raised name
+    # against the module and checking `issubclass` is strictly stronger: it fails for a
+    # raise of anything outside the family, and for no raise at all.
     between = src[src.index(CALL) : src.index(SWAP)]
-    assert "RestoreAborted" in between, "a timeout must abort, never fall through to the swap"
+    raised = re.findall(r"raise\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", between)
+    assert raised, "a timeout must abort, never fall through to the swap"
+    for name in raised:
+        cls = getattr(merge, name, None)
+        assert isinstance(cls, type) and issubclass(cls, merge.RestoreAborted), (
+            f"the swap barrier raises {name!r}, which is not a pre-swap abort: a refusal "
+            "here must leave the live corpus byte-identical, which is exactly what every "
+            "RestoreAborted handler already relies on"
+        )
 
 
 def test_every_heavy_corpus_writer_takes_a_lease() -> None:

@@ -503,6 +503,19 @@ artifacts:
       - "each bundled binaries[*].version minor MUST equal the installed duckdb minor (loader + test-enforced)"
       - "an EMPTY pin keeps columnar.secure_crypto_available() False (test-enforced)"
       - "the sha256 pins are NEVER computed/promoted in CI — only the operator's audited build fills them"
+    # PARKED, deliberately, 2026-09-07 (prompt 07 C6). This has read as an open to-do
+    # since 2026-06-19; it is not one, and leaving it looking like one costs a future
+    # session the same investigation. The blocker is not effort and not a decision:
+    # `extensions.duckdb.org` is not in the sandbox egress allowlist, and the sha256 of a
+    # binary nobody fetched cannot be written down without fabricating it -- which is the
+    # one thing this entry exists to prevent. So it stays blank BY DESIGN until an
+    # operator runs the networked per-platform build in EXTERNAL_DEPENDENCIES.md.
+    # What that unblocks, so the cost of leaving it parked is stated rather than implied:
+    # the PERSISTED encrypted columnar store (D1/D2/D3). Until then the engine runs
+    # IN-MEMORY, which is correct and honest -- it costs a per-process rebuild and
+    # survives no restart, and buys nothing over the maintained counters for the
+    # corpus-wide aggregates. Nothing is broken while this is empty.
+    parked: "operator-gated: needs a networked per-platform build; a fabricated sha256 is the alternative, so blank is the honest state"
     last_verified: "2026-07-12"
 
   - id: vllm-package-version
