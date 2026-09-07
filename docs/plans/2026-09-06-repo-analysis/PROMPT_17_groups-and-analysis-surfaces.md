@@ -1,8 +1,28 @@
 # Prompt 17 — Super-groups, the concept map, and the analysis surfaces
 
+> **EXECUTED 2026-09-07 — read this before building anything below.** The staleness guard
+> (`_WORKING_MODE.md` §2) found **S1–S7 already shipped**, almost all of it in PR #721 on
+> 2026-07-19; the Open-queue entry this prompt was written from still said *"execution delegated,
+> PENDING"*, which is what made the whole prompt read as unbuilt. Nothing here was rebuilt.
+> Per-slice evidence, with the tree anchor that proves it, is in the CLOSING NOTE appended to the
+> **SUPER-GROUPS** entry in [`docs/ledger/OPEN_QUEUE.md`](../../ledger/OPEN_QUEUE.md).
+>
+> Two items in §S7 were not gaps at all and are now corrected in `INVENTORY.md`: **KW-17** is
+> shipped (`/api/insights/keyword-stats` + the reader/SPA hovers), and **AI-19** was *deliberately
+> removed* by maintainer ruling 22 as an absorption into the reader — building it would undo a
+> ruling. The Trends third window and its per-window top-5 charts shipped 2026-06-16; only the
+> wider Trends redesign (retiring the Insights search bar, B11a) is still open, and it stays
+> browser-gated.
+>
+> **The one genuine defect the sweep found has been fixed in this PR:** `ring_country_split` capped
+> its country list at 40 while the shipped catalog carries 189 distinct source countries, so §D's
+> clickable *"not mapped"* bucket could be truncated out of the payload and the count announced
+> beside the map was the cap. Reproduced live, fixed, mutation-checked.
+>
 > **Scope:** `src/analytics/supergroups.py` and the group layer, the analysis window, the concept map.
 > **Gated on:** nothing blocking; the naming and circle-grammar rulings are already given.
-> **Sequencing:** its S1 is a prerequisite for prompt 16 (the Observatory consumes it).
+> **Sequencing:** its S1 is a prerequisite for prompt 16 (the Observatory consumes it) — S1 is
+> shipped (`src/analytics/supergroup_stats.py`), so prompt 16 is **unblocked**.
 
 ## 0. Working mode
 

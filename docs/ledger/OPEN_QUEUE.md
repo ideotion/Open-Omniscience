@@ -6732,7 +6732,10 @@
   statistics ("is a theme rising?"), a Leads family for super-groups, keyword→super-group
   navigation; brief of record =
   [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md`](../archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md);
-  execution delegated, PENDING — SEQUENCED AFTER the Leads-calibration + Families-entities
+  execution delegated — **EXECUTED AND SHIPPED 2026-07-19 in PR #721** (S1-S5 end to end; the
+  "PENDING" this entry carried until 2026-09-07 was stale for seven weeks and is what sent a later
+  prompt back to rebuild it — re-verified against `main` @ `58a4d6d`, see the closing note below;
+  it was SEQUENCED AFTER the Leads-calibration + Families-entities
   executions, whose primitives it consumes):** the ~77-group scaffold is healthy but the layer has
   NO statistics, and the export exposed the totals as broken: (1) GENERIC CONTAMINATION — "data"
   = 36,507 of the AI group's 43,067 mentions (85%); creation/sentence/marketplace/identity same
@@ -6774,6 +6777,27 @@
   largest bucket); every ⦾ chip app-wide deep-links to the map; the located-share honesty line
   states that map coverage grows as source countries are filled (the ~49% unlocated share = the
   standing Wikidata source-country generator lever, operator-side).
+  **CLOSING NOTE — VERIFIED-PRESENT 2026-09-07 against `main` @ `58a4d6d` (the staleness sweep the
+  2026-09-06 analysis prompts mandate; nothing was rebuilt):** every slice of BOTH briefs is in the
+  tree and its tests are green (76 passed across `test_supergroup_stats/_rising/_index`,
+  `test_supergroups`, `test_group_stats`, `test_ring_country_split`, `test_ui_ring_map`,
+  `test_supergroup_seed`). S1 `src/analytics/supergroup_stats.py` (dedup-first member resolution +
+  mandatory dominance and cross-group-overlap disclosures) · S2 `supergroup_rising.py` (two-proportion
+  z-test on SHARE, Benjamini-Hochberg across the family, count floor, `driven_by` stated, the shared
+  DF-ubiquity gate refusing a generic-driven rise outright) · S3 `supergroup_index.py` + the
+  `.lvl-super` chip in the analysis Keywords subtab and a text note on omnibar rows (text there is
+  DELIBERATE and recorded at the call site: a command-palette row carries exactly one action) ·
+  S4 the two-tier circled browse, clickable country cells and clickable "not mapped" bucket, the
+  app-wide 🗺 deep-link, and the located-share honesty line (`index.html:1258`, keyed ×12) ·
+  S5 the four config fixes + the lint (`test_supergroup_seed.py::test_scaffold_config_lint`) ·
+  S6 both curation panels in Settings, Insights read-only, and the "only rows with a real decision"
+  filter with its honest empty state. **The one real gap the sweep found is now fixed** (see the
+  `shipped.csv` row of 2026-09-07): §D's country list was capped at 40 by `ring_country_split`, and
+  189 distinct source countries ship in the catalog, so on a broadly-covered concept (a) the
+  unlocated bucket could be truncated out of the payload — making the clickable "not mapped" drill
+  this very ruling names a dead end, surviving only because it HAPPENED to be the largest — and
+  (b) no exact country total was published, so the figure announced beside the map WAS the cap,
+  against the same day's anti-capping ruling. Both reproduced live before the fix.
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
   system's current limitations"; brief of record =

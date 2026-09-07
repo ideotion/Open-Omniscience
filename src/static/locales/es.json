@@ -1965,6 +1965,7 @@
   "By language": "Por idioma",
   "mentions per language": "menciones por idioma",
   "Not mapped (source country unknown)": "No mapeado (país de la fuente desconocido)",
+  "Countries listed: {shown} of {total}": "Países listados: {shown} de {total}",
   "Mentions": "Menciones",
   "Most recent": "Más recientes",
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Más recientes primero, por la fecha de publicación del artículo (fijada por el editor), entre las fuentes con esta etiqueta. Cada título abre la copia guardada sin conexión.",

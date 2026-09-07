@@ -79,7 +79,7 @@ claim lives · owning prompt.
 | KW-14 | P6 entity→QID (OpenTapioca) | OPERATOR-GATED + licence check | same | strategy doc | P05 |
 | KW-15 | BM25F default weights (A/B harness built, no chosen weights) — needs the graded gold set | OPERATOR-GATED | strategy doc; Settings → Diagnostics gold-set builder | strategy doc | P05 |
 | KW-16 | Entity families: caps-furniture batch, Roman-numeral exclusion, cross-script alias rings, kind-dropdown honesty | BUILT (2026-07-19..21, per the 2026-07-22 audit) | `ACTION_PLAN_2026-07-22` §0 | — | — |
-| KW-17 | Clickable-keyword stats hover (slice 2) — "which stats" undecided | RULING-GATED (soft) | FUTURE_DEVELOPMENTS §"Clickable in-article keywords" | FD | P17 |
+| KW-17 | Clickable-keyword stats hover (slice 2) — "which stats" undecided | **VERIFIED-PRESENT 2026-09-07** (`58a4d6d`) — shipped, not ruling-gated: `GET /api/insights/keyword-stats` (`src/api/insights.py:1240`) behind the reader's `kwStatLine` (`src/static/reader.js:130`) and the SPA `#oo-tip` hover (`src/static/app-boot.js:206`); mentions · spread · windowed trend rate · top co-occurrences, counts only. `docs/ROADMAP.md` already recorded it as shipped | FUTURE_DEVELOPMENTS §"Clickable in-article keywords" | FD | P17 |
 | KW-18 | Per-language month scoping (a stopwords-ARCHITECTURE change; complement to slice 3) | UNBUILT — and RECORDED 2026-09-07 at the code that makes it impossible (`services/stopwords.get_stopwords`'s docstring + a behavioural branch-order guard), so the next reader meets the constraint where they would act on it rather than in a design doc | design doc §8 last row | design doc | P06 |
 
 ## LAW — the law vertical
@@ -134,7 +134,7 @@ claim lives · owning prompt.
 | AI-16 | Qualification-assist per-source button | BUILT (STALE-CLAIM in Session-B carry-over (c)) | `src/static/app-sources.js:396` | CLAUDE.md | P02 |
 | AI-17 | The ~50-anchor triage grading sitting + the real roster bench run on the rig | OPERATOR-GATED | CLAUDE.md Session E remaining | CLAUDE.md | P11 |
 | AI-18 | Deep-model tier / whole-corpus cited synthesis / corpus Q&A / per-surface LLM lenses (2026-06-17 expansion rulings) | UNBUILT (design-only) | CLAUDE.md IN-APP OLLAMA entry "REMAINING" | CLAUDE.md | P11 |
-| AI-19 | Per-article Summarize/Translate on the analysis Articles list | UNCHECKED | same | CLAUDE.md | P17 |
+| AI-19 | Per-article Summarize/Translate on the analysis Articles list | **CLOSED BY RULING, checked 2026-09-07** (`58a4d6d`) — not a gap to build: maintainer ruling 22 (field feedback 2026-08-07, shipped 2026-08-20) REMOVED the per-row buttons as an absorption, because the reader runs both on the same endpoints and shows the original URL as its own visible text (invariant #6); the bulk Summarize-all / Translate-all actions are untouched. Recorded at the call site (`src/static/app-analysis.js:1243`) and in the `shipped.csv` row for rulings 20-22 | same | CLAUDE.md | P17 |
 
 ## UI — browser-verified backlog
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |

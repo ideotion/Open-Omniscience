@@ -6555,3 +6555,24 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
+
+
+## 2026-09-07 — prompt 17: the sweep that found the work done, and the one cap that outlived its ruling
+
+Prompt 17 (super-groups, the concept map, the analysis surfaces) was verified slice by slice
+against `main` @ `58a4d6d` and found ALREADY SHIPPED end to end — S1-S5 and the GROUPS-layer
+amendment in PR #721 (2026-07-19), S6's curation-in-Settings, S7's KW-17 hover, and the Trends
+third window with its per-window top-5 charts (2026-06-16). Nothing was rebuilt. The prompt read
+as unbuilt because the DOCKET was stale: the Open-queue SUPER-GROUPS entry still said "execution
+delegated, PENDING" seven weeks after its own execution merged. Two S7 rows were not gaps either
+— KW-17 is shipped, and AI-19 was DELIBERATELY removed by maintainer ruling 22 as an absorption
+into the reader, so building it would have undone a ruling.
+
+The one real defect was found by reading §D's code against §D's own ruling, and it is the entry
+worth keeping.
+
+**THREE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a bound that a ruling's
+load-bearing row rides along with is safe only by accident; a MIN gate expressed as a rounded
+percentage grows slack as its denominator grows, and at 3040 keys exactly one missing translation
+is invisible; and `grep --include` is a whole-invocation filter, so naming files of another type
+positionally beside it silently searches none of them.
