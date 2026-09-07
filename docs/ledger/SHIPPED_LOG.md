@@ -6607,6 +6607,31 @@ not a consent gate on what the UI does to help you decide; check a prescribed co
 fact's CARDINALITY, not only against the code; an inverse verified by round trip beats one verified
 by a character rule, and the character rule fails toward silence; and a source guard cannot tell a
 live branch from a dead one, because the identifier it looks for lives inside the branch. Plus: the recorded regex bomb had a second, larger disguise in the SAME function, and the test written for the first one is what found it; and a mutation matrix that names a test file which does not exist reddens on every mutation and reads as a perfect result.
+
+## 2026-09-07 — prompt 17: the sweep that found the work done, and the one cap that outlived its ruling
+
+Prompt 17 (super-groups, the concept map, the analysis surfaces) was verified slice by slice
+against `main` @ `58a4d6d` and found ALREADY SHIPPED end to end — S1-S5 and the GROUPS-layer
+amendment in PR #721 (2026-07-19), S6's curation-in-Settings, S7's KW-17 hover, and the Trends
+third window with its per-window top-5 charts (2026-06-16). Nothing was rebuilt. The prompt read
+as unbuilt because the DOCKET was stale: the Open-queue SUPER-GROUPS entry still said "execution
+delegated, PENDING" seven weeks after its own execution merged. Two S7 rows were not gaps either
+— KW-17 is shipped, and AI-19 was DELIBERATELY removed by maintainer ruling 22 as an absorption
+into the reader, so building it would have undone a ruling.
+
+The one real defect was found by reading §D's code against §D's own ruling, and it is the entry
+worth keeping.
+
+**THREE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a bound that a ruling's
+load-bearing row rides along with is safe only by accident; a MIN gate expressed as a rounded
+percentage grows slack as its denominator grows, and at 3040 keys exactly one missing translation
+is invisible; and `grep --include` is a whole-invocation filter, so naming files of another type
+positionally beside it silently searches none of them.
+
+**A FOURTH LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** a guard anchored on a
+literal operand list reddens when you add an operand beside the one it is about — re-anchor it on
+the property, pin both directions, and grep the TEST tree for any string you change in
+`src/static/` before you change it.
 ---
 
 ## 2026-09-07 — PROMPT_11: model supply, capability probes, and the honest gaps

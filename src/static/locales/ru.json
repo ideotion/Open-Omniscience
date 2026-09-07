@@ -1988,6 +1988,7 @@
   "By language": "По языкам",
   "mentions per language": "упоминаний по языкам",
   "Not mapped (source country unknown)": "Не на карте (страна источника неизвестна)",
+  "Countries listed: {shown} of {total}": "Показано стран: {shown} из {total}",
   "Mentions": "Упоминания",
   "Most recent": "Самые новые",
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Сначала самые новые — по дате публикации статьи (заданной издателем) среди источников с этой меткой. Каждый заголовок открывает офлайн-копию.",

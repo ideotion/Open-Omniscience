@@ -45,8 +45,28 @@ def test_truncation_is_disclosed_never_silent():
 
 
 def test_dumbbell_wired_into_ring_map_detail():
+    """The dumbbell reaches the ring-map detail block.
+
+    Re-anchored 2026-09-07: this asserted the literal five-operand concatenation
+    ``langs + langBd + unlocNote + dumb + tbl``, which is a LANDMARK that merely
+    coincided with the property the test is named for. Adding a sixth, unrelated
+    operand (the country-truncation disclosure) reddened it against code in which
+    the dumbbell is wired exactly as before. The property is that ``dumb`` is one
+    of the terms assigned to the detail block, and that is what is asserted now --
+    strictly stronger for the claim, since it still fails when the dumbbell is
+    dropped from the assignment and no longer fails when a neighbour is added.
+    """
+    from tests.js_source_helper import strip_comments
+
     assert "const dumb = ringDumbbellSvg(" in _JS
-    assert "langs + langBd + unlocNote + dumb + tbl" in _JS
+    body = strip_comments(function_body(_JS, "showRingMap"))
+    # The RENDER assignment, not the two `detail.innerHTML = ""` resets that clear the
+    # block on entry and on an empty ring -- selected by what it is (a composed value)
+    # rather than by the operands it happens to have today.
+    renders = [ln for ln in body.split("\n") if "detail.innerHTML =" in ln and '= ""' not in ln]
+    assert len(renders) == 1, f"expected one composed detail render, found {len(renders)}"
+    terms = {t.strip().rstrip(";") for t in renders[0].split("detail.innerHTML =", 1)[1].split("+")}
+    assert "dumb" in terms, f"the dumbbell must be rendered into the detail block; got {terms}"
 
 
 def test_dumbbell_strings_translated():
