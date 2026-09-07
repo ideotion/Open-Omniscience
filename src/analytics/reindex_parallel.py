@@ -406,6 +406,14 @@ def _worker_init(extractor_name: str, gazetteer: dict[str, str] | None) -> None:
 def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
     """The PURE half of when/where/who: extraction only, no database.
 
+    ``language`` is consumed by ``extract_dates`` ALONE -- ``extract_locations``
+    and ``extract_entities`` never see it -- and it is load-bearing rather than a
+    hint: the month/weekday tables are language-GATED, so a homograph resolves to
+    a DIFFERENT month per language (measured: "12 listopadu 2024" is 2024-11-12
+    under ``cs`` and 2024-10-12 under ``hr``) and a gated weekday resolves to
+    nothing at all without its own language. An unknown language REFUSES rather
+    than guessing, so passing the wrong one costs recall and never fabricates.
+
     Returns plain, picklable data (lists of dicts) or ``None`` when the caller
     did not ask for it. Runs in a worker process, so it must never touch an ORM
     object or a session -- it is handed only the article's own text plus the
@@ -559,6 +567,53 @@ def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
         return out
     finally:
         stop.set()
+
+
+def compute_derivatives_with_www(
+    extractor,
+    key: int,
+    content: str,
+    *,
+    title: str,
+    extraction_language: str,
+    sentiment_language: str | None,
+    date_language: str | None,
+    country: str | None,
+    anchor_iso: str | None,
+) -> ArticleDerivatives:
+    """The WHOLE DB-free half of ``index_article`` for ONE article, computed
+    SERIALLY in the calling thread -- terms, sentiment AND when/where/who.
+
+    C16 (2026-07-24 throughput brief, S-D). :func:`_compute_one` deliberately
+    leaves ``www`` unset, and its comment gives the reason: on the re-index path
+    "serial means one core, which is the situation pooled WWW exists to escape;
+    doing it here would move the same work from one place to another at identical
+    cost". That reasoning is exact for the re-index and INVERTED for the
+    collector, where the "other place" is INSIDE the single-writer gate: moving
+    the work is the entire point, and the cost is identical only in CPU, not in
+    how long every other writer is blocked. Measured on the real ingest path
+    (8 articles x ~22 KiB): the gate window is 3.68-3.85 s of which 3.45-3.59 s
+    (93.3-93.7%, three runs) is these pure steps, and only ~0.24 s is the write.
+
+    Delegating to ``_compute_one`` rather than re-implementing it is deliberate:
+    a second copy of "what index_article's pure half computes" would drift
+    silently the next time that function changes.
+
+    The three language arguments are SEPARATE on purpose, because
+    ``index_article`` feeds three different values to the three consumers:
+    ``extraction_language`` is the keyword extractor's stoplist pick (its ``or
+    "en"`` is a documented working assumption), ``sentiment_language`` is the
+    known/deduced language VADER is gated on, and ``date_language`` is what the
+    caller's own inline path hands ``extract_dates`` (see :func:`_extract_www`).
+    Collapsing them would change WHAT is computed, which this move must not.
+    """
+    d = _compute_one(extractor, key, content, title, extraction_language, sentiment_language)
+    if d.error is None:
+        # A per-article precompute failure already falls back to index_article's
+        # own inline computation for that one article, so leaving www unset on
+        # the error path is the correct (and only honest) thing to do.
+        d.www = _extract_www(content, date_language, (country, anchor_iso, None))
+    return d
 
 
 def precompute_batch(
