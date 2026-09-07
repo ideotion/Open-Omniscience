@@ -5,8 +5,10 @@ one that matches what you need.
 
 > **Planning lives in a few clearly-separated homes** (the map):
 > **[ROADMAP.md](ROADMAP.md)** = the forward-looking board (what's next + status) ·
-> **[../CLAUDE.md](../CLAUDE.md)** = the binding ruling ledger + live Open queue (source of
-> truth) · **[FUTURE_DEVELOPMENTS.md](FUTURE_DEVELOPMENTS.md)** = design intent (the *why*) ·
+> **[../CLAUDE.md](../CLAUDE.md)** = the binding ruling ledger (source of truth), with its
+> two companions **[ledger/LESSONS.md](ledger/LESSONS.md)** (reusable findings; read every
+> session) and **[ledger/OPEN_QUEUE.md](ledger/OPEN_QUEUE.md)** (the live docket of pending
+> rulings) · **[FUTURE_DEVELOPMENTS.md](FUTURE_DEVELOPMENTS.md)** = design intent (the *why*) ·
 > **[product/SCALE_ROADMAP.md](product/SCALE_ROADMAP.md)** = the deep scale/stability detail ·
 > **[ledger/](ledger/)** = what already shipped. Older/historical planning docs are under
 > **[archive/](archive/)**.

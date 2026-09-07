@@ -396,6 +396,7 @@ Development cycles are named after the version they produce (`0.09 → 0.1 → 0
 to match at each flip). The version is single-sourced from `pyproject.toml`. What already
 shipped is tracked as rows in [`docs/ledger/shipped.csv`](ledger/shipped.csv) (index) with
 verbatim detail + reusable lessons in [`docs/ledger/SHIPPED_LOG.md`](ledger/SHIPPED_LOG.md);
-release notes are in [`docs/CHANGES.md`](CHANGES.md). Binding rulings and the live Open queue
-are in [`../CLAUDE.md`](../CLAUDE.md) — this board is a readable summary of it, not a
-replacement.
+release notes are in [`docs/CHANGES.md`](CHANGES.md). Binding rulings are in
+[`../CLAUDE.md`](../CLAUDE.md) and the live Open queue in
+[`docs/ledger/OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md) (split out 2026-09-07, ruling A3) — this
+board is a readable summary of them, not a replacement.

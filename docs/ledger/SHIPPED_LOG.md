@@ -1,6 +1,6 @@
 # Shipped batch log — archive (moved out of CLAUDE.md 2026-06-25)
 
-> The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into CLAUDE.md's Session-rituals 'Lessons' subsection. Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
+> The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into [`LESSONS.md`](LESSONS.md) (moved out of CLAUDE.md's Session-rituals 'Lessons' subsection on 2026-09-07, ruling A3). Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 - **A REFACTOR THAT PRESERVES *WHAT* IS FOUND NEEDS A DIFFERENTIAL, BECAUSE A NAME-LEVEL
@@ -6445,3 +6445,69 @@ nested in a scanned folder, offers it as a first-class item, and `ImportQueue._r
 the same extracted helper the `/legacy/restore` endpoint calls — one code path, deliberately.
 `tests/test_unified_backup_ui.py` already pins that chain as a data-safety property. Nothing was
 removed; the finding is the deliverable.
+
+## 2026-09-07 — monitoring/diagnostics — `card-audit.json` serialises again (retired from the Open queue)
+
+**Retired here by ruling A3(3) on 2026-09-07.** The entry had said "NOT fixed"; PR #1013 (the
+reality check) corrected that claim in place, and this pass re-verified it independently against
+the tree before retiring it: `src/briefing/card_audit.py` ends `audit_cards()` with
+`return _sanitise_non_finite(report)` (`card_audit.py:1614`), and `_sanitise_non_finite` does
+exactly the two things the entry asked for — it replaces `inf`/`-inf`/`NaN` with `None` **and**
+NAMES where they were, bounded by `_NON_FINITE_NAME_LIMIT = 50` ("a handful identifies the
+culprit; naming thousands would itself bloat the member this exists to save"). The root cause is
+still delegated to the next bundle, which is the design: sanitising silently would have been the
+hiding-place-for-the-bug-it-survives shape, and naming the fields is what avoids it. Nothing in
+the entry is pending, so it leaves the docket for the record.
+
+The entry as it stood, verbatim:
+
+**~~`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06~~ — FIXED; re-verified
+2026-09-07.** `src/briefing/card_audit.py:_sanitise_non_finite` replaces `inf`/`-inf`/`NaN`
+with `None` AND lists each offender's dotted path under `non_finite` (capped by
+`_NON_FINITE_NAME_LIMIT = 50`), which is the fix shape this entry specified — including the
+load-bearing half, so the next bundle identifies the producer rather than silently surviving.
+The finding below is kept as the record of how it was found. ORIGINAL ENTRY: found in a field
+bundle, NOT fixed (a different subsystem from the vLLM chain that surfaced it, and the
+root cause needs a real corpus to locate):** the member computes for **112 seconds**
+and is then thrown away whole by the JSON encoder — `Out of range float values are not
+JSON compliant: -inf`. `card_audit._eval_arith` already refuses non-finite values
+(`card_audit.py:235`), so the `-inf` is reaching the payload from some OTHER field, and
+which one is unknown without the corpus that produced it. THE FIX SHAPE, when built:
+sanitise at the serialisation boundary — non-finite floats become `null` **and the
+report NAMES the fields that were non-finite**, so the member survives AND the next
+bundle identifies the culprit. Sanitising silently would make this the exact
+hiding-place-for-the-bug-it-survives shape the ledger already warns about twice. The
+other bundle members were unaffected (the per-member guard did its job — one failure,
+not an aborted export).
+
+---
+
+## 2026-09-07 — llm/vllm — why ten vLLM starts died (retired from the Open queue)
+
+**Retired here by ruling A3(3) on 2026-09-07**: verified shipped —
+`src/llm/vllm_lifecycle.py:1835-1836` sets `VLLM_USE_FLASHINFER_SAMPLER=0` whenever
+`cuda_toolkit_present()` is false, guarded so an operator's explicit setting still wins. The
+entry was already struck through and marked ANSWERED by the session that closed it; it is
+retired rather than left in the docket because nothing in it is pending. Its reusable half —
+**a DRIVER is not a TOOLKIT** — is copied into `LESSONS.md`, where rule (5a)(b) puts it and
+rule (1) makes it mandatory reading.
+
+The entry as it stood, verbatim:
+
+**~~WHY TEN vLLM STARTS DIED~~ — ANSWERED 2026-08-09, and the host-RAM hypothesis was
+WRONG.** The operator's preserved log named it outright: vLLM 0.26 selects FlashInfer
+for top-k/top-p sampling (`Using FlashInfer for top-p & top-k sampling`), FlashInfer
+**JIT-compiles** that kernel on first use, and first use is `warmup_kernels` at the very
+END of engine init — so on a machine with the NVIDIA driver and **no CUDA toolkit** it
+died on `RuntimeError: Could not find nvcc and default cuda_home='/usr/local/cuda'
+doesn't exist`, ~78 s in, with the weights already resident. That is precisely the
+reported "model loads in VRAM but unloads for unknown reasons" — the card was full when
+it died. NOT host RAM (`journalctl -k` was empty and 5.5 GB was available), NOT the OOM
+killer, NOT graph capture (`enforce_eager` is on below 10 GB, so no capture happens).
+FIXED same day: `_server_env()` sets `VLLM_USE_FLASHINFER_SAMPLER=0` whenever
+`cuda_toolkit_present()` is false. **The standing lesson to keep: a DRIVER is not a
+TOOLKIT.** Inference needs only the driver; any JIT path silently converts a runtime
+dependency into a BUILD dependency, and it fails at the END of initialisation with the
+expensive resource already committed — which reads as "it worked and then stopped"
+rather than "it never started". When a component is chosen at runtime because a package
+is merely importable, ask what that component does on first use.

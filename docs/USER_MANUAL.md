@@ -2826,7 +2826,7 @@ opt‑in, defaults to offline, and ships with the warning above.
 # What shipped in 0.0.8 — the roadmap cycle
 
 > **Historical snapshot, see CLAUDE.md.** This is a point-in-time record of the 0.0.8 cycle;
-> it is not maintained against later releases. `CLAUDE.md`'s Open queue + `docs/ledger/`
+> it is not maintained against later releases. `docs/ledger/OPEN_QUEUE.md` + `docs/ledger/`
 > are the live sources of truth for what has shipped since.
 
 Everything below is available now, entirely from the browser UI. Each feature states its

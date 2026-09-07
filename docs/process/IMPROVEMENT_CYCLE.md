@@ -112,8 +112,8 @@ slices go through the AppVM `ui_walk` (R3) and graduate "browser-unverified" →
 harness. Honesty-critical parsers get the negative-space skeptic.
 
 ### 6 · MERGE + RECORD — the maintainer + the ledger
-The maintainer merges; a `shipped.csv` row per slice + harvested lessons into the Session-rituals
-subsection; **a new measurement instrument registers in `LOOP_SELFTESTS`** (enforced by
+The maintainer merges; a `shipped.csv` row per slice + harvested lessons into
+`docs/ledger/LESSONS.md`; **a new measurement instrument registers in `LOOP_SELFTESTS`** (enforced by
 `tests/test_recursive_loop.py`, which discovers every `run_*_selftest` from the tree). The next
 cycle's Measure re-runs the KPI snapshot; the differ closes the loop.
 
