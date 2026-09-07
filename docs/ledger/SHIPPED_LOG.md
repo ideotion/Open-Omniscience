@@ -6511,6 +6511,50 @@ dependency into a BUILD dependency, and it fails at the END of initialisation wi
 expensive resource already committed — which reads as "it worked and then stopped"
 rather than "it never started". When a component is chosen at runtime because a package
 is merely importable, ask what that component does on first use.
+
+
+## 2026-09-07 — S3.6's other half, and the first-run preflight becomes a job
+
+**S3.6 (the half PR-10 did not ship): 56 DB-touching `async def` handlers come off the single
+event loop, and an AST guard stops the 57th.** A FastAPI `async def` path operation runs ON the
+process's one event loop; a plain `def` one runs in Starlette's threadpool. All 56 of these do
+synchronous DB work through the SQLCipher codec, so each was a whole-server freeze for its own
+duration -- the field measured `list_sources` at 12.6 s over 68,409 rows while a pure in-memory
+`/api/scheduler/status` read took 41.7 s. MEASURED HERE on the real stack (slowapi limiter +
+`Depends(get_db)`), issuing a trivial second request while a 1.5 s handler is in flight:
+**async def 1,159.6 ms vs plain def 4.8 ms**. The property is that the SECOND REQUEST IS SERVED;
+nothing here makes any handler faster.
+
+COUNTED BEFORE CONVERTING, and the count chose the fix: **51 of the 56 contained no `await`, no
+`async for` and no `async with`** -- `async def` by habit, not misuse. Of the other five,
+`import_pdf_folder` awaited ONLY its own `run_in_threadpool` hop (it takes a JSON body, so it went
+to the loop to bounce straight off it); `import_prices_csv` and `import_csv` genuinely await the
+upload stream but did their DB work on the loop afterwards; and `import_newsletters` -- whose own
+test has claimed since 2026-07-17 that it runs off the loop -- still ran a get-or-create that
+COMMITS, plus a rollback, on the loop. **56 -> 4**, each awaiting the request stream, none touching
+its session on the loop. Guard: `tests/test_handlers_off_the_event_loop.py`, two mechanisms with a
+mutation each (a census against a named allowlist; and a check that an allowlisted handler awaits
+something OTHER than the threadpool hop and never touches its session on the loop).
+
+**PRH-23: the first-run preflight becomes a task-manager-visible job.** Both halves ran inline on
+the collect-pass thread -- up to 50 source checks plus one robots read per feed host plus a
+per-provider sample, every one a real request over Tor, while the task manager could show only the
+coarse "background" phase. The app was working correctly and a first launch looked stalled. Moved
+onto `src/jobs/background.py`, the registry this repo already has for the 2026-07-08 "heavy button
+freezes the app" family. Three things make the move honest rather than cosmetic: it takes its OWN
+`session_scope` (the pass thread is still using its own, and a Session is not safe for concurrent
+use); the kick declines under the exclusive hold (a pass already in flight when a restore claims
+the machine runs on into its tail, so this entry point CAN fire under the hold -- the same "gate
+every entry point" shape S6.1 relearned for the two rollup builds); and a cancelled half writes NO
+log and reports `complete: false`, because `has_run_before()` reads that log and a partial one
+would mark the preflight done with most sources never checked.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a timing harness that does
+not assert the work happened can report a pass from a server that did nothing (the reproducer's
+own `from __future__ import annotations` made FastAPI answer 422 without ever calling the handler);
+51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
+"it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
+numbered slice is invisible from both directions.
 ## 2026-09-07 — the import checkpoint interval K, and what the two whole-corpus PRAGMA checks actually cost
 
 **THE MECHANISM SHIPPED; THE NUMBER DID NOT.** The 2026-08-08 queue entry's item (b) asked

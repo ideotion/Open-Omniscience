@@ -21,6 +21,43 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
+  AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
+  the prompt's seven slices were ALREADY BUILT and are recorded as such in
+  [`../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md`](../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md)
+  and `INVENTORY.md` PERF-01/PRH-23; NO RULING IS INVENTED HERE):**
+  **THE OPEN QUESTION — should polled GETs be admission-capped, now that 51 more handlers can
+  run concurrently?** Converting 56 `async def` handlers to plain `def` (S3.6) changes WHERE
+  their DB work runs, and it also changes HOW MANY can run at once: an `async def` handler was
+  serialised by the one event loop, a `def` one takes an anyio threadpool token (**40** by
+  default). The connection pool it then draws from is sized by the machine —
+  `memory_budget.resolve_for` gives **6 + 2 = 8** connections below 4 GB, 4 + 16 = 20 in the
+  middle tier, 8 + 64 = 72 above. So on a small machine, 40 possible concurrent handlers face 8
+  connections, and the 9th waits on `pool_timeout` (30 s) and then errors.
+  **THIS IS NOT NEW and it is not a regression:** the tree already had **283** plain `def`
+  handlers taking `Depends(get_db)`, including the polled ones, so the exposure predates this
+  change — which adds 51 to a set of 283 — and every one of the 51 previously froze the WHOLE
+  server instead, which is strictly worse. A pool-timeout error names itself; a frozen loop does
+  not. **What is NOT decided is whether to bound it deliberately.** The crash brief's own
+  refuter note (S3.4) killed the general form — "do NOT add a queueing semaphore in `get_db`
+  (it recreates pool-timeout hangs for writes and diagnostics)" — but left the narrow form
+  standing: *"if you cap, scope it to polled GETs and fast-fail 429."* That narrow cap is
+  designed and unbuilt. It is recorded here rather than built because it is a policy about what
+  the app does to the operator under load, and because the honest measurement that would size it
+  (how many concurrent handlers a small field machine actually reaches) does not exist yet —
+  guessing a cap would be the fabricated-number failure. **PENDING: the maintainer's call on
+  whether to build the polled-GET cap, and on which measurement should size it.**
+  **THE CLASS-B DECISION TAKEN (recorded so it is not re-litigated, and so it can be reversed
+  knowingly):** PRH-23 moved the first-run preflight onto the background-job registry, which
+  means the pass tail no longer BLOCKS on it — so it now overlaps the housekeeping lane, and
+  **ruling R5 asked for a serialised pass tail.** Judged compatible on two bounds, both stated
+  in `src/monitoring/preflight_job.py`: R5 serialised the two WHOLE-CORPUS DB consumers (the
+  lane's qualification scan and the briefing refresh) because they contend for memory and the
+  writer gate on two cores, whereas this job is network-bound, capped at 50 sources, and writes
+  one `SourceMetadata` row per source; and it runs on the FIRST pass of a fresh install and
+  never again — a pass on which the corpus is empty, so the lane's whole-corpus scan has nothing
+  to scan. If the maintainer reads R5 more strictly than that, the reversal is one line: run the
+  job's worker inline instead of kicking it, keeping the registry entry for visibility.
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
   chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
@@ -9370,3 +9407,60 @@
   position — this is a content edit, however small, on a recorded entry; (c) leave them and
   keep the pointer. Recommendation: **(a)** — it is the largest fully verbatim move available
   and it invents nothing.
+
+### 2026-09-07 — C16 shipped; three findings recorded, none of them fixed here
+
+**RECORDED, NOT FIXED (1) — the re-index's pooled and inline when/where/who passes disagree
+about the date language, so the same article re-indexed twice can get DIFFERENT dates.**
+`reindex_articles` builds its task as `(art.id, body, title, lang or "en", lang, www_ctx)`,
+and `_worker_compute` hands that fourth element to `_extract_www`, which hands it to
+`extract_dates`. The INLINE path (`datestore.store_for_article`) instead passes
+`article.language` — the raw authoritative column. Those differ whenever `language` is empty
+and `detected_language` is not, which is the ordinary state of an article whose `<html lang>`
+was missing. The two paths are selected by BATCH SIZE: `precompute_batch` declines below
+`_MIN_PARALLEL_BATCH = 16` (and for a non-reconstructible extractor), so a window of 20
+articles gets the deduced language and a window of 10 gets `None`.
+
+It is a real difference, measured rather than assumed: `extract_dates`' month and weekday
+tables are language-GATED, so `"12 listopadu 2024"` is **2024-11-12** under `cs` and
+**2024-10-12** under `hr`, and a gated weekday (`уторак`, `senin`) resolves to nothing at all
+without its own language. The direction is benign — an unknown language REFUSES rather than
+guessing, so the pooled path has strictly MORE recall and neither path fabricates — but
+"which dates this article has" depending on how many siblings happened to be in its window is
+a determinism defect in a stored, user-visible field.
+
+NOT fixed here because it changes what the re-index STORES, and C16's whole safety argument is
+that it moves where work happens without changing what is computed. Two options for its own
+slice: pass `art.language` in the task (inline-identical, loses the pooled recall) or teach
+`store_for_article` to use the resolved language (gains recall on both paths, changes stored
+dates for existing corpora on the next re-index). The second looks better and is a behaviour
+ruling, not a refactor.
+
+**RECORDED, NOT FIXED (2) — the collector could gain the same date recall and deliberately
+does not.** `ArticleBatch._precompute` passes `a.language` for dates, byte-identical to the
+inline path it replaces. Passing the RESOLVED language (`article.language or
+detected_language`) would resolve gated months and weekdays for every article whose `<html
+lang>` was absent. Same ruling as (1), same reason for deferring: it belongs in the slice that
+decides (1), not smuggled into a hot-path move.
+
+**DELIBERATE OMISSION (3) — the cross-core process pool is NOT wired into the collector, and
+the reason is measured rather than cautious.** The C-brief's C16 asks for `precompute_batch`'s
+pool after the correctness step. Two facts refuse it. (a) `collect_batch_size()` defaults to
+**8** against `_MIN_PARALLEL_BATCH = 16`, so on every shipped configuration the pool would take
+its serial path — a dormant mechanism that still reads as wired, which the ledger already
+records as worse than no mechanism. (b) Above that default the collector runs up to
+`collect_parallelism` (default 50) source workers concurrently, each of which would spawn its
+own `ProcessPoolExecutor` of up to 8 workers with nothing arbitrating between them;
+`reindex_parallel`'s pool is safe precisely because it has ONE caller at a time, holding the
+exclusive hold. The recoverable quantity here is the GATE WINDOW, and running serially outside
+the gate recovers all of it (measured 93.0–93.4% → 0.0%). Re-open only with a per-process pool
+budget the collector's workers share.
+
+**DELIBERATE OMISSION (4) — PERF-09's bandwidth CAP stays unbuilt.** The measurement half
+shipped (owner-side bytes-over-time in both download managers). A cap needs the download loop
+to THROTTLE — pacing chunk reads against a target rate — which is a change to fetch behaviour
+rather than a measurement, and it needs a decision the code cannot make for itself: whether the
+budget is per-job or per-process, and how it composes with the existing collection-speed
+governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
+target for the collector. Building a second, unrelated rate authority next to it is how two
+surfaces come to disagree about one quantity. Recorded for a ruling.

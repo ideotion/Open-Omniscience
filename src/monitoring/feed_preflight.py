@@ -27,6 +27,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -147,21 +148,45 @@ def _feed_targets() -> tuple[list[dict], list[dict]]:
     return market, calendar
 
 
-def run_feed_preflight(fetcher, *, sample_per_provider: int = _SAMPLE_PER_PROVIDER) -> dict:
+def run_feed_preflight(
+    fetcher,
+    *,
+    sample_per_provider: int = _SAMPLE_PER_PROVIDER,
+    progress: Callable[[int, int, str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict:
     """Robots per distinct host + a per-provider sample verification; JSONL appended.
 
     Returns an honest summary {hosts, robots_denied, calendar_checked, market_checked}.
     Every verdict (good or bad) lands in the log — the point IS the log.
+
+    ``progress(done, total, host)`` and ``should_stop()`` mirror
+    :func:`src.monitoring.preflight.preflight_sources` so the first-run job can name
+    the host it is on and stop between checks (PRH-23). A stopped run writes NO log
+    and reports ``complete: False`` — this log is what :func:`has_run_before` reads,
+    so a partial one would mark the feeds "done" with most of them never checked.
     """
     market, calendar = _feed_targets()
     records: list[dict] = []
 
     hosts = sorted({t["host"] for t in market + calendar if t["host"]})
+    # done/total spans the robots pass plus both sample passes; the totals for those are
+    # not known until the robots verdicts are in, so the bar is over hosts and the two
+    # sample phases say so in `detail` rather than inventing a denominator.
     robots_by_host: dict[str, dict] = {}
-    for host in hosts:
+    for i, host in enumerate(hosts):
+        if should_stop is not None and should_stop():
+            return {
+                "hosts": len(hosts),
+                "complete": False,
+                "stopped": "cancelled during the robots pass; nothing was logged, so "
+                "the next pass retries the whole set",
+            }
         rec = _check_host_robots(fetcher, host)
         robots_by_host[host] = rec
         records.append(rec)
+        if progress is not None:
+            progress(i + 1, len(hosts), host)
 
     def _sample(targets: list[dict]) -> list[dict]:
         by_host: dict[str, int] = {}
@@ -176,7 +201,15 @@ def run_feed_preflight(fetcher, *, sample_per_provider: int = _SAMPLE_PER_PROVID
         return picked
 
     calendar_checked = 0
+    if progress is not None:
+        progress(len(hosts), len(hosts), "sampling calendar feeds")
     for t in _sample(calendar):
+        if should_stop is not None and should_stop():
+            return {
+                "hosts": len(hosts),
+                "complete": False,
+                "stopped": "cancelled while sampling calendar feeds; nothing was logged",
+            }
         try:
             from src.events.feeds import verify_feed
 
@@ -187,7 +220,15 @@ def run_feed_preflight(fetcher, *, sample_per_provider: int = _SAMPLE_PER_PROVID
             records.append({**t, "status": "error", "error": str(exc)[:200]})
 
     market_checked = 0
+    if progress is not None:
+        progress(len(hosts), len(hosts), "sampling market feeds")
     for t in _sample(market):
+        if should_stop is not None and should_stop():
+            return {
+                "hosts": len(hosts),
+                "complete": False,
+                "stopped": "cancelled while sampling market feeds; nothing was logged",
+            }
         rec = {**t, "checked_at": datetime.now(UTC).isoformat(timespec="seconds")}
         try:
             result = fetcher.fetch(t["url"], require_html=False)
@@ -204,6 +245,7 @@ def run_feed_preflight(fetcher, *, sample_per_provider: int = _SAMPLE_PER_PROVID
     denied = sum(1 for r in robots_by_host.values() if r["robots"] in ("disallowed", "blocked"))
     summary = {
         "hosts": len(hosts),
+        "complete": True,
         "robots_denied": denied,
         "calendar_feeds_sampled": calendar_checked,
         "market_feeds_sampled": market_checked,

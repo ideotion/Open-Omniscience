@@ -42,14 +42,28 @@ def order(monkeypatch):
 
     monkeypatch.setattr(runner, "run_scrape_once", _scrape)
 
-    def _preflight(session, fetcher):
+    # PRH-23: the pass no longer CALLS the preflight, it KICKS the visible job. Two
+    # markers, because they are now two different moments on two different threads:
+    # "preflight" is recorded on the PASS thread when the job is started (which is what
+    # the ordering and phase assertions are actually about, and the only one of the two
+    # that is deterministic), and "preflight-ran" on the JOB thread when the work really
+    # happens -- so the test still proves the work is DONE and not merely scheduled.
+    def _kick(fetcher=None):
         calls.append("preflight")
         phases_at["preflight"] = current_phase()
-        return {}
+        return real_kick(fetcher)
 
+    def _preflight(session, fetcher, **kw):
+        calls.append("preflight-ran")
+        return {"complete": True, "checked": 0}
+
+    from src.monitoring import preflight_job
+
+    real_kick = preflight_job.kick
     monkeypatch.setattr("src.monitoring.preflight.has_run_before", lambda: False)
     monkeypatch.setattr("src.monitoring.preflight.preflight_sources", _preflight)
     monkeypatch.setattr("src.monitoring.feed_preflight.has_run_before", lambda: True)
+    monkeypatch.setattr(preflight_job, "kick", _kick)
     monkeypatch.setattr("src.events.feeds.auto_import_due_feeds",
                         lambda f: calls.append("calendars") or {"picked": []})
     monkeypatch.setattr("src.monitoring.field_test.enabled", lambda: False)
@@ -77,6 +91,11 @@ def order(monkeypatch):
     # running inline — join it too, for the same determinism reason.
     if sched._lane_thread is not None:
         sched._lane_thread.join(timeout=5)
+    # PRH-23: the first-run preflight is a background JOB now — join it for the same
+    # determinism reason as the two threads above.
+    _pf_thread = preflight_job.PREFLIGHT_JOB._thread
+    if _pf_thread is not None:
+        _pf_thread.join(timeout=5)
     return calls, phases_at
 
 
@@ -84,6 +103,11 @@ def test_scrape_runs_before_first_run_preflight(order):
     calls, _ = order
     assert "scrape" in calls and "preflight" in calls
     assert calls.index("scrape") < calls.index("preflight"), calls
+    # PRH-23: kicking the job is not enough — the work must actually run. Without this
+    # the test would pass just as well if the job never started, which is the exact
+    # vacuity a "moved it to a background job" change invites.
+    assert "preflight-ran" in calls, calls
+    assert calls.index("preflight") <= calls.index("preflight-ran"), calls
     # And before the calendar import + discovery too (all the slow housekeeping).
     assert calls.index("scrape") < calls.index("calendars"), calls
 
@@ -91,6 +115,9 @@ def test_scrape_runs_before_first_run_preflight(order):
 def test_phase_is_collecting_during_scrape_then_cleared(order):
     _, phases_at = order
     assert phases_at["scrape"] == "collecting"
+    # PRH-23: the phase recorded when the preflight is KICKED. It is still "background"
+    # -- the preflight is housekeeping, never part of "collecting" -- and it is now also
+    # its own /api/jobs entry, which is the point of the move.
     assert phases_at["preflight"] == "background"
     # S4.1 (duty-cycle fix): the briefing recompute now runs concurrently in its
     # own background thread (tracked as its own task-manager entry, kind=
