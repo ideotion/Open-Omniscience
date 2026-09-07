@@ -104,7 +104,21 @@ def test_t6_divergent_merge_full(corpora):
     preview = _run(a, "merge", str(art), "--passphrase", "pw-torture")["report"]
     assert preview["committed"] is False
     assert preview["verification"]["ok"] is True
-    assert preview["plan"]["articles"] == {"new": 2, "duplicate": 1, "conflict": 0}
+    # The COUNTS, not the whole dict. `DomainResult.as_dict` is additive by design (it
+    # omits an empty `samples`/`conflicts` and includes them when there is something to
+    # say), so an equality assertion here breaks the day a plan gains a field -- which it
+    # did on 2026-09-07, when the sample collectors moved BEFORE their INSERT and articles
+    # started NAMING what a merge added instead of publishing an always-empty list. The
+    # property this line is about is the merge outcome, and that is checked exactly.
+    # NB the name: `art` above is the ARTIFACT PATH, still needed by the --commit run
+    # below. A first draft of this amendment reused it for the plan and `str(art)` then
+    # handed the stringified dict to the helper as a path -- FileNotFoundError naming a
+    # dict, and every later test in this module inherited an unmerged corpus.
+    arts = preview["plan"]["articles"]
+    assert (arts["new"], arts["duplicate"], arts["conflict"]) == (2, 1, 0)
+    # And the samples are the outcome too: an import that says "2 new" and cannot name one
+    # of them is the always-empty list PRH-08 filed. Both of B's unique articles, by title.
+    assert sorted(arts["samples"]) == ["B filler", "Only in B"]
     # The commodity disagreement is REPORTED with both values, local kept (never averaged).
     cp = preview["plan"]["commodity_prices"]
     assert cp["conflict"] == 1 and cp["conflicts"][0]["incoming"] != cp["conflicts"][0]["local"]

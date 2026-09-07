@@ -686,6 +686,14 @@ def verify_folder_backup(
         ``bad-signature`` fails the verdict; ``unsigned`` does not, because a backup
         written before signing existed is a real backup.
 
+    WHAT IT COSTS, stated rather than left to be discovered: a verify of a 2026-09-07-or-
+    later backup READS EVERY BYTE it carries, because that is what a content check is. It
+    used to read only the model blobs and `stat` the rest, so on a large folder backup this
+    is now a full pass over the drive rather than a directory walk — minutes to hours at
+    disk speed, bounded in RAM (streamed) and cancellable. That is the price of the check
+    being real; there is no cheaper way to learn that a dump on an external drive still
+    holds the bytes it was written with.
+
     ``should_stop`` cancels between files (a stopped run reports ``ok=False`` — an
     incomplete verify can never claim success); ``progress_cb`` gets a live tally.
     Counts only, no score. Never raises — a broken manifest is an honest verdict."""
