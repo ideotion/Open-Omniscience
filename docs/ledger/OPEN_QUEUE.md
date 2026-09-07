@@ -9435,3 +9435,105 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+
+**PROMPT 21 — SECURITY, NETWORK POSTURE AND THE CONSENT SURFACE: WHAT SHIPPED, WHAT IS
+STILL RULING-GATED, AND ONE STALE CLAIM CORRECTED (executed 2026-09-07, branch
+`claude/security-network-posture-consent-e7uyr5`; NO RULING IS INVENTED HERE).**
+Three of the prompt's seven slices were buildable and shipped (rows in
+[`shipped.csv`](shipped.csv)): S1 NET-01, the connect-time SSRF closure; S2 NET-02 + PRH-03,
+the sanitizer excepts and the DuckDuckGo redirect; S3's documentation half. The other four
+wait on a maintainer ruling and are recorded here with the tree state each was re-derived
+against this pass, so the next session does not re-investigate them.
+
+**S4 · I3 — Tor-exit-resolve (SOCKS RESOLVE, 0xF0). STILL DESIGN-ONLY, re-verified: zero
+code.** The design of record is already written in this queue (the 2026-07-20 amendment,
+"can't we ping the source server"), including why DIRECT contact is ruled out — ICMP cannot
+ride Tor, so a ping is clearnet by construction, and a direct probe of a just-Tor-fetched
+source hands the server and the ISP a time-correlated link between the user's real IP and
+that source. Nothing has changed about the mechanism, the provenance class
+(`dns-via-tor-exit`, never blended with socket-observed) or the free ADDRMAP upgrade once
+Stem lands. What is owed is only the go/no-go (question I3, recommended default: go, as its
+own skeptic-matrixed slice). Grep anchor for the next session: `0xF0` and `dns-via-tor-exit`
+appear nowhere under `src/`.
+
+**S5 · I4 — `oo-netcut` and Stem-controlled Tor. STILL DESIGN-ONLY, re-verified: zero code**
+(`docs/ROADMAP.md` carries both lines and nothing under `src/` imports `stem` or names
+`netcut`). Two things are worth recording before the ruling rather than after it. (a) The
+honest claim boundary is already fixed by the non-negotiables: a userspace app can never
+equal a hardware webcam light, and `oo-netcut` must name the layer it controls rather than
+implying the machine is silent. (b) **Arti must be RE-VERIFIED, not assumed.** Its Python
+bindings were nascent at the knowledge cutoff, and this project's own recorded lesson about
+prescribed remedies applies — the mature path is a `tor` process driven through Stem, and
+per-source CIRCUIT isolation (`IsolateSOCKSAuth`, already a primitive here in
+`src/ingest/__init__.py::_isolated_proxies`) compartmentalises with no clearnet exposure at
+all, which is strictly preferable to the per-source clearnet fallback. Question I4 offers
+"park both to 0.5+" as its recommended default; parking is a legitimate answer and is not
+taken here.
+
+**S6 · PRH-16 — THE CONSENT MACHINERY IS TWO-THIRDS BUILT, AND THE INVENTORY CLAIM THAT IT
+"EXISTS NOWHERE" IS STALE (corrected in `INVENTORY.md` this pass).** Re-derived from the
+tree: `CONSENT_DOC_VERSION` is **PRESENT** (`src/legal/consent.py:43`, `"1.0"`, alongside
+`is_accepted` / `needs_acceptance` / `record_consent`, re-exported from `src/legal/__init__.py`
+and read by `src/legal/documents.py`). The **web consent surface is PRESENT** too, and the
+reason it did not answer to a grep for "modal" is that a modal was deliberately NOT what was
+built: `docs/legal/IMPLEMENTATION_NOTES.md` records the choice of a dedicated pre-app page
+over an in-SPA `<dialog>` because it blocks harder — nothing of the app is reachable first —
+wired as `/api/legal/` on the locked-state allowlist (`src/api/unlock.py`) with
+`src/api/legal.py`'s consent/decline routes, and pinned by
+`tests/test_legal_documents.py::test_unlock_first_launch_inserts_legal_step_before_passphrase`.
+Only `OO_REQUIRE_CONSENT` is genuinely absent — and **that is a recorded decision, not an
+oversight**: the same notes state it is "intentionally left as a documented option, not the
+default, because hard-blocking the web entrypoint could strand a desktop-launcher or
+`curl | bash` user with no console." The prompt asked to decide whether these are wanted and,
+if not, to record the refusal where the design lives; the refusal was already there, so
+nothing is decided here. **The only open question is whether the opt-in hard block should
+ever ship** — recommended default: leave it as the documented option it is, since the
+strand-a-launcher-user reason has not changed.
+
+**S7 · G9 + NET-09 — self-update and release signing. STILL UNBUILT, re-verified: no
+`self_update` module exists** (the only tree hits for "self-update" are two unrelated
+comments about Home refreshing itself). The posture is already ruled — manual, user-driven,
+git-pull based, no signing key yet — and the mechanics are settled in
+`docs/FUTURE_DEVELOPMENTS.md` §"In-app self-update" (line 993, promoted to active
+2026-06-16, mechanics only): snapshot → verify → staged migrate → atomic swap → rollback, with the
+data directory living outside the code tree as the property that makes the corpus, settings
+and keys survive by construction, and **never a silent decrypt across an update**. What is
+owed is G9's five questions (channel, trust root, cadence, `curl|bash` versus git, mirror
+anchoring) and NET-09. **Re-verified this pass and worth stating because it is the honest
+half:** `.github/workflows/release.yml` computes `SHA256SUMS` and publishes them with the
+artifacts, and its own header comment already says "checksums-only for now — signing is a
+tracked FUTURE_DEVELOPMENTS item", so the release path does not over-claim today. NET-09 is
+only the question of whether that changes.
+
+**DELIBERATE OMISSION — the DuckDuckGo RESULT-LINK regex is NOT widened, and the reason is
+an environment finding.** `_parse_results` matches `<a class="result__a" href="…">`, which
+requires `class` to be the FIRST attribute and `href` to follow it immediately; an
+`href`-first anchor, or one carrying `rel="nofollow"` before `class`, does not match. That
+is real fragility in the one sanctioned external channel, and it is deliberately left alone,
+because widening it blind could start admitting sponsored anchors as discovered sources and
+**the live markup could not be observed**: `html.duckduckgo.com` answers `CONNECT … 403`
+through this sandbox's proxy, against a `pypi.org` 200 control (probed 2026-09-07, this
+session probing first rather than assuming, per the working mode). The `uddg` unwrap that DID ship is
+justified by the URL shape alone and is strictly additive, so it cannot lose a result that
+resolves today. Re-open with either an allowlist entry for `html.duckduckgo.com` or a
+captured sample of a real response.
+
+**STATED RESIDUALS of the NET-01 closure, so they are not read as covered.** (a) A fetch
+whose proxy endpoint is a HOSTNAME rather than an address stands the connect-time check down
+for that request: allowlisting it would mean resolving it from inside a socket hook on every
+fetch, and a security guard may not break a working configuration in order to protect it.
+`_guard_target`'s policy there is unchanged, so such a deployment is exactly as protected as
+before. (b) An address that is publicly routable but internal to the operator's own network
+perimeter is out of reach of any address-shape rule, here and in `_guard_target` alike.
+(c) A remote-resolving proxy (`socks5h`/`socks4a`) never resolves the destination in this
+process at all, so there is nothing local to validate — which is the same reason
+`_guard_target` skips its hostname branch there.
+
+**SEQUENCING — NET-04's nonce CSP stays blocked, and the blocker is now measured.**
+`src/api/main.py::_CSP` still carries `script-src 'self' 'unsafe-inline'`. It cannot leave
+until the inline handlers do, and the count re-derived by the 2026-09-06 analysis is roughly
+**590** (~331 in `index.html`, ~259 across the seventeen `app-*.js` modules) — not the 295
+the ledger recorded, which counted `index.html` only and predates the module split. Prompt 15
+S2 owns the retirement; landing the nonce first breaks the app. Recorded here so the
+sequencing survives the two prompts being executed by different sessions.

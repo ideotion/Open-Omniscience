@@ -154,9 +154,12 @@ class _Scope:
     #: against the host a resolution ASKED ABOUT (resolving 127.0.0.1 answers
     #: 127.0.0.1, and refusing that would refuse the proxy itself), never
     #: against the addresses a resolution ANSWERS WITH: a hostname that resolves
-    #: to the proxy's own address is precisely the attack, and skipping it there
-    #: made the resolution check inert on any machine with a loopback proxy in
-    #: its environment -- measured, in this sandbox, before it was fixed.
+    #: to the proxy's own address is precisely the attack. Skipping it there made
+    #: the resolution check BLIND to any answer equal to a configured proxy's
+    #: address -- which on the documented Tor shape, and in any environment that
+    #: names a loopback proxy, is 127.0.0.1, the commonest SSRF target of all,
+    #: while 10.0.0.5 and 169.254.169.254 were still refused, which is exactly
+    #: why it looked like it worked. Measured in this sandbox before it was fixed.
     allowed: frozenset[tuple[str, int]] = frozenset()
     allowed_hosts: frozenset[str] = frozenset()
     #: Why the check is standing down for this request, or "" when it is live.

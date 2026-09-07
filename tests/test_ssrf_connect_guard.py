@@ -320,6 +320,42 @@ def test_a_hostname_proxy_stands_the_guard_down_with_a_stated_reason():
     assert scope.connects_checked == 0
 
 
+def test_an_unrelated_star_proxy_env_var_cannot_stand_the_guard_down(
+    loopback_server: int, rebinding_dns: list, monkeypatch
+):
+    """``get_environ_proxies`` returns EVERY ``*_proxy`` variable in the environment
+    with its suffix stripped -- ``npm_config_proxy`` arrives as ``npm_config``,
+    ``NO_PROXY`` as ``no`` carrying a comma-separated host list. None of those is a
+    key ``requests.utils.select_proxy`` can ever consult, so none of them may
+    matter here; without the narrowing, one unrelated variable naming a HOST would
+    stand the guard down silently on a great many developer machines."""
+    monkeypatch.setenv("NPM_CONFIG_PROXY", "http://corp-proxy.example:8080")
+    monkeypatch.setenv("YARN_HTTPS_PROXY", "http://another-proxy.example:8080")
+    fetcher = _fetcher()
+    endpoints = fetcher._request_proxy_endpoints(f"http://rebind.test:{loopback_server}/", None)
+    assert "npm_config" not in endpoints, endpoints
+    assert "yarn_https" not in endpoints, endpoints
+    assert "no" not in endpoints, endpoints
+    # And the guard is still live end to end, not merely un-stood-down on paper.
+    with pytest.raises(BlockedTarget):
+        fetcher.fetch(f"http://rebind.test:{loopback_server}/")
+
+
+def test_a_real_scheme_keyed_proxy_is_still_kept(loopback_server: int, rebinding_dns: list):
+    """The negative-space twin: the narrowing must not drop a key requests WOULD
+    select, or it refuses a proxy connection that is entirely legitimate. All four
+    shapes ``select_proxy`` consults are retained."""
+    fetcher = _fetcher()
+    fetcher.session.proxies = {
+        "http": "http://127.0.0.1:9050",
+        "all": "http://127.0.0.1:9051",
+        "http://rebind.test": "http://127.0.0.1:9052",
+        "all://rebind.test": "http://127.0.0.1:9053",
+    }
+    endpoints = fetcher._request_proxy_endpoints("http://rebind.test/", None)
+    assert set(endpoints) >= {"http", "all", "http://rebind.test", "all://rebind.test"}
+
+
 def test_an_injected_session_stands_the_guard_down():
     """``_guard_target`` already exempts an injected test double (no real socket,
     and tests legitimately use loopback stand-in hosts). The two must agree, or a

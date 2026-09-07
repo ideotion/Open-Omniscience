@@ -56,12 +56,22 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   is passphrase length, which the create flow guides.
 - **Airplane mode is a socket-level kill switch, not just a per-call convention.** When
   offline is engaged, `src/ingest/airplane.py` installs a process-wide guard over
-  `socket.getaddrinfo` / `create_connection` / `socket.connect(_ex)`: any **non-loopback**
-  target raises `AirplaneModeError` **before** a real socket is opened, so no missed call
+  `socket.getaddrinfo` / `create_connection` / `socket.connect(_ex)` — and, since
+  2026-07-25, over `http.client.HTTPConnection._tunnel` and PySocks' `socksocket.connect`
+  as well, because a proxied connection negotiates its REAL destination at an
+  application-protocol layer the first three never see. Any **non-loopback** target raises
+  `AirplaneModeError` **before** a real socket is opened, so no missed call
   site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
   and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
   It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
   per-call refusals remain as the friendly layer above it. App boot makes zero network calls.
+- **The same patch layer carries a second, independent gate: the connect-time SSRF check**
+  (`src/ingest/ssrf_guard.py`, 2026-09-07). It is inert except inside an `EthicalFetcher`
+  request on the thread making it, where it refuses any non-public address the request
+  resolves to or connects to — closing the window between the pre-fetch check's `getaddrinfo`
+  and the one `requests` performs at connect time. One patch layer, two gates, so a call site
+  cannot meet one and miss the other; each has its own opt-out
+  (`OO_SSRF_CONNECT_GUARD=0` here), and neither flag disables the other.
 
 ## Data integrity / chain of custody
 
@@ -91,9 +101,35 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 
 ## Hardening already in place
 
-- Parameterized DB access only (no string-built SQL on the live path); FTS5 `MATCH`
-  is fully bound. `bleach` allowlist for any HTML; `bcrypt` required for hashing
-  (no silent fallback). `sanitize_url` strips whitespace before scheme checks.
+*(Current state, re-derived from the tree on 2026-09-07 — the 2026-06 audit report further
+down is a RECORD of that date and carries its own disposition table.)*
+
+- **Injection sinks.** Parameterized DB access only (no string-built SQL on the live path);
+  FTS5 `MATCH` is fully bound, and an injection-style search returns 400 or an empty match,
+  never a 500. `bleach` allowlist for any HTML; `bcrypt` required for hashing (no silent
+  fallback). No `eval`/`exec`/`pickle`/`yaml.load` sinks, asserted by a repo invariant.
+  Untrusted XML (Wikipedia dumps, sitemaps) parses through `defusedxml`.
+- **Ingested URLs.** `sanitize_url` strips whitespace before the scheme check, and
+  `safe_href` allowlists http(s) before any ingested URL is rendered as a link, so a
+  `javascript:` URL in a feed is inert text. Both catch `ValueError` only — an unexpected
+  exception reaches the caller instead of becoming an empty string that reads as "unsafe".
+- **The fetch path.** Robots fail-closed, per-host rate limits, an honest bot User-Agent,
+  bounded redirects re-validated per hop on the page *and* robots fetches, a declared
+  `Content-Length` refused up front, and the streamed body aborted mid-read once it exceeds
+  the cap (so a gzip bomb never materialises). SSRF is checked twice: the target is resolved
+  and validated before the fetch, and — since 2026-09-07 — every address the request actually
+  resolves or connects to is validated as it happens, closing the DNS-rebinding window
+  between the two (`src/ingest/ssrf_guard.py`).
+- **The local API.** A cross-origin state-changing request is refused (403) on `Origin`/
+  `Referer`; a `Host` header that does not name this loopback API is refused (421, a
+  DNS-rebinding guard); every non-Swagger response carries `nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with
+  `frame-ancestors 'none'`. CORS ships `allow_credentials=False`.
+- **At rest.** The data dir is created `0700` (best-effort, POSIX-only) so another local user
+  cannot read the corpus, signing keys or custody log; signing keys are `0600`. Full at-rest
+  encryption remains the host's job (Qubes/LUKS) — this bounds a shared host, not a seized one.
+- **Exported data.** CSV cells beginning `= + - @` or a control character are neutralised
+  before export (spreadsheet formula injection).
 
 ## At-risk-user safety (Settings → Advanced → Safety, and → Uninstall & wipe)
 
@@ -134,6 +170,33 @@ ethical-fetch path and the evidence-verification guarantees above.
 ---
 
 # Application-security audit (2026-06)
+
+> ## ⚠ Disposition — this report is a RECORD of 2026-06-08, not a list of open findings
+>
+> **Every Medium and Low finding below has since been closed in code**, and the report
+> was never updated, so it has been reading as a live to-do list for over a year. It is
+> kept in full because its threat model, data-flow map and reasoning are still the best
+> description of this app's attack surface — but the table below, not the sections after
+> it, is the current state. Each verdict was re-derived from the tree on **2026-09-07**
+> (`main`, the anchors are what proves it), never taken from a status line.
+>
+> | # | 2026-06 finding | State on 2026-09-07 | Anchor |
+> |---|---|---|---|
+> | S-001 | SSRF (CWE-918) | **Closed, including the residual.** Resolve-then-validate on the target, manual bounded redirects re-validated per hop on the page *and* robots paths. The `OO-D2-003` DNS-rebinding TOCTOU the report left open — the one thing "pin to the validated IP" was for — was live-reproduced and closed on 2026-09-07 by validating the address the connection *actually reaches*, not by pinning. | `src/ingest/__init__.py::_guard_target`, `::_guarded_redirect_get`, `src/ingest/ssrf_guard.py`, `tests/test_ssrf_connect_guard.py` |
+> | S-002 | Decompression-bomb / size DoS | **Closed.** `Content-Length` refused up front; the real (streamed) body is read in chunks against a running ceiling, so a gzip bomb is aborted mid-read rather than after materialising. | `src/ingest/__init__.py::_read_body` |
+> | S-003 | CSRF on no-body POSTs | **Closed.** A middleware refuses any state-changing method whose `Origin`/`Referer` is not loopback (403). A separate `Host`-header guard refuses a DNS-rebinding host with 421. | `src/api/main.py::csrf_and_security_headers` |
+> | S-004 | CSV formula injection | **Closed.** Exported cells beginning `= + - @` or a control char are prefixed with `'`. | `src/utils/security.py::csv_safe_cell`, `tests/test_security_hardening.py` |
+> | S-005 | `javascript:` URI in an `href` | **Closed.** A strict http(s) scheme allowlist runs on every ingested URL rendered as a link, server-side and in the reader. | `src/utils/security.py::safe_href` (call sites: `src/api/main.py`, `src/api/law.py`, `src/services/duckduckgo.py`) |
+> | S-006 | No CSP / security headers | **Closed except one clause.** `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a `default-src 'self'` CSP with `frame-ancestors 'none'` ship on every non-Swagger response. **Residual, tracked as NET-04:** `script-src` still carries `'unsafe-inline'`, because the UI still has roughly 590 inline `on*=` handlers; landing a nonce-based CSP before they are retired would break the app. | `src/api/main.py::_CSP` |
+> | S-007 | CORS `allow_credentials=True` | **Closed.** The app passes `allow_credentials=False`. (`src/config/settings.py` still declares a `cors_allow_credentials` default of `True`; nothing reads it — recorded here rather than changed, because removing a config field is a surface change, not a security fix.) | `src/api/main.py` CORS middleware |
+> | S-008 | XXE (residual) | **Posture asserted.** Both untrusted-XML readers parse through `defusedxml`. | `src/wiki/dumpread.py`, `src/ingest/sitemap.py` |
+> | S-011 | At-rest file permissions | **Closed at the level that bounds access.** The whole data dir is `chmod 0700` on creation, which is what stops another local user reading the corpus, keys and custody log; individual files keep their umask mode inside it. Best-effort and POSIX-only by design — full at-rest encryption remains the host's job (Qubes/LUKS), as the report itself says. | `src/paths.py::_ensure` |
+> | S-009 | SQL/FTS injection — SAFE | **Still safe, and now guarded.** An injection-style search returns 400 or an empty match, never a 500. | `tests/test_security_hardening.py::test_injection_style_search_returns_400_not_500` |
+> | S-010 | No eval/exec/pickle sinks | **Still true, and now guarded.** | `tests/test_repo_invariants.py::test_no_dangerous_eval_or_deserialization_sinks` |
+> | S-012 | Indirect prompt injection — bounded | **Unchanged posture** (local model, no tools, output escaped and labelled as AI-derived). | — |
+>
+> The remediation roadmap in §5 is therefore **spent**: items 1–8 are done, apart from the
+> `script-src 'unsafe-inline'` clause of item 5.
 
 The defensive security review of the ingest→store→process→present data path, its findings, and the hardening applied.
 

@@ -6243,3 +6243,101 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A GUARD'S OWN EXEMPTION SET CAN DEFEAT THE GUARD — exempt the QUESTION, never the
+    ANSWER (2026-09-07, NET-01's resolution check):** the connect-time SSRF guard allowlists
+    the configured proxy endpoint, because a Tor proxy is loopback and refusing it would
+    refuse Tor itself. Its resolution half then skipped any RETURNED address that was in that
+    allowlist — which reads as the same exemption and is the opposite of it. Resolving the
+    proxy literal `127.0.0.1` answers `127.0.0.1` and must pass; a NAME that answers
+    `127.0.0.1` **is the attack**. The exact reach is worth stating rather than rounding: the
+    check went blind to any answer equal to a configured proxy's own ADDRESS, which on the
+    documented Tor shape — and in any environment that names a loopback proxy, as this sandbox
+    does — is `127.0.0.1`, the commonest SSRF target of all. `10.0.0.5` and `169.254.169.254`
+    would still have been refused, which is precisely why it looked like it worked. It was also
+    invisible because the LATER net (the connect check, keyed on the exact `(address, port)`
+    pair) caught the reproduction anyway and the test went green. What found it was asking WHICH of two mechanisms fired, by reading the scope's
+    own counters, rather than being satisfied that something refused. GENERAL FORM: when a
+    guard carries an exemption, name which side of the comparison it belongs on — an exemption
+    keyed to the thing being ASKED ABOUT is narrow, one keyed to the RESULT silently exempts
+    everything that can produce that result. COROLLARY, and the reason the belt hid the
+    defect: with two nets over one property, a test that only asserts "it was refused" cannot
+    tell you which net is alive, so each mechanism needs a driver that reaches it alone (the
+    recorded belt-masks-the-primary lesson, arriving from the other direction).
+  - **A SECOND GUARD RIDING AN EXISTING PATCH LAYER MUST NOT INHERIT THE FIRST'S OFF SWITCH,
+    AND ONE FLAG CANNOT CARRY TWO FACTS (2026-09-07, same slice):** the airplane backstop
+    already patches `socket.getaddrinfo`/`create_connection`/`connect(_ex)`/`_tunnel`/
+    `socksocket.connect`, and the right place for a connect-time SSRF check is those same
+    functions — one layer, so a call site cannot meet one gate and miss the other. But
+    `install_airplane_socket_guard()` reads `OO_AIRPLANE_SOCKET_GUARD` and, when it is `0`,
+    installs NOTHING: riding that installer would have handed an unrelated flag a silent veto
+    over a security control it was never about, and the installer itself only runs from
+    `run_deferred_startup`, so a CLI, a script or a test would have had no guard at all.
+    Installing the patches unconditionally instead re-arms airplane's refusal for the
+    deployment that opted out of it. Both directions are wrong because `_installed` was being
+    asked to mean two things: "the functions are patched" and "airplane is in force". Split
+    them (`_installed` + `_airplane_armed`), give each guard its own env opt-out, and let each
+    hook decide for itself. GENERAL FORM: before extending a shared mechanism with a second
+    policy, list the flags that currently gate it and ask which policy each one is ABOUT; a
+    flag that gates the mechanism gates every policy on it, whether or not that was ever
+    intended.
+  - **A PLAN'S REMEDY IS A HYPOTHESIS, AND THE TIE-BREAK IS WHICH WAY IT FAILS (2026-09-07,
+    NET-01 "connect-time IP pinning"):** the recorded rule says a plan written from
+    measurements is trustworthy about the DEFECT and not automatically about the REPAIR. The
+    defect here was exact and live-reproducible — `_guard_target` validates one `getaddrinfo`
+    answer, urllib3 connects on a second one, and a real fetch returned a loopback server's
+    body as a clean 200. The prescribed repair, an adapter that PINS the validated IP, was
+    refused after being costed: pinning means taking over urllib3's connection construction
+    and then carrying the hostname separately for SNI, certificate matching and the `Host`
+    header, i.e. version-fragile private API whose failure mode is a SILENTLY WEAKER TLS
+    verification. Validating the address the connection ACTUALLY reaches gets the same
+    security property — the threat is reaching an INTERNAL address, and a second, different
+    PUBLIC answer is normal under CDN anycast, so pinning's extra strictness buys nothing
+    here — touches no TLS state, and rides the stdlib socket chokepoint every HTTP client
+    must pass through. The deciding argument is the direction of failure: a pinning adapter
+    fails OPEN the day urllib3 moves its private API, and a socket-level check fails CLOSED.
+    GENERAL FORM: when you diverge from a prescribed remedy, cost BOTH and pick on the failure
+    mode, then write the comparison where the next reader will look for it — otherwise the
+    divergence reads as a shortcut.
+  - **A TRANSLATION SCOPED TO THE CALL YOU EXPECTED TO RAISE LEAKS THE ONE YOU DID NOT
+    (2026-09-07, same slice, found by the negative-space pass and by nothing else):** the
+    connect-time refusal is a private exception type, translated at the fetch boundary into
+    the public `BlockedTarget` so callers keep the contract they already have. The first cut
+    wrapped `session.get` — the call the refusal was expected to come from. But a redirect
+    hop re-runs `_guard_target` INSIDE the same scope, and that resolves, so the refusal can
+    arrive from there too: a redirect to an internal host escaped as a type no caller catches,
+    on a path refused for exactly the same reason. Wrap the whole scope body, not the call you
+    had in mind. GENERAL FORM: when a guard can raise from anywhere inside a region, the
+    translation belongs at the region's edge; enumerate what else inside it touches the
+    guarded resource, because the enumeration you write from the happy path will omit the
+    re-entry.
+  - **`session.proxies` IS NOT THE ANSWER TO "WHAT WILL requests CONNECT TO" (2026-09-07,
+    empirical, and it decided a guard's correctness):** `Session.merge_environment_settings`
+    folds `HTTP(S)_PROXY` from the environment in whenever `trust_env` is set, which is the
+    default, and none of that appears in `session.proxies`. A guard that allowlists "the
+    configured proxy" by reading the session alone therefore REFUSES the proxy connection of
+    every operator whose proxy comes from their environment — a security control breaking a
+    working configuration, which is the one thing it may not do. Two riders measured while
+    fixing it: `requests.utils.get_environ_proxies` strips the `_proxy` suffix off every
+    matching variable, so `NO_PROXY` arrives as the key **`no`** carrying a comma-separated
+    host list (not a proxy endpoint) and `yarn_https_proxy` arrives as `yarn_https`; and
+    PySocks 1.7.1's `socksocket._write_SOCKS5_address` takes its non-`rdns` branch through
+    `socket.getaddrinfo(host, port, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP, AI_ADDRCONFIG)` and
+    keeps `addresses[0]` — read out of the installed library rather than recalled, which is
+    what makes it safe to claim that a local-resolving SOCKS destination lookup meets a
+    `getaddrinfo` hook.
+  - **MEASURE A SURVIVING MUTANT FOR EQUIVALENCE BEFORE WRITING A FIXTURE TO KILL IT — and
+    when it IS equivalent, the honest repair is a direct test of the contract, not a deleted
+    guard (2026-09-07, the DuckDuckGo redirect unwrap):** three of five mutations survived.
+    One was a fixture gap (the missing-target fallback is equivalent on a scheme-less
+    redirector and only discriminating on the absolute one, where returning the redirector
+    registers `duckduckgo.com` as a discovered SOURCE). The other two were genuinely
+    equivalent AT THE CALLER: `_clean_url`'s own `scheme`/`netloc` check and `safe_href`
+    reach the same verdict for every relative, scheme-less and dangerous-scheme target, so no
+    fixture through that path can ever tell the versions apart. Deleting them would have made
+    a public classmethod answer dishonestly for any caller that is not `_clean_url` (the
+    recorded "a public function's guards can live entirely in its caller" defect); keeping
+    them untested would have shipped unexercised code in a security path. The third way is to
+    test the helper's contract DIRECTLY and write the equivalence measurement into its
+    docstring, so the next matrix does not re-find it and nobody writes a vacuous fixture for
+    it. GENERAL FORM: a surviving mutant is a finding about the test, the fixture, or the
+    code — and "which" is a measurement, not a judgement call.

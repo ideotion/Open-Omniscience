@@ -97,6 +97,20 @@ never the way to make room for something rules (5)/(5a) would have sent to
   one click-target ollama.com link). The loopback activity/network/vitals polls are NOT
   internet. So the residual leak (if any beyond Ollama's own process / browser
   DNS-prefetch) is now caught by construction.
+- **THE SSRF GUARD IS CONNECT-TIME, NOT ONLY PRE-FETCH (NET-01, closed 2026-09-07,
+  live-reproduced first):** `_guard_target` resolves the target and refuses a non-public
+  answer — which is NOT the resolution the connection uses, since requests/urllib3 resolve
+  the same name again inside `create_connection`; a resolver answering public at guard time
+  and `127.0.0.1` at connect time fetched a loopback server's body as a clean 200.
+  `src/ingest/ssrf_guard.py` now validates, for ONE fetch on ONE thread, every address a
+  resolution ANSWERS with and every address a connect is HANDED — entered by
+  `_guarded_redirect_get` (the one method every fetch, robots read, redirect hop and
+  preflight side door passes through) and hooked into `airplane.py`'s ONE socket patch layer,
+  so the two gates cannot be held apart. It deliberately does NOT pin the validated IP:
+  pinning needs urllib3's private connection construction plus a hand-carried hostname for
+  SNI/cert matching, and fails OPEN when that moves, where this fails CLOSED.
+  `OO_SSRF_CONNECT_GUARD=0` disables (its own flag, never the airplane one). Enforced by
+  tests/test_ssrf_connect_guard.py.
 - Honesty by construction: no composite trust/quality scores (CardSchemaError
   enforces); every signal carries method + caveat + n; degrade loudly. No
   fabricated security, ever (no lock screens over plaintext, no theater).
@@ -482,7 +496,10 @@ never the way to make room for something rules (5)/(5a) would have sent to
   is the SAME hazard as the 2026-07-02 stale-base revert incident below — always
   rebase onto the FRESH default tip before merging.)
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
-- Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close, every session.
+- Update the CURRENT release-gate rows you close, every session — today
+  `docs/product/RELEASE_0.3_GATE.md` and `RELEASE_0.4_GATE.md`. (This line named
+  `RELEASE_0.1_RC_GATE.md`, which has not existed for two cycles; corrected 2026-09-07,
+  after it sent a session looking for it.)
 - **PER-RELEASE: RE-CONFIRM THE NO-TELEMETRY CLAIM (recorded 2026-09-07; it existed in no memory
   file, only in a PR body).** `docs/legal/POLITIQUE_DE_CONFIDENTIALITE.md` and its 11 translations,
   plus `docs/USER_MANUAL.md`, state to the user that the app sends no telemetry. That is a

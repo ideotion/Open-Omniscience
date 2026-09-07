@@ -287,6 +287,13 @@ _DNS_CACHE_MAX = _env_cap("OO_DNS_CACHE_MAX", 2048, floor=64)
 _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 
 
+#: The proxy-mapping keys ``requests.utils.select_proxy`` can ever consult, minus
+#: the ``<scheme>://<hostname>`` / ``all://<hostname>`` forms, which are matched by
+#: their "://" instead. Used to narrow the endpoint set the connect-time SSRF guard
+#: allowlists (see ``EthicalFetcher._request_proxy_endpoints``).
+_SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
+
+
 def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
     """True when ``proxy_url``'s scheme resolves DNS AT THE PROXY/EXIT
     (``socks5h``/``socks4a``) rather than locally (``socks5``/``socks4``, any
@@ -1105,6 +1112,19 @@ class EthicalFetcher:
         whose proxy comes from their environment. Merged in the same precedence
         requests itself uses: environment first, then the session, then the
         per-request mapping.
+
+        The result is then narrowed to the keys ``requests.utils.select_proxy``
+        can ever consult -- read out of the installed library rather than
+        recalled: ``<scheme>://<hostname>``, ``<scheme>``, ``all://<hostname>``,
+        ``all``. That is a SUPERSET of whatever is selected for any hop, so it
+        can never refuse a proxy requests would actually use, and it drops the
+        rest of what ``get_environ_proxies`` returns -- which is every
+        ``*_proxy`` variable in the environment with its suffix stripped, so
+        ``NO_PROXY`` arrives as the key ``no`` carrying a comma-separated host
+        list and ``yarn_https_proxy`` as ``yarn_https``. Those matter because a
+        proxy endpoint given as a HOSTNAME stands the guard down for the request:
+        without this filter, an unrelated ``npm_config_proxy`` naming a host
+        would silently disable the check on a great many developer machines.
         """
         merged: dict[str, str] = {}
         if getattr(self.session, "trust_env", False):
@@ -1114,7 +1134,7 @@ class EthicalFetcher:
                 _LOG.debug("could not read environment proxies for %r", url, exc_info=True)
         merged.update(getattr(self.session, "proxies", None) or {})
         merged.update(explicit or {})
-        return merged
+        return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 
     def _read_body(
         self, response, url: str, *, token: int | None = None, keep_bytes: bool = False
