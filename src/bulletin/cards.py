@@ -14,16 +14,28 @@ signal, the method that produced it, the caveat that bounds it, an n, and — fo
 set-based cards — the EXACT article ids it was built from. Those ids are what phase
 2 will hand a local model; here they become the articles a reader can see.
 
-ONE HONESTY PROBLEM, STATED RATHER THAN HIDDEN. Every other section in this
+THE HONESTY PROBLEM, AND HOW MUCH OF IT IS NOW FIXED. Every other section in this
 edition is anchored to the period's closed window, which is what makes it
-reproducible: ask again next month and you get the same numbers. Card producers
-take no period — ``run_all_bounded(session)`` has no ``end`` — so they compute
-against whatever "now" is when the edition is generated, each with its own window.
-That is not a defect to paper over with a period label the numbers do not have. The
-section declares that its cards are AS OBSERVED AT GENERATION, and the edition JSON
-is what makes them reproducible: the record holds the cards, so re-rendering shows
-the same ones even though re-computing would not. That is already how ``stories``
-works.
+reproducible: ask again next month and you get the same numbers. Card producers used
+to take no period at all — ``run_all_bounded(session)`` had no ``end`` — so every
+card computed against whatever "now" was when the edition was generated.
+
+``run_all_bounded`` now takes ``as_of``, an EXCLUSIVE period end, and hands it to
+every producer that declares it. FIVE of the registered producers do; the rest are
+called exactly as before and still compute against now. So this section is MIXED,
+and the one thing it must not do is carry a single verdict for all of it:
+
+* each card states whether ITS producer was anchored (``period_anchored``), read
+  from the producer that made it rather than from the section it landed in;
+* the section's ``window.matches_period`` is now MEASURED — true only when every
+  card shown was anchored — instead of a hardcoded ``False``;
+* ``anchored_producers`` / ``unanchored_producers`` travel by name, because a count
+  says how many and a document needs to say which.
+
+An unanchored card is not a defect to hide behind a period label its numbers do not
+have. What makes both kinds reproducible is the record: the edition JSON holds the
+cards, so re-rendering shows exactly these even though re-computing would not. That
+is already how ``stories`` works.
 
 THE BUDGET IS A ``break``, NOT A TIMEOUT. ``run_all_bounded``'s own docstring
 records why: an all-diagnostics run once sat 69 minutes inside a member that called
@@ -50,7 +62,28 @@ DEFAULT_BUDGET_S = 240.0
 DEFAULT_CARDS_PER_TYPE = 3
 DEFAULT_ARTICLES_PER_CARD = 4
 
-_CAVEAT = (
+_CAVEAT_MIXED = (
+    "Some cards here are anchored to the period above and some are AS OBSERVED WHEN "
+    "THIS EDITION WAS GENERATED. Each card says which it is, because a single verdict "
+    "for the section would be true of only part of it. An unanchored producer uses its "
+    "own window and states it in its own method, so asking again tomorrow would give "
+    "different cards for those. What makes both kinds reproducible is the record: this "
+    "edition holds them, so re-rendering it shows exactly these. Every card carries the "
+    "measurement that surfaced it, never a blended score, and a card is a prompt to "
+    "look rather than a finding: absence of a card is not absence of the thing it would "
+    "have surfaced."
+)
+
+_CAVEAT_ANCHORED = (
+    "Every card here was computed against the period above, the same closed window the "
+    "rest of this document uses. What makes them reproducible is the record: this "
+    "edition holds them, so re-rendering it shows exactly these. Every card carries the "
+    "measurement that surfaced it, never a blended score, and a card is a prompt to "
+    "look rather than a finding: absence of a card is not absence of the thing it would "
+    "have surfaced."
+)
+
+_CAVEAT_UNANCHORED = (
     "Cards are AS OBSERVED WHEN THIS EDITION WAS GENERATED, not for the period above. "
     "Each producer uses its own window and states it in its own method, so these are "
     "the only figures in this document that are not anchored to the period — asking "
@@ -113,14 +146,23 @@ def cards_by_type(
 
     deadline = time.monotonic() + float(budget_s)
     try:
-        cards, stats = run_all_bounded(session, deadline=deadline)
+        # THE PERIOD SEAM. `period.end` is the exclusive upper bound the rest of this
+        # edition uses, so a producer that can honour it computes the same window
+        # every other section does. One that cannot is called exactly as before, and
+        # each card says which happened.
+        cards, stats = run_all_bounded(session, deadline=deadline, as_of=period.end)
     except Exception as exc:  # noqa: BLE001 - the record survives the card layer
         _LOG.warning("bulletin: the card layer failed", exc_info=True)
         return {
             "section": "cards",
             "error": f"{type(exc).__name__}: {exc}",
-            "caveat": _CAVEAT,
+            # No producer ran, so nothing is known about anchoring. The MIXED wording
+            # would claim a split that was never measured; this says the section
+            # failed and stops.
+            "caveat": _CAVEAT_MIXED,
         }
+
+    anchored = set(stats.get("anchored") or [])
 
     grouped: dict[str, list[Any]] = {}
     for c in cards:
@@ -134,6 +176,11 @@ def cards_by_type(
             ids = list(c.article_ids or [])
             row: dict[str, Any] = {
                 "title": c.title,
+                "produced_by": c.produced_by,
+                # Read from the PRODUCER that made this card, never from the section
+                # it landed in: a section-level verdict is true of only part of a
+                # mixed section, which is the whole reason this field exists.
+                "period_anchored": c.produced_by in anchored,
                 "summary": c.summary,
                 "bucket": c.bucket,
                 "signal": dict(c.signal or {}),
@@ -168,6 +215,11 @@ def cards_by_type(
             }
         )
 
+    shown_cards = [row for t in types for row in t["cards"]]
+    anchored_shown = [r for r in shown_cards if r["period_anchored"]]
+    all_anchored = bool(shown_cards) and len(anchored_shown) == len(shown_cards)
+    none_anchored = not anchored_shown
+
     return {
         "section": "cards",
         "types": types,
@@ -175,6 +227,12 @@ def cards_by_type(
         "card_types": len(grouped),
         "producers_run": stats.get("producers_run"),
         "producers_total": stats.get("producers_total"),
+        # BY NAME, both directions. A count says how many honoured the period; only
+        # the names let a reader check which card came from which.
+        "anchored_producers": sorted(anchored),
+        "unanchored_producers": sorted(stats.get("unanchored") or []),
+        "cards_period_anchored": len(anchored_shown),
+        "cards_shown_total": len(shown_cards),
         # Reported, never absorbed: a document built from half the producers must say
         # so, or a short feed reads as a quiet period.
         "truncated": bool(stats.get("truncated")),
@@ -183,8 +241,11 @@ def cards_by_type(
             "start": period.start.isoformat(),
             "end": period.end.isoformat(),
             "days": period.days,
-            # The one section in the edition whose figures are NOT the period's.
-            "matches_period": False,
+            # MEASURED, not hardcoded. True only when every card actually shown was
+            # computed against this window — one unanchored card among twenty makes
+            # the section's figures not the period's, and saying otherwise would be
+            # the fabricated pass a blanket True always is.
+            "matches_period": all_anchored,
         },
         "method": (
             "every enabled card producer, run once at generation time under a wall-clock "
@@ -193,7 +254,13 @@ def cards_by_type(
             "method and caveat, its n, and the articles it was built from where the card "
             "identifies a set. Producers a card producer disabled in Settings are not run."
         ),
-        "caveat": _CAVEAT + " " + ARTICLE_CAVEAT,
+        "caveat": (
+            _CAVEAT_ANCHORED
+            if all_anchored
+            else (_CAVEAT_UNANCHORED if none_anchored else _CAVEAT_MIXED)
+        )
+        + " "
+        + ARTICLE_CAVEAT,
     }
 
 

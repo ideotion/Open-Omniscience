@@ -195,6 +195,14 @@ class Card:
     dismissible: bool = True
     recipe: dict | None = None
     trigger: dict | None = None
+    # WHICH PRODUCER MADE THIS CARD. Set by the registry as it collects, never by a
+    # producer -- a card cannot know its own registration name, and asking each one
+    # to repeat it is a second place for the two to disagree. It exists so a document
+    # can say per card whether that card's figures were anchored to a period or
+    # computed against now: a section-wide verdict is true of only part of a mixed
+    # section, which is the honesty problem the Bulletin's card section states about
+    # itself. Empty for a card built outside the registry (a test, a direct call).
+    produced_by: str = ""
 
     def __post_init__(self) -> None:
         if self.bucket not in BUCKETS:

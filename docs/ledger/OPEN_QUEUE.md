@@ -1698,6 +1698,65 @@
   carried forward: run `/llm-bench` on the GPU machine and on a slow one so the §6.3 time budget
   rests on measurements rather than a guess; and run the continuous-improvement cycles (§15's
   remaining half is *running* them, not building them).
+  **THE FOUR REMAINING §20 QUESTIONS ARE RULED (maintainer, 2026-09-07, in answer to
+  `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4). The §20 list is now CLOSED: every one of the five
+  open questions has an answer.**
+  **D1 (§20 Q4) — LAYER A IS AVAILABLE BELOW THE HARDWARE GATE.**
+  `LAYER_A_REQUIRES_CAPABLE_HARDWARE` flips to `False`, so the §3 gate applies to the NARRATION
+  layer only and a GPU-less operator gets the deterministic document. This does not weaken ruling
+  (2): the justification for gating was workload shape — thousands of narration calls — and that
+  is exactly what stays gated. The recorded consequence the original ruling accepted (a GPU-less
+  operator denied even the model-free half) is what is being reversed, on the design record's own
+  note that it was "reversible in one condition". **The verdict is now TWO facts, not one:**
+  `bulletin_available()` returns the DOCUMENT verdict, and `narration_available` beside it carries
+  the model verdict with its own reason — one key could not mean both without the recorded
+  one-key-two-meanings defect, since below the bar the document is available and the narration is
+  not. The constant keeps exactly one read (the read-count test is unchanged at 2) and the
+  narration refusal reads it nowhere: it is a hardware fact, not a policy constant.
+  **D2 (§20 Q2) — THE INTRODUCTION IS NARRATED BY THE MODEL**, over the edition's own masthead and
+  section figures, with a DETERMINISTIC TEMPLATE beside it. The maintainer chose the narrated form
+  over the templated one; the fallback is not a hedge but the same §8 rule every other Layer-B
+  sentence obeys — a model failure, an empty answer or a paragraph that fails grounding resolves to
+  the template with the reason recorded, so an edition below the gate or in airplane mode still
+  opens with a paragraph and §2's "a section called AI summary would name a document containing no
+  model output" mislabelling never arises. The introduction is grounded in the edition's OWN
+  figures (not article text), so the grounding check is the numeric-support one and an invented
+  figure is dropped exactly as elsewhere.
+  **D3 (§20 Q3) — MAIL SENDING: NEVER.** No outbound mail path is added to the app. Download the
+  document plus the short paste digest stays the only exit (§10 ruling 13). The reasoning is
+  recorded rather than left to be re-derived each cycle: sending is real egress that reveals the
+  operator to a mail provider, off Tor, with stored credentials — a new egress surface for a
+  document the user can already export, against an app whose ONLY external call is the gated,
+  off-by-default DuckDuckGo discovery. This is a CLOSED question, not a deferral.
+  **D4 (§20 Q1/Q5) — THE EIGHT SHIPPED SECTIONS AND THE CHECKBOX REVIEW SCREEN ARE RATIFIED AS THE
+  RULED DESIGN.** The section list is `rising_concepts · across_channels · country_coverage ·
+  by_topic_tag · changes_of_record · alerts · through_time · cards`, in that order, with `cards`
+  deliberately LAST (it is the slowest and the only section whose figures are not the period's).
+  The review screen is the checkbox-per-section/per-story screen with per-sentence verdicts. Both
+  are now pinned by a guard, because a ratified list that nothing enforces is a list that drifts;
+  ADDING a section stays cheap (that is what the registry is for) — the guard makes an addition or
+  a removal a deliberate edit of the ruling rather than a silent one.
+  **ONE QUESTION §18's ENUMERATION RAISES AND DOES NOT ANSWER — MAINTAINER'S TO RULE (recorded
+  2026-09-07, deliberately NOT decided by the session that built the enumeration):** the annexes
+  ZIP defaults to `full_text=True`, and the evidence archive carries every article's whole stored
+  text by design. **Is redistributing a publisher's full text the operator's to do?** That is a
+  question about each publisher's terms, not about this app's behaviour, and it has three shapes
+  worth separating. (a) The EVIDENCE archive is owner-only by design and is not meant to be
+  shared — its full text is what makes the edition's counts recomputable, which is its whole
+  reason to exist; the question barely arises while it stays on the machine that made it.
+  (b) The ANNEXES bundle is what the download button hands over BESIDE the report, so it is the
+  artifact that actually travels, and its default is full text. (c) The published REPORT already
+  carries bounded excerpts only, so it is not in question. The enumeration now STATES, per
+  artifact, that the text is there and whose it is (`publisher_full_text`), and stops:
+  `src/bulletin/privacy.py`'s item says in as many words that this app does not answer it.
+  THE OPTIONS, none taken: keep full text as the annexes default and rely on the disclosure ·
+  flip the annexes default to excerpt-only and make full text the deliberate choice (one query
+  parameter, already plumbed and tested both ways) · make it an operator setting with the terms
+  question stated at the switch. **A ruling would change a default, not build a mechanism** —
+  `full_text` is already a first-class flag on the route, the builder and the enumeration.
+  Tracked on the board as **BUL-3** in [`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* →
+  REMAINING, alongside the four other Bulletin carry-overs; this entry holds the reasoning,
+  that table holds the status.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
@@ -3736,6 +3795,30 @@
   per message. A functional index over that column needs a migration AND the recorded
   NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
   `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
+- **QUESTION FOR THE MAINTAINER — PUSH CI ON `main` NEVER COMPLETES (measured 2026-09-07; no
+  ruling taken, because the fix spends the maintainer's money).** Of the 40 most recently
+  completed `ci.yml` runs on `main`: **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron.** Zero push-triggered runs on the default branch have
+  reached a conclusion. Each merge's run is killed by the next one — my own merge's run
+  (#1030, `c370d4f8`) lasted 3m43s with zero jobs allocated. The workflow ALREADY tries to
+  prevent this: `cancel-in-progress: ${{ github.ref_name !=
+  github.event.repository.default_branch }}` is meant to exempt `main`, and it is not taking
+  effect. **Why this is a question and not a fix:** the repair is a concurrency-block change,
+  which makes every merge run a full matrix (macOS + Windows + ubuntu × several lanes) instead
+  of being cancelled — real runner minutes, at the current cadence of roughly one merge every
+  four minutes. That is a cost decision, and the cheaper alternative is a ruling that the
+  nightly IS the referee for `main` and sessions must reproduce lanes locally rather than defer
+  to CI. **What it costs to leave as-is:** several standing lessons resolve a local limitation
+  with "let CI run the real test" (the CI-only/standalone-repro pattern, the columnar
+  real-httpfs round trip, the pwsh-gated installer tests, the crypto lane's `[pqc]` guard —
+  the last of which was written *because* a guard that no lane collects is a guard that never
+  runs). On `main` that referee currently reports on a cron against whatever the branch happens
+  to be at 11:33 UTC, which is nobody's merge. **UNMEASURED, deliberately:** the mechanism.
+  Whether the expression mis-evaluates or pending runs are superseded regardless of the flag
+  needs a cancellation reason the Actions API does not expose cleanly; the observation says the
+  guarantee is absent, not why, and changing the workflow on the observation alone would be
+  fixing a mechanism nobody has read.
 
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
