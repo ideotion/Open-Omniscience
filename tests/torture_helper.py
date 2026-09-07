@@ -60,6 +60,11 @@ def cmd_build(args) -> None:
     from src.paths import data_dir
 
     mode = args.mode
+    # The CONTENT identity, separate from the structural mode. Default = the mode,
+    # so every existing caller's fixture is byte-identical; a caller that needs two
+    # DISTINCT artifacts of the same shape (the checkpoint-group tests, which have
+    # to prove that both merges of one group reach the corpus) passes its own tag.
+    tag = args.tag or mode
     with session_scope() as s:
         src = Source(name="Shared Wire", domain="wire.example")
         s.add(src)
@@ -84,40 +89,40 @@ def cmd_build(args) -> None:
         )
         s.add(shared)
         s.flush()
-        body = f"unique-to-{mode} body text"
+        body = f"unique-to-{tag} body text"
         uniq = Article(
-            url=f"https://wire.example/{mode}", canonical_url=f"https://wire.example/{mode}",
-            source_id=src.id, title=f"Only in {mode}", content=body, hash=_h(body),
+            url=f"https://wire.example/{tag}", canonical_url=f"https://wire.example/{tag}",
+            source_id=src.id, title=f"Only in {tag}", content=body, hash=_h(body),
             language="en",
         )
         s.add(uniq)
         s.flush()
         kw_shared = Keyword(term="elections", normalized_term="elections", language="en", frequency=3)
-        kw_uniq = Keyword(term=f"kw-{mode}", normalized_term=f"kw-{mode}", language="en", frequency=1)
+        kw_uniq = Keyword(term=f"kw-{tag}", normalized_term=f"kw-{tag}", language="en", frequency=1)
         s.add_all([kw_shared, kw_uniq])
         s.flush()
         s.add(KeywordMention(keyword_id=kw_shared.id, article_id=shared.id, count=2,
                              observed_on=date(2026, 6, 1), country="fr", extractor="baseline"))
         s.add(KeywordMention(keyword_id=kw_uniq.id, article_id=uniq.id, count=1,
                              observed_on=date(2026, 6, 2), extractor="baseline"))
-        sg = KeywordSuperGroup(name=f"group-{mode}", color="#123456")
+        sg = KeywordSuperGroup(name=f"group-{tag}", color="#123456")
         s.add(sg)
         s.flush()
         s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="elections"))
-        wp = WikiPage(wiki="fr", title=f"Page_{mode}", baseline_revid=100, last_revid=101)
+        wp = WikiPage(wiki="fr", title=f"Page_{tag}", baseline_revid=100, last_revid=101)
         s.add(wp)
         s.flush()
         s.add(WikiRevision(page_id=wp.id, revid=101,
                            timestamp=datetime(2026, 6, 1, tzinfo=UTC), editor="ed",
                            size=10, delta_bytes=5))
-        s.add(LawDocument(jurisdiction="eu", title=f"Reg {mode}",
-                          url=f"https://law.example/{mode}",
-                          baseline_hash=_h(f"law{mode}"), last_hash=_h(f"law{mode}")))
+        s.add(LawDocument(jurisdiction="eu", title=f"Reg {tag}",
+                          url=f"https://law.example/{tag}",
+                          baseline_hash=_h(f"law{tag}"), last_hash=_h(f"law{tag}")))
         s.add(CommodityPrice(symbol="XAU", market="spot", observed_on=date(2026, 6, 1),
                              price=1000.0 if mode == "A" else 1234.5, currency="USD",
                              unit="ozt", source="feed:gold"))
-        s.add(CommodityPrice(symbol=f"SYM{mode}", observed_on=date(2026, 6, 2), price=42.0,
-                             currency="USD", unit="kg", source=f"feed:{mode}"))
+        s.add(CommodityPrice(symbol=f"SYM{tag}", observed_on=date(2026, 6, 2), price=42.0,
+                             currency="USD", unit="kg", source=f"feed:{tag}"))
 
     (data_dir() / "app_settings.json").write_text(
         json.dumps({"version": "oo-app-settings-1",
@@ -134,7 +139,7 @@ def cmd_build(args) -> None:
 
         with CustodyLog() as log:
             log.record("article:shared", _h(SHARED_BODY), "ingest", actor="op")
-            log.record("article:uniq", _h(f"unique-to-{mode} body text"), "ingest", actor="op")
+            log.record("article:uniq", _h(f"unique-to-{tag} body text"), "ingest", actor="op")
         if args.custody == "tampered":
             from src.database.connect import connect as db_connect
 
@@ -199,7 +204,14 @@ def cmd_merge(args) -> None:
         # the FULL restore direction-dependent in DERIVED data BY DESIGN, so disable it
         # here to keep the engine's symmetry/determinism assertions meaningful. ``--reindex``
         # opts a specific test into the real post-swap re-index step (default stays off).
-        report = merge_mod.run_restore(staged, commit=args.commit, reindex_imported=args.reindex)
+        report = merge_mod.run_restore(
+            staged, commit=args.commit, reindex_imported=args.reindex,
+            # The CHECKPOINT seam, driven end to end rather than in-process: the
+            # held path's whole claim is about what does NOT happen to the live
+            # corpus, and only a real run_restore against a real corpus can show it.
+            working_copy=Path(args.working_copy) if args.working_copy else None,
+            hold_after_merge=bool(args.hold),
+        )
         _emit({"report": report})
     except Exception as exc:  # noqa: BLE001
         _emit({"error": type(exc).__name__, "message": str(exc)[:300]})
@@ -326,6 +338,7 @@ def main() -> None:
     b.add_argument("--artifact", default=None)
     b.add_argument("--passphrase", default="-")
     b.add_argument("--custody", default="none", choices=["ok", "tampered", "none"])
+    b.add_argument("--tag", default=None)
     m = sub.add_parser("merge")
     m.add_argument("artifact")
     m.add_argument("--passphrase", default="-")
@@ -333,6 +346,8 @@ def main() -> None:
     m.add_argument("--kill-at", default=None)
     m.add_argument("--reindex", action="store_true")
     m.add_argument("--crash-reindex", action="store_true")
+    m.add_argument("--working-copy", default=None)
+    m.add_argument("--hold", action="store_true")
     sub.add_parser("dump")
     f = sub.add_parser("fts-find")
     f.add_argument("token")
