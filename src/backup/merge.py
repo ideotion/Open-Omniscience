@@ -3510,7 +3510,14 @@ def _run_scoped_snapshot() -> Path | None:
       * a LATER run gets a new token and therefore a new snapshot.
 
     Re-verifies the file still exists before reusing it: a snapshot someone deleted must
-    be re-taken, never silently reported as still standing."""
+    be re-taken, never silently reported as still standing.
+
+    AT A CHECKPOINT INTERVAL K > 1 the first copy is written at the first CHECKPOINT
+    rather than at the first item, because a HELD item skips this stage entirely. Its
+    CONTENT is unchanged by that: nothing writes the live corpus between the run's start
+    and its first swap, so the file still holds the run-start state an operator would
+    want back. And a run stopped before any checkpoint needs no safety net at all —
+    nothing was written to the corpus to return from."""
     from src.scheduler.runner import exclusive_window_token
 
     token = exclusive_window_token()
@@ -3598,25 +3605,23 @@ def _verify_fts(con, has_fts: bool, articles: int) -> dict:
 # --------------------------------------------------------------------------- #
 #  Verification on the working copy (design §3: the merge gate)
 # --------------------------------------------------------------------------- #
-def verify_copy(
-    working_copy: Path, staged_corpus: Path, batch_id: int, *, timings: object = None
-) -> dict:
-    """Post-merge verification, all on the copy. Any failure aborts the restore
-    BEFORE the swap -- the live DB never sees an unverified merge.
+def verify_file(working_copy: Path, *, timings: object = None) -> dict:
+    """The whole-FILE structural checks: ``quick_check`` + ``foreign_key_check``.
 
-    ``timings`` (optional): a StageTimings-like recorder. SPLIT for the same reason
-    ``prepare_staged`` is, and with more urgency: this stage runs once per queued
-    backup over the WHOLE working copy, so on an 18-backup import it walks a
-    growing multi-GB file eighteen times -- and it had never once been observed at
-    field scale, because no run had survived long enough to reach it. The aggregate
-    alone would not say which half to act on, and the halves are unrelated work:
-    ``quick_check`` is a page walk of the entire file (and the working copy
-    PRESERVES the live at-rest state, so on an encrypted corpus every one of those
-    pages is decrypted), ``foreign_key_check`` is index-driven, and the content
-    sample is a bounded join. Optional, so every existing caller and test is
-    untouched and a timing failure can never break a restore.
+    SPLIT OUT of :func:`verify_copy` for the import checkpoint (2026-09-07). These
+    two ask nothing about any particular merge -- they ask whether the FILE is
+    structurally sound, so they cover every merge the file carries, and running them
+    once per file is exactly as strong as running them once per merge into it. That
+    is what makes a checkpoint interval K > 1 possible without weakening the gate:
+    the per-merge checks (:func:`verify_merge`) still run for every item, and this
+    walk runs once for the working copy they all landed in.
+
+    ``quick_check`` is a page walk of the entire file (and the working copy PRESERVES
+    the live at-rest state, so on an encrypted corpus every one of those pages is
+    decrypted); ``foreign_key_check`` is index-driven and, measured, barely feels the
+    codec at all. See ``docs/design/IMPORT_PERFORMANCE_2026-08-08.md`` §5 for both
+    numbers.
     """
-    from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
     _sub = _sub_timer(timings)
@@ -3635,7 +3640,31 @@ def verify_copy(
         with _sub("verify:foreign_key_check"):
             fk = con.execute("PRAGMA foreign_key_check").fetchall()
         v["foreign_key_violations"] = len(fk)
+        v["file_ok"] = v["quick_check"] == "ok" and v["foreign_key_violations"] == 0
+        return v
+    finally:
+        con.close()
 
+
+def verify_merge(
+    working_copy: Path, staged_corpus: Path, batch_id: int, *, timings: object = None
+) -> dict:
+    """The checks about THIS MERGE: counts, the search index, and the sampled
+    content comparison against the artifact this batch came from.
+
+    Every one of these needs ``staged_corpus`` still on disk, which is why they run
+    per item rather than at a checkpoint -- an artifact's staging tree is cleaned as
+    soon as its item finishes, so deferring the content sample would mean dropping
+    it. Split out of :func:`verify_copy` (2026-09-07) with no change to what any of
+    them does.
+    """
+    from src.database.connect import attach
+    from src.database.connect import connect as db_connect
+
+    _sub = _sub_timer(timings)
+    con = db_connect(working_copy, check_same_thread=False)
+    try:
+        v: dict = {}
         has_fts = bool(
             con.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='article_fts' LIMIT 1"
@@ -3675,21 +3704,78 @@ def verify_copy(
                 (batch_id,),
             )
         v["sampled_content_mismatches"] = bad
-        v["ok"] = (
-            v["quick_check"] == "ok"
-            and v["foreign_key_violations"] == 0
-            and v["fts_matches_articles"]
-            and v["fts_trigger_present"]
-            and bad == 0
+        v["merge_ok"] = (
+            v["fts_matches_articles"] and v["fts_trigger_present"] and bad == 0
         )
         return v
     finally:
         con.close()
 
 
+def verify_copy(
+    working_copy: Path, staged_corpus: Path, batch_id: int, *, timings: object = None
+) -> dict:
+    """Post-merge verification, all on the copy. Any failure aborts the restore
+    BEFORE the swap -- the live DB never sees an unverified merge.
+
+    Both halves, composed: :func:`verify_merge` (this batch) and :func:`verify_file`
+    (the whole file). Kept as ONE function with its original signature and its
+    original output keys so every existing caller, test and persisted report is
+    untouched; ``merge_ok`` and ``file_ok`` are additive, and ``ok`` is still the
+    conjunction of everything.
+
+    ``timings`` (optional): a StageTimings-like recorder. SPLIT for the same reason
+    ``prepare_staged`` is, and with more urgency: this stage runs once per queued
+    backup over the WHOLE working copy, so on an 18-backup import it walks a
+    growing multi-GB file eighteen times -- and it had never once been observed at
+    field scale, because no run had survived long enough to reach it. The aggregate
+    alone would not say which half to act on, and the halves are unrelated work:
+    ``quick_check`` is a page walk of the entire file (and the working copy
+    PRESERVES the live at-rest state, so on an encrypted corpus every one of those
+    pages is decrypted), ``foreign_key_check`` is index-driven, and the content
+    sample is a bounded join. Optional, so every existing caller and test is
+    untouched and a timing failure can never break a restore.
+    """
+    v = verify_file(working_copy, timings=timings)
+    v.update(verify_merge(working_copy, staged_corpus, batch_id, timings=timings))
+    v["ok"] = bool(v["file_ok"] and v["merge_ok"])
+    return v
+
+
 # --------------------------------------------------------------------------- #
 #  Side files (additive + idempotent; local always wins) and custody chains
 # --------------------------------------------------------------------------- #
+def _merge_side_files_and_custody(staged: StagedArtifact, report: dict) -> None:
+    """The body of the ``side_files_and_custody`` stage.
+
+    Extracted (2026-09-07) because the checkpoint-group path runs it for a HELD item
+    too: side files and custody chains merge into ``data_dir()``, not into the
+    corpus, so they are neither carried by the working copy nor undone by discarding
+    it, and deferring them to the checkpoint would mean dropping them (an item's
+    staging tree is gone by then). One body, two call sites — a second copy would be
+    the drift this project's ledger records over and over.
+    """
+    report["side_files"] = merge_side_files(staged)
+    if staged.custody_path is not None:
+        report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
+
+
+def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
+    """The body of the ``report_json_write`` stage — extracted for the same reason
+    as :func:`_merge_side_files_and_custody`, and used by both paths."""
+    from src.database.connect import connect as db_connect
+
+    con = db_connect(working, check_same_thread=False)
+    try:
+        con.execute(
+            "UPDATE merge_batches SET report_json = ? WHERE id = ?",
+            (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
 def merge_side_files(staged: StagedArtifact) -> dict:
     report: dict = {}
     base = data_dir()
@@ -4717,11 +4803,20 @@ _RESTORE_STAGES_ALWAYS: tuple[str, ...] = (
     "snapshot_working_copy",
     "merge",
     "verify",
-    "corpus_delta_before",
+)
+# The HELD tail (checkpoint interval K, 2026-09-07): an item merged into a working
+# copy the caller is carrying stops here. Its two stages are the ones that cannot
+# wait for the checkpoint -- see the held branch in run_restore for why.
+_RESTORE_STAGES_HELD: tuple[str, ...] = (
+    "side_files_and_custody",
+    "report_json_write",
 )
 # Everything after the dry-run early return (``if not commit``) -- i.e. only a
-# COMMITTING restore reaches these.
+# COMMITTING restore reaches these. ``corpus_delta_before`` belongs HERE and not in
+# _ALWAYS: a preview returns above it, so counting it made a preview's denominator
+# one larger than the number of stages it walks (fixed 2026-09-07).
 _RESTORE_STAGES_COMMIT: tuple[str, ...] = (
+    "corpus_delta_before",
     "pre_restore_snapshot",
     "side_files_and_custody",
     "report_json_write",
@@ -4737,18 +4832,22 @@ _RESTORE_STAGES_COMMIT: tuple[str, ...] = (
 )
 
 
-def restore_stage_plan(*, commit: bool, reindex_imported: bool = True) -> tuple[str, ...]:
+def restore_stage_plan(
+    *, commit: bool, reindex_imported: bool = True, hold_after_merge: bool = False
+) -> tuple[str, ...]:
     """The stages THIS restore will actually walk, in order.
 
     Exists so a caller can show an honest "phase N of M" (field ruling 2026-07-29
     item 17: the number of remaining phases must be visible). M is NOT a constant --
-    a dry run stops after ``corpus_delta_before`` and a restore with
-    ``reindex_imported=False`` never runs the ``reindex`` stage -- so a hardcoded
-    denominator would be a fabricated number, exactly the thing this project's
-    honesty rules forbid. Pure + total, so it is trivially testable and can never
-    itself fail a restore."""
+    a dry run stops before ``corpus_delta_before``, a HELD item (checkpoint interval
+    K) stops after its own report row, and a restore with ``reindex_imported=False``
+    never runs the ``reindex`` stage -- so a hardcoded denominator would be a
+    fabricated number, exactly the thing this project's honesty rules forbid. Pure +
+    total, so it is trivially testable and can never itself fail a restore."""
     if not commit:
         return _RESTORE_STAGES_ALWAYS
+    if hold_after_merge:
+        return _RESTORE_STAGES_ALWAYS + _RESTORE_STAGES_HELD
     tail = tuple(s for s in _RESTORE_STAGES_COMMIT if s != "reindex" or reindex_imported)
     return _RESTORE_STAGES_ALWAYS + tail
 
@@ -4798,6 +4897,8 @@ def run_restore(
     should_stop: Callable[[], bool] | None = None,
     exclusive: bool = False,
     source_digest: str | None = None,
+    working_copy: Path | None = None,
+    hold_after_merge: bool = False,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -4868,7 +4969,35 @@ def run_restore(
     with no behavioural difference: the fast path itself refuses unless it can PROVE the
     copy is complete (see :func:`~src.database.connect._quiesced_file_copy`), so passing
     it wrongly costs correctness nothing. Default False keeps every existing caller
-    byte-for-byte on the old path."""
+    byte-for-byte on the old path.
+
+    ``working_copy`` / ``hold_after_merge`` (the import CHECKPOINT INTERVAL K,
+    2026-09-07 — the 2026-08-08 queue entry's item (b)). Both default to the
+    behaviour every existing caller already had, and neither does anything unless
+    the caller supplies them:
+
+      * ``working_copy`` says WHERE to build or find the disposable copy the merge
+        writes into. Default (None) is ``staged.staging_dir/working.db``, created
+        fresh from the live corpus exactly as before. When the caller passes a path
+        that ALREADY EXISTS, that copy is reused as-is and no snapshot is taken —
+        which is the whole saving: an 18-backup queue otherwise copies the entire
+        (growing) corpus eighteen times, once per item.
+      * ``hold_after_merge`` stops after the merge, this batch's own verification
+        and its side files, WITHOUT verifying the whole file, snapshotting,
+        swapping or re-indexing. The report comes back ``held=True``,
+        ``committed=False``, and the working copy is left for the caller to carry
+        into the next item. It is meaningful only with ``commit=True``: a preview
+        returns above the held branch and its report carries no ``held`` key at
+        all, which is what a caller reads, so the combination costs nothing and
+        claims nothing.
+
+    THE COST, and it is the caller's to accept: nothing is durable until a swap, so
+    every item held is an item that a kill, a Stop or a failure discards along with
+    the rest of its group. The gate is NOT weakened — every per-merge check still
+    runs for every item, and the whole-file walk (:func:`verify_file`) covers every
+    merge in the file it walks — but the WINDOW in which a crash costs work grows
+    with K. :func:`~src.backup.import_queue.import_checkpoint_k` owns that choice
+    and states the range."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
@@ -4936,16 +5065,28 @@ def run_restore(
             staged, allow_unverified=allow_unverified, timings=timings
         )
 
-    working = staged.staging_dir / "working.db"
-    if working.exists():
-        working.unlink()
+    working = Path(working_copy) if working_copy is not None else staged.staging_dir / "working.db"
+    # CARRIED, not created: a caller running a checkpoint group hands the SAME path
+    # to every item, and from the second item on the file is already there with the
+    # previous merges in it. Only a caller-supplied path can be carried -- the
+    # default staging path is per-item and is unlinked exactly as before, so a
+    # left-over from an earlier attempt in the same staging dir can never be
+    # mistaken for a group's copy.
+    carried = working_copy is not None and working.exists()
     # The working copy PRESERVES the live at-rest state: merging on an
-    # encrypted corpus must never yield a plaintext live file at the swap.
+    # encrypted corpus must never yield a plaintext live file at the swap. That is
+    # also why a carried copy left behind by a killed run is not the at-rest hole a
+    # plaintext staging tree would be: it is encrypted whenever the live corpus is,
+    # and it is swept by the ordinary ``.restore-*`` janitor.
     from src.database.connect import snapshot_preserving
 
     _abort_point("snapshot_working_copy")
     with timings.stage("snapshot_working_copy"):
-        snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
+        if not carried:
+            if working.exists():
+                working.unlink()
+            working.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -5050,9 +5191,25 @@ def run_restore(
             timings.record(f"merge_sql:{_sql}", float(_agg["seconds"]))
     _abort_point("verify")
     with timings.stage("verify"):
-        verification = verify_copy(
-            working, staged.corpus_path, batch_id, timings=timings
-        )
+        if hold_after_merge:
+            # The per-merge half only. The whole-FILE walk is not skipped, it is
+            # DEFERRED to the checkpoint that swaps this copy in -- and it covers
+            # every merge in the file by construction, so the gate is as strong
+            # there as it would have been here. Said in the payload rather than
+            # left to be inferred: an `ok` that means "this batch's own checks
+            # passed" must not read as "this copy is cleared for the live corpus".
+            verification = verify_merge(
+                working, staged.corpus_path, batch_id, timings=timings
+            )
+            verification["ok"] = bool(verification["merge_ok"])
+            verification["file_checks_deferred"] = (
+                "quick_check and foreign_key_check run once, on the checkpoint that "
+                "swaps this working copy in; they cover every merge it carries"
+            )
+        else:
+            verification = verify_copy(
+                working, staged.corpus_path, batch_id, timings=timings
+            )
 
     report: dict = {
         "artifact_kind": staged.kind,
@@ -5073,6 +5230,37 @@ def run_restore(
         report["timings"] = timings.report()
         return report
     if not commit:
+        report["timings"] = timings.report()
+        return report
+
+    # ---- held path (checkpoint interval K) -------------------------------- #
+    # The merge landed in the working copy and passed its own checks; the caller is
+    # carrying that copy into the next item, so everything from here to the swap is
+    # the CHECKPOINT's work and is not done per item.
+    #
+    # Two things still are, and both are deliberate. The side files and custody
+    # chains merge into ``data_dir()`` rather than into the corpus, and this item's
+    # staging tree is deleted the moment it returns — deferring them would drop
+    # them, so they run now (additive, idempotent and local-wins, so a group that is
+    # later discarded leaves nothing a re-import does not simply redo). And the
+    # per-batch report row is written into the working copy it describes, which is
+    # exactly where the checkpoint will carry it.
+    if hold_after_merge:
+        _abort_point("side_files_and_custody")
+        with timings.stage("side_files_and_custody"):
+            _merge_side_files_and_custody(staged, report)
+        _abort_point("report_json_write")
+        with timings.stage("report_json_write"):
+            report["timings"] = timings.report()
+            _write_batch_report(working, batch_id, report)
+        report["held"] = True
+        report["batch_id"] = batch_id
+        report["working_copy"] = str(working)
+        report["held_note"] = (
+            "merged into the import's working copy and verified, but NOT yet written "
+            "to your corpus — it is committed by the checkpoint at the end of this "
+            "group of backups"
+        )
         report["timings"] = timings.report()
         return report
 
@@ -5141,29 +5329,17 @@ def run_restore(
 
         _abort_point("side_files_and_custody")
         with timings.stage("side_files_and_custody"):
-            report["side_files"] = merge_side_files(staged)
-            if staged.custody_path is not None:
-                report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
+            _merge_side_files_and_custody(staged, report)
 
         # Persist the final report inside the copy BEFORE it becomes the live DB.
         # (The timings captured up to this instant are what gets written; every
         # LATER stage below is necessarily missing from THIS particular copy —
         # honest by construction, since the swap/reindex/post-steps haven't
         # happened yet at the moment this row is written.)
-        from src.database.connect import connect as db_connect
-
         _abort_point("report_json_write")
         with timings.stage("report_json_write"):
             report["timings"] = timings.report()
-            con = db_connect(working, check_same_thread=False)
-            try:
-                con.execute(
-                    "UPDATE merge_batches SET report_json = ? WHERE id = ?",
-                    (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
-                )
-                con.commit()
-            finally:
-                con.close()
+            _write_batch_report(working, batch_id, report)
 
         # The atomic swap itself: kept as close to bare as possible (the highest
         # crash-sensitivity moment in the whole engine) -- the timer adds only two

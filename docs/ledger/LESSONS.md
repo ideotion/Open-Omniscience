@@ -6438,6 +6438,104 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A GUARD'S OWN EXEMPTION SET CAN DEFEAT THE GUARD — exempt the QUESTION, never the
+    ANSWER (2026-09-07, NET-01's resolution check):** the connect-time SSRF guard allowlists
+    the configured proxy endpoint, because a Tor proxy is loopback and refusing it would
+    refuse Tor itself. Its resolution half then skipped any RETURNED address that was in that
+    allowlist — which reads as the same exemption and is the opposite of it. Resolving the
+    proxy literal `127.0.0.1` answers `127.0.0.1` and must pass; a NAME that answers
+    `127.0.0.1` **is the attack**. The exact reach is worth stating rather than rounding: the
+    check went blind to any answer equal to a configured proxy's own ADDRESS, which on the
+    documented Tor shape — and in any environment that names a loopback proxy, as this sandbox
+    does — is `127.0.0.1`, the commonest SSRF target of all. `10.0.0.5` and `169.254.169.254`
+    would still have been refused, which is precisely why it looked like it worked. It was also
+    invisible because the LATER net (the connect check, keyed on the exact `(address, port)`
+    pair) caught the reproduction anyway and the test went green. What found it was asking WHICH of two mechanisms fired, by reading the scope's
+    own counters, rather than being satisfied that something refused. GENERAL FORM: when a
+    guard carries an exemption, name which side of the comparison it belongs on — an exemption
+    keyed to the thing being ASKED ABOUT is narrow, one keyed to the RESULT silently exempts
+    everything that can produce that result. COROLLARY, and the reason the belt hid the
+    defect: with two nets over one property, a test that only asserts "it was refused" cannot
+    tell you which net is alive, so each mechanism needs a driver that reaches it alone (the
+    recorded belt-masks-the-primary lesson, arriving from the other direction).
+  - **A SECOND GUARD RIDING AN EXISTING PATCH LAYER MUST NOT INHERIT THE FIRST'S OFF SWITCH,
+    AND ONE FLAG CANNOT CARRY TWO FACTS (2026-09-07, same slice):** the airplane backstop
+    already patches `socket.getaddrinfo`/`create_connection`/`connect(_ex)`/`_tunnel`/
+    `socksocket.connect`, and the right place for a connect-time SSRF check is those same
+    functions — one layer, so a call site cannot meet one gate and miss the other. But
+    `install_airplane_socket_guard()` reads `OO_AIRPLANE_SOCKET_GUARD` and, when it is `0`,
+    installs NOTHING: riding that installer would have handed an unrelated flag a silent veto
+    over a security control it was never about, and the installer itself only runs from
+    `run_deferred_startup`, so a CLI, a script or a test would have had no guard at all.
+    Installing the patches unconditionally instead re-arms airplane's refusal for the
+    deployment that opted out of it. Both directions are wrong because `_installed` was being
+    asked to mean two things: "the functions are patched" and "airplane is in force". Split
+    them (`_installed` + `_airplane_armed`), give each guard its own env opt-out, and let each
+    hook decide for itself. GENERAL FORM: before extending a shared mechanism with a second
+    policy, list the flags that currently gate it and ask which policy each one is ABOUT; a
+    flag that gates the mechanism gates every policy on it, whether or not that was ever
+    intended.
+  - **A PLAN'S REMEDY IS A HYPOTHESIS, AND THE TIE-BREAK IS WHICH WAY IT FAILS (2026-09-07,
+    NET-01 "connect-time IP pinning"):** the recorded rule says a plan written from
+    measurements is trustworthy about the DEFECT and not automatically about the REPAIR. The
+    defect here was exact and live-reproducible — `_guard_target` validates one `getaddrinfo`
+    answer, urllib3 connects on a second one, and a real fetch returned a loopback server's
+    body as a clean 200. The prescribed repair, an adapter that PINS the validated IP, was
+    refused after being costed: pinning means taking over urllib3's connection construction
+    and then carrying the hostname separately for SNI, certificate matching and the `Host`
+    header, i.e. version-fragile private API whose failure mode is a SILENTLY WEAKER TLS
+    verification. Validating the address the connection ACTUALLY reaches gets the same
+    security property — the threat is reaching an INTERNAL address, and a second, different
+    PUBLIC answer is normal under CDN anycast, so pinning's extra strictness buys nothing
+    here — touches no TLS state, and rides the stdlib socket chokepoint every HTTP client
+    must pass through. The deciding argument is the direction of failure: a pinning adapter
+    fails OPEN the day urllib3 moves its private API, and a socket-level check fails CLOSED.
+    GENERAL FORM: when you diverge from a prescribed remedy, cost BOTH and pick on the failure
+    mode, then write the comparison where the next reader will look for it — otherwise the
+    divergence reads as a shortcut.
+  - **A TRANSLATION SCOPED TO THE CALL YOU EXPECTED TO RAISE LEAKS THE ONE YOU DID NOT
+    (2026-09-07, same slice, found by the negative-space pass and by nothing else):** the
+    connect-time refusal is a private exception type, translated at the fetch boundary into
+    the public `BlockedTarget` so callers keep the contract they already have. The first cut
+    wrapped `session.get` — the call the refusal was expected to come from. But a redirect
+    hop re-runs `_guard_target` INSIDE the same scope, and that resolves, so the refusal can
+    arrive from there too: a redirect to an internal host escaped as a type no caller catches,
+    on a path refused for exactly the same reason. Wrap the whole scope body, not the call you
+    had in mind. GENERAL FORM: when a guard can raise from anywhere inside a region, the
+    translation belongs at the region's edge; enumerate what else inside it touches the
+    guarded resource, because the enumeration you write from the happy path will omit the
+    re-entry.
+  - **`session.proxies` IS NOT THE ANSWER TO "WHAT WILL requests CONNECT TO" (2026-09-07,
+    empirical, and it decided a guard's correctness):** `Session.merge_environment_settings`
+    folds `HTTP(S)_PROXY` from the environment in whenever `trust_env` is set, which is the
+    default, and none of that appears in `session.proxies`. A guard that allowlists "the
+    configured proxy" by reading the session alone therefore REFUSES the proxy connection of
+    every operator whose proxy comes from their environment — a security control breaking a
+    working configuration, which is the one thing it may not do. Two riders measured while
+    fixing it: `requests.utils.get_environ_proxies` strips the `_proxy` suffix off every
+    matching variable, so `NO_PROXY` arrives as the key **`no`** carrying a comma-separated
+    host list (not a proxy endpoint) and `yarn_https_proxy` arrives as `yarn_https`; and
+    PySocks 1.7.1's `socksocket._write_SOCKS5_address` takes its non-`rdns` branch through
+    `socket.getaddrinfo(host, port, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP, AI_ADDRCONFIG)` and
+    keeps `addresses[0]` — read out of the installed library rather than recalled, which is
+    what makes it safe to claim that a local-resolving SOCKS destination lookup meets a
+    `getaddrinfo` hook.
+  - **MEASURE A SURVIVING MUTANT FOR EQUIVALENCE BEFORE WRITING A FIXTURE TO KILL IT — and
+    when it IS equivalent, the honest repair is a direct test of the contract, not a deleted
+    guard (2026-09-07, the DuckDuckGo redirect unwrap):** three of five mutations survived.
+    One was a fixture gap (the missing-target fallback is equivalent on a scheme-less
+    redirector and only discriminating on the absolute one, where returning the redirector
+    registers `duckduckgo.com` as a discovered SOURCE). The other two were genuinely
+    equivalent AT THE CALLER: `_clean_url`'s own `scheme`/`netloc` check and `safe_href`
+    reach the same verdict for every relative, scheme-less and dangerous-scheme target, so no
+    fixture through that path can ever tell the versions apart. Deleting them would have made
+    a public classmethod answer dishonestly for any caller that is not `_clean_url` (the
+    recorded "a public function's guards can live entirely in its caller" defect); keeping
+    them untested would have shipped unexercised code in a security path. The third way is to
+    test the helper's contract DIRECTLY and write the equivalence measurement into its
+    docstring, so the next matrix does not re-find it and nobody writes a vacuous fixture for
+    it. GENERAL FORM: a surviving mutant is a finding about the test, the fixture, or the
+    code — and "which" is a measurement, not a judgement call.
   - **A CAPABILITY PROBE THAT RUNS THE LIBRARY'S HAPPY PATH CAN STILL BE WRONG ABOUT IT — and
     the FABRICATED-FAILURE half is the one no fixture catches (2026-09-07, D7's OTS probe):**
     replacing `OTS_AVAILABLE`'s bare-import check with an offline round trip is the correct
@@ -6791,6 +6889,107 @@
     then ASSERT the NULL is there, or the branch is untested while looking covered. Same
     family as the recorded fixture-missing-a-field-production-always-stamps entry, arriving
     from the opposite direction: here production stamps a default the fixture cannot refuse.
+  - **A CODEC MULTIPLIER MEASURED IN THE PAGE CACHE OVER-STATES A DISK-BOUND WALK, AND
+    THE RULED PAGE SIZE IS WHY (2026-09-07, the S5 measurement of the two whole-corpus
+    PRAGMA checks):** `merge_diag.walk_probe` publishes a plaintext-versus-encrypted
+    page-walk RATIO precisely because a probe small enough to sit in a bundle is small
+    enough to sit in RAM, and its docstring's recipe is to take the field's own measured
+    `prepare_staged:validate` rate and apply the multiplier. Measured independently at
+    2 and 4 GiB on the real engine, n=3 per configuration, the multiplier reproduces
+    **warm** — 2.34x/2.57x against the recorded 2.40/2.39/2.42 — and falls to
+    **1.29x/1.39x cold**. THE MECHANISM IS THE RULING ITSELF: a staged corpus is
+    exported plaintext and gets SQLite's 4096 default, while an encrypted store created
+    under DB-10 §1b is **16384**, so the encrypted arm does a QUARTER as many reads,
+    four times as large, and once I/O dominates that pays for most of the codec — and
+    the field's `validate` rate (17 MB/s on a 32 GB artifact) is as disk-bound as a
+    number gets. So the recipe over-states by about 1.8x on exactly the input it names.
+    GENERAL FORM: a ratio survives a regime change only when BOTH arms stay in the same
+    regime; before applying one measured in RAM to a rate measured on a disk, ask what
+    ELSE differs between the arms — here a page size that a separate, correct ruling had
+    already changed. TWO MORE FACTS FROM THE SAME RUN, recorded so they are not
+    re-derived: both checks are **LINEAR in bytes** (encrypted `quick_check` 8.2 → 8.4
+    s/GiB cold as the corpus doubles, `foreign_key_check` 3.1 → 2.8, flat to within the
+    noise), and `foreign_key_check` is **CODEC-NEUTRAL** (0.84-0.98x per byte in both
+    regimes) and costs about a THIRD of `quick_check` — it is index-driven and never
+    walks the pages `quick_check` walks, so it is not the place to look first.
+    **AND THE MEASUREMENT TOOK THREE PASSES, WHICH IS THE OTHER HALF OF THE LESSON.**
+    Pass 1 ran ONE repetition per configuration while this session was also running
+    pytest, mypy and a mutation matrix; its cold ratios came out 1.51x/1.08x/0.95x/1.58x
+    — no trend — and a story was nearly written around the 0.95. Pass 2 fixed the
+    repetitions and interleaved AT THE CONDITION LEVEL (all arms cold, then all arms
+    warm), which spreads machine drift across arms and **destroys any condition that
+    depends on what ran immediately before**: by the time the first arm's "warm" run
+    happened, three later arms had each dropped the page cache and read gigabytes
+    through it, so its 2 GiB warm `quick_check` measured 14.6 s against a
+    genuinely-warm 5.2 s. Interleave one level OUT — a round visits every arm, and
+    within an arm the dependent conditions run back to back — and both properties
+    survive. The tell for both passes was the same: a per-configuration spread that made
+    the differences unreadable, against 1.19x worst-case once it was measured properly.
+  - **"DID IT COPY?" IS ANSWERED BY THE CONTENT, NEVER BY THE CLOCK — a timing
+    assertion at fixture scale is the lookalike trap wearing a test's clothes
+    (2026-09-07, the checkpoint's carried working copy):** the whole saving of the
+    import checkpoint is that the second item of a group REUSES the working copy
+    instead of re-snapshotting the corpus, so the obvious guard is that the second
+    item's `snapshot_working_copy` stage is faster than the first's. The mutation that
+    re-snapshots unconditionally **SURVIVED it**: on a fixture this small both numbers
+    are noise, and a comparison between two noise samples passes about half the time in
+    each direction. The exact, load-independent question is what a re-snapshot actually
+    DOES — it throws the previous merge away and starts again from the live corpus — so
+    the discriminator is `SELECT COUNT(*) FROM merge_batches` in the carried file: two
+    after two held items, one after a re-snapshot. GENERAL FORM: when a change's win is
+    that some work is SKIPPED, do not assert the duration; assert the state that only
+    the skipped path can produce. Same family as the recorded "a probe's scale is part
+    of the lookalike", with the fixture rather than the measurement as the subject.
+    **SECOND SURVIVOR FROM THE SAME MATRIX, and it was a finding about the CODE:**
+    deleting `self._checkpoint_k <= 1` from the hold decision changed nothing, because
+    the group-full check beside it (`open_items + 1 >= k`) independently returns False
+    for every item at K = 1. Neither deleting the clause nor writing a test for it is
+    right: it is a belt on the shipped default (an off-by-one turning `>=` into `>`
+    would let K = 1 hold an item), so it stays, the measurement goes in a comment beside
+    it, and the mutation matrix reverts BOTH clauses together — the recorded 2026-08-02
+    "revert every mechanism" lesson, met for the first time on a guard being written
+    rather than one being audited.
+  - **A STAGE LIST THAT SAYS WHERE A DRY RUN STOPS IS A CLAIM ABOUT AN EARLY RETURN,
+    AND THE RETURN MOVED FIRST (2026-09-07, `restore_stage_plan`):** the plan's own
+    docstring and its test both said "a dry run stops AFTER `corpus_delta_before`", and
+    `_RESTORE_STAGES_ALWAYS` duly counted that stage — while `run_restore`'s
+    `if not commit: return` sits directly ABOVE it, so a preview's published
+    denominator was one larger than the number of stages a preview walks. The drift
+    guard could not see it: it compares the declared list against the ORDER of
+    `timings.stage(...)` calls in the source, which is a claim about sequence and says
+    nothing about which of them a given flag reaches. GENERAL FORM: a guard over an
+    ordered list checks order; the CONDITIONAL membership needs its own assertion, one
+    per branch the function can return on.
+  - **PUSH CI ON `main` HAS NOT COMPLETED ONCE IN 40 RUNS — "CI will catch it" is not an
+    available guarantee on this repository, and the ledger leans on it repeatedly
+    (2026-09-07, measured while trying to verify a merge):** the recorded lesson is
+    `merged ≠ green`; this is the structural version underneath it, and it is worse.
+    Of the **40 most recently COMPLETED `ci.yml` runs on `main`**: **34 `cancelled`,
+    2 `failure`, 4 `success` — and all four successes are `event: schedule`.** Not one
+    push-triggered run on the default branch reached a conclusion. Each merge's run dies
+    when the next merge lands, and under this cadence that is minutes: run 4923
+    (`c370d4f8`, my own merge) was created 17:36:09 and cancelled 17:39:52, the instant
+    #1029 merged; 4929 died at 17:43:12 when #1026 landed. 4923 had **zero jobs
+    allocated** when it was cancelled, so it never ran a line. THE CONSEQUENCE IS NOT
+    ABOUT ANY ONE PR: several standing lessons resolve a local limitation with "let CI
+    run the real test" (the CI-only/standalone-repro pattern, the columnar real-httpfs
+    round trip, the pwsh-gated installer tests, the crypto lane). On the default branch
+    that referee reports on a cron, against whatever `main` happens to be at 11:33 UTC —
+    a moving target that is nobody's merge. So a session that defers a check to CI is
+    deferring it to the nightly, and the honest move is to reproduce the lane locally
+    whenever it can be reproduced at all: the **Core-only lane can** (a clean 3.13 venv,
+    `pip install -e ".[dev]"` in a worktree, then that lane's own `pytest -q`; measured
+    here 9170 passed / 150 skipped / 0 failed against 9303/128 with the extras, the extra
+    22 skips being the analysis-gated tests doing exactly what the lane checks), and so
+    can PowerShell and sqlcipher per their own recorded entries. **WHAT IS MEASURED AND
+    WHAT IS NOT:** the 34/40 count and the cancellation timestamps are measured. The
+    MECHANISM is not, and the reason to say so is that `ci.yml` already carries
+    `cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}`
+    — i.e. the repo *intends* to exempt `main` and the exemption is not taking effect.
+    Whether that expression is mis-evaluating, or whether pending runs in a group are
+    superseded regardless of the flag, needs a check the Actions API does not expose
+    cleanly (a cancellation reason). Do not "fix" the workflow on the strength of the
+    observation alone — the observation says the guarantee is absent, not why.
 
   - **A "MUST BE GONE" GUARD OVER A MARKDOWN DOCUMENT TRIPS ON THE SENTENCE THAT RECORDS
     THE REMOVAL -- and the narrowing that works is FENCED CODE BLOCKS (2026-09-07, the
@@ -6861,6 +7060,12 @@
     REASON FOR NOT DOING IT too, because a blocker is the one part of a parked entry that
     nobody re-checks -- it reads as the conclusion of work already done. Ship the
     refutation as a test, so the next reader sees it was measured rather than overruled.
+    ATTRIBUTION, because the lesson outlived the code that occasioned it: the narrowing
+    itself shipped in PR #1031, from a session that found NET-02 in parallel and merged
+    first. This branch's implementation was dropped; the refutation was not, because
+    #1031's own block does not carry it, and it now rides beside that block as
+    `test_a_non_str_input_already_raised_BEFORE_the_narrowing` (mutation-checked against
+    #1031's code: move the pre-`try` work inside a re-widened except and it reddens).
   - **A DOCUMENT CAN BE RIGHT AT THE TOP AND WRONG A HUNDRED LINES DOWN, AND THAT IS
     WORSE THAN BEING WRONG THROUGHOUT (2026-09-07, J3):** the ruling asked to "document
     SQLite-only and remove the implication of dual support", and `docs/ARCHITECTURE.md`
@@ -6889,3 +7094,28 @@
     second untested provisioning path beside the one that runs. GENERAL FORM: before
     acting on an item that names a FUNCTION, execute the module; "dead" is a spectrum and
     the item's author may have read the line without running the file.
+
+  - **TWO SESSIONS BUILT THE SAME PARKED ITEM ON THE SAME DAY, AND THE PAPERWORK THAT
+    WOULD HAVE PREVENTED IT DOES NOT EXIST (2026-09-07, PRH-03 + NET-02, PR #1035 vs
+    PR #1031):** both sessions read `PARKED.md`, found the same two items, built them in
+    full -- implementation, tests, a mutation matrix each -- and one merged hours before
+    the other. Roughly a session of work was duplicated and then thrown away. WHAT MAKES
+    THIS A LESSON RATHER THAN BAD LUCK IS THAT THE COLLISION WAS VISIBLE IN ADVANCE AND
+    STILL HAPPENED: `INVENTORY.md` filed both items under **P21** while `PROMPT_20` S5
+    claimed them by name, `00_INDEX.md` sets no fence between the two prompts, and the
+    losing PR flagged that disagreement in its own body as "one cross-reference
+    disagreement, surfaced rather than silently resolved" -- and then built them anyway,
+    because a flagged disagreement is not a lock. A parked item is CLAIMABLE and nothing
+    in this repository lets a session claim one: no owner column, no in-flight marker, no
+    convention of opening the PR first. GENERAL FORM, for a repo that runs several
+    sessions in parallel: before starting a slice whose subject is a NAMED item in a
+    shared backlog, read the open PRs and the last day of `main` for that item's name --
+    `git log --oneline -20 origin/main` and a `search_pull_requests` for the item id cost
+    a minute, against a session of rebuilt work. AND WHEN YOU LOSE THE RACE, YIELD: take
+    the merged implementation whole rather than re-landing yours over it, then keep only
+    what yours has that theirs does not, and mutation-check each survivor against THEIR
+    code so "additive" is a measurement rather than a courtesy. Here that came to five
+    tests out of forty-three -- four negative-space cases on the redirect host check
+    (three of which are the sole failure under their own mutant, so #1031's thirty tests
+    demonstrably do not reach them) and the blocker refutation above. The rest was
+    deleted, which is the right outcome and takes about an hour to reach honestly.

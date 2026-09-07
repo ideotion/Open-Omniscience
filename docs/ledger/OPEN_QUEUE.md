@@ -914,42 +914,71 @@
   only — an existing corpus keeps the tags its `Source` rows were created with, and a
   retroactive apply would be its own reviewed slice.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
-  the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
-  reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
-  `for` loop of `_run_item` → `run_restore`, so every backup pays its own
+  the MEASUREMENT shipped first, then item (b) on 2026-09-07; item (a) is still parked,
+  and the reasons are findings rather than reluctance):** the queue ran `_drive()` as a
+  strict `for` loop of `_run_item` → `run_restore`, so every backup paid its own
   **prepare** (stage A + validate + upgrade, measured 46.7 and 56.0 min on the two field
-  runs, on files that never touch the live corpus) and its own **verify_copy** (a
-  `quick_check` + `foreign_key_check` over the WHOLE working copy — the live corpus plus
-  everything merged so far). On eighteen backups that is ~14–17 h of prepare in series
-  with the merges, and eighteen structural walks of a growing multi-GB file.
-  **(a) PREFETCH — three blockers found by reading the seam, all of which raise the
-  estimate:** (i) staging lives INSIDE `VolumeBackupManager._run_restore`, on the
-  singleton manager's worker thread, and that singleton is one-job-at-a-time BY DESIGN
-  (`_reap_or_reject`) — so the queue would need to stage into its own tree and hand a
-  `StagedArtifact` across, which means a new `start_restore(..., staged=)` seam; (ii)
-  `cleanup_staging(staged)` is in a `finally` owned by the merge thread, so a
-  prefetched tree crosses an ownership boundary the current code guarantees by
-  construction — and on an encrypted corpus that tree is PLAINTEXT, so an orphan is an
-  at-rest hole, not just bytes; (iii) **decisive** — `find_completed_import` runs
-  BEFORE staging precisely so an already-merged artifact costs one small JSON read, and
-  the field log records **8 of 18 imports adding zero articles**. A prefetch that stages
-  ahead of that check burns 47–56 min per skipped item and defeats an existing
-  optimisation. Any build must run the digest check first.
-  **(b) CHECKPOINT INTERVAL — needs a RULING, not a guess:** verify+swap once per K
-  backups instead of per backup would save 17 × (verify + snapshot + swap), but nothing
-  is durable until a swap: today a kill at item 12 keeps eleven committed and skipped on
-  re-run, and at K=18 it loses twelve merges' CPU. The maintainer has killed this import
-  twice, so the trade is real. K is theirs to choose.
-  **WHAT SHIPPED INSTEAD (both merged-order-independent):** `verify_copy` sub-timings
-  (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) + the
-  `working_copy_bytes` the walk traverses, so the first completed backup converts
-  "2414 s" into a rate; and `merge_diag.walk_probe`, which measures the plaintext-vs-
-  encrypted page-walk RATIO on this machine (**2.40 / 2.39 / 2.42 across three runs**;
-  likely an upper bound at field scale, where I/O takes a larger share). `verify_copy`
-  has NEVER been observed in the field — both recorded runs ended before it — so every
-  estimate above rests on it, and the next completed backup supplies it for free.
-  SEQUENCING: read the first real verify number, THEN pick K, THEN build the prefetch if
-  the prepare side still dominates.
+  runs, on files that never touch the live corpus), its own whole-corpus **working-copy
+  snapshot**, and its own **verify_copy** (a `quick_check` + `foreign_key_check` over the
+  WHOLE working copy — the live corpus plus everything merged so far). On eighteen
+  backups that is ~14–17 h of prepare in series with the merges, eighteen copies of a
+  growing multi-GB file, and eighteen structural walks of it.
+  **(a) PREFETCH — STILL PARKED; the three blockers were RE-VERIFIED against
+  `main`@690920e on 2026-09-07 and all three still hold:** (i) staging lives INSIDE
+  `VolumeBackupManager._run_restore`, on the singleton manager's worker thread, and that
+  singleton is one-job-at-a-time BY DESIGN (`volume_job.py:196 _reap_or_reject`, which
+  raises on a genuinely-running job) — so a prefetch would need to stage into its own
+  tree and hand a `StagedArtifact` across, i.e. a new `start_restore(..., staged=)` seam;
+  (ii) `cleanup_staging(staged)` is still in a `finally` owned by the merge thread
+  (`volume_job.py:764`), so a prefetched tree crosses an ownership boundary the current
+  code guarantees by construction — and the staged corpus is PLAINTEXT by design
+  (`artifact.py:189-190`, `merge.py:1576`), so an orphan is an at-rest hole, not just
+  bytes; (iii) **decisive** — `find_completed_import` still runs BEFORE staging
+  (`volume_job.py:456` against `read_volume_backup` at `:550`) precisely so an
+  already-merged artifact costs one small JSON read, and the field log records **8 of 18
+  imports adding zero articles**. A prefetch that stages ahead of that check burns
+  47–56 min per skipped item and defeats an existing optimisation. **AND ITS OWN GATE IS
+  STILL UNMET:** C3's recommended default was "build only if the first real `verify_copy`
+  number shows prepare still dominating", and `verify_copy` has STILL never been observed
+  in the field. Note the contrast with (b), which is why (b) was the safe half to build:
+  the checkpoint's carried file is a WORKING COPY, which preserves the live at-rest state
+  — encrypted whenever the corpus is — so an orphan of it is not the at-rest hole a
+  prefetched staging tree would be, and it is swept by the same `.restore-*` janitor.
+  **(b) CHECKPOINT INTERVAL K — MECHANISM SHIPPED 2026-09-07; THE NUMBER IS STILL THE
+  MAINTAINER'S.** `run_restore` gained two optional parameters (`working_copy=` says
+  where to build or find the disposable copy, `hold_after_merge=` stops after the merge,
+  this batch's own verification and its side files), the queue drives the group, and
+  `verify_copy` split into `verify_merge` (per item: counts, the search index, the
+  sampled content comparison against the artifact — all of which need that item's staging
+  tree, which is deleted the moment it returns) and `verify_file` (per checkpoint:
+  `quick_check` + `foreign_key_check`, which ask about the FILE and therefore cover every
+  merge in it). The gate is not weakened; the WINDOW in which a crash costs work grows
+  with K, and that is the whole trade.
+  **⛔ THE OPEN RULING IS THE NUMBER, AND ONLY THE NUMBER.** `AppSettings.import_
+  checkpoint_k`, range 1..24, refused loudly outside it (never clamped — silently turning
+  a 30 into a 24 hands an operator a durability window they did not choose);
+  `OO_IMPORT_CHECKPOINT_K` overrides for one process; Settings → Data carries the control
+  with the cost on the visible surface and the long form in the hover bubble.
+  **The shipped default is 1 = today's behaviour, byte for byte, and the recommendation
+  on record is 3.** It ships at 1 because this entry itself said the trade "needs a
+  RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU that today
+  it would keep, and that is a change to what a Stop costs every operator. → **Pick K.**
+  **WHAT THE QUEUE NOW REPORTS, at any moment:** `items_committed` and `items_staged` as
+  two different numbers plus a `checkpoint` block (`k`, `open_group_items`, and a note
+  that at K > 1 names what a Stop would cost); per-item states `staged` ("Merged — not
+  yet saved") and `discarded` ("Discarded — import it again"), both `ok: false` so a
+  staged item's numbers can never sit behind a success headline; and a conclusion caveat
+  naming anything merged and never saved. A process restart rewrites `staged` →
+  `discarded`, because the working copy does not survive the process.
+  **WHAT SHIPPED IN 2026-08 INSTEAD (both merged-order-independent):** `verify_copy`
+  sub-timings (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`)
+  + the `working_copy_bytes` the walk traverses; and `merge_diag.walk_probe`, which
+  measures the plaintext-vs-encrypted page-walk RATIO on this machine (**2.40 / 2.39 /
+  2.42 across three runs**). **2026-09-07 REFINES THAT RATIO'S USE — see the Lessons
+  entry:** it is a WARM-cache number, and applying it to a field rate measured in the
+  DISK-BOUND regime over-states the encrypted walk, because a production encrypted store
+  is 16384-page (DB-10 §1b) against a staged plaintext corpus's 4096 and therefore does a
+  quarter as many, four times as large, reads.
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
   card provenance · Articles tab · Settings (maintainer; INTAKE + INVESTIGATION this session,
   code-verified against `main`@9c651ee, 47 numbered questions ANSWERED the same day; brief of
@@ -3707,6 +3736,30 @@
   per message. A functional index over that column needs a migration AND the recorded
   NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
   `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
+- **QUESTION FOR THE MAINTAINER — PUSH CI ON `main` NEVER COMPLETES (measured 2026-09-07; no
+  ruling taken, because the fix spends the maintainer's money).** Of the 40 most recently
+  completed `ci.yml` runs on `main`: **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron.** Zero push-triggered runs on the default branch have
+  reached a conclusion. Each merge's run is killed by the next one — my own merge's run
+  (#1030, `c370d4f8`) lasted 3m43s with zero jobs allocated. The workflow ALREADY tries to
+  prevent this: `cancel-in-progress: ${{ github.ref_name !=
+  github.event.repository.default_branch }}` is meant to exempt `main`, and it is not taking
+  effect. **Why this is a question and not a fix:** the repair is a concurrency-block change,
+  which makes every merge run a full matrix (macOS + Windows + ubuntu × several lanes) instead
+  of being cancelled — real runner minutes, at the current cadence of roughly one merge every
+  four minutes. That is a cost decision, and the cheaper alternative is a ruling that the
+  nightly IS the referee for `main` and sessions must reproduce lanes locally rather than defer
+  to CI. **What it costs to leave as-is:** several standing lessons resolve a local limitation
+  with "let CI run the real test" (the CI-only/standalone-repro pattern, the columnar
+  real-httpfs round trip, the pwsh-gated installer tests, the crypto lane's `[pqc]` guard —
+  the last of which was written *because* a guard that no lane collects is a guard that never
+  runs). On `main` that referee currently reports on a cron against whatever the branch happens
+  to be at 11:33 UTC, which is nobody's merge. **UNMEASURED, deliberately:** the mechanism.
+  Whether the expression mis-evaluates or pending runs are superseded regardless of the flag
+  needs a cancellation reason the Actions API does not expose cleanly; the observation says the
+  guarantee is absent, not why, and changing the workflow on the observation alone would be
+  fixing a mechanism nobody has read.
 
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
@@ -9733,6 +9786,107 @@ governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns 
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
 
+
+**PROMPT 21 — SECURITY, NETWORK POSTURE AND THE CONSENT SURFACE: WHAT SHIPPED, WHAT IS
+STILL RULING-GATED, AND ONE STALE CLAIM CORRECTED (executed 2026-09-07, branch
+`claude/security-network-posture-consent-e7uyr5`; NO RULING IS INVENTED HERE).**
+Three of the prompt's seven slices were buildable and shipped (rows in
+[`shipped.csv`](shipped.csv)): S1 NET-01, the connect-time SSRF closure; S2 NET-02 + PRH-03,
+the sanitizer excepts and the DuckDuckGo redirect; S3's documentation half. The other four
+wait on a maintainer ruling and are recorded here with the tree state each was re-derived
+against this pass, so the next session does not re-investigate them.
+
+**S4 · I3 — Tor-exit-resolve (SOCKS RESOLVE, 0xF0). STILL DESIGN-ONLY, re-verified: zero
+code.** The design of record is already written in this queue (the 2026-07-20 amendment,
+"can't we ping the source server"), including why DIRECT contact is ruled out — ICMP cannot
+ride Tor, so a ping is clearnet by construction, and a direct probe of a just-Tor-fetched
+source hands the server and the ISP a time-correlated link between the user's real IP and
+that source. Nothing has changed about the mechanism, the provenance class
+(`dns-via-tor-exit`, never blended with socket-observed) or the free ADDRMAP upgrade once
+Stem lands. What is owed is only the go/no-go (question I3, recommended default: go, as its
+own skeptic-matrixed slice). Grep anchor for the next session: `0xF0` and `dns-via-tor-exit`
+appear nowhere under `src/`.
+
+**S5 · I4 — `oo-netcut` and Stem-controlled Tor. STILL DESIGN-ONLY, re-verified: zero code**
+(`docs/ROADMAP.md` carries both lines and nothing under `src/` imports `stem` or names
+`netcut`). Two things are worth recording before the ruling rather than after it. (a) The
+honest claim boundary is already fixed by the non-negotiables: a userspace app can never
+equal a hardware webcam light, and `oo-netcut` must name the layer it controls rather than
+implying the machine is silent. (b) **Arti must be RE-VERIFIED, not assumed.** Its Python
+bindings were nascent at the knowledge cutoff, and this project's own recorded lesson about
+prescribed remedies applies — the mature path is a `tor` process driven through Stem, and
+per-source CIRCUIT isolation (`IsolateSOCKSAuth`, already a primitive here in
+`src/ingest/__init__.py::_isolated_proxies`) compartmentalises with no clearnet exposure at
+all, which is strictly preferable to the per-source clearnet fallback. Question I4 offers
+"park both to 0.5+" as its recommended default; parking is a legitimate answer and is not
+taken here.
+
+**S6 · PRH-16 — THE CONSENT MACHINERY IS TWO-THIRDS BUILT, AND THE INVENTORY CLAIM THAT IT
+"EXISTS NOWHERE" IS STALE (corrected in `INVENTORY.md` this pass).** Re-derived from the
+tree: `CONSENT_DOC_VERSION` is **PRESENT** (`src/legal/consent.py:43`, `"1.0"`, alongside
+`is_accepted` / `needs_acceptance` / `record_consent`, re-exported from `src/legal/__init__.py`
+and read by `src/legal/documents.py`). The **web consent surface is PRESENT** too, and the
+reason it did not answer to a grep for "modal" is that a modal was deliberately NOT what was
+built: `docs/legal/IMPLEMENTATION_NOTES.md` records the choice of a dedicated pre-app page
+over an in-SPA `<dialog>` because it blocks harder — nothing of the app is reachable first —
+wired as `/api/legal/` on the locked-state allowlist (`src/api/unlock.py`) with
+`src/api/legal.py`'s consent/decline routes, and pinned by
+`tests/test_legal_documents.py::test_unlock_first_launch_inserts_legal_step_before_passphrase`.
+Only `OO_REQUIRE_CONSENT` is genuinely absent — and **that is a recorded decision, not an
+oversight**: the same notes state it is "intentionally left as a documented option, not the
+default, because hard-blocking the web entrypoint could strand a desktop-launcher or
+`curl | bash` user with no console." The prompt asked to decide whether these are wanted and,
+if not, to record the refusal where the design lives; the refusal was already there, so
+nothing is decided here. **The only open question is whether the opt-in hard block should
+ever ship** — recommended default: leave it as the documented option it is, since the
+strand-a-launcher-user reason has not changed.
+
+**S7 · G9 + NET-09 — self-update and release signing. STILL UNBUILT, re-verified: no
+`self_update` module exists** (the only tree hits for "self-update" are two unrelated
+comments about Home refreshing itself). The posture is already ruled — manual, user-driven,
+git-pull based, no signing key yet — and the mechanics are settled in
+`docs/FUTURE_DEVELOPMENTS.md` §"In-app self-update" (line 993, promoted to active
+2026-06-16, mechanics only): snapshot → verify → staged migrate → atomic swap → rollback, with the
+data directory living outside the code tree as the property that makes the corpus, settings
+and keys survive by construction, and **never a silent decrypt across an update**. What is
+owed is G9's five questions (channel, trust root, cadence, `curl|bash` versus git, mirror
+anchoring) and NET-09. **Re-verified this pass and worth stating because it is the honest
+half:** `.github/workflows/release.yml` computes `SHA256SUMS` and publishes them with the
+artifacts, and its own header comment already says "checksums-only for now — signing is a
+tracked FUTURE_DEVELOPMENTS item", so the release path does not over-claim today. NET-09 is
+only the question of whether that changes.
+
+**DELIBERATE OMISSION — the DuckDuckGo RESULT-LINK regex is NOT widened, and the reason is
+an environment finding.** `_parse_results` matches `<a class="result__a" href="…">`, which
+requires `class` to be the FIRST attribute and `href` to follow it immediately; an
+`href`-first anchor, or one carrying `rel="nofollow"` before `class`, does not match. That
+is real fragility in the one sanctioned external channel, and it is deliberately left alone,
+because widening it blind could start admitting sponsored anchors as discovered sources and
+**the live markup could not be observed**: `html.duckduckgo.com` answers `CONNECT … 403`
+through this sandbox's proxy, against a `pypi.org` 200 control (probed 2026-09-07, this
+session probing first rather than assuming, per the working mode). The `uddg` unwrap that DID ship is
+justified by the URL shape alone and is strictly additive, so it cannot lose a result that
+resolves today. Re-open with either an allowlist entry for `html.duckduckgo.com` or a
+captured sample of a real response.
+
+**STATED RESIDUALS of the NET-01 closure, so they are not read as covered.** (a) A fetch
+whose proxy endpoint is a HOSTNAME rather than an address stands the connect-time check down
+for that request: allowlisting it would mean resolving it from inside a socket hook on every
+fetch, and a security guard may not break a working configuration in order to protect it.
+`_guard_target`'s policy there is unchanged, so such a deployment is exactly as protected as
+before. (b) An address that is publicly routable but internal to the operator's own network
+perimeter is out of reach of any address-shape rule, here and in `_guard_target` alike.
+(c) A remote-resolving proxy (`socks5h`/`socks4a`) never resolves the destination in this
+process at all, so there is nothing local to validate — which is the same reason
+`_guard_target` skips its hostname branch there.
+
+**SEQUENCING — NET-04's nonce CSP stays blocked, and the blocker is now measured.**
+`src/api/main.py::_CSP` still carries `script-src 'self' 'unsafe-inline'`. It cannot leave
+until the inline handlers do, and the count re-derived by the 2026-09-06 analysis is roughly
+**590** (~331 in `index.html`, ~259 across the seventeen `app-*.js` modules) — not the 295
+the ledger recorded, which counted `index.html` only and predates the module split. Prompt 15
+S2 owns the retirement; landing the nonce first breaks the app. Recorded here so the
+sequencing survives the two prompts being executed by different sessions.
 **CARRY-OVER FROM THE PROMPT-17 SWEEP (2026-09-07, PR #1027 — four items, each measured; none
 of them blocks the PR, and none of them was silently dropped).** The sweep found prompt 17's
 S1-S7 already shipped and fixed the one real defect it turned up (the concept map's country cap);
@@ -10097,10 +10251,35 @@ non-SQLite URL.** Refusing would break an install in the name of documenting it,
 documented non-choice into a hard error is a bigger decision than the question asked. If the
 maintainer wants a refusal, that is a one-line change and a ruling.
 
-**L8 — `PR pending` in `shipped.csv`: ALREADY SWEPT, nothing to do.** Verified rather than
-assumed: `grep -c "PR pending"` over `shipped.csv` is **0**. The convention itself is recorded in
-`CLAUDE.md` rule (5b). This entry exists so the next session reading PROMPT_20's "Gated on … L8"
-does not re-open a closed item.
+**L8 — `PR pending` in `shipped.csv`: SWEPT, and it needed sweeping after all.** First measured
+at the session's start: `grep -c "PR pending"` was **0**, so the item read as closed. By the time
+this branch merged, `main` had grown **six** new rows carrying the placeholder — one repository
+day. That is the real shape of L8: not a backlog to clear once but a placeholder that refills,
+because rows are written before their PR number exists and the sweep is nobody's step. All six are
+resolved here by rule (5b)'s own method — first-parent binary search of `main` for the earliest
+commit whose `shipped.csv` contains the row, the number read out of that merge's subject, the
+clone confirmed non-shallow first (`git rev-parse --is-shallow-repository` → `false`), and each
+answer corroborated independently rather than trusted: four by a branch name matching the row's
+subject (`#1034 claude/import-performance-results`, `#1024 claude/ai-layer-model-supply`,
+`#1031 claude/security-network-posture-consent`, `#1040 claude/ci-never-completes-on-main`) and
+the two whose branch names carry no subject (`#1033`, and `#1031`'s second row) by the merge's own
+file list — `src/static/oosky.js` + `app-observatory.js` for the Observatory row,
+`docs/SECURITY.md` for the SECURITY row. `grep -c "PR pending"` is **0** again.
+
+⚠ **A SWEEP IS ITSELF A DUPLICATE-ROW GENERATOR under `.gitattributes`' `merge=union`**, and this
+is the second time the ledger has paid for it. Any branch cut BEFORE this sweep still holds the
+`PR pending` text; when it merges, union keeps both lines and the row appears twice with no
+conflict marker and no failing check. The scan that catches it is the duplicate-key one over
+`(date, area, item)` compared against the COMMON ANCESTOR — run on this merge: 854 rows, 9
+duplicates already in the ancestor, **0 introduced**, arithmetic closing at 845 + 4 + 5.
+
+**THE STANDING QUESTION L8 ACTUALLY RAISES, put to the maintainer rather than answered here:**
+should a row be allowed to carry `PR pending` at all? A test asserting `grep -c "PR pending" == 0`
+would end the refill permanently, at the cost of forcing every session to open its PR before
+writing its ledger row — which is a change to the order of the ritual, not a lint. Recommendation:
+**yes, add the test**, because the alternative has now been measured twice and the sweep is
+unowned work that also manufactures duplicate rows. Not taken unilaterally: it changes the
+sequence every session follows.
 
 **J1 — the `src/api/diagnostics.py` split: ANSWERED "yes", NOT ATTEMPTED, and the
 reconnaissance is the deliverable.** Three measurements the prompt did not have, each of which
@@ -10133,6 +10312,33 @@ GROW.** The composition, the verdict and the burn-down route are in
 eighteen days unnoticed, so the count is now ratcheted and ruff is version-bounded. **A
 maintainer decision is still open behind it:** whether the 231 auto-fixable findings are worth a
 dedicated import-ordering PR with a full-suite diff, which is the only way that block converges.
+
+**PRH-03 + NET-02 — BUILT HERE AND YIELDED, because another session shipped them first.** Both
+were completed on this branch (implementation, 43 tests, an 8-mutant matrix) and
+[PR #1031](https://github.com/ideotion/Open-Omniscience/pull/1031) landed the same two items,
+independently found and independently mutation-checked, hours before this merge. Its
+implementation is the one in the tree. This branch took `src/services/duckduckgo.py`,
+`src/utils/security.py` and `tests/test_duckduckgo_url_helpers.py` from `origin/main` byte for
+byte and deleted its own two test files, keeping the five assertions #1031 does not carry (the
+NET-02 blocker refutation, and four negative-space cases on the redirect host check — three of
+which are the sole failure under their own mutant against #1031's code). **The scheduling problem
+this exposes is in `PARKED.md` and `INVENTORY.md`, not in either session:** a parked item has no
+owner and no in-flight marker, `INVENTORY.md` filed both under P21 while PROMPT_20 §S5 claimed
+them by name, `00_INDEX.md` sets no fence between the two prompts, and the losing PR flagged that
+exact disagreement in its own body before building anyway — because a flagged disagreement is not
+a lock. **Open question for the maintainer:** an owner/claim column on `PARKED.md` and
+`INVENTORY.md` rows, or a convention that a session opens its PR before starting a named item?
+Recommendation: the convention, since it needs no new file and the PR list is already the one
+place every session can see. Not taken unilaterally — it binds every session, not just this one.
+
+**A FINDING FROM THE YIELD, recorded and NOT repaired:** through the redirect, a target is
+percent-decoded exactly one more time than through a direct href — `parse_qsl` decodes it,
+`_unwrap_search_redirect` decodes it again, `_clean_url` decodes it a third — so `/%2561` arrives
+as `/a` via the hop and as `/%61` direct. Measured, both paths, side by side. Left alone because
+`discover_sources_by_topic` keeps only the DOMAIN, which is unaffected (verified), because the
+direct path already over-decodes once and this is a consistency gap rather than a new class of
+defect, and because a merge resolution is the wrong place to edit another session's just-merged
+code over a judgement it made deliberately. Also in `PARKED.md`, under the DDG entry.
 
 **CARRY-OVER — what PROMPT_20 asked for and this session did NOT build, each with why:**
 * **S1** (the diagnostics split) — above.

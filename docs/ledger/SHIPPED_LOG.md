@@ -6556,6 +6556,69 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
 
+- **NET-01 — THE SSRF GUARD NOW VALIDATES THE ADDRESS THE CONNECTION ACTUALLY REACHES, AND
+  THE PRESCRIBED REMEDY WAS REFUSED ON ITS FAILURE MODE (2026-09-07, prompt 21 S1):**
+  `EthicalFetcher._guard_target` resolves the target and refuses a non-public answer — and
+  that is not the resolution the connection uses, because `requests`/`urllib3` resolve the
+  same name again inside `create_connection`. Reproduced live before anything was built: a
+  real fetcher against a resolver answering `93.184.216.34` at guard time and `127.0.0.1` at
+  connect time returned a loopback HTTP server's body as a clean 200, with no error anywhere.
+  The plan named "connect-time IP PINNING (a custom transport adapter)". That was costed and
+  refused: pinning means taking over urllib3's connection construction and then carrying the
+  hostname separately for SNI, certificate matching and the `Host` header — version-fragile
+  private API whose failure mode is a SILENTLY WEAKER TLS verification, and which fails OPEN
+  the day urllib3 moves. Validating the address actually connected to is the same security
+  property (the threat is reaching an INTERNAL address; a second, different PUBLIC answer is
+  normal under CDN anycast), touches no TLS state, and rides the stdlib socket chokepoint
+  every HTTP client must pass through, so it fails CLOSED. `src/ingest/ssrf_guard.py` holds a
+  thread- and request-scoped scope entered by `_guarded_redirect_get` — the one method the
+  page fetch, the robots fetch, every redirect hop and both preflight side doors pass through
+  — with two nets: every address a resolution ANSWERS with, and every address a connect is
+  HANDED. It is hooked into `airplane.py`'s EXISTING patch layer, so one place patches
+  sockets and a call site cannot meet one gate and miss the other; `_installed` is split from
+  a new `_airplane_armed` so `OO_AIRPLANE_SOCKET_GUARD=0` keeps meaning exactly what it meant.
+  The proxy endpoint is allowlisted as an exact `(address, port)` pair (by address alone it
+  would open every port on the machine) and the endpoint set is merged from the ENVIRONMENT as
+  well as the session, because `merge_environment_settings` folds `HTTP(S)_PROXY` in whenever
+  `trust_env` is set. STATED RESIDUALS, in the module rather than implied: a hostname proxy
+  endpoint stands the check down for that request; a publicly-routable-but-internal address is
+  out of reach of any address-shape rule; `socks5h` never resolves the destination here at all.
+  **FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a guard's own exemption
+  set can defeat the guard (exempt the QUESTION, never the ANSWER — the resolution check went
+  BLIND to any answer equal to a configured proxy's own address, i.e. to `127.0.0.1` wherever a
+  loopback proxy is configured, and the later net hid it);
+  a second guard riding an existing patch layer must not inherit the first's off switch, and
+  one flag cannot carry two facts; a plan's remedy is a hypothesis and the tie-break is which
+  way it fails; a translation scoped to the call you expected to raise leaks the one you did
+  not (a redirect hop's own `_guard_target` resolves inside the scope); and `session.proxies`
+  is not the answer to "what will requests connect to".
+
+- **NET-02 + PRH-03 — THE APP-WIDE URL SANITIZERS CATCH `ValueError` ONLY, AND THE DUCKDUCKGO
+  REDIRECT RESOLVES (2026-09-07, prompt 21 S2):** `safe_href` and `sanitize_url` held
+  `except Exception` around `urlparse` — right for the one exception `urlparse` genuinely
+  raises and wrong for everything else, so a `TypeError` from a bytes/None argument or an
+  `AttributeError` from a caller passing the wrong object became a clean empty string,
+  indistinguishable from "this link was unsafe", on every surface that renders an ingested
+  URL. Both now catch `ValueError`; `urlparse` is hoisted to a module import so the
+  propagation half is testable at all. `_clean_url` stripped the query string BEFORE it
+  validated, so every real DuckDuckGo result — always its own redirector,
+  `//duckduckgo.com/l/?uddg=<target>` — arrived scheme-less and was discarded, silently, in
+  the one sanctioned external discovery channel, with a test asserting only that a list came
+  back. `_unwrap_search_redirect` resolves it first and DISCARDS a redirect with no usable
+  target rather than falling back to the redirector, which on the absolute form is a valid
+  https URL and would register `duckduckgo.com` itself as a discovered SOURCE. Deliberately
+  unchanged and now stated rather than implied: the query strip on the final url (right for
+  this consumer, which keeps the DOMAIN and treats the url as a homepage to look for feeds
+  under; wrong in general, for the recorded reason that a URL's query can BE the article
+  address). RECORDED AND NOT CHANGED: the result-link regex requires `class=` to be the first
+  attribute after `<a `, which is real fragility — and `html.duckduckgo.com` answers
+  `CONNECT … 403` through this sandbox against a `pypi.org` 200 control, so the live markup
+  could not be observed and widening the pattern blind could start admitting sponsored anchors
+  as discovered sources. **ONE LESSON, copied verbatim into `LESSONS.md`:** measure a
+  surviving mutant for EQUIVALENCE before writing a fixture to kill it — three of five
+  survived, one was a fixture gap and two were genuinely equivalent at the caller, which makes
+  the honest repair a direct test of the helper's own contract with the measurement in its
+  docstring, not a deleted guard and not a contrived fixture.
 ## 2026-09-07 — Wikipedia as a living source (prompt 18): two slices, one measured stop
 
 **The consented "Refresh exact sizes" (S5).** The 2026-06-16 inline-size-estimates ruling's
@@ -6953,20 +7016,99 @@ a log axis waiting to fabricate itself, and the real corpus picks the fallback; 
 a minimum radius has a cap, and the legend will quietly teach a scale the canvas does not use; a
 second `oo:langchange` listener is a second enumerator, and two existing guards find "the" listener
 by first occurrence; and an ORM column default makes a `None` fixture unable to test the NULL branch.
+## 2026-09-07 — the import checkpoint interval K, and what the two whole-corpus PRAGMA checks actually cost
+
+**THE MECHANISM SHIPPED; THE NUMBER DID NOT.** The 2026-08-08 queue entry's item (b) asked
+whether a multi-backup import should verify and swap once per K backups instead of once per
+backup. It is built: `run_restore` gained `working_copy=` (where to build or find the
+disposable copy) and `hold_after_merge=` (stop after the merge, this batch's own verification
+and its side files, leaving the copy for the caller), the import queue drives the group, and
+`verify_copy` split into `verify_merge` — counts, the search index and the sampled content
+comparison against the artifact, all of which need that item's staging tree, which is deleted
+the moment it returns — and `verify_file`, the whole-file `quick_check` + `foreign_key_check`,
+which ask about the FILE and therefore cover every merge in it. That split is what makes K > 1
+possible without weakening the gate.
+
+**IT SHIPS AT K = 1, WHICH IS TODAY'S BEHAVIOUR BYTE FOR BYTE**, because the entry itself said
+the trade "needs a RULING, not a guess": at K = 3 a kill at item 12 loses up to two merges' CPU
+that today it would keep, and that is a change to what a Stop costs every operator. The
+recommendation on record is 3; the value is one setting
+(`AppSettings.import_checkpoint_k`, 1..24, refused loudly outside the range rather than
+clamped, with `OO_IMPORT_CHECKPOINT_K` as a one-process override and a control in
+Settings → Data whose visible surface carries the cost and whose hover bubble carries the long
+form).
+
+**WHAT THE DURABILITY COST LOOKS LIKE FROM THE OUTSIDE**, because a trade nobody can see is a
+trade nobody agreed to: the queue publishes `items_committed` and `items_staged` as two
+different numbers plus a `checkpoint` block naming K and the open group; a per-item `staged`
+state reads "Merged — not yet saved" and a `discarded` one reads "Discarded — import it
+again"; both are `ok: false`, so a staged item's numbers can never sit behind a success
+headline; a failure or a refused verification discards the whole open group, because a windowed
+merge step commits mid-merge and a half-merged copy must never become the live corpus; and a
+process restart rewrites `staged` to `discarded`, because the working copy does not survive the
+process.
+
+**THE MEASUREMENT HALF** (the brief's S5, "measure them, do not change them") is in
+`docs/design/IMPORT_PERFORMANCE_2026-08-08.md` §5b, and the three reusable findings are in
+`LESSONS.md`: both checks are linear in bytes; `foreign_key_check` costs about a third of
+`quick_check` and is codec-neutral; and the plaintext-versus-encrypted codec multiplier that
+`merge_diag.walk_probe` publishes is a WARM-cache number (2.34x/2.57x measured) that falls to
+1.29x/1.39x cold, because a production encrypted store is 16384-page under DB-10 §1b against a
+staged plaintext corpus's 4096 and therefore does a quarter as many, four times as large,
+reads. Applying it to the field's disk-bound `validate` rate — which is exactly what
+`walk_probe`'s docstring recommends — over-states the encrypted walk by about 1.8x. It took
+three passes to get there, and the two failures are in `LESSONS.md`: a single-run pass on a
+machine busy with this session's own test suites, and a pass whose interleaving destroyed the
+warm condition it was measuring.
+
+**TWO SURVIVING MUTANTS OUT OF TWENTY-ONE, and both were findings rather than noise.** A
+timing assertion (`the second item's snapshot stage is faster`) could not discriminate a
+carried working copy at fixture scale; the content can (`SELECT COUNT(*) FROM merge_batches` is
+two after two held items and one after a re-snapshot). And the hold decision's explicit
+`K <= 1` clause is independently delivered by the group-full check beside it, so a
+single-clause mutation is a no-op — the clause stays as a belt on the shipped default, with the
+measurement in a comment, and the matrix reverts both together.
+
+**ALSO FIXED, found while reading the plan it belongs to:** `restore_stage_plan` counted
+`corpus_delta_before` for a PREVIEW, which returns above it — a published denominator one
+larger than the stages a preview actually walks.
+
+**RECORDED VERIFIED-PRESENT, not rebuilt:** the brief's S3 (the post-import conclusion screen's
+articles-first headline, labelled per-type breakdown, corpus delta and work-induced queue) and
+S4 (one aggregated conclusion for a whole queue with per-item rows beneath) were both already
+built; the descriptions that said otherwise were corrected in the same PR.
 
 ## 2026-09-07 -- PROMPT_20 (structural debt, dependencies, test hygiene): the parked URL backlog, the orphaned dependency, the SQLite-only ruling, and an order-dependent red on main
 
 Four slices, all from PROMPT_20. The details are in `shipped.csv`; what follows is what a later
 session would otherwise re-derive.
 
-**PRH-03 -- every real DuckDuckGo result was being discarded, in the one sanctioned external
-channel.** The HTML endpoint never links a result directly: every `result__a` href is a
-protocol-relative hop through DuckDuckGo's own `/l/` redirect with the target percent-encoded in
-`uddg`. `_clean_url` stripped the query string BEFORE validating, so the target went and the
-remaining `//duckduckgo.com/l/` was refused as scheme-less. The existing test asserted only
-`isinstance(results, list)`, which is why it survived. The unwrap runs before the strip, only for
-DuckDuckGo's own hop, and the unwrapped target meets the same `safe_href` allowlist a direct href
-does. Six mutants, all killed by name, two of which were findings rather than confirmations (below).
+**PRH-03 and NET-02 were YIELDED, not shipped, and the collision is the entry.** Both were built
+here in full -- implementation, forty-three tests, an eight-mutant matrix -- and while this branch
+was open, [PR #1031](https://github.com/ideotion/Open-Omniscience/pull/1031) built the same two
+items independently and merged first. Its code is the code in the tree; this branch's was dropped
+rather than re-landed. What survived the yield is the five things #1031 does not carry, each
+mutation-checked against ITS implementation rather than against the one that was discarded:
+
+* **The NET-02 blocker refutation** (below), now a test beside #1031's own NET-02 block.
+* **Four negative-space cases on the redirect host check.** The `html.duckduckgo.com` SUBDOMAIN
+  hop -- which is the host this app actually fetches (`SEARCH_URL`), so the `endswith` branch is
+  the production path rather than a generality. A `duckduckgo.com.evil.example` LOOKALIKE, which
+  is what makes the `!=` / `endswith` PAIR load-bearing: a substring test accepts it and hands
+  discovery whatever it names. `uddg` arriving AFTER `rut`, the discriminating input for reading
+  the query after the `&amp;` unescape rather than before. And an EMPTY `uddg`. **Three of the
+  four are the SOLE failure under their own mutant** -- host check widened to a substring,
+  `endswith` branch dropped, unescape moved after the parse -- so #1031's thirty tests
+  demonstrably do not reach them, and "additive" here is a measurement rather than a courtesy.
+  The fourth pins `keep_blank_values=False`, whose mutant is genuinely equivalent, and its
+  docstring says so rather than implying a kill.
+
+**Measured during the yield and deliberately NOT changed:** through the redirect a target is
+percent-decoded exactly ONE MORE TIME than through a direct href -- `parse_qsl` decodes,
+`_unwrap_search_redirect` decodes again, `_clean_url` decodes a third -- so `/%2561` arrives as
+`/a` via the hop and as `/%61` direct. Recorded in `PARKED.md` rather than repaired: the consumer
+keeps only the DOMAIN, which is unaffected, and a merge resolution is the wrong place to edit
+another session's just-merged code over a judgement it made deliberately.
 
 **PRH-04 -- the item understated it.** `scripts/setup_llm.py` was recorded as "dead code calling a
 method on a module that no longer exists"; running it shows both its imports name modules that are
@@ -6975,15 +7117,20 @@ the way to provision the local model. Deleted, with the removal recorded in the 
 file already records a previous one.
 
 **NET-02 -- the parked BLOCKER was false.** PARKED.md had parked the narrowing on "changes
-behaviour for non-str inputs of an app-wide sanitizer". Both functions run `re.sub` on the input
-BEFORE the `try`, so a truthy non-str already raised `TypeError` outside the block; the broad except
-never covered that case at all.
+behaviour for non-str inputs of an app-wide sanitizer". Both functions touch the input BEFORE the
+`try` -- `re.sub` in `safe_href`, a `.lower()` chain in `sanitize_url` -- so a truthy non-str
+already raised outside the block; the broad except never covered that case at all. That blocker is
+why the item sat parked from 2026-08-20, and #1031's block does not record it, so the refutation
+ships here as `test_a_non_str_input_already_raised_BEFORE_the_narrowing`. Its mutant is the world
+the blocker feared: move the pre-`try` work inside a re-widened except, and it reddens by name.
 
 **J2, J3, S7, S6 -- see the four lessons below.**
 
-**SIX LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a "must be gone" guard over a
+**SEVEN LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a "must be gone" guard over a
 MARKDOWN document trips on the sentence recording the removal, and the narrowing that works is
 fenced code blocks; a memory or RATIO assertion taken over a SHARED path is a claim about the whole
 pytest session; an ADVISORY lane cannot report that it is failing worse; a parked item's stated
 BLOCKER is a claim like any other; a document can be right at the top and wrong a hundred lines
-down; and a "dead code" claim is a claim about a line when the file may not import at all.
+down; a "dead code" claim is a claim about a line when the file may not import at all; and two
+sessions built the same parked item on the same day, because a parked item is claimable and
+nothing in this repository lets a session claim one.

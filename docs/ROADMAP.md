@@ -201,6 +201,10 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Remove the legacy single-file backup RESTORE** once the format is fully retired (keep the additive-merge engine). 🎨
 - **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — shipped earlier; the B5 wave (⏳ #624) added job-state-as-truth polling, the paused-state label and verify/pause-resume wiring. Remaining: click-through 🛠 + key the new strings ×12. 🚧
 - **Unified import/export — the browser-gated cleanup** (*lifted 2026-09-07 from `docs/archive/design/UNIFIED_IMPORT_EXPORT.md`, where it was the only live record*) — after a click-through, retire the orphaned volume/folder JS handlers (`folderBackupStart` / `volBackupStart` in `src/static/app-backup.js`, whose panels the unified dialogs replaced) and the capped single-file-CREATE remnant. Verified 2026-09-07: single-file CREATE is already retired (`src/api/backup_v2.py` header); what survives is `POST /legacy/restore` + the 2 GiB `_MAX_RESTORE_BYTES` upload cap, which stay until the legacy format is retired (the row above). Belongs on the browser-verify burn-down, not to a blind removal — the interleaved-shared-helper hazard. 🛠 browser-gated
+- **Import performance — the CHECKPOINT INTERVAL K: mechanism shipped 2026-09-07 (PR #1034), the NUMBER is a ruling.** A multi-backup import pays, *per item*, a whole-corpus working-copy snapshot, a whole-file `quick_check` + `foreign_key_check` over it, and an atomic swap. K > 1 carries one working copy across K consecutive backups and pays those once; `verify_copy` split into `verify_merge` (per item — counts, the search index and the sampled comparison against the artifact all need that item's staging tree, which is deleted the moment it returns) and `verify_file` (per checkpoint — `quick_check` + `foreign_key_check` ask about the FILE, so they cover every merge in it). The gate is not weakened; what grows with K is the window in which a crash costs work. **The shipped default is 1 = today's behaviour byte for byte** (`AppSettings.import_checkpoint_k`, range 1..24, refused loudly outside it rather than clamped; `OO_IMPORT_CHECKPOINT_K` for one process; a control in Settings → Data). **Recommendation on record: 3** — at which a kill at item 12 of 18 loses up to two merges' CPU that today it would keep, which is a change to what a Stop costs every operator. 🔒 blocked on a maintainer ruling (§5, *Still with the maintainer*)
+- **Import performance — PREFETCH (stage the next backup while the current one merges): PARKED, and this is a finding rather than reluctance.** All three blockers re-verified against `main`@690920e on 2026-09-07: the singleton restore manager is one-job-at-a-time by design (`volume_job.py:196`), `cleanup_staging` sits in a merge-thread `finally` (`volume_job.py:764`) over a tree that is **plaintext** by design — so an orphan is an at-rest hole, not just bytes — and the already-merged digest check runs 94 lines *before* staging (`:456` against `:550`), which the field log says saves 47–56 min on **8 of 18** imports. **Its own gate is also still unmet:** the recommendation was "build only if the first real `verify_copy` number shows prepare still dominating", and no field `verify_copy` has ever completed. Contrast with K, which was the safe half to build: the carried file is a WORKING COPY, encrypted whenever the corpus is. ⬜ gated on the row below
+- **The first field `verify_copy` number** — every remaining import-performance estimate rests on it, and both recorded field runs ended before it. It costs nothing to obtain: the sub-timings (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) and `working_copy_bytes` already ship, so the next completed backup converts a wall-clock figure into a rate. Until then, [`docs/design/IMPORT_PERFORMANCE_2026-08-08.md`](design/IMPORT_PERFORMANCE_2026-08-08.md) §5b is a **stand-in measured on sandbox disk** (170–178 MB/s against the field's own 17 MB/s on a 32 GB artifact) and becomes a cross-check the moment a real one lands. 🛠 operational (one completed field import)
+- **Checkpoint UI — browser click-through owed** (PR #1034): the Settings → Data interval control and the import queue's new `staged` ("Merged — not yet saved") / `discarded` ("Discarded — import it again") rows. Node-checked, invariant-guarded and keyed ×12, never clicked. 🛠 browser-gated
 
 - **Newsletter publisher ATTACH — the write path** (ruling 2026-06-15 clause (d); the resolver
   shipped ⏳ #1030, the attach deliberately did not) — imported newsletters still all land in one
@@ -285,6 +289,63 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Content-provenance class** — ✅ found SHIPPED end-to-end (ingestion stamps `source_type` + backfill; `insights_source_types` facet; reading-diet-by-channel in `concentration.py`) — S6 verify-marks against the design doc's acceptance. 
 - **Secondary-source `cited` provenance class — remaining slices** (background job at scale, denormalize `citing_source_id`, surface the citing trail, wire dormant `external_sources`). 🚧 partial
 - **Law-vertical coverage — adapter-first vs breadth-first** (2026-07-24 field-feedback Session A §3, ruled: adapter-first is (a), breadth-first is (b) and gets this ROADMAP row for later): the enumeration-adapter build (`legislation.gov.uk`, `gesetze-im-internet.de`, `EUR-Lex` ELI register — act/code-level `LawDocument`s per jurisdiction's OWN official count) is **BLOCKED this session on egress** — all three endpoints are gateway-policy-denied here (confirmed via both `curl`/`WebFetch`, per the brief's own "MUST NOT ship an unverified adapter endpoint" contingency); build it on a networked machine per the 2026-07-17 law-vertical brief S6. **Breadth-first (b), the alternative/complementary direction**: a shallow track of ONE portal/gazette per country, sourced from the already-committed `configs/legal_sources_generated.yml` (225 sources across ~162 jurisdictions, per-row verification status), rather than a deep per-jurisdiction enumeration — trades completeness (the "France has 76 codes" principle) for FAST worldwide breadth. Shipped this session (A3, buildable without egress): `adaptive_track_budget` (the per-pass tracking budget scales with the watched-doc count, so whichever direction is built next won't crawl at 5/pass forever) + the AI change-summary layer (`LawRevisionSummary`, auto for UI-language-floor jurisdictions via `advance_law_summaries`, on-demand `POST /api/law/revisions/{id}/summarize` for the rest). 🎨/🛠
+  - **UPDATE 2026-09-07 (PR #1023) — the ungated half of the law brief SHIPPED; the gated half is unchanged.**
+    ✅ **Gazettes as streams (S7/S2):** three of the four catalog `gazette_feed` values now become a real
+    `rss_url` — Georgia `matsne.gov.ge`, Vietnam `congbao.chinhphu.vn`, St Vincent `legal.gov.vc`. A feed
+    carries its OWN validator-enforced tier (`gazette_feed_verification`, vocabulary `fetched | lead`),
+    because the row-level `verification.status` is about the PORTAL: all four rows are `fetched` and
+    Uruguay's `impo.com.uy` feed was never fetched — its own notes call it the site's generic WordPress
+    news feed — so promoting on the row status would have filed Uruguayan site news as that country's
+    official gazette. It ships unwired. ⚠ These three are **not collected on seeding**: `select_sources`
+    admits only QUALIFIED sources, so they enter the qualification ladder first; what changed is that
+    they can be *judged* at all (`trial_fetch` needs an `rss_url` or a sitemap, and a gazette with
+    neither produces no evidence forever).
+    ✅ **Coverage denominators (S5/S4):** the catalog's **39** dated official counts across 32 countries
+    (the row above and the brief both said 27) now print beside the tracked count in
+    `GET /api/diagnostics/law-coverage`, together with the **31 of 32** countries that have a known
+    official enumeration and in which this install tracks nothing. **No fraction is computed** — see
+    Q-LAW-1 below. The join runs only through the country a document itself states (`uk` documents say
+    `gb`), never through the jurisdiction code.
+    ✅ **`[pdf]` narrowing said out loud (L6's stated default, applied not decided):** with the extra
+    absent — the default-install state — **63 of 275** catalog sources publish PDF only, across 54
+    countries, and **6 of the 23** tracked documents are PDFs by URL (all six Timor-Leste). Both counts
+    publish as floors; an install that HAS the extra is never told it is degraded.
+    ✅ **Vetting board (S6):** `docs/product/LAW_VETTING_BOARD.md`, generated by
+    `scripts/law_vetting_board.py` — 44 rows in four sections (2 confirmed gaps · 9 unverified leads with
+    a real domain · 29 access-blocked or bot-walled · 4 recorded down). Sections 3–4 are a keyword triage
+    over the catalog's own prose and the page says so. North Korea's honest-gap record was a YAML
+    *comment* no tool could read; it is a domain-less `lead` row now, beside the comment.
+    ✅ **Verified-present, not rebuilt:** S4b (catalog language → `LawDocument` → `Article.language`) and
+    A5 (AI change summaries, auto at the `UI_LOCALE_CODES` floor + on demand) were both already shipped
+    and were recorded as outstanding. That is the 3rd and 4th law item in a row to turn out
+    shipped-when-read — **grep this vertical before building in it.**
+  - 🔒 **Q-LAW-1 — the ruling that blocks a real coverage number.** Should each `official_count` entry
+    DECLARE whether its unit counts the same objects an act/code-level `LawDocument` is? The units run
+    over codes, acts, volumes, gazette issues, treaties and cases, and a volume or a gazette issue holds
+    many acts; deciding that from the unit STRING is what ruling 47's extensive/intensive rail forbids.
+    Recommendation: an explicit `counts_documents: true|false` on the 39 entries (a closed population,
+    reviewable in the diff), after which tracked-vs-enumerated becomes computable for the entries that
+    say true. Until then the report is honest but cannot answer "how much of France do we have".
+  - 🔒 **Q-LAW-2 (L6) — promote `[pdf]` into the default extras, or keep the disclosure?** The stated
+    default was applied, not decided. The disclosure is the right floor either way; promoting is a
+    separate call about install weight (`pypdf` only).
+  - 🛠 **Q-LAW-3 — the 44 vetting-board rows each want a one-word answer** (enable / adapter / honest gap
+    / re-check / drop). Nothing there is scraped around: a robots refusal or bot wall is the host's
+    choice, so each blocked domain is an adapter/API path or a recorded gap.
+  - 🔒 **Q-LAW-4 — should the per-endpoint verification tier generalise?** `enumeration_url` (107 of them,
+    none fetched by anyone) and `structured.api` / `structured.bulk` sit in exactly the position
+    `gazette_feed` did. An endpoint field no test can distinguish from a URL somebody wrote down is the
+    shape this vertical keeps paying for.
+  - ⬜ **The other gazette feeds are still unverified and unwired** — BOE, Dziennik Ustaw, the Federal
+    Register and the EUR-Lex OJ daily, named in the brief's S7. No feed was fetched by the 2026-09-07
+    session; the three wired ones rest entirely on the producing session's recorded 2026-07-17 evidence.
+  - 🛠 **S1 (the live enumeration adapters) is unchanged and still the gate on everything else.**
+    Re-probed 2026-09-07 with per-host evidence: `pypi.org` 200 and `github.com` 400 against `000`
+    (refused at the tunnel) for `www.legislation.gov.uk`, `eur-lex.europa.eu`,
+    `www.gesetze-im-internet.de` **and** `legal.gov.vc`. Unchanged from 2026-08-20. **The one operator
+    step:** fetch one CLML `…/data.xml` on a networked machine, run `parse_clml`, and check it clears the
+    text-recovery floor with an empty `unknown_elements`. If it does, the schema assumptions hold and the
+    enumeration is worth building; if not, the report NAMES what it did not understand.
 - **DuckDuckGo query discovery channel** (off-by-default, per-query logging, budgeted) + Wikidata generator as a scheduled refresh. 🎨
 - **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build — ✅ **BUILT (S5.1)** (`us-usgs` + `parse_mcs_csv` + `/api/stats/minerals-supply`; supply-not-prices by construction; real fetch = operator). · S&P500-is-an-index reclassification — ✅ found done (`idx_sp500` + the commodities board excludes `index` symbols per the recorded ruling in `markets.py`).
 
@@ -476,6 +537,14 @@ S-5 joined it.)
 
 | S-5 | **`natural-earth-geometry` carries a BLANK `sha256` in the external-artifact registry** — `configs/external_artifacts.yml` pins `{path: src/static/world_countries.json, sha256: ""}`, so the freshness check confirms the file EXISTS and never that it is the file we vendored (*lifted 2026-09-07; it was recorded only in PR #976's body*) | one entry, one field | Not deferred by ruling — simply never done. Its sibling `vendored-alpine` entry received exactly this one-line fix on 2026-08-22 and its own comment states the reason: *"a BLANK pin left this entry at status `info` ('present') … filled, drift now reports `stale`"* | Measure the digest from the committed file and fill the pin — a real measured value, never a fabricated one, and then `last_verified` moves with it |
 
+**Note on S-4 (2026-09-07).** Both JS i18n ratchets currently sit one slot above the real
+count — `--max-untranslatable` 560 against 559, `--max-unkeyed-t-calls` 297 against 296. The
+slack arrived with ordinary attrition on `main`, not with any one branch, and it was flagged
+rather than silently reclaimed inside a merge commit: tightening it would redden any in-flight
+branch that legitimately adds a string, and this repository merges several in parallel. It is
+still a free slot for the next drift to land in unseen, so lower it in a PR that owns the
+change — the tooling prints the new floor.
+
 **What PROMPT_20 closed on 2026-09-07, and what it leaves — the to-do, in the order a next
 session should take it** ([PR #1035](https://github.com/ideotion/Open-Omniscience/pull/1035); the
 full carry-over with reasons is the last entry in [`OPEN_QUEUE.md`](ledger/OPEN_QUEUE.md)).
@@ -485,9 +554,21 @@ which also closes PARKED MAINT-04 in both directions, since that item's migratio
 structlog and its migration SET was already empty) · **J3** (SQLite-only ruled, documented, and
 `_build_engine` now degrades loudly on a non-SQLite URL) · **the ruff style-lane verdict** (stays
 advisory, may no longer grow — [`RUFF_STYLE_LANE.md`](maintenance/RUFF_STYLE_LANE.md)) ·
-**PRH-03 / PRH-04 / NET-02** from `PARKED.md` · **L8** (verified already swept: no `PR pending`
+**PRH-04** from `PARKED.md` · **L8** (verified already swept: no `PR pending`
 remains in `shipped.csv`) · **PRH-27**, refuted rather than fixed — a full suite run leaves no
 `oo.env`, so the item had no subject.
+
+*Closed by a PARALLEL session while this branch was open, not by it:* **PRH-03** and
+**NET-02** landed in [PR #1031](https://github.com/ideotion/Open-Omniscience/pull/1031)
+hours before this merge. Both sessions found them, built them, and mutation-checked them
+independently; #1031 merged first, so its implementation is the one in the tree and this
+branch's was dropped rather than re-landed. Two things survived the yield because #1031
+does not carry them: the measurement that PARKED's own stated blocker for NET-02 was
+false, and four negative-space cases on the redirect host check. **The reusable lesson is
+the scheduling one** — `PARKED.md` items carry no owner, PROMPT_20 §S5 and `INVENTORY.md`
+disagreed about whether these were P20's or P21's, this PR flagged that disagreement in
+its own body, and the disagreement still cost a full duplicate build. A parked item is
+claimable; nothing in the repository lets a session claim one.
 
 *Left, each with what would unblock it:*
 
@@ -500,7 +581,6 @@ remains in `shipped.csv`) · **PRH-27**, refuted rather than fixed — a full su
 | **PRH-29** | the Windows `pytest` hang itself | a bisect against the suite, as its own task, on a real Windows runner. 2026-09-07 shipped only a `timeout-minutes: 45` cost cap — the hang is unchanged, and a Windows failure at ~45 min is that cap working, not a regression |
 | **the ruff burn-down** | 305 of the 442 findings are auto-fixable, 132 of them `I001` | **a maintainer decision**, because a tree-wide import reorder is not behaviour-neutral here: import order is load-bearing in named places, and the honest shape is a dedicated PR with a full-suite diff, not a drive-by `--fix` |
 | **test hygiene (the S6 family)** | `test_export_sources_to_yaml` against the legacy shared engine, `test_get_source_statistics`, the port-8001 collision between the two vLLM files | one at a time. The member fixed on 2026-09-07 was found by running the suite on clean `main` first — a baseline run is what makes this family visible at all |
-
 **Honest note on S-3 (closed 2026-08-20).** The row is done, and the premise it was written
 around — "the real cost is parse/compile on the 2-core field VMs" — turned out to be **half
 right, for a reason the row did not name**.
@@ -561,6 +641,7 @@ Lessons) as the mandatory read with the queue consulted on demand, and a size ra
 4. **`v0.2.0` tag** — ✅ DONE (the maintainer ran the P0 live-corpus validation and tagged; 0.3 opens the measured-&-verified cycle).
 6. **Lemmatization default-on** — ✅ RULED default-ON 2026-07-18: the maintainer's live-corpus `lemma_preview` precision review (35 groups / 71 keywords, clean) was the coherent gate — per the recorded correction, the IR A/B never was, for a display-layer change. Execution delegated (`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`); the graded IR gold set remains wanted for the separate BM25F retrieval decision. 🛠
 7. **Retention / eviction posture** — decide after the storage-footprint numbers from the next field export are in. 🔒
+- **Import checkpoint interval K** (*added 2026-09-07; not part of the 2026-07-10 delegation, hence unnumbered*) — the mechanism shipped at its no-op default of 1; the number is the ruling. Trading durability for time is not a decision the code can make for the operator, and this operator has killed the import twice. Recommendation on record: **3**. See §4 (Backup, import / export) for the mechanism and `docs/ledger/OPEN_QUEUE.md` for the full entry. 🔒
 
 ---
 

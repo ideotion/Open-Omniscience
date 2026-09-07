@@ -34,6 +34,12 @@ _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _KEEP_ALIVE_RE = re.compile(r"^(-1|\d+(\.\d+)?(ms|s|m|h)?)$")
 _DEFAULT_KEEP_ALIVE = "30m"
 _MAX_PROMPT_CHARS = 4000
+# Mirrors src.backup.import_queue.CHECKPOINT_K_MAX. Duplicated as a literal ON
+# PURPOSE rather than imported: this module is read on the settings path and by the
+# boot sequence, and importing the backup engine from it would pull the whole merge
+# stack in for one integer. A test pins the two against each other, so the copy
+# cannot drift.
+_CHECKPOINT_K_MAX = 24
 
 
 class AppSettingsError(ValueError):
@@ -113,6 +119,18 @@ class AppSettings:
     ai_sweep_keyword_triage: bool = True
     ai_sweep_source_tags: bool = True
     ai_sweep_perception_extract: bool = True
+    # THE IMPORT CHECKPOINT INTERVAL K (2026-09-07; the 2026-08-08 queue entry's
+    # item (b)). How many corpus backups of a multi-backup import share ONE
+    # verify + working-copy snapshot + atomic swap. 1 = today's behaviour, every
+    # backup written to the corpus as soon as it finishes. Above 1 the working
+    # copy is carried across K backups and the whole-file checks and the swap are
+    # paid once -- which is faster and strictly less durable, because nothing is
+    # durable until a swap and a Stop, a failure or a crash discards the group.
+    # Range 1..CHECKPOINT_K_MAX; the recommendation on record is 3. The reasoning
+    # and the resolution order live in
+    # src.backup.import_queue.import_checkpoint_k, which is the ONE place that
+    # decides -- this is the stored value it prefers.
+    import_checkpoint_k: int = 1
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -272,7 +290,21 @@ def load_settings() -> AppSettings:
         _LOG.warning("ignoring invalid stored llm_model_vllm %r", llm_model_vllm)
         llm_model_vllm = None
 
+    # The import checkpoint interval. Out of range or unreadable falls back to the
+    # DEFAULT (1 = commit every backup), never to the stored number: the safe
+    # direction for a durability knob is fewer items per checkpoint, and a value
+    # nobody meant must not be able to widen the window in which a crash costs work.
+    checkpoint_k = raw.get("import_checkpoint_k", defaults.import_checkpoint_k)
+    try:
+        checkpoint_k = int(checkpoint_k)
+    except (TypeError, ValueError):
+        checkpoint_k = defaults.import_checkpoint_k
+    if not (1 <= checkpoint_k <= _CHECKPOINT_K_MAX):
+        _LOG.warning("ignoring out-of-range stored import_checkpoint_k %r", checkpoint_k)
+        checkpoint_k = defaults.import_checkpoint_k
+
     return AppSettings(
+        import_checkpoint_k=checkpoint_k,
         theme=theme,
         default_result_limit=limit,
         recipes_disabled=recipes_disabled,
@@ -412,6 +444,27 @@ def save_settings(updates: dict) -> AppSettings:
             current.llm_model_vllm = val
         else:
             raise AppSettingsError(f"invalid llm_model_vllm {val!r} (must be a model id)")
+    if "import_checkpoint_k" in updates and updates["import_checkpoint_k"] is not None:
+        # REJECTED loudly, never clamped: K is a durability decision, and silently
+        # turning a 30 into a 24 would hand the operator a window they did not
+        # choose while telling them nothing. A bool is refused for the same reason
+        # the AI flags refuse a string -- True is an int in Python, and "1 backup
+        # per checkpoint" is not what anyone means by True.
+        val = updates["import_checkpoint_k"]
+        if isinstance(val, bool):
+            raise AppSettingsError("import_checkpoint_k must be an integer, not a boolean")
+        try:
+            k = int(val)
+        except (TypeError, ValueError) as exc:
+            raise AppSettingsError("import_checkpoint_k must be an integer") from exc
+        if not (1 <= k <= _CHECKPOINT_K_MAX):
+            raise AppSettingsError(
+                f"import_checkpoint_k must be between 1 and {_CHECKPOINT_K_MAX} "
+                "(1 writes every backup to your corpus as soon as it finishes; "
+                "higher values are faster and lose more work if the import is "
+                "stopped or crashes)"
+            )
+        current.import_checkpoint_k = k
 
     _write_raw({"version": SETTINGS_VERSION, **current.to_dict()})
     return current

@@ -39,6 +39,11 @@ from urllib.robotparser import RobotFileParser
 
 import requests
 
+from src.ingest.ssrf_guard import (
+    BlockedConnectTarget,
+    connect_scope,
+    is_blocked_ip,
+)
 from src.monitoring.activity import activity_monitor
 
 _LOG = logging.getLogger(__name__)
@@ -282,6 +287,13 @@ _DNS_CACHE_MAX = _env_cap("OO_DNS_CACHE_MAX", 2048, floor=64)
 _REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
 
 
+#: The proxy-mapping keys ``requests.utils.select_proxy`` can ever consult, minus
+#: the ``<scheme>://<hostname>`` / ``all://<hostname>`` forms, which are matched by
+#: their "://" instead. Used to narrow the endpoint set the connect-time SSRF guard
+#: allowlists (see ``EthicalFetcher._request_proxy_endpoints``).
+_SELECTABLE_PROXY_KEYS = frozenset({"http", "https", "all"})
+
+
 def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
     """True when ``proxy_url``'s scheme resolves DNS AT THE PROXY/EXIT
     (``socks5h``/``socks4a``) rather than locally (``socks5``/``socks4``, any
@@ -382,20 +394,12 @@ def _reset_crossed_online_for_tests() -> None:
     _CROSSED_ONLINE.clear()
 
 
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """True for any address an external fetch should never reach (SSRF, CWE-918).
-
-    Blocks loopback, RFC1918/ULA private, link-local (incl. 169.254.169.254 cloud
-    metadata), reserved, multicast and the unspecified address.
-    """
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+#: The blocked-address predicate lives in ``src.ingest.ssrf_guard`` so the
+#: resolve-time check below and the connect-time check there read ONE definition
+#: -- two copies would be two answers to one question, and the whole point of
+#: NET-01 is that those two moments must agree. Re-exported under its historical
+#: private name for the call sites and tests that already use it.
+_is_blocked_ip = is_blocked_ip
 
 
 class EthicalFetcher:
@@ -1031,33 +1035,106 @@ class EthicalFetcher:
         Also honours the kill switch, for the same reason ``_guard_target`` does:
         the two preflight modules call this directly rather than through
         ``fetch()``, so without it they had no kill-switch gate of their own.
+
+        NET-01: this is also where the CONNECT-TIME SSRF scope is entered, and it
+        is entered here for the same reason the kill-switch check moved here --
+        this is the ONE method through which the page fetch, the robots fetch,
+        every redirect hop and both preflight side doors reach the network.
+        ``_guard_target`` validates the address a hostname resolves to; requests
+        then resolves the SAME name again inside ``create_connection`` and
+        connects to whatever that second answer says. The scope makes every
+        socket this thread opens for the duration of this request validate the
+        address it is actually reaching (see ``src.ingest.ssrf_guard``), so the
+        two moments can no longer disagree.
         """
         if self._real_session and _KILL.is_set():
             raise FetchFailed("network kill switch is active -- collection stopped by operator")
+        # Lazily, and on EVERY request rather than behind a one-shot flag:
+        # ``src.ingest.airplane`` imports this module, so the import cannot be at
+        # module level, and the installer is an ``if already installed: return``
+        # -- so re-asking costs a sys.modules lookup and self-heals after a test
+        # (or anything else) restores the real socket calls. A "we decided once"
+        # flag would leave the guard silently absent from that point on.
+        from src.ingest.airplane import ensure_connect_guard_installed
+
+        ensure_connect_guard_installed()
         current = url
-        for _ in range(self._max_redirects + 1):
-            kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
-            if extra_headers:
-                kwargs["headers"] = extra_headers
-            if proxies:
-                kwargs["proxies"] = proxies
-            if stream and self._real_session:
-                kwargs["stream"] = True
-            resp = self.session.get(current, **kwargs)
-            status = resp.status_code
-            location = resp.headers.get("Location") if hasattr(resp, "headers") else None
-            if 300 <= status < 400 and location:
-                nxt = urljoin(current, location)
-                p = urlparse(nxt)
-                if p.scheme not in ("http", "https") or not p.netloc:
-                    raise FetchFailed(f"redirect to unsupported URL: {nxt!r}")
-                self._guard_target(p.hostname)  # re-validate the redirect target
-                if hasattr(resp, "close"):
-                    resp.close()
-                current = nxt
-                continue
-            return resp, str(getattr(resp, "url", current) or current)
+        with connect_scope(
+            enabled=self._real_session,
+            proxies=self._request_proxy_endpoints(url, proxies),
+        ):
+            # ONE translation, around the WHOLE scope body rather than around the
+            # GET alone: a redirect hop's own ``_guard_target`` resolves inside
+            # the scope, so the resolution check can raise from there too, and a
+            # try around ``session.get`` would have let that one escape as a
+            # BlockedConnectTarget -- a type no caller catches, on a path that is
+            # refused for exactly the same reason. Callers keep the exception
+            # contract they already have: a connect-time refusal is a
+            # BlockedTarget like a resolve-time one, deterministic, never retried.
+            try:
+                for _ in range(self._max_redirects + 1):
+                    kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}
+                    if extra_headers:
+                        kwargs["headers"] = extra_headers
+                    if proxies:
+                        kwargs["proxies"] = proxies
+                    if stream and self._real_session:
+                        kwargs["stream"] = True
+                    resp = self.session.get(current, **kwargs)
+                    status = resp.status_code
+                    location = resp.headers.get("Location") if hasattr(resp, "headers") else None
+                    if 300 <= status < 400 and location:
+                        nxt = urljoin(current, location)
+                        p = urlparse(nxt)
+                        if p.scheme not in ("http", "https") or not p.netloc:
+                            raise FetchFailed(f"redirect to unsupported URL: {nxt!r}")
+                        self._guard_target(p.hostname)  # re-validate the redirect target
+                        if hasattr(resp, "close"):
+                            resp.close()
+                        current = nxt
+                        continue
+                    return resp, str(getattr(resp, "url", current) or current)
+            except BlockedConnectTarget as exc:
+                raise BlockedTarget(str(exc)) from exc
         raise FetchFailed(f"too many redirects for {url}")
+
+    def _request_proxy_endpoints(
+        self, url: str, explicit: dict[str, str] | None
+    ) -> dict[str, str]:
+        """Every proxy this request could actually be sent through.
+
+        The connect-time guard allowlists the proxy endpoint, so it has to know
+        the same endpoint ``requests`` will use -- and ``session.proxies`` is not
+        that answer. ``Session.merge_environment_settings`` folds in the
+        ``HTTP(S)_PROXY`` environment (honouring ``NO_PROXY``) whenever
+        ``trust_env`` is set, which is the default; a guard that only read
+        ``session.proxies`` would refuse the proxy connection of every operator
+        whose proxy comes from their environment. Merged in the same precedence
+        requests itself uses: environment first, then the session, then the
+        per-request mapping.
+
+        The result is then narrowed to the keys ``requests.utils.select_proxy``
+        can ever consult -- read out of the installed library rather than
+        recalled: ``<scheme>://<hostname>``, ``<scheme>``, ``all://<hostname>``,
+        ``all``. That is a SUPERSET of whatever is selected for any hop, so it
+        can never refuse a proxy requests would actually use, and it drops the
+        rest of what ``get_environ_proxies`` returns -- which is every
+        ``*_proxy`` variable in the environment with its suffix stripped, so
+        ``NO_PROXY`` arrives as the key ``no`` carrying a comma-separated host
+        list and ``yarn_https_proxy`` as ``yarn_https``. Those matter because a
+        proxy endpoint given as a HOSTNAME stands the guard down for the request:
+        without this filter, an unrelated ``npm_config_proxy`` naming a host
+        would silently disable the check on a great many developer machines.
+        """
+        merged: dict[str, str] = {}
+        if getattr(self.session, "trust_env", False):
+            try:
+                merged.update(requests.utils.get_environ_proxies(url, no_proxy=None))
+            except Exception:  # noqa: BLE001 - an unreadable environment is not a fetch error
+                _LOG.debug("could not read environment proxies for %r", url, exc_info=True)
+        merged.update(getattr(self.session, "proxies", None) or {})
+        merged.update(explicit or {})
+        return {k: v for k, v in merged.items() if k in _SELECTABLE_PROXY_KEYS or "://" in k}
 
     def _read_body(
         self, response, url: str, *, token: int | None = None, keep_bytes: bool = False

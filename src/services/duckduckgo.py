@@ -34,21 +34,12 @@ Author: Ideotion
 
 import re
 import time
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, unquote, urljoin, urlparse
 
 from src.utils.logging_config import setup_logging
 from src.utils.security import safe_href
 
 logger = setup_logging("duckduckgo")
-
-#: DuckDuckGo's HTML endpoint never links a result directly: every ``result__a`` href
-#: is a protocol-relative hop through its OWN ``/l/`` redirect, with the real target
-#: percent-encoded in ``uddg`` and a ``rut`` signature beside it. Anchored at the start
-#: and requiring the ``/l/?`` path so that neither a lookalike domain
-#: (``duckduckgo.com.evil.example``) nor a foreign host carrying a ``uddg`` parameter
-#: can be unwrapped -- an unwrap is a redirect we FOLLOW, so widening it would hand any
-#: page we merely found the ability to point discovery wherever it liked.
-_DDG_REDIRECT_RE = re.compile(r"^(?:https?:)?//(?:[\w-]+\.)*duckduckgo\.com/l/\?", re.IGNORECASE)
 
 
 class DuckDuckGoSearch:
@@ -222,22 +213,74 @@ class DuckDuckGoSearch:
 
         return results
 
-    @staticmethod
-    def _redirect_target(url: str) -> str | None:
-        """The raw, still-encoded ``uddg`` value of a DuckDuckGo ``/l/`` hop.
+    # DuckDuckGo's HTML endpoint wraps every result in its OWN redirector rather
+    # than linking the publisher directly:
+    #     //duckduckgo.com/l/?uddg=<percent-encoded target>&rut=<signature>
+    # The path is ``/l/`` (historically also ``/l``) and the host is either absent
+    # (a protocol-relative or root-relative href) or a duckduckgo.com host. The
+    # target we want is the ``uddg`` parameter; everything else on that URL is
+    # DuckDuckGo's own bookkeeping.
+    _REDIRECT_PATHS = frozenset({"/l/", "/l"})
+    _REDIRECT_TARGET_PARAM = "uddg"
+    _REDIRECT_HOST = "duckduckgo.com"
 
-        Call only for a URL ``_DDG_REDIRECT_RE`` matched. Returns ``None`` when the hop
-        carries no ``uddg`` at all -- a DuckDuckGo-internal link rather than a result.
+    @classmethod
+    def _unwrap_search_redirect(cls, url: str) -> str | None:
+        """Resolve a DuckDuckGo ``/l/?uddg=`` redirect to the publisher URL it names.
 
-        The value is returned STILL ENCODED so ``_clean_url``'s single ``unquote``
-        decodes it exactly once; decoding here as well would corrupt any target carrying
-        a literal percent sign (``%2525`` -> ``%25`` -> ``%``).
+        Returns the URL to carry on with: the unwrapped target for a redirect,
+        ``url`` UNCHANGED for anything that is not one (so every non-redirect
+        result takes a byte-identical path through ``_clean_url``), and ``None``
+        for a redirect whose ``uddg`` is missing or is not an absolute http(s)
+        URL -- discarding it, which is exactly what ``_clean_url`` already did to
+        the whole family before this existed.
+
+        THE TWO REFUSALS ARE THIS FUNCTION'S OWN CONTRACT, not a load-bearing
+        layer under ``_clean_url``: measured against the mutant that drops each of
+        them, the caller's later ``scheme``/``netloc`` check and ``safe_href`` reach
+        the same verdict for every relative, scheme-less and dangerous-scheme
+        target -- so at the ``_clean_url`` level they are equivalent, and they are
+        pinned by DIRECT tests of this helper instead. What is NOT equivalent is
+        the missing-target case on an ABSOLUTE redirector URL
+        (``https://duckduckgo.com/l/?rut=…``): returning that instead of ``None``
+        gives ``_clean_url`` a perfectly valid https URL and registers
+        **duckduckgo.com itself as a discovered source**. Keeping the refusals here
+        means this classmethod answers honestly for a caller that is not
+        ``_clean_url``, rather than relying on guards that live in it.
+
+        WHY THIS IS HERE AND NOT LATER (PRH-03): ``_clean_url`` strips the query
+        string *before* it validates, so the redirect arrived at the validator as
+        ``//duckduckgo.com/l/`` -- scheme-less, therefore dropped. Every real
+        redirect result was discarded in the one sanctioned external discovery
+        channel, silently, with the search reporting an empty or short result
+        list rather than an error.
+
+        A ``ValueError`` from ``urlparse`` (an unterminated IPv6 literal) means
+        this is not a redirect we can read; the raw URL is returned unchanged and
+        the caller's own validation refuses it, byte-identically to before.
         """
-        for pair in url.split("?", 1)[1].split("&"):
-            name, sep, value = pair.partition("=")
-            if sep and name == "uddg":
-                return value or None
-        return None
+        try:
+            parts = urlparse(url.replace("&amp;", "&"))
+        except ValueError as e:
+            logger.debug(f"redirect unwrap: unparseable URL {url!r}, left as-is: {e}")
+            return url
+        host = (parts.hostname or "").lower()
+        if parts.path not in cls._REDIRECT_PATHS:
+            return url
+        if host and host != cls._REDIRECT_HOST and not host.endswith("." + cls._REDIRECT_HOST):
+            return url
+        target = ""
+        for key, val in parse_qsl(parts.query, keep_blank_values=False):
+            if key.lower() == cls._REDIRECT_TARGET_PARAM and val:
+                target = unquote(val)
+                break
+        if not target:
+            logger.debug(f"redirect unwrap: no {cls._REDIRECT_TARGET_PARAM} target in {url!r}")
+            return None
+        if not target.lower().startswith(("http://", "https://")):
+            logger.debug(f"redirect unwrap: target is not an absolute http(s) URL: {target!r}")
+            return None
+        return target
 
     @classmethod
     def _clean_url(cls, url: str) -> str | None:
@@ -245,39 +288,26 @@ class DuckDuckGoSearch:
         if not url:
             return None
 
+        # Resolve DuckDuckGo's own redirector FIRST -- before the query strip
+        # below, which would otherwise take the target with it (PRH-03).
+        unwrapped = cls._unwrap_search_redirect(url)
+        if unwrapped is None:
+            return None
+        url = unwrapped
+
         # Remove tracking parameters
         url = re.sub(r"\/\*[^*]+\*\/", "/", url)
-        # HTML entities BEFORE anything reads the query: the href arrives from raw
-        # markup, so a redirect hop's parameter separator is "&amp;". Moving this ahead
-        # of the query strip is byte-neutral for a direct href -- the strip discards the
-        # query either way, and a path can only lose a literal "&amp;" it never had.
-        url = url.replace("&amp;", "&")
-
-        # PRH-03: unwrap DuckDuckGo's own redirect BEFORE the query strip. Stripping
-        # first discarded the "uddg" target -- the only address such a result carries --
-        # and left the scheme-less "//duckduckgo.com/l/", which the validation below then
-        # rejected. Every real search result was therefore dropped in silence, and the
-        # one sanctioned external channel returned nothing but the occasional direct
-        # href. Only DuckDuckGo's OWN hop is unwrapped: an arbitrary host answering with
-        # a "uddg" parameter is left alone, so a page we merely found can never redirect
-        # discovery at a target of its choosing.
-        if _DDG_REDIRECT_RE.match(url):
-            target = cls._redirect_target(url)
-            if not target:
-                return None
-            # An unwrapped target does NOT get the tracking strip: "uddg" is the
-            # complete address DuckDuckGo resolved, and this codebase has already paid
-            # for treating a query as disposable -- an older CMS puts the article id
-            # there ("/news/?articleid=2504"), so stripping it would re-introduce the
-            # very loss this fix is about, one layer down.
-            url = target
-        else:
-            url = re.sub(r"\?.*$", "", url)  # Remove query string for now
+        # Remove the query string. The discovery consumer keeps only the DOMAIN
+        # (dedup, source identity) and uses the URL as a homepage to look for RSS
+        # feeds under, so dropping the query is right for that use -- but it is
+        # NOT right for a URL whose query IS the article address
+        # (``/news/?articleid=2504``), and that is why the redirect above has to
+        # be resolved before this line rather than after it.
+        url = re.sub(r"\?.*$", "", url)
 
         # Decode URL encoding
         try:
-            from urllib.parse import unquote
-
+            url = url.replace("&amp;", "&")
             url = unquote(url)
         except (ValueError, UnicodeError) as e:  # malformed encoding: keep the raw URL
             logger.debug(f"URL unquote failed, keeping raw form: {e}")
@@ -292,9 +322,7 @@ class DuckDuckGoSearch:
             return None
         # Belt-and-braces scheme allowlist: only http(s) is a real source URL. The
         # downstream fetch re-guards (robots/SSRF/scheme), but a discovery result
-        # carrying javascript:/data:/file: should never leave this function. It is also
-        # what stops the unwrap above becoming a smuggling route: an attacker-supplied
-        # "uddg=javascript:..." meets exactly the same allowlist.
+        # carrying javascript:/data:/file: should never leave this function.
         if not safe_href(url):
             logger.debug(f"URL rejected (non-http(s) scheme): {url!r}")
             return None

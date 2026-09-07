@@ -37,11 +37,6 @@ import html
 import logging
 import re
 from pathlib import Path
-
-# Module scope, not function scope, for two reasons: the two URL helpers below both
-# need it, and a test can only pin "an unexpected exception PROPAGATES" if it can
-# reach the name it would have to plant one in (src/services/duckduckgo.py already
-# imports it this way for exactly that pin).
 from urllib.parse import urlparse
 
 # Configure logging
@@ -241,21 +236,20 @@ def sanitize_url(url: str) -> str:
     if url.lower().startswith(("javascript:", "data:", "vbscript:", "file:")):
         return ""
 
-    # Validate URL structure
+    # Validate URL structure. ``urlparse`` raises ``ValueError`` and nothing else
+    # on a real string (the documented case is an unterminated IPv6 literal, e.g.
+    # "https://[::1/path"); a broader ``except`` here would silently swallow a
+    # programming error -- a TypeError from a bytes/None argument, a
+    # RecursionError -- and hand every caller a clean "" as though the URL had
+    # merely been unsafe. This is the app-wide sanitizer, so a silent swallow
+    # here is silent everywhere (NET-02).
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             # If no scheme or netloc, assume it's a relative URL
             return url
-    except ValueError:
-        # NET-02 (2026-09-07): ``ValueError`` only -- the one exception ``urlparse``
-        # raises for a str (an invalid IPv6 literal in the netloc). It cannot be
-        # reached by a non-str: the ``re.sub`` above rejects those with a TypeError
-        # BEFORE this block, which is the premise PARKED.md parked this narrowing on
-        # and ``tests/test_security_url_excepts.py`` now measures. The realistic
-        # failure still fails CLOSED; only an UNEXPECTED one escapes, because
-        # ``except Exception`` in a sanitizer means a genuine bug inside it reads as
-        # "this link is unsafe" forever with nothing saying so.
+    except ValueError as exc:
+        logger.debug("sanitize_url: unparseable URL %r dropped (%s)", url, exc)
         return ""
 
     return url
@@ -292,9 +286,15 @@ def safe_href(url: str | None) -> str:
     if not url:
         return ""
     cleaned = re.sub(r"[\x00-\x20\x7f]+", "", url)
+    # ``ValueError`` only, for the same reason as ``sanitize_url`` above: an
+    # unparseable URL is honestly dropped, while anything ``urlparse`` does not
+    # itself raise is a defect in the CALLER and must reach it (NET-02). The
+    # previous ``except Exception`` turned every such defect into an empty href,
+    # on every surface that renders an ingested link.
     try:
         scheme = urlparse(cleaned).scheme.lower()
-    except ValueError:  # NET-02: see the note in sanitize_url above -- same reasoning.
+    except ValueError as exc:
+        logger.debug("safe_href: unparseable URL %r dropped (%s)", url, exc)
         return ""
     return cleaned if scheme in ("http", "https") else ""
 
