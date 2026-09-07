@@ -411,7 +411,7 @@ Interactive API docs: **http://127.0.0.1:8000/docs**.
 
 All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
 
-**Local LLM (Ollama) — Phase 2.** Set it up from **Settings → AI**: an in-app,
+**Local LLM (Ollama).** Set it up from **Settings → AI**: an in-app,
 **checksum-verified** Ollama installer (Linux) plus a **model download queue** (real
 byte progress, cancel), an active-model picker and an editable-prompts panel. Or install
 Ollama yourself from **ollama.com** and `ollama pull llama3.2:3b`. Model pulls egress
@@ -424,7 +424,7 @@ curl -X POST http://127.0.0.1:8000/api/llm/articles/1/summarize -d '{}'  # persi
 ```
 If Ollama isn't running, these return HTTP 503 with a clear message — not a fake summary.
 
-**Commodity prices + honest correlation — Phase 3.**
+**Commodity prices + honest correlation.**
 ```bash
 curl -X POST http://127.0.0.1:8000/api/commodities/Nd/prices -H 'Content-Type: application/json' \
   -d '{"points":[{"observed_on":"2026-01-01","price":100,"unit":"kg"}]}'
@@ -433,26 +433,26 @@ curl 'http://127.0.0.1:8000/api/commodities/Nd/correlation?query=neodymium'
 Correlation returns a real coefficient + p-value + n from scipy (Pearson/Spearman),
 with a "correlation ≠ causation" caveat; too little overlap → `insufficient_data`.
 
-**Monitoring — Phase 4.** `GET /api/monitoring/health` performs real reachability
+**Monitoring.** `GET /api/monitoring/health` performs real reachability
 checks (through the ethical fetcher); `GET /api/monitoring/anomalies` flags
 article-volume spikes by z-score. **Email:** `POST /api/sources/{id}/ingest-email`
 (IMAP) folds messages into the same searchable corpus.
 
-**Image metadata verification — Phase 4.** `POST /api/verify/image-metadata`
+**Image metadata verification.** `POST /api/verify/image-metadata`
 (upload an image) returns its format, dimensions, EXIF and GPS with plain factual
 observations (e.g. editing-software tag present, no capture timestamp). Scoped
 honestly as *metadata checks* — **not** deepfake/manipulation detection (that was
 fabricated and was quarantined off the working tree; see
 [docs/QUARANTINE_ARCHIVE.md](QUARANTINE_ARCHIVE.md)).
 
-**Signed evidence bundles — Phase 5.** The analysis window's **Export signed
+**Signed evidence bundles.** The analysis window's **Export signed
 evidence** button (or `POST /api/reports/evidence`) produces a Merkle-rooted,
 Ed25519-signed bundle. Anyone can verify it offline, without this app:
 ```bash
 python scripts/verify_evidence.py evidence-bundle.json   # exit 0 = verified
 ```
 
-**Chain of custody — Phase 5.** The **Chain of custody** UI panel tracks signed,
+**Chain of custody.** The **Chain of custody** UI panel tracks signed,
 tamper-evident provenance and lets you toggle its behaviour at runtime:
 post-quantum signatures, anchoring mode (offline `local` vs Bitcoin-anchored
 **OpenTimestamps**), and auto-logging on ingest. Toggles are *preferences* — the

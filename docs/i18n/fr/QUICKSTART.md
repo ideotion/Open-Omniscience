@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scri
 > **Inspectez avant de faire confiance.** Envoyer un script dans votre shell
 > exécute du code sur votre machine. Le bootstrap est volontairement minuscule —
 > lisez-le d'abord si vous le souhaitez
-> ([scripts/bootstrap.sh](../../scripts/bootstrap.sh)) ; tout ce qu'il fait est
+> ([scripts/bootstrap.sh](../../../scripts/bootstrap.sh)) ; tout ce qu'il fait est
 > vérifier git + Python 3.13, cloner ce dépôt dans `~/open-omniscience`, et
 > passer la main au `./install.sh` du dépôt. Vous pouvez tout autant cloner
 > vous-même et lancer `./install.sh`.
@@ -168,7 +168,7 @@ Documentation interactive de l'API : **http://127.0.0.1:8000/docs**.
 Toutes sont locales d'abord et se dégradent bruyamment (jamais de fabrication).
 Schémas complets sur `/docs`.
 
-**LLM local (Ollama) — Phase 2.** Le plus simple : choisissez **Outils LLM
+**LLM local (Ollama).** Le plus simple : choisissez **Outils LLM
 locaux** dans `./install.sh` (il peut installer Ollama et tirer un petit modèle
 pour vous). Manuellement : installez Ollama, puis `ollama pull llama3.2:3b`.
 L'en-tête de l'interface montre l'état du LLM ; chaque résultat de recherche a
@@ -180,7 +180,7 @@ curl -X POST http://127.0.0.1:8000/api/llm/articles/1/summarize -d '{}'  # persi
 Si Ollama ne tourne pas, ces appels renvoient HTTP 503 avec un message clair —
 pas un faux résumé.
 
-**Prix des matières premières + corrélation honnête — Phase 3.**
+**Prix des matières premières + corrélation honnête.**
 ```bash
 curl -X POST http://127.0.0.1:8000/api/commodities/Nd/prices -H 'Content-Type: application/json' \
   -d '{"points":[{"observed_on":"2026-01-01","price":100,"unit":"kg"}]}'
@@ -190,20 +190,20 @@ La corrélation renvoie un vrai coefficient + valeur p + n via scipy
 (Pearson/Spearman), avec l'avertissement « corrélation ≠ causalité » ; trop peu
 de recouvrement → `insufficient_data`.
 
-**Surveillance — Phase 4.** `GET /api/monitoring/health` effectue de vraies
+**Surveillance.** `GET /api/monitoring/health` effectue de vraies
 vérifications d'accessibilité (par le collecteur éthique) ;
 `GET /api/monitoring/anomalies` signale les pics de volume d'articles par
 z-score. **Courriel :** `POST /api/sources/{id}/ingest-email` (IMAP) verse les
 messages dans le même corpus interrogeable.
 
-**Vérification des métadonnées d'image — Phase 4.**
+**Vérification des métadonnées d'image.**
 `POST /api/verify/image-metadata` (téléversez une image) renvoie format,
 dimensions, EXIF et GPS avec des observations factuelles claires (p. ex.
 étiquette de logiciel d'édition présente, pas d'horodatage de capture). Cadré
 honnêtement comme des *vérifications de métadonnées* — **pas** de détection de
 deepfake/manipulation (celle-ci était fabriquée et est en quarantaine).
 
-**Lots de preuves signés — Phase 5.** Le bouton **Exporter des preuves
+**Lots de preuves signés.** Le bouton **Exporter des preuves
 signées** du panneau de recherche (ou `POST /api/reports/evidence`) produit un
 lot à racine de Merkle, signé Ed25519. N'importe qui peut le vérifier hors
 ligne, sans cette application :
@@ -211,7 +211,7 @@ ligne, sans cette application :
 python scripts/verify_evidence.py evidence-bundle.json   # exit 0 = vérifié
 ```
 
-**Chaîne de possession — Phase 5.** Le panneau **Preuves & possession** suit la
+**Chaîne de possession.** Le panneau **Preuves & possession** suit la
 provenance signée, inviolable, et vous laisse régler son comportement à chaud :
 signatures post-quantiques, mode d'ancrage (`local` hors-ligne vs ancrage
 Bitcoin **OpenTimestamps**), et journalisation automatique à la collecte. Les

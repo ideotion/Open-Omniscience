@@ -6,9 +6,9 @@ classes, parallelization map, and verification gates. The full fix specification
 causes, exact code, exact tests) live in the two companion investigation docs and are NOT
 repeated here:
 
-- [`AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md`](AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md)
+- [`AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md`](../../design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md)
   — read §1.1, §2.1, §6.1, §7.1, §8.1, §9.1 (each is a complete, code-cited spec).
-- [`AUTONOMOUS_SESSION_BRIEF_2026-07-26_FIELD_REMARKS.md`](AUTONOMOUS_SESSION_BRIEF_2026-07-26_FIELD_REMARKS.md)
+- [`AUTONOMOUS_SESSION_BRIEF_2026-07-26_FIELD_REMARKS.md`](../../design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_FIELD_REMARKS.md)
   — read items 1–3, 6, 7 (each carries its fix shape + exact proposed tests).
 
 Read the spec section for a slice IN FULL before building it. Do not re-derive root causes

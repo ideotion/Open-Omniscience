@@ -1,3 +1,11 @@
+> **Status update (2026-09-07, docs-hygiene + reality-check pass) — the banner below is STALE on its own
+> headline finding.** The DB-10 CREATE-time seam **IS wired**: `src/database/connect.py`'s fresh-file path
+> now sets `auto_vacuum=INCREMENTAL` (§1a, ruled 2026-07-17) *and* `cipher_page_size=16384` (§1b, ratified
+> 2026-08-13), with the reopen-hazard candidate ladder that page_size requires under SQLCipher; the bounded
+> idle `incremental_vacuum` pass is wired through `src/scheduler/maintenance.py` →
+> `src/database/maintenance.py:maybe_incremental_vacuum`. Existing corpora keep their create-time pragmas
+> and migrate only through a deliberate rebuild — that part of the banner still holds.
+>
 > **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the highest-value confirmed gap: `auto_vacuum=INCREMENTAL` + `page_size=16384` are STILL not set on the fresh-file creation path (`src/database/connect.py:86`), despite §1a being formally ruled (2026-07-17) and §1b's evidence being delivered ("16384 wins every dimension at scale", PR #726). Adaptive backup volume sizing, D2/D3 rollups, the cross-time-recall invariant test, and `journal_size_limit` are all confirmed SHIPPED (this doc was stale on those). See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # 5 TB Architecture — Verify-Before-Trust Review (A14 / P1.7)

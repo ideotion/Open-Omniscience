@@ -1,5 +1,17 @@
 # ACTION PLAN 2026-07-22 — design-audit remediation
 
+> **Status update (2026-09-07, docs-hygiene + reality-check pass).** Re-verified phase by phase against
+> `main`. **Phase 1 (DB-10 create-time seam) is DONE** — the highest-value item on this board, and both
+> of its ruled halves are wired. **Phase 2 (documentation hygiene) is DONE**, mostly by other sessions,
+> not by this plan's own executor. **Phases 3.1, 4.1, 6, 8 and 9 are DONE.** Genuinely open: 3.2/3.3
+> (the structured law adapters and gazette feed, each needing a real fetch), 4.2 (in-app apply of
+> analyzer proposals), 4.3/4.4 (gold-set- and network-gated), 5, 7, 10 and 11. Per-phase evidence is in
+> the status line at the head of each phase below.
+>
+> This board's own §0 warns not to assume its "still missing" calls are accurate if significant time has
+> passed. Six weeks passed. They were not.
+
+
 ## 0. What this is
 
 On 2026-07-22 a subagent fan-out (7 parallel forks, each reading its assigned
@@ -41,6 +53,12 @@ still accurate by the time you pick this up if significant time has passed.
 ---
 
 ## Phase 1 — DB-10 create-time seam (highest value, self-contained)
+
+> **DONE** (verified 2026-09-07). `src/database/connect.py`'s fresh-file path sets
+> `auto_vacuum=INCREMENTAL` (§1a) and `cipher_page_size=16384` (§1b, ratified 2026-08-13), and carries
+> the reopen-hazard candidate ladder page_size demands under SQLCipher — the negative-space concern
+> this phase's own working-mode note flagged. The bounded idle `incremental_vacuum` pass is wired
+> (`src/scheduler/maintenance.py` → `src/database/maintenance.py:maybe_incremental_vacuum`).
 
 **Why first:** §1a (`auto_vacuum=INCREMENTAL`) was formally RULED 2026-07-17 and
 §1b (`page_size=16384`) had its evidence delivered with "recommendation firm"
@@ -89,6 +107,14 @@ lowest-risk, highest-value gap the whole audit found.
 
 ## Phase 2 — Documentation hygiene (carried forward from the 2026-07-17 plan)
 
+> **DONE** (verified 2026-09-07) — but see the correction in that plan's own 2026-09-07 banner: this
+> phase's premise ("T1, T2, T3, T5, T6 and T8 all still open") was true on 2026-07-22 and stopped being
+> true shortly after. 2.1 `docs/README.md` ✓ · 2.2 `test_docs_index_covers_live_docs` ✓ · 2.3
+> `AUDIT_TRAIL.md` ✓ (backfilled again on 2026-09-07, now to 2026-08-20) · 2.4 USER_MANUAL banner ✓ ·
+> 2.5 QUICKSTART — the heading was retitled but six inline `— Phase N.` labels survived until
+> 2026-09-07, when they and the fr mirror were finished · 2.6 the bare `SCALE_ROADMAP.md` reference is
+> not in the doc this phase names; it is at `docs/FUTURE_DEVELOPMENTS.md`, qualified on 2026-09-07.
+
 The 2026-07-17 docs-review plan (`ACTION_PLAN_2026-07-17_DOCS_REVIEW.md`,
 T1–T10) was itself barely executed — this audit found T1, T2, T3, T5, T6, and T8
 all still open. T8 (archival) is **done as of this pass** (see §0 above); the
@@ -136,6 +162,14 @@ rest are carried forward here as the authoritative remaining scope for that plan
 
 ## Phase 3 — Law vertical remainder
 
+> **PARTLY DONE** (verified 2026-09-07). **3.1 add-a-document-by-URL is DONE** —
+> `POST /api/law/documents` in `src/api/law.py`. 3.2 (structured adapters), 3.3 (gazette-as-RSS) and
+> 3.4 are OPEN and stay fetch-gated: the offline half of the CLML adapter shipped
+> (`src/law/adapters/`) against hand-authored fixtures, and the live enumeration half is blocked on
+> egress — probed 2026-09-07 from this sandbox, `https://www.legislation.gov.uk/` returns curl code
+> `000` (connection never established) against a `200` control on `https://pypi.org/`. Owning
+> prompt: `PROMPT_13`.
+
 Three of the eight brief slices (S1, S2, S4, S5) are done; S3, S6, S7 are
 genuinely open (see the banner on
 `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-17_LAW_VERTICAL.md` for the exact
@@ -172,6 +206,11 @@ buildability:
 ---
 
 ## Phase 4 — Keyword-engine remainder
+
+> **PARTLY DONE** (verified 2026-09-07). **4.1 stoplists → data files is DONE** — 35 files under
+> `configs/stopwords_extra/`, read by `src/analytics/extract.py`'s `_STOPWORDS_EXTRA_DIR` union, with
+> `PROVENANCE.md` carrying the evidence trail. 4.2 (in-app apply of analyzer proposals) is OPEN — no
+> such panel exists. 4.3/4.4 remain correctly gated (the graded gold set; a networked machine).
 
 - **4.1 [BUILDABLE-NOW] Stoplists → data files** (KEYWORD_BASELINE_AND_MANAGEMENT
   S1b/Q3). Migrate `_EXTRA_STOPWORD_TEXT` (`src/analytics/extract.py:300`, a
@@ -225,6 +264,15 @@ buildable-now tooling gap)
 
 ## Phase 6 — OSM/maps preprocessing bridge
 
+> **DONE, by a different route than this phase specified** (verified 2026-09-07). The phase asked for
+> an *offline* preprocessing pipeline producing a choropleth-ready artifact. What shipped instead is
+> `src/static/osmpbf.js` — a dependency-free in-browser `.osm.pbf` reader (`OOPBF`), bounded by
+> `maxBlocks` so a hundreds-of-MB region is an honest truncated PREVIEW rather than an OOM, with
+> `assembleAdminAreas` doing the boundary assembly — wired into the world map from `app-map.js` and
+> fixture-tested in `tests/test_osmpbf_parser.py` under node. The DoD's substance (a fixture-tested
+> pure parser, no WebGL) is met; there is no offline artifact format to document because the design
+> went in-browser instead.
+
 - **6.1 [BUILDABLE-NOW, offline-preprocessable] Build the OSM boundary/gazetteer
   offline-preprocessing pipeline** (`ACTION_PLAN_2026-07-13_SOURCES_MAPS_GAPS.md`'s
   ruled Part-1 data-source path — no-WebGL stands, per the 2026-07-13 ruling).
@@ -240,6 +288,10 @@ buildable-now tooling gap)
 
 ## Phase 7 — Keyword-skeleton fingerprint persistence
 
+> **OPEN** (verified 2026-09-07). `src/analytics/skeleton.py` exists; nothing persists a fingerprint
+> (`grep skeleton src/database/models.py` → 0). Still the dormant stretch, still sequenced after the
+> triage cleanup. Owning prompt: `PROMPT_05`.
+
 - **7.1 [BUILDABLE-NOW, but sequence AFTER Phase 4/8's keyword cleanup]**
   Persist `src/analytics/skeleton.py`'s pure in-memory fingerprint core: a
   migration adding whatever table the design calls for, plus wiring the live
@@ -251,6 +303,11 @@ buildable-now tooling gap)
 ---
 
 ## Phase 8 — LLM triage/tag real runs + verification (operator-gated)
+
+> **DONE** (verified 2026-09-07). `POST /api/diagnostics/keyword-triage/run` and `/source-tags/run`
+> exist as progressive sweeps with persisted cursors; the maintainer's real runs landed and both
+> proposal batches were reviewed on 2026-09-05 (see the `analytics/stopwords` and `catalog/source-tags`
+> rows in `docs/ledger/shipped.csv`, and the CLAUDE.md Open-queue entry for what was *not* taken).
 
 - **8.1 [OPERATOR-GATED]** The wiring (S1/S2 of
   `AUTONOMOUS_SESSION_BRIEF_2026-07-20_LLM_TRIAGE_TAG_RUNS.md`) is done — what's
@@ -292,6 +349,10 @@ buildable-now tooling gap)
 ---
 
 ## Phase 10 — Observatory frontend (browser-verify-gated by design)
+
+> **BACKEND DONE, FRONTEND OPEN** (verified 2026-09-07). `src/analytics/observatory.py` +
+> `GET /api/insights/observatory` are in the tree; there is no `ooSky` renderer and no observatory
+> surface in `index.html`. Still browser-gated by design. Owning prompt: `PROMPT_16`.
 
 - **10.1 [BROWSER-GATED, do not start without a real click-through plan]** The
   `ooSky` canvas renderer + its dedicated tab. The design doc is explicit that
