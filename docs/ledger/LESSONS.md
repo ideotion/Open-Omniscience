@@ -6960,3 +6960,33 @@
     nothing about which of them a given flag reaches. GENERAL FORM: a guard over an
     ordered list checks order; the CONDITIONAL membership needs its own assertion, one
     per branch the function can return on.
+  - **PUSH CI ON `main` HAS NOT COMPLETED ONCE IN 40 RUNS — "CI will catch it" is not an
+    available guarantee on this repository, and the ledger leans on it repeatedly
+    (2026-09-07, measured while trying to verify a merge):** the recorded lesson is
+    `merged ≠ green`; this is the structural version underneath it, and it is worse.
+    Of the **40 most recently COMPLETED `ci.yml` runs on `main`**: **34 `cancelled`,
+    2 `failure`, 4 `success` — and all four successes are `event: schedule`.** Not one
+    push-triggered run on the default branch reached a conclusion. Each merge's run dies
+    when the next merge lands, and under this cadence that is minutes: run 4923
+    (`c370d4f8`, my own merge) was created 17:36:09 and cancelled 17:39:52, the instant
+    #1029 merged; 4929 died at 17:43:12 when #1026 landed. 4923 had **zero jobs
+    allocated** when it was cancelled, so it never ran a line. THE CONSEQUENCE IS NOT
+    ABOUT ANY ONE PR: several standing lessons resolve a local limitation with "let CI
+    run the real test" (the CI-only/standalone-repro pattern, the columnar real-httpfs
+    round trip, the pwsh-gated installer tests, the crypto lane). On the default branch
+    that referee reports on a cron, against whatever `main` happens to be at 11:33 UTC —
+    a moving target that is nobody's merge. So a session that defers a check to CI is
+    deferring it to the nightly, and the honest move is to reproduce the lane locally
+    whenever it can be reproduced at all: the **Core-only lane can** (a clean 3.13 venv,
+    `pip install -e ".[dev]"` in a worktree, then that lane's own `pytest -q`; measured
+    here 9170 passed / 150 skipped / 0 failed against 9303/128 with the extras, the extra
+    22 skips being the analysis-gated tests doing exactly what the lane checks), and so
+    can PowerShell and sqlcipher per their own recorded entries. **WHAT IS MEASURED AND
+    WHAT IS NOT:** the 34/40 count and the cancellation timestamps are measured. The
+    MECHANISM is not, and the reason to say so is that `ci.yml` already carries
+    `cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}`
+    — i.e. the repo *intends* to exempt `main` and the exemption is not taking effect.
+    Whether that expression is mis-evaluating, or whether pending runs in a group are
+    superseded regardless of the flag, needs a check the Actions API does not expose
+    cleanly (a cancellation reason). Do not "fix" the workflow on the strength of the
+    observation alone — the observation says the guarantee is absent, not why.
