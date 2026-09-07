@@ -7040,3 +7040,37 @@
     number out of `ci.yml`, never out of prose, and reproduce each of the three i18n commands
     separately (gate 1 passing is no evidence at all about gate 2 — it compares locale files
     against `en.json` and is structurally blind to a brand-new string with no key).
+  - **THE `shipped.csv` UNION-MERGE DEFECT HAS A THIRD FORM, AND THE RECORDED TELL DOES NOT
+    FIRE ON IT — only the duplicate-key scan does (2026-09-07, merging #1041 with main's
+    #1021 sweep):** the ledger already records this collision twice, and both times the
+    diagnostic offered was *"the tell in the diff is a numstat with DELETIONS on a merge you
+    expect to be purely additive"*. **Here the numstat was 17 added / 0 deleted — flawless —
+    and the file was still corrupt.** The mechanism is worth stating exactly, because it is
+    the case both earlier entries describe from the other side: main had EDITED two rows
+    (sweeping their `refs` to add `PR #1021` per rule 5b), my branch carried the ancestor's
+    unedited copies, and `merge=union` **added main's corrected row without removing my stale
+    one**. Nothing is deleted, so there is nothing for a deletion-count to notice; the union
+    did exactly what union means. So the earlier entries' tell is a symptom of *some*
+    instances, never a test for the class — the only check that sees it is the one those
+    entries also name and which is easy to skip once the numstat looks clean: a
+    DUPLICATE-KEY scan over `(date, area, item)` compared against the COMMON ANCESTOR (9
+    pre-existing here; 11 after the merge). Run it on every merge that touches the file,
+    whatever the numstat says.
+    **THE REPAIR HAS ITS OWN TRAP, and I walked into it:** having found the two stale rows, I
+    rebuilt the file through `csv.writer(lineterminator="\n")`, which normalised all 22 CRLF
+    rows and turned a 2-line fix into **57 added / 42 deleted** — the recorded
+    "`read_text()` normalises line endings" lesson, re-earned in the repair for the defect
+    beside it. The safe rebuild needs no CSV round-trip at all: *the union minus the stale
+    ancestor copies IS main's file plus your own new rows*, so take `MERGE_HEAD`'s bytes
+    verbatim and append, which preserves every existing line by construction. Verify with
+    `git diff --ignore-cr-at-eol --numstat` AND a raw CRLF count, since the first flag hides
+    exactly the damage the second measures.
+    **SIBLING, from the same merge: a verification assertion can be wrong in the safe
+    direction and still cost you.** Resolving the three ledger `.md` conflicts I asserted
+    that nothing outside the conflict hunk had moved — which assumed every addition lands at
+    the TAIL. Main had inserted an entry at the HEAD of the Open-queue section, git
+    auto-merged it correctly, and my assertion fired on a perfectly good resolution. A
+    guard that reddens on correct code gets relaxed, and a relaxed guard catches nothing, so
+    the fix is not to loosen it but to assert the property that actually matters: every line
+    EITHER side added relative to the common ancestor must survive in the result. That one
+    holds whatever the insertion point, and it is what proves an additive merge additive.

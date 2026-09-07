@@ -7090,3 +7090,13 @@ lessons it earned, which are copied verbatim into `LESSONS.md` per protocol rule
 2. A decision recorded as urgent can have been spent months earlier, and urgency is the attribute
    nobody re-checks.
 3. A ratchet's value in a doc is not the ratchet.
+
+### 2026-09-07 addendum — the merge that produced a fourth lesson
+
+Merging origin/main into `claude/v1-pathway-planning-4pf6n8` hit the `shipped.csv`
+union-merge collision in a form the ledger's recorded TELL cannot detect: main had EDITED
+two rows and `merge=union` kept its corrected row beside this branch's stale one, with a
+numstat of 17 added / 0 deleted. Only the duplicate-key scan against the common ancestor
+saw it. The lesson is appended verbatim to `LESSONS.md` per rule (5a)(b); its two riders
+are that the obvious repair re-earns the CRLF-normalisation defect, and that a
+verification assertion assuming tail-only additions fires on a correct head-insertion.
