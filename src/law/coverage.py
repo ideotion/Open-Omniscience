@@ -236,7 +236,15 @@ def law_coverage_report(
     # its ISO-2. LawDocument.country is the field S4b added for exactly this, and a
     # document that states none joins nothing — reported as its own state, not as
     # "no enumeration exists".
-    enum_by_country = official_enumerations() if enumerations is None else enumerations
+    # ONE catalog parse, shared by both consumers below. Read separately they cost 553 ms
+    # each on the shipped file, and this report is a member of the all-diagnostics bundle
+    # -- paying twice for the same bytes is avoidable rather than acceptable.
+    from src.law.catalog import load_legal_catalog
+
+    catalog = load_legal_catalog()
+    enum_by_country = (
+        official_enumerations(catalog) if enumerations is None else enumerations
+    )
     tracked_countries: set[str] = set()
 
     now = datetime.now(UTC)
@@ -310,7 +318,7 @@ def law_coverage_report(
         "documents": total_docs,
         "baselined": total_baselined,
         "jurisdictions": jurisdictions,
-        "extraction": _pdf_reach(session),
+        "extraction": _pdf_reach(session, catalog),
         "enumeration": {
             "countries_with_an_official_count": len(enum_by_country),
             "figures": sum(len(v) for v in enum_by_country.values()),
