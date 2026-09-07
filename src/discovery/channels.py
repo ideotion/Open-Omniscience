@@ -169,16 +169,38 @@ def resolve_external_source(session, *, domain: str, name: str | None, discovere
 def is_disqualified_domain(session, domain: str) -> bool:
     """Has this instance JUDGED this domain and refused it?
 
-    One indexed seek on the unique ``domain`` column. Deliberately a per-domain
-    question rather than a set built once: the callers are capped, and a set snapshot
-    is the shape that goes stale.
+    Indexed seeks on the unique ``domain`` column, over the spellings the same host
+    can legitimately arrive as. Asking only for ``domain.lower()`` -- the first cut --
+    was strictly WORSE than not normalising at all: ``Source.domain`` is compared with
+    SQLite's BINARY collation and is stored unnormalised by ``POST /api/sources``
+    (``SourceManager.create_source`` does not run it through :func:`registrable_domain`),
+    so a source an operator typed as ``Example.COM`` and later disqualified was
+    unrefusable by EVERY spelling, the exact-case caller included.
+
+    HONEST LIMIT, because this is a refusal and a refusal that quietly does not fire is
+    the bad direction: this catches a stored domain written the way it is asked for, in
+    lowercase, or with a ``www.`` the caller supplied. It cannot catch a domain STORED
+    with uppercase and asked in lowercase -- nothing here can, short of a scan over
+    ``lower(Source.domain)`` that no index serves, or normalising on write, which is
+    where the asymmetry actually belongs. Every catalogue this app ships is entirely
+    lowercase, so the gap is reachable only through a hand-typed source.
+
+    Deliberately a per-domain question rather than a set built once: a set snapshot is
+    the shape that goes stale. The cost is bounded by the callers, not by this function
+    -- see ``promote_cited_sources``, which asks only about domains it already knows are
+    sources.
     """
+    from src.catalog.normalize import registrable_domain
     from src.catalog.qualification import STATUS_DISQUALIFIED
     from src.database.models import Source
 
+    spellings = {domain, domain.lower()}
+    reg = registrable_domain(domain)
+    if reg:
+        spellings.add(reg)
     return (
         session.query(Source.id)
-        .filter(Source.domain == domain.lower(), Source.status == STATUS_DISQUALIFIED)
+        .filter(Source.domain.in_(spellings), Source.status == STATUS_DISQUALIFIED)
         .first()
         is not None
     )
@@ -203,8 +225,18 @@ def _add_candidate(session, *, domain: str, name: str | None, channel: str, evid
 
     So the refusal lives HERE, at the one chokepoint every channel stages through,
     rather than in each channel: a channel added later cannot forget a check it never
-    had to write. It is a backstop, not the everyday path -- see the sibling test that
-    drives it directly, because through a channel the dedup gets there first.
+    had to write.
+
+    It is not merely "not the everyday path" -- through the three channels it is
+    UNREACHABLE, provably: each computes ``known = _existing_domains(session)``, which
+    lowercases every ``Source`` domain, and passes an already-lowercased ``dom``, and
+    each skips on ``dom in known`` BEFORE staging. A disqualified domain is a Source
+    domain, so it is in ``known``, so it never arrives. That is why the sibling test
+    drives this function directly: it is the only level at which this particular
+    refusal discriminates. The counter ``citation_channel`` keeps for it is therefore
+    structurally zero today -- kept because the whole point of moving the check here is
+    the day ``known`` is narrowed (scoping it to enabled sources, say), when it starts
+    firing and a silent ``continue`` would be a refusal nobody could see.
     """
     from src.database.models import SourceCandidate
 

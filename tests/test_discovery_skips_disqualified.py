@@ -15,13 +15,19 @@ whose purpose is something else. Narrowing that set (scoping it to enabled sourc
 shape the open `enabled`-vs-qualified question would take) would have reopened the hole
 in silence, and no test in the tree would have noticed.
 
-So these tests pin the guarantee at two levels, and each says which one it is:
+So these tests pin the guarantee at two levels, and each says which one it is. A
+mutation pass measured which is which, because "it already passed" and "it cannot
+fail" are different claims:
 
-  * end-to-end through the public funnels -- passes today, and its value is that it
-    KEEPS passing when the dedup changes underneath;
-  * directly against the ``_add_candidate`` chokepoint, which is the only level where
-    the new refusal is discriminating, because through a channel the dedup gets there
-    first.
+  * ``citation_channel`` end-to-end -- NON-discriminating. It passes with the refusal
+    removed, because the dedup gets there first (see ``_add_candidate``'s own note:
+    through a channel the refusal is provably unreachable). Its value is that it keeps
+    passing when the dedup changes underneath.
+  * ``promote_cited_sources`` end-to-end -- DISCRIMINATING. It fails without the
+    change: that funnel used to report a disqualified domain as ``already_a_source``,
+    and on the base commit ``skipped`` had no ``disqualified`` key at all.
+  * directly against the ``_add_candidate`` chokepoint -- DISCRIMINATING, and the only
+    level at which THAT refusal is, since through a channel the dedup arrives first.
 
 Both directions are covered: a qualified and a never-judged domain in the same batch
 must still be proposed, or "never re-propose" would have quietly become "never propose".
@@ -122,8 +128,26 @@ def test_a_never_judged_and_a_qualified_domain_are_still_proposed(session):
 
 
 # --------------------------------------------------------------------------- #
-#  The chokepoint itself -- the only level where the new refusal is discriminating
+#  The chokepoint itself -- the only level at which ITS refusal discriminates
 # --------------------------------------------------------------------------- #
+def test_a_disqualified_domain_is_refused_however_its_row_was_spelled(session):
+    """``Source.domain`` is BINARY-collated and ``POST /api/sources`` stores what was
+    typed, so a hand-added source can sit in the table as ``Example.COM``. The first
+    cut asked only for ``domain.lower()``, which made such a row unrefusable by every
+    spelling INCLUDING its own -- strictly worse than not normalising, and silent,
+    because a refusal that does not fire looks exactly like a domain nobody judged."""
+    _judged(session, "Example.COM", STATUS_DISQUALIFIED)
+    _judged(session, "plain.example", STATUS_DISQUALIFIED)
+    session.commit()
+
+    assert is_disqualified_domain(session, "Example.COM") is True, "asked exactly as stored"
+    assert is_disqualified_domain(session, "plain.example") is True
+    assert is_disqualified_domain(session, "PLAIN.example") is True, "asked in another case"
+    assert is_disqualified_domain(session, "www.plain.example") is True, "asked with a www."
+    # The twin: widening the spellings must not start refusing a domain nobody judged.
+    assert is_disqualified_domain(session, "never-judged.example") is False
+
+
 def test_the_staging_chokepoint_refuses_a_disqualified_domain(session):
     """Driven directly, because through a channel the dedup gets there first. This is
     what makes the ruling hold independently of a dedup set that exists for another

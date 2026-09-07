@@ -140,10 +140,19 @@ def promote_cited_sources(
         if is_infrastructure_domain(dom):  # CDN / analytics / boilerplate-legal (field 2026-07-10)
             skipped["infrastructure"] += 1
             continue
-        if is_disqualified_domain(session, dom):
-            skipped["disqualified"] += 1
+        # A disqualified domain IS a source domain, so it is always in `existing_set`;
+        # asking the database first cost one indexed seek per candidate domain -- on an
+        # `async def` handler, i.e. on the event loop -- for a question only the known
+        # ones can answer. Split the reason INSIDE the branch instead: same two counters,
+        # one query per already-known domain rather than per domain, and no query at all
+        # on the path that stages a candidate (which also keeps this loop from touching
+        # the database after a `session.add`, where an autoflush-enabled session would
+        # flush mid-loop and take the single-writer gate).
+        if dom in existing_set:
+            reason = "disqualified" if is_disqualified_domain(session, dom) else "already_a_source"
+            skipped[reason] += 1
             continue
-        if dom in existing_set or any(is_equivalent_domain(dom, e) for e in existing):
+        if any(is_equivalent_domain(dom, e) for e in existing):
             skipped["already_a_source"] += 1
             continue
         if len(created) >= cap:
