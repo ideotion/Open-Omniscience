@@ -85,6 +85,14 @@ def _dump_jobs() -> list[dict]:
                     "unit": "bytes",
                     "percent": e["percent"],
                 },
+                # PERF-09: the OWNER's own bytes-over-time, measured in the
+                # download loop. Always present as a block; `measured` is False
+                # with a REASON when there is nothing to report, because a
+                # `bytes_per_s` of 0 reads as "stalled" and that is a different
+                # fact from "not measured yet". The ETA rides inside it and only
+                # when a real rate AND a real Content-Length both exist.
+                "rate": e.get("rate") or {"measured": False, "reason": "not reported"},
+                "eta_seconds": (e.get("rate") or {}).get("eta_seconds"),
                 "error": e.get("error"),
                 "actions": _dl_actions(state),
             }
@@ -123,6 +131,14 @@ def _osm_jobs() -> list[dict]:
                     "unit": "bytes",
                     "percent": e["percent"],
                 },
+                # PERF-09: the OWNER's own bytes-over-time, measured in the
+                # download loop. Always present as a block; `measured` is False
+                # with a REASON when there is nothing to report, because a
+                # `bytes_per_s` of 0 reads as "stalled" and that is a different
+                # fact from "not measured yet". The ETA rides inside it and only
+                # when a real rate AND a real Content-Length both exist.
+                "rate": e.get("rate") or {"measured": False, "reason": "not reported"},
+                "eta_seconds": (e.get("rate") or {}).get("eta_seconds"),
                 "error": e.get("error"),
                 "actions": _dl_actions(state),
             }

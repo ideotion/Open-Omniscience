@@ -19,18 +19,27 @@ reproducer/analysis as evidence —
     not even dirty when ``import_due_feeds`` runs — a second, independent
     refutation.) The test below asserts the gate stays UNHELD across the exact
     dirty-session → read-query → fetch shape the claim describes.
-  * **F13 — REAL hold, DECLINED (GIL-marginal + split-risk).** The batched
-    collector flush holds the gate across per-article keyword EXTRACTION, not
-    just the write (documented + pinned below). The fix — splitting
-    ``index_article`` into extract-outside / persist-inside — is high-risk (the
-    hottest, most correctness-critical function: idempotency, exact counters,
-    when/where/who, sentiment) and GIL-bounded-marginal in throughput: extraction
-    is GIL-serialised regardless of the gate, so the only recoverable overlap is
-    the amortised fsync window (batching already collapses ~8 extractions onto ONE
-    commit, so writes are the small part of the window). Session A's judgment
-    stands, now with a reproducer. The test PINS the current property (gate held
-    across extraction); if a future session splits it, update this test
-    consciously.
+  * **F13 — REAL hold; DECLINED 2026-07-12, REVERSED AND FIXED 2026-09-07 (C16 /
+    S-D).** The batched collector flush used to hold the gate across per-article
+    EXTRACTION, not just the write. The 2026-07-12 decline called the fix
+    GIL-bounded-marginal, reasoning that "batching already collapses ~8
+    extractions onto ONE commit, so writes are the small part of the window".
+    That premise is right and the conclusion inverted: the writes being small is
+    exactly why moving the rest out is worth ~16x, not a marginal fsync overlap.
+
+    MEASURED on the real ingest path (8 articles x ~22 KiB, three runs each,
+    ``scripts``-free repro in the C16 PR): gate window **3679-3851 ms** before,
+    of which **93.3-93.7%** was pure extraction and only ~240 ms was the write;
+    **206-242 ms** after. The decline also named the wrong step — "keyword
+    extraction" is the SMALLEST of the five (~185 ms of the batch), while
+    ``extract_dates`` alone is ~1.93 s and ``score_article`` ~0.70 s. That is
+    the material change since 2026-07-12: when/where/who at ingest (T12) landed
+    AFTER that judgment and multiplied the in-gate CPU by roughly an order of
+    magnitude, so the rider was re-opened on evidence rather than on preference.
+
+    The test below is the SAME reproducer with its assertion consciously flipped
+    (its previous docstring asked for exactly that), plus the negative twin that
+    stops the flip being satisfiable by simply disabling the gate.
   * **F10 — REAL, DECLINED (bounded / best-effort / self-resolving).**
     ``_drain_wal`` checks out a pool connection under the gate (inverted vs
     workers' connection→gate), but via ``engine.connect()`` bounded by
@@ -185,18 +194,20 @@ def test_f14_sessionlocal_is_autoflush_off_the_property_that_refutes_the_claim()
 # --------------------------------------------------------------------------- #
 
 
-def test_f13_batched_flush_holds_the_gate_across_keyword_extraction(monkeypatch):
-    """F13 (DECLINED, GIL-marginal + split-risk): the batched collector flush
-    holds the single-writer gate ACROSS per-article keyword EXTRACTION, not just
-    the write. Proven by probing ``write_gate.stats()["held"]`` from inside the
-    extractor: every extraction during a batched flush runs with the gate HELD.
+def test_f13_batched_flush_runs_extraction_OUTSIDE_the_gate(monkeypatch):
+    """F13, REVERSED (C16 / S-D, 2026-09-07): the batched collector flush runs
+    per-article extraction with the single-writer gate UNHELD.
 
-    This DOCUMENTS the property Session A judged not worth splitting (extraction
-    is GIL-serialised, so moving it out of the gate does not raise collector
-    throughput beyond the amortised-fsync overlap; the split would refactor the
-    hottest correctness-critical function). If a future session DOES split
-    extraction out of the gate window, this assertion will flip — update it
-    consciously and record the reversal in the ledger."""
+    This is the 2026-07-12 reproducer with its assertion consciously flipped —
+    that test's own docstring asked for exactly this when a future session split
+    extraction out of the gate window. Same probe (``write_gate.stats()["held"]``
+    read from inside the extractor), opposite expectation.
+
+    THE NEGATIVE TWIN IS LOAD-BEARING and is why the second half exists: "every
+    extraction ran with the gate unheld" is satisfied just as well by a gate that
+    is never taken at all (``OO_WRITE_GATE=0``, a broken registration, a session
+    that never flushes), which would be a data-safety regression wearing this
+    test's green. So the writes must still be shown to pass THROUGH the gate."""
     from src.analytics import extract as extract_mod
     from src.database.models import Article
     from src.database.session import init_db, session_scope
@@ -206,6 +217,7 @@ def test_f13_batched_flush_holds_the_gate_across_keyword_extraction(monkeypatch)
 
     init_db()
     monkeypatch.setenv("OO_COLLECT_COMMIT_BATCH", "4")
+    grants_before = write_gate.stats()["grants"]
 
     real_get = extract_mod.get_extractor
     held_during_extract: list[bool] = []
@@ -233,10 +245,20 @@ def test_f13_batched_flush_holds_the_gate_across_keyword_extraction(monkeypatch)
         tally = ingest_source(s, src, fetcher=_fetcher(sess))
         assert tally["stored"] == 4
 
-    # The extractor ran once per stored article, and EVERY run was under the gate
-    # (the batched flush's window spans the extraction — the F13 hold).
-    assert held_during_extract, "extraction never ran"
-    assert all(held_during_extract), held_during_extract
+    # The extractor ran once per stored article, and NOT ONE run was under the
+    # gate: the flush window now spans the DML only (C16). Anti-vacuity first —
+    # an empty list satisfies `not any(...)` for free.
+    assert len(held_during_extract) == 4, held_during_extract
+    assert not any(held_during_extract), held_during_extract
+
+    # THE NEGATIVE TWIN: the gate is still real. If extraction is outside it
+    # because the gate is not being taken at all, that is a data-safety
+    # regression, not this fix — so the batch's own writes must have passed
+    # through it. (`grants` is the gate's own monotonic acquisition counter.)
+    assert write_gate.stats()["grants"] > grants_before, (
+        "the write gate was never acquired during a batched flush — extraction "
+        "being 'outside the gate' is meaningless if nothing is inside it"
+    )
 
     # And, for contrast, the article FETCHES ran with the gate UNHELD (P1.8's
     # own invariant: fetch/extract-of-links happens outside the gate). This keeps
