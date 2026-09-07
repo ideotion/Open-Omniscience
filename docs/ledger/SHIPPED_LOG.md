@@ -6788,3 +6788,33 @@ what decides the severity; a zero-specificity `:where()` default is what lets a 
 coexist with deliberate exceptions; a property that lives at the call site reaches the call
 sites somebody remembered; one theme cannot answer for seventeen when the value comes from the
 UA; and a heading probe scoped to one container class reports a clean app.
+
+## 2026-09-07 — stats/sdmx: the observation CONTAINER, as opposed to the observation-level lookup (P14 S2)
+
+`parse_sdmx_json` read observations only out of `dataSets[].series[<key>].observations`. A message
+returned for `dimensionAtObservation=AllDimensions` carries no `series` key at all — its observations
+hang straight off the dataSet as `dataSets[].observations` — so a well-formed message parsed to **zero
+rows and logged nothing**. The 2026-08-13 session had fixed the observation-level LOOKUP for exactly
+this mode and written a test named for it; the fixture kept a `series` map with an empty-string key, a
+shape `AllDimensions` never emits, so the test covered the lookup and never the container.
+
+Shipped: both containers are read; dataSet-level dimensions become a weakest-precedence fallback
+(observation > series > dataSet — a single-area query can legitimately carry `REF_AREA` there, and
+refusing it would discard good data to look careful); a dataSet carrying **neither** container is
+logged as unreadable, while an empty-but-present container stays silent; and an SDMX-JSON **2.0**
+message is refused **by name**, with the instruction to pin 1.0 on the request rather than sniff the
+response. Every refusal from 2026-08-13 is retained, each pinned by a mutation-checked test (six
+mutants, all killed by name).
+
+Provenance, because it bounds what this proves: the fixtures are **spec-shaped, not fetched**.
+`sdmx.oecd.org`, `api.worldbank.org` and `dataservices.imf.org` each answer `CONNECT <host>:443` →
+`403` at the sandbox proxy, with `pypi.org` 200 as the control — the seventh consecutive session to
+converge on that, recorded as per-host evidence under `QUESTIONS_FOR_THE_MAINTAINER` F1. SDMX-JSON 2.0
+support itself therefore stays unbuilt: it still needs one real body.
+
+Also corrected in the same PR, under the staleness guard: the revision-anomaly detector (`GOV-06`) and
+all three parser families (`GOV-05`) were recorded as UNCHECKED/on-mission-to-build and are in fact
+**shipped and wired** — the detector runs `revision.py` → `store.py:267` → `/api/stats/revision-anomalies`
+→ `app-map.js:2143` with three test files guarding it. `PRH-24` (the "Registered statistics sources"
+view) really is unbuilt. `S4` (the default aggregation strategy) was **not** flipped: which figure a
+reader sees first is an editorial decision, so it is recorded as question `G11` instead.

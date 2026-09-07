@@ -102,10 +102,10 @@ claim lives · owning prompt.
 |---|---|---|---|---|---|
 | GOV-01 | 36 WB indicator codes never fetched — `scripts/verify_worldbank_indicators.py` is ONE command on a networked machine | OPERATOR-GATED (F1) | script docstring | CLAUDE.md | P14 |
 | GOV-02 | Bloc rosters (Task 4) — registry deliberately EMPTY; own networked session | OPERATOR-GATED (G3) | `src/catalog/blocs.py` docstring | CLAUDE.md | P14 |
-| GOV-03 | OECD SDMX-JSON 1.0 / IMF message support (parser handles one message shape; "SDMX-JSON 2.1" docstring corrected) | UNBUILT (needs a real fetched body) | `src/stats/sdmx.py:143-154` | CLAUDE.md 2026-08-13 lesson | P14 |
+| GOV-03 | OECD SDMX-JSON 1.0 / IMF message support | PART-BUILT 2026-09-07 @ `58a4d6df`: the 1.0 `AllDimensions` CONTAINER (`dataSets[].observations`, no `series` key) parsed to ZERO rows and logged nothing — fixed, with an unreadable dataSet now logged and a 2.0 message refused BY NAME. SDMX-JSON **2.0** remains unbuilt and still needs a real fetched body. | `src/stats/sdmx.py`; `tests/test_sdmx_parse.py` | CLAUDE.md 2026-08-13 lesson | P14 |
 | GOV-04 | Agencies directory 29 → ~152 with `news_url` (networked research pass) | OPERATOR-GATED (G5) | `src/stats/agencies.py` 29 entries | CLAUDE.md | P14 |
-| GOV-05 | CSV/OWID + JSON-stat/PxWeb + bulk-ZIP parsers (V-Dem/UCDP) | UNCHECKED (`src/stats/bulk.py` exists) | FUTURE_DEVELOPMENTS §"Statistical-data ingestion" | FD | P14 |
-| GOV-06 | Revision-anomaly detector over `StatFigure` vintages | UNCHECKED (`src/stats/revision.py` exists) | FD | FD | P14 |
+| GOV-05 | CSV/OWID + JSON-stat/PxWeb + bulk-ZIP parsers (V-Dem/UCDP) | VERIFIED-PRESENT 2026-09-07 @ `58a4d6df` — all three families ship: `parse_csv`/`parse_jsonstat` (`sdmx.py`), `parse_csv_wide` + `zip_csv_members`/`read_zip_member` (`bulk.py`), tested in `test_stats_csv_jsonstat_parse.py` + `test_stats_bulk.py`. Do not rebuild. | `src/stats/sdmx.py`, `src/stats/bulk.py` | FD | P14 |
+| GOV-06 | Revision-anomaly detector over `StatFigure` vintages | VERIFIED-PRESENT 2026-09-07 @ `58a4d6df` — shipped AND wired end to end: `find_revision_anomalies` → `store.py:267` → `/api/stats/revision-anomalies` → `app-map.js:2143`, with `test_stats_revision.py`, `test_stats_revision_store.py` and a `test_repo_invariants.py` guard. Do not rebuild. | `src/stats/revision.py` | FD | P14 |
 | GOV-07 | IPCC as a source + forecast/prediction tracking | RULING-GATED (G4) | FD §"IPCC" | FD | P14 |
 | GOV-08 | Key-gated sources (EIA API v2, FRED, Comtrade, FIRMS, OpenAQ) — V1-2 | RULING-GATED (G1) | V1_PATHWAY §7 | V1 | P14 |
 | GOV-09 | BRICS Joint Statistical Publication; AfDB/UNECA continental endpoints | OPERATOR-GATED | CLAUDE.md 2026-08-07 rulings 2/46 | CLAUDE.md | P14 |
