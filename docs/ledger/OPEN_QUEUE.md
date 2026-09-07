@@ -1504,6 +1504,24 @@
   are now pinned by a guard, because a ratified list that nothing enforces is a list that drifts;
   ADDING a section stays cheap (that is what the registry is for) — the guard makes an addition or
   a removal a deliberate edit of the ruling rather than a silent one.
+  **ONE QUESTION §18's ENUMERATION RAISES AND DOES NOT ANSWER — MAINTAINER'S TO RULE (recorded
+  2026-09-07, deliberately NOT decided by the session that built the enumeration):** the annexes
+  ZIP defaults to `full_text=True`, and the evidence archive carries every article's whole stored
+  text by design. **Is redistributing a publisher's full text the operator's to do?** That is a
+  question about each publisher's terms, not about this app's behaviour, and it has three shapes
+  worth separating. (a) The EVIDENCE archive is owner-only by design and is not meant to be
+  shared — its full text is what makes the edition's counts recomputable, which is its whole
+  reason to exist; the question barely arises while it stays on the machine that made it.
+  (b) The ANNEXES bundle is what the download button hands over BESIDE the report, so it is the
+  artifact that actually travels, and its default is full text. (c) The published REPORT already
+  carries bounded excerpts only, so it is not in question. The enumeration now STATES, per
+  artifact, that the text is there and whose it is (`publisher_full_text`), and stops:
+  `src/bulletin/privacy.py`'s item says in as many words that this app does not answer it.
+  THE OPTIONS, none taken: keep full text as the annexes default and rely on the disclosure ·
+  flip the annexes default to excerpt-only and make full text the deliberate choice (one query
+  parameter, already plumbed and tested both ways) · make it an operator setting with the terms
+  question stated at the switch. **A ruling would change a default, not build a mechanism** —
+  `full_text` is already a first-class flag on the route, the builder and the enumeration.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;

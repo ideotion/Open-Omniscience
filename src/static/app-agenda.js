@@ -290,6 +290,9 @@
       try { v = await api(`/api/bulletin/editions/${encodeURIComponent(filename)}/review`); }
       catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not open this edition: ") + e.message)}</div>`; return; }
       _bulRender(v);
+      // The §18 enumeration is fetched right after the review renders, so it is on
+      // screen before the operator reaches the download button rather than after.
+      _bulPrivacy();
     }
 
     // ONE renderer for a narrated unit's label and per-sentence verdicts, shared by
@@ -370,16 +373,51 @@
           <button onclick="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
           <div id="bul-pub" class="hint" style="align-self:center"></div>
         </div>
-        <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>`;
+        <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>
+        <div id="bul-privacy" class="hint" style="margin-top:8px"></div>`;
+    }
+
+    // §18: what a READER of the export can see, stated where the operator clicks —
+    // and BEFORE the click, not in a dialog after it. Rendered as part of the review
+    // rather than behind a toggle, because informed consent in this app is visible by
+    // default; the long form lives in the note inside the ZIP.
+    //
+    // It is measured against the SAME selection the download will use, or it would
+    // describe a different file from the one about to be sent.
+    async function _bulPrivacy() {
+      const box = $("bul-privacy");
+      if (!box || !_bulFile) return;
+      const q = _bulQuery(); q.set("kind", "annexes");
+      let d = null;
+      try { d = await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/export-privacy?${q}`); }
+      catch (e) {
+        // A failed enumeration is an UNANSWERED question, never an all-clear. Saying
+        // so is the whole point of the tri-state underneath it.
+        box.textContent = _bulT("What a reader of these files could see could not be listed: ")
+          + e.message + " " + _bulT("That is an unanswered question, not an all-clear.");
+        return;
+      }
+      const rows = (d.items || []).map(it => {
+        const mark = it.present === true
+          ? (it.n != null ? `${_bulT("yes")} (${it.n})` : _bulT("yes"))
+          : (it.present === false ? _bulT("no") : _bulT("NOT MEASURED"));
+        return `<li><strong>${esc(it.what)}</strong> — ${esc(mark)}<br>
+          <span class="muted">${esc(it.why_it_matters)}</span></li>`;
+      }).join("");
+      box.innerHTML = `<strong>${esc(_bulT("What a reader of these files can see"))}</strong>
+        <p class="muted" style="margin:4px 0">${esc(d.caveat || "")}</p>
+        <ul style="margin:4px 0 0 18px">${rows}</ul>`;
     }
 
     function bulletinToggleSection(key) {
       if (_bulExcludeSections.has(key)) _bulExcludeSections.delete(key);
       else _bulExcludeSections.add(key);
+      _bulPrivacy();
     }
     function bulletinToggleStory(key) {
       if (_bulExcludeStories.has(key)) _bulExcludeStories.delete(key);
       else _bulExcludeStories.add(key);
+      _bulPrivacy();
     }
 
     function bulletinOpen(fmt) {

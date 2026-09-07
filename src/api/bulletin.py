@@ -335,6 +335,64 @@ def ai_plan(
     )
 
 
+@router.get("/editions/{filename}/export-privacy")
+def export_privacy_route(
+    filename: str,
+    kind: str = Query("annexes", description="report | annexes | evidence"),
+    full_text: bool = Query(True, description="for annexes: would the bundle carry full text"),
+    exclude_sections: str = Query("", description="the same selection the export would use"),
+    exclude_stories: str = Query(""),
+    db: Session = Depends(get_db),
+) -> dict:
+    """What a READER of this export could see — the §18 enumeration.
+
+    Owed before an artifact leaves the machine, and answered here so the operator
+    meets it BEFORE the download rather than after. It is measured against the exact
+    set of articles the export would carry, which is why it takes the same selection
+    the render and annexes routes take: an enumeration over a different population
+    would describe a file nobody is about to send.
+
+    Read-only, and it decides nothing. Every item it lists is legitimate content
+    that no filter over field names could tell from ordinary data — which is
+    precisely why the mechanism is disclosure and not a scrubber.
+    """
+    from src.bulletin.annexes import assign_refs
+    from src.bulletin.privacy import export_privacy
+    from src.bulletin.review import apply_selection
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
+    if kind == "evidence":
+        # The evidence archive's population is the PERIOD, not the citations, and it
+        # is resolved by the archive's own selector rather than a second copy of the
+        # predicate — two copies is how two surfaces come to disagree about a number.
+        from src.bulletin.period import resolve_period
+        from src.bulletin.privacy import period_article_count  # noqa: F401  (documented seam)
+
+        try:
+            period = resolve_period(str((edition.get("period") or {}).get("cadence") or "weekly"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        from src.bulletin.evidence import _period_article_ids
+
+        ids = _period_article_ids(db, period)
+    else:
+        ids = [int(e["id"]) for e in assign_refs(edition)]
+
+    try:
+        return export_privacy(
+            db, edition, kind=kind, article_ids=ids, full_text=bool(full_text)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/editions/{filename}/render")
 def render_edition(
     filename: str,
