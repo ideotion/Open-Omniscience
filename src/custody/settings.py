@@ -194,8 +194,26 @@ def save_settings(updates: dict) -> CustodySettings:
 
 
 def availability() -> dict:
-    """Report what the *build* can actually do, independent of preferences."""
-    from src.custody.signing import PQC_AVAILABLE
-    from src.custody.timestamp import OTS_AVAILABLE
+    """Report what the *build* can actually do, independent of preferences.
 
-    return {"pqc_available": bool(PQC_AVAILABLE), "ots_available": bool(OTS_AVAILABLE)}
+    THE FLAGS NOW MEAN WHAT THIS DOCSTRING ALWAYS PROMISED (D7). Until 2026-09-07 they
+    were set by a bare ``import`` succeeding, so this function published
+    ``{"pqc_available": true}`` for a library that could not sign -- a fabricated
+    capability claim under a sentence saying "what the build can ACTUALLY do". Both are
+    now round-trip probes.
+
+    THE REASONS TRAVEL WITH THEM, because "not installed" and "installed but it cannot
+    sign" call for opposite actions -- one is a pip install, the other is a version
+    problem nobody can fix by installing harder -- and a lone boolean cannot say which.
+    Added ALONGSIDE the existing keys, never replacing them: every caller of
+    ``pqc_available``/``ots_available`` keeps reading exactly what it read before.
+    """
+    from src.custody.signing import PQC_AVAILABLE, PQC_REASON
+    from src.custody.timestamp import OTS_AVAILABLE, OTS_REASON
+
+    return {
+        "pqc_available": bool(PQC_AVAILABLE),
+        "pqc_reason": PQC_REASON,
+        "ots_available": bool(OTS_AVAILABLE),
+        "ots_reason": OTS_REASON,
+    }

@@ -47,6 +47,7 @@ from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
+from src.llm.weights_pin import PinMismatch as _PinMismatch
 from src.paths import data_dir
 
 _LOG = logging.getLogger(__name__)
@@ -3164,6 +3165,29 @@ def kv_basis(model: str) -> dict:
     return {"measured": True, "mb_per_token": mb, "config_files_present": present, **basis}
 
 
+def _cached_revision_facts(model: str, revisions: list[Path]) -> dict:
+    """Which revision(s) of ``model`` are on the disk, and how that reads against the pin.
+
+    THREE STATES, and the third is the one a boolean would fabricate: "pinned and the
+    cached revision matches", "pinned and it does not", "not pinned, so nothing here was
+    checked". Reported, never enforced -- see the caller's comment for why the refusal
+    lives at the download instead.
+
+    More than one revision can legitimately sit in a cache (a re-download at a new
+    revision keeps the old tree), so the list is reported rather than collapsed to one:
+    saying "the pinned revision is present" while another is also on disk would answer a
+    question nobody asked.
+    """
+    from src.llm import weights_pin as _wp
+
+    names = sorted({r.name.strip().lower() for r in revisions if r.name})
+    pin = _wp.hf_revision_pin(model)
+    out: dict = {"cached_revisions": names, "pin_basis": pin.basis, "revision_pinned": pin.pinned}
+    if pin.pinned:
+        out["revision_matches_pin"] = pin.value in names
+    return out
+
+
 def model_cache_state(model: str) -> dict:
     """Is ``model`` already downloaded? ``{cached, path, bytes}``.
 
@@ -3240,6 +3264,15 @@ def model_cache_state(model: str) -> dict:
             "location": where,
             "expected": str(expected),
             "incomplete": None,
+            # D6 DISCLOSURE, not a gate. The cache lays each download down under
+            # snapshots/<commit sha>, so which revision is HERE is a fact we can read
+            # for free -- and reading it is how an operator notices the bytes moved
+            # between two installs even before they pin anything. The REFUSAL lives at
+            # the download (see run_model_download_job): refusing to SERVE a cache that
+            # predates the pin would turn a working install into a failed one for
+            # everyone who downloaded before pinning, which is the recorded hazard of
+            # letting a new floor override a value the field has already served.
+            **_cached_revision_facts(model, revisions),
         }
 
     if partial is not None:
@@ -3276,10 +3309,18 @@ def model_cache_state(model: str) -> dict:
 
 #: Run INSIDE the managed venv (which has ``huggingface_hub`` -- vLLM depends on it).
 #: ``-u`` so the progress lines reach us while the download runs rather than at the end.
+#:
+#: ``argv[2]`` is the PINNED REVISION (D6), or "" for unpinned. A revision is passed to
+#: ``snapshot_download`` rather than compared afterwards because passing it is what makes
+#: the download FETCH those bytes; the comparison that follows in
+#: :func:`~src.llm.weights_pin.check_downloaded_revision` is what proves it did. The
+#: values are handed over as ARGV, never spliced into this source -- the recorded
+#: "never build program source by interpolating values; pass data as data" rule.
 _SNAPSHOT_SCRIPT = (
     "import sys\n"
     "from huggingface_hub import snapshot_download\n"
-    "p = snapshot_download(sys.argv[1])\n"
+    "rev = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None\n"
+    "p = snapshot_download(sys.argv[1], revision=rev)\n"
     "print('__downloaded__ ' + p)\n"
 )
 
@@ -3319,10 +3360,16 @@ def run_model_download_job(
     if state["cached"]:
         return {"downloaded": True, "state": "already_cached", **state}
 
+    # D6: the pin, if there is one. Resolved BEFORE the fetch so a malformed operator
+    # override is refused as a pin here rather than silently passed to the hub as a
+    # revision that still moves.
+    from src.llm import weights_pin as _pin
+
+    pinned = _pin.hf_revision_pin(model)
     run = runner or _default_runner
     stop = _stop_probe(ctx)
     ctx.set_progress(detail=f"downloading {model} from Hugging Face")
-    argv = [str(venv_python()), "-u", "-c", _SNAPSHOT_SCRIPT, model]
+    argv = [str(venv_python()), "-u", "-c", _SNAPSHOT_SCRIPT, model, pinned.value]
     exit_code: int | None = None
     path: str | None = None
     tail: deque[str] = deque(maxlen=_OUTPUT_TAIL_LINES)
@@ -3345,7 +3392,18 @@ def run_model_download_job(
             + (f" (exit code {exit_code})" if exit_code is not None else "")
             + (": " + " | ".join(list(tail)[-3:]) if tail else "")
         )
-    return {"downloaded": True, "state": "downloaded", **model_cache_state(model)}
+    # D6: what ARRIVED against what was PINNED. Raises PinMismatch on a genuine
+    # mismatch -- the bytes changed under the operator, which is the one thing the pin
+    # exists to detect, and the no-fabricated-security rule says refuse rather than warn.
+    # Nothing is deleted: the refusal is about trust, and destroying several GB the
+    # operator may want to inspect would be a second harm.
+    integrity = _pin.check_downloaded_revision(model, path)
+    return {
+        "downloaded": True,
+        "state": "downloaded",
+        "integrity": integrity,
+        **model_cache_state(model),
+    }
 
 
 def run_models_download_job(
@@ -3381,6 +3439,11 @@ def run_models_download_job(
         try:
             one = run_model_download_job(ctx, model=model, runner=runner)
             results.append({"model": model, **one})
+        except _PinMismatch as exc:
+            # Its OWN state, not folded into "error": a gated repo, a typo and a network
+            # blip are the operator's to fix, while "the published weights are not the
+            # bytes you pinned" is a supply-chain finding and reads as one.
+            results.append({"model": model, "state": "integrity-mismatch", "error": str(exc)})
         except (VllmLifecycleError, VllmUnsupportedError) as exc:
             # Recorded with its own reason -- a gated repo and a typo look identical
             # from a bare "failed", and only one of them is the operator's to fix.
