@@ -113,6 +113,13 @@ class WriterGate:
         self._held_since: float | None = None
         self._max_hold_s = 0.0
         self._max_hold_holder: str | None = None
+        # Cumulative HELD time, so a soak can ask "what share of the run was the single
+        # writer occupied?" -- a different question from ``_total_wait_s``, which is
+        # thread-seconds of CONTENTION and is large both when many workers write briefly
+        # and when one writes for hours. Free: the release path already computes ``held``
+        # for the max, and this is one float add on that same line, inside a lock it
+        # already holds (the 2026-08-06 rule about instruments on hot paths).
+        self._total_held_s = 0.0
         self._timeouts = 0  # bounded acquires that gave up (S2.5)
         # S2.6 (c): FIFO handoff. Without it acquire() grants to whichever thread
         # happens to find the gate free, so a looping re-acquirer can starve a
@@ -216,6 +223,9 @@ class WriterGate:
             if self._depth == 0:
                 if self._held_since is not None:
                     held = time.monotonic() - self._held_since
+                    # Outermost release only (``_depth == 0``), so a reentrant nested write
+                    # is counted once rather than once per level.
+                    self._total_held_s += held
                     if held > self._max_hold_s:
                         self._max_hold_s = held
                         # Retained AFTER release on purpose: the peak hold is
@@ -252,6 +262,8 @@ class WriterGate:
             self._depth = 0
             self._holder = None
             self._held_since = None
+            # Deliberately NOT resetting the counters: they are process-cumulative by
+            # contract and a test that leaked the gate has not un-held it.
             # The queue too: a waiter left behind would sit at the head forever
             # and block every later acquire (FIFO). Each parks on its OWN
             # condition, so every one must be woken by name -- a notify_all on
@@ -275,6 +287,10 @@ class WriterGate:
                 "contended": self._contended,
                 "total_wait_s": round(self._total_wait_s, 4),
                 "max_wait_s": round(self._max_wait_s, 4),
+                # Accumulated on RELEASE, so a hold in flight right now is NOT in it --
+                # ``held_for_s`` beside it is that hold, and adding them would be the
+                # reader's decision, not a number this method may invent.
+                "total_held_s": round(self._total_held_s, 4),
                 # S2.6: the name, not just the number. ``holder``/``held_for_s``
                 # are None when the gate is free -- absent state, never a 0 that
                 # would read as "held for no time".

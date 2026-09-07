@@ -461,7 +461,18 @@ this history it reports the merge commit rather than the authoring one, and answ
   `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/shipped.csv`
   returns nothing — the 2026-07-18 b9dcbcc merge committed unresolved conflict
   markers INTO CLAUDE.md on main because only shipped.csv was verified (fixed
-  same day; both sides were kept additively, as the ledger rule requires). Agent findings get hand-re-verified before
+  same day; both sides were kept additively, as the ledger rule requires). **AND THAT GREP IS
+  BLIND TO `shipped.csv`, WHICH IS THE FILE IT NAMES (2026-09-07):** `.gitattributes` sets
+  `merge=union` on it, so it NEVER produces a conflict marker — union keeps both sides' lines
+  and reports success. That is correct for an append-only file and silently WRONG for any row
+  the other side EDITED: main's docs reality-check rewrote eleven historical rows, and the one
+  this branch also carried came out as TWO rows — the stale `PR pending` text beside main's
+  corrected `PR #1011`. A marker grep cannot see it and neither can a clean `git merge`. The
+  check that works is a DUPLICATE-KEY scan over `(date, area, item)`, compared against the
+  COMMON ANCESTOR rather than against zero — nine duplicates already existed there, so a bare
+  "are there duplicates" test would have accused this merge of nine things it did not do. The
+  tell in the diff is a numstat with DELETIONS on a merge you expect to be purely additive.
+  Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
   SUBPROCESS-spawning determinism test import the OLD code from the mutated
@@ -5687,6 +5698,38 @@ this history it reports the merge commit rather than the authoring one, and answ
     a bound exists, install both versions and write down what you MEASURED — here 1.0.0 → 16
     failed / 23 passed in this repo's own suite against 0.4.0 → 39 passed, which is checkable,
     where a changelog paraphrase arrives at the same confidence and is where the error will be.
+    **THE BOUND HAS A TEST NOW (2026-09-07, PR #1016) — and writing it produced a finding the
+    obvious version of the guard would have missed: THE NEGATIVE-SPACE TWIN IS LOAD-BEARING ON A
+    VERSION CEILING, because over-narrowing SATISFIES the ceiling assertion.** `pqcrypto==0.3.4`
+    and `<0.4` both exclude 1.0.0, so both make a lone "the ceiling refuses 1.0.0" guard GREEN
+    while dropping the release a real install resolves to — i.e. the cheapest way to fix the
+    guard would be to make the extra useless. Mutation-proven in both directions: widening to
+    `<2.0` (dependabot's exact change) reddens ONLY the ceiling test, over-narrowing to
+    `==0.3.4` reddens ONLY the twin **while the ceiling test still passes**, and deleting the
+    requirement trips an anti-vacuity helper — an absent requirement parses as an EMPTY
+    `SpecifierSet`, which admits everything, so a guard that tolerated it would pass hardest at
+    exactly the moment the ceiling stopped existing. Two riders. (a) Assert CONTAINMENT via
+    `packaging.SpecifierSet`, never the literal constraint string: a lower-bound bump is
+    legitimate and must not redden, and `packaging` ships wherever pytest runs (pytest requires
+    it), so it is safe on the Core-only lane. (b) The failure MESSAGE is the whole deliverable —
+    it is what a reviewer of the widening PR reads — so it names the constraint that was set,
+    the version it now admits, and the inverted predicate, not just "bound changed".
+    **(c) A GUARD WHOSE SUBJECT IS THE ENVIRONMENT IS UNREACHABLE UNLESS THE LANE THAT BUILDS
+    THAT ENVIRONMENT COLLECTS IT — found in my own test, before it shipped.** The third guard
+    compares the DECLARED ceiling against what pip actually RESOLVED, and it could not run
+    anywhere: every bare `pytest -q` lane collects the file with no `[pqc]` installed, so it can
+    only reach its own skip, while `crypto` — the ONE lane that installs the extra — runs two
+    explicitly-named files and never collected it. Green in every lane, executed in none,
+    reading as coverage. Naming the file in that lane fixes it, and the fix is MEASURABLE: with
+    the extra installed the file goes 2-passed/1-skipped → 3-passed, and with pqcrypto 1.0.0
+    installed against the declared `<1.0` it fails ALONE (1 failed / 2 passed) — which is also
+    what proves it is not redundant with the twin, since the twin can only ever check a
+    `_SHIPPED` constant a human wrote down while this one checks what upstream actually
+    published. GENERAL FORM: when a test's meaning depends on an OPTIONAL extra, find the lane
+    that installs that extra and confirm it COLLECTS the file; a lane that names files
+    explicitly is where an environment-gated guard goes to die. Same class as the node-suite
+    driver ratchet, which exists because an unrun suite already cost a shipped defect — there
+    the file had no runner, here it had a runner in the one environment where it means nothing.
   - **A RESERVE SIZED FOR A MECHANISM THAT IS SWITCHED OFF IS NOT CONSERVATISM — it is a
     permanently unclaimed resource, and a "conservative" default stops being conservative
     once it decides EVERY machine (2026-09-05, the field context window; maintainer-ruled
@@ -6208,6 +6251,39 @@ this history it reports the merge commit rather than the authoring one, and answ
     read the second as an unrelated flake. The repair belongs in the assertion, not the code:
     compare the fields the test is about, and pin the newly-live field by name.
 
+  - **A REPORT WHOSE EVERY BLOCK DEGRADES HONESTLY HAS THE SAME SHAPE WHEN IT WAS HANDED
+    NOTHING — so a shape assertion cannot tell a working member from a broken one
+    (2026-09-07, the soak-window bundle member):** the recorded K2 lesson names a degrade
+    wrapper becoming the hiding place for the bug it survives, and the FastAPI-sentinel
+    lesson names `Query(False)` being truthy when a route is called directly. This is
+    where the two meet: a composed report in which each block reports `{measured: false,
+    reason}` on failure produces a payload with all the right KEYS whether it got a real
+    Session or a `Depends` object, so `assert "window" in payload` passes on exactly the
+    defect it was written for. Measured, not reasoned: the mutation that replaced
+    `soak_window_report(db=db)` with `soak_window_report()` left the guard GREEN. The
+    assertion has to be on a VALUE only the real path can produce — here a `wal_bytes` row
+    the test itself inserted, read back out through the member. GENERAL FORM: the better
+    your degrade discipline, the weaker a shape assertion is, and the two are related by
+    construction rather than by accident.
+  - **FILTERING A BUCKETED SERIES TO A SUB-BUCKET WINDOW IS A CHOICE OF WHICH WAY TO BE
+    WRONG — pick the direction the hazard makes safe, and disclose it (2026-09-07, same
+    slice):** `wal_bytes` is stamped with its HOUR BUCKET, so a snapshot genuinely taken at
+    10:45 by a process that started at 10:30 carries the timestamp 10:00. A strict `t >=
+    started_at` drops a reading that really is in the window and UNDER-reports the maximum;
+    widening the boundary to the containing hour can include up to 59 minutes of a previous
+    session. Neither is free. For a GROWTH hazard the under-report is the dangerous half —
+    a hidden WAL spike is the thing the series exists to show — so widen, and publish the
+    boundary plus the first point's timestamp so a reader can see exactly which reading is
+    the borderline one. The general question to ask is not "which is correct" but "which
+    error does this metric's failure mode punish".
+  - **NOT EVERY CUMULATIVE SECOND MAY BE DIVIDED BY A WINDOW (2026-09-07, same slice):** the
+    write gate publishes `total_held_s` and `total_wait_s` side by side and only ONE of them
+    is a share of wall time. The gate is exclusive, so at most one holder exists at a time
+    and held time is bounded by elapsed time; waiting is summed ACROSS waiters, so on a
+    contended gate it exceeds the window and a "share" computed from it would exceed 1.
+    Before dividing an accumulated duration by a window, ask whether the thing being
+    accumulated can happen in parallel with itself — and pin it, because the symmetry of the
+    two field names is exactly what invites the second division.
 ## Open queue (when maintainer says proceed)
 - **PROMPT-04 EXECUTION 2026-09-07 — source qualification, discovery, and ONE NEW RULING (B11).
   Three slices shipped; S1 stays blocked on B1 and the promotion frontier is PARKED WHOLE (branch
@@ -6626,7 +6702,17 @@ this history it reports the merge commit rather than the authoring one, and answ
   **THE INSTANCE IS CLOSED, AND IT RE-OPENED ONCE** — `2617037c` + `e112e04f` upper-bounded it
   to `pqcrypto>=0.3.4,<1.0` with the reason in a comment; **dependabot #996 widened it straight
   back to `<2.0` on 2026-09-03 and it merged** (a bot does not read comments), and it was
-  re-narrowed the same day. That round MEASURED a second breakage the first pass missed: 1.0.0's
+  re-narrowed the same day. **AND ON 2026-09-07 DEPENDABOT #1012 PROPOSED THE IDENTICAL WIDENING
+  A THIRD TIME AND IT MERGED (06:56:37) — measured: `<2.0` resolves to 1.0.0 — so it was
+  re-narrowed again and the instance is now defended by a MECHANISM rather than by prose (#1016):
+  `tests/test_dependency_ceilings.py` reddens on the PR that widens the ceiling, naming the
+  inverted predicate, instead of the repository going red later on somebody else's unrelated
+  change.** The 1.0.0 API was re-measured that day against both real wheels installed side by
+  side and every claim in the pyproject comment held, the corrected key-format one included
+  (`keygen()` returns plain `bytes`; `PUBLIC_KEY_SIZE` is 1952 in both). The guard covers the
+  DECLARATION and the INSTALLED version; it does NOT close the CLASS below, and it does not
+  settle the registry question below either. That round MEASURED a second breakage the first
+  pass missed: 1.0.0's
   `verify` returns `None` for a VALID signature and raises `InvalidSignatureError` for an invalid
   one, where 0.4.0 returns True/False — so `signing.py`'s `bool(_mldsa.verify(...))` reports every
   genuine ML-DSA signature as a verification FAILURE on an install whose keys already exist, a
@@ -13336,10 +13422,16 @@ this history it reports the merge commit rather than the authoring one, and answ
   no grandfathering per the same-day seed ruling; catalog failures = catalog-review work
   items) before the switch; this row
   EXPLICITLY doubles as the backup/restore-AT-SCALE validation — RESTATED 2026-07-30 with
-  row 3's withdrawn 5M bar: at ~1M articles this is a restore at roughly 2× the P0-validated
-  2.5 GB scale, NOT the ~10× the 5M framing claimed. State the REAL multiple in the gate
-  evidence; carrying the old 10× wording over a 1M run would be a fabricated pass on a bar
-  that was never tested. (5) **an
+  row 3's withdrawn 5M bar: at ~1M articles this is a restore well short of the ~10× the 5M
+  framing claimed. State the REAL multiple in the gate evidence; carrying the old 10× wording
+  over a 1M run would be a fabricated pass on a bar that was never tested. **⚠ CORRECTED
+  2026-09-07: this line read "roughly 2× the P0-validated 2.5 GB scale", and that estimate was
+  superseded TWICE inside this same ledger entry before anyone noticed** — by 6.2× for the
+  2026-08-03 run (794,333 articles / 16.5 GB) and by **8.3×** for the 2026-08-12 one
+  (1,048,725 articles / 21.0 GB), which is the figure the gate doc carries. The estimate was
+  written before either run existed; the general point is that a sentence instructing a reader
+  to "state the REAL multiple" must not itself carry a guessed one, because the guess is what
+  gets quoted. (5) **an
   ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
   execution) → implemented → EXECUTED** on the real ~1M corpus (per row 3's withdrawn 5M
   bar), removing the undesired-article
@@ -13440,23 +13532,32 @@ this history it reports the merge commit rather than the authoring one, and answ
   9 honesty rules standing as instruments; still open there: the 12-locale sweep (4
   covered), rule 9 (adversarial screenshot reading), and the Gecko/AppVM bar — every stamp
   stays "Chromium-verified (remote sandbox) · awaiting human UX pass".
-  ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
-  `criteria-calibration.json` is already an all-diagnostics bundle member
-  (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
-  execution is gated on — sequence = bundle → session proposes criteria against real specimens
-  → maintainer agrees → operator runs the quarantine pass with `write=True` → re-index clears
-  the junk keywords.
+  ~~ROW 5's remaining step is a DECISION~~ — **it was TAKEN 2026-08-23 (maintainer: "proceed
+  with tier A"), so the remaining step is the RUN.** The sequence (bundle → session proposes
+  criteria against real specimens → maintainer agrees → operator runs the quarantine pass with
+  `write=True` → re-index clears the junk keywords) is complete through the agreement;
+  `criteria-calibration.json` rides the all-diagnostics bundle (`src/api/diagnostics.py`, the
+  `criteria-calibration.json` member) and delivered the specimens the proposal was built on.
+  **The invocation is NOT the default one** — `?write=true&include_prose_gate=false`, because
+  the write path applies three independent criteria and only the URL-shape one is Tier A; the
+  four commands are `RELEASE_0.3_GATE.md` §7.1.
   **P0 VALIDATION RUN ON THE BIG CORPUS — MAINTAINER, 2026-08-03 (report
   `oo-p0-validation-20260803000812.json`, app 0.3.0, engine `oo-volumes-2`): 5 pass · 0 fail ·
   0 not-measurable.** REAL SCALE, stated as measured rather than as the bar's own wording:
   **16.5 GB / 794,333 articles**, i.e. **6.2× the 2,522 MB corpus v0.2.0 was validated at** —
   NOT the "100 GB" three acceptance-bar strings still say, and in the ~1M band the 2026-07-30
   ruling withdrew row 3 to. (Row 4's earlier "roughly 2×" estimate was low; the real multiple
-  is 6.2×. ~~Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.~~ —
-  **ALREADY DONE, and this sentence was the stale half; re-verified 2026-09-07:**
-  `src/monitoring/p0_validation.py` was corrected on 2026-08-03 and now carries the real figures
-  in a comment that names the correction — *"These said 'the maintainer's real 100 GB corpus'
-  until 2026-08-03. No run has ever been at 100 GB."*)
+  is 6.2×. ~~Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.~~
+  **ALREADY DONE 2026-08-03, and this sentence was the stale half — found independently by
+  the repo-analysis pass and by the 2026-09-07 docs reality-check, which is itself the tell
+  that a stale to-do outlives the fix it asks for.** `_acceptance_bars()` no longer names a
+  size at all: each bar is now the PROPERTY being tested (RAM does not scale with the corpus)
+  and the run's own `measurements` carry the size it was at, with the reasoning recorded in
+  the docstring verbatim — *"These said 'the maintainer's real 100 GB corpus' until
+  2026-08-03. No run has ever been at 100 GB."* — because a bar naming a scale no run reaches
+  makes every verdict read as though it cleared that scale. `kpi.py`'s K1 still names
+  "100 GB+" and that is CORRECT, not a leftover: it is a KPI TARGET, not a bar a report
+  claims to have met, and it reports `not-measurable` without one.)
   • **P0.1 backup — a genuinely strong pass.** Peak RSS grew **53.9 MB over a 15,699 MiB
     corpus (0.34 %)**, against v0.2.0's +440 MB over 2,522 MiB (17.45 %): RAM did not merely
     stay under a bar, it stopped tracking corpus size. 47 volumes / 18.2 GB in 1,040 s, parity
