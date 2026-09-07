@@ -193,3 +193,121 @@ def test_ring_country_article_ids_bounded_and_disclosed(db, monkeypatch):
     out_full = q.ring_country_article_ids(db, ring_id="testconcept", country="us", limit=100)
     assert out_full["bounded"] is False
     assert out_full["total"] == 5
+
+
+# --------------------------------------------------------------------------- #
+# The country LIST is bounded; the country COUNT never is, and the "not mapped"
+# bucket is never one of the rows the bound drops (anti-capping + §D, 2026-07-18).
+# --------------------------------------------------------------------------- #
+
+
+def _seed_many_countries(db, monkeypatch, *, n_located, located_articles, unlocated_articles):
+    """`n_located` located countries with `located_articles` articles each, plus one
+    unlocated source. Every located bucket is deliberately BIGGER than the unlocated
+    one, so the ordering puts the unlocated row last — the arrangement in which a
+    plain ``rows[:limit]`` drops exactly the bucket the §D ruling says must stay
+    reachable. A fixture where the unlocated bucket is the largest (its usual field
+    shape) cannot discriminate: it survives any limit and the guard passes for free.
+    """
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+    for i in range(n_located):
+        s = Source(name=f"S{i}", domain=f"s{i}.test", country=f"c{i:02d}")
+        db.add(s); db.commit()
+        for k in range(located_articles):
+            _add_kw_mention(db, term="alpha", language="en", source=s, n=k + 1)
+    un = Source(name="Unlocated", domain="un.test", country=None)
+    db.add(un); db.commit()
+    for k in range(unlocated_articles):
+        _add_kw_mention(db, term="alpha", language="en", source=un, n=k + 1)
+
+
+def test_the_not_mapped_bucket_survives_the_country_limit(db, monkeypatch):
+    """The unlocated bucket is split out BEFORE the limit, so it is reachable however
+    many countries carry the concept. It used to be ordered like any other row and
+    survived only because it happened to be the largest."""
+    _seed_many_countries(db, monkeypatch, n_located=6, located_articles=3, unlocated_articles=1)
+
+    out = q.ring_country_split(db, ring_id="testconcept", limit=3)
+    unlocated = [c for c in out["countries"] if c["country"] is None]
+    assert len(unlocated) == 1, (
+        "the 'not mapped' bucket must ride every payload — it is the clickable drill "
+        "the §D ruling names, and dropping it makes it a dead end"
+    )
+    assert unlocated[0]["articles"] == 1
+    # The located side really was cut, so the assertion above is about the split and
+    # not about a fixture that happened to fit under the limit.
+    assert len([c for c in out["countries"] if c["country"]]) == 3
+
+
+def test_the_reported_country_count_is_never_the_cap(db, monkeypatch):
+    """Anti-capping: a cap may bound which countries are LISTED, never the number
+    reported. ``n_countries`` is the exact located total; ``countries_listed`` says
+    how many the payload carries; ``truncated`` says the two differ."""
+    _seed_many_countries(db, monkeypatch, n_located=6, located_articles=3, unlocated_articles=1)
+
+    out = q.ring_country_split(db, ring_id="testconcept", limit=3)
+    assert out["n_countries"] == 6, "the exact count of located countries, not the limit"
+    assert out["countries_listed"] == 3
+    assert out["truncated"] is True
+    # The number a reader could otherwise count off the map must be STRICTLY below the
+    # reported total, or this guard would pass against a payload that reports the cap.
+    assert len([c for c in out["countries"] if c["country"]]) < out["n_countries"]
+
+
+def test_an_untruncated_split_never_claims_a_truncation(db, monkeypatch):
+    """The negative-space twin: under the limit nothing is cut, so ``truncated`` is
+    False and the two counts agree. An over-eager flag would print a "listed 6 of 6"
+    disclosure about a complete list — a fabricated gap, exactly as dishonest as the
+    hidden cap it replaces."""
+    _seed_many_countries(db, monkeypatch, n_located=6, located_articles=3, unlocated_articles=1)
+
+    out = q.ring_country_split(db, ring_id="testconcept", limit=40)
+    assert out["truncated"] is False
+    assert out["n_countries"] == 6 and out["countries_listed"] == 6
+    assert len([c for c in out["countries"] if c["country"]]) == out["n_countries"]
+    assert any(c["country"] is None for c in out["countries"])
+
+
+def test_a_split_with_nothing_indexed_reports_zero_rather_than_omitting_it(db, monkeypatch):
+    """Zero located countries is a real measurement here (nothing indexed yet), not an
+    unmeasured gap — so the counts ride that branch too and no consumer has to default
+    an absent field into a number."""
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of", lambda lang, norm: None)
+
+    out = q.ring_country_split(db, ring_id="testconcept")
+    assert out["n_keywords"] == 0
+    assert out["n_countries"] == 0 and out["countries_listed"] == 0
+    assert out["truncated"] is False
+
+
+def test_unlocated_buckets_are_summed_not_picked_between(db, monkeypatch):
+    """`NULL` and `''` are distinct GROUP BY buckets and one fact to a reader, so the
+    payload sums them. The groups are disjoint (a source carries one country value),
+    so adding their distinct-article counts is exact. Defensive rather than observed:
+    no shipped catalog entry has an empty country, but the column permits one, and the
+    frontend used to keep whichever unlocated row came last."""
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+
+    a = Source(name="NullCountry", domain="a.test", country=None)
+    b = Source(name="EmptyCountry", domain="b.test", country="")
+    db.add_all([a, b]); db.commit()
+    _add_kw_mention(db, term="alpha", language="en", source=a, n=1)
+    _add_kw_mention(db, term="alpha", language="en", source=b, n=1)
+
+    out = q.ring_country_split(db, ring_id="testconcept")
+    unlocated = [c for c in out["countries"] if c["country"] is None]
+    assert len(unlocated) == 1, "the two falsy-country groups must arrive as ONE bucket"
+    assert unlocated[0]["articles"] == 2, "both articles are counted, neither dropped"
+    # Neither falsy group may be mistaken for a located country.
+    assert out["n_countries"] == 0

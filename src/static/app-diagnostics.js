@@ -187,8 +187,8 @@
         + grid
         + `<polyline points="${X(0).toFixed(1)},${Y(0).toFixed(1)} ${X(xmax).toFixed(1)},${Y(ymax).toFixed(1)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>`
         + `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`
-        + `<text x="${(W / 2).toFixed(0)}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--text)">${esc(t("Cumulative words added →"))}</text>`
-        + `<text x="14" y="${(H / 2).toFixed(0)}" text-anchor="middle" font-size="12" fill="var(--text)" transform="rotate(-90 14 ${(H / 2).toFixed(0)})">${esc(t("Cumulative keywords →"))}</text>`
+        + `<text x="${(W / 2).toFixed(0)}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--fg)">${esc(t("Cumulative words added →"))}</text>`
+        + `<text x="14" y="${(H / 2).toFixed(0)}" text-anchor="middle" font-size="12" fill="var(--fg)" transform="rotate(-90 14 ${(H / 2).toFixed(0)})">${esc(t("Cumulative keywords →"))}</text>`
         + `</svg>`
         + `<div class="hint muted" style="margin-top:4px">${esc(t("Dashed line = perfectly linear growth. The more the curve bows below it, the more the vocabulary is saturating (fewer junk keywords)."))}</div>`;
     }

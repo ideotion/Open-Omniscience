@@ -433,6 +433,10 @@
     // Counts only, no score; unknown country is shown honestly, never mapped or guessed.
     async function showRingMap(ringId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // A template, so the FRAME translates and the two numbers stay data. Guarded on
+      // tf EXISTING rather than falling back to identity: an identity fallback would
+      // render the literal "{shown}" to the reader (the broken-frame rule).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
       const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
       if (!host) return;
       if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; return; }
@@ -448,7 +452,24 @@
           names[c.country] = (typeof ooRegionName === "function") ? ooRegionName(c.country, String(c.country).toUpperCase()) : String(c.country).toUpperCase();
         });
         const label = d.label || ringId;
-        if (!Object.keys(values).length) {
+        // Anti-capping: the polygons are a bounded LIST, so the figure announced beside
+        // the map is the payload's exact n_countries, never the number of shapes drawn.
+        // When the two differ the ratio is stated -- visibly, and in the map's own aria
+        // label, so a screen reader is not the one reader left with the cap.
+        const shownCountries = Object.keys(values).length;
+        // NO fallback to the drawn count when n_countries is absent: that IS the cap
+        // this change removes, so defaulting to it would put the defect back through
+        // the error path. It cannot happen anyway -- the read cache is an in-process
+        // SimpleCache, so a payload predating the field cannot outlive the deploy that
+        // adds it -- and if it ever did, the label carries NO number rather than one
+        // that might silently be a bound.
+        const totalCountries = (d.n_countries != null) ? d.n_countries : null;
+        const countLine = (totalCountries == null) ? ""
+          : (d.truncated && tf)
+            ? tf("Countries listed: {shown} of {total}", {shown: shownCountries, total: totalCountries})
+            : `${totalCountries} ${t("countries")}`;
+        const ariaLabel = countLine ? `${label} — ${countLine}` : label;
+        if (!shownCountries) {
           host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`;
         } else {
           host.innerHTML = "";
@@ -457,7 +478,7 @@
           await ooMap(host, {
             values, names, unit: t("articles"),
             valueLabel: (iso, v) => `${v} ${t("articles")}`,
-            aria: `${label} — ${Object.keys(values).length} ${t("countries")}`,
+            aria: ariaLabel,
             method: d.method || "", caveat: d.caveat || "",
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
@@ -484,7 +505,13 @@
           ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
         // Item #8: an honest per-country dumbbell (articles vs mentions) above the table.
         const dumb = ringDumbbellSvg((d.countries || []).filter(c => c.country), names, ringId);
-        if (detail) detail.innerHTML = langs + langBd + unlocNote + dumb + tbl;
+        // The same ratio the aria carries, VISIBLE by default (a bound on what is drawn
+        // is a caveat, and this one governs the map, the dumbbell and the table alike).
+        // Emitted only when the list really is short of the total -- a note that always
+        // rendered would claim a truncation the data does not exhibit.
+        const truncNote = (d.truncated && tf)
+          ? `<div class="hint">${esc(countLine)}</div>` : "";
+        if (detail) detail.innerHTML = langs + langBd + truncNote + unlocNote + dumb + tbl;
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
     }
     // §D: the shared country-cell drill -- exact article ids behind (ring, country),

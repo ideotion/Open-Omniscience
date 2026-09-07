@@ -212,3 +212,117 @@ def test_article_length_endpoint(tmp_path):
             assert _score_like_keys(data) == []
     finally:
         app.dependency_overrides.clear()
+
+
+# ------------------- quarantined articles are held out (2026-09-07) ------------- #
+# This report was the ONE analytics path that still measured quarantined rows.
+# `quarantine_composition` counts them on purpose and every other path filters them
+# out, but the length distribution scanned the lot -- so the nav-soup and
+# extraction-junk the quarantine exists to condemn was setting the very thresholds
+# the Home substance filter uses to exclude junk. The exclusion is COUNTED and
+# returned rather than silent: an omitted population and a zero are different facts.
+
+@pytest.fixture()
+def quarantined_corpus():
+    """Half the corpus quarantined, and deliberately at the ENDS of the
+    distribution: the junk a quarantine catches is short nav-soup, so an
+    unfiltered report is pulled toward exactly the values a threshold is set from.
+    A fixture where the two populations overlapped could not tell the filter worked.
+    """
+    sa = pytest.importorskip("sqlalchemy")
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Article, ArticleLink, Base, Source
+
+    eng = sa.create_engine("sqlite:///:memory:", future=True,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(eng)
+    s = sessionmaker(bind=eng, future=True)()
+    s.add(Source(id=1, name="Web", domain="w.test", source_type="news"))
+    s.commit()
+
+    def art(i, wc, q):
+        return Article(url=f"https://q/{i}", canonical_url=f"https://q/{i}", source_id=1,
+                       title=f"t{i}", hash=f"hq{i}", language="en", word_count=wc, content="c",
+                       quarantined=q, quarantine_reason="nav-soup" if q else None,
+                       published_at=datetime(2024, 6, 1, tzinfo=UTC), created_at=datetime.now(UTC))
+
+    # Kept: 400, 500, 600.  Quarantined: 5, 6, 7 (short junk).
+    s.add_all([art(1, 400, False), art(2, 500, False), art(3, 600, None),
+               art(4, 5, True), art(5, 6, True), art(6, 7, True)])
+    s.commit()
+    # `quarantined` carries `default=False`, so passing None through the ORM stores
+    # 0 and NOT NULL -- the first version of this fixture did exactly that, and the
+    # mutation swapping `isnot(True)` for `== False` SURVIVED because no row in it
+    # was ever actually NULL. A pre-migration row (one the quarantine job has never
+    # judged) is genuinely NULL, so write that state the way the database holds it.
+    s.execute(sa.text("UPDATE articles SET quarantined = NULL WHERE word_count = 600"))
+    s.commit()
+    assert s.execute(
+        sa.text("SELECT COUNT(*) FROM articles WHERE quarantined IS NULL")
+    ).scalar() == 1, "the fixture must really contain a NULL, or the NULL test is vacuous"
+    s.add_all([ArticleLink(article_id=4, url="j1", normalized_url="j1", link_type="external"),
+               ArticleLink(article_id=1, url="k1", normalized_url="k1", link_type="external")])
+    s.commit()
+    try:
+        yield s
+    finally:
+        s.close()
+
+
+def test_quarantined_articles_are_excluded_from_the_length_distribution(quarantined_corpus):
+    from src.analytics.article_length import article_length_report
+
+    r = article_length_report(quarantined_corpus)
+    assert r["scanned"] == 3, "only the three non-quarantined articles may be scanned"
+    assert r["with_word_count"] == 3
+    # The tell: min is 400, not 5. An unfiltered report would put the junk at the
+    # bottom of the distribution, which is precisely where a threshold gets set.
+    assert r["word_count"]["min"] == 400, "quarantined junk must not reach the distribution"
+    assert r["word_count"]["n"] == 3
+
+
+def test_a_null_quarantined_column_is_kept_not_dropped(quarantined_corpus):
+    """`isnot(True)` rather than `== False`: the column is NULL on every row the
+    quarantine job has never visited, which on a real corpus is most of them. A
+    `== False` predicate would silently drop the whole un-swept corpus."""
+    from src.analytics.article_length import article_length_report
+
+    r = article_length_report(quarantined_corpus)
+    assert r["word_count"]["max"] == 600, "the NULL-quarantined article must be kept"
+
+
+def test_the_exclusion_is_counted_and_published_never_silent(quarantined_corpus):
+    from src.analytics.article_length import article_length_report
+
+    r = article_length_report(quarantined_corpus)
+    assert r["excluded_quarantined"] == 3, (
+        "the held-out population must be reported -- a reader who cannot see how much "
+        "was excluded cannot judge what the distribution describes"
+    )
+    assert "quarantined" in r["method"].lower(), "the method must say the rows were held out"
+
+
+def test_cited_sources_applies_the_same_exclusion_so_the_zeros_stay_coherent(quarantined_corpus):
+    """`zeros = scanned - linked_articles` spans two queries. Filtering only the
+    first would count a quarantined article's links against a smaller scan and
+    understate the zeros -- two populations that must be filtered once each."""
+    from src.analytics.article_length import article_length_report
+
+    r = article_length_report(quarantined_corpus)
+    cs = r["cited_sources"]
+    # Article 1 has one external link; articles 2 and 3 have none. Article 4's link
+    # is quarantined out. So: one article with 1, two with 0 -- never a negative
+    # zero-count, and never the quarantined article's link.
+    assert cs["n"] == 3, f"the cited-source population must match the scan, got {cs['n']}"
+    assert cs["max"] == 1 and cs["histogram"]["0"] == 2
+
+
+def test_the_figure_passes_the_exclusion_through_to_the_frontend(quarantined_corpus):
+    from src.analytics.figures import article_length_distribution
+
+    d = article_length_distribution(quarantined_corpus)
+    assert d["excluded_quarantined"] == 3, (
+        "the chartable projection must carry the exclusion, or the surface cannot state it"
+    )
+    assert d["measurable"] is True and d["n"] == 3

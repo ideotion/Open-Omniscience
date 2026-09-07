@@ -198,6 +198,10 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Remove the legacy single-file backup RESTORE** once the format is fully retired (keep the additive-merge engine). 🎨
 - **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — shipped earlier; the B5 wave (⏳ #624) added job-state-as-truth polling, the paused-state label and verify/pause-resume wiring. Remaining: click-through 🛠 + key the new strings ×12. 🚧
 - **Unified import/export — the browser-gated cleanup** (*lifted 2026-09-07 from `docs/archive/design/UNIFIED_IMPORT_EXPORT.md`, where it was the only live record*) — after a click-through, retire the orphaned volume/folder JS handlers (`folderBackupStart` / `volBackupStart` in `src/static/app-backup.js`, whose panels the unified dialogs replaced) and the capped single-file-CREATE remnant. Verified 2026-09-07: single-file CREATE is already retired (`src/api/backup_v2.py` header); what survives is `POST /legacy/restore` + the 2 GiB `_MAX_RESTORE_BYTES` upload cap, which stay until the legacy format is retired (the row above). Belongs on the browser-verify burn-down, not to a blind removal — the interleaved-shared-helper hazard. 🛠 browser-gated
+- **Import performance — the CHECKPOINT INTERVAL K: mechanism shipped 2026-09-07 (PR #1034), the NUMBER is a ruling.** A multi-backup import pays, *per item*, a whole-corpus working-copy snapshot, a whole-file `quick_check` + `foreign_key_check` over it, and an atomic swap. K > 1 carries one working copy across K consecutive backups and pays those once; `verify_copy` split into `verify_merge` (per item — counts, the search index and the sampled comparison against the artifact all need that item's staging tree, which is deleted the moment it returns) and `verify_file` (per checkpoint — `quick_check` + `foreign_key_check` ask about the FILE, so they cover every merge in it). The gate is not weakened; what grows with K is the window in which a crash costs work. **The shipped default is 1 = today's behaviour byte for byte** (`AppSettings.import_checkpoint_k`, range 1..24, refused loudly outside it rather than clamped; `OO_IMPORT_CHECKPOINT_K` for one process; a control in Settings → Data). **Recommendation on record: 3** — at which a kill at item 12 of 18 loses up to two merges' CPU that today it would keep, which is a change to what a Stop costs every operator. 🔒 blocked on a maintainer ruling (§5, *Still with the maintainer*)
+- **Import performance — PREFETCH (stage the next backup while the current one merges): PARKED, and this is a finding rather than reluctance.** All three blockers re-verified against `main`@690920e on 2026-09-07: the singleton restore manager is one-job-at-a-time by design (`volume_job.py:196`), `cleanup_staging` sits in a merge-thread `finally` (`volume_job.py:764`) over a tree that is **plaintext** by design — so an orphan is an at-rest hole, not just bytes — and the already-merged digest check runs 94 lines *before* staging (`:456` against `:550`), which the field log says saves 47–56 min on **8 of 18** imports. **Its own gate is also still unmet:** the recommendation was "build only if the first real `verify_copy` number shows prepare still dominating", and no field `verify_copy` has ever completed. Contrast with K, which was the safe half to build: the carried file is a WORKING COPY, encrypted whenever the corpus is. ⬜ gated on the row below
+- **The first field `verify_copy` number** — every remaining import-performance estimate rests on it, and both recorded field runs ended before it. It costs nothing to obtain: the sub-timings (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) and `working_copy_bytes` already ship, so the next completed backup converts a wall-clock figure into a rate. Until then, [`docs/design/IMPORT_PERFORMANCE_2026-08-08.md`](design/IMPORT_PERFORMANCE_2026-08-08.md) §5b is a **stand-in measured on sandbox disk** (170–178 MB/s against the field's own 17 MB/s on a 32 GB artifact) and becomes a cross-check the moment a real one lands. 🛠 operational (one completed field import)
+- **Checkpoint UI — browser click-through owed** (PR #1034): the Settings → Data interval control and the import queue's new `staged` ("Merged — not yet saved") / `discarded` ("Discarded — import it again") rows. Node-checked, invariant-guarded and keyed ×12, never clicked. 🛠 browser-gated
 
 - **Newsletter publisher ATTACH — the write path** (ruling 2026-06-15 clause (d); the resolver
   shipped ⏳ #1030, the attach deliberately did not) — imported newsletters still all land in one
@@ -333,6 +337,17 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
 - Prior sub-items folded in: dumps → corpus ingestion path · edition-wide auto-track after a dump download
   (the 2026-06-12 superseding ruling, now the plan of record) · a dedicated tracked-changes tab ·
   auto-watch all 12 UI editions · Wikipedia tab → Settings · agenda ↔ wiki linking. 🎨
+- **2026-09-07 pass (prompt 18) — two shipped, one measured stop.** ✅ The **version anchor**
+  (`Article.source_revision`: which upstream revision an article's stored TEXT came from, for both the
+  watched-page sync and the dump ingest) and the **reader's way into the history** (the tracked-changes
+  view was already built but reachable only from Settings; the reader now states the version and links
+  the local history when this machine holds one). ✅ The **consented "Refresh exact sizes"** retires the
+  unconsented per-edition probe button. ✅ The wiki strip's **K·N regex bomb** (13.4 s per 400 KB of
+  unclosed-`<ref>` spam, on the ingest path) fixed through a shared linear scanner. 🚧 **Whole-edition
+  ingest stopped at the seam with its gate MEASURED:** three of the five `STORAGE_5TB_PLAN.md` §9 steps
+  preceding it are unbuilt and four of the six §8 rulings unruled. **G10 is two questions, not five** —
+  Q2/Q3/Q4 were answered on 2026-06-12 and Q3 shipped the same day; Q1 (ingest scope) and Q5 (backups)
+  remain open. 🚧
 
 ### UI / UX & onboarding
 - **"Database size" shows EVERYTHING** — ✅ **BUILT** (A12b backend ✅ + B14 display ⏳ #625): the Library + System-tab "Storage footprint" panels render the all-stores total (db/wal/wiki/OSM/staging/**Ollama store outside data_dir**) with the private-vs-re-downloadable split visible; lazy-measured + cached, never on the poll. Remaining 🛠: click-through.
@@ -341,12 +356,69 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
 - **Home dashboard + "Latest in your corpus"** — ✅ verified SHIPPED (B8: `/api/insights/latest` + `src/analytics/latest.py` with user-set-and-seen gates, near-dup collapse, script-aware length; `#home-latest-panel` + trends + recent-by-tag). Remaining: the **synthesized-Leads carousel** (pausable/a11y — the one deferred nicety). 🚧
 - **Clickable in-article keywords — stats hover** — ✅ verified SHIPPED (B9: `keyword-stats` endpoint + reader/SPA #oo-tip hovers; mentions · spread · windowed trend rate · top co-occurrences, counts-only).
 - **Editable keybindings panel** — ✅ verified SHIPPED (B11b: Settings → Shortcuts).
-- **Remove the Insights search bar** — 🔒 gated (B11a): first verify the omnibar Enter→analysis-window fully absorbs `exploreTerm()`'s 4-endpoint view (trend + associations + context + mindmap); a browser-unverified removal risks losing a tool (the Desk lesson).
+- **Remove the Insights search bar** — 🔒 gated (B11a / H3, re-confirmed live 2026-09-07: `#ins-term` and `exploreTerm` are still wired): first verify the omnibar Enter→analysis-window fully absorbs `exploreTerm()`'s 4-endpoint view (trend + associations + context + mindmap); a browser-unverified removal risks losing a tool (the Desk lesson). The hide is additionally blocked by INTERLEAVING, not just absorption: `#ins-explore` mixes the retirable search bar with a NON-searchable corpus-landscape that must stay and with the shared `#mm-kit`, which relocates into the corpus window and back. A blind `display:none` is the interleaved-shared-component hazard. Port, guard the absorption, then hide — with a browser open.
 - **Guided-setup wizard remaining slices** — the **sources-by-theme step shipped (S4.7, 2026-07-12)**: real tag taxonomy via loopback `/api/scheduler/coverage`, themes default-all (cover-everything), language emphasis → `language_equilibrium`, loopback config write, never egress. The encryption-choice step is on **unlock.html** (chosen pre-DB at first launch), so it is architecturally moot in the post-unlock wizard. Remaining: a country-emphasis picker (`country_priority` lever exists) + browser click-through. 🚧
 - **Onboarding & training** — first-run tour as dismissible Home cards + contextual "why" notes + a supervised training curriculum (in-repo, never hosted). 🎨
 - **First-launch data-location chooser** (*lifted 2026-09-07 from `docs/design/FIX_SESSION_PROMPT_2026-07-14.md` Slice 2, where it was the only live record*) — maintainer-asked 2026-07-14: default = the app data folder, or "choose a folder" in which an **"OOS data"** subfolder is created; decided at first launch AFTER language + legal acceptance and BEFORE the passphrase. Reuses the shipped A11 `OO_DATA_DIR`/`oo.env` persistence seam, with an honest writable / free-disk / tmpfs preflight. Verified 2026-09-07: nothing in `unlock.html` or the setup path offers this today. 🎨
-- **i18n long tail** — the 44 new B5/B14/B15 strings are keyed ×12 (B10, #629) ✅; **composite-string format support** (`OOI18N.tf` template + interpolation) **and server-built Home-card title translation** (design + first producer) **shipped (S4.5, 2026-07-12)** ✅ — `Card.title_i18n`/`title_vars`, `rising_now` the reference producer, the template key in all 12 locales. Remaining: extend translatable titles to the other producers + key more dynamic JS rows via `tf` + the pre-existing ~105–140 chrome tail. 🚧 ongoing
+- **i18n long tail** — the 44 new B5/B14/B15 strings are keyed ×12 (B10, #629) ✅; **composite-string format support** (`OOI18N.tf` template + interpolation) **and server-built Home-card title translation** (design + first producer) **shipped (S4.5, 2026-07-12)** ✅ — `Card.title_i18n`/`title_vars`, `rising_now` the reference producer, the template key in all 12 locales. Remaining: extend translatable titles to the other producers + key more dynamic JS rows via `tf` + the chrome tail, MEASURED 2026-09-07 rather than estimated — **557 untranslatable UI strings and 297 unkeyed `t("…")` call sites, both ratchets at ZERO SLACK** (`ci.yml`), so any new `title=`/label/paragraph reddens CI unless it is keyed in the same commit. Known specifics: the eight `guis/` skins are outside the gate's scope entirely; `reader.js` calls `t()` zero times; the `{action} failed: {error}` template was considered and REJECTED in favour of full-sentence keys (do not re-propose it); the uninstall dynamic preview/confirm dialogs stay English (PRH-19). Lower a ratchet in the same PR that frees the slack. 🚧 ongoing
 - **Human click-through of all browser-unverified UI** — now including the whole B wave (B3/B5/B14/B15 + storage panels + backup dialogs). 🛠
+
+**The browser-verified UI burn-down (prompt 15) — what is left after PR #1029.** The type
+scale (PRH-32), dialog theming and the three Library labels (PRH-33) shipped 2026-09-07,
+Chromium-verified on all 17 themes. The rest of that prompt is untouched and is tracked here
+so it is not re-derived from the prompt file each time:
+- **`var(--line)` is defined nowhere the SPA loads — 41 fallback-less references** across ten
+  files. A `var()` with no fallback that resolves to nothing voids its WHOLE declaration, so
+  each does nothing: measured, all eleven dialogs' declared border computed `0px none`.
+  Ratcheted (`tests/test_dialog_theming.py`) so nothing new lands. 🔒 **ruling-gated — the
+  question is simply whether those 41 borders were ever wanted**; if yes the repair is one line
+  plus a browser pass, if no the declarations should be deleted rather than left looking like
+  styling. Full measurement in `docs/ledger/OPEN_QUEUE.md`, 2026-09-07.
+- **The five axe-core P2s** from the 2026-08-20 matrix §11.1 — Home card-back chip/tier-badge
+  contrast · agenda inline-link distinguishability (a convention decision) · `.an-tab`
+  nested-interactive · the tasks top bar's grounds (`#llm`, `#tm-conn`, `.muted`) · reader
+  `.deduced > h3` / `.dup-pill`. 🛠
+- **No layout media query between 900 px and desktop** — `max-width:900px` is still the widest.
+  🎨
+- **~590 inline `on*=` handlers** (~331 in `index.html`, ~259 across the `app-*.js` modules)
+  against ~103 `addEventListener`. This is what blocks a nonce-based CSP; `'unsafe-inline'`
+  stays in `script-src` until it is paid down. The ledger's recorded "295 as of 2026-06-15"
+  counted `index.html` only and predates the module split. Do it in bounded passes with
+  byte-parity discipline — a green walk does not prove each of 590 handlers works when clicked.
+  🚧 browser-gated
+- **Dead UI, deleted with a browser open** — the retired temporal-map cluster (`loadTimemap`,
+  `renderTimemap`, `showTmapDetail`) is unreachable but INTERLEAVED with live helpers `ooMap`
+  still uses (`kindColor`, `TMAP_KINDS`, `fmtYear`, `fmtDate`, `dateToT`, `lon2x`/`lat2y`,
+  `tmapFindCoverage`); a wrong deletion passes `node --check` and breaks the map at runtime.
+  Also the retired `#corpus-win` modal, the orphaned `loadIndicesData`/`loadMarketData`, the
+  orphaned `#onboard` locale keys, and **PRH-14**, the unwired `#vitals-pop` popover, which is
+  in the tree and absent from the recorded dead-UI worklist. Do NOT delete `firstRun` — it is
+  test-pinned and intentionally retained. 🛠 browser-gated
+- **PRH-31 — `_window_daily_series` omits zero-count days**, so the index axis compresses (day 1
+  and day 5 render adjacent). Re-confirmed live 2026-09-07 at `src/analytics/queries.py:1714`,
+  with `app-corpus.js:1293` carrying a comment that acknowledges the omission. The repair is
+  zero-FILLING (for keyword mentions an absent day is a real zero, never a null) and it touches
+  the trending sparklines. 🚧
+- **Backends with no surface** — Leads 2.0 grading on Home (evidence chips, a sort control wired
+  to `sort_leads` with the `explain_order` hover, lifecycle deltas — browser-gated because it
+  visibly reorders the flagship feed) · the Conjunction-lens deeper views (conditional trend,
+  vocabulary contrast, per-article intensity, lead/lag — needs a payload extension) · the
+  subjectivity reader highlight panel (spans are emitted, nothing renders them) · corpus facet
+  filters in the Articles subtab, with an id-seeded corpus INTERSECTING rather than clearing on
+  refine · eleven unwired `ooViz` primitives (note the recorded correction: the namespace is
+  **`ooViz`**, not `ooviz`, and a case-sensitive grep for a name you did not read out of the
+  file is not evidence of absence) · **L5**, the `_SPARSE_BAR_MAX` reach decision for
+  `commodityOverlaySvg` / `ringDumbbellSvg` / `ooDonut`. 🚧
+- **The 2026-07-22 GUI report's residue** — three P1s still open (the Home glance strip mixing
+  languages; Lead titles frozen in the locale they first rendered in — the interpolated-`tf()`
+  class, where an already-interpolated string is no longer a key, so a render-once surface must
+  register with `oo:langchange`; unsegmented zh keywords on the Insights map). **Its P2 tier was
+  never closed** — 12 open, 8 partial, 5 unchecked — although a `shipped.csv` row describes that
+  report as closed out; correct the row and work the tier. 🚧
+- **L2 — settle the verification bar.** Every stamp currently reads "Chromium-verified (remote
+  sandbox) · awaiting human UX pass". The 12-locale sweep covers four; rule 9 (adversarial
+  screenshot reading) has never run; the Gecko/AppVM bar has never been met. Whatever L2 rules,
+  make the stamp mean one thing and apply it consistently. 🔒 ruling-gated
 
 ### Network / transport / Tor
 - **Reliable Tor & per-source transport** — optional in-app Stem-controlled `tor` process; per-source circuit isolation by default; clearnet-for-Tor-hostile sources only as an explicit consented per-source opt-in. 🎨
@@ -403,6 +475,14 @@ without a browser and a runnable suite in the same session.
 
 | S-5 | **`natural-earth-geometry` carries a BLANK `sha256` in the external-artifact registry** — `configs/external_artifacts.yml` pins `{path: src/static/world_countries.json, sha256: ""}`, so the freshness check confirms the file EXISTS and never that it is the file we vendored (*lifted 2026-09-07; it was recorded only in PR #976's body*) | one entry, one field | Not deferred by ruling — simply never done. Its sibling `vendored-alpine` entry received exactly this one-line fix on 2026-08-22 and its own comment states the reason: *"a BLANK pin left this entry at status `info` ('present') … filled, drift now reports `stale`"* | Measure the digest from the committed file and fill the pin — a real measured value, never a fabricated one, and then `last_verified` moves with it |
 
+**Note on S-4 (2026-09-07).** Both JS i18n ratchets currently sit one slot above the real
+count — `--max-untranslatable` 560 against 559, `--max-unkeyed-t-calls` 297 against 296. The
+slack arrived with ordinary attrition on `main`, not with any one branch, and it was flagged
+rather than silently reclaimed inside a merge commit: tightening it would redden any in-flight
+branch that legitimately adds a string, and this repository merges several in parallel. It is
+still a free slot for the next drift to land in unseen, so lower it in a PR that owns the
+change — the tooling prints the new floor.
+
 **Honest note on S-3 (closed 2026-08-20).** The row is done, and the premise it was written
 around — "the real cost is parse/compile on the 2-core field VMs" — turned out to be **half
 right, for a reason the row did not name**.
@@ -457,6 +537,7 @@ correct.
 4. **`v0.2.0` tag** — ✅ DONE (the maintainer ran the P0 live-corpus validation and tagged; 0.3 opens the measured-&-verified cycle).
 6. **Lemmatization default-on** — ✅ RULED default-ON 2026-07-18: the maintainer's live-corpus `lemma_preview` precision review (35 groups / 71 keywords, clean) was the coherent gate — per the recorded correction, the IR A/B never was, for a display-layer change. Execution delegated (`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`); the graded IR gold set remains wanted for the separate BM25F retrieval decision. 🛠
 7. **Retention / eviction posture** — decide after the storage-footprint numbers from the next field export are in. 🔒
+- **Import checkpoint interval K** (*added 2026-09-07; not part of the 2026-07-10 delegation, hence unnumbered*) — the mechanism shipped at its no-op default of 1; the number is the ruling. Trading durability for time is not a decision the code can make for the operator, and this operator has killed the import twice. Recommendation on record: **3**. See §4 (Backup, import / export) for the mechanism and `docs/ledger/OPEN_QUEUE.md` for the full entry. 🔒
 
 ---
 

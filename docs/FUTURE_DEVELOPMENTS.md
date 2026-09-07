@@ -798,6 +798,23 @@ Unchanged design, still unbuilt; revisit within 0.0.9:
 
 > **Cross-reference (2026-09-07):** this is the OLDER of the two Wikipedia sections (2026-06-12) and is kept because of what only it holds — the superseding auto-track ruling. The 2026-07-10 section at the top of this file is the newer framing (a versioned source = an Article + a linked revision trail); it does not replace this one.
 
+> **Status re-check 2026-09-07 (b), the prompt-18 pass — G10 IS TWO QUESTIONS, NOT FIVE.** The five
+> "QUESTIONS FOR THE MAINTAINER" below are gated as G10, and three of them are already answered **by the
+> RULED block further down this same section**: Q2 (analytics mixing — same pools, YES), Q3 (version
+> storage depth — per-revision FULL TEXT, and SHIPPED the same day) and Q4 (change feed — the
+> watched-pages tracker IS the feed, with the superseding ruling turning that into `recentchanges` at
+> edition scale). **Q1 (scope of dump ingestion) and Q5 (backups) are the two that remain open**, and both
+> are sharpened by what has shipped since: Q1 is really "tracked entirely" versus "ingested entirely",
+> which the tiering proposal under the superseding ruling already frames and which decides how much store
+> Phase C must carry; Q5 now sits against a shipped backup engine that excludes `wiki_dumps/` from the
+> corpus artifact BY CONSTRUCTION while a separate large-data folder backup can carry it. Recommended
+> defaults exist in `QUESTIONS_FOR_THE_MAINTAINER.md` and are NOT taken here.
+>
+> **Also shipped 2026-09-07:** the version anchor (`Article.source_revision`) and the reader's route into
+> the tracked-changes view, which the ruled block below asks for as "a DEDICATED tracked-changes TAB in
+> the wiki-article UI" — the view itself was built in wave 5 and was reachable only from Settings.
+> Whole-edition ingest remains stopped at the seam; see the Open queue entry for the measured gate.
+>
 > **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **PARTLY SHIPPED and this is the section that carries the SUPERSEDING auto-track ruling** — do not read it as a duplicate of the 2026-07-10 section at the top of this file and do not merge the two (protocol rule 5). Watched pages DO become corpus Articles (`src/wiki/corpus.py`); whole-edition ingest from a downloaded dump does not, and stays P0-scale-gated.
 
 **The maintainer's concept (recorded):** Wikipedia articles must be ingested

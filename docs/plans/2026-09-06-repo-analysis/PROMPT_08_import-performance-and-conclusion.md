@@ -52,6 +52,17 @@ optimisation.
 
 ### S3 — The post-import conclusion screen
 
+> **⚠ STALE — CORRECTED 2026-09-07 against `main`@690920e. This slice was already BUILT, in all three
+> parts, and the description below was wrong about the code.** The headline has not summed across every
+> table since the 2026-07-20 root-cause fix: `_renderImportSummary` (`src/static/app-backup.js:1140`)
+> headlines `plan.articles` alone, adds the ruling's labelled per-type breakdown, and keeps the cross-table
+> row-sum ONLY behind the explicit label "database records, all types". The corpus delta is
+> `merge._corpus_snapshot` (`src/backup/merge.py:4125`) taken before the swap and after it, over exactly the
+> six named dimensions, rendered before → after → Δ by `_uxCorpusDeltaView` (`app-backup.js:1077`). The
+> work-induced queue is the `queueBlock` at `app-backup.js:1400` plus the corpus-wide `work_induced` tally
+> (`merge.py:5455`). What the 2026-09-07 session ADDED here is the checkpoint's own half: committed versus
+> staged. Recorded VERIFIED-PRESENT rather than rebuilt, per the working mode's staleness guard.
+
 The ruled redesign, still unbuilt in its delta form. Today the headline sums `new`/`duplicate`/`conflict`
 across **every table** of the merge plan, so it mixes articles with keyword-mention, link, entity, date and
 custody rows under the single unlabelled word "imported" — a row-sum reads as an article count, and mentions
@@ -70,6 +81,14 @@ Framing is positive and every number real: "your corpus grew by X articles from 
 languages" is both celebratory and checkable. Numbers through the shared formatter and `OOI18N.tf` ×12.
 
 ### S4 — The aggregated multi-backup conclusion
+
+> **⚠ STALE — CORRECTED 2026-09-07 against `main`@690920e. Already BUILT.** A queue does not produce
+> eighteen conclusions: `_uxImQueuePoll` (`src/static/app-backup.js:751`) builds ONE `summaries` list across
+> every item and calls `_renderImportSummary` once, which aggregates the run and renders `_uxPerItemView`
+> (`app-backup.js:1034`) as per-item rows beneath — with each item's own outcome, article split, elapsed
+> time and a bar scaled to the largest item in the run. Items that failed, were cancelled or were skipped
+> are excluded from the aggregate by `_uxOutcome().ok` and listed with their outcome. Recorded
+> VERIFIED-PRESENT.
 
 Item 3 of the 2026-08-06 asks, never built: a queue of eighteen backups currently produces eighteen
 conclusions and no total. Aggregate across the run, with per-item rows beneath.

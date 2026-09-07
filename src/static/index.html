@@ -62,6 +62,10 @@
              the other tabs. #tab-analyze + #tab-search stay registered and reachable via
              showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
         <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+        <!-- OBSERVATORY (maintainer-ruled 2026-07-18): a dedicated main tab, whole-corpus
+             v1. The invariant-#2 roster grows by one. It shows DATA (#8) and is a
+             REDUNDANT lens: Insights' tabular views stay the canonical access path. -->
+        <button class="nav-item" data-tab="observatory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="9" ry="3.6"/><ellipse cx="12" cy="12" rx="3.6" ry="9"/></svg><span>Observatory</span></button>
         <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
         <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01"/></svg><span>Governments</span></button>
         <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
@@ -1341,6 +1345,47 @@
     </section>
     </div>
 
+    <!-- ========================= OBSERVATORY ========================= -->
+    <!-- The corpus as a night sky (docs/design/OBSERVATORY_DESIGN.md). The geometry
+         and its two refusals live in oosky.js; the wiring in app-observatory.js.
+         EVERY honesty statement on this surface is printed, never hovered: which
+         radial scale is in force, the populations the picture leaves out, and the
+         full ranked table -- which is the canonical view, not a caption. -->
+    <div class="tab-page" id="tab-observatory">
+    <section class="panel">
+      <h2>Observatory <span class="muted" style="font-weight:400">&mdash; your corpus as a night sky</span></h2>
+      <p class="hint">Each galaxy is a super-group of keywords; each wedge is one of the twelve scaffold domains. Angle carries the domain only &mdash; a galaxy&rsquo;s position within its wedge is a stable hash, so it stays put between visits and means nothing in itself.</p>
+      <div class="row" id="sky-controls" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <label class="small">Distance from centre
+          <select id="sky-measure" title="Which single measure the distance from the centre carries. Never a blend of several."></select></label>
+        <label class="small">Colour
+          <select id="sky-lens" title="What the colour of a galaxy carries. Colour is never the only signal — every galaxy also carries its name, its distance and its row in the table below.">
+            <option value="language">Language</option>
+            <option value="trend">Trend</option>
+          </select></label>
+        <button class="secondary" id="sky-reset" title="Return the view to its starting position and zoom">Reset view</button>
+      </div>
+      <div id="sky-status" class="hint" role="status"></div>
+      <div id="sky-stage">
+        <!-- data-i18n-dyn: this element owns its own aria-label and translates it
+             itself (_obsAria composes it through OOI18N.tf). Without the opt-out
+             the walker caches the placeholder below as "the original English" on
+             first sight and reverts every dynamic value written after it. -->
+        <canvas id="sky-canvas" role="img" tabindex="0" data-i18n-dyn
+                aria-label="The corpus as a sky."></canvas>
+      </div>
+      <div id="sky-readout" class="sky-readout" aria-live="polite"></div>
+      <div id="sky-legend"></div>
+      <div id="sky-disclosure"></div>
+      <!-- Caveat VISIBLE by default (the informed-consent non-negotiable): never
+           behind a toggle, never only in a hover bubble. -->
+      <div class="card-caveat" id="sky-caveat">Counts and ratios only &mdash; there is no composite score here, and no channel blends two measures. Star size is drawn as area, which readers systematically under-estimate, so it is a secondary cue: the distance from the centre and the table below are what carry the reading. Constellation lines are drawn from a shared member keyword, never from how close two galaxies appear.</div>
+      <h3 class="lib-sub">Ranked table</h3>
+      <p class="hint">Every galaxy, in full &mdash; including those the sky cannot place. This table is the canonical view; the sky is a second way of reading it.</p>
+      <div id="sky-table" class="sky-table-wrap"></div>
+    </section>
+    </div>
+
     <!-- ========================== WORLD MAP ========================== -->
     <div class="tab-page" id="tab-timemap">
     <section class="panel">
@@ -1633,7 +1678,7 @@
 
     <section class="panel">
       <h2>Wikipedia offline baselines</h2>
-      <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.</p>
+      <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; each shows a bundled, dated size estimate with no network call, and Refresh exact sizes reads the current published size for the editions you selected — one consented request, nothing guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.</p>
       <div class="row">
         <div style="flex:2">
           <label for="dump-lang">Language edition</label>
@@ -1641,11 +1686,11 @@
                  oninput="renderWikiLanguages()" style="margin-bottom:6px">
           <select id="dump-lang" size="8" multiple title="Ctrl/⌘-click to select several editions"><option value="en">Loading editions…</option></select>
         </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="probeDump()">Estimate size</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="refreshDumpSizes()" title="Read the exact size the dump host publishes right now for every edition you have selected — one consented request for the whole selection, spaced politely across the one host. Editions marked = carry that exact figure; ~ is the bundled dated estimate. An edition that could not be read says why, and is never shown as zero.">Refresh exact sizes</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
         <div id="dump-estimate" class="hint" style="align-self:center"></div>
       </div>
-      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.</div>
+      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and, inline, a bundled dated estimate marked ~; Refresh exact sizes replaces that with the host's current figure, marked =, for the editions you selected. You can also type any edition code that isn't listed.</div>
       <div id="dump-size-note" class="hint" hidden><span>Inline sizes are estimates — the exact size is read on download.</span>
         <span class="muted">· <span>reviewed</span> <span id="dump-size-asof"></span></span></div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>
@@ -1733,6 +1778,21 @@
         <button onclick="openUnifiedExport()">Export / Back up…</button>
         <button onclick="openUnifiedImport()">Import…</button>
       </div>
+      <!-- THE IMPORT CHECKPOINT INTERVAL K (2026-09-07). A durability knob, so the
+           cost is on the VISIBLE surface and the long form is layered into the hover
+           bubble (informed consent by layering, never by hiding). Default 1 = today's
+           behaviour; the recommendation on record is 3, and the choice is the
+           maintainer's. -->
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <div style="flex:0 0 auto">
+          <label for="set-checkpoint-k">Backups per save point</label>
+          <input id="set-checkpoint-k" type="number" min="1" max="24" step="1" style="width:6em"
+                 title="1 saves every backup to your corpus as soon as it finishes. Higher copies and checks your corpus once per group instead of once per backup, which is faster — and everything merged since the last save point is lost if the import is stopped or the app crashes, so those backups have to be imported again."
+                 onchange="saveImportCheckpointK(this)">
+        </div>
+        <div style="flex:0 0 auto;align-self:end"><span id="set-checkpoint-k-msg" class="hint" role="status" aria-live="polite"></span></div>
+      </div>
+      <p class="hint" style="margin-top:6px">Higher is faster and loses more work if an import is stopped or crashes.</p>
     </section>
     <!-- Newsletter / document IMPORT (2026-07-31 Settings review): moved here from its
          own subtab. Importing .eml and PDF files is bringing data IN, which is exactly
@@ -2840,7 +2900,7 @@
        dialog element inside a display:none ancestor does not render even via
        showModal(). Keeping them here is what lets Safety open the backup flow
        without navigating away (2026-07-31 Settings review). -->
-    <dialog id="ux-import" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
+    <dialog id="ux-import" style="max-width:560px;width:92%;padding:18px">
       <h3 style="margin:0 0 4px">Import</h3>
       <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
       <div><label for="ux-imp-src">Folder to import from</label>
@@ -2873,7 +2933,7 @@
         <button id="ux-imp-run" onclick="_uxImRun(this)" disabled>Import selected</button>
       </div>
     </dialog>
-    <dialog id="ux-export" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
+    <dialog id="ux-export" style="max-width:560px;width:92%;padding:18px">
       <h3 style="margin:0 0 4px">Export / Backup</h3>
       <p class="muted" id="ux-inv-status" style="margin-top:0">Loading what's available…</p>
       <div id="ux-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -2892,7 +2952,7 @@
       </div>
     </dialog>
 
-  <dialog id="corpus-win" style="width:min(760px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="corpus-win" style="width:min(760px,94vw);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="corpus-title" style="font-size:15px"></b>
       <span id="corpus-n" class="muted" style="font-size:12px"></span>
@@ -2924,7 +2984,7 @@
        hover-readout / legend; Item-Y bars when n<10) for a Trends sparkline or
        any small chart. The caveat shows VISIBLE by default (informed consent).
        Native showModal() traps focus implicitly (OO-D13-001). -->
-  <dialog id="chart-enlarge" style="width:min(940px,96vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="chart-enlarge" style="width:min(940px,96vw);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="chart-enlarge-title" style="font-size:15px"></b>
       <span style="margin-inline-start:auto"></span>
@@ -2941,7 +3001,7 @@
        picks the members. Step 2 shows the synthesis + caveat + provenance + the full
        corpus of synthesized articles WITH their metadata; export (Markdown / standalone
        page) + copy. Native showModal() traps focus (OO-D13-001). -->
-  <dialog id="synth-window" style="width:min(900px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="synth-window" style="width:min(900px,96vw);max-height:92vh;padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="synth-win-title" style="font-size:15px">Synthesis</b>
       <span style="margin-inline-start:auto"></span>
@@ -2956,7 +3016,7 @@
        evidence links): before any external link is followed, show what THIS
        database already knows about it; the outbound anchor's visible text IS
        the full URL, and clicking it still passes the external-link confirm. -->
-  <dialog id="link-preview" style="max-width:520px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+  <dialog id="link-preview" style="max-width:520px;padding:18px">
     <h3 style="margin:0 0 8px">Before you leave — what this app knows</h3>
     <div id="lp-body" style="display:flex;flex-direction:column;gap:5px"></div>
     <div id="lp-out" style="margin-top:10px"></div>
@@ -2972,7 +3032,7 @@
        (truncated per side, NOT a live re-diff), editor/comment metadata, and a
        "full text stored" marker. Honest window (showing N of M) + a visible caveat;
        flagged-only toggle reuses the endpoint param. Counts only, no score. -->
-  <dialog id="wiki-tc" style="width:min(820px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="wiki-tc" style="width:min(820px,96vw);max-height:92vh;padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <b style="font-size:13px">Tracked changes</b>
       <b id="wiki-tc-title" class="muted" style="font-size:13px;font-weight:500"></b>
@@ -2988,7 +3048,7 @@
     <div id="wiki-tc-method" class="card-caveat" style="padding:0 16px 14px"></div>
   </dialog>
 
-  <dialog id="folder-picker" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="folder-picker" style="width:min(560px,94vw);padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
       <strong>Pick a folder</strong>
       <span class="muted" style="margin-left:auto;font-size:12px">on this machine</span>
@@ -3004,7 +3064,7 @@
     </div>
   </dialog>
 
-  <dialog id="net-consent" style="max-width:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+  <dialog id="net-consent" style="max-width:440px;padding:18px">
     <h3 style="margin:0 0 8px">Go online?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
       <div id="net-consent-reason" style="margin-top:4px"><b></b></div></div>
@@ -3026,7 +3086,7 @@
        the collector stays stopped, and only the local-AI install is exempted.
        Every claim below is one the code actually enforces; the last paragraph is
        the limit, stated in the same breath rather than left to be inferred. -->
-  <dialog id="ai-egress-consent" style="max-width:460px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+  <dialog id="ai-egress-consent" style="max-width:460px;padding:18px">
     <h3 style="margin:0 0 8px">Let the AI install go online, without collecting?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
       <div id="ai-egress-reason" style="margin-top:4px"><b></b></div></div>
@@ -3072,7 +3132,7 @@
        feedback 2026-07-17: two consecutive screens for the same decision).
        Zero-network on load by construction (only localStorage + the existing
        language list are read before the user acts). -->
-  <dialog id="guide-wizard" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="guide-wizard" style="width:min(560px,94vw);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)">
       <svg class="mark" viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
         <path d="M2 16 C8 6.5, 24 6.5, 30 16 C24 25.5, 8 25.5, 2 16 Z" style="stroke:currentColor" stroke-width="2" stroke-linejoin="round"/>
@@ -3152,6 +3212,7 @@
   <script src="/static/osmpbf.js"></script>
   <!-- ooViz: zero-dependency honest-chart primitives (loaded before app.js as window.ooViz) -->
   <script src="/static/ooviz.js"></script>
+  <script src="/static/oosky.js"></script>
   <script src="/static/app-core.js"></script>
   <script src="/static/app-shell.js"></script>
   <script src="/static/app-home.js"></script>
@@ -3163,6 +3224,7 @@
   <script src="/static/app-sources.js"></script>
   <script src="/static/app-markets.js"></script>
   <script src="/static/app-insights.js"></script>
+  <script src="/static/app-observatory.js"></script>
   <script src="/static/app-diagnostics.js"></script>
   <script src="/static/app-corpus.js"></script>
   <script src="/static/app-map.js"></script>
