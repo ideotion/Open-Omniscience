@@ -370,5 +370,6 @@
   "not measured — the lexicon reads English only, so its absence is not a neutral reading": "未测量 —— 该词库仅能读英文，因此其缺失并不等于中性读数",
   "No articles": "没有文章",
   "(untitled)": "（无标题）",
-  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "本文未附正文。它可能本就没有正文，其存储正文可能无法读取，也可能自本期构建以来已被隔离或删除 —— 此文件存在，是为了让报告中的引用得以解析，且此缺口是明说的，而非留白。"
+  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "本文未附正文。它可能本就没有正文，其存储正文可能无法读取，也可能自本期构建以来已被隔离或删除 —— 此文件存在，是为了让报告中的引用得以解析，且此缺口是明说的，而非留白。",
+  "sentences that named a figure absent from this edition were removed": "提及本期中不存在的数字的句子已被删除"
 }

@@ -370,5 +370,6 @@
   "not measured — the lexicon reads English only, so its absence is not a neutral reading": "غير مقيس — المعجم لا يقرأ إلا الإنجليزية، فغيابه ليس قراءة محايدة",
   "No articles": "لا مقالات",
   "(untitled)": "(بلا عنوان)",
-  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "لا يُدرَج نص لهذا المقال. فقد لا يكون له نص، أو لم يُتَح قراءة نصه المخزَّن، أو حُجِر أو أُزيل بعد بناء هذا العدد — والملف موجود هنا حتى تُحَل إحالة التقرير، والنقص مذكور لا متروك فراغًا."
+  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "لا يُدرَج نص لهذا المقال. فقد لا يكون له نص، أو لم يُتَح قراءة نصه المخزَّن، أو حُجِر أو أُزيل بعد بناء هذا العدد — والملف موجود هنا حتى تُحَل إحالة التقرير، والنقص مذكور لا متروك فراغًا.",
+  "sentences that named a figure absent from this edition were removed": "أُزيلت الجمل التي ذكرت رقمًا غير موجود في هذه النشرة"
 }

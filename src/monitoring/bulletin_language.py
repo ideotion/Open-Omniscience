@@ -248,6 +248,17 @@ def sample_edition() -> dict:
             {"section": "skipped_example", "skipped": "no data in this period"},
             {"section": "broken_example", "error": "ValueError: synthetic"},
         ],
+        # The introduction (D2, ruled narrated). Present so the sample exercises BOTH
+        # of its branches' chrome — the AI label and the partial-removal note — which
+        # is the whole reason this record is exercised rather than minimal: a sample
+        # that omits a surface reports full coverage for strings nobody translated.
+        "introduction": {
+            "text": "A model paragraph opening the document.",
+            "narrated": True,
+            "partial": True,
+            "sentences": [{"text": "A model paragraph opening the document.", "kept": True}],
+            "prompt_version": "bulletin-introduction-v1",
+        },
         "stories": {
             "stories": [
                 {

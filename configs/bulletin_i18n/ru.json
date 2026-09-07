@@ -370,5 +370,6 @@
   "not measured — the lexicon reads English only, so its absence is not a neutral reading": "не измерено — словарь читает только английский, поэтому его отсутствие не является нейтральной оценкой",
   "No articles": "Нет статей",
   "(untitled)": "(без заголовка)",
-  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "Для этой статьи текст не включён. Возможно, его нет вовсе, возможно, сохранённый текст не удалось прочитать, либо статья была помещена в карантин или удалена после сборки этого выпуска — файл здесь для того, чтобы ссылка из отчёта разрешалась, и пробел назван, а не оставлен пустым."
+  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "Для этой статьи текст не включён. Возможно, его нет вовсе, возможно, сохранённый текст не удалось прочитать, либо статья была помещена в карантин или удалена после сборки этого выпуска — файл здесь для того, чтобы ссылка из отчёта разрешалась, и пробел назван, а не оставлен пустым.",
+  "sentences that named a figure absent from this edition were removed": "предложения, называвшие отсутствующую в этом выпуске цифру, удалены"
 }

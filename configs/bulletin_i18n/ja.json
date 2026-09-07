@@ -370,5 +370,6 @@
   "not measured — the lexicon reads English only, so its absence is not a neutral reading": "未測定 — この語彙集は英語しか読めないため、値がないことは中立という読みではありません",
   "No articles": "記事なし",
   "(untitled)": "（無題）",
-  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "この記事の本文は含まれていません。本文が存在しないか、保存された本文が読み取れなかったか、この号の作成後に隔離または削除された可能性があります — 報告書の参照が解決するようファイルはここにあり、欠落は空白のままにせず明記しています。"
+  "No text is included for this article. It may hold none, its stored text may not have been readable, or it may have been quarantined or removed since this edition was built — the file is here so the report's reference resolves, and the gap is stated rather than left blank.": "この記事の本文は含まれていません。本文が存在しないか、保存された本文が読み取れなかったか、この号の作成後に隔離または削除された可能性があります — 報告書の参照が解決するようファイルはここにあり、欠落は空白のままにせず明記しています。",
+  "sentences that named a figure absent from this edition were removed": "この号に存在しない数値に言及した文は削除されました"
 }

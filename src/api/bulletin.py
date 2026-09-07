@@ -22,8 +22,34 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.jobs.background import BackgroundJob, register_job
 
 router = APIRouter(prefix="/api/bulletin", tags=["bulletin"])
+
+
+def _narration_worker(ctx, **kwargs):
+    from src.bulletin.narration_job import run_bulletin_narration_job
+
+    return run_bulletin_narration_job(ctx, **kwargs)
+
+
+#: §14: Layer B is a BackgroundJob with a persisted cursor, task-manager-visible,
+#: abortable. Registered here beside the route that starts it — the house
+#: convention, and one registration site rather than two that could disagree about
+#: whether a run is cancellable.
+#:
+#: ``is_writer=False``: the only writes are the edition JSON on disk and the job's
+#: own cursor file. Each story's evidence is read in its own short session, never
+#: one held across hours of model calls.
+_NARRATION_JOB = register_job(
+    BackgroundJob(
+        "bulletin-narration",
+        "Bulletin narration (AI-derived, removable)",
+        _narration_worker,
+        is_writer=False,
+        cancellable=True,
+    )
+)
 
 
 def _require_gate() -> dict:
@@ -141,6 +167,106 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=404, detail="no such edition") from exc
     except ValueError as exc:  # malformed JSON on disk — say so, never return {}
         raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
+
+
+@router.post("/editions/{filename}/narrate")
+def narrate_edition(
+    filename: str,
+    lang: str = Query("", description="the language to narrate in; blank = the model's default"),
+    restart: bool = Query(
+        False,
+        description="discard a paused run and start this edition from the first unit",
+    ),
+    introduction: bool = Query(True, description="also narrate the opening paragraph"),
+    max_stories: int = Query(0, ge=0, le=200, description="0 = every story in the record"),
+) -> dict:
+    """Start (or RESUME) the narration of one persisted edition, as a background job.
+
+    §14. Narration used to run inline inside ``/generate``, which is a multi-minute
+    synchronous handler on a long run — the whole-server-freeze family this codebase
+    has paid for three times. This returns immediately; the run is visible in the
+    task manager, stoppable, and carries a PERSISTED CURSOR, so a restart resumes
+    rather than starts over.
+
+    RESUME IS THE DEFAULT. ``restart=true`` is the destructive reading and has to be
+    asked for: a default that discards a paused run is indistinguishable from a
+    resume at every layer above it, and the loss only surfaces as a progress bar
+    back at zero.
+
+    409 when a run is already in flight, and 409 with the cursor when a paused run
+    is for a DIFFERENT edition — continuing that one would misreport what was
+    narrated, and starting over would discard it, so neither is chosen silently.
+    """
+    from src.bulletin.narration_job import NarrationScopeMismatch
+    from src.bulletin.store import read_edition
+
+    gate = _require_gate()
+    if not gate.get("narration_available"):
+        # 403 with the hardware verdict, not a job that starts and refuses: the
+        # operator asked for narration and the answer is about this machine.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "reason": gate.get("narration_reason"),
+                "caveat": gate.get("narration_caveat"),
+                "narration_available": False,
+            },
+        )
+    try:
+        read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    try:
+        return _NARRATION_JOB.start(
+            filename=filename,
+            language=lang or None,
+            restart=bool(restart),
+            introduction=bool(introduction),
+            max_stories=int(max_stories) or None,
+        )
+    except NarrationScopeMismatch as exc:  # pragma: no cover - raised inside the worker
+        raise HTTPException(status_code=409, detail={"reason": str(exc), **exc.state}) from exc
+    except RuntimeError as exc:
+        # A run of this kind is already going. Return its status rather than a bare
+        # refusal: the caller asked for narration and what they need to know is that
+        # it is already happening, and how far along.
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": str(exc), "status": _NARRATION_JOB.status()},
+        ) from exc
+
+
+@router.get("/narration")
+def narration_status() -> dict:
+    """The narration run's live status and its PERSISTED account of itself.
+
+    Two facts, not one. ``job`` is process-local and a restart erases it; ``run`` is
+    the cursor on disk, which is what makes a multi-hour run's progress survive one
+    — and the absence of a completion stamp there is the evidence that a run did not
+    finish, so nothing ever writes one to mark a run handled.
+    """
+    from src.bulletin.narration_job import last_narration_run
+
+    gate = _require_gate()
+    return {
+        "job": _NARRATION_JOB.status(),
+        "run": last_narration_run(),
+        "narration_available": gate.get("narration_available"),
+        "narration_reason": gate.get("narration_reason"),
+    }
+
+
+@router.post("/narration/stop")
+def narration_stop() -> dict:
+    """Ask the narration run to stop at its next unit boundary.
+
+    Cooperative: it never kills a thread. The cursor is already saved per unit, so
+    stopping costs at most the unit in flight and starting again resumes from there.
+    """
+    _require_gate()
+    _NARRATION_JOB.cancel()
+    return {"stopping": True, "status": _NARRATION_JOB.status()}
 
 
 @router.get("/editions/{filename}/review")

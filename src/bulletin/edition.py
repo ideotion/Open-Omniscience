@@ -148,6 +148,28 @@ def build_edition(
         max_stories=max_stories,
     )
 
+    attach_narration(edition)
+    return edition
+
+
+def attach_narration(edition: dict) -> dict:
+    """Join Layer B's paragraphs to their stories, and compose what the edition SAYS
+    about its own narration from what HAPPENED.
+
+    Extracted so exactly ONE function owns this shape. It is built from two places
+    now — the inline path above and the resumable narration job — and the recorded
+    defect is precisely that: three paths assembled this block, they disagreed about
+    the join key, and the failure looked like a story nobody had tried to narrate.
+
+    IDEMPOTENT, because the job calls it after every unit so a killed run leaves a
+    record that still reads correctly. The Layer-A caveat is kept apart in
+    ``record_caveat`` on the first call and recomposed from there, so calling this
+    a hundred times appends the narration sentence once.
+    """
+    narration = edition.get("narration") or {}
+    stories_block = edition.get("stories") or {}
+    stories = stories_block.get("stories") or []
+
     # Adjacency, not interleaving: each paragraph is attached to its story by the
     # article ids both already carry, so a renderer can place them side by side
     # without either layer having to know the other's shape.
@@ -158,11 +180,9 @@ def build_edition(
     # `story["narration"]` looks exactly like a story nobody tried to narrate. The
     # key is fixed at the source (narration.narrate_story); the count below is what
     # makes a future divergence say so instead of vanishing.
-    by_ids = {
-        tuple(p.get("article_ids") or []): p for p in edition["narration"].get("paragraphs") or []
-    }
+    by_ids = {tuple(p.get("article_ids") or []): p for p in narration.get("paragraphs") or []}
     attached = 0
-    for story in stories.get("stories") or []:
+    for story in stories:
         para = by_ids.get(tuple(story.get("article_ids") or []))
         if para is not None:
             attached += 1
@@ -174,23 +194,26 @@ def build_edition(
                 "partial": para.get("partial", False),
                 "fallback_reason": para.get("fallback_reason"),
             }
-    shown = len(stories.get("stories") or [])
-    edition["narration"]["paragraphs_attached"] = attached
+    shown = len(stories)
+    narration["paragraphs_attached"] = attached
+    narration.pop("attach_gap", None)
     if attached < shown:
-        edition["narration"]["attach_gap"] = (
+        narration["attach_gap"] = (
             f"{shown - attached} of {shown} stories could not be matched to a paragraph "
             "by article ids — the two sides disagree about the key, so those stories "
             "carry no sentence here even though one may have been written."
         )
+    edition["narration"] = narration
 
     # What the edition SAYS about its narration is built from what happened, not
     # from what was requested. The unconditional version claimed "the sentences
     # under each story were written by a local model" on an edition where the model
     # was unreachable and nought of eight stories had been narrated.
-    narrated = int(edition["narration"].get("stories_narrated") or 0)
+    base = edition.setdefault("record_caveat", edition.get("caveat", ""))
+    narrated = int(narration.get("stories_narrated") or 0)
     if narrated:
         edition["caveat"] = (
-            edition.get("caveat", "")
+            base
             + f" This edition carries a narration layer over {narrated} of {shown} "
             "stories: those sentences were written by a local model and kept only "
             "because every figure and name in them appears in the articles it was "
@@ -199,10 +222,22 @@ def build_edition(
         )
     else:
         edition["caveat"] = (
-            edition.get("caveat", "")
+            base
             + " Narration was requested and produced nothing: no sentence here was "
             "written by a model. Each story carries a deterministic sentence composed "
             "from its own counts, and the reason the model produced nothing is "
             "recorded beside it."
+        )
+
+    # The introduction is model-written too, and it is the FIRST thing a reader
+    # meets — so the Methods & caveats appendix owes it a sentence rather than
+    # leaving the inline label to carry the whole disclosure. Composed here because
+    # this is the one place that recomposes the caveat from its kept base, so it
+    # cannot append twice.
+    if (edition.get("introduction") or {}).get("narrated"):
+        edition["caveat"] += (
+            " The opening paragraph was also written by the model, over this "
+            "edition's own figures rather than over article text, and every figure "
+            "in it was checked against them before it was kept."
         )
     return edition

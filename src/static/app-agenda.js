@@ -292,6 +292,21 @@
       _bulRender(v);
     }
 
+    // ONE renderer for a narrated unit's label and per-sentence verdicts, shared by
+    // the introduction and (through the same shape) by every story. Written once so
+    // the two cannot come to disagree about what "dropped" looks like.
+    function _bulUnit(u) {
+      const sents = (u.sentences || []).map(x => x.kept
+        ? `<li>${esc(x.text)}</li>`
+        : `<li class="muted"><s>${esc(x.text)}</s> — ${esc(_bulT("dropped; not in the evidence:"))} ${esc((x.unsupported || []).join(", "))}</li>`
+      ).join("");
+      const label = u.narrated
+        ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${u.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
+        : `<div class="muted">${esc(_bulT("No model text: "))}${esc(u.fallback_reason || "")}</div>`;
+      return `<div style="margin:8px 0">${label}<div>${esc(u.text || "")}</div>` +
+        (sents ? `<ul style="margin:4px 0 0 12px">${sents}</ul>` : "") + `</div>`;
+    }
+
     function _bulRender(v) {
       const box = $("bulletin-review");
       const state = v.state === "published"
@@ -333,12 +348,22 @@
           ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
       }).join("");
 
+      // The introduction is a Layer-B unit like any other, so it owes the same
+      // per-sentence account (§13). Shown ABOVE the sections because that is where
+      // it sits in the document: an operator reviewing what a model wrote should
+      // meet the opening paragraph first, exactly as a reader will.
+      const intro = v.introduction
+        ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Introduction"))}</h4>` + _bulUnit(v.introduction)
+        : "";
+
       box.innerHTML = `<h3 style="margin:0 0 4px">${esc(_bulT("Review"))} ${state}</h3>
         <p class="hint" style="margin-top:0">${esc(v.caveat || "")}</p>
         <p class="hint">${esc(v.method || "")}</p>
+        ${intro}
         <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="secondary" onclick="bulletinNarrate(this)" id="bul-narrate-run">${esc(_bulT("Narrate with the local model"))}</button>
           <button class="secondary" onclick="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
           <button class="secondary" onclick="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
           <button class="secondary" onclick="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
@@ -437,6 +462,72 @@
     function bulletinOpenFile(filename) {
       window.open(
         `/api/bulletin/editions/${encodeURIComponent(filename)}/render?fmt=html`, "_blank", "noopener");
+    }
+
+    // Narration is a BACKGROUND JOB (§14), not a request that returns when the model
+    // is done: on a long run that would be a multi-minute synchronous handler, which
+    // is the freeze family this app has paid for three times. So this STARTS it and
+    // returns, and the task manager is where the run is watched and stopped.
+    //
+    // RESUME IS THE DEFAULT. Nothing here sends restart=true: discarding a paused run
+    // has to be an explicit act, because the loss only ever surfaces as a progress bar
+    // back at zero.
+    let _bulNarratePoll = null;
+
+    async function bulletinNarrate(btn) {
+      if (!_bulFile) return;
+      const out = $("bul-pub");
+      btn.disabled = true;
+      try {
+        await api(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/narrate?${_bulQuery()}`,
+          {method: "POST"});
+        if (out) out.textContent = _bulT("Narrating in the background — watch it in the task manager.");
+        _bulWatchNarration();
+      } catch (e) {
+        if (out) out.textContent = _bulT("Could not start narration: ") + e.message;
+        btn.disabled = false;
+      }
+    }
+
+    // The poll stops on a terminal state and re-reads the review, so the operator sees
+    // the paragraphs appear. It never invents a percentage: the numbers are the job's
+    // own done/total over UNITS, which is a real count of work, not an ETA.
+    function _bulWatchNarration() {
+      if (_bulNarratePoll) clearInterval(_bulNarratePoll);
+      _bulNarratePoll = setInterval(async () => {
+        let d = null;
+        try { d = await api("/api/bulletin/narration"); }
+        catch { clearInterval(_bulNarratePoll); _bulNarratePoll = null; return; }
+        const job = d.job || {}, out = $("bul-pub"), btn = $("bul-narrate-run");
+        const n = {done: job.done || 0, total: job.total || 0};
+        if (job.running) {
+          if (out) out.textContent = _bulTf("Narrating — units: {done} of {total}", n);
+          return;
+        }
+        clearInterval(_bulNarratePoll); _bulNarratePoll = null;
+        if (btn) btn.disabled = false;
+        if (out) {
+          // Three outcomes, three sentences. An ERROR is named rather than folded
+          // into "finished" -- a run that lost its model must not read as a run that
+          // had nothing to say -- and a CANCEL says how to resume, because the cursor
+          // is saved and starting again continues rather than starts over.
+          //
+          // The state word is never interpolated: it arrives in English, and dropping
+          // an English word into a translated sentence is the mixed-language defect
+          // the frame-translates-data-does-not rule exists to prevent. Each state
+          // gets its own keyable frame, and the counts stay label:value so nothing
+          // has to conjugate with a number in twelve languages.
+          if (job.state === "error") {
+            out.textContent = _bulT("Narration stopped: ") + (job.error || "");
+          } else if (job.state === "cancelled") {
+            out.textContent = _bulTf(
+              "Narration stopped — units: {done} of {total}. Start it again to resume.", n);
+          } else {
+            out.textContent = _bulTf("Narration finished — units: {done} of {total}", n);
+          }
+        }
+        if (_bulFile) bulletinReview(_bulFile);
+      }, 3000);
     }
 
     async function bulletinPublish(btn) {

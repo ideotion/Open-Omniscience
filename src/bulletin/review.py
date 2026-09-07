@@ -108,10 +108,36 @@ def review_view(edition: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    # The introduction is a Layer-B unit like any other, so it owes the same
+    # per-sentence account: §13's requirement is that the operator can SEE a
+    # sentence was checked, and an opening paragraph the review screen did not show
+    # would be the one model-written passage nobody reviewed.
+    intro = edition.get("introduction") or {}
+    introduction = (
+        {
+            "text": intro.get("text"),
+            "narrated": bool(intro.get("narrated")),
+            "partial": bool(intro.get("partial")),
+            "fallback_reason": intro.get("fallback_reason"),
+            "sentences": [
+                {
+                    "text": s.get("text"),
+                    "kept": bool(s.get("kept")),
+                    "unsupported": s.get("unsupported") or [],
+                    "checks_applied": s.get("checks_applied") or [],
+                }
+                for s in (intro.get("sentences") or [])
+            ],
+        }
+        if intro.get("text")
+        else None
+    )
+
     return {
         "filename": edition.get("filename"),
         "state": edition.get("state", "draft"),
         "period": edition.get("period") or {},
+        "introduction": introduction,
         "sections": sections,
         "stories": stories,
         "method": (
