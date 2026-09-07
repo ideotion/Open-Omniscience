@@ -201,6 +201,13 @@ def article_ai_keywords(
             "model": r.model,
             "prompt_version": r.prompt_version,
             "confirmed": r.confirmed,
+            # Where the term occurs in the stored article, or ABSENT when it does not.
+            # A deterministic read of your own copy, never a model claim -- and the
+            # absence is the informative case: a term that is not in the text was
+            # inferred, translated or invented, and only saying nothing keeps that
+            # distinction. Omitted rather than sent as null, so a consumer cannot render
+            # "no evidence" as a measurement.
+            **({"evidence": r.evidence} if r.evidence else {}),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows

@@ -252,18 +252,26 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
             raws.append(await f.read())
         except Exception:
             skipped_non_eml += 1
-    source = _get_newsletter_source(db)
-    try:
-        # Heavy sync work (parse + anonymise + index_article per message) runs OFF the
-        # event loop -- this is an async def handler, so without this a multi-thousand-
-        # message import freezes the single-worker server for its whole duration (the
-        # same async-def-doing-sync-work family already fixed for unlock/restore-preview/
-        # /api/articles; the sibling upload_pdfs handler already does this correctly).
-        from starlette.concurrency import run_in_threadpool
+    # Heavy sync work (parse + anonymise + index_article per message) runs OFF the
+    # event loop -- this is an async def handler, so without this a multi-thousand-
+    # message import freezes the single-worker server for its whole duration (the
+    # same async-def-doing-sync-work family already fixed for unlock/restore-preview/
+    # /api/articles; the sibling upload_pdfs handler already does this correctly).
+    #
+    # S3.6 (2026-09-07) closed the two SMALL uses the 2026-07-17 fix left behind. They
+    # are one row each, which is why they read as harmless -- but get-or-create COMMITS,
+    # and a commit on the event loop waits for the single-writer gate like any other:
+    # under a held gate (measured at 6,236 s of wait in the field) it blocks every
+    # request in the process, from a one-row insert. The rollback is the same call on
+    # the error path. The rule this slice ships is the simple one a guard can hold the
+    # line on -- the session is NEVER touched on the loop -- not "only the big ones".
+    from starlette.concurrency import run_in_threadpool
 
+    source = await run_in_threadpool(_get_newsletter_source, db)
+    try:
         tally = await run_in_threadpool(ingest_emails, db, source, raws)
     except Exception as exc:  # ingest_emails is total; never let storage escape as a raw 500
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         raise HTTPException(
             status_code=500,
             detail=f"Newsletter import failed while storing: {exc}",
@@ -380,23 +388,27 @@ class PdfFolderBody(BaseModel):
 
 
 @router.post("/documents/pdf/import-folder")
-async def import_pdf_folder(body: PdfFolderBody, db: Session = Depends(get_db)) -> dict:
+def import_pdf_folder(body: PdfFolderBody, db: Session = Depends(get_db)) -> dict:
     """Import every PDF under a server-side folder path (bounded, best-effort).
 
     ZERO network (local disk read). Heavy work runs off the event loop. 400 on a
     folder that does not exist. A very large tree is the future folder-import JOB's
     job (pausable + task-manager-visible, the .eml pattern) — this bounded pass
-    handles an operator-chosen directory now."""
-    import os
+    handles an operator-chosen directory now.
 
-    from starlette.concurrency import run_in_threadpool
+    S3.6: a plain ``def``, not ``async def`` + ``run_in_threadpool``. Its two siblings
+    above MUST be async -- they await the upload stream -- but this one takes a JSON
+    body, so it never needed the loop at all: the old shape started on the loop only to
+    bounce straight back off it. Starlette runs a sync path operation in its threadpool,
+    which is the same place the work ran before and one hop closer."""
+    import os
 
     from src.ingest.pdf_import import ingest_pdf_directory
 
     folder = (body.folder or "").strip()
     if not folder or not os.path.isdir(folder):
         raise HTTPException(status_code=400, detail=f"Not a folder: {folder!r}")
-    tally = await run_in_threadpool(ingest_pdf_directory, db, folder)
+    tally = ingest_pdf_directory(db, folder)
     return {"folder": folder, "tally": tally}
 
 

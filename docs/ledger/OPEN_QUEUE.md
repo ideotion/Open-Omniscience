@@ -21,6 +21,43 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **PROMPT 09 — THE CRASH-BRIEF REMAINDER: ONE OPEN QUESTION, AND ONE CLASS-B DECISION TAKEN
+  AUTONOMOUSLY (executed 2026-09-07, branch `claude/async-handlers-event-loop-qfyl1n`; five of
+  the prompt's seven slices were ALREADY BUILT and are recorded as such in
+  [`../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md`](../plans/2026-09-06-repo-analysis/PROMPT_09_crash-memory-and-write-path.md)
+  and `INVENTORY.md` PERF-01/PRH-23; NO RULING IS INVENTED HERE):**
+  **THE OPEN QUESTION — should polled GETs be admission-capped, now that 51 more handlers can
+  run concurrently?** Converting 56 `async def` handlers to plain `def` (S3.6) changes WHERE
+  their DB work runs, and it also changes HOW MANY can run at once: an `async def` handler was
+  serialised by the one event loop, a `def` one takes an anyio threadpool token (**40** by
+  default). The connection pool it then draws from is sized by the machine —
+  `memory_budget.resolve_for` gives **6 + 2 = 8** connections below 4 GB, 4 + 16 = 20 in the
+  middle tier, 8 + 64 = 72 above. So on a small machine, 40 possible concurrent handlers face 8
+  connections, and the 9th waits on `pool_timeout` (30 s) and then errors.
+  **THIS IS NOT NEW and it is not a regression:** the tree already had **283** plain `def`
+  handlers taking `Depends(get_db)`, including the polled ones, so the exposure predates this
+  change — which adds 51 to a set of 283 — and every one of the 51 previously froze the WHOLE
+  server instead, which is strictly worse. A pool-timeout error names itself; a frozen loop does
+  not. **What is NOT decided is whether to bound it deliberately.** The crash brief's own
+  refuter note (S3.4) killed the general form — "do NOT add a queueing semaphore in `get_db`
+  (it recreates pool-timeout hangs for writes and diagnostics)" — but left the narrow form
+  standing: *"if you cap, scope it to polled GETs and fast-fail 429."* That narrow cap is
+  designed and unbuilt. It is recorded here rather than built because it is a policy about what
+  the app does to the operator under load, and because the honest measurement that would size it
+  (how many concurrent handlers a small field machine actually reaches) does not exist yet —
+  guessing a cap would be the fabricated-number failure. **PENDING: the maintainer's call on
+  whether to build the polled-GET cap, and on which measurement should size it.**
+  **THE CLASS-B DECISION TAKEN (recorded so it is not re-litigated, and so it can be reversed
+  knowingly):** PRH-23 moved the first-run preflight onto the background-job registry, which
+  means the pass tail no longer BLOCKS on it — so it now overlaps the housekeeping lane, and
+  **ruling R5 asked for a serialised pass tail.** Judged compatible on two bounds, both stated
+  in `src/monitoring/preflight_job.py`: R5 serialised the two WHOLE-CORPUS DB consumers (the
+  lane's qualification scan and the briefing refresh) because they contend for memory and the
+  writer gate on two cores, whereas this job is network-bound, capped at 50 sources, and writes
+  one `SourceMetadata` row per source; and it runs on the FIRST pass of a fresh install and
+  never again — a pass on which the corpus is empty, so the lane's whole-corpus scan has nothing
+  to scan. If the maintainer reads R5 more strictly than that, the reversal is one line: run the
+  job's worker inline instead of kicking it, keeping the registry entry for visibility.
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
   chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
@@ -9400,3 +9437,182 @@
   position — this is a content edit, however small, on a recorded entry; (c) leave them and
   keep the pointer. Recommendation: **(a)** — it is the largest fully verbatim move available
   and it invents nothing.
+
+### 2026-09-07 — C16 shipped; three findings recorded, none of them fixed here
+
+**RECORDED, NOT FIXED (1) — the re-index's pooled and inline when/where/who passes disagree
+about the date language, so the same article re-indexed twice can get DIFFERENT dates.**
+`reindex_articles` builds its task as `(art.id, body, title, lang or "en", lang, www_ctx)`,
+and `_worker_compute` hands that fourth element to `_extract_www`, which hands it to
+`extract_dates`. The INLINE path (`datestore.store_for_article`) instead passes
+`article.language` — the raw authoritative column. Those differ whenever `language` is empty
+and `detected_language` is not, which is the ordinary state of an article whose `<html lang>`
+was missing. The two paths are selected by BATCH SIZE: `precompute_batch` declines below
+`_MIN_PARALLEL_BATCH = 16` (and for a non-reconstructible extractor), so a window of 20
+articles gets the deduced language and a window of 10 gets `None`.
+
+It is a real difference, measured rather than assumed: `extract_dates`' month and weekday
+tables are language-GATED, so `"12 listopadu 2024"` is **2024-11-12** under `cs` and
+**2024-10-12** under `hr`, and a gated weekday (`уторак`, `senin`) resolves to nothing at all
+without its own language. The direction is benign — an unknown language REFUSES rather than
+guessing, so the pooled path has strictly MORE recall and neither path fabricates — but
+"which dates this article has" depending on how many siblings happened to be in its window is
+a determinism defect in a stored, user-visible field.
+
+NOT fixed here because it changes what the re-index STORES, and C16's whole safety argument is
+that it moves where work happens without changing what is computed. Two options for its own
+slice: pass `art.language` in the task (inline-identical, loses the pooled recall) or teach
+`store_for_article` to use the resolved language (gains recall on both paths, changes stored
+dates for existing corpora on the next re-index). The second looks better and is a behaviour
+ruling, not a refactor.
+
+**RECORDED, NOT FIXED (2) — the collector could gain the same date recall and deliberately
+does not.** `ArticleBatch._precompute` passes `a.language` for dates, byte-identical to the
+inline path it replaces. Passing the RESOLVED language (`article.language or
+detected_language`) would resolve gated months and weekdays for every article whose `<html
+lang>` was absent. Same ruling as (1), same reason for deferring: it belongs in the slice that
+decides (1), not smuggled into a hot-path move.
+
+**DELIBERATE OMISSION (3) — the cross-core process pool is NOT wired into the collector, and
+the reason is measured rather than cautious.** The C-brief's C16 asks for `precompute_batch`'s
+pool after the correctness step. Two facts refuse it. (a) `collect_batch_size()` defaults to
+**8** against `_MIN_PARALLEL_BATCH = 16`, so on every shipped configuration the pool would take
+its serial path — a dormant mechanism that still reads as wired, which the ledger already
+records as worse than no mechanism. (b) Above that default the collector runs up to
+`collect_parallelism` (default 50) source workers concurrently, each of which would spawn its
+own `ProcessPoolExecutor` of up to 8 workers with nothing arbitrating between them;
+`reindex_parallel`'s pool is safe precisely because it has ONE caller at a time, holding the
+exclusive hold. The recoverable quantity here is the GATE WINDOW, and running serially outside
+the gate recovers all of it (measured 93.0–93.4% → 0.0%). Re-open only with a per-process pool
+budget the collector's workers share.
+
+**DELIBERATE OMISSION (4) — PERF-09's bandwidth CAP stays unbuilt.** The measurement half
+shipped (owner-side bytes-over-time in both download managers). A cap needs the download loop
+to THROTTLE — pacing chunk reads against a target rate — which is a change to fetch behaviour
+rather than a measurement, and it needs a decision the code cannot make for itself: whether the
+budget is per-job or per-process, and how it composes with the existing collection-speed
+governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
+target for the collector. Building a second, unrelated rate authority next to it is how two
+surfaces come to disagree about one quantity. Recorded for a ruling.
+- **PROMPT_11 EXECUTED 2026-09-07 (the AI layer: model supply, capability probes, and the honest
+  gaps). FOUR OF ITS SEVEN SLICES WERE ALREADY BUILT, and the staleness guard is what said so —
+  the prompt's own scoping was written from doc status lines that had aged past the tree.** What
+  was VERIFIED-PRESENT at `main` @ 690920e, with the anchor that proves it: (a) **S6's roster
+  reduction** — `DEFAULT_ROSTER` is `_incumbents()`, `BENCH_ROSTER_AS_OF` is gone and
+  `src/llm/ollama.py:144` records that `MINISTRAL_AS_OF` INHERITED its dated-registry duty; the
+  prompt's "six roster tests are about the dropped entries, so a blind delete takes working guards
+  with it" was a live CI risk that is already spent. (b) **AI-14, the buried custom-model field** —
+  `index.html` Settings → Advanced → AI → "Run your own model", inside `<details class="adv-sec"
+  data-adv="ai">`, with the 2026-08-12 ruling quoted verbatim in the comment above it. (c) **S4 /
+  D10, the perception rollout** — `ai_sweep_perception_extract` defaults True, `field_gate` stores
+  only `active is True` and refuses the unmeasured, and BOTH structural points the prompt asks to
+  preserve are pinned by `test_repo_invariants.py::test_perception_extraction_is_eval_gated_and_
+  never_touches_the_trusted_tables` (only `ai-who`/`ai-place`/`ai-date` reach `ai_keyword`, never
+  the trusted tables; WHO stays ONE combined kind, with `ai-person`/`ai-org`/`ai-event` asserted
+  ABSENT). Only the numeric floors remain, and they are the operator's graded gold set (R6).
+  (d) **S3's CI-visible mechanism** — `tests/test_dependency_ceilings.py` shipped in #1016 and the
+  corrected migration measurements are already in the pyproject comment (16 failed/23 passed at
+  1.0.0 against 39 at 0.4.0; `keygen()` returns plain `bytes`; `PUBLIC_KEY_SIZE` 1952 in both).
+  **TWO INVENTORY ITEMS WERE REFUTED RATHER THAN BUILT, and both would have been damaging:**
+  **PRH-21** says to call `configure_ollama_store_access` "from `src/llm/installer.py`, where it is
+  defined, test-pinned and never invoked". Two of those three facts are wrong: it is a SHELL
+  function in `install.sh:495`, and its uninvoked state is a deliberate maintainer ruling, recorded
+  in the comment directly above it and pinned by `test_repo_invariants.py::test_seamless_install_
+  and_language_first_first_launch` — the 2026-06-20 field test moved Ollama provisioning ENTIRELY
+  to Settings → AI so the installer "asks NOTHING and never provisions Ollama". Wiring it would run
+  `sudo chmod` during install, which is exactly what that ruling removed. NOT DONE; the premise is
+  the defect. **PRH-09** says to prefill `#vllm-model-input` from the stored `llm_model_vllm`. That
+  element exists NOWHERE in the tree, and its only reader — `startVllm` in `app-ai-tools.js` — had
+  ZERO callers, so the function's own guard toasted "Enter a model id first." on every possible
+  click. Resolved as RETIRE, not prefill: the 2026-08-04 rework made the fused Local AI card THE
+  one control and it starts through `/api/llm/activation/start`. Adding a model input plus a second
+  start button beside it would re-create the routing-vs-provisioning confusion that fusion removed.
+  `POST /api/llm/vllm/start` is untouched and still reachable through activation.
+  **D8 IS A THIRD KIND OF STALE, and it is the interesting one:** `docs/design/MULTI_MODEL_
+  SPECIALISATION_2026-08-10.md` says "Nothing built" and the INVENTORY repeats it, while
+  `src/ai_layer/specialisation.py` ships 476 lines with `tests/test_specialisation.py` beside it.
+  What is genuinely missing is not the harness but any way to START it: `run_shape` has no caller
+  outside the test tree — no endpoint, no script, no button — so the OPERATOR STEP D8 defers to is
+  not actually available on the rig. Recorded, deliberately NOT built here, because D8's
+  recommendation is "no build" and adding an invocation path is a build; but the deferral should be
+  read as "the harness cannot be run yet", not as "the harness is missing".
+  **D9 — the live ollama.com library browse: DROPPED, with the reason.** Grep-verified that no
+  browse code exists (`ollama.com` appears only as a static download/library LINK in
+  `app-settings.js` and `installer.py`). The curated dated catalog plus the free-text tag box in
+  "Run your own model" covers the need; a live browse is a network surface with a maintenance tail,
+  against a one-model ruling whose whole point is that the default is not a menu.
+  **AI-15 IS STILL OPERATOR-GATED, and the evidence is per-host rather than a shrug:**
+  `ollama.com` answers this sandbox's proxy `CONNECT ... 403 Forbidden`, as does `huggingface.co`,
+  with `pypi.org` at 200 as the control (probed 2026-09-07). So "is the Ollama account `LiquidAI`
+  the publisher's own?" cannot be answered here and is deliberately NOT guessed — the same refusal
+  the 2026-08-02 entry recorded, now on its seventh consecutive session. It joins F1's list.
+  **WHAT WAS BUILT:** S1 (the model-weights pin, D6), S2 (round-trip capability probes, D7), S3's
+  missing half (a dependabot `ignore` for pqcrypto MAJORS), S5 (the two dead ends wired), and S7's
+  D5 collapse. Details in `docs/ledger/shipped.csv` (2026-09-07, `llm/weights-pin`).
+  **RULINGS TAKEN ON THE RECORDED RECOMMENDED DEFAULTS, not by the maintainer** — D5 (collapse
+  behind a count), D6 (pin + refuse), D7 (sweep yes; stay on `<1.0`), D8 (no build), D9 (drop),
+  D10 (already in the recommended shape). Each is reversible and each is named here so a
+  maintainer ruling that differs has one place to land.
+- **LAW VERTICAL — S2/S4/S6/S7 EXECUTED 2026-09-07 (branch `claude/law-enumeration-coverage-1txthg`,
+  one draft PR onto `main`); FOUR QUESTIONS FOR THE MAINTAINER, and two prompt claims corrected.**
+  Per-slice detail is in the `docs/ledger/shipped.csv` row; this entry holds only what needs a
+  ruling and what a later session must not re-derive.
+  **STALENESS FIRST, because two of the six slices did not exist as work.** `S3`/`S4b` (thread the
+  catalog's language to the corpus) and `S5`/`A5` (AI change summaries) were both recorded as
+  outstanding by `PROMPT_13` and both were already shipped at `main` @ `690920e2` — the columns are
+  at `src/database/models.py:2187-2188`, the summary ride-along at `src/scheduler/runner.py:1263`.
+  Neither was rebuilt; both prompt sections and the 2026-07-17 brief now carry the anchor. That is
+  the third and fourth law item in a row to turn out shipped-when-read (36 and 37 were the first
+  two, 2026-08-20), which is itself the finding: **this vertical's status text ages faster than any
+  other area's, so grep before building here, always.**
+  **F1 RE-PROBED AND STILL BLOCKED (2026-09-07, per-host evidence, so nobody re-runs it):**
+  `curl -o /dev/null -w '%{http_code}'` gives `pypi.org` 200 and `github.com` 400 (both reachable),
+  against `000` — connection refused at the tunnel — for `www.legislation.gov.uk`,
+  `eur-lex.europa.eu`, `www.gesetze-im-internet.de` AND `legal.gov.vc`. Unchanged from 2026-08-20.
+  S1 stays untouched; the one operator step (fetch one CLML `data.xml`, run `parse_clml`, check the
+  recovery floor and an empty `unknown_elements`) is still the thing that unblocks the enumeration.
+  **Q-LAW-1 (the one that actually blocks a number): should each `official_count` entry DECLARE
+  whether its unit counts the same objects an act/code-level tracked document is?** S4 put the
+  catalog's 39 dated counts (32 countries) into the coverage report and deliberately computes NO
+  fraction, because the units run over codes, acts, volumes, gazette issues, treaties and cases and
+  a volume or a gazette issue holds many acts. Deciding that from the unit STRING is the exact move
+  ruling 47's extensive/intensive rail forbids. Options: (a) add an explicit
+  `counts_documents: true|false` to each of the 39 entries, hand-decided and reviewable in the diff,
+  after which a real tracked-vs-enumerated fraction becomes computable for the entries that say
+  true; (b) leave it undeclared permanently and keep publishing the two numbers side by side;
+  (c) rule that the fraction is never wanted at all, since "covering a jurisdiction" is about
+  breadth rather than a percentage. Recommendation: **(a)** — it is ruling 47's own precedent
+  applied one vertical over, the population is 39 rows and closed, and until it lands the report is
+  honest but cannot answer "how much of France do we have".
+  **Q-LAW-2 (L6, and the stated default was APPLIED not decided): `[pdf]` stays optional and the
+  coverage report now says so, with the numbers.** Measured at this anchor: **63 of 275 catalog
+  sources declare a format list of exactly `[pdf]`, across 54 countries, and 6 of the 23 registrable
+  tracked documents are PDFs by URL** — all six Timor-Leste. So a default install cannot read a
+  quarter of the documents this vertical tracks. The question stands: promote `[pdf]` into the
+  default extras, or keep the disclosure? Recommendation: the disclosure is the right FLOOR either
+  way and is now shipped; promoting is a separate call about install weight (`pypdf` only).
+  **Q-LAW-3: 44 rows are on the vetting board and every one wants a one-word answer** —
+  `docs/product/LAW_VETTING_BOARD.md`, generated by `scripts/law_vetting_board.py`, in four
+  sections: 2 confirmed gaps (kp, ye — acknowledge or re-open), 9 unverified leads with a real
+  domain (enable / adapter / gap / drop), 29 access-blocked or bot-walled (adapter / API / honest
+  gap — never scraped around), 4 recorded down (re-check / park / drop). Sections 3 and 4 are a
+  KEYWORD TRIAGE over the catalog's own prose and the page says so; they are a starting point, not
+  an exhaustive list of blocked domains.
+  **Q-LAW-4: is a `gazette_feed` a first-class endpoint tier?** S2 gave each of the four
+  `gazette_feed` values its own `gazette_feed_verification` block, validator-enforced, vocabulary
+  `fetched | lead` only. This was necessary rather than tidy: all four rows are
+  `verification.status: fetched` at ROW level and one of them (impo.com.uy) has a feed nobody ever
+  fetched, which the row's own notes call the site's generic WordPress news feed — promoting on the
+  row status would have filed Uruguayan site news as that country's official gazette. Ruling asked
+  for: does this tier generalise to `enumeration_url` (107 of them, none fetched by anyone) and to
+  `structured.api`/`structured.bulk`? Recommendation: **yes, and the same way** — an endpoint field
+  that no test can distinguish from a URL somebody wrote down is the shape this vertical keeps
+  paying for.
+  **RECORDED SO IT IS NOT RE-DISCOVERED:** the DPRK honest-gap record lived ONLY in a YAML comment
+  while Yemen's identically-reasoned one was a domain-less `lead` row, so no tool could read it.
+  It is a row now (the comment kept beside it, verbatim); the loader still returns 275 sources
+  because a domain-less row can never become a `Source`. **And what S2 does NOT buy:**
+  `select_sources` admits only QUALIFIED sources, so the three wired feeds are not collected on
+  seeding — they enter the qualification ladder, which they previously could not, because
+  `trial_fetch` falls back to sitemap discovery without an `rss_url` and a gazette with neither
+  produces no evidence and stays unqualified forever.

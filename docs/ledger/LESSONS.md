@@ -6127,3 +6127,306 @@
     diverge and the mutation reddens by name. The recorded rule that the discriminating input is
     never the obvious example has a corollary: when a mutant survives, run the mutated code and
     find out which branch it took, rather than assuming the assertion is too weak.
+
+- **A TIMING HARNESS THAT DOES NOT ASSERT THE WORK HAPPENED CAN REPORT A PASS FROM A SERVER
+  THAT DID NOTHING (2026-09-07, S3.6, caught before it could lie):** the concurrency
+  reproducer for the event-loop freeze put a slow handler in flight and measured how long a
+  second, trivial request took. Its FastAPI mini-app was built inside the test function, in a
+  test file carrying `from __future__ import annotations` -- so every annotation was a STRING
+  that FastAPI resolves against the MODULE globals, and `Request`/`Session` were imported
+  inside the function. FastAPI could not resolve `Request`, silently demoted `request` to a
+  QUERY PARAMETER, and answered **422 without ever calling the handler**. The measurement
+  would then have been "the second request was fast" -- a green run produced by a server that
+  never did any work at all, in the direction that confirms the fix. What caught it was an
+  `entered.wait(timeout=5)` latch set INSIDE the handler and asserted BEFORE the clock
+  started. **GENERAL FORM: a harness that measures the effect of some work must independently
+  assert that the work RAN.** The failure mode of a silently-skipped body is indistinguishable
+  from the success it is trying to demonstrate, and it fails toward "pass". The same shape as
+  the recorded `str.replace`-with-an-absent-needle mutation (a no-op whose green run reads
+  exactly like a dead guard) -- one layer up, in the fixture rather than the mutation.
+
+- **51 OF 56 `async def` HANDLERS AWAITED NOTHING AT ALL (2026-09-07, S3.6):** the crash brief
+  recorded 56 DB-touching `async def` handlers as a freeze risk. Parsing their bodies before
+  converting them showed that 51 contained no `await`, no `async for` and no `async with` --
+  they were not handlers that needed the loop and used it wrongly, they were handlers where
+  `async def` is simply the shape people type. Of the 5 that did await, one
+  (`import_pdf_folder`) awaited ONLY its own `run_in_threadpool` hop, i.e. it went to the loop
+  purely to bounce straight off it. **GENERAL FORM: before designing a fix for a defect class,
+  count what the instances actually ARE.** The remedy for "async by habit" is a census guard
+  with a named allowlist (a new instance must argue for itself); the remedy for "needed async,
+  used it wrongly" would have been code review. The measured shape chose the mechanism, and it
+  is the cheaper one.
+
+- **"IT IS ONLY ONE ROW" IS NOT A REASON TO TOUCH THE DATABASE ON THE EVENT LOOP (2026-09-07,
+  S3.6):** `import_newsletters` was fixed on 2026-07-17 to run its heavy `ingest_emails` call
+  through `run_in_threadpool`, and a test has asserted since then that it "runs off the event
+  loop". It still called `_get_newsletter_source(db)` -- a get-or-create that **COMMITS** --
+  and `db.rollback()` on its error path, both on the loop. A commit waits on the single-writer
+  gate like any other commit, and the field measured gate waits of **6,236 s**; so a one-row
+  insert can block every request in the process for as long as the gate is held. **GENERAL
+  FORM: when a fix moves "the heavy part" off a contended resource, the leftovers inherit the
+  same WORST case, not the same average one -- their size bounds their typical cost, never
+  their blocking cost.** The rule a guard can actually hold the line on is "the session is
+  never touched on the loop", not "the big ones are not"; the AST guard added here asserts
+  exactly that, because a threshold nobody can state is a threshold nobody can test.
+
+- **A HALF-SHIPPED NUMBERED SLICE IS INVISIBLE FROM BOTH DIRECTIONS (2026-09-07, found by the
+  S3.6 staleness sweep):** crash-brief slice S3.6 had two halves -- the lock-state cache and
+  the 56-handler conversion. PR-10 shipped the cache; its commit message describes the cache
+  and nothing else, and **no `S3.6` row was ever written to `shipped.csv`**. The result read
+  both ways at once: the shipped half looked unshipped (the prompt still asked for it, and it
+  was already there with both belts), and the unshipped half looked done-by-association to
+  anyone who found the cache and stopped. **GENERAL FORM: when a PR ships PART of a numbered
+  slice, the CSV row must name WHICH part and what remains** -- the slice id alone asserts the
+  whole thing. This is the inverse of the stale-PENDING-banner failure the 2026-09-06 analysis
+  named: there a doc claimed less than the tree held; here a commit claimed a slice id and
+  delivered half of it.
+
+  - **A DECLINE'S OWN PREMISE CAN BE THE ARGUMENT FOR REVERSING IT, AND THE STEP IT NAMED
+    WAS 5% OF THE COST (2026-09-07, C16 / S-D — reversing the 2026-07-12 F13 decline):**
+    F13 recorded that the batched collector flush holds the single-writer gate across
+    per-article extraction, and DECLINED the fix as "GIL-bounded-marginal", reasoning that
+    "batching already collapses ~8 extractions onto ONE commit, so **writes are the small
+    part of the window**". That premise is exactly right and the conclusion is inverted: the
+    writes being small is precisely why moving everything else out is worth ~16x rather than
+    an amortised fsync overlap. MEASURED on the real ingest path (8 articles x ~22 KiB, five
+    runs per arm, deterministic per arm while wall time is pure noise on this box): the gate
+    window is **3626-3756 ms** before and **207-236 ms** after, with extraction accounting for
+    **93.0-93.4%** of it before and **0.0%** after. TWO THINGS WORTH MORE THAN THE RATIO.
+    (a) **The decline named the wrong step.** It says "keyword EXTRACTION", and the keyword
+    extractor is the SMALLEST of the five pure steps (~185 ms of that batch) — `extract_dates`
+    alone is ~1.93 s and `score_article` ~0.70 s. The material change since the decline is that
+    when/where/who at ingest (T12) landed AFTER it and multiplied the in-gate CPU by roughly an
+    order of magnitude, so a judgment that was correct when written became wrong without anyone
+    editing it. The staleness guard's "is the MEASUREMENT this item rests on still one the code
+    would produce today?" applies to a DECLINE as much as to a finding — and a decline is more
+    dangerous, because nothing about it looks pending. (b) **The wall clock did not move and
+    saying so is the finding**: five runs per arm both span ~6.6-9.5 s, so this relocates CPU
+    rather than removing it and is a CONTENTION fix, not a throughput fix — the earlier
+    three-run "before" trio happened to land at the low end and would have supported a
+    fabricated regression story just as easily as a fabricated win.
+    **THE INSTRUMENT WENT BLIND AT THE MOMENT OF SUCCESS, which is the part that would have
+    shipped a silent data loss.** The timing probe patched `datestore.extract_dates` /
+    `whostore.extract_locations` — the names as imported into the STORE modules — and the fix
+    routes the same work through `reindex_parallel._extract_www`, which imports them from their
+    DEFINING modules. So the three when/where/who steps vanished from the breakdown and the
+    measured extraction total fell 3500 -> 840 ms, which is indistinguishable from "the WWW pass
+    stopped running and every date, place and person is now silently dropped". A moved call site
+    defeats a probe pinned to the old one, and the failure presents as a better number. The only
+    thing that separates them is a WHOLE-STRUCTURE DIFFERENTIAL: dump every derived row on both
+    trees and compare (54 articles, 1032 mentions, 68 dates, 24 places, 24 entities, keyword
+    counters, sentiment, top-keyword and deduced language — byte-identical, same SHA-256 over
+    158,390 bytes).
+    **AND THE FIRST DIFFERENTIAL WAS A LOOKALIKE THAT ALSO CAME BACK IDENTICAL.** `pipeline.py`
+    stores `language = doc.language or source.language`, so a fixture with one `language="en"`
+    source made every article "en" whatever `<html lang>` said — and `extract_dates`' month and
+    weekday tables are language-GATED, so the gated paths were never reached and a byte-identical
+    result was worth nothing about the one argument the change threads. Fixed by giving each
+    language its own SOURCE, with cs/hr over the same body as the discriminating pair: measured,
+    "12 listopadu 2024" is **2024-11-12 under `cs` and 2024-10-12 under `hr`** — a different
+    MONTH, not a recall difference. (A second lookalike hid behind the first: the bodies were
+    identical across sources, and the content hash is global, so only the first source's articles
+    were ever stored.) An unknown language REFUSES rather than guessing, so a wrong language
+    costs recall and never fabricates — which is why the collector passes `article.language`
+    (byte-identical to its own inline path) rather than the deduced language that would raise
+    recall, and the recall gain is recorded as a separate item instead of smuggled into a
+    hot-path move.
+    **THE PROCESS-POOL HALF WAS REFUSED ON MEASUREMENT, NOT ON RISK:** the brief asked for
+    `precompute_batch`'s cross-core precompute next, and `collect_batch_size()` defaults to 8
+    against `_MIN_PARALLEL_BATCH = 16`, so it would take its serial path on every shipped
+    configuration — a dormant mechanism that still looks wired. Above that default the collector
+    runs up to 50 source workers concurrently, each spawning its own pool of up to 8 processes
+    with nothing arbitrating between them; `reindex_parallel`'s pool is safe precisely because it
+    has ONE caller at a time, holding the exclusive hold. The recoverable win is the gate window
+    and running serially OUTSIDE it recovers all of it.
+    **THE BASELINE COULD NOT BE A WORKTREE**, per the recorded trap: `pip install -e .` installs
+    a META-PATH finder (`__editable___*_finder`), which runs before `sys.path`, so a worktree
+    baseline silently imports the head tree. Reverting the two files in place — with copies taken
+    first and the restore verified by checksum — is what made the base run a base run.
+  - **A GUARD THAT COMPARES A WINDOW'S FIRST AND LAST SAMPLE CANNOT SEE A RESET IN
+    THE MIDDLE — and the number it then publishes is positive, plausible and wrong
+    (2026-09-07, PERF-09's download-rate sampler):** the owner-side rate refuses a
+    negative delta, which reads as complete: a cumulative byte count that goes
+    backwards means the transfer restarted, and a negative rate is not a slow
+    download. It is complete only for a restart at the window's EDGE. With
+    `reset(0)` at the head and a restart in the middle — 0 → 10,000 → 500 — first
+    is still less than last, so the guard never fires and the rate comes out as
+    500 B over 4 s: **a measured 125 B/s over a window in which 10,000 bytes
+    arrived and were then discarded.** The check has to run on EVERY observation,
+    not on the pair that happens to bound the window; a backwards count then opens
+    a FRESH window, which is also better than refusing forever, because the bytes
+    arriving after a restart are real progress at a real rate. GENERAL FORM: when a
+    guard is written over an aggregate of a sequence (first vs last, min vs max,
+    sum vs count), ask what it cannot see INSIDE the sequence — an invariant about
+    a series is not testable from its endpoints. TWO RIDERS. **The mutation matrix
+    then produced a survivor that was a finding about the MUTANT:** it added a key
+    to `DownloadEntry.to_dict()` to test "nothing about the rate is persisted",
+    and `_save()` serialises `asdict(entry)` — the dataclass FIELDS — so the
+    mutation could never reach the state file the guard reads. Re-targeted at a
+    real dataclass field it reddens by name; the recorded rule holds, and the
+    first step on a survivor is to check the mutant reproduces the defect at all.
+    **And my own "nothing is persisted" test was a non-unique needle:** it scanned
+    the serialised JSON blob for the substring `"rate"`, and pytest names the tmp
+    directory after the test, so the PATH contained it and the assertion failed
+    against correct code. Walk the persisted KEYS.
+  - **PRUNE A RATE WINDOW AT READ TIME, NOT ONLY AT WRITE — an instrument that
+    freezes while still reporting is worse than one that stops (2026-09-07, same
+    slice):** samples arrive only when bytes do, so a sampler that prunes its
+    window on `observe` alone keeps a full window forever once a transfer stalls,
+    and goes on publishing the last healthy figure for as long as nobody sends it
+    another byte. Pruning against a FRESH clock reading at snapshot time makes the
+    stall fall out by construction: everything ages out, the window empties, and
+    the honest answer — "no bytes received in the last N s", with the idle time —
+    is a measurement of a DIFFERENT quantity and the one an operator watching a
+    stuck download actually wants. The distinction needs its own branch: an EMPTY
+    window means aged-out, ONE sample means a window that just opened (a start, a
+    resume, a restart), and folding them together would print an `idle_s` of ~0
+    beside "no bytes received" for a transfer that is perfectly healthy and merely
+    young.
+  - **ADDING A CALL INSIDE A FUNCTION MAKES EVERY NODE SUITE THAT EXTRACTS THAT
+    FUNCTION PART OF YOUR CHANGE — and the guard for it already existed; I pushed
+    ahead of it (2026-09-07, PERF-09's rate line):** the house pattern for testing
+    the UI engine is to EXTRACT a function from the real file by name and evaluate
+    it in isolation, precisely so a re-typed copy cannot pass while the shipped
+    code is broken. The cost of that isolation is that the extracted copy sees ONLY
+    what its own suite extracted: adding `_rateNote(j, t)` inside `_jobRow` left
+    `import_tail_phase_node_test.js` — a suite about IMPORT PHASES, which no search
+    for "rate" or "download" would ever reach — throwing `ReferenceError: _rateNote
+    is not defined`. I wrote my OWN node suite carefully (extracting `_fmtBytes`,
+    `_fmtDur` and `_rateNote` together) and never asked who else extracts the
+    function I had just added a call to. GENERAL FORM: before adding a call inside
+    any function, `grep -l "<function>" tests/*_node_test.js` — the enumeration is
+    by what the OTHER suites READ, never by what your change is about, because the
+    suite that breaks is named for its own subject and not for yours.
+    **THE PART THAT MATTERS MORE THAN THE FIX: the guard was not missing.** Every
+    node suite has a pytest driver (the `test_every_node_suite_has_a_driver`
+    ratchet exists because an unrun suite already cost a shipped defect), so the
+    full suite catches this in the ordinary way — I pushed before my full run
+    finished, at a stop-hook prompt, and CI found it 20 minutes later. When you
+    cannot wait for the full suite, the substitute is not hope: `for f in
+    tests/*_node_test.js; do node "$f" || echo "RED: $f"; done` runs all 28 in
+    SECONDS and would have caught it. Add it to the named tree-guard set for any
+    change that touches an `app-*.js` function other tests extract.
+    RIDER on the repair: the tempting fix is a `typeof _rateNote === "function"`
+    guard at the call site, and it is wrong for the reason the ledger already
+    records — a `hasattr`-style guard around a call you wrote is self-fulfilling,
+    and here it would make the PRODUCTION renderer paper over a broken harness.
+    Extract the dependency in the suite that needs it, and never stub it, or the
+    copy under test drifts from the shipped code, which is the one thing this
+    whole harness exists to prevent.
+  - **A CAPABILITY PROBE THAT RUNS THE LIBRARY'S HAPPY PATH CAN STILL BE WRONG ABOUT IT — and
+    the FABRICATED-FAILURE half is the one no fixture catches (2026-09-07, D7's OTS probe):**
+    replacing `OTS_AVAILABLE`'s bare-import check with an offline round trip is the correct
+    fix, and the first version of that round trip reported OTS **unavailable on every install
+    that has it**. `opentimestamps` refuses to serialize an EMPTY `Timestamp` — by name, "An
+    empty timestamp can't be serialized" — and `anchor()` never meets that because it merges a
+    calendar's attestations in BEFORE serializing. So the probe exercised a shape production
+    never produces, and a fabricated FAIL is exactly as dishonest as the fabricated pass being
+    fixed, and much easier to believe: it looks like the library being broken rather than the
+    probe. THREE THINGS. (a) It was found by INSTALLING the optional extra and running the
+    probe, not by reading it — the recorded "run tool-gated tests with the tool" rule, which
+    on this repo means `pip install -e ".[pqc,timestamping]"` in the sandbox venv and takes a
+    minute. (b) The guard that stops it recurring must be keyed on the LIBRARY being
+    importable, never on the flag: a `skipif(not OTS_AVAILABLE)` keys a skip on the very thing
+    under test, so a probe that wrongly reports unavailable SKIPS the tests written to catch
+    that — mutation-proven, the mutation removing the attestation survived the first matrix and
+    reddens the second. (c) A probe of an optional extra needs a LANE that installs it: the
+    crypto lane installed `[pqc]` only, so the OTS positive half could not have run anywhere,
+    which is the recorded "an environment-gated guard goes to die in a lane that names files
+    explicitly" trap arriving before the guard was even written.
+  - **WITH A WORKING LIBRARY INSTALLED, AN IMPORT PROBE AND A CAPABILITY PROBE AGREE — so the
+    obvious assertion about the flag cannot fail (2026-09-07, same slice):** the natural guard
+    for "the flag is derived from the round trip" is
+    `assert PQC_AVAILABLE is _probe_mldsa(_mldsa)[0]`, and it SURVIVES the mutation that reverts
+    the flag to `_mldsa is not None`, because on a machine whose pqcrypto works both answers are
+    True. The discriminating case exists only if a library that IMPORTS and CANNOT WORK is
+    injected — which is the shipped 2026-08-20 defect itself — and injecting it means reloading a
+    module every custody test imports, so it belongs in a SUBPROCESS rather than in the shared
+    process. GENERAL FORM: when a fix replaces predicate A with predicate B, ask on which inputs
+    A and B DIFFER, and check the fixture reaches one; a fixture drawn from the healthy
+    environment usually reaches none, and the guard then measures the environment.
+  - **A "MUST BE WIRED" GUARD OVER A ZERO-ARGUMENT FUNCTION IS SATISFIED BY ITS OWN
+    DECLARATION, AND `"POST"` IS NEVER A UNIQUE NEEDLE (2026-09-07, the reader's AI lens):**
+    two source guards written in the same hour as the fix, both refuted by the mutation matrix
+    in one run. `assert "loadAiLens()" in src` cannot tell WIRED from DEFINED, because
+    `function loadAiLens() {` contains `loadAiLens()` — the recorded zero-argument trap,
+    recurring in a file where nothing had yet used the shared slicer. And
+    `assert '"POST"' in src` survived deleting the confirm request's method, because
+    `reader.js` has ANOTHER POST (summarize/translate) thirty lines away. The replacement is a
+    node suite that extracts the real functions and drives them: what is asserted is the markup
+    a reader ends up with and the request that actually leaves the page, and both mutations then
+    redden by name. Worth recording again because both traps are already in this file and were
+    still walked into — the durable fix is to reach for the behavioural shape FIRST on any
+    "is it called" claim, since that is the exact claim a substring cannot make.
+  - **AN EVIDENCE COLUMN'S HONESTY IS ITS EMPTINESS (2026-09-07, `AiKeyword.evidence`):** the
+    column is documented as "the snippet the model drew the term from" and had zero writers
+    since it was added. The tempting writer is the model — ask it for the snippet — and that
+    adds a SECOND unverifiable claim beside the first. A deterministic search of the article's
+    own stored text says something checkable instead ("this term appears HERE in your copy"),
+    and the case that carries the value is the one where it finds NOTHING: a term the model
+    produced that is not in the text was inferred, translated or invented, and only storing
+    nothing preserves that. So the mutation that matters is not "does it find the snippet" but
+    "does it invent one" — filling a miss with the article's opening line passes every
+    positive test. TWO MECHANICS worth keeping: search exact-first with `str.find` and fall
+    back to an IGNORECASE regex over the ORIGINAL string, because `"İ".lower()` is `i` plus a
+    combining dot and `"ß".casefold()` is `ss` — both change LENGTH, so lowering the text and
+    indexing back into it slices at the wrong place; and the needle is `re.escape`d, so there
+    is no pattern to backtrack (a literal search is linear, unlike the `OPEN.*?CLOSE` shape
+    that cost a 412 KB article 138 seconds).
+  - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
+    trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
+    catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
+    `verification.status: fetched`, and one of those feeds had never been asked for. The
+    status is about the PORTAL — impo.com.uy's row records loading `/contenido/`, while the
+    row's OWN notes call the feed URL the site's generic WordPress `/feed/` of news posts,
+    "not confirmed to carry each day's Diario Oficial issue individually, so verify before
+    relying on it for gazette monitoring". Promoting on the row status would have filed
+    Uruguayan site news in the corpus **as that country's official gazette**: not a broken
+    fetch, which announces itself, but a plausible wrong corpus, which does not. GENERAL
+    FORM: a verification tier covers the thing the verifying session actually looked at, and
+    every OTHER URL in that record is a claim nobody checked — so a field that will be
+    fetched needs its own tier, and the vocabulary should be narrower than the row's where
+    the middle tiers cannot mean anything (a search snippet can say a site exists, never
+    that a URL serves a parseable feed). The same catalog has 107 `enumeration_url` values
+    and a `structured.api`/`structured.bulk` pair in the identical position. COROLLARY on
+    reading the evidence: the row-level `evidence` sentence is what settles it, and it did —
+    three of the four record fetching the feed, one records fetching something else. Read
+    the sentence, not the enum.
+  - **A DENOMINATOR IN AN UNDECLARED UNIT IS NOT A DENOMINATOR, AND THE JOIN KEY IS THE
+    SECOND TRAP (2026-09-07, law coverage):** 39 dated official counts sat in the law
+    catalog as the completeness principle's missing denominators, and the obvious move —
+    print `tracked / enumerated` — is a fabricated statistic: a tracked document is
+    act/code-level while the recorded units run over codes, acts, volumes, gazette issues,
+    treaties and cases, and a volume or a gazette issue holds many acts. Deciding
+    commensurability from the unit STRING is the exact move ruling 47's extensive/intensive
+    rail already forbids for aggregation, so the two numbers are published side by side with
+    the reason attached and the declaration is raised as a ruling. SECOND HALF, and it would
+    have been silent: the counts key on ISO-2 `country` while documents key on an "ISO-ish"
+    `jurisdiction`, and `uk` documents state `gb` — so reading the jurisdiction code as a
+    country BOTH misses that pair AND risks attaching some other country's enumeration to a
+    code that collides with its ISO-2. The honest join runs only through the country a
+    document itself states, and a document stating none gets its own third state rather than
+    being reported as "no enumeration exists". GENERAL FORM: before dividing two numbers
+    from different files, check the UNIT and the JOIN KEY separately — either one alone can
+    make the quotient a number nobody measured.
+  - **A MECHANISM BUILT TO SURFACE CAVEATS IS BLIND TO THE CAVEATS IT WAS NOT SHAPED FOR —
+    carry the raw field too (2026-09-07, same slice):** a derived check (is the figure's
+    `source_url` on the publisher's own domain?) correctly flags the Council of Europe's
+    treaty count, which cites Wikipedia, and Mauritania's, which cites a news site. It
+    STRUCTURALLY cannot flag the African Union's 80, whose `source_url` is perfectly
+    on-domain and whose caveat lives in the row's `notes`: "a manual tally ... treat this as
+    approximate, not authoritative". Extracting that with a prose heuristic is the move this
+    project refuses, so the notes ride along verbatim beside the figure. GENERAL FORM: when
+    you build an instrument to expose disclosures, ask what it is structurally unable to
+    see, and keep the unprocessed field beside it — the same shape as the recorded
+    two-harvest-instruments lesson, at the level of one payload.
+  - **AN HONEST GAP RECORDED AS A COMMENT IS OUTSIDE THE SYSTEM, NOT A LESSER VERSION OF ONE
+    (2026-09-07, the law catalog's two confirmed gaps):** the catalog has a deliberate shape
+    for "we looked and there is no official portal" — a domain-less `lead` row, which the
+    validator sees and the loader drops, so a gap can never become a `Source`. Yemen is one.
+    North Korea's identically-reasoned, better-evidenced gap was a **YAML comment block**, so
+    the validator could not count it, the vetting board could not list it, and nothing that
+    reads the catalog as data knew it existed. Nobody was wrong at the time; the comment is
+    the producing session's own words and is where a future reader looks. GENERAL FORM: when
+    a project has a DATA shape for a deliberate absence, prose recording the same fact is not
+    a weaker record, it is an invisible one — add the row and keep the prose beside it.
