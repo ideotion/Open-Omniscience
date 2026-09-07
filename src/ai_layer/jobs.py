@@ -116,6 +116,12 @@ def extract_for_articles(
             added = ai_store.record_keywords(
                 session, w.article_id, terms, model=model, kind=kind,
                 language=w.language, prompt_version=prompt_version,
+                # The article's own text, so each stored term records WHERE it occurs
+                # in it. The title is included because a term the model took from the
+                # headline is grounded exactly as much as one from the body -- the same
+                # text the model was shown (`_combined_text`'s shape), so a term the
+                # model could have read is never reported as absent from the text.
+                evidence_text=f"{w.title}\n\n{w.content}" if w.title else w.content,
             )
             session.commit()  # persist progress; release the gate between articles
             stored += 1

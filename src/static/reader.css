@@ -125,3 +125,23 @@
    hidden behind a toggle. --warn is the reader page's amber. */
 .r-caveat { color: var(--warn); font-size: 12px; margin: 2px 0 0; }
 .r-warn { color: var(--warn); font-weight: 600; }
+
+/* --- the AI-derived lens, beside (never inside) the trusted keyword list ---------
+   The two classes stay visually two: the trusted list keeps its row grammar, and this
+   one stacks so each term can carry its own evidence line. No `opacity` anywhere --
+   element opacity composites over the parent and makes a contrast pair lie, which is
+   how .ag-cal failed AA on 16 of 17 themes; the muted token is used directly instead. */
+/* THE TWO CLASSES MUST READ AS TWO. Caught in a browser, not in review: without this
+   the lens heading butted straight against the trusted list's own caveat line and the
+   whole block read as one list — which is the exact confusion the two-class convention
+   exists to prevent. A rule and real space, not a colour cue. */
+#r-ailens { margin-top: 22px; padding-top: 14px; border-top: 2px solid var(--line); }
+.r-ailist li { flex-direction: column; align-items: flex-start; gap: 3px; }
+.r-aikind { color: var(--mut); font-size: 11.5px; text-transform: none; }
+.r-aiev { color: var(--mut); font-size: 12px; line-height: 1.45; }
+/* The absence is a FINDING, not an empty slot: a term the model produced that is not in
+   your stored copy was inferred, translated or invented. It reads in the caveat colour
+   because that is what it is. */
+.r-aigap { color: var(--warn); font-style: italic; }
+.r-aibtn { font: inherit; font-size: 11.5px; padding: 1px 8px; cursor: pointer; }
+.r-aibtn[data-on="1"] { border-color: var(--accent); color: var(--accent); }

@@ -6369,3 +6369,141 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A CAPABILITY PROBE THAT RUNS THE LIBRARY'S HAPPY PATH CAN STILL BE WRONG ABOUT IT — and
+    the FABRICATED-FAILURE half is the one no fixture catches (2026-09-07, D7's OTS probe):**
+    replacing `OTS_AVAILABLE`'s bare-import check with an offline round trip is the correct
+    fix, and the first version of that round trip reported OTS **unavailable on every install
+    that has it**. `opentimestamps` refuses to serialize an EMPTY `Timestamp` — by name, "An
+    empty timestamp can't be serialized" — and `anchor()` never meets that because it merges a
+    calendar's attestations in BEFORE serializing. So the probe exercised a shape production
+    never produces, and a fabricated FAIL is exactly as dishonest as the fabricated pass being
+    fixed, and much easier to believe: it looks like the library being broken rather than the
+    probe. THREE THINGS. (a) It was found by INSTALLING the optional extra and running the
+    probe, not by reading it — the recorded "run tool-gated tests with the tool" rule, which
+    on this repo means `pip install -e ".[pqc,timestamping]"` in the sandbox venv and takes a
+    minute. (b) The guard that stops it recurring must be keyed on the LIBRARY being
+    importable, never on the flag: a `skipif(not OTS_AVAILABLE)` keys a skip on the very thing
+    under test, so a probe that wrongly reports unavailable SKIPS the tests written to catch
+    that — mutation-proven, the mutation removing the attestation survived the first matrix and
+    reddens the second. (c) A probe of an optional extra needs a LANE that installs it: the
+    crypto lane installed `[pqc]` only, so the OTS positive half could not have run anywhere,
+    which is the recorded "an environment-gated guard goes to die in a lane that names files
+    explicitly" trap arriving before the guard was even written.
+  - **WITH A WORKING LIBRARY INSTALLED, AN IMPORT PROBE AND A CAPABILITY PROBE AGREE — so the
+    obvious assertion about the flag cannot fail (2026-09-07, same slice):** the natural guard
+    for "the flag is derived from the round trip" is
+    `assert PQC_AVAILABLE is _probe_mldsa(_mldsa)[0]`, and it SURVIVES the mutation that reverts
+    the flag to `_mldsa is not None`, because on a machine whose pqcrypto works both answers are
+    True. The discriminating case exists only if a library that IMPORTS and CANNOT WORK is
+    injected — which is the shipped 2026-08-20 defect itself — and injecting it means reloading a
+    module every custody test imports, so it belongs in a SUBPROCESS rather than in the shared
+    process. GENERAL FORM: when a fix replaces predicate A with predicate B, ask on which inputs
+    A and B DIFFER, and check the fixture reaches one; a fixture drawn from the healthy
+    environment usually reaches none, and the guard then measures the environment.
+  - **A "MUST BE WIRED" GUARD OVER A ZERO-ARGUMENT FUNCTION IS SATISFIED BY ITS OWN
+    DECLARATION, AND `"POST"` IS NEVER A UNIQUE NEEDLE (2026-09-07, the reader's AI lens):**
+    two source guards written in the same hour as the fix, both refuted by the mutation matrix
+    in one run. `assert "loadAiLens()" in src` cannot tell WIRED from DEFINED, because
+    `function loadAiLens() {` contains `loadAiLens()` — the recorded zero-argument trap,
+    recurring in a file where nothing had yet used the shared slicer. And
+    `assert '"POST"' in src` survived deleting the confirm request's method, because
+    `reader.js` has ANOTHER POST (summarize/translate) thirty lines away. The replacement is a
+    node suite that extracts the real functions and drives them: what is asserted is the markup
+    a reader ends up with and the request that actually leaves the page, and both mutations then
+    redden by name. Worth recording again because both traps are already in this file and were
+    still walked into — the durable fix is to reach for the behavioural shape FIRST on any
+    "is it called" claim, since that is the exact claim a substring cannot make.
+  - **AN EVIDENCE COLUMN'S HONESTY IS ITS EMPTINESS (2026-09-07, `AiKeyword.evidence`):** the
+    column is documented as "the snippet the model drew the term from" and had zero writers
+    since it was added. The tempting writer is the model — ask it for the snippet — and that
+    adds a SECOND unverifiable claim beside the first. A deterministic search of the article's
+    own stored text says something checkable instead ("this term appears HERE in your copy"),
+    and the case that carries the value is the one where it finds NOTHING: a term the model
+    produced that is not in the text was inferred, translated or invented, and only storing
+    nothing preserves that. So the mutation that matters is not "does it find the snippet" but
+    "does it invent one" — filling a miss with the article's opening line passes every
+    positive test. TWO MECHANICS worth keeping: search exact-first with `str.find` and fall
+    back to an IGNORECASE regex over the ORIGINAL string, because `"İ".lower()` is `i` plus a
+    combining dot and `"ß".casefold()` is `ss` — both change LENGTH, so lowering the text and
+    indexing back into it slices at the wrong place; and the needle is `re.escape`d, so there
+    is no pattern to backtrack (a literal search is linear, unlike the `OPEN.*?CLOSE` shape
+    that cost a 412 KB article 138 seconds).
+  - **A ROW-LEVEL VERIFICATION TIER SAYS NOTHING ABOUT THE ENDPOINTS INSIDE THE ROW — and
+    trusting it fabricates a source rather than breaking a fetch (2026-09-07, the law
+    catalog's gazette feeds):** four catalog rows carry a `gazette_feed`, all four are
+    `verification.status: fetched`, and one of those feeds had never been asked for. The
+    status is about the PORTAL — impo.com.uy's row records loading `/contenido/`, while the
+    row's OWN notes call the feed URL the site's generic WordPress `/feed/` of news posts,
+    "not confirmed to carry each day's Diario Oficial issue individually, so verify before
+    relying on it for gazette monitoring". Promoting on the row status would have filed
+    Uruguayan site news in the corpus **as that country's official gazette**: not a broken
+    fetch, which announces itself, but a plausible wrong corpus, which does not. GENERAL
+    FORM: a verification tier covers the thing the verifying session actually looked at, and
+    every OTHER URL in that record is a claim nobody checked — so a field that will be
+    fetched needs its own tier, and the vocabulary should be narrower than the row's where
+    the middle tiers cannot mean anything (a search snippet can say a site exists, never
+    that a URL serves a parseable feed). The same catalog has 107 `enumeration_url` values
+    and a `structured.api`/`structured.bulk` pair in the identical position. COROLLARY on
+    reading the evidence: the row-level `evidence` sentence is what settles it, and it did —
+    three of the four record fetching the feed, one records fetching something else. Read
+    the sentence, not the enum.
+  - **A DENOMINATOR IN AN UNDECLARED UNIT IS NOT A DENOMINATOR, AND THE JOIN KEY IS THE
+    SECOND TRAP (2026-09-07, law coverage):** 39 dated official counts sat in the law
+    catalog as the completeness principle's missing denominators, and the obvious move —
+    print `tracked / enumerated` — is a fabricated statistic: a tracked document is
+    act/code-level while the recorded units run over codes, acts, volumes, gazette issues,
+    treaties and cases, and a volume or a gazette issue holds many acts. Deciding
+    commensurability from the unit STRING is the exact move ruling 47's extensive/intensive
+    rail already forbids for aggregation, so the two numbers are published side by side with
+    the reason attached and the declaration is raised as a ruling. SECOND HALF, and it would
+    have been silent: the counts key on ISO-2 `country` while documents key on an "ISO-ish"
+    `jurisdiction`, and `uk` documents state `gb` — so reading the jurisdiction code as a
+    country BOTH misses that pair AND risks attaching some other country's enumeration to a
+    code that collides with its ISO-2. The honest join runs only through the country a
+    document itself states, and a document stating none gets its own third state rather than
+    being reported as "no enumeration exists". GENERAL FORM: before dividing two numbers
+    from different files, check the UNIT and the JOIN KEY separately — either one alone can
+    make the quotient a number nobody measured.
+  - **A MECHANISM BUILT TO SURFACE CAVEATS IS BLIND TO THE CAVEATS IT WAS NOT SHAPED FOR —
+    carry the raw field too (2026-09-07, same slice):** a derived check (is the figure's
+    `source_url` on the publisher's own domain?) correctly flags the Council of Europe's
+    treaty count, which cites Wikipedia, and Mauritania's, which cites a news site. It
+    STRUCTURALLY cannot flag the African Union's 80, whose `source_url` is perfectly
+    on-domain and whose caveat lives in the row's `notes`: "a manual tally ... treat this as
+    approximate, not authoritative". Extracting that with a prose heuristic is the move this
+    project refuses, so the notes ride along verbatim beside the figure. GENERAL FORM: when
+    you build an instrument to expose disclosures, ask what it is structurally unable to
+    see, and keep the unprocessed field beside it — the same shape as the recorded
+    two-harvest-instruments lesson, at the level of one payload.
+  - **AN HONEST GAP RECORDED AS A COMMENT IS OUTSIDE THE SYSTEM, NOT A LESSER VERSION OF ONE
+    (2026-09-07, the law catalog's two confirmed gaps):** the catalog has a deliberate shape
+    for "we looked and there is no official portal" — a domain-less `lead` row, which the
+    validator sees and the loader drops, so a gap can never become a `Source`. Yemen is one.
+    North Korea's identically-reasoned, better-evidenced gap was a **YAML comment block**, so
+    the validator could not count it, the vetting board could not list it, and nothing that
+    reads the catalog as data knew it existed. Nobody was wrong at the time; the comment is
+    the producing session's own words and is where a future reader looks. GENERAL FORM: when
+    a project has a DATA shape for a deliberate absence, prose recording the same fact is not
+    a weaker record, it is an invisible one — add the row and keep the prose beside it.
+
+- **THE `shipped.csv` UNION-MERGE DUPLICATE HAS A THIRD SHAPE, AND ITS RECORDED TELL IS SILENT ON
+  IT (2026-09-07, caught live on PR #1025 by the prescribed scan):** the ledger already records
+  this defect twice, both times as *main edited a row your branch also carries*, with the tell
+  being **"a numstat with DELETIONS on a merge you expect to be purely additive."** This time the
+  direction was reversed: **THIS branch edited two rows and main merely carried the originals
+  forward** (main's own commits touched the file, but not those rows). Union kept both sides'
+  lines, so the merge produced **two duplicates while adding four lines and deleting NONE** —
+  `4 added / 0 deleted`, exactly the "purely additive" numstat the recorded tell says is the
+  healthy case. `git merge` reported success, and a conflict-marker grep is blind by
+  construction (`.gitattributes` sets `merge=union`, so this file never produces a marker).
+  **GENERAL FORM: the numstat tell detects only the direction where the OTHER side deleted
+  something. When YOU are the editor, the duplicate arrives with a clean, additive numstat and no
+  tell at all.** So the duplicate-key scan over `(date, area, item)` against the COMMON ANCESTOR
+  is not a confirmation step to run when something looks off — it is the ONLY check that sees all
+  three shapes, and it must be run on every merge that touches this file regardless of how the
+  numstat reads. (Compared against the ancestor, never against zero: nine duplicates already
+  exist there, so a bare "are there duplicates" test accuses every merge of nine things it did
+  not do.) A corollary worth stating plainly: **editing an existing row is strictly more dangerous
+  than appending one**, because only the edit can be duplicated by union — which is why rule (5b)
+  is best obeyed in the same session that learns the PR number, when the row is still the newest
+  thing in the file and no other branch carries a copy.

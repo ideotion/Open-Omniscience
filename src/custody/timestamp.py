@@ -59,9 +59,64 @@ try:  # pragma: no cover - availability is environment-dependent
         Timestamp,
     )
 
-    OTS_AVAILABLE = True
-except Exception:  # noqa: BLE001
-    OTS_AVAILABLE = False
+    _OTS_IMPORTED = True
+except Exception as _exc:  # noqa: BLE001
+    _OTS_IMPORTED = False
+    _OTS_IMPORT_ERROR = f"{type(_exc).__name__}: {str(_exc)[:160]}"
+
+
+def _probe_ots() -> tuple[bool, str]:
+    """CAN IT BUILD AND READ A PROOF? -- not "does it import?". ``(available, reason)``.
+
+    The same class as ``PQC_AVAILABLE`` (D7): a flag set by a bare import answers
+    whether the module loaded, and every caller below reads it as "this build can
+    produce and parse an OpenTimestamps proof". Those are different questions, and the
+    pqcrypto near-miss is what a library that answers the first and fails the second
+    costs -- there, a renamed function and a changed return contract left a whole
+    honest-degrade machine unreachable while the flag said everything was fine.
+
+    OFFLINE BY CONSTRUCTION, and that is the design point. The round trip exercises the
+    exact API both production paths use -- :func:`anchor`'s
+    ``Timestamp`` -> ``DetachedTimestampFile(OpSHA256(), ...)`` -> serialize, and
+    :func:`ots_info`'s deserialize -> ``all_attestations()`` -- and stops there.
+    ``RemoteCalendar`` is imported and never called: submitting to a calendar is real
+    egress under explicit consent, so a capability probe must never perform it, and a
+    probe that needed the network could not tell a missing library from a closed port.
+
+    NEVER RAISES -- the negative direction the tests pin.
+    """
+    if not _OTS_IMPORTED:
+        return False, f"opentimestamps is not usable ([timestamping] extra): {_OTS_IMPORT_ERROR}"
+    digest = hashlib.sha256(b"open-omniscience ots capability probe").digest()
+    try:
+        ts = Timestamp(digest)
+        # An EMPTY timestamp cannot be serialized -- the library refuses it by name
+        # ("An empty timestamp can't be serialized"), which the first run of this probe
+        # discovered. That refusal is correct and it is also not the production shape:
+        # `anchor` merges a calendar's attestations into `ts` before serializing, so a
+        # real proof always carries at least one. A local PendingAttestation reproduces
+        # that shape with NO network -- and without it this probe would have reported
+        # OTS unavailable on every install that has it, a FABRICATED FAILURE, exactly as
+        # dishonest as the fabricated pass being fixed and much easier to believe.
+        ts.attestations.add(PendingAttestation("https://probe.invalid"))
+        ctx = BytesSerializationContext()
+        DetachedTimestampFile(OpSHA256(), ts).serialize(ctx)
+        blob = ctx.getbytes()
+        back = DetachedTimestampFile.deserialize(BytesDeserializationContext(blob))
+        if back.timestamp.msg != digest:
+            return False, "a serialized proof did not deserialize back to the same digest"
+        # ots_info walks exactly this, and isinstance-tests each attestation. The
+        # probe's own PendingAttestation comes back through it, so the walk is
+        # genuinely exercised rather than returning an empty list for free.
+        if not any(isinstance(a, PendingAttestation) for _m, a in back.timestamp.all_attestations()):
+            return False, "a serialized attestation did not survive the round trip"
+    except Exception as exc:  # noqa: BLE001 - nothing escapes a capability probe
+        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
+    return True, "detached-proof round trip verified (build, serialize, deserialize, read)"
+
+
+#: Set from the CAPABILITY, never from the import; the reason places the blame.
+OTS_AVAILABLE, OTS_REASON = _probe_ots()
 
 
 class TimestampError(RuntimeError):
