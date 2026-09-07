@@ -6179,3 +6179,136 @@
     it could have been caught in seconds. The grep is not "which tests are about this file" —
     it is the literal string, because the file that anchors on it will be named for something
     else entirely (here: a dumbbell chart).
+
+  - **A DECLINE'S OWN PREMISE CAN BE THE ARGUMENT FOR REVERSING IT, AND THE STEP IT NAMED
+    WAS 5% OF THE COST (2026-09-07, C16 / S-D — reversing the 2026-07-12 F13 decline):**
+    F13 recorded that the batched collector flush holds the single-writer gate across
+    per-article extraction, and DECLINED the fix as "GIL-bounded-marginal", reasoning that
+    "batching already collapses ~8 extractions onto ONE commit, so **writes are the small
+    part of the window**". That premise is exactly right and the conclusion is inverted: the
+    writes being small is precisely why moving everything else out is worth ~16x rather than
+    an amortised fsync overlap. MEASURED on the real ingest path (8 articles x ~22 KiB, five
+    runs per arm, deterministic per arm while wall time is pure noise on this box): the gate
+    window is **3626-3756 ms** before and **207-236 ms** after, with extraction accounting for
+    **93.0-93.4%** of it before and **0.0%** after. TWO THINGS WORTH MORE THAN THE RATIO.
+    (a) **The decline named the wrong step.** It says "keyword EXTRACTION", and the keyword
+    extractor is the SMALLEST of the five pure steps (~185 ms of that batch) — `extract_dates`
+    alone is ~1.93 s and `score_article` ~0.70 s. The material change since the decline is that
+    when/where/who at ingest (T12) landed AFTER it and multiplied the in-gate CPU by roughly an
+    order of magnitude, so a judgment that was correct when written became wrong without anyone
+    editing it. The staleness guard's "is the MEASUREMENT this item rests on still one the code
+    would produce today?" applies to a DECLINE as much as to a finding — and a decline is more
+    dangerous, because nothing about it looks pending. (b) **The wall clock did not move and
+    saying so is the finding**: five runs per arm both span ~6.6-9.5 s, so this relocates CPU
+    rather than removing it and is a CONTENTION fix, not a throughput fix — the earlier
+    three-run "before" trio happened to land at the low end and would have supported a
+    fabricated regression story just as easily as a fabricated win.
+    **THE INSTRUMENT WENT BLIND AT THE MOMENT OF SUCCESS, which is the part that would have
+    shipped a silent data loss.** The timing probe patched `datestore.extract_dates` /
+    `whostore.extract_locations` — the names as imported into the STORE modules — and the fix
+    routes the same work through `reindex_parallel._extract_www`, which imports them from their
+    DEFINING modules. So the three when/where/who steps vanished from the breakdown and the
+    measured extraction total fell 3500 -> 840 ms, which is indistinguishable from "the WWW pass
+    stopped running and every date, place and person is now silently dropped". A moved call site
+    defeats a probe pinned to the old one, and the failure presents as a better number. The only
+    thing that separates them is a WHOLE-STRUCTURE DIFFERENTIAL: dump every derived row on both
+    trees and compare (54 articles, 1032 mentions, 68 dates, 24 places, 24 entities, keyword
+    counters, sentiment, top-keyword and deduced language — byte-identical, same SHA-256 over
+    158,390 bytes).
+    **AND THE FIRST DIFFERENTIAL WAS A LOOKALIKE THAT ALSO CAME BACK IDENTICAL.** `pipeline.py`
+    stores `language = doc.language or source.language`, so a fixture with one `language="en"`
+    source made every article "en" whatever `<html lang>` said — and `extract_dates`' month and
+    weekday tables are language-GATED, so the gated paths were never reached and a byte-identical
+    result was worth nothing about the one argument the change threads. Fixed by giving each
+    language its own SOURCE, with cs/hr over the same body as the discriminating pair: measured,
+    "12 listopadu 2024" is **2024-11-12 under `cs` and 2024-10-12 under `hr`** — a different
+    MONTH, not a recall difference. (A second lookalike hid behind the first: the bodies were
+    identical across sources, and the content hash is global, so only the first source's articles
+    were ever stored.) An unknown language REFUSES rather than guessing, so a wrong language
+    costs recall and never fabricates — which is why the collector passes `article.language`
+    (byte-identical to its own inline path) rather than the deduced language that would raise
+    recall, and the recall gain is recorded as a separate item instead of smuggled into a
+    hot-path move.
+    **THE PROCESS-POOL HALF WAS REFUSED ON MEASUREMENT, NOT ON RISK:** the brief asked for
+    `precompute_batch`'s cross-core precompute next, and `collect_batch_size()` defaults to 8
+    against `_MIN_PARALLEL_BATCH = 16`, so it would take its serial path on every shipped
+    configuration — a dormant mechanism that still looks wired. Above that default the collector
+    runs up to 50 source workers concurrently, each spawning its own pool of up to 8 processes
+    with nothing arbitrating between them; `reindex_parallel`'s pool is safe precisely because it
+    has ONE caller at a time, holding the exclusive hold. The recoverable win is the gate window
+    and running serially OUTSIDE it recovers all of it.
+    **THE BASELINE COULD NOT BE A WORKTREE**, per the recorded trap: `pip install -e .` installs
+    a META-PATH finder (`__editable___*_finder`), which runs before `sys.path`, so a worktree
+    baseline silently imports the head tree. Reverting the two files in place — with copies taken
+    first and the restore verified by checksum — is what made the base run a base run.
+  - **A GUARD THAT COMPARES A WINDOW'S FIRST AND LAST SAMPLE CANNOT SEE A RESET IN
+    THE MIDDLE — and the number it then publishes is positive, plausible and wrong
+    (2026-09-07, PERF-09's download-rate sampler):** the owner-side rate refuses a
+    negative delta, which reads as complete: a cumulative byte count that goes
+    backwards means the transfer restarted, and a negative rate is not a slow
+    download. It is complete only for a restart at the window's EDGE. With
+    `reset(0)` at the head and a restart in the middle — 0 → 10,000 → 500 — first
+    is still less than last, so the guard never fires and the rate comes out as
+    500 B over 4 s: **a measured 125 B/s over a window in which 10,000 bytes
+    arrived and were then discarded.** The check has to run on EVERY observation,
+    not on the pair that happens to bound the window; a backwards count then opens
+    a FRESH window, which is also better than refusing forever, because the bytes
+    arriving after a restart are real progress at a real rate. GENERAL FORM: when a
+    guard is written over an aggregate of a sequence (first vs last, min vs max,
+    sum vs count), ask what it cannot see INSIDE the sequence — an invariant about
+    a series is not testable from its endpoints. TWO RIDERS. **The mutation matrix
+    then produced a survivor that was a finding about the MUTANT:** it added a key
+    to `DownloadEntry.to_dict()` to test "nothing about the rate is persisted",
+    and `_save()` serialises `asdict(entry)` — the dataclass FIELDS — so the
+    mutation could never reach the state file the guard reads. Re-targeted at a
+    real dataclass field it reddens by name; the recorded rule holds, and the
+    first step on a survivor is to check the mutant reproduces the defect at all.
+    **And my own "nothing is persisted" test was a non-unique needle:** it scanned
+    the serialised JSON blob for the substring `"rate"`, and pytest names the tmp
+    directory after the test, so the PATH contained it and the assertion failed
+    against correct code. Walk the persisted KEYS.
+  - **PRUNE A RATE WINDOW AT READ TIME, NOT ONLY AT WRITE — an instrument that
+    freezes while still reporting is worse than one that stops (2026-09-07, same
+    slice):** samples arrive only when bytes do, so a sampler that prunes its
+    window on `observe` alone keeps a full window forever once a transfer stalls,
+    and goes on publishing the last healthy figure for as long as nobody sends it
+    another byte. Pruning against a FRESH clock reading at snapshot time makes the
+    stall fall out by construction: everything ages out, the window empties, and
+    the honest answer — "no bytes received in the last N s", with the idle time —
+    is a measurement of a DIFFERENT quantity and the one an operator watching a
+    stuck download actually wants. The distinction needs its own branch: an EMPTY
+    window means aged-out, ONE sample means a window that just opened (a start, a
+    resume, a restart), and folding them together would print an `idle_s` of ~0
+    beside "no bytes received" for a transfer that is perfectly healthy and merely
+    young.
+  - **ADDING A CALL INSIDE A FUNCTION MAKES EVERY NODE SUITE THAT EXTRACTS THAT
+    FUNCTION PART OF YOUR CHANGE — and the guard for it already existed; I pushed
+    ahead of it (2026-09-07, PERF-09's rate line):** the house pattern for testing
+    the UI engine is to EXTRACT a function from the real file by name and evaluate
+    it in isolation, precisely so a re-typed copy cannot pass while the shipped
+    code is broken. The cost of that isolation is that the extracted copy sees ONLY
+    what its own suite extracted: adding `_rateNote(j, t)` inside `_jobRow` left
+    `import_tail_phase_node_test.js` — a suite about IMPORT PHASES, which no search
+    for "rate" or "download" would ever reach — throwing `ReferenceError: _rateNote
+    is not defined`. I wrote my OWN node suite carefully (extracting `_fmtBytes`,
+    `_fmtDur` and `_rateNote` together) and never asked who else extracts the
+    function I had just added a call to. GENERAL FORM: before adding a call inside
+    any function, `grep -l "<function>" tests/*_node_test.js` — the enumeration is
+    by what the OTHER suites READ, never by what your change is about, because the
+    suite that breaks is named for its own subject and not for yours.
+    **THE PART THAT MATTERS MORE THAN THE FIX: the guard was not missing.** Every
+    node suite has a pytest driver (the `test_every_node_suite_has_a_driver`
+    ratchet exists because an unrun suite already cost a shipped defect), so the
+    full suite catches this in the ordinary way — I pushed before my full run
+    finished, at a stop-hook prompt, and CI found it 20 minutes later. When you
+    cannot wait for the full suite, the substitute is not hope: `for f in
+    tests/*_node_test.js; do node "$f" || echo "RED: $f"; done` runs all 28 in
+    SECONDS and would have caught it. Add it to the named tree-guard set for any
+    change that touches an `app-*.js` function other tests extract.
+    RIDER on the repair: the tempting fix is a `typeof _rateNote === "function"`
+    guard at the call site, and it is wrong for the reason the ledger already
+    records — a `hasattr`-style guard around a call you wrote is self-fulfilling,
+    and here it would make the PRODUCTION renderer paper over a broken harness.
+    Extract the dependency in the suite that needs it, and never stub it, or the
+    copy under test drifts from the shipped code, which is the one thing this
+    whole harness exists to prevent.

@@ -9403,3 +9403,60 @@
   position — this is a content edit, however small, on a recorded entry; (c) leave them and
   keep the pointer. Recommendation: **(a)** — it is the largest fully verbatim move available
   and it invents nothing.
+
+### 2026-09-07 — C16 shipped; three findings recorded, none of them fixed here
+
+**RECORDED, NOT FIXED (1) — the re-index's pooled and inline when/where/who passes disagree
+about the date language, so the same article re-indexed twice can get DIFFERENT dates.**
+`reindex_articles` builds its task as `(art.id, body, title, lang or "en", lang, www_ctx)`,
+and `_worker_compute` hands that fourth element to `_extract_www`, which hands it to
+`extract_dates`. The INLINE path (`datestore.store_for_article`) instead passes
+`article.language` — the raw authoritative column. Those differ whenever `language` is empty
+and `detected_language` is not, which is the ordinary state of an article whose `<html lang>`
+was missing. The two paths are selected by BATCH SIZE: `precompute_batch` declines below
+`_MIN_PARALLEL_BATCH = 16` (and for a non-reconstructible extractor), so a window of 20
+articles gets the deduced language and a window of 10 gets `None`.
+
+It is a real difference, measured rather than assumed: `extract_dates`' month and weekday
+tables are language-GATED, so `"12 listopadu 2024"` is **2024-11-12** under `cs` and
+**2024-10-12** under `hr`, and a gated weekday (`уторак`, `senin`) resolves to nothing at all
+without its own language. The direction is benign — an unknown language REFUSES rather than
+guessing, so the pooled path has strictly MORE recall and neither path fabricates — but
+"which dates this article has" depending on how many siblings happened to be in its window is
+a determinism defect in a stored, user-visible field.
+
+NOT fixed here because it changes what the re-index STORES, and C16's whole safety argument is
+that it moves where work happens without changing what is computed. Two options for its own
+slice: pass `art.language` in the task (inline-identical, loses the pooled recall) or teach
+`store_for_article` to use the resolved language (gains recall on both paths, changes stored
+dates for existing corpora on the next re-index). The second looks better and is a behaviour
+ruling, not a refactor.
+
+**RECORDED, NOT FIXED (2) — the collector could gain the same date recall and deliberately
+does not.** `ArticleBatch._precompute` passes `a.language` for dates, byte-identical to the
+inline path it replaces. Passing the RESOLVED language (`article.language or
+detected_language`) would resolve gated months and weekdays for every article whose `<html
+lang>` was absent. Same ruling as (1), same reason for deferring: it belongs in the slice that
+decides (1), not smuggled into a hot-path move.
+
+**DELIBERATE OMISSION (3) — the cross-core process pool is NOT wired into the collector, and
+the reason is measured rather than cautious.** The C-brief's C16 asks for `precompute_batch`'s
+pool after the correctness step. Two facts refuse it. (a) `collect_batch_size()` defaults to
+**8** against `_MIN_PARALLEL_BATCH = 16`, so on every shipped configuration the pool would take
+its serial path — a dormant mechanism that still reads as wired, which the ledger already
+records as worse than no mechanism. (b) Above that default the collector runs up to
+`collect_parallelism` (default 50) source workers concurrently, each of which would spawn its
+own `ProcessPoolExecutor` of up to 8 workers with nothing arbitrating between them;
+`reindex_parallel`'s pool is safe precisely because it has ONE caller at a time, holding the
+exclusive hold. The recoverable quantity here is the GATE WINDOW, and running serially outside
+the gate recovers all of it (measured 93.0–93.4% → 0.0%). Re-open only with a per-process pool
+budget the collector's workers share.
+
+**DELIBERATE OMISSION (4) — PERF-09's bandwidth CAP stays unbuilt.** The measurement half
+shipped (owner-side bytes-over-time in both download managers). A cap needs the download loop
+to THROTTLE — pacing chunk reads against a target rate — which is a change to fetch behaviour
+rather than a measurement, and it needs a decision the code cannot make for itself: whether the
+budget is per-job or per-process, and how it composes with the existing collection-speed
+governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
+target for the collector. Building a second, unrelated rate authority next to it is how two
+surfaces come to disagree about one quantity. Recorded for a ruling.
