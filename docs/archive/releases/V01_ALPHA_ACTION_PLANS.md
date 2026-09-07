@@ -2,7 +2,7 @@
 
 > ⚠️ **HISTORICAL / proposal-stage (2026-06-12).** These two commissioned plans predate the
 > 0.2 cycle; several steps shipped independently and the rest are folded into
-> **[`docs/ROADMAP.md`](../ROADMAP.md)** (§4 feature backlog). Kept as the retrievable home of
+> **[`docs/ROADMAP.md`](../../ROADMAP.md)** (§4 feature backlog). Kept as the retrievable home of
 > the original commission.
 
 > **Status:** maintainer-commissioned 2026-06-12; awaiting maintainer review.

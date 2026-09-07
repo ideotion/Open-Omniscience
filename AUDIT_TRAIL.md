@@ -5,6 +5,151 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-08-20 · UI click-through — the browser-verification matrix expansion
+
+- **Base commit:** `main` tip at session start; brief of record:
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md)
+  (this run executed the **stretch target** that brief's §8 worklist named, not a new commission).
+- **Method:** the merged `scripts/ui_clickthrough_run.py` harness over
+  `src/monitoring/ui_walk.py` + `ui_walk_playwright.py`, driven against live app instances in
+  the three test states; the axes 08-13 left open were the point — the standalone Reader, a
+  real-import state-D fixture, **all 17 themes**, five lens/sub-panel drills, and an a11y axis
+  (axe-core 4.13.0, vendored and registered). 46 regression tests cover the runner.
+- **23 findings** — 1 P1 · 7 P2 · 15 positive. Two the 08-13 worklist had named with a defined
+  shape were fixed in the same session: the 375 px top-bar overflow (P1 from 08-13) and the
+  post-import screen's untested content path.
+- **What the widened axes bought, and would not have been found otherwise:** the AI pill's
+  `ai-off` label sat at raw `var(--err)` **below AA text contrast on 13 of 17 themes** (worst
+  2.41:1 on solar, against the pill's own 8 %-err tint) — invisible to every earlier 5-theme
+  run; repaired with the recorded mix-toward-`--fg` pattern (55 %, worst 4.82:1), the state
+  never having been colour-only. A second find on the app side: `#agenda-subonly` defaults
+  checked and its bypass named only `imported`, so the corpus-**deduced** category — whose
+  synthetic calendar can never be subscribed — was invisible in every agenda view at default
+  settings, while the category filter still offered "deduced" as an empty lens.
+- **Five instrument lookalikes recorded as method, not as defects:** a `.pill.warn`
+  `querySelector` that measured the AI pill rather than the state label; a surface anchored on
+  a by-construction-empty element; a breakpoint walk that *navigated* at 375 px (a different
+  claim, and one invariant #2's own floor legitimately fails); a specimen selector derived from
+  tag/class that returns the document's first match; and a sidecar API probe sharing 127.0.0.1
+  with the harness's own browser, so the app's rate limiter can 429 it.
+- **Verification stamp unchanged:** "Chromium-verified (remote sandbox) · awaiting human UX
+  pass". Still open there: the 12-locale sweep (4 covered), the adversarial screenshot-reading
+  rule, and the Gecko/AppVM bar.
+- **Full log:** [`docs/audit/UI_CLICKTHROUGH_2026-08-20.md`](docs/audit/UI_CLICKTHROUGH_2026-08-20.md)
+  + [`findings.csv`](docs/audit/ui-clickthrough-2026-08-20/findings.csv) (23) ·
+  [`coverage.csv`](docs/audit/ui-clickthrough-2026-08-20/coverage.csv) ·
+  [`evidence/`](docs/audit/ui-clickthrough-2026-08-20/evidence/) (15 committed of 69 produced).
+
+---
+
+## 2026-08-13 · UI click-through — 0.3 close gate row 8
+
+- **Base commit:** `main` tip at session start; brief of record:
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md).
+- **Method:** row 8 asked for **either** a standing `ui_walk` runner **or** a defined human
+  click-through. This session built the first: a real Playwright-backed `UiWalkDriver`
+  (`src/monitoring/ui_walk_playwright.py`) against the `Surface`/Protocol scaffold that had
+  been in the tree since the row was written, driven against three live instances covering the
+  brief's three test states. The harness is merged source with 31 regression tests, not a
+  one-off script.
+- **10 findings** — 1 P0 · 2 P1 · 1 P2 · 6 positive.
+- **Row 8 closed** against its own literal wording. The fuller matrix (17 themes, the a11y
+  axis, the Reader, the lens drills, the automatable honesty-rule checks) was recorded
+  honestly as a **stretch target, not a condition** — and executed on 2026-08-20 (entry above).
+- **Full log:** [`docs/audit/UI_CLICKTHROUGH_2026-08-13.md`](docs/audit/UI_CLICKTHROUGH_2026-08-13.md)
+  + [`findings.csv`](docs/audit/ui-clickthrough-2026-08-13/findings.csv) (10) ·
+  [`coverage.csv`](docs/audit/ui-clickthrough-2026-08-13/coverage.csv) (87 rows).
+
+---
+
+## 2026-07-28 · GUI audit — translation coverage, graphical quality, visual data representation
+
+- **Base commit:** `main` tip at session start; brief of record:
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-28_GUI_AUDIT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-28_GUI_AUDIT.md).
+- **Scope + method:** a **static, source-level** audit, deliberately composing with (never
+  restating) the 2026-07-22 behavioural GUI test — whose own §9 had asked for exactly this
+  sweep. No browser was run: contrast is **computed** from the theme variables rather than
+  sampled from pixels, and static matching misses interpolated strings, so **every count below
+  is a floor**. The three stdlib probes that produced them are committed
+  (`docs/audit/gui-audit-2026-07-28/probes/`) so a fix session re-measures rather than trusting
+  the report.
+- **Mental-model correction the audit had to make first:** a string not wrapped in `t()` is not
+  thereby untranslated — `i18n.js`'s MutationObserver translates any text node or
+  `placeholder`/`title`/`aria-label` whose normalized value matches a locale key. **The gap is
+  a missing KEY, not a missing wrapper.** Filing the 539 keyed-but-bare `toast()` sites as
+  "never translated" would have been a fabricated finding; they are ~120 ms English flashes.
+- **Translation:** 471 DOM-reachable literals already keyed · **319 (272 distinct) with no key
+  at all = permanently English in all 11 non-English locales** · 6 native `confirm()`/`alert()`
+  arguments the walker can never reach. Two structural findings: the i18n gate is **blind to
+  the UI engine** (`scripts/i18n_report.py` opens `index.html` only, so `app.js` and the other
+  five surfaces are invisible to `--min 100`), and the largest single family — 33 distinct
+  `"<Verb> failed:"` strings — collapses to **one** `OOI18N.tf()` template.
+- **A non-negotiable breach, and the reason it leads the fix list:** the reader's two-class
+  provenance HEADINGS (`From the source` / `Deduced by this app — less reliable` /
+  `AI-derived — unreliable`, +7 more) are unkeyed — the labels that *carry the reliability
+  claim* render English-only in 11 locales, so informed-consent layering degrades exactly
+  where it is load-bearing.
+- **Graphical:** `--warn` fails WCAG AA on **6 of 17 themes** — every failure a LIGHT theme,
+  the identical signature invariant #23's `--caveat` fix already had (8/17). The inline-handler
+  debt measured **~1.9× the ledger's recorded figure** (the recorded 295 counted `index.html`
+  only). `prefers-contrast` is unhandled despite a `contrast` theme existing.
+- **Visual data:** **8 `ooviz.js` primitives are built and tested with zero call sites** —
+  including `pathWithGaps`, which draws a break instead of bridging a gap (the honest
+  rendering). **This one was later REFUTED (2026-08-02) and the refutation is the more useful
+  finding:** the namespace is `ooViz`, not `ooviz`, so a case-sensitive grep for a name nobody
+  had read out of the export site reported absence where six primitives were already wired
+  (22 `ooViz.` call sites in `src/static/*.js` as of 2026-09-07). The audit's own honesty note —
+  that every count in it is a floor — applies in this direction too. 35 of 941 top-level `app.js` functions emit a table and never a chart. And
+  `ooDonut` contradicts the project's own committed chart-decision framework (pie/donut only
+  at ≤5 slices) with no slice-count guard, fed an unbounded language set.
+- **Full log:** the brief itself (findings + the ordered 8-slice fix plan) ·
+  [`i18n_missing_keys.csv`](docs/audit/gui-audit-2026-07-28/i18n_missing_keys.csv) (the
+  worklist) · [`probes/`](docs/audit/gui-audit-2026-07-28/probes/).
+
+---
+
+## 2026-07-25 · Transversal audit 09 — 0.3 delta edition (security + functional)
+
+- **Base commit:** `origin/main` @ `2aa8dc3`, fetched fresh at session start.
+- **Method:** a 23-agent orchestrated workflow — 10 generation agents across three phases, then
+  **13 independent adversarial skeptic re-verifications**, each with no access to the original
+  claimant's reasoning and instructed to default to refutation. 12 of 13 candidate defects
+  survived. Scoped as the "edition 09" that 07 and 08 anticipated: disposition of 08's Action
+  Plan C, a fresh pass on the 2026-07-22 GUI report, an independent audit of every surface
+  shipped 07-21 → 07-25 (the LLM/vLLM stack, the throughput brief, the source-management
+  program), and a genuine bug-bounty pass — the part of the commission 07/08 did not cover,
+  since neither was written as a security audit.
+- **Two P0s, both real, neither leaking in shipped code:** (1) the **airplane-mode socket
+  backstop is blind to the real destination host through a SOCKS/Tor proxy** — live-reproduced
+  against a stub SOCKS5 server and hand-verified against the installed PySocks source; the
+  destination is negotiated at the application layer, invisible to the four functions the guard
+  patches, so the guard's own "whatever the code path" claim was false for exactly the
+  transport at-risk journalists are told to use. (2) the 3-day-old **B6 eval-gated
+  who/where/when extraction was completely inert** — `gate_languages_from_report()` read
+  `report["by_language"]` where the persisted artifact nests it one level deeper, so every
+  language was permanently gated "never evaluated"; it failed SAFE, and every unit test mocked
+  the bug-matching shape, which is why it shipped green.
+- **Four P1s:** a live-reproduced symlink-follow path traversal in folder-backup **restore**
+  (the sibling *verify* function has the guard — a recurrence of a defect class this subsystem
+  already fixed once); Pillow 12.2.0 pinned in `requirements.lock` with CVEs reachable through
+  `POST /api/verify/image-metadata` (downgraded on reachability analysis to 2 of 13, both
+  DoS); a missing `session.rollback()` letting one dirty-session exception cascade into
+  permanently marking unrelated URLs as failed; and `USER_MANUAL.md` with **zero** mentions of
+  the qualification lifecycle, which the 0.3 gate's own row 1 requires.
+- **Positives:** the airplane guarantee held under direct adversarial review for every
+  non-proxied path (stdlib sockets, asyncio, TLS, mailbox protocols); all 5 P0s from the
+  2026-07-22 GUI report were independently confirmed FIXED across 4 distinct commits; all 5
+  spot-checked non-negotiables held; bandit/secrets/SQL-injection otherwise clean.
+- **Disposition: all ten Action-Plan-D items shipped the same day** (fix-forward session; see
+  the `docs/ledger/shipped.csv` row "security — transversal audit 09 fix-forward"), including
+  the two P0s, the traversal guard, the Pillow bump + lockfile regeneration, the rollback fix,
+  the USER_MANUAL §3.3/§3.9 additions, and a ratchet extension so sibling diagnostic routers
+  can no longer be invisible to the all-diagnostics completeness test.
+- **Full log:** [`docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md`](docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md)
+  (its own §12 carries the ranked Action Plan D).
+
+---
+
 ## 2026-07-22 · Systematic GUI test & critical review (100-agent Chromium pass)
 
 - **Base commit:** `main` tip at session start; brief:

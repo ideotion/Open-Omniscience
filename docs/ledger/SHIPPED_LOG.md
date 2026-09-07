@@ -734,7 +734,7 @@
   test_repo_invariants::test_ai_output_in_ui_language_and_prompt_relocalization. node --check + i18n 100%. REMAINING:
   human click-through (fork-3).
   **TIER 2.6 — UNIFIED IMPORT/EXPORT = DESIGN DOC (remarks 2/5/6; a large frontend consolidation, browser-unverifiable
-  + big, deferred per §8 to a click-through session):** `docs/design/UNIFIED_IMPORT_EXPORT.md` specifies ONE Import +
+  + big, deferred per §8 to a click-through session):** `docs/archive/design/UNIFIED_IMPORT_EXPORT.md` specifies ONE Import +
   ONE Export/Backup entry, each → an options pop-up → file/folder pick, REUSING the shipped backends (no new backend):
   6a Import routes to restore/volume/folder + the TWO newsletter paths (upload + folder job) + mailbox + models; 6b
   Export mandates the OOENC2 streaming-volume path for the encrypted corpus (NOT the legacy 2 GiB single-file) + the
@@ -5792,3 +5792,64 @@ reconciles as 74 tag lines plus 6 opened headers. A separate check asserts every
 PROPOSED for that exact domain: its only two hits are the two rendered into the catalog's own
 vocabulary (fortune.com `finance` → `financial`, labiotech.eu `health` → `healthcare`). Mutation matrix: a reintroduced synonym pair
 and a neutered stem predicate each redden by name, restore verified green.
+
+## 2026-09-07 — docs/hygiene: the reality check, and the shallow clone that answered every question with its own boundary
+
+PROMPT_02 of the 2026-09-06 repo-analysis plan (PR #1013), documentation only — not one line of `src/`.
+Its premise is the finding that produced it: **the single largest category of "open work" in
+this repository is documents describing a past state of the tree**, which is not a tidiness
+problem but a cost — a stale claim buys a future session a whole rebuild and buys the
+maintainer a decision they already made. Six slices: mark the two 2026-07 action plans done
+where they are done *with the anchor that proves it*; backfill four missing audits into
+`AUDIT_TRAIL.md`; reality-check `docs/FUTURE_DEVELOPMENTS.md` (25 status banners, four embedded
+ledgers archived, the three duplicate pairs **cross-linked and deliberately NOT merged** —
+protocol rule 5 forbids compressing away a ruling and §22 carries the superseding auto-track
+one); correct eight stale claims the tree refutes; archive two spent design docs after lifting
+their only-here carry-overs into `docs/ROADMAP.md`; and record six things known only to the PR
+history.
+
+**THE REUSABLE LESSON — A SESSION CLONE IS SHALLOW UNTIL PROVEN OTHERWISE, AND A BOUNDED
+HISTORY ANSWERS EVERY ARCHAEOLOGY QUESTION WITH ITS OWN BOUNDARY.** Twelve `shipped.csv` rows
+had carried `PR pending` for up to seven weeks, and the honest way to resolve one is to
+binary-search `main`'s FIRST-PARENT history for the earliest commit whose `shipped.csv`
+contains the row, then read the PR number out of that merge's subject. Run against this
+session's clone, that method returned **`#944` for ten different rows spanning seven weeks** —
+because the clone was 56 commits deep and its oldest commit already contained all ten, so the
+search was reporting the truncation point, once per row, with no error and nothing to
+distinguish it from a real answer. Ten identical, wrong, authoritative-looking numbers, one
+commit away from the project's permanent shipped record. `git fetch --unshallow` (56 → 1,789
+commits) then produced twelve DISTINCT numbers. THREE RULES. (a) `git rev-parse
+--is-shallow-repository` costs nothing and is the precondition for any claim about when
+something first appeared — check it BEFORE the search, not after a suspicious result. (b) **The
+cheap self-test is to ask whether the OLDEST reachable commit already satisfies the
+predicate**: if it does, the answer is a boundary artifact whatever the search returns, and
+that check generalises to every bisect-shaped question over a history you did not clone
+yourself. (c) CORROBORATE from a second, independent field — each resolved merge's BRANCH NAME
+had to match its row's subject (`#706 claude/lemma-default-on-brief` ↔ the lemmatization row;
+`#726 claude/pagesize-evidence-db10` ↔ the DB-10 §1b row), which is what turned twelve
+plausible numbers into twelve checkable ones. AND THE OBVIOUS SHORTCUT IS NOT ONE: a `git
+log -S` pickaxe over the same needle reports the MERGE commit rather than the authoring one on
+this history, so it agreed with the wrong answer — an agreement between two methods that share
+a defect is not corroboration.
+
+**A SECOND FABRICATION, CAUGHT THE SAME WAY.** Writing the 2026-07-22 plan's banner I typed
+that the egress gateway "answers `CONNECT … 403`" — copied from the recorded shape of earlier
+sessions rather than measured. Probed: it returns curl code **`000`** (the connection is never
+established at all) against a `200` control on `https://pypi.org/`. Both readings mean
+"blocked" and only one of them is what this environment does, so the banner now carries the
+measured value and the control beside it. A claim inherited from a sibling session's record is
+not a measurement, however true it was there.
+
+**THREE REFUTATIONS OF THE ANALYSIS'S OWN ITEMS**, recorded so nobody re-chases them: PRH-18
+(the install docs already say "promptless" — the claimed gap does not exist); PRH-34 (the
+training track is already fully described in `FUTURE_DEVELOPMENTS`, so there was nothing to
+add); and the 2026-07-17 T9 spec's `poll_transparency.py` finding, which is a NAME COLLISION
+with `poll_cache.py` — that module is about polling cadence, not poll transparency.
+`docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md` was **kept live** against T8.2's own
+archival list, because its S4 (in-app review of analyzer proposals) is genuinely unbuilt.
+
+**MEASURED, NOT ASSERTED:** inline `on*=` handlers re-counted at **331 in `index.html` +
+280 across the seventeen `app-*.js` modules = 611**, against 131 `addEventListener` — the
+ledger's recorded "295 as of 2026-06-15" counted `index.html` alone and predates the module
+split, so it under-stated the debt by roughly half. Recorded as a correction, not fixed here:
+the retirement is browser-verify-gated and belongs to its own prompt.

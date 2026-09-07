@@ -148,7 +148,7 @@ The defensive security review of the ingest→store→process→present data pat
 **Target:** `/home/user/Open-Omniscience` @ `5780172` · **Date:** 2026-06-08 ·
 **Mode:** defensive, read-only assessment (no code changed) · **Network:** OFF (no live
 external target contacted; benign markers only) · **Proof trail:** [`HISTORY.md`](HISTORY.md) ·
-**Machine-readable:** [`security_findings.json`](security_findings.json) / [`security_findings.csv`](security_findings.csv)
+**Machine-readable:** [`security_findings.json`](archive/security_findings.json) / [`security_findings.csv`](archive/security_findings.csv)
 
 ---
 

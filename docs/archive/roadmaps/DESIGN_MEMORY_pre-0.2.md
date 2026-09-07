@@ -393,7 +393,7 @@ GUI tab + a `law` scheduler mode, with a **worldwide catalog of real official so
 (`configs/legal_sources.yml`) seeded **by default** and a curated set of trackable
 consolidated-law documents (baseline → normalised-text diff → honest flag, reusing the
 wiki engine). Cross-jurisdiction near-dup surfaces **model legislation**. See
-[`USER_MANUAL.md`](USER_MANUAL.md). The remaining refinements are *structured* per-edit diffs
+[`USER_MANUAL.md`](../../USER_MANUAL.md). The remaining refinements are *structured* per-edit diffs
 (Akoma Ntoso / ELI) and patent/docket parsing — not the tracking machinery, which now
 exists; and the not-legal-advice / licence discipline, which is enforced and documented.
 
@@ -533,7 +533,7 @@ framework) are the whole of `0.06`'s genuinely new code; everything else is
 composition. **All four are now shipped and tested.** On top of them: the
 source-integrity layer (`src/integrity/`, §6 C+D — profile + user-guided actor-collapse)
 and crowdsourced **signed annotation bundles** (`src/annotations/`, §6 D). See
-[`USER_MANUAL.md`](USER_MANUAL.md), [`USER_MANUAL.md`](USER_MANUAL.md), [`USER_MANUAL.md`](USER_MANUAL.md).
+[`USER_MANUAL.md`](../../USER_MANUAL.md), [`USER_MANUAL.md`](../../USER_MANUAL.md), [`USER_MANUAL.md`](../../USER_MANUAL.md).
 
 ---
 
@@ -593,11 +593,11 @@ the only genuinely new code the rest composes from.
 
 **Target environment:** Qubes OS · Debian AppVM · Python 3.13 · single primary user · loopback-only.
 **Working branch:** `0.05` (direct, per owner's instruction).
-**Companion doc:** [`DESIGN.md`](DESIGN.md) (what we're building & why).
+**Companion doc:** [`DESIGN.md`](../../DESIGN.md) (what we're building & why).
 
 > ## Implementation status (v0.0.6)
 > **Phases 0–5 implemented and tested** on the `claude/kind-lovelace-ulpTc` branch
-> (full suite green; see [`QUICKSTART.md`](QUICKSTART.md)):
+> (full suite green; see [`QUICKSTART.md`](../../QUICKSTART.md)):
 > - **Phase 0/1 — Trustworthy core ✅:** single 3.13 manifest; clean DB session
 >   layer (no import-time side effects); one ethical fetch path (robots fail-closed)
 >   → trafilatura extraction → dedup/provenance; FTS5 Boolean search with correct
@@ -882,7 +882,7 @@ or commodity (Pillar 6) first.**
 
 Phases 0–5 delivered a *working prototype*. Phase 6 makes the **repository** (not
 just the running app) genuinely functional and trustworthy. See
-[`HISTORY.md`](HISTORY.md) for the findings that drive this.
+[`HISTORY.md`](../../HISTORY.md) for the findings that drive this.
 
 Operating rule unchanged: every item ends green and tested; delete-before-build;
 no silent failure; honest provenance.
@@ -1042,7 +1042,7 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > service/cache + draft), `/api/briefing*`, the scheduler precompute hook, and the
 > redesigned **Home** card feed are implemented; the full suite is green incl. the
 > `no-score-field` honesty guard (`tests/test_briefing*.py`,
-> `tests/test_signals_concentration.py`). See [`USER_MANUAL.md`](USER_MANUAL.md).
+> `tests/test_signals_concentration.py`). See [`USER_MANUAL.md`](../../USER_MANUAL.md).
 
 - [x] `src/briefing/`: the `Card` dataclass + a producer registry; `/api/briefing`
       assembling cards from producers; scheduler precompute + cache.
@@ -1087,7 +1087,7 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > **Status: shipped & tested.** `src/integrity/` (actors, user-guided collapse, the
 > no-composite profile), `/api/integrity/*`, the **Source integrity** GUI tab, and the
 > echo-chamber / lonely-signal / capacity-implausible cards are implemented. The 40-puppet
-> acceptance is a passing test (`tests/test_integrity.py`). See [`USER_MANUAL.md`](USER_MANUAL.md).
+> acceptance is a passing test (`tests/test_integrity.py`). See [`USER_MANUAL.md`](../../USER_MANUAL.md).
 >
 > **User-guided, user-aware, GUI-mediated (§6 non-negotiable).** Anti-amplification is
 > never a silent transform the user merely *undoes* — it is **propose → user disposes**,
@@ -1122,7 +1122,7 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > **Status: shipped & tested.** `src/annotations/` (signed bundle build/verify reusing
 > the hybrid custody signer, local store, web-of-trust, transparent aggregation),
 > `/api/annotations/*`, and the GUI in the Source integrity tab. See
-> [`USER_MANUAL.md`](USER_MANUAL.md); acceptance in `tests/test_annotations.py`.
+> [`USER_MANUAL.md`](../../USER_MANUAL.md); acceptance in `tests/test_annotations.py`.
 
 - [x] Annotation = a signed, portable bundle (reuse the **custody/evidence** machinery)
       of source facts/tags/corrections; **export/import**; opt-in **web-of-trust**
@@ -1139,7 +1139,7 @@ Therefore 0.06 is **GUI-first**, not API-first:
 > `/api/law/*`, the **World law** GUI tab, the `law` scheduler mode) with a **worldwide
 > catalog of real official sources** (`configs/legal_sources.yml`) seeded **by default**;
 > the composable news-corpus cards (IP/legal pulse, ownership-change) and the
-> **emotion-category** card ship too. See [`USER_MANUAL.md`](USER_MANUAL.md);
+> **emotion-category** card ship too. See [`USER_MANUAL.md`](../../USER_MANUAL.md);
 > `tests/test_law.py`, `tests/test_awareness_emotion.py`.
 
 - [x] **Law change-tracking (§5):** worldwide official sources (UK `legislation.gov.uk`,
@@ -2135,7 +2135,7 @@ lists, then to **add type-to-filter search** and **more editions**.
 > **Discipline that constrains every plan:** local-first (no server, no accounts, no
 > telemetry); surface signals, never verdicts; **never ship fake security** — a feature
 > that *claims* a protection it does not deliver is worse than its absence; and hold the
-> dual-use red lines in [GOVERNANCE.md](GOVERNANCE.md).
+> dual-use red lines in [GOVERNANCE.md](../../GOVERNANCE.md).
 
 ---
 
@@ -2263,7 +2263,7 @@ statement of *what it is for*, the *red lines*, and the *governance intent* is c
 disproportionately protective — and is itself an ethical act.
 
 ### Phase 1 (✅ ships now)
-- ✅ **[GOVERNANCE.md](GOVERNANCE.md)** — the statement of purpose, the **dual-use red
+- ✅ **[GOVERNANCE.md](../../GOVERNANCE.md)** — the statement of purpose, the **dual-use red
   lines** (no individual-person tracking / face-voice recognition / private-message
   ingestion / automated trust score / central server / silent filtering — *absent by
   construction, not configurable*), the legal/ethical posture, funding-independence intent,

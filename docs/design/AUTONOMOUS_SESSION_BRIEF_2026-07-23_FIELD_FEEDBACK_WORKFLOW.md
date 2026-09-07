@@ -1,6 +1,10 @@
 # Autonomous session brief — 2026-07-23 field-feedback workflow
 
-**Status: PENDING execution.** This is the operating manual for one (or several
+**Status: ~~PENDING execution~~ — EXECUTED 2026-07-23** (re-verified 2026-09-07). Slices S1, S2, S3.1,
+S3.2, S3.3+S3.5, S4.1, S4.3 and S5 all shipped; `CLAUDE.md`'s "FIELD FEEDBACK 2026-07-23" entry carries
+the per-slice record AND the honest open board (S3.4's real execution is the maintainer's operator step,
+S4.1 cause (ii) and S4.2 were deliberately not built). The banner below was written by the session that
+then executed it, which is why it says otherwise. Original status: This is the operating manual for one (or several
 consecutive) autonomous CLI session(s) executing the maintainer-ruled workflow from the
 2026-07-23 field-feedback round (seven impressions → twelve answered questions → two
 all-diagnostics exports analyzed → this program). The binding record is the ledger entry

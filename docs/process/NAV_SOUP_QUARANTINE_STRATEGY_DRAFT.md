@@ -1,3 +1,16 @@
+> **SUPERSEDED (2026-09-07) — kept as the record of how the criterion was proposed, not as status.**
+> Everything this note proposes as hypothetical has since shipped, so its "scaffold only / dry-run / not
+> wired into the app" description of the mechanism is now false. Re-verified against `main`:
+> `Article.quarantined` / `quarantine_reason` / `quarantined_at` are real nullable columns
+> (`src/database/models.py`), reversible by design, with `quarantined=NULL` reading as "never judged";
+> `src/analytics/quarantine_job.py:...candidates_batch` carries the `write: bool = False` parameter,
+> where `write=True` idempotently STAMPS each detected candidate; and `src/api/quarantine.py` exposes
+> it. The proposed *sequencing* (discuss → agree → execute) became **row 5 of the 0.3 close gate**, which
+> is where its live status lives: Tier A (8 articles, criteria version `nav-soup-v2`) was agreed
+> 2026-08-23 and the pass itself is the maintainer's operator step. Read
+> [`docs/product/RELEASE_0.3_GATE.md`](../product/RELEASE_0.3_GATE.md) for what remains; read this file
+> only for the reasoning behind the criterion.
+
 # NAV-SOUP retroactive quarantine — sequencing draft (proposal, not a build spec)
 
 Status: **draft note only**. Nothing here is executed or scheduled. It proposes how the

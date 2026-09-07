@@ -23,6 +23,9 @@ Records kept for accountability; nothing here describes the current system.
   action plans, `findings.csv`, `raw/` tool dumps, `diagrams/`). See its README.
 - [`source_enrichment/`](source_enrichment/) — the completed source-metadata-enrichment
   session's prompts + fan-out workflow (was `docs/design/source_enrichment/`).
+- [`future-developments/`](future-developments/) — embedded historical ledgers lifted out of
+  `docs/FUTURE_DEVELOPMENTS.md` on 2026-09-07 (field-test remarks, a consolidated to-do, the 0.0.9
+  sequencing, field diagnostics). Verbatim; see its README.
 - [`roadmaps/`](roadmaps/), [`field-tests/`](field-tests/), [`releases/`](releases/) —
   earlier archival passes.
 

@@ -1,6 +1,10 @@
 # Autonomous session brief — field feedback 2026-08-07
 
-**Status:** PENDING execution. Planning only; nothing in this brief is built.
+**Status:** ~~PENDING execution. Planning only; nothing in this brief is built.~~ — **PARTLY EXECUTED**
+(re-verified 2026-09-07). The STATISTICS side executed 2026-08-20 (rulings 1b, 4, 5+30+31, 6+33, 32, 43,
+44, 45, 47 — see the six 2026-08-20 `shipped.csv` rows); the LAW side (rulings 34–37) is partly shipped —
+36 and 37 landed 2026-08-07, 35 is structurally done, and 34's adapter has its offline half only, blocked
+on egress. The networked half of the whole board stays operator-gated behind one egress-allowlist entry.
 **Origin:** eight maintainer field impressions (2026-08-07) + two attachments, investigated
 against `main`@`9c651ee` and re-based on `main`@`563dd15`. 47 numbered questions were put and
 answered the same day; every ruling is recorded in `CLAUDE.md`'s Open queue under the

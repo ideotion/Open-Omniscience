@@ -23,7 +23,7 @@ A consolidated archive of point-in-time records: audits, the security proof trai
 
 **Target:** `/home/user/Open-Omniscience` @ `f275a76` (merged `0.06` line) · **Date:** 2026-06-08 ·
 **Mode:** read-only / non-destructive · **Env:** `.venv`, Python 3.13.12, network OFF ·
-**Proof trail:** [`HISTORY.md`](HISTORY.md) · **Machine-readable:** [`findings.json`](findings.json) / [`findings.csv`](findings.csv)
+**Proof trail:** [`HISTORY.md`](HISTORY.md) · **Machine-readable:** [`findings.json`](archive/findings.json) / [`findings.csv`](archive/findings.csv)
 
 ---
 

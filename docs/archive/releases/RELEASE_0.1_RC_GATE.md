@@ -1,8 +1,8 @@
 # V0.1 alpha — official release-candidate gate
 
 > ⚠️ **HISTORICAL (V0.1 shipped 2026-07-02).** This gate was scoped to the V0.1 alpha, which
-> has been released. The live board is now **[`docs/ROADMAP.md`](../ROADMAP.md)**; the current
-> release gate is the 0.2 P0 scale set in **[`SCALE_ROADMAP.md`](SCALE_ROADMAP.md)**. Kept for
+> has been released. The live board is now **[`docs/ROADMAP.md`](../../ROADMAP.md)**; the current
+> release gate is the 0.2 P0 scale set in **[`SCALE_ROADMAP.md`](../../product/SCALE_ROADMAP.md)**. Kept for
 > the record and its still-useful per-item acceptance criteria; still-open rows were folded
 > into `docs/ROADMAP.md`.
 
