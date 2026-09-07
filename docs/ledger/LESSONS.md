@@ -6056,6 +6056,77 @@
     allocation that makes the failure look like a regression somewhere else. Fixed by
     `_server_env()` setting `VLLM_USE_FLASHINFER_SAMPLER=0` whenever `cuda_toolkit_present()`
     is false (`src/llm/vllm_lifecycle.py`), an operator's explicit setting still winning.
+  - **A ONE-LINE FLIP OWES A DISCLOSURE THAT IS TRUE ON BOTH SIDES OF IT — and nothing about
+    flipping a boolean will tell you the wording did not follow (2026-09-07, the Bulletin's
+    open question 4):** the ledger had recorded for months that answering it was "one constant
+    with exactly one read … a one-line change, not an audit", and the code half was exactly
+    that. The other half was not: the caveat beside the constant said the deterministic
+    document "is withheld only because the feature is gated as a whole", which became FALSE the
+    moment the flip landed — a refusal an operator never received, printed in the one place
+    they would go to understand why. A guard counting the READS cannot see it, and neither can
+    a passing suite, because both states are internally consistent. **THE MECHANISM THAT MAKES
+    BOTH TRUE AND KEEPS THE GUARD MEANINGFUL:** read the constant ONCE into a local at the top
+    of the function and derive the verdict, the reason AND the caveat from that local — a local
+    is not a second place to flip, it is the same place read once — then pin BOTH states with
+    tests that monkeypatch the constant, plus the twin asserting the shipped state does NOT
+    claim the refusal. Three mutations redden: the caveat pinned to either state, and the
+    unmeasured-probe path claiming a gate it never measured. **THE SECOND HALF IS SHARPER AND
+    GENERALISES FURTHER: when one gate answers two questions, the verdict is two keys.**
+    `available` had to become the DOCUMENT verdict with `narration_available` beside it, because
+    below the bar those are opposite answers and a caller reading a single `available` would
+    have to guess which one it got — the recorded one-key-two-meanings defect, in a policy
+    flag. And the key that is a HARDWARE FACT must read the POLICY constant NOWHERE, or
+    flipping the policy silently changes what the app claims about the machine; the mutation
+    that makes the narration verdict read the constant reddens by name.
+  - **A WORKER WHOSE PER-ITEM FUNCTION DEGRADES INSTEAD OF RAISING WILL FINISH `complete` ON A
+    DEAD BACKEND — the abort-to-done defect wearing a graceful-degrade hat (2026-09-07, the
+    Bulletin's narration job):** `narrate_story` never raises; a model failure resolves to the
+    deterministic template with the reason recorded, which is right for the document and is
+    precisely what makes a naive loop walk every story, write a template for each, advance its
+    cursor and end `done`. Nothing in the run looks like a failure. The design record had
+    warned against exactly this three fixes running, and the warning is not enough on its own
+    because the defect arrives through the CORRECT behaviour of the callee. **THE FIX IS TO
+    CLASSIFY THE FALLBACK REASON**, not to make the callee raise: an outage does not advance
+    the cursor, is retried with backoff, and after N in a row the run RAISES so the job state
+    is genuinely `error`. **THE NEGATIVE-SPACE TWIN IS MANDATORY AND IS WHERE THE FIX GOES
+    WRONG:** not every fallback is the backend. A story whose articles carry no readable text
+    fails for a reason retrying cannot change, so treating every fallback as an outage stalls
+    the whole run on one empty item, for ever, having looked conservative. Both directions need
+    a test, and the mutation for each reddens a different one.
+  - **A MUTATION IS ONLY EVIDENCE ABOUT THE SUITE THAT COULD HAVE SEEN IT (2026-09-07):** a
+    mutation deleting a per-card disclosure line from the renderer SURVIVED, run against the
+    translation-coverage suite — and coverage genuinely cannot see it, because a line the
+    renderer stopped emitting is a line the translator is never asked for, so the catalog stays
+    100% complete while the sentence vanishes. Re-pointed at the suite that claims the property
+    it reddened immediately. The recorded `pytest -k` lesson says a selector matching zero tests
+    reads like a pass; this is the same family one level up, where the selector matches plenty
+    of tests and none of them is about the thing. Before reading a survival as a finding, name
+    the test that would have to fail. **AND THE FINDING UNDERNEATH IS WORTH ITS OWN LINE: a
+    translation-completeness guard is blind to a deleted render line by construction**, which
+    makes a behavioural render assertion the twin every new disclosure line needs — with its own
+    negative-space half, since a record written before the field existed must get NO line rather
+    than a fabricated answer.
+  - **AN EXCLUSIVE PERIOD END DOES NOT MAP ONTO EVERY CONSUMER'S CLOCK, AND THE TWO ARE ONE DAY
+    APART (2026-09-07, the card producers' period seam):** handing producers an `as_of` anchor,
+    `on_the_horizon` looks FORWARD and takes `end` directly — the first instant after the period
+    is exactly "what was on the horizon when this closed" — while `through_time` is an
+    anniversary on a CALENDAR DATE and must take `end - 1 day`, the period's own last covered
+    day. Anchoring it on `end` picks the day AFTER the edition's last, finds a different set,
+    and every ordinary fixture still passes. A fixture whose articles sit on the last covered
+    day discriminates them; nothing else does. GENERAL FORM: when one anchor is threaded through
+    several consumers, ask each one what its own clock MEANS before passing the value, and write
+    the fixture that separates the two readings — a shared parameter name is not a shared
+    semantics.
+  - **A SURVIVING MUTANT CAN SURVIVE FOR A REASON UNRELATED TO THE PROPERTY — check WHY the
+    fixture failed before writing a better assertion (2026-09-07, the same seam):** the mutant
+    that made a derived anchor override an explicit `today` survived a test written for exactly
+    that precedence. It survived because the mutated code returned `[]` too — for want of a
+    trending term inside the anchored window, not because the precedence held. The fixture had
+    seeded its mentions two months before the period, so BOTH versions took an early return and
+    the assertion could not tell them apart. Moving the mentions inside the window made the two
+    diverge and the mutation reddens by name. The recorded rule that the discriminating input is
+    never the obvious example has a corollary: when a mutant survives, run the mutated code and
+    find out which branch it took, rather than assuming the assertion is too weak.
 
 - **A TIMING HARNESS THAT DOES NOT ASSERT THE WORK HAPPENED CAN REPORT A PASS FROM A SERVER
   THAT DID NOTHING (2026-09-07, S3.6, caught before it could lie):** the concurrency
@@ -6438,6 +6509,104 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A GUARD'S OWN EXEMPTION SET CAN DEFEAT THE GUARD — exempt the QUESTION, never the
+    ANSWER (2026-09-07, NET-01's resolution check):** the connect-time SSRF guard allowlists
+    the configured proxy endpoint, because a Tor proxy is loopback and refusing it would
+    refuse Tor itself. Its resolution half then skipped any RETURNED address that was in that
+    allowlist — which reads as the same exemption and is the opposite of it. Resolving the
+    proxy literal `127.0.0.1` answers `127.0.0.1` and must pass; a NAME that answers
+    `127.0.0.1` **is the attack**. The exact reach is worth stating rather than rounding: the
+    check went blind to any answer equal to a configured proxy's own ADDRESS, which on the
+    documented Tor shape — and in any environment that names a loopback proxy, as this sandbox
+    does — is `127.0.0.1`, the commonest SSRF target of all. `10.0.0.5` and `169.254.169.254`
+    would still have been refused, which is precisely why it looked like it worked. It was also
+    invisible because the LATER net (the connect check, keyed on the exact `(address, port)`
+    pair) caught the reproduction anyway and the test went green. What found it was asking WHICH of two mechanisms fired, by reading the scope's
+    own counters, rather than being satisfied that something refused. GENERAL FORM: when a
+    guard carries an exemption, name which side of the comparison it belongs on — an exemption
+    keyed to the thing being ASKED ABOUT is narrow, one keyed to the RESULT silently exempts
+    everything that can produce that result. COROLLARY, and the reason the belt hid the
+    defect: with two nets over one property, a test that only asserts "it was refused" cannot
+    tell you which net is alive, so each mechanism needs a driver that reaches it alone (the
+    recorded belt-masks-the-primary lesson, arriving from the other direction).
+  - **A SECOND GUARD RIDING AN EXISTING PATCH LAYER MUST NOT INHERIT THE FIRST'S OFF SWITCH,
+    AND ONE FLAG CANNOT CARRY TWO FACTS (2026-09-07, same slice):** the airplane backstop
+    already patches `socket.getaddrinfo`/`create_connection`/`connect(_ex)`/`_tunnel`/
+    `socksocket.connect`, and the right place for a connect-time SSRF check is those same
+    functions — one layer, so a call site cannot meet one gate and miss the other. But
+    `install_airplane_socket_guard()` reads `OO_AIRPLANE_SOCKET_GUARD` and, when it is `0`,
+    installs NOTHING: riding that installer would have handed an unrelated flag a silent veto
+    over a security control it was never about, and the installer itself only runs from
+    `run_deferred_startup`, so a CLI, a script or a test would have had no guard at all.
+    Installing the patches unconditionally instead re-arms airplane's refusal for the
+    deployment that opted out of it. Both directions are wrong because `_installed` was being
+    asked to mean two things: "the functions are patched" and "airplane is in force". Split
+    them (`_installed` + `_airplane_armed`), give each guard its own env opt-out, and let each
+    hook decide for itself. GENERAL FORM: before extending a shared mechanism with a second
+    policy, list the flags that currently gate it and ask which policy each one is ABOUT; a
+    flag that gates the mechanism gates every policy on it, whether or not that was ever
+    intended.
+  - **A PLAN'S REMEDY IS A HYPOTHESIS, AND THE TIE-BREAK IS WHICH WAY IT FAILS (2026-09-07,
+    NET-01 "connect-time IP pinning"):** the recorded rule says a plan written from
+    measurements is trustworthy about the DEFECT and not automatically about the REPAIR. The
+    defect here was exact and live-reproducible — `_guard_target` validates one `getaddrinfo`
+    answer, urllib3 connects on a second one, and a real fetch returned a loopback server's
+    body as a clean 200. The prescribed repair, an adapter that PINS the validated IP, was
+    refused after being costed: pinning means taking over urllib3's connection construction
+    and then carrying the hostname separately for SNI, certificate matching and the `Host`
+    header, i.e. version-fragile private API whose failure mode is a SILENTLY WEAKER TLS
+    verification. Validating the address the connection ACTUALLY reaches gets the same
+    security property — the threat is reaching an INTERNAL address, and a second, different
+    PUBLIC answer is normal under CDN anycast, so pinning's extra strictness buys nothing
+    here — touches no TLS state, and rides the stdlib socket chokepoint every HTTP client
+    must pass through. The deciding argument is the direction of failure: a pinning adapter
+    fails OPEN the day urllib3 moves its private API, and a socket-level check fails CLOSED.
+    GENERAL FORM: when you diverge from a prescribed remedy, cost BOTH and pick on the failure
+    mode, then write the comparison where the next reader will look for it — otherwise the
+    divergence reads as a shortcut.
+  - **A TRANSLATION SCOPED TO THE CALL YOU EXPECTED TO RAISE LEAKS THE ONE YOU DID NOT
+    (2026-09-07, same slice, found by the negative-space pass and by nothing else):** the
+    connect-time refusal is a private exception type, translated at the fetch boundary into
+    the public `BlockedTarget` so callers keep the contract they already have. The first cut
+    wrapped `session.get` — the call the refusal was expected to come from. But a redirect
+    hop re-runs `_guard_target` INSIDE the same scope, and that resolves, so the refusal can
+    arrive from there too: a redirect to an internal host escaped as a type no caller catches,
+    on a path refused for exactly the same reason. Wrap the whole scope body, not the call you
+    had in mind. GENERAL FORM: when a guard can raise from anywhere inside a region, the
+    translation belongs at the region's edge; enumerate what else inside it touches the
+    guarded resource, because the enumeration you write from the happy path will omit the
+    re-entry.
+  - **`session.proxies` IS NOT THE ANSWER TO "WHAT WILL requests CONNECT TO" (2026-09-07,
+    empirical, and it decided a guard's correctness):** `Session.merge_environment_settings`
+    folds `HTTP(S)_PROXY` from the environment in whenever `trust_env` is set, which is the
+    default, and none of that appears in `session.proxies`. A guard that allowlists "the
+    configured proxy" by reading the session alone therefore REFUSES the proxy connection of
+    every operator whose proxy comes from their environment — a security control breaking a
+    working configuration, which is the one thing it may not do. Two riders measured while
+    fixing it: `requests.utils.get_environ_proxies` strips the `_proxy` suffix off every
+    matching variable, so `NO_PROXY` arrives as the key **`no`** carrying a comma-separated
+    host list (not a proxy endpoint) and `yarn_https_proxy` arrives as `yarn_https`; and
+    PySocks 1.7.1's `socksocket._write_SOCKS5_address` takes its non-`rdns` branch through
+    `socket.getaddrinfo(host, port, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP, AI_ADDRCONFIG)` and
+    keeps `addresses[0]` — read out of the installed library rather than recalled, which is
+    what makes it safe to claim that a local-resolving SOCKS destination lookup meets a
+    `getaddrinfo` hook.
+  - **MEASURE A SURVIVING MUTANT FOR EQUIVALENCE BEFORE WRITING A FIXTURE TO KILL IT — and
+    when it IS equivalent, the honest repair is a direct test of the contract, not a deleted
+    guard (2026-09-07, the DuckDuckGo redirect unwrap):** three of five mutations survived.
+    One was a fixture gap (the missing-target fallback is equivalent on a scheme-less
+    redirector and only discriminating on the absolute one, where returning the redirector
+    registers `duckduckgo.com` as a discovered SOURCE). The other two were genuinely
+    equivalent AT THE CALLER: `_clean_url`'s own `scheme`/`netloc` check and `safe_href`
+    reach the same verdict for every relative, scheme-less and dangerous-scheme target, so no
+    fixture through that path can ever tell the versions apart. Deleting them would have made
+    a public classmethod answer dishonestly for any caller that is not `_clean_url` (the
+    recorded "a public function's guards can live entirely in its caller" defect); keeping
+    them untested would have shipped unexercised code in a security path. The third way is to
+    test the helper's contract DIRECTLY and write the equivalence measurement into its
+    docstring, so the next matrix does not re-find it and nobody writes a vacuous fixture for
+    it. GENERAL FORM: a surviving mutant is a finding about the test, the fixture, or the
+    code — and "which" is a measurement, not a judgement call.
   - **A CAPABILITY PROBE THAT RUNS THE LIBRARY'S HAPPY PATH CAN STILL BE WRONG ABOUT IT — and
     the FABRICATED-FAILURE half is the one no fixture catches (2026-09-07, D7's OTS probe):**
     replacing `OTS_AVAILABLE`'s bare-import check with an offline round trip is the correct
@@ -6862,6 +7031,36 @@
     nothing about which of them a given flag reaches. GENERAL FORM: a guard over an
     ordered list checks order; the CONDITIONAL membership needs its own assertion, one
     per branch the function can return on.
+  - **PUSH CI ON `main` HAS NOT COMPLETED ONCE IN 40 RUNS — "CI will catch it" is not an
+    available guarantee on this repository, and the ledger leans on it repeatedly
+    (2026-09-07, measured while trying to verify a merge):** the recorded lesson is
+    `merged ≠ green`; this is the structural version underneath it, and it is worse.
+    Of the **40 most recently COMPLETED `ci.yml` runs on `main`**: **34 `cancelled`,
+    2 `failure`, 4 `success` — and all four successes are `event: schedule`.** Not one
+    push-triggered run on the default branch reached a conclusion. Each merge's run dies
+    when the next merge lands, and under this cadence that is minutes: run 4923
+    (`c370d4f8`, my own merge) was created 17:36:09 and cancelled 17:39:52, the instant
+    #1029 merged; 4929 died at 17:43:12 when #1026 landed. 4923 had **zero jobs
+    allocated** when it was cancelled, so it never ran a line. THE CONSEQUENCE IS NOT
+    ABOUT ANY ONE PR: several standing lessons resolve a local limitation with "let CI
+    run the real test" (the CI-only/standalone-repro pattern, the columnar real-httpfs
+    round trip, the pwsh-gated installer tests, the crypto lane). On the default branch
+    that referee reports on a cron, against whatever `main` happens to be at 11:33 UTC —
+    a moving target that is nobody's merge. So a session that defers a check to CI is
+    deferring it to the nightly, and the honest move is to reproduce the lane locally
+    whenever it can be reproduced at all: the **Core-only lane can** (a clean 3.13 venv,
+    `pip install -e ".[dev]"` in a worktree, then that lane's own `pytest -q`; measured
+    here 9170 passed / 150 skipped / 0 failed against 9303/128 with the extras, the extra
+    22 skips being the analysis-gated tests doing exactly what the lane checks), and so
+    can PowerShell and sqlcipher per their own recorded entries. **WHAT IS MEASURED AND
+    WHAT IS NOT:** the 34/40 count and the cancellation timestamps are measured. The
+    MECHANISM is not, and the reason to say so is that `ci.yml` already carries
+    `cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}`
+    — i.e. the repo *intends* to exempt `main` and the exemption is not taking effect.
+    Whether that expression is mis-evaluating, or whether pending runs in a group are
+    superseded regardless of the flag, needs a check the Actions API does not expose
+    cleanly (a cancellation reason). Do not "fix" the workflow on the strength of the
+    observation alone — the observation says the guarantee is absent, not why.
   - **A RULING CAN INVALIDATE THE PLAN THAT ASKED FOR IT, AND THE PLAN GOES ON READING AS
     CURRENT (2026-09-07, the storage refresh):** `STORAGE_5TB_PLAN.md`'s whole priority order
     rests on headline finding (3) -- "a default-page SQLCipher file caps at ~17.5 TB, so text

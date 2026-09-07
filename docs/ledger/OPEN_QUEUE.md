@@ -1698,6 +1698,65 @@
   carried forward: run `/llm-bench` on the GPU machine and on a slow one so the §6.3 time budget
   rests on measurements rather than a guess; and run the continuous-improvement cycles (§15's
   remaining half is *running* them, not building them).
+  **THE FOUR REMAINING §20 QUESTIONS ARE RULED (maintainer, 2026-09-07, in answer to
+  `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4). The §20 list is now CLOSED: every one of the five
+  open questions has an answer.**
+  **D1 (§20 Q4) — LAYER A IS AVAILABLE BELOW THE HARDWARE GATE.**
+  `LAYER_A_REQUIRES_CAPABLE_HARDWARE` flips to `False`, so the §3 gate applies to the NARRATION
+  layer only and a GPU-less operator gets the deterministic document. This does not weaken ruling
+  (2): the justification for gating was workload shape — thousands of narration calls — and that
+  is exactly what stays gated. The recorded consequence the original ruling accepted (a GPU-less
+  operator denied even the model-free half) is what is being reversed, on the design record's own
+  note that it was "reversible in one condition". **The verdict is now TWO facts, not one:**
+  `bulletin_available()` returns the DOCUMENT verdict, and `narration_available` beside it carries
+  the model verdict with its own reason — one key could not mean both without the recorded
+  one-key-two-meanings defect, since below the bar the document is available and the narration is
+  not. The constant keeps exactly one read (the read-count test is unchanged at 2) and the
+  narration refusal reads it nowhere: it is a hardware fact, not a policy constant.
+  **D2 (§20 Q2) — THE INTRODUCTION IS NARRATED BY THE MODEL**, over the edition's own masthead and
+  section figures, with a DETERMINISTIC TEMPLATE beside it. The maintainer chose the narrated form
+  over the templated one; the fallback is not a hedge but the same §8 rule every other Layer-B
+  sentence obeys — a model failure, an empty answer or a paragraph that fails grounding resolves to
+  the template with the reason recorded, so an edition below the gate or in airplane mode still
+  opens with a paragraph and §2's "a section called AI summary would name a document containing no
+  model output" mislabelling never arises. The introduction is grounded in the edition's OWN
+  figures (not article text), so the grounding check is the numeric-support one and an invented
+  figure is dropped exactly as elsewhere.
+  **D3 (§20 Q3) — MAIL SENDING: NEVER.** No outbound mail path is added to the app. Download the
+  document plus the short paste digest stays the only exit (§10 ruling 13). The reasoning is
+  recorded rather than left to be re-derived each cycle: sending is real egress that reveals the
+  operator to a mail provider, off Tor, with stored credentials — a new egress surface for a
+  document the user can already export, against an app whose ONLY external call is the gated,
+  off-by-default DuckDuckGo discovery. This is a CLOSED question, not a deferral.
+  **D4 (§20 Q1/Q5) — THE EIGHT SHIPPED SECTIONS AND THE CHECKBOX REVIEW SCREEN ARE RATIFIED AS THE
+  RULED DESIGN.** The section list is `rising_concepts · across_channels · country_coverage ·
+  by_topic_tag · changes_of_record · alerts · through_time · cards`, in that order, with `cards`
+  deliberately LAST (it is the slowest and the only section whose figures are not the period's).
+  The review screen is the checkbox-per-section/per-story screen with per-sentence verdicts. Both
+  are now pinned by a guard, because a ratified list that nothing enforces is a list that drifts;
+  ADDING a section stays cheap (that is what the registry is for) — the guard makes an addition or
+  a removal a deliberate edit of the ruling rather than a silent one.
+  **ONE QUESTION §18's ENUMERATION RAISES AND DOES NOT ANSWER — MAINTAINER'S TO RULE (recorded
+  2026-09-07, deliberately NOT decided by the session that built the enumeration):** the annexes
+  ZIP defaults to `full_text=True`, and the evidence archive carries every article's whole stored
+  text by design. **Is redistributing a publisher's full text the operator's to do?** That is a
+  question about each publisher's terms, not about this app's behaviour, and it has three shapes
+  worth separating. (a) The EVIDENCE archive is owner-only by design and is not meant to be
+  shared — its full text is what makes the edition's counts recomputable, which is its whole
+  reason to exist; the question barely arises while it stays on the machine that made it.
+  (b) The ANNEXES bundle is what the download button hands over BESIDE the report, so it is the
+  artifact that actually travels, and its default is full text. (c) The published REPORT already
+  carries bounded excerpts only, so it is not in question. The enumeration now STATES, per
+  artifact, that the text is there and whose it is (`publisher_full_text`), and stops:
+  `src/bulletin/privacy.py`'s item says in as many words that this app does not answer it.
+  THE OPTIONS, none taken: keep full text as the annexes default and rely on the disclosure ·
+  flip the annexes default to excerpt-only and make full text the deliberate choice (one query
+  parameter, already plumbed and tested both ways) · make it an operator setting with the terms
+  question stated at the switch. **A ruling would change a default, not build a mechanism** —
+  `full_text` is already a first-class flag on the route, the builder and the enumeration.
+  Tracked on the board as **BUL-3** in [`docs/ROADMAP.md`](../ROADMAP.md) → *The Bulletin* →
+  REMAINING, alongside the four other Bulletin carry-overs; this entry holds the reasoning,
+  that table holds the status.
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
@@ -3736,6 +3795,30 @@
   per message. A functional index over that column needs a migration AND the recorded
   NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
   `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
+- **QUESTION FOR THE MAINTAINER — PUSH CI ON `main` NEVER COMPLETES (measured 2026-09-07; no
+  ruling taken, because the fix spends the maintainer's money).** Of the 40 most recently
+  completed `ci.yml` runs on `main`: **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron.** Zero push-triggered runs on the default branch have
+  reached a conclusion. Each merge's run is killed by the next one — my own merge's run
+  (#1030, `c370d4f8`) lasted 3m43s with zero jobs allocated. The workflow ALREADY tries to
+  prevent this: `cancel-in-progress: ${{ github.ref_name !=
+  github.event.repository.default_branch }}` is meant to exempt `main`, and it is not taking
+  effect. **Why this is a question and not a fix:** the repair is a concurrency-block change,
+  which makes every merge run a full matrix (macOS + Windows + ubuntu × several lanes) instead
+  of being cancelled — real runner minutes, at the current cadence of roughly one merge every
+  four minutes. That is a cost decision, and the cheaper alternative is a ruling that the
+  nightly IS the referee for `main` and sessions must reproduce lanes locally rather than defer
+  to CI. **What it costs to leave as-is:** several standing lessons resolve a local limitation
+  with "let CI run the real test" (the CI-only/standalone-repro pattern, the columnar
+  real-httpfs round trip, the pwsh-gated installer tests, the crypto lane's `[pqc]` guard —
+  the last of which was written *because* a guard that no lane collects is a guard that never
+  runs). On `main` that referee currently reports on a cron against whatever the branch happens
+  to be at 11:33 UTC, which is nobody's merge. **UNMEASURED, deliberately:** the mechanism.
+  Whether the expression mis-evaluates or pending runs are superseded regardless of the flag
+  needs a cancellation reason the Actions API does not expose cleanly; the observation says the
+  guarantee is absent, not why, and changing the workflow on the observation alone would be
+  fixing a mechanism nobody has read.
 
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
@@ -9762,6 +9845,107 @@ governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns 
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
 
+
+**PROMPT 21 — SECURITY, NETWORK POSTURE AND THE CONSENT SURFACE: WHAT SHIPPED, WHAT IS
+STILL RULING-GATED, AND ONE STALE CLAIM CORRECTED (executed 2026-09-07, branch
+`claude/security-network-posture-consent-e7uyr5`; NO RULING IS INVENTED HERE).**
+Three of the prompt's seven slices were buildable and shipped (rows in
+[`shipped.csv`](shipped.csv)): S1 NET-01, the connect-time SSRF closure; S2 NET-02 + PRH-03,
+the sanitizer excepts and the DuckDuckGo redirect; S3's documentation half. The other four
+wait on a maintainer ruling and are recorded here with the tree state each was re-derived
+against this pass, so the next session does not re-investigate them.
+
+**S4 · I3 — Tor-exit-resolve (SOCKS RESOLVE, 0xF0). STILL DESIGN-ONLY, re-verified: zero
+code.** The design of record is already written in this queue (the 2026-07-20 amendment,
+"can't we ping the source server"), including why DIRECT contact is ruled out — ICMP cannot
+ride Tor, so a ping is clearnet by construction, and a direct probe of a just-Tor-fetched
+source hands the server and the ISP a time-correlated link between the user's real IP and
+that source. Nothing has changed about the mechanism, the provenance class
+(`dns-via-tor-exit`, never blended with socket-observed) or the free ADDRMAP upgrade once
+Stem lands. What is owed is only the go/no-go (question I3, recommended default: go, as its
+own skeptic-matrixed slice). Grep anchor for the next session: `0xF0` and `dns-via-tor-exit`
+appear nowhere under `src/`.
+
+**S5 · I4 — `oo-netcut` and Stem-controlled Tor. STILL DESIGN-ONLY, re-verified: zero code**
+(`docs/ROADMAP.md` carries both lines and nothing under `src/` imports `stem` or names
+`netcut`). Two things are worth recording before the ruling rather than after it. (a) The
+honest claim boundary is already fixed by the non-negotiables: a userspace app can never
+equal a hardware webcam light, and `oo-netcut` must name the layer it controls rather than
+implying the machine is silent. (b) **Arti must be RE-VERIFIED, not assumed.** Its Python
+bindings were nascent at the knowledge cutoff, and this project's own recorded lesson about
+prescribed remedies applies — the mature path is a `tor` process driven through Stem, and
+per-source CIRCUIT isolation (`IsolateSOCKSAuth`, already a primitive here in
+`src/ingest/__init__.py::_isolated_proxies`) compartmentalises with no clearnet exposure at
+all, which is strictly preferable to the per-source clearnet fallback. Question I4 offers
+"park both to 0.5+" as its recommended default; parking is a legitimate answer and is not
+taken here.
+
+**S6 · PRH-16 — THE CONSENT MACHINERY IS TWO-THIRDS BUILT, AND THE INVENTORY CLAIM THAT IT
+"EXISTS NOWHERE" IS STALE (corrected in `INVENTORY.md` this pass).** Re-derived from the
+tree: `CONSENT_DOC_VERSION` is **PRESENT** (`src/legal/consent.py:43`, `"1.0"`, alongside
+`is_accepted` / `needs_acceptance` / `record_consent`, re-exported from `src/legal/__init__.py`
+and read by `src/legal/documents.py`). The **web consent surface is PRESENT** too, and the
+reason it did not answer to a grep for "modal" is that a modal was deliberately NOT what was
+built: `docs/legal/IMPLEMENTATION_NOTES.md` records the choice of a dedicated pre-app page
+over an in-SPA `<dialog>` because it blocks harder — nothing of the app is reachable first —
+wired as `/api/legal/` on the locked-state allowlist (`src/api/unlock.py`) with
+`src/api/legal.py`'s consent/decline routes, and pinned by
+`tests/test_legal_documents.py::test_unlock_first_launch_inserts_legal_step_before_passphrase`.
+Only `OO_REQUIRE_CONSENT` is genuinely absent — and **that is a recorded decision, not an
+oversight**: the same notes state it is "intentionally left as a documented option, not the
+default, because hard-blocking the web entrypoint could strand a desktop-launcher or
+`curl | bash` user with no console." The prompt asked to decide whether these are wanted and,
+if not, to record the refusal where the design lives; the refusal was already there, so
+nothing is decided here. **The only open question is whether the opt-in hard block should
+ever ship** — recommended default: leave it as the documented option it is, since the
+strand-a-launcher-user reason has not changed.
+
+**S7 · G9 + NET-09 — self-update and release signing. STILL UNBUILT, re-verified: no
+`self_update` module exists** (the only tree hits for "self-update" are two unrelated
+comments about Home refreshing itself). The posture is already ruled — manual, user-driven,
+git-pull based, no signing key yet — and the mechanics are settled in
+`docs/FUTURE_DEVELOPMENTS.md` §"In-app self-update" (line 993, promoted to active
+2026-06-16, mechanics only): snapshot → verify → staged migrate → atomic swap → rollback, with the
+data directory living outside the code tree as the property that makes the corpus, settings
+and keys survive by construction, and **never a silent decrypt across an update**. What is
+owed is G9's five questions (channel, trust root, cadence, `curl|bash` versus git, mirror
+anchoring) and NET-09. **Re-verified this pass and worth stating because it is the honest
+half:** `.github/workflows/release.yml` computes `SHA256SUMS` and publishes them with the
+artifacts, and its own header comment already says "checksums-only for now — signing is a
+tracked FUTURE_DEVELOPMENTS item", so the release path does not over-claim today. NET-09 is
+only the question of whether that changes.
+
+**DELIBERATE OMISSION — the DuckDuckGo RESULT-LINK regex is NOT widened, and the reason is
+an environment finding.** `_parse_results` matches `<a class="result__a" href="…">`, which
+requires `class` to be the FIRST attribute and `href` to follow it immediately; an
+`href`-first anchor, or one carrying `rel="nofollow"` before `class`, does not match. That
+is real fragility in the one sanctioned external channel, and it is deliberately left alone,
+because widening it blind could start admitting sponsored anchors as discovered sources and
+**the live markup could not be observed**: `html.duckduckgo.com` answers `CONNECT … 403`
+through this sandbox's proxy, against a `pypi.org` 200 control (probed 2026-09-07, this
+session probing first rather than assuming, per the working mode). The `uddg` unwrap that DID ship is
+justified by the URL shape alone and is strictly additive, so it cannot lose a result that
+resolves today. Re-open with either an allowlist entry for `html.duckduckgo.com` or a
+captured sample of a real response.
+
+**STATED RESIDUALS of the NET-01 closure, so they are not read as covered.** (a) A fetch
+whose proxy endpoint is a HOSTNAME rather than an address stands the connect-time check down
+for that request: allowlisting it would mean resolving it from inside a socket hook on every
+fetch, and a security guard may not break a working configuration in order to protect it.
+`_guard_target`'s policy there is unchanged, so such a deployment is exactly as protected as
+before. (b) An address that is publicly routable but internal to the operator's own network
+perimeter is out of reach of any address-shape rule, here and in `_guard_target` alike.
+(c) A remote-resolving proxy (`socks5h`/`socks4a`) never resolves the destination in this
+process at all, so there is nothing local to validate — which is the same reason
+`_guard_target` skips its hostname branch there.
+
+**SEQUENCING — NET-04's nonce CSP stays blocked, and the blocker is now measured.**
+`src/api/main.py::_CSP` still carries `script-src 'self' 'unsafe-inline'`. It cannot leave
+until the inline handlers do, and the count re-derived by the 2026-09-06 analysis is roughly
+**590** (~331 in `index.html`, ~259 across the seventeen `app-*.js` modules) — not the 295
+the ledger recorded, which counted `index.html` only and predates the module split. Prompt 15
+S2 owns the retirement; landing the nonce first breaks the app. Recorded here so the
+sequencing survives the two prompts being executed by different sessions.
 **CARRY-OVER FROM THE PROMPT-17 SWEEP (2026-09-07, PR #1027 — four items, each measured; none
 of them blocks the PR, and none of them was silently dropped).** The sweep found prompt 17's
 S1-S7 already shipped and fixed the one real defect it turned up (the concept map's country cap);

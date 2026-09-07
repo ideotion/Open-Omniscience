@@ -6513,6 +6513,46 @@ rather than "it never started". When a component is chosen at runtime because a 
 is merely importable, ask what that component does on first use.
 
 
+## 2026-09-07 — Bulletin completion: the four rulings, Layer B as a job, the §18 enumeration
+
+**RULINGS (maintainer, in answer to `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4).** The design
+record's §20 list is CLOSED. D1: the hardware gate covers NARRATION, not the document. D2: the
+introduction is narrated by the model, with the deterministic template beside it. D3: mail
+sending is NEVER. D4: the eight sections and the checkbox review screen are ratified. Each is
+recorded verbatim in `docs/ledger/OPEN_QUEUE.md` and in the design record's own §20, with the
+question kept beside its answer — a closed question that vanishes is one the next session
+re-opens.
+
+**WHAT SHIPPED.** `src/bulletin/gate.py` (two verdicts, one read, a correct caveat in both
+states of the constant) · `src/bulletin/narration_job.py` (§14's `BackgroundJob` with a persisted
+cursor, resume-by-default, an outage that never advances the cursor and raises rather than ending
+`done`) · `src/bulletin/introduction.py` (D2, grounded in the edition's own figures) ·
+`src/bulletin/privacy.py` (§18's enumeration, per artifact, tri-state) · the card period seam
+(`run_all_bounded(as_of=…)`, five producers converted, per-card anchoring rendered).
+
+**THE FIVE REUSABLE LESSONS ARE IN `LESSONS.md`**, appended the same day: a one-line flip owes a
+disclosure true on both sides of it (and one gate answering two questions owes two keys, the
+hardware one reading no policy constant) · a worker whose per-item function degrades instead of
+raising finishes `complete` on a dead backend, and the negative-space twin is where its fix goes
+wrong · a mutation is only evidence about the suite that could have seen it, and a
+translation-completeness guard is blind to a deleted render line by construction · an exclusive
+period end does not map onto every consumer's clock and the two are one day apart · a surviving
+mutant can survive for a reason unrelated to the property.
+
+**ONE REAL DEFECT FOUND WHILE BUILDING,** worth recording because the number looked fine: the
+§18 newsletter count filtered on `Source.domain` with no join to `Article` — a cartesian product,
+so the count came back as articles times matching sources. SQLAlchemy warns and the figure is
+still plausible, which is how a privacy number would have shipped wrong. Pinned by a test that a
+two-source corpus holding two newsletters reports 2.
+
+**WHAT IS DELIBERATELY NOT DONE.** §18's named *publication profile* is not built: the
+enumeration is what that section says is owed before a first archive leaves a machine, and a
+whitelist is a mechanism the operator has not been asked about. The card period seam converts
+FIVE producers of thirty-seven; the rest are called exactly as before and every card says which
+window its figures came from, because a section-wide verdict is true of only part of a mixed
+section. And the annexes' full-text default raises a question about each publisher's terms that
+is the maintainer's — recorded in the Open queue with its options, not decided.
+
 ## 2026-09-07 — S3.6's other half, and the first-run preflight becomes a job
 
 **S3.6 (the half PR-10 did not ship): 56 DB-touching `async def` handlers come off the single
@@ -6556,6 +6596,69 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
 
+- **NET-01 — THE SSRF GUARD NOW VALIDATES THE ADDRESS THE CONNECTION ACTUALLY REACHES, AND
+  THE PRESCRIBED REMEDY WAS REFUSED ON ITS FAILURE MODE (2026-09-07, prompt 21 S1):**
+  `EthicalFetcher._guard_target` resolves the target and refuses a non-public answer — and
+  that is not the resolution the connection uses, because `requests`/`urllib3` resolve the
+  same name again inside `create_connection`. Reproduced live before anything was built: a
+  real fetcher against a resolver answering `93.184.216.34` at guard time and `127.0.0.1` at
+  connect time returned a loopback HTTP server's body as a clean 200, with no error anywhere.
+  The plan named "connect-time IP PINNING (a custom transport adapter)". That was costed and
+  refused: pinning means taking over urllib3's connection construction and then carrying the
+  hostname separately for SNI, certificate matching and the `Host` header — version-fragile
+  private API whose failure mode is a SILENTLY WEAKER TLS verification, and which fails OPEN
+  the day urllib3 moves. Validating the address actually connected to is the same security
+  property (the threat is reaching an INTERNAL address; a second, different PUBLIC answer is
+  normal under CDN anycast), touches no TLS state, and rides the stdlib socket chokepoint
+  every HTTP client must pass through, so it fails CLOSED. `src/ingest/ssrf_guard.py` holds a
+  thread- and request-scoped scope entered by `_guarded_redirect_get` — the one method the
+  page fetch, the robots fetch, every redirect hop and both preflight side doors pass through
+  — with two nets: every address a resolution ANSWERS with, and every address a connect is
+  HANDED. It is hooked into `airplane.py`'s EXISTING patch layer, so one place patches
+  sockets and a call site cannot meet one gate and miss the other; `_installed` is split from
+  a new `_airplane_armed` so `OO_AIRPLANE_SOCKET_GUARD=0` keeps meaning exactly what it meant.
+  The proxy endpoint is allowlisted as an exact `(address, port)` pair (by address alone it
+  would open every port on the machine) and the endpoint set is merged from the ENVIRONMENT as
+  well as the session, because `merge_environment_settings` folds `HTTP(S)_PROXY` in whenever
+  `trust_env` is set. STATED RESIDUALS, in the module rather than implied: a hostname proxy
+  endpoint stands the check down for that request; a publicly-routable-but-internal address is
+  out of reach of any address-shape rule; `socks5h` never resolves the destination here at all.
+  **FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a guard's own exemption
+  set can defeat the guard (exempt the QUESTION, never the ANSWER — the resolution check went
+  BLIND to any answer equal to a configured proxy's own address, i.e. to `127.0.0.1` wherever a
+  loopback proxy is configured, and the later net hid it);
+  a second guard riding an existing patch layer must not inherit the first's off switch, and
+  one flag cannot carry two facts; a plan's remedy is a hypothesis and the tie-break is which
+  way it fails; a translation scoped to the call you expected to raise leaks the one you did
+  not (a redirect hop's own `_guard_target` resolves inside the scope); and `session.proxies`
+  is not the answer to "what will requests connect to".
+
+- **NET-02 + PRH-03 — THE APP-WIDE URL SANITIZERS CATCH `ValueError` ONLY, AND THE DUCKDUCKGO
+  REDIRECT RESOLVES (2026-09-07, prompt 21 S2):** `safe_href` and `sanitize_url` held
+  `except Exception` around `urlparse` — right for the one exception `urlparse` genuinely
+  raises and wrong for everything else, so a `TypeError` from a bytes/None argument or an
+  `AttributeError` from a caller passing the wrong object became a clean empty string,
+  indistinguishable from "this link was unsafe", on every surface that renders an ingested
+  URL. Both now catch `ValueError`; `urlparse` is hoisted to a module import so the
+  propagation half is testable at all. `_clean_url` stripped the query string BEFORE it
+  validated, so every real DuckDuckGo result — always its own redirector,
+  `//duckduckgo.com/l/?uddg=<target>` — arrived scheme-less and was discarded, silently, in
+  the one sanctioned external discovery channel, with a test asserting only that a list came
+  back. `_unwrap_search_redirect` resolves it first and DISCARDS a redirect with no usable
+  target rather than falling back to the redirector, which on the absolute form is a valid
+  https URL and would register `duckduckgo.com` itself as a discovered SOURCE. Deliberately
+  unchanged and now stated rather than implied: the query strip on the final url (right for
+  this consumer, which keeps the DOMAIN and treats the url as a homepage to look for feeds
+  under; wrong in general, for the recorded reason that a URL's query can BE the article
+  address). RECORDED AND NOT CHANGED: the result-link regex requires `class=` to be the first
+  attribute after `<a `, which is real fragility — and `html.duckduckgo.com` answers
+  `CONNECT … 403` through this sandbox against a `pypi.org` 200 control, so the live markup
+  could not be observed and widening the pattern blind could start admitting sponsored anchors
+  as discovered sources. **ONE LESSON, copied verbatim into `LESSONS.md`:** measure a
+  surviving mutant for EQUIVALENCE before writing a fixture to kill it — three of five
+  survived, one was a fixture gap and two were genuinely equivalent at the caller, which makes
+  the honest repair a direct test of the helper's own contract with the measurement in its
+  docstring, not a deleted guard and not a contrived fixture.
 ## 2026-09-07 — Wikipedia as a living source (prompt 18): two slices, one measured stop
 
 **The consented "Refresh exact sizes" (S5).** The 2026-06-16 inline-size-estimates ruling's

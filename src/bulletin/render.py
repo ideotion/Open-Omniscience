@@ -164,6 +164,7 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
         ),
         "",
     ]
+    out += _introduction_lines(edition, T)
     # The language line goes HERE, above the first figure, and is written after the
     # body so it can count what the body actually asked for. A reader meeting an
     # English caveat under a French heading is owed the reason before the caveat.
@@ -232,6 +233,40 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     if disclosure:
         out[lang_at:lang_at] = [f"*{disclosure}*", ""]
     return "\n".join(out)
+
+
+def _introduction_lines(edition: dict, T: Translator) -> list[str]:
+    """The opening paragraph (§20 Q2, ruled narrated 2026-09-07).
+
+    SHARED by both renderers, for the reason ``_section_groups`` and
+    ``_masthead_splits`` are: the masthead once drifted between them and the HTML
+    page carried four bullet points where the Markdown carried ten. A block written
+    twice is a block that will differ.
+
+    Empty when the record carries none, so every edition already on disk renders
+    byte-identically. The AI label is on the paragraph the MODEL wrote and off the
+    deterministic one, because that distinction is the whole of §4's adjacency
+    rule — a reader must always be able to see which sentences a model wrote.
+    """
+    intro = edition.get("introduction") or {}
+    text = intro.get("text")
+    if not text:
+        return []
+    out: list[str] = []
+    if intro.get("narrated"):
+        mark = f"*{T.t(_AI_LABEL)}"
+        if intro.get("partial"):
+            mark += "; " + T.t(
+                "sentences that named a figure absent from this edition were removed"
+            )
+        out += [f"{mark}.*", ""]
+    out += [str(text), ""]
+    if not intro.get("narrated") and intro.get("fallback_reason"):
+        out += [
+            T.f("*No model text: {reason}.*", reason=T.t(str(intro["fallback_reason"]))),
+            "",
+        ]
+    return out
 
 
 def _masthead_splits(m: dict, T: Translator) -> list[str]:
@@ -758,6 +793,19 @@ def _cards_blocks(section: dict, T: Translator) -> list[tuple[str | None, str, l
                 lines.append(T.f("- n: {n}", n=_fmt(card.get("n"))))
             if card.get("bucket"):
                 lines.append(T.f("- Bucket: {bucket}", bucket=T.t(str(card["bucket"]))))
+            # WHICH WINDOW THIS CARD'S FIGURES CAME FROM. Printed per card because
+            # the section is mixed: some producers honour the edition's period and
+            # some compute against generation time, and one line at the top of the
+            # section would be true of only part of what is under it. Absent on an
+            # edition written before the seam existed, where the field does not
+            # exist and inventing an answer for it would be a fabricated one.
+            anchored = card.get("period_anchored")
+            if anchored is True:
+                lines.append(T.t("- Window: this edition's period"))
+            elif anchored is False:
+                lines.append(
+                    T.t("- Window: as observed when this edition was generated, not the period")
+                )
             if card.get("method"):
                 lines.append(T.f("- Method: {method}", method=T.t(str(card["method"]))))
             arts = card.get("article_rows") or []
@@ -1207,6 +1255,9 @@ h3{font-size:1rem;margin:1.4rem 0 .4rem}
    above it — a heading that does not outrank its parent is not a hierarchy. */
 h4{font-size:.94rem;margin:1rem 0 .3rem;color:var(--muted)}
 .lede{color:var(--muted);margin:0 0 1.5rem}
+/* The opening paragraph (D2). Body size, not muted: it is the document
+   speaking, and the AI label above it is what marks who wrote it. */
+.intro{margin:0 0 1.2rem}
 ul{padding-left:1.2rem}li{margin:.25rem 0}
 .caveat{color:var(--mark);border-left:3px solid var(--mark);padding:.4rem 0 .4rem .8rem;
 margin:.8rem 0;font-size:.92rem}
@@ -1263,6 +1314,9 @@ def render_html(edition: dict, *, lang: str = "en", tr: Translator | None = None
         )
         + "</p>"
     )
+    for line in _introduction_lines(edition, T):
+        if line:
+            body.append(f'<p class="intro">{_inline(line)}</p>')
     lang_at = len(body)
 
     body.append(f"<h2>{_e(T.t('This corpus, this period'))}</h2><ul>")
