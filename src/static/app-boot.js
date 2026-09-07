@@ -70,6 +70,16 @@
           renderCompositionFigures();
         }
       } catch (_e) {}
+      // The Observatory is the same class again, and worse: its canvas has no DOM
+      // for the i18n walker to reach at all, so EVERY label it paints (the orbit
+      // ticks, the domain wedge names) plus its tf()-built disclosures would stay
+      // in the first-rendered locale forever. Re-render only if it has payload,
+      // i.e. only if the tab was ever opened -- this never triggers a fetch.
+      try {
+        if (typeof _obs !== "undefined" && _obs.payload && typeof _obsRender === "function") {
+          _obsRender();
+        }
+      } catch (_e) {}
       // The Activity view is the same class again, and it recurred the moment a new
       // interpolated string was added there: the qualification tile's composition note
       // ("Of 3 awaiting a verdict, 1 have never been attempted…") is built with
@@ -327,6 +337,7 @@
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();
 
+
     // Wire the universal subtab grammar on every multi-section surface (one
     // component, three surfaces). No opts.initial: each surface keeps its
     // HTML-default panel; the component just adopts ARIA + keyboard + click.
@@ -343,6 +354,34 @@
     if (_anBootTab && document.getElementById("an-" + _anBootTab)) {
       _anSubtabs.select(_anBootTab); _anBootTab = null;
     }
+
+    // Deep-link the tracked-changes view for ONE wiki page (S2/S4): the article
+    // reader offers "tracked changes on this machine" and navigates to
+    // "/?wikitc=<page_id>". The reader is a STANDALONE page served by
+    // /api/articles/{id}/view, so without this the history the ruling asks to sit
+    // beside a wiki article is reachable only from Settings -- which is not where
+    // a reader is.
+    //
+    // AFTER the subtab wiring on purpose: the component owns the strip's visible
+    // state (invariant #18), so selecting through `_setSubtabs` is what keeps the
+    // .active / aria-selected pair in step -- the same idiom app-shell.js uses for
+    // the "wiki" nav alias, fallback included, and `_setSubtabs` does not exist
+    // until the line above.
+    //
+    // The reader only ever emits this link for a page whose WikiPage row exists, so
+    // the id is real by construction; a stale or hand-edited one opens the view and
+    // the view's own honest empty state answers it -- no fabricated history, and a
+    // malformed link never breaks boot.
+    (function _hydrateWikiTrackedChanges() {
+      try {
+        const id = Number(new URLSearchParams(location.search).get("wikitc"));
+        if (!Number.isFinite(id) || id <= 0) return;
+        if (typeof openWikiTC !== "function") return;
+        showTab("settings", false);
+        try { _setSubtabs.select("wikipedia"); } catch (e) { showSetCat("wikipedia"); }
+        openWikiTC(id, "", "");
+      } catch (e) { /* a malformed deep link must never break boot */ }
+    })();
 
     // Click the EMPTY space of the sidebar (not a nav item / button / link) to
     // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /

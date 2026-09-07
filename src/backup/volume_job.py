@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
@@ -353,8 +353,27 @@ class VolumeBackupManager:
         allow_unverified: bool = False,
         corpus_passphrase: str | None = None,
         force: bool = False,
+        working_copy: Path | None = None,
+        hold_after_merge: bool = False,
+        already_merged_digests: Collection[str] = (),
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
+        """Restore one artifact folder as a background job.
+
+        ``working_copy`` / ``hold_after_merge`` / ``already_merged_digests`` are the
+        CHECKPOINT-GROUP seam (2026-09-07, the 2026-08-08 queue entry's item (b)).
+        They are the queue's, not this manager's: the manager stays one-job-at-a-time
+        by design and nothing here runs concurrently — the group is simply a working
+        copy the queue hands to consecutive items instead of re-copying the whole
+        corpus for each of them. Defaults reproduce the single-artifact behaviour
+        exactly.
+
+        ``already_merged_digests`` closes the one regression a carried working copy
+        would otherwise introduce: :func:`find_completed_import` reads the LIVE
+        corpus, which does not yet contain the group's earlier merges, so the same
+        artifact queued twice inside one group would be merged twice. The queue knows
+        what it has put in the copy and says so.
+        """
         with self._lock:
             self._reap_or_reject()
             srcp = Path(src)
@@ -378,13 +397,29 @@ class VolumeBackupManager:
             self._thread = threading.Thread(
                 target=self._run_restore,
                 args=(srcp, passphrase, allow_unverified, corpus_passphrase, _restore_fn),
+                kwargs={
+                    "working_copy": Path(working_copy) if working_copy is not None else None,
+                    "hold_after_merge": bool(hold_after_merge),
+                    "already_merged_digests": frozenset(already_merged_digests or ()),
+                },
                 daemon=True,
                 name="volume-restore",
             )
             self._thread.start()
             return self.status()
 
-    def _run_restore(self, srcp, passphrase, allow_unverified, corpus_passphrase, restore_fn):
+    def _run_restore(
+        self,
+        srcp,
+        passphrase,
+        allow_unverified,
+        corpus_passphrase,
+        restore_fn,
+        *,
+        working_copy: Path | None = None,
+        hold_after_merge: bool = False,
+        already_merged_digests: frozenset[str] = frozenset(),
+    ):
         from src.backup.merge import RestoreAborted, RestoreRefused
 
         # ONE run journal per queue item, opened before anything expensive. Eight
@@ -420,12 +455,36 @@ class VolumeBackupManager:
             # date it matched, and `force` re-imports regardless.
             _digest = artifact_source_digest(srcp)
             _already = None if self._force else find_completed_import(_digest)
+            # ...and the same question against the OPEN CHECKPOINT GROUP, which the
+            # live corpus cannot answer yet: an artifact already merged into the
+            # working copy this item is about to be handed is just as merged, it is
+            # simply not durable yet. Without this the skip would silently stop
+            # working the moment K > 1, for exactly the duplicate-artifact case the
+            # field log says is 8 of 18 imports.
+            if (
+                _already is None
+                and not self._force
+                and _digest
+                and _digest in already_merged_digests
+            ):
+                _already = {
+                    "batch_id": None,
+                    "imported_at": None,
+                    "in_open_checkpoint_group": True,
+                }
             if _already is not None:
                 summary = {
                     "skipped": "already-merged",
                     "source_digest": _digest,
                     "merged_as_batch": _already["batch_id"],
                     "merged_at": _already["imported_at"],
+                    # Which of the two answers this was. "Already in your corpus" and
+                    # "already in this run's uncommitted working copy" are different
+                    # facts, and only the first survives a kill -- so a reader who is
+                    # deciding whether to re-run needs to see which one they got.
+                    "in_open_checkpoint_group": bool(
+                        _already.get("in_open_checkpoint_group")
+                    ),
                     "note": (
                         "this exact artifact was already merged; nothing to do. "
                         "Re-import with force to merge it again."
@@ -469,7 +528,9 @@ class VolumeBackupManager:
             # constant -- run_restore's plan legitimately differs by commit /
             # reindex_imported (field ruling 2026-07-29 item 17).
             _restore_plan = restore_stage_plan(
-                commit=True, reindex_imported=not defer_reindex()
+                commit=True,
+                reindex_imported=not defer_reindex(),
+                hold_after_merge=hold_after_merge,
             )
             _phase_total = len(_RESTORE_MANAGER_PHASES) + len(_restore_plan)
 
@@ -640,6 +701,11 @@ class VolumeBackupManager:
                         # the fast path holds the write gate for the copy, which is free
                         # when collection is confirmed paused and rude when it is not.
                         exclusive=_owned,
+                        # The checkpoint-group seam. Both are None/False for every
+                        # caller but the queue running K > 1, so the single-artifact
+                        # path is unchanged.
+                        working_copy=working_copy,
+                        hold_after_merge=hold_after_merge,
                     )
                     # S6.2: an artifact that CARRIES the large public files puts them
                     # back once the corpus merge has committed -- after, because a
@@ -670,9 +736,25 @@ class VolumeBackupManager:
                                 ),
                             }
                     with self._lock:
-                        self._state, self._summary = "done", {"report": report}
+                        self._state, self._summary = "done", {
+                            "report": report,
+                            # The queue needs BOTH to drive its group: the digest so
+                            # a later item in the same group is answered from the
+                            # working copy, and held-ness so it knows whether this
+                            # item is durable or is riding on a copy that a kill
+                            # would discard.
+                            "source_digest": _digest,
+                            "held": bool(report.get("held")),
+                        }
                         self._progress = {"phase": "done"}
-                    if defer_reindex():
+                    # A HELD item has no corpus to read a backlog from -- its
+                    # articles are in the working copy, not the live store, so
+                    # handing off there would report the PREVIOUS state as this
+                    # item's and start a drain over articles that are not there. The
+                    # checkpoint that commits the group hands off for all of them.
+                    # Scoped to `held` deliberately: every other outcome reaches this
+                    # line exactly as it did before.
+                    if defer_reindex() and not report.get("held"):
                         hand_off_reindex(report)
                     runlog.end("ok", **{
                         k: report.get(k) for k in ("batch_id", "reindexed", "articles_merged")

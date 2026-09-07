@@ -37,6 +37,7 @@ import html
 import logging
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -235,15 +236,20 @@ def sanitize_url(url: str) -> str:
     if url.lower().startswith(("javascript:", "data:", "vbscript:", "file:")):
         return ""
 
-    # Validate URL structure
-    from urllib.parse import urlparse
-
+    # Validate URL structure. ``urlparse`` raises ``ValueError`` and nothing else
+    # on a real string (the documented case is an unterminated IPv6 literal, e.g.
+    # "https://[::1/path"); a broader ``except`` here would silently swallow a
+    # programming error -- a TypeError from a bytes/None argument, a
+    # RecursionError -- and hand every caller a clean "" as though the URL had
+    # merely been unsafe. This is the app-wide sanitizer, so a silent swallow
+    # here is silent everywhere (NET-02).
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             # If no scheme or netloc, assume it's a relative URL
             return url
-    except Exception:
+    except ValueError as exc:
+        logger.debug("sanitize_url: unparseable URL %r dropped (%s)", url, exc)
         return ""
 
     return url
@@ -280,11 +286,15 @@ def safe_href(url: str | None) -> str:
     if not url:
         return ""
     cleaned = re.sub(r"[\x00-\x20\x7f]+", "", url)
-    from urllib.parse import urlparse
-
+    # ``ValueError`` only, for the same reason as ``sanitize_url`` above: an
+    # unparseable URL is honestly dropped, while anything ``urlparse`` does not
+    # itself raise is a defect in the CALLER and must reach it (NET-02). The
+    # previous ``except Exception`` turned every such defect into an empty href,
+    # on every surface that renders an ingested link.
     try:
         scheme = urlparse(cleaned).scheme.lower()
-    except Exception:
+    except ValueError as exc:
+        logger.debug("safe_href: unparseable URL %r dropped (%s)", url, exc)
         return ""
     return cleaned if scheme in ("http", "https") else ""
 

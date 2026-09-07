@@ -5,6 +5,42 @@
 > **Sequencing:** its S3 (nonce CSP) is blocked on prompt 15's inline-handler retirement. Everything else is
 > independent.
 
+> ### EXECUTION RECORD, 2026-09-07 — three slices built, four ruling-gated, one claim corrected
+>
+> Executed against `main` @ `d9ee33e7`, branch `claude/security-network-posture-consent-e7uyr5`.
+> Read this before the slices: four of the seven wait on a maintainer ruling this session may
+> not take, and one of the three buildable ones rested on a claim the tree contradicts.
+>
+> | slice | verdict | the anchor that settles it |
+> |---|---|---|
+> | **S1** — NET-01, the SSRF connect-time TOCTOU | **was genuinely open; BUILT** — and live-reproduced first: a real `EthicalFetcher` against a resolver answering `93.184.216.34` at guard time and `127.0.0.1` at connect time returned a loopback server's body as a clean 200 | `src/ingest/ssrf_guard.py`, the scope entered in `src/ingest/__init__.py::_guarded_redirect_get`, hooked into the one socket patch layer in `src/ingest/airplane.py`; `tests/test_ssrf_connect_guard.py` (16 tests; an 11-mutation matrix, each asserted to have applied) |
+> | **S2** — NET-02 (`safe_href`/`sanitize_url`) + PRH-03 (the `uddg` redirect) | **was genuinely open; BUILT** | `src/utils/security.py` (`ValueError` only, `urlparse` hoisted so propagation is testable), `src/services/duckduckgo.py::_unwrap_search_redirect`; `tests/test_security_hardening.py`, `tests/test_duckduckgo_url_helpers.py` |
+> | **S3** — the nonce CSP, and `docs/SECURITY.md` | **SPLIT: the doc half BUILT, the nonce half still blocked** | `docs/SECURITY.md` now opens its embedded 2026-06-08 report with a per-finding disposition table re-derived from the tree; `src/api/main.py::_CSP` still carries `script-src 'unsafe-inline'` and cannot lose it until prompt 15 S2 retires the ~590 inline handlers |
+> | **S4** — I3, Tor-exit-resolve (SOCKS `RESOLVE`) | **RULING-GATED; re-verified design-only** | `0xF0` and `dns-via-tor-exit` appear nowhere under `src/`. The full design of record is already in `docs/ledger/OPEN_QUEUE.md` (2026-07-20 amendment); what is owed is the go/no-go, question I3 |
+> | **S5** — I4, `oo-netcut` and Stem-controlled Tor | **RULING-GATED; re-verified design-only** | nothing under `src/` imports `stem` or names `netcut`; both lines exist only in `docs/ROADMAP.md`. Question I4's recommended default is to park both |
+> | **S6** — PRH-16, the consent machinery | **STALE CLAIM: two of the three named pieces ARE in the tree** — see below | `src/legal/consent.py:43` (`CONSENT_DOC_VERSION = "1.0"`), `src/api/legal.py` + `src/api/unlock.py`'s locked-state allowlist, `tests/test_legal_documents.py::test_unlock_first_launch_inserts_legal_step_before_passphrase` |
+> | **S7** — G9 + NET-09, self-update and signing | **RULING-GATED; re-verified unbuilt** | no `self_update` module exists (the two "self-update" hits in `src/static/` are unrelated comments about Home refreshing itself). `.github/workflows/release.yml` publishes `SHA256SUMS` and its own header says signing is a tracked future item, so the release path does not over-claim today |
+>
+> **The corrected claim, named as §2 of the working mode requires.** `INVENTORY.md` PRH-16
+> and this prompt's own §6 say `OO_REQUIRE_CONSENT`, `CONSENT_DOC_VERSION` and a web consent
+> modal "exist nowhere in the tree". `CONSENT_DOC_VERSION` exists, with `is_accepted` /
+> `needs_acceptance` / `record_consent` around it. The web consent surface exists too — and
+> the reason it did not answer to a search for a *modal* is that a modal was deliberately not
+> what was built: `docs/legal/IMPLEMENTATION_NOTES.md` records choosing a dedicated pre-app
+> page over an in-SPA `<dialog>` because it blocks harder. Only `OO_REQUIRE_CONSENT` is
+> genuinely absent, and that too is a recorded decision rather than an omission — the same
+> notes call it "intentionally left as a documented option, not the default, because
+> hard-blocking the web entrypoint could strand a desktop-launcher or `curl | bash` user with
+> no console." So S6's ask ("record the refusal where the design lives") was already
+> satisfied; nothing was decided here, and the one open question is whether the opt-in hard
+> block should ever ship.
+>
+> **What §1 said was already closed, re-verified rather than trusted.** The SOCKS/Tor proxy
+> blind spot is closed (`airplane.py` patches `http.client.HTTPConnection._tunnel` and
+> PySocks' `socksocket.connect`), and the folder-backup symlink traversal is closed
+> (`src/backup/folder_backup.py:701` refuses a symlink outright on the restore path, never
+> following it). Both hold at this anchor.
+
 ## 0. Working mode
 
 Read `_WORKING_MODE.md`, then the CLAUDE.md non-negotiables on the network kill switch and the socket-level

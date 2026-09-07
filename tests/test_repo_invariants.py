@@ -2038,6 +2038,20 @@ def test_custom_extractor_run_from_analysis_window_is_wired():
     assert "AI-derived metadata" in src
 
 
+def _oosky_code() -> str:
+    """oosky.js with BOTH comment forms stripped.
+
+    A "must be absent" guard trips on the comment that explains the absence, and
+    this needle is named in oosky.js's own header ("never Math.random"). The
+    recorded rule is to strip the comment, never to reword it -- that sentence is
+    what a future session reads before deciding the absence was an oversight.
+    """
+    import re
+
+    js = (_SRC / "static" / "oosky.js").read_text(encoding="utf-8")
+    return re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", js, flags=re.S))
+
+
 def test_ui_invariants():
     """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
     between sessions; now they fail CI instead of relying on memory."""
@@ -2084,6 +2098,24 @@ def test_ui_invariants():
     installer = (_ROOT / "install.sh").read_text(encoding="utf-8")
     assert '_mk_desktop "$APP_NAME-desk"' not in installer, (
         "single-launcher verdict: the installer must not create a Desk launcher"
+    )
+    # 31. The Observatory (ruled 2026-07-18; built 2026-09-07). The roster of
+    #     invariant #2 grew by one, and the surface's honesty rests on things a
+    #     reader cannot see in a canvas: which scale was drawn, what was left out,
+    #     and that the table beside it is the canonical view. Full behavioural
+    #     coverage is tests/test_observatory_ui.py + tests/oosky_node_test.js;
+    #     these are the four that must never regress silently.
+    assert '<button class="nav-item" data-tab="observatory"' in html, (
+        "the Observatory is a dedicated main tab in the sidebar (CLAUDE.md #31, #2)"
+    )
+    assert 'class="card-caveat" id="sky-caveat"' in html, (
+        "the Observatory caveat renders visibly, never behind a toggle (#31, informed consent)"
+    )
+    assert "LOG_MIN_SPAN" in _oosky_code(), (
+        "ooSky must keep its log-mode refusal -- a sub-decade log radius fabricates an axis (#31)"
+    )
+    assert "Math.random" not in _oosky_code(), (
+        "the sky is deterministic: same corpus, same sky, so change is signal (#31)"
     )
     # 8. external links ALWAYS confirmed via popup before opening (ruled
     #    2026-06-10) — delegated capture-phase guard in the UI.
@@ -2185,6 +2217,20 @@ def test_ui_invariants():
     for fn in ("schedulerStart", "schedulerRunNow", "firstRun"):
         body = html.split(f"async function {fn}(", 1)[1].split("async function", 1)[0]
         assert "ensureOnline(" in body, f"{fn} must consent before going online"
+    # 14e (2026-09-07, from a measured breach): the gate covers what the UI does to
+    #      HELP YOU DECIDE, not only the action. "Estimate size" egressed a live HEAD
+    #      to dumps.wikimedia.org with NO ensureOnline, for years, beside a "Download"
+    #      button that had one -- a preview reads as *looking*, not as *doing*, which
+    #      is exactly where a gate gets forgotten. Both are asserted here, together,
+    #      so the pair cannot drift apart again. (The general half of the amendment --
+    #      gate every estimate/preview/validation that runs BEFORE a gated action --
+    #      is a reading instruction; no grep can enumerate "every preview".)
+    for fn in ("startDump", "refreshDumpSizes"):
+        body = _strip_js_comments(_js_function_body(app_js(), fn))
+        assert "ensureOnline(" in body, (
+            f"{fn} egresses to the dump host, so it must pass the ONE consent popup "
+            "(CLAUDE.md #14, extended #14e)"
+        )
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
@@ -7684,7 +7730,7 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 562
+_CLAUDE_MD_LINE_CEILING = 616
 
 
 def _claude_md_lines() -> int:

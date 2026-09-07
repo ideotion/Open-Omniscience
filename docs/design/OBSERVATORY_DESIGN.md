@@ -2,7 +2,17 @@
 
 # The Observatory — the corpus as a night sky (design of record)
 
-**Status: DESIGN-ONLY — nothing built.** Maintainer-ruled 2026-07-18 (in-dialogue);
+**Status: BUILT (2026-09-07) — S0 · S1 · S2 · S3 · most of S6.** The `domain:` scaffold
+field and the payload endpoint shipped 2026-07-20 (`ae066e10`); the `ooSky` canvas
+renderer, the Observatory tab and its interactions shipped 2026-09-07,
+**Chromium-verified in the remote sandbox · awaiting the human UX pass** (the design's
+own §9 gate (c)). What is NOT built, and is honestly deferred: the arm/tag tier, the
+star-system and planet tiers, novae, the ooTimeScope scrub and the Telescope — see
+§9 for which slice each belongs to. UI invariant #31 in `CLAUDE.md` records what may
+not regress. **The line below is the ORIGINAL 2026-07-18 status and is kept as a
+record of when the ruling was given, not as a claim about the tree.**
+
+**Status at ruling (2026-07-18): DESIGN-ONLY — nothing built.** Maintainer-ruled 2026-07-18 (in-dialogue);
 **supersedes ruling Q5a (2026-07-13)**, which had deprioritized the 3D keyword explorer,
 and revives the 2026-06-16 flagship under that entry's own resolution A: **hand-rolled
 canvas 2.5D / CSS-3D — no Three.js, no WebGL** (reaffirmed by the 2026-07-13 maps ruling).
@@ -98,9 +108,11 @@ Measured 2026-07-18: the topic taxonomy is **eight tags** in the en baseline (po
 economy · health · climate · energy · science · technology · sport), 7 languages covered.
 The fear is growth (analyzer-grown + user tags); the guard answers it by construction:
 
-- **Universe tier: clusters = the scaffold's ~12 domains.** PREREQUISITE:
-  `configs/keyword_supergroups.yml` names the domains only in a prose comment — an
-  additive `domain:` field per group is a small data-curation slice (S0).
+- **Universe tier: clusters = the scaffold's ~12 domains.** ~~PREREQUISITE:
+  `configs/keyword_supergroups.yml` names the domains only in a prose comment~~ —
+  **DONE (S0, shipped 2026-07-20, `ae066e10`): all 77 groups carry a `domain:` field,
+  across exactly 12 distinct values.** Verified present 2026-09-07 against `main`
+  @ `d9ee33e7`; the prerequisite wording above is a record of the gap, not the state.
 - **Galaxy tier: arms = the top K (K≤6) topic tags among that galaxy's members by member
   count**, each arm requiring a minimum membership (proposed ≥5); every other member lives
   in the diffuse **DISC**, labeled "untagged / other (N)" — disclosed, never hidden. A

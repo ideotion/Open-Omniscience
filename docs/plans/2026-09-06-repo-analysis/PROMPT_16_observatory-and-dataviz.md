@@ -41,8 +41,12 @@ would be a beautiful picture of the junk.
 - Static when idle: no animation loops. LOD rides the hierarchy (≈5k sprites plus the nebula).
 - The sr-list and keyboard path are not an afterthought; the tabular views stay canonical.
 
-One additive backend change: the design needs a `domain:` field in `configs/keyword_supergroups.yml` — today
-the twelve domains live only in a comment.
+~~One additive backend change: the design needs a `domain:` field in
+`configs/keyword_supergroups.yml` — today the twelve domains live only in a comment.~~
+**STALE — corrected 2026-09-07 (staleness guard, working mode §2): the `domain:` field
+shipped 2026-07-20 (`ae066e10`) and all 77 groups carry it, across exactly 12 distinct
+values. There is no additive backend change to make here; the shipped payload was already
+sufficient for the universe and galaxy tiers this prompt builds.**
 
 ## 3. The wider vocabulary (the standing maintainer wish)
 
@@ -54,7 +58,16 @@ honesty semantics are encoded, the tests pass. What is missing is call sites.
 Candidates measured and dispositioned in the 2026-08-04 plan, so this prompt starts from evidence rather than
 taste:
 
-- **Article-length histogram — build with caveats.** The data is exact and already binned and is surfaced
+- **Article-length histogram — ALREADY BUILT; one named defect remained.** *(Corrected
+  2026-09-07: the figure shipped 2026-08-04 (`814e5dc1`) as Library → Composition, behind an
+  explicit "Measure article lengths" button rather than a tab-select autoload, with the
+  unequal-width caveat on the axis, the `by_language` segmented-only re-bin and the excluded
+  n stated — every caveat below was already honoured, and the 2026-08-04 plan's own execution
+  banner says so. This bullet was written from that plan's pre-execution body. The ONE live
+  defect in the list was the missing quarantine filter; it is fixed in this PR — the report
+  now holds quarantined rows out of BOTH its populations and publishes
+  `excluded_quarantined`, which the figure surfaces and the frontend states.)* The original
+  disposition follows. **Build with caveats.** The data is exact and already binned and is surfaced
   nowhere. But it needs an explicit action rather than a tab-select autoload (its fetch is a full `articles`
   scan with no route guard); the corpus-wide summary silently pools zh/ja/th with Latin text, so the primary
   chart must be built from the `by_language` entries where `unsegmented` is false, stating the excluded n; the
