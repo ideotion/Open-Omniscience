@@ -91,13 +91,32 @@ check("a grounded term shows the snippet from the reader's own copy", () => {
 check("an UNGROUNDED term says so — the absence is the finding", () => {
   const { ctx, host } = sandbox({});
   ctx.renderAiLens({ keywords: [
-    { id: 2, term: "Atlantis", kind: "keyword", confirmed: false },
+    // `evidence_absent` is the server saying it SEARCHED the stored copy and the term
+    // is not in it. That is the informative case.
+    { id: 2, term: "Atlantis", kind: "keyword", confirmed: false, evidence_absent: true },
   ]});
   assert.ok(host.innerHTML.includes("Not found in your stored copy of this article"),
     "a term the model produced that is not in the text was inferred, translated or " +
     "invented — an empty slot would read as 'nothing to show'");
   assert.ok(/class="r-aiev r-aigap"/.test(host.innerHTML),
     "and it is styled as the caveat it is, not as an evidence line");
+});
+
+check("a row with NEITHER key never claims a search that did not happen", () => {
+  // THE DEFECT THIS GUARDS. Rows written before the evidence writer existed hold NULL,
+  // and the lens used to render every one of them as "not found in your stored copy" —
+  // stating a search nobody ran. The server now omits BOTH keys when the stored copy has
+  // no text to search, and that is a different sentence, not a softer one.
+  const { ctx, host } = sandbox({});
+  ctx.renderAiLens({ keywords: [
+    { id: 3, term: "Atlantis", kind: "keyword", confirmed: false },
+  ]});
+  assert.ok(!host.innerHTML.includes("Not found in your stored copy"),
+    "with no search performed, the lens must NOT assert that the term is absent");
+  assert.ok(host.innerHTML.includes("Your stored copy has no text to search"),
+    "it says which of the three states this is, rather than leaving a blank");
+  assert.ok(/class="r-aiev r-aigap"/.test(host.innerHTML),
+    "still styled as the caveat it is");
 });
 
 check("the lens is LABELLED at the point of display and never merged into the index", () => {

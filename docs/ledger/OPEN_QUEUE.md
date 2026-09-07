@@ -10525,6 +10525,147 @@ code over a judgement it made deliberately. Also in `PARKED.md`, under the DDG e
   ordering collision between the two vLLM files. Untouched. The one member this session DID fix
   was not on the prompt's list: it was found by the mandatory baseline run, and it was RED on
   `main`.
+- **WHAT PROMPT_11 LEFT UNDONE — the standing list, written 2026-09-07 after #1024 merged
+  (`965e3e5`).** The executed record is the entry above; this is the actionable remainder, most
+  serious first. Items (1) and (5) are findings made while writing this list, not carry-over.
+  **(1) A LIVE HONESTY DEFECT IN MY OWN S5, and it is the exact collapse S1 was careful to
+  avoid.** `evidence` is written ONLY at insert time by `record_keywords`; there is no backfill
+  and no migration. So every `ai_keyword` row that existed before #1024 has `evidence = NULL`,
+  `GET /api/ai/articles/{id}/keywords` omits the field (`src/api/ai.py:210`), and the reader
+  renders "Not found in your stored copy of this article" (`src/static/reader.js:290`). For a
+  legacy row that sentence is FALSE: nothing ever searched. Two different facts — *searched and
+  genuinely absent* (the informative case: inferred, translated or invented) and *never searched*
+  — print as one, which is the same three-state collapse `weights_pin.py` refuses when it OMITS
+  `revision_matches_pin` rather than sending `False` for a cache nothing compared. The discipline
+  was applied in one slice of the PR and missed in the other, the same day. Anyone who ran the AI
+  keyword pass before 2026-09-07 sees the false label on EVERY term. **RECOMMENDED DEFAULT: a
+  deterministic offline top-up**, not a schema change — `evidence_for` needs only the stored
+  article text, is idempotent, and the repo already has the precedent in invariant #21's silent
+  `autoIndexInsights` backlog top-up. A `evidence_checked` column would also work and costs a
+  migration for a distinction a re-scan removes.
+  **FIXED 2026-09-07 (maintainer asked), AND NOT BY THE RECOMMENDED DEFAULT — the precedent I
+  cited turned out to be an argument AGAINST it.** `autoIndexInsights` carries a cooldown
+  because of the P0-5 storm (`/api/insights/reindex` called 1,326× in 369 s, "each batch a heavy
+  write contending with the live scrape"), so citing it as a licence to write was backwards. The
+  fix RESOLVES AT READ TIME instead and persists nothing, which removes the ambiguity rather
+  than describing it: `store.evidence_for_rows` searches the stored copy for every row the
+  endpoint is about to return, so an absent snippet IS "searched and not found". No migration,
+  no write inside a GET, no backfill window during which the answer is still wrong, and the
+  endpoint's "a read never writes anything" docstring stays TRUE.
+  **THREE STATES SHIP, because two were the defect:** `evidence` (occurs here), `evidence_absent`
+  (searched, not in your copy — the informative case), and NEITHER KEY when the stored copy has
+  no text, which is a different fact rather than a weaker "not found". +1 string ×12
+  ("Your stored copy has no text to search").
+  **ONE THING THE FIX ONLY JUST AVOIDED, worth keeping:** a compressed article keeps its text in
+  `compressed_content` and leaves `content` EMPTY, so searching the column directly would have
+  reported every term of every compressed article as absent — fabricating the exact absence this
+  lens exists to report. `article_evidence_text` goes through `Article.get_content()`, and
+  `test_compressed_articles_are_searched_through_get_content` is the guard.
+  Seven mutations, each reddening by name; the endpoint mutation that always claims absence
+  reproduces the original defect. Both i18n ratchets lowered to the measured values (555→554,
+  296→295).
+  **(2) BOTH PIN VALUES SHIP BLANK — the mechanism is complete, only the values are missing.**
+  `HF_REVISION_PINS` and `OLLAMA_DIGEST_PINS` in `src/llm/weights_pin.py` are empty dicts, so the
+  pin reports "not pinned, nothing was checked" — the honest third state, not a silent pass.
+  Resolving them needs `huggingface.co` / `ollama.com`, which answer this sandbox's proxy
+  `CONNECT ... 403` (`pypi.org` 200 as the control). OPERATOR STEP, on a connected machine:
+  resolve the Ministral snapshot's revision SHA and the Ollama manifest digest for
+  `MINISTRAL_TAG`, fill both dicts, and re-date `model-weights-revision` in
+  `configs/external_artifacts.yml`. The refusal path is already fixture-tested; a digest nobody
+  fetched, typed in from here, is the fabricated checksum the non-negotiables forbid.
+  **(3) AI-15 — ONE LOOKUP, still unanswered on its seventh consecutive session.** Is the Ollama
+  account `LiquidAI` the publisher's own? Same 403 as (2). Deliberately NOT guessed; it joins F1's
+  list. It gates nothing that ships, but it is the provenance claim behind the default model.
+  **(4) D8's HARNESS CANNOT BE STARTED, which is why its "operator step on the rig" is not
+  actually available.** `src/ai_layer/specialisation.py` ships 476 lines with its own suite, and
+  `run_shape` has no caller outside the test tree — no endpoint, no script, no button. NEEDS A
+  RULING before any build: D8's recommendation is "no build", and an invocation path IS a build.
+  The cheapest honest shape is a script rather than a surface, since the measurement is an
+  operator step and not a user feature. Read the deferral as "the harness cannot be run yet".
+  **(5) PRH-21's SECOND HALF IS MOOT AS WRITTEN, and the real question is different.** The
+  inventory says "the `OLLAMA_MODELS` hint is never keyed". The hint is `install.sh:526`, and it
+  sits INSIDE `configure_ollama_store_access()` (lines 495–528), which has exactly one occurrence
+  in the file — its own definition, zero call sites. So the string cannot be unkeyed FOR A USER:
+  it never prints. `install.sh` has no i18n machinery at all, so keying it is not a key addition
+  either. The live question is what to do with 34 lines of deliberately-dead shell that the
+  2026-06-20 ruling keeps uninvoked on purpose: keep it as a documented affordance an operator can
+  call by hand, or delete it. NEEDS A RULING; do NOT wire it (that runs `sudo chmod` during
+  install, which is exactly what the ruling removed).
+  **(6) D10 / S4's NUMERIC FLOORS remain the operator's graded gold set (R6).** The structural
+  half is built and test-pinned; the floors are a measurement nobody in a sandbox can take.
+  **(7) FOUR CI LANES HAD NOT REPORTED WHEN #1024 MERGED**, on the maintainer's instruction with
+  the full `test` suite and the `PQC signing path` lane already green: Core-only install, Columnar
+  store, Portability (windows-latest), SQLCipher wheel smoke (ubuntu-latest). Core-only is the one
+  to read — it is the lane that proves the new probes report UNAVAILABLE rather than raising when
+  `pqcrypto`/`opentimestamps` are absent. It was reproduced locally with a `builtins.__import__`
+  shim (81 passed, 8 skipped, 0 failed); that is evidence, not CI's verdict, and the two are not
+  interchangeable. **CORRECTION, same session, ~1h after this item was written: the sentence "they
+  now run against `main`" was WRONG, and item (8) is why.** The verdict has to come from a PR run;
+  for these four it came from #1036's, whose head carries #1024's code via the merge.
+  **RESOLVED 2026-09-07 18:07 UTC — THREE OF THE FOUR ARE GREEN, INCLUDING THE ONE THAT MATTERED.**
+  On #1036 head `0eaf2a3`, run `34147233035`: **Core-only install SUCCESS** (job `101821786146`,
+  17:49:37 → 18:07:37), Columnar store SUCCESS, SQLCipher wheel smoke SUCCESS on all three OSes;
+  Portability (windows-latest) still queued, and it observes rather than gates. So the S2 claim
+  that the capability probes report UNAVAILABLE rather than RAISING when `pqcrypto`/
+  `opentimestamps` are absent is now carried by CI, not only by the local `builtins.__import__`
+  shim — which is the distinction this item existed to keep open, and it is now closed in the
+  direction the shim predicted. The merge of #1024 on incomplete CI is retrospectively vindicated,
+  which is worth recording precisely BECAUSE it could have gone the other way: a green outcome does
+  not make merging before the lane reported a sound method, and item (8) is why the method was
+  weak.
+  **(8) `main` ITSELF HAS HAD NO CI VERDICT FOR FIFTEEN CONSECUTIVE MERGES — found 2026-09-07
+  while trying to read item (7)'s lanes, and it is a repo-level gap rather than a PROMPT_11
+  item.** Every one of the fifteen most recent COMPLETED push-to-`main` runs of `ci.yml` concluded
+  **`cancelled`**, unbroken from #1009 (2026-09-05) through #1024 and #1023 today. None of them
+  ran: `list_workflow_jobs` returns **zero jobs** for the ones checked (#1024's `34146578254`,
+  #1023's `34146815483`), so they were killed while still PENDING, before a single job dispatched.
+  The concurrency block at `ci.yml:22-24` is where it happens, group `${{ github.workflow }}-${{
+  github.ref }}` with `cancel-in-progress` written to be FALSE on the default branch.
+  **CORRECTION, SAME SESSION — I ASSERTED A MECHANISM MY EVIDENCE DOES NOT ESTABLISH.** This entry
+  first said GitHub keeps at most one PENDING run per group and supersedes it, so every main run
+  dies before starting. Zero jobs plus a cancellation timestamp matching the next run's creation is
+  consistent with that — and EQUALLY consistent with the `cancel-in-progress` expression evaluating
+  TRUE on `main`, i.e. the exemption simply not working. The two are indistinguishable from what I
+  measured, and PR #1040 reached the same finding independently and was RIGHT to mark the mechanism
+  **"UNMEASURED, deliberately"**: the cancellation reason that would separate them is not cleanly
+  exposed by the Actions API. Read #1040's entry as the primary record — its sample is larger and
+  its restraint is better. **The one argument that does bear on it, for whoever resolves this:**
+  under pure pending-supersession a run that has actually STARTED survives, so some push run should
+  eventually complete — and #1040 measures that ZERO ever have. That leans against supersession,
+  except that the observed queue depth (this session's own jobs sat queued over forty minutes)
+  means a run rarely reaches "running" before the next merge arrives, which rescues it. So the
+  question is genuinely open, and the fix must not be chosen from either story until someone reads
+  the mechanism rather than the symptom. The timestamps are exact — #1024's run
+  updated at 17:15:08 and #1023's was created at 17:15:07; #1022's updated at 17:11:50 and #1024's
+  created at 17:11:49. **What this means: the repo's entire CI protection is PR runs.** Nothing
+  verifies the merge COMMIT — so a semantic conflict between two PRs that are each green alone
+  would land on `main` unseen, which is exactly what a merge queue exists to catch and exactly
+  what the fast-merge ritual makes likely. NEEDS A RULING, and the honest options are not equal:
+  (a) adopt a merge queue, which is the real fix and changes the merge ritual; (b) keep push runs
+  but let them queue rather than supersede, which needs a per-SHA concurrency group (`${{
+  github.sha }}`) and will run many suites at once on a busy day; (c) accept PR-run-only coverage
+  as DELIBERATE and say so in the ritual, so nobody again reads a cancelled main run as a pass.
+  Do NOT read (c) as the cheap default: it is only honest if the ledger stops implying main is
+  verified. Recorded rather than changed, because `ci.yml`'s concurrency is a workflow-policy
+  decision and this session found it, it was not asked to set it. **AND PR #1040 ADDS THE ARGUMENT
+  THIS ENTRY WAS MISSING: the fix spends the maintainer's money.** A concurrency change makes every
+  merge run a full macOS + Windows + ubuntu matrix instead of being cancelled, at roughly one merge
+  every four minutes — so option (a)/(b) is a COST decision, not merely a correctness one, and #1040
+  names the cheap alternative I did not: rule that the nightly cron IS the referee for `main` and
+  require sessions to reproduce lanes locally. Its measurement also supplies what mine lacked —
+  of the 40 most recent completed runs, **34 cancelled · 2 failure · 4 success, and all four
+  successes are the `schedule` cron**, so the cron referee already exists in fact. TWO ENTRIES NOW
+  DESCRIBE ONE FINDING (this one and #1040's, from parallel sessions); both are kept per the
+  additive rule, and #1040's is the one to cite.
+  **ONE FACT THAT BEARS ON OPTION (c) SPECIFICALLY, measured on this branch 2026-09-07 19:48:**
+  "PR runs are the referee" assumes PR runs COMPLETE, and at this merge cadence they can be starved
+  the same way. Any branch touching `docs/ledger/OPEN_QUEUE.md` is re-conflicted by the next merge
+  that appends to it — four times in four hours here — and each resolve-and-push CANCELS its own
+  queued PR run (`cancel-in-progress` is TRUE off the default branch, correctly) and restarts a
+  queue that was measured at 45+ minutes. Main moving roughly every ten minutes against a queue
+  that long means a ledger branch can be forced to re-merge faster than its own CI can conclude.
+  So (c) is not free either: it needs the queue to drain faster than `main` moves, which is the
+  same runner-capacity question option (b) raises, arriving from the other side.
 
 - **THE NINE V1 RULINGS ANSWERED (maintainer ruled 2026-09-07, PROMPT 23 planning session,
   branch `claude/v1-pathway-planning-4pf6n8`; V1_PATHWAY_2026-07-14 §7 had carried V1-1..V1-9
