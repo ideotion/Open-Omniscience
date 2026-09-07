@@ -502,6 +502,41 @@ _ARTICLE_TOP_KEYWORD_COLUMNS: dict[str, str] = {
 }
 
 
+# THE KEYWORD PASS'S ATTEMPT RECORD (PRH-01). Additive + NULLABLE with NO backfill:
+# an existing article reads NULL, which means "keyword indexing has never been attempted
+# here" -- the same thing a genuinely never-attempted article means, and the correct
+# reading for both (worth trying). Populates forward from index_article. Same self-heal
+# pattern as the quarantine / detected_language / top_keyword columns above.
+_ARTICLE_KEYWORD_INDEXED_COLUMN: dict[str, str] = {
+    "keyword_indexed_at": "ALTER TABLE articles ADD COLUMN keyword_indexed_at DATETIME",
+}
+
+
+def ensure_article_keyword_indexed_column(engine: Engine) -> list[str]:
+    """Self-heal ``articles.keyword_indexed_at`` (idempotent, additive).
+
+    No backfill, deliberately: stamping every existing article now would claim an
+    attempt that never happened, and the honest NULL already sorts such an article
+    FIRST in the backfill queue, which is exactly where it belongs."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_KEYWORD_INDEXED_COLUMN.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_article_top_keyword_columns(engine: Engine) -> list[str]:
     """Self-heal the articles top-keyword precompute columns (idempotent, additive).
 
@@ -1067,11 +1102,18 @@ def ensure_supergroup_ring_column(engine: Engine) -> list[str]:
 SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "feed_fetch_state": frozenset(_FEED_BACKOFF_COLUMNS),
     "article_analyses": frozenset(_ARTICLE_ANALYSIS_COLUMNS),
+    # top_keyword_* and keyword_indexed_at were self-healed but UNREGISTERED until
+    # 2026-09-07: their migrations add columns from a loop over a module table, which the
+    # drift guard's parser could not resolve, so they were silently exempt from it. The
+    # parser now reads that form (tests/test_migration_self_heal_drift.py) and these are
+    # declared -- the self-heals themselves were always wired, only the registry was blind.
     "articles": (
         frozenset(_ARTICLE_IDENTITY_COLUMNS)
         | frozenset(_ARTICLE_IP_COLUMNS)
         | frozenset(_ARTICLE_DETECTED_LANG_COLUMN)
         | frozenset(_ARTICLE_QUARANTINE_COLUMNS)
+        | frozenset(_ARTICLE_TOP_KEYWORD_COLUMNS)
+        | frozenset(_ARTICLE_KEYWORD_INDEXED_COLUMN)
     ),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL, column + its index).
@@ -1084,7 +1126,12 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS),
     # ensure_source_qualification_columns (the admission-gate STAMP columns) +
     # ensure_source_last_crawled_column (§8 crawl-by-default rotation marker).
-    "sources": frozenset(_SOURCE_QUALIFICATION_COLUMNS) | frozenset(_SOURCE_LAST_CRAWLED_COLUMN),
+    # ensure_source_counter_columns joins them for the same reason as the articles note.
+    "sources": (
+        frozenset(_SOURCE_QUALIFICATION_COLUMNS)
+        | frozenset(_SOURCE_LAST_CRAWLED_COLUMN)
+        | frozenset(_SOURCE_COUNTER_COLUMNS)
+    ),
 }
 
 
