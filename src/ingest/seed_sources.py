@@ -137,21 +137,44 @@ def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
     """Catalog entries a domain-keyed seeder can never register: ``{domain: [shadowed]}``.
 
     ``Source.domain`` is UNIQUE, so one domain holds one feed -- and the catalogue
-    describes several distinct feeds per registrable domain. Measured on
-    ``configs/sources.yml`` (2026-09-07): 54 domains carry more than one entry and 227
-    of 3,429 entries are shadowed by an earlier sibling. They are NOT redundant rows.
-    ``bbc.com`` alone carries 31, and the 30 that lose are BBC's non-English language
-    services -- Arabic, Hausa, Swahili, Persian and the rest; ``rfi.fr`` shadows its
-    English, Spanish, Portuguese and Chinese services the same way. So the entries this
-    reports are, disproportionately, the catalogue's own non-Anglophone coverage.
+    describes several distinct feeds per registrable domain. Measured 2026-09-07 on
+    ``configs/sources.yml``: 54 domains carry more than one entry and 227 of 3,429 are
+    shadowed by an earlier sibling. Measured on what ``seed_default_sources`` really
+    builds -- five catalogues concatenated -- 299 domains and **475 of 3,870**, which
+    is the figure an install reports and the only one that counts a CROSS-catalogue
+    collision.
+
+    They are NOT redundant rows, and the losses come in two shapes:
+
+    * **Language services.** ``bbc.com`` carries 31 entries and the 30 that lose are
+      BBC Arabic, Hausa, Swahili, Persian and the rest; ``dw.com`` and ``rfi.fr`` the
+      same. Across the curated file, 75 shadowed entries declare a language and
+      declare a DIFFERENT one than the sibling that survives.
+    * **Editorial metadata.** 220 of the cross-catalogue losses are
+      ``sources_spectrum.yml`` losing to ``sources.yml``, and 192 shadowed entries
+      carry a ``lean-*`` tag the survivor lacks -- ``cnn.com`` loses
+      ``lean-center-left``, ``dailymail.co.uk`` loses ``lean-right``. The
+      political-lean vocabulary reaches ``Source.tags`` for barely any outlet that
+      has it.
 
     That makes the obvious repair the wrong one: DELETING the shadowed entries would
     delete exactly the multilingual breadth the language-equilibrium lever exists to
-    balance. Recovering them needs a decision about source identity (today a domain;
-    the alternative is the feed) which reaches the alias-aware dedup, the restore-merge's
-    domain joins, the qualification overlay and the citations tally -- a maintainer
-    ruling, recorded rather than taken here. This function exists so the loss is
-    COUNTED and inspectable instead of silent.
+    balance, and the editorial dimension the spectrum catalogue exists for. Recovering
+    them needs a decision about source identity (today a domain; the alternative is the
+    feed) which reaches the alias-aware dedup, the restore-merge's domain joins, the
+    qualification overlay and the citations tally -- a maintainer ruling, recorded
+    rather than taken here. Note what does NOT work: the language services do not live
+    on distinct hosts (all 31 BBC entries share ``feeds.bbci.co.uk``, differing only in
+    the feed PATH), so splitting them into separate domain rows is not available.
+
+    NOT EVERY COLLISION IS A DEFECT. ``seed_legal_sources`` routes through the same
+    seeder, and the legal catalogue deliberately carries one host as two rows when it
+    publishes both a codes portal and a gazette (ruled 2026-07-17: "registration must
+    collapse them"). Those 14 are a designed collapse counted by the same field as an
+    accidental one -- the count is exact either way, the INTERPRETATION differs by
+    catalogue.
+
+    This function exists so the loss is COUNTED and inspectable instead of silent.
 
     Pure: takes the loaded catalogue, touches no database. The winner is the FIRST entry
     for a domain, which is the order ``seed_sources`` itself inserts in.
@@ -179,17 +202,31 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     counter over two facts that mean opposite things: a domain already in the database
     is an idempotent re-run working correctly, while a domain claimed by an EARLIER
     entry of this same input is a catalogue entry that will never be registered on any
-    install. Conflated, the second was invisible -- 227 entries, most of them
-    non-English language services (see :func:`catalog_domain_collisions`). ``skipped``
-    keeps its old value (their sum) so every existing caller reads unchanged.
+    install. Conflated, the second was invisible -- 475 entries on a real boot, 227 of
+    them inside ``configs/sources.yml`` alone (see :func:`catalog_domain_collisions`
+    for what they are and why deleting them is the wrong repair). ``skipped`` keeps its
+    old value (now the sum of all three reasons) so every existing caller reads
+    unchanged.
     """
     existing = {d for (d,) in session.query(Source.domain).all()}
     claimed: set[str] = set()
     to_add = []
     skipped_existing = 0
+    skipped_malformed = 0
     shadowed: list[dict] = []
     for s in sources:
-        domain = s["domain"]
+        domain = s.get("domain") or ""
+        if not domain:
+            # The same rule `catalog_domain_collisions` uses, for the same reason: one
+            # rule, two implementations, and they must not answer differently. Reading
+            # `s["domain"]` raised on an absent key and, worse, an entry with an empty
+            # domain was counted as SHADOWED and then built into a `Source(domain=None)`
+            # against a NOT NULL column -- an IntegrityError at commit that would take
+            # the whole batch with it. Unreachable through either shipped loader (both
+            # filter on a truthy name and domain), which is exactly why it needed
+            # pinning rather than leaving to chance.
+            skipped_malformed += 1
+            continue
         # Shadowing is a property of the CATALOGUE, not of this run: an entry an
         # earlier sibling of the same input already claims can never be registered
         # on any install, whether or not the database happens to hold that domain
@@ -210,9 +247,10 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
         session.commit()
     return {
         "created": len(to_add),
-        "skipped": skipped_existing + len(shadowed),
+        "skipped": skipped_existing + len(shadowed) + skipped_malformed,
         "total": len(sources),
         "skipped_existing": skipped_existing,
+        "skipped_malformed": skipped_malformed,
         "shadowed": len(shadowed),
         "shadowed_examples": [
             {"name": s.get("name"), "domain": s.get("domain")}
