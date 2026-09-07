@@ -31,7 +31,7 @@ tag → flip). Nothing on this board touches the version.
 | B | A multi-day (≥72 h) collector soak | operator | ruled 2026-08-23, moved from 0.3 row 7b | **OPEN** |
 | C | Diagnostics on the ~1M-article instance | operator | ruled 2026-08-23, moved from 0.3 row 3's earlier bar | **OPEN** |
 | D | Row B's evidence is readable from one artifact | session | *proposed* | **BUILT — awaiting a run to read** |
-| E | Row A's demonstration has tooling that can state its own result | session | *proposed* | **OPEN** |
+| E | Row A's demonstration has tooling that can state its own result | session | *proposed* | **PARTIAL** — the check is built and rides the bundle; the RUN is Row A's |
 | F | The browser bar reaches a human, a second engine, or is closed as-is | shared | *proposed* | **OPEN** |
 
 Rows A–C are the substance. D and E exist because A and B are both **operator** rows whose
@@ -173,6 +173,35 @@ pairing across an import.
 **Not built here**, and deliberately: it is tooling for a data-safety demonstration, it wants
 its own reviewed slice with the full skeptic matrix, and building it in the same PR as the gate
 that asks for it would leave nobody to check it against the ask.
+
+**BUILT 2026-09-07** (prompt 07 S5, `src/catalog/qualification_integrity.py` +
+`GET /api/diagnostics/qualification-integrity`, a member of the all-diagnostics bundle as
+`qualification-integrity.json`). It answers the closing clause and does **not** need the
+before/after pairing this row asked for, because of one property of the data: the attempt log
+**is** the "before". `source_qualification_attempts` is append-only, it is carried by the merge
+with ids remapped, and `evaluate_and_stamp` writes the attempt row and `Source.status` in the
+same transaction — so for any judged source the two must agree, and
+
+    status == the verdict of its NEWEST judging attempt
+
+A violation is exactly the 2026-07-24 inversion. That makes the clause answerable **after** an
+import rather than only around one, so an operator who has already run it can still answer this
+row months later from the corpus itself.
+
+**What it publishes:** both directions kept apart (`laundered` — judged disqualified, no longer
+disqualified, the direction Row A names; `demoted` — the same stamp loss starving a source out
+of collection), each **named** up to a cap with the exact total beside it; the disqualified
+sources it examined, named (Row E's "state its own result"); and `checked.with_judging_attempt`
+as the denominator, because a corpus with no judgements reports `not-measurable-here` rather
+than a clean bill of health — "nothing wrong" and "nothing to look at" are opposite findings.
+
+**What it cannot see, stated in the payload:** a regression that dropped the stamp columns *and*
+the attempt rows together leaves the receiving instance no "before" either. That is what the
+denominator is for.
+
+**Still open on this row:** the RUN. The check is Row A's instrument, so it closes when Row A
+does — read `qualification-integrity.json` out of an all-diagnostics bundle taken after the
+committed import, and the clause is answered by a number naming the sources.
 
 ---
 

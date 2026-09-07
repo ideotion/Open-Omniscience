@@ -2050,6 +2050,30 @@ def source_audit(
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/qualification-integrity")
+def qualification_integrity(db: Session = Depends(get_db)) -> JSONResponse:
+    """0.4 Row A's closing clause, as a number: is a previously-DISQUALIFIED source still
+    disqualified?
+
+    Row A closes on a committed import at scale, and its clause exists because "a pass that
+    only counts ``qualified`` rows cannot see the inversion this row exists to catch" -- the
+    2026-07-24 defect, where the merge's column allowlist dropped the qualification stamp and
+    a known-bad source arrived carrying ``server_default='unqualified'``, indistinguishable
+    from never-judged. Row E asks for tooling because on tens of thousands of sources a
+    by-hand spot-check "is exactly the shape of check that gets reported as done without
+    being done".
+
+    The attempt log is the "before": ``evaluate_and_stamp`` writes the attempt row and
+    ``Source.status`` in one transaction, so for any judged source the two must agree. That
+    makes this answerable AFTER an import rather than only around one. Both directions are
+    counted apart (laundered / demoted), the examined disqualified sources are NAMED, and a
+    corpus with no judgements reports ``not-measurable-here`` rather than a clean bill of
+    health. Read-only; counts and names, never a score."""
+    from src.catalog.qualification_integrity import qualification_integrity_report
+
+    return JSONResponse(qualification_integrity_report(db))
+
+
 @router.get("/source-qualification-export")
 def source_qualification_export(
     download: bool = Query(False),
@@ -3821,6 +3845,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # the split of its app-provided sources (judged vs still pending). Read-only.
         ("source-qualification-export.json",
          lambda: source_qualification_export(download=False, fmt="json", db=db)),
+        # 0.4 Row A's closing clause (Row E's tooling): does every judged source still
+        # carry the verdict its own history recorded? Read-only, and cheap -- the exact
+        # re-read runs only over the candidates the grouped query surfaced.
+        ("qualification-integrity.json", lambda: qualification_integrity(db=db)),
         # The concurrency sweep's own MECHANISM (2026-08-09). The sweep itself is an
         # operator action needing a live model; this proves it really runs concurrently
         # -- a bench that silently ran serially would still publish a plausible curve.
@@ -4076,6 +4104,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/source-audit": "source-audit.json",
     "/source-audit-selftest": "source-audit-selftest.json",
     "/source-qualification-export": "source-qualification-export.json",
+    "/qualification-integrity": "qualification-integrity.json",
     "/dates": "date-extraction.json",
     "/performance": "performance.json",
     "/benchmark": "benchmark.json",
