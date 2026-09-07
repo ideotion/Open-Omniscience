@@ -37,6 +37,24 @@ def _font_px(selector: str) -> float:
     return float(m.group(1))
 
 
+def _font_px_exact(selector: str) -> float:
+    """``_font_px`` for a selector that is a SUFFIX of another one.
+
+    ``css_rule`` finds ``selector + " {"`` as a plain substring, so ``.card h4``
+    resolves to ``.brief-bucket .card h4 {`` — which occurs first and declares only
+    line-clamping, no size. The guard then failed against perfectly correct CSS: the
+    recorded non-unique-needle trap, and the helper's own docstring warns about it.
+    Anchoring on the rule's start (newline + indent) is what makes the needle unique.
+    """
+    m = re.search(
+        r"\n\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", CSS
+    )
+    assert m, f"no rule starting exactly at selector {selector!r}"
+    size = re.search(r"font-size:\s*([\d.]+)px", m.group(1))
+    assert size, f"{selector} declares no px font-size: {m.group(1)}"
+    return float(size.group(1))
+
+
 # --------------------------------------------------------------------------- #
 #  the move
 # --------------------------------------------------------------------------- #
@@ -124,6 +142,17 @@ def test_opening_advanced_still_fetches_nothing_for_diagnostics():
 # --------------------------------------------------------------------------- #
 #  the type scale
 # --------------------------------------------------------------------------- #
+#  Retargeted 2026-09-07 (PRH-32) from ``#tab-settings .panel h2/h3`` to the app-wide
+#  selectors.  The scale shipped scoped to Settings "because that is what was asked",
+#  and the same inversion was still live on every other tab -- measured in Chromium on
+#  all 17 themes before the lift: Home's "By channel" rendered 12.5px --muted at
+#  4.56-12.71:1 while a briefing card's own <h4> inside it rendered 15px full --fg at
+#  6.07-18.10:1.  These guards keep their original PROPERTY and only widen their scope,
+#  which is the deliberate supersession the file's other retargeting note describes.
+SCALE_H2 = ":where(.panel, dialog) :where(h2)"
+SCALE_H3 = ":where(.panel, dialog) :where(h3)"
+
+
 def test_a_section_name_outranks_everything_inside_it():
     """Maintainer 2026-08-11: "some inner parts of the sections appear bigger or
     brighter than section titles which is confusing."
@@ -134,8 +163,8 @@ def test_a_section_name_outranks_everything_inside_it():
     """
     body = _font_px("body")
     fold = _font_px(".adv-sec-t")
-    h2 = _font_px("#tab-settings .panel h2")
-    h3 = _font_px("#tab-settings .panel h3")
+    h2 = _font_px(SCALE_H2)
+    h3 = _font_px(SCALE_H3)
     small = _font_px(".small")
     hint = _font_px(".hint")
 
@@ -144,6 +173,11 @@ def test_a_section_name_outranks_everything_inside_it():
         f"> h3 {h3} > body {body}"
     )
     assert body > small >= hint, f"body {body} > small {small} >= hint {hint}"
+    # A card title is the loudest thing a briefing card contains and must still sit
+    # UNDER the section that holds it -- this is the pair that was actually inverted
+    # on Home, and reading the ladder without it would miss the reported defect.
+    card = _font_px_exact(".card h4")
+    assert h2 > card, f"a card title ({card}px) must not outrank its section ({h2}px)"
 
 
 def test_the_hierarchy_survives_translation():
@@ -151,11 +185,55 @@ def test_the_hierarchy_survives_translation():
     in Arabic, Chinese, Japanese, Hindi or Bengali, so a title that relied on it read
     as small dim text in five of the twelve locales — the old .panel h2 did exactly
     that. A heading may not lean on case again."""
-    for sel in ("#tab-settings .panel h2", "#tab-settings .panel h3"):
+    for sel in (SCALE_H2, SCALE_H3):
         rule = css_rule(CSS, sel)
         assert "uppercase" not in rule, f"{sel} must not encode rank as letter case"
         assert "font-weight:700" in rule.replace(" ", ""), f"{sel} must carry its own weight"
         assert "var(--fg)" in rule, f"{sel} must be full-brightness, not --muted"
+
+
+def test_the_old_muted_uppercase_section_title_cannot_come_back():
+    """The negative-space twin of the two guards above, and the one that actually
+    fails if the lift is reverted: the defect was not "no scale exists", it was a
+    MORE SPECIFIC rule re-imposing 12.5px/--muted/uppercase on ``.panel h2``.  A
+    zero-specificity ``:where()`` default loses to any such rule silently, so the
+    ordering assertions above would still pass while every section title on every tab
+    outside Settings went back to being the dimmest thing in its own panel.
+
+    Comment-stripped, because the comment beside the fix necessarily quotes the very
+    declarations being forbidden (the recorded must-be-gone-guard trap, in CSS).
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
+    for banned in (".panel h2 {", ".panel h2{", "#tab-settings .panel h2 {"):
+        assert banned not in css, (
+            f"{banned!r} re-introduces a class-specificity rule for a section title; the "
+            "scale is deliberately zero-specificity so component classes can override it"
+        )
+
+
+def test_a_deliberately_small_label_still_beats_the_scale():
+    """Why the scale is written with ``:where()`` and not as ``.panel h3``.
+
+    Three classes name headings that are SUPPOSED to be small -- a briefing family
+    lens, a figure caption, a Library sub-heading.  A plain ``.panel h3`` rule carries
+    (0,1,1) and would have beaten all three, blowing 12-13px labels up to 15.5px; the
+    zero-specificity form loses to every one of them by construction.  Measured live
+    before and after the lift: all three read the same px in Chromium.
+
+    Asserted as the specificity RELATION, not as "the classes exist" -- the classes
+    existed before the lift too and said nothing about which rule wins.
+    """
+    for sel, expected in ((".brief-bucket > h3", 12.0), (".fig-title", 13.0), (".lib-sub", 13.0)):
+        assert _font_px(sel) == expected, f"{sel} changed size; the scale may be overriding it"
+    scale = css_rule(CSS, SCALE_H3)
+    assert scale, "the scale rule must exist for this comparison to mean anything"
+    # The mechanism itself: every selector in the scale is wrapped, so it contributes
+    # no specificity at all.  Drop the :where() and these three labels lose.
+    for sel in (SCALE_H2, SCALE_H3):
+        assert sel.count(":where(") == 2, (
+            f"{sel} must keep BOTH :where() wrappers -- one unwrapped half restores enough "
+            "specificity to beat .fig-title and .lib-sub"
+        )
 
 
 def test_the_small_class_actually_has_a_rule():
