@@ -14979,6 +14979,70 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **OPERATOR STEPS (in the brief's §8, none guessable from here):** the A/B host checks + the
   kernel-log capture at the next crash; nothing else in the plan is gated on them.
   PENDING: the brief's execution (14 sequenced PRs, S0.1 first).
+- **WHOLE-REPOSITORY ANALYSIS + THE 23-PROMPT ACTION PLAN (maintainer-asked 2026-09-06: "have a detailed
+  look at the repo's documentation, future developments, unfinished projects and ideas, unresolved bugs and
+  anything marked in the memory as something to do later. Sort everything into a detailed action plan
+  structured into several prompts … for autonomous opus 5 coding sessions … Don't code or fix anything";
+  plan of record = [`docs/plans/2026-09-06-repo-analysis/`](docs/plans/2026-09-06-repo-analysis/),
+  entry point `00_INDEX.md`; ANALYSIS + PLANNING ONLY — nothing coded, nothing fixed, the only tree changes
+  are the plan folder and one `docs/README.md` pointer):** twelve READ-ONLY investigation agents swept
+  `FUTURE_DEVELOPMENTS.md`, the whole `docs/design/` tree, the roadmaps/gates/process docs, the **ENTIRE PR
+  history #1–#1010**, code/test/CI markers and the audit reports; every claim they returned was re-derived
+  from the tree at `main`@`1d421e9` by the orchestrating session before entering the inventory.
+  **THE HEADLINE FINDING, and it is about this repository's memory rather than its code: the single largest
+  category of "open work" here is DOCUMENTS DESCRIBING A PAST STATE OF THE TREE.** Four session briefs carry
+  a "Status: PENDING execution" banner written by the session that then executed them within 48 hours; and
+  the DB-10 create-time seam, the OSM preprocessing bridge, the quarantine ACTION, stoplists-as-data-files,
+  the Ollama `num_ctx` auto-tune, newsletter-links-to-`ArticleLink` and the qualification-assist button are
+  each recorded somewhere as open and each present in the tree. That is not tidiness: a stale claim costs a
+  future session a whole rebuild and costs the maintainer a decision they already made — which is why the
+  plan's verdict vocabulary separates BUILT · PARTIAL · UNBUILT · STALE-CLAIM · OPERATOR-GATED ·
+  RULING-GATED · BROWSER-GATED · UNCHECKED, and uses UNCHECKED honestly rather than upgrading a claim it did
+  not re-derive.
+  **DELIVERED:** `00_INDEX.md` (themes, suggested order, concurrency fences, the prompt map) ·
+  `INVENTORY.md` (every open item with its verdict, the tree anchor that proves it, where the stale claim
+  lives, and its owning prompt, plus the operator-gated / ruling-gated / browser-gated / stale-claim lists) ·
+  `_WORKING_MODE.md` (the rules every prompt shares — ledger-first; the staleness guard; the verbatim gate
+  commands including the THREE SEPARATE i18n commands, both ratchets at zero slack; the tree-scanning guard
+  set; what this sandbox can actually do; the honesty rules; the closeout rituals) ·
+  `QUESTIONS_FOR_THE_MAINTAINER.md` (**65 decisions**, each with context, options and a recommended default,
+  with the irreversible and data-safety ones marked so an autonomous session may not decide them under the
+  standing autonomy ruling) · `PROMPT_01`…`PROMPT_23`.
+  **NEW: a `PRH` section of 35 items found ONLY in a pull-request body and in no memory file.** Among them,
+  each re-verified against the tree this pass: `backfill_corpus` has **no cursor**, so an article that
+  legitimately yields zero terms is re-selected forever and holds the front of the queue (the 2026-07-23
+  livelock shape, one subsystem over; a reproducer already exists in `scripts/analysis/`); `structlog` is an
+  orphaned core dependency (declared in pyproject, **zero** call sites against ~612 stdlib-logging sites);
+  `_clean_url` strips the query string BEFORE validation, so every real DuckDuckGo `/l/?uddg=<target>`
+  redirect loses its target and is discarded as scheme-less — in the one sanctioned external channel, with a
+  test that asserts only that a list came back; `extract_locations` scans the whole text once PER gazetteer
+  entry (~4,700 patterns, 2,558 ms/article at 4,500 cities); the quarantine filter reaches `queries.py` (9
+  references) and **not** `store.py` / `rollup_serve.py` / `columnar.py` (0 each), so every counter-, rollup-
+  and columnar-served keyword aggregate counts quarantined articles; `AiKeyword.evidence` has zero writers
+  and `POST /api/ai/keywords/confirm` no frontend consumer; and PR #18's key-rotation / Key-Revocation-List /
+  hardware-backed-key notes survived nowhere when that PR's content re-landed as `src/custody`.
+  **ALSO MEASURED THIS PASS (numbers, not claims):** **56** `async def` handlers still take
+  `Depends(get_db)` — 50 of them in `source_management.py` — with **no AST guard** preventing the
+  fifty-seventh, so the whole-server-freeze family the Lessons list already names three times remains open at
+  its largest single site; `src/api/diagnostics.py` is **6,200 lines**; inline `on*=` handlers are **~590**
+  (~331 in `index.html`, ~259 across the seventeen `app-*.js` modules) against the ledger's recorded "295 as
+  of 2026-06-15", which counted `index.html` only and predates the module split; the Insights search bar
+  (`#ins-term` / `exploreTerm`) is still live; and the P0 "100 GB" acceptance strings were corrected on
+  2026-08-03, so the ledger sentence naming them as stale is itself the stale half.
+  **WHAT IS GENUINELY OPEN, once the stale claims are removed** (§"What is actually open" in the index):
+  the egress allowlist (five consecutive sessions have now failed a reach-a-named-publisher task through
+  five different tool surfaces — it is not a prompt problem, and one allowlist entry unblocks ten items) ·
+  ~20 maintainer rulings, several create-time irreversible · the operator measurements (month occupancy,
+  `configs/source_qualification.yml`, the graded gold sets, the ≥72 h soak, the committed full import) · the
+  56 handlers · file members inside the signed backup artifact (the top parked data-safety item, and the
+  reason both the wiki-dump and models-in-backup rulings sit unbuilt) · the Phase-2 promotion frontier · the
+  static-embedding layer and the BM25F default, both waiting on ten minutes of gold-set grading · the
+  Observatory frontend · the UI backlog · documentation hygiene · and the 35 PR-only items.
+  **NO RULING IS INVENTED HERE.** Every decision the analysis found open is recorded as a question with a
+  recommended default, never as a decision taken; the standing 2026-06-15 autonomy ruling applies to the
+  unmarked ones and explicitly does not apply to the marked ones. **PENDING:** the maintainer's answers, and
+  then the prompts' execution.
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
