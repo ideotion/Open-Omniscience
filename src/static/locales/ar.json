@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "افتح هذه الكلمة المفتاحية كنافذة مجموعة: الاتجاه والمقالات الأعضاء والروابط الخارجية المشتركة (مصادر المصادر).",
   "Full moon": "بدر",
   "New moon": "محاق",
+  "First quarter moon": "التربيع الأول",
+  "Last quarter moon": "التربيع الأخير",
   "Fetch weather context": "جلب السياق الجوي",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "يجلب مقطع Open-Meteo المحدود لهذا المكان والنافذة الزمنية — فقط بعد موافقتك.",
   "Fetch weather context for one place and time window (Open-Meteo)": "جلب السياق الجوي لمكان واحد ونافذة زمنية واحدة (Open-Meteo)",
