@@ -3168,6 +3168,28 @@ def write_gate_report() -> dict:
     }
 
 
+@router.get("/soak-window")
+def soak_window_report(db: Session = Depends(get_db)) -> dict:
+    """The multi-day soak reading: five signals, each with the window it actually read.
+
+    The 0.3 gate's row 7 and the 0.4 board both ask for a multi-day collector soak, and
+    nothing here could answer it after the fact -- collect_perf is a ring covering about
+    one pass, the latency reservoir keeps the last 512 requests per route, the error log
+    is a rolling 2,000 records. This composes the DURABLE readings instead and states,
+    per block, what window it covers: process uptime is the soak's clock, the
+    memory-guard and write-gate counters are process-cumulative and align with it, the
+    hourly wal_bytes series is filtered back down to it, and the two rolling windows say
+    so rather than being read as if they spanned the soak.
+
+    Verdict-free by construction: ``window.reaches_bar`` says whether the window is long
+    enough to be read against the gate's 72-hour bar, and what the numbers mean inside it
+    is the maintainer's reading. Read-only, local, counts and timings only.
+    """
+    from src.monitoring.soak_window import soak_window as _soak
+
+    return _soak(db)
+
+
 @router.get("/request-latency")
 def request_latency() -> dict:
     """Per-route latency percentiles + the event-loop-block watchdog events (log #2).
@@ -3672,6 +3694,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.
         ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
         ("windows-locks.json", lambda: windows_locks_report(download=False)),
+        # S4 (2026-09-07): the soak window -- the durable readings composed with the
+        # window each one actually covers, so a multi-day run can be read after it ends.
+        ("soak-window.json", lambda: soak_window_report(db=db)),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
         # §6 recursive-improvement loop instruments: the two cheap, decrypt-light DATA reports
@@ -4064,6 +4089,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/windows-locks": "windows-locks.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
+    "/soak-window": "soak-window.json",  # S4 (2026-09-07): the multi-day soak reading
     "/write-gate": "write-gate.json",  # S2.6 (2026-09-02): who holds the gate / a connection
     "/stall-forensics": "stall-forensics.json",
     "/slow-queries": "slow-queries.json",

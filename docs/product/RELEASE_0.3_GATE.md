@@ -458,7 +458,18 @@ collection at release scale. The instrumentation exists and the shorter reading 
 so this is an unmeasured property rather than a suspected one — but unmeasured is what it
 is, and the release notes say so.
 
-**It is required in 0.4, not deferred.** See §5.
+**It is required in 0.4, not deferred.** See §5, and
+[`RELEASE_0.4_GATE.md`](RELEASE_0.4_GATE.md) row B.
+
+**The instrument it was missing now exists (2026-09-07).** No single artifact could answer
+"did the soak pass", because the readings a soak needs live in six places with six different
+windows — `collect_perf` covers about one pass, the latency reservoir the last 512 requests
+per route, the error log 2,000 rolling records — and none of that is documented where a
+reader would look. Assembling the answer by hand is how a two-hour reading acquires a
+three-day label. `GET /api/diagnostics/soak-window` (bundle member `soak-window.json`)
+composes them and states, per block, the window it actually read; the 0.4 board's row D
+carries the shape. It certifies nothing: `window.reaches_bar` says whether the window is long
+enough to be read against the bar, and the reading is the maintainer's.
 
 #### The 2026-08-23 run reported `fail`, and the detector was wrong
 
@@ -593,6 +604,10 @@ human UX pass".
 | 2026-08-23 | **Row 5 criteria AGREED (maintainer): Tier A** — *"proceed with tier A"*. The 8-article URL-shape drop path is approved for execution; Tier B (the 451 above the word guard) stays unproposed | maintainer |
 | 2026-08-23 | **Tier A was not executable as agreed, and now is.** The write path applies THREE independent criteria; the nav-soup prose gate fires on bodies the word guard KEEPS — a different, larger population than the URL rules reach — and it was ON by default with the manager never passing the flag, so the default run would have stamped the 8 agreed articles plus an unmeasured number more. `include_prose_gate` is now threaded through the manager and the endpoint as run-lifetime mode (preserved across pause/resume AND app restart, like `write`); `index_page_tiers` gained the same persistence, closing a restart that silently narrowed a tier run. Six tests, five mutations each reddening by name | session |
 | 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
+| 2026-09-07 | **Row 5 made a single command.** §7.1 is now four `curl` calls in order — the non-default `include_prose_gate=false` invocation, the status poll that confirms `dry_run:false` *and* the criteria actually applied, the keyword re-index that clears the junk the stamp leaves behind, and the composition read that reports the count under `nav-soup-v2` — plus a decline branch and a reversal note. The board's own text was contradicting itself in four places about whether row 5's decision was still open: it was taken on 2026-08-23, and only the **run** remains | session |
+| 2026-09-07 | **Board reconciled with the tree.** Row 3's cost paragraph read `~1M` three lines below the sentence that moved its bar to the corpus `0.3` ships against — corrected to the **40,260 articles** that run actually measured. The two ledger claims this pass was asked to check were re-derived and are already correct: the `100 GB` acceptance strings were fixed on 2026-08-03 (`p0_validation.py` names a property, not a size; `kpi.py`'s K1 correctly still names 100 GB+ as a *target* with an `nm` reason), and row 4's multiple is 8.3×, not the *"roughly 2×"* CLAUDE.md carried. §7.1's four endpoints and every parameter in them verified against the routers | session |
+| 2026-09-07 | **The calibration prose arm can now finish, and aims at the population under decision.** It had a cursor by design and no way to carry it: the bundle passed `after_id=0, limit=500` literally, so every export re-measured the same lowest-id 500 and both field reports stopped at `last_id: 695`. It also walked by ascending id rather than by the index pages Tier B is about. Now: a persisted per-scope cursor (invalidated by a `CRITERIA_VERSION` change, so two detectors' verdicts are never summed), a `prose_gate_scope` of `all` or `index_pages`, an exact `remaining`, and the population named in the report. Eleven tests | session |
+| 2026-09-07 | **Row 7b's missing instrument built** — `GET /api/diagnostics/soak-window`, bundle member `soak-window.json`. Six instruments held the soak's answer across six different windows, several far shorter than the bar; this composes them and states per block the window it read, with a not-measurable state wherever the window does not reach. Three counters became durable to make it possible (write-gate `total_held_s`, memory-guard `engagements`/`total_engaged_s`, both shapes of an aborted statement) and the error log now publishes its own `records_cap` beside every count. Verdict-free: `reaches_bar` is a fact about the window's length. 29 tests, 17 mutations each reddening by name | session |
 
 ---
 
@@ -900,6 +915,13 @@ carries `0.3.0` on `main`:
 | i18n completeness | `scripts/i18n_report.py --min 100` | 2989/2989 × 12 locales |
 | i18n ratchet 1 | `--max-untranslatable 561` | 561 — **unchanged**, not merely under |
 | i18n ratchet 2 | `--max-unkeyed-t-calls 298` | 298 — **unchanged**, not merely under |
+
+> **The commands are verbatim from `ci.yml` at `917e809`, not from `ci.yml` today.** The
+> figures above are a record of that run and are left as measured. Both i18n ratchets have
+> since been lowered on `main` — `--max-untranslatable 560` and `--max-unkeyed-t-calls 297`
+> — by whichever change keyed the strings; read the workflow, not this table, before
+> running the gates. (Re-measured 2026-09-07 at `fb51d7b`: 560 and 297, so the ratchets
+> carry no slack and the next unkeyed string reddens.)
 
 The pass count carries its own proof at every step: 8390 → **8406** is exactly the 16 tests
 the first pass added, 8406 → **8415** is exactly the 9 that arrived with `origin/main`'s

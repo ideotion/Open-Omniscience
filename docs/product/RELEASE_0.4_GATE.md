@@ -125,10 +125,29 @@ session forensics — with **different and mostly undocumented windows**, severa
 shorter than three days. Assembling the answer by hand is how a two-hour reading acquires a
 three-day label.
 
-**Built in this PR:** `GET /api/diagnostics/soak-window`, an all-diagnostics bundle member
-(`soak-window.json`). It reports the five signals row B needs, each with **its own window and
-denominator**, and refuses to certify the bar when the window does not reach it. It does not
-re-derive P0.3's RSS verdict — that stays P0's — and it publishes no composite.
+**Built in this PR:** `GET /api/diagnostics/soak-window`, riding the all-diagnostics bundle
+as `soak-window.json`. It adds no sampler. It composes the durable readings that already exist
+and states, per block, **the window it actually read**:
+
+| Block | Reading | Its window |
+|---|---|---|
+| `window` | process uptime, and whether it reaches 72 h | the soak's own clock |
+| `memory_guard` | engage cycles per day, paused share | process-cumulative, aligns with the clock |
+| `wal` | the `wal_bytes` maximum inside the window | hourly snapshots, infinite retention, filtered down to it |
+| `write_gate` | busy share, contention | process-cumulative, aligns with the clock |
+| `database_stats_latency` | the `/api/database/stats` p95 | the last ≤512 requests — **not** the soak |
+| `interrupted` | statements aborted mid-flight | a rolling 2,000-record log — a **floor** at capacity |
+
+Three counters had to become durable for this to be possible at all: the write gate now
+accumulates `total_held_s` on release (an in-flight hold stays in `held_for_s`), the memory
+guard counts `engagements` and `total_engaged_s` (closed episodes only), and the error log
+recognises both shapes of an aborted statement — the typed `StatementTimeout` and SQLite's raw
+`interrupted` — and publishes its own `records_cap` beside every count, so the retention that
+bounds them travels with them.
+
+It is **verdict-free** on purpose: `window.reaches_bar` is a fact about the window's *length*,
+and what the numbers inside it mean is the maintainer's reading. It does not re-derive P0.3's
+RSS verdict — that stays P0's — and it publishes no composite.
 
 **Closes when:** one soak-window report from a run of ≥ 72 h exists and is read alongside the
 P0.3 report. Until a real soak happens, this row is *built, unread* — the honest state, and
@@ -185,6 +204,7 @@ The `0.3` gate's own log is the format.
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-07 | Board created from `RELEASE_0.3_GATE.md` §5. Rows A/B/C carried under their existing rulings; D/E/F proposed | session |
+| 2026-09-07 | **Row D BUILT** — `GET /api/diagnostics/soak-window` + the `soak-window.json` bundle member. It adds no sampler: it composes the durable readings that already existed and states, per block, the window it actually read. The row stays open because *built* is not *read* — it closes on one report from a run of ≥ 72 h | session |
 
 ---
 
