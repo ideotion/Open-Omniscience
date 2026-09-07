@@ -199,6 +199,31 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — shipped earlier; the B5 wave (⏳ #624) added job-state-as-truth polling, the paused-state label and verify/pause-resume wiring. Remaining: click-through 🛠 + key the new strings ×12. 🚧
 - **Unified import/export — the browser-gated cleanup** (*lifted 2026-09-07 from `docs/archive/design/UNIFIED_IMPORT_EXPORT.md`, where it was the only live record*) — after a click-through, retire the orphaned volume/folder JS handlers (`folderBackupStart` / `volBackupStart` in `src/static/app-backup.js`, whose panels the unified dialogs replaced) and the capped single-file-CREATE remnant. Verified 2026-09-07: single-file CREATE is already retired (`src/api/backup_v2.py` header); what survives is `POST /legacy/restore` + the 2 GiB `_MAX_RESTORE_BYTES` upload cap, which stay until the legacy format is retired (the row above). Belongs on the browser-verify burn-down, not to a blind removal — the interleaved-shared-helper hazard. 🛠 browser-gated
 
+- **Newsletter publisher ATTACH — the write path** (ruling 2026-06-15 clause (d); the resolver
+  shipped ⏳ #1030, the attach deliberately did not) — imported newsletters still all land in one
+  bucket source. The decision machinery now exists and is tested: a vendored, digest-verified Public
+  Suffix List (`src/catalog/publicsuffix.py`), the ruled ladder (eTLD+1 → exact `Source.domain` →
+  alias map → new DISABLED email source, never fuzzy), the platform inversion applied first (measured:
+  NO newsletter platform is in either section of the PSL, so the list alone would collapse every
+  Substack publisher into one source), `List-Id` parsed and kept, and a read-only preview at
+  `GET /api/newsletters/publisher-preview`. **What is left, in this order, because the order is
+  load-bearing:** (1) the **provenance columns** — send-domain and the attached source id, an additive
+  migration; the ruling's UNDO is only feasible once they exist; (2) the **attach itself**, behind
+  them; (3) the **import UI announcing the automated attaches + the undo**. Ruling (d) pairs the
+  silent auto-attach with (3), so shipping (2) alone is half a data-placement change. **Note for
+  whoever wires it:** `resolve_newsletter_publisher` matches `lower(Source.domain)` deliberately (the
+  column is BINARY-collated and stored as typed, and a one-sided normalisation is a match that
+  silently never fires) — that is a scan, free for a report and wrong per message; a functional index
+  needs a migration AND meets the recorded NOCASE/expression-index problem, so it is a decision, not a
+  tidy-up. ⬜
+- **Live mailbox pull as a JOB** (plan S7) — `import_mailbox` (`src/api/ingestion.py`) is still a
+  SYNCHRONOUS endpoint over a potentially long pull, invisible to the task manager. **I1 (stored,
+  encrypted credentials for repeat pulls) stays 🔒 blocked on a maintainer ruling** — it adds a secret
+  to the store, which is a real decision and not a convenience. The anonymise-at-ingest guarantees are
+  not negotiable in any of it: no recipient identity, no raw `.eml`, no recipient-bearing header,
+  tracking-link detox, and never a fetch at import (N files ⇒ zero sockets — the property that stops
+  an open-tracking pixel confirming a read). The import-time no-recovery disclosure ×12 needs
+  VERIFYING rather than assuming. ⬜ / 🔒
 - **Collector write-batching** — ✅ SHIPPED as P1.8 (`src/ingest/batch.py` + `tests/test_collect_batching.py`; this row lagged §2's own ✅) — S6 verify-marks the no-loss battery.
 
 ### Database / scaling (columnar & rollups)
@@ -211,13 +236,33 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Temporal-map remainder** — linear/log time-scale toggle + feed the mention layer with **event-places** (the temporal map itself is retired into `ooMap`). ⬜
 - **OSM download-manager remainder** — per-job rate/ETA/bandwidth-cap controls, country sub-extracts, one consented exact-size refresh. 🚧 partial
 - **OSM as a DATA SOURCE for all maps** (ruled 2026-07-13, Q1a; build DEFERRED to its own session) — an OFFLINE preprocessing job turns OSM extracts into compact simplified geometry (finer admin-0, **sub-national admin-1** for region choropleth, a richer place gazetteer) that replaces/augments Natural Earth on every map surface, fixing the ~75 microstate centroid-fallbacks + coarse borders. Border-honesty: disclose "OSM convention as of `<date>`", surface disputed borders as CONTESTED. no-WebGL stands (live street-level detail is out of scope). Sits behind P0 scale + the sources system. ⬜
+- **Observed-IP choropleth as its own DIMENSION** — a map layer keyed on the `server_ip` observations
+  must stay DISTINCT from the catalog-ASSERTED country dimension. Asserted origin and observed
+  infrastructure are different classes of fact (a publisher's CDN edge is not its country), so
+  blending them silently would be the fabrication; two dimensions, each named, or neither. ⬜
 - **3D keyword explorer** — formally **DEPRIORITIZED** (ruled 2026-07-13, Q5a; supersedes the 2026-06-16 "do NOT defer the 3D"). The 3-level mind-map (Keywords/Families/Super-groups) stays as-is. ⬜
 
 ### Agenda & calendars
-- **Eclipse canon** from a bundled public table (moons + seasons already shipped). 🎨
+- **Eclipse canon** from a bundled public table (all four moon phases + seasons already shipped). 🎨
+- **Agenda confidence TIERS** (⏳ #1030 recorded the gap; not built) — the catalog carries ONE boolean
+  `confirmed`, and `agRow` renders three pill states from it. The ruled vocabulary needs three:
+  `scheduled` (official, sourced) · `window` (a legal window — the France-2027 `confirmed:false`
+  pattern) · `projected` (a sourced rule plus last-held). A **passed projected date** is marked
+  "status unknown — check the official source" (itself a lead) and is **never silently
+  re-projected**; **no sourced rule + no last-held ⇒ no entry at all**, a gap rather than a guess.
+  Not started deliberately: it is a schema + display change across `configs/world_events.yml`, the
+  catalog loader and the agenda, and half-building a schema is worse than parking it. ⬜
 - **Deduced events as first-class agenda entries** with keyword links (RC-blocking-era item). ⬜
 - **Worldwide calendar preloads** — bank holidays; Islamic computed with the ±1-day caveat; Hindu/Buddhist from sourced tables; fix Christian-centring. 🎨
-- **One recurrence model** (RULE + dated INSTANCES + `since:` origin year) · **month-span events** ("Dry January") · **full iCal import** · **saved-filter "smart calendars"** · **catalog depth flood** (elections/summits/central banks/courts/UN days) · **agenda i18n** · **temporal-map player speeds** 0.05×–16×. 🎨
+- **One recurrence model** — *measured 2026-09-07 (⏳ #1030), and this row was half wrong:* the
+  **SCHEMA IS SHIPPED and tested** (`catalog._in_active_range` / `_span_end_date` / `_span_for`, the
+  `origin_year`/`until_year`/`end_month`/`end_day` fields, floating nth-weekday recurrence, all pinned
+  by `tests/test_event_recurrence.py`). What is missing is the **DISPLAY**: `app-agenda.js` renders
+  none of it, so a month-span event ("Dry January") draws as a single day and a `since:` origin year
+  is never shown. Still genuinely unbuilt beside it: **RRULE expansion of imported VEVENTs** (no
+  `rrule` anywhere in `src/`, verified), **saved-filter "smart calendars"**, **catalog depth flood**
+  (elections/summits/central banks/courts/UN days), **agenda i18n**, **temporal-map player speeds**
+  0.05×–16×. 🚧 schema shipped, display + iCal RRULE open
 
 ### LLM / AI
 - **LLM language detection for unknown-language articles** — ✅ **BUILT (B15)** ⏳ #626: opt-in, detector-first, a third clearly-labelled "AI-derived · unreliable" provenance class, never overwrites the asserted/detector channels, garbage answers store nothing, visible abortable job. Remaining 🛠: browser click-through + run it on the live corpus.
@@ -263,6 +308,14 @@ Surface: Settings → Advanced → *Bulletin* (folded, last).
 ### Convergence, watches & alerting
 - **New Home producers** — "Converging now" (`space_time_convergence`) + "watch-rules fired" (`watch_matches`) ✅ exist and register; the TWO missing are now ✅ **SHIPPED (S6.4)**: **`on_the_horizon`** (an upcoming agenda date ∩ a currently-trending keyword; bucket watch) + **`through_time`** (anniversary lens: articles published on today's date in earlier years; bucket context; cross-time recall sacred). Neither promoted into an urgent alert (the ruled boundary). 🚧→✅
 - **Severity-tiered local alert layer** — ✅ SHIPPED (`src/analytics/alerts.py` + the Home strip; "urgent" = provider-declared ONLY, never a promoted count — the ruled no-escalation boundary). Extension (tag-family spike input, capped at watch/info) → S6.4. 🚧
+- **Hazard providers beyond the two** (⏳ #1030 verified the gap; not built) — `src/hazards/parse.py`
+  covers **USGS and GDACS only**. Designed and unbuilt: **NWS · ReliefWeb · FEWS NET · EONET · WHO**,
+  the **nuclear/radiological urgent tag-family** rule, and relaying official short-horizon forecasts
+  WITH provenance. Two constraints carry over unchanged: `_hazard_tier`
+  (`src/analytics/alerts.py:71`, *not* under `src/hazards/`) keeps the no-promotion rule — a magnitude
+  is a provider-declared BAND, never urgency — and a parser must never be written against a payload
+  shape nobody has seen. Every one of these hosts is CONNECT-refused from the build sandbox, so this
+  is a 🛠 networked build: capture a real response first, then write the parser against it. ⬜ / 🛠
 - **Space-time scenario cards** — disputed-chronology, story-propagation, supply-chain-ripple ✅ SHIPPED (2026-07-03, `tests/test_scenario_cards.py`); remaining: silent-disasters + law-takes-effect (codeable → S6.9 stretch) · news-desert atlas + election-window desk (external baselines/roster — 🛠 operator-gated). 🚧
 
 ### Versioned sources as first-class Articles — Wikipedia + laws (maintainer-directed 2026-07-10, future version)
@@ -358,9 +411,26 @@ so it is not re-derived from the prompt file each time:
 - **Continuous-collection remainder** — the first-run country/language emphasis picker + an explainable "which country next & why" schedule panel (background auto-collect + stratified interleave already shipped). ⬜
 
 ### Weather / IPCC / lunar
-- **Open-Meteo remainder** — anomaly baselines, deduced signal-keywords, a reader weather-context row, a map overlay (slice 1 suggest-to-fetch cards shipped; the 2026-07-03 batch-E commit mentions "weather signals" — VERIFY-FIRST what remains before building). 🚧 partial
+- **Open-Meteo remainder** — *the VERIFY-FIRST this row asked for was done 2026-09-07 (⏳ #1030);
+  here is the answer, so nobody re-derives it.* **Signal-keywords: BUILT** —
+  `src/analytics/weather_signals.py` derives `kind="signal"` rows from explicit threshold rules into
+  a SEPARATE store (its own design note says why it is not the keyword table), read by
+  `/api/signals`. **Anomaly baselines: half-built and honest about it** — the module carries the
+  anomaly-vs-stated-baseline structure and names the baseline, then publishes the gap ("Not yet
+  checked against a baseline: confirming an anomaly requires the consented Open-Meteo reanalysis
+  fetch"), so it is 🛠 operator-gated rather than unwritten. **Still absent:** the reader
+  weather-context row (no weather reference in `app-corpus.js` / `app-library.js`) and the temporal-map
+  overlay. 🚧
 - **IPCC as a source + prediction-tracking** — PDF-to-text ingest, predictions as first-class dated claims, a retrospective promises-due lens. 🎨
-- **Lunar-effects testing framework** — correlate any daily series vs the lunar series (Pearson/Spearman + phase-bucket contrast, mandatory BH-FDR, pre-registration UI). 🚧 partial
+- **Lunar-effects testing framework** — ✅ **BUILT AND WIRED END TO END** (re-measured 2026-09-07,
+  ⏳ #1030; this row read "partial" and understated it): `src/analytics/lunar.py` correlates any
+  stored daily series against the moon's illuminated fraction, with Benjamini-Hochberg FDR
+  (`src/stats/fdr.py`) **mandatory** on a screen and a DETERMINISTIC circular-shift permutation test
+  (no scipy, no RNG) that preserves the autocorrelation of both series; correlation-is-not-causation
+  on every result and the null outcome named as the expected one. Served by
+  `/api/insights/lunar-correlation` and drawn by `app-insights.js` `loadLunar()` with limit and
+  `fdr_q` controls. **REMAINING: only the pre-registration hypothesis UI** — the screen exists,
+  "declare what you expect before you look" does not. ✅ / ⬜ pre-registration
 
 ### Self-update, portability & voice
 - **App self-update** (default OFF) — check → signed backup + snapshot → verify → staged migrate → atomic swap + rollback. 5 open questions (channel, trust root, cadence, curl\|bash vs git, mirror-anchoring). 🎨

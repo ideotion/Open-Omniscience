@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "এই কীওয়ার্ডটি কর্পাস উইন্ডো হিসেবে খুলুন: প্রবণতা, সদস্য নিবন্ধ ও শেয়ার করা বহির্গামী লিংক (উৎসের উৎস)।",
   "Full moon": "পূর্ণিমা",
   "New moon": "অমাবস্যা",
+  "First quarter moon": "প্রথম চতুর্থাংশ চাঁদ",
+  "Last quarter moon": "শেষ চতুর্থাংশ চাঁদ",
   "Fetch weather context": "আবহাওয়ার প্রেক্ষাপট আনুন",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "এই স্থান ও সময়-জানালার জন্য সীমিত Open-Meteo অংশ আনে — শুধুমাত্র আপনার সম্মতির পরে।",
   "Fetch weather context for one place and time window (Open-Meteo)": "একটি স্থান ও সময়-জানালার জন্য আবহাওয়ার প্রেক্ষাপট আনুন (Open-Meteo)",

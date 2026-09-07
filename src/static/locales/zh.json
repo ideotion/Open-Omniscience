@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "将此关键词作为语料库窗口打开：趋势、成员文章及共享外部链接（来源的来源）。",
   "Full moon": "满月",
   "New moon": "新月",
+  "First quarter moon": "上弦月",
+  "Last quarter moon": "下弦月",
   "Fetch weather context": "获取天气背景数据",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "仅在您同意后，为该地点和时间窗口获取限定的 Open-Meteo 数据片段。",
   "Fetch weather context for one place and time window (Open-Meteo)": "为一个地点和时间窗口获取天气背景数据（Open-Meteo）",

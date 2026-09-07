@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Открыть это ключевое слово как окно корпуса: тренд, статьи-участники и общие исходящие ссылки (источники источников).",
   "Full moon": "Полнолуние",
   "New moon": "Новолуние",
+  "First quarter moon": "Первая четверть",
+  "Last quarter moon": "Последняя четверть",
   "Fetch weather context": "Получить метеоконтекст",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Загружает ограниченный фрагмент Open-Meteo для этого места и окна — только после вашего согласия.",
   "Fetch weather context for one place and time window (Open-Meteo)": "Получить метеоконтекст для одного места и временного окна (Open-Meteo)",

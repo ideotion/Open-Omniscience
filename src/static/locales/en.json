@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).",
   "Full moon": "Full moon",
   "New moon": "New moon",
+  "First quarter moon": "First quarter moon",
+  "Last quarter moon": "Last quarter moon",
   "Fetch weather context": "Fetch weather context",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.",
   "Fetch weather context for one place and time window (Open-Meteo)": "Fetch weather context for one place and time window (Open-Meteo)",

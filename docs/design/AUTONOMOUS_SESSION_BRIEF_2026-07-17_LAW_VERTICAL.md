@@ -178,6 +178,16 @@ verify the reading-diet/facet/Articles-toggle surfaces render the new class corr
 browser (fork-3) — the backend filter validates against the extended set already.
 
 ### S4b — Thread the legal LANGUAGE through to the corpus (P1, the Cambodia fix) — size S
+> **SHIPPED 2026-07-17 — VERIFIED-PRESENT at `main` @ `690920e2` (2026-09-07).** Everything the
+> paragraph below asks for exists: `LawDocument.language` / `.country` are declared at
+> `src/database/models.py:2187-2188`, `register_documents` populates them from the catalog AND
+> heals both the row and its already-ingested Article (`src/law/catalog.py`), and
+> `upsert_law_corpus_article` passes `language=doc.language` into the Article
+> (`src/law/corpus.py:119`). The description below is the ORIGINAL problem statement, kept as
+> the record of why the change was made — read it in the past tense. A 2026-09-07 session was
+> sent to build this and found it already built; the staleness guard is the reason that cost
+> one grep instead of a duplicate migration.
+
 The catalog carries per-source/per-document `language`, but registration DROPS it —
 `LawDocument` has no language/country columns and `upsert_law_corpus_article` ingests law
 Articles with `language=None`, so a French-language Cambodian code gets no French stoplist,
@@ -190,6 +200,15 @@ document with NO stated language stays `None` honestly — never guessed from th
 `language="fr"` and French keyword extraction; existing docs heal on their next track.**
 
 ### S5 — The law coverage/freshness diagnostic (P1) — size S
+> **SHIPPED, and AMENDED 2026-09-07.** The denominator half below assumed an enumeration
+> ADAPTER was the only route to one. It is not: 39 dated official counts across 32 countries
+> were already committed in the catalog and were going unread. The report now prints them beside
+> the tracked count and still computes no fraction, because a tracked document is act/code-level
+> while the enumerated units run over codes, acts, volumes, gazette issues and treaties and
+> nothing declares which of those count the same objects — so the example below ("France: 12/76
+> codes") remains exactly the shape this report must NOT emit until a ruling declares
+> commensurability per entry. See `src/law/coverage.py`.
+
 `GET /api/diagnostics/law-coverage`: per-jurisdiction doc counts, baseline coverage %,
 last-checked ages, per-doc verdict tallies (robots-blocked named), adapter/catalog `*_AS_OF`
 freshness — counts + method, no score. **Denominators come from the official enumeration**
@@ -247,6 +266,18 @@ revision; negative-space tests (malformed XML, empty act, robots-blocked) pinned
 
 
 ### S7 — Gazettes as streams (P2) — size S
+> **PARTLY SHIPPED 2026-09-07 (the acceptance bar is met from the catalog, not from a live
+> sweep).** Three feeds are wired — Georgia (matsne.gov.ge), Vietnam (congbao.chinhphu.vn) and
+> St Vincent (legal.gov.vc) — each promoted only because its OWN
+> `gazette_feed_verification.status` is `fetched`. Uruguay's (impo.com.uy) ships unwired: its
+> feed was never fetched and the row's notes call it the site's generic WordPress news feed.
+> What is NOT done is the live half this section asks for: no feed was fetched by THIS session
+> (every publisher host answers CONNECT 403 through the agent proxy), so BOE, Dziennik Ustaw,
+> the Federal Register and the EUR-Lex OJ daily are still unverified and unwired. And note the
+> acceptance bar's second clause — "producing law-stream articles in a normal pass" — is not met
+> either: `select_sources` admits only QUALIFIED sources, so the three enter the qualification
+> ladder first. What changed is that they can now be judged at all.
+
 Verify (live) which seeded legal portals expose real RSS/Atom (BOE, Dziennik Ustaw, Federal
 Register, EUR-Lex OJ daily…), fix their `Source` rows to carry the working feed URL, and confirm
 they flow through the NORMAL news pipeline as `source_type: legal` articles (provenance class
