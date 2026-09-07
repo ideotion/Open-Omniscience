@@ -1,3 +1,16 @@
+> **Status update (2026-09-07) — the 2026-07-22 banner below is STALE in both directions.**
+> §1a AND §1b are both **ruled and wired**: `src/database/connect.py` sets
+> `auto_vacuum=INCREMENTAL` and `cipher_page_size=16384` on the fresh-file path, with the
+> reopen-hazard candidate ladder page_size requires. §3's bounded idle pass **is wired**
+> (`src/scheduler/maintenance.py` → `maybe_incremental_vacuum`). **§2 is HALF shipped:** the
+> disclosure half exists (`app-settings.js:_confirmVacuum` estimates the duration at 10–17 s/GB
+> and confirms before running), but there is still **no backend refusal and no free-disk
+> preflight** on `POST /api/database/vacuum` — though a full VACUUM needs ~2× the file size in
+> scratch — and nothing points at the incremental pass, which was this section's actual ask.
+> §1b's ruling also **quadrupled the store's size ceiling** (16.00 TiB → 64.00 TiB), which
+> retires the premise that made Phase C mandatory; see
+> [`STORAGE_5TB_REFRESH_2026-09-07.md`](./STORAGE_5TB_REFRESH_2026-09-07.md).
+>
 > **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — §1a is ruled and §1b's evidence is in, but NEITHER PRAGMA is actually set in `src/database/connect.py` yet — and its two direct follow-ons (the idle `incremental_vacuum` maintenance pass, §3; the VACUUM-button size gate, §2) are confirmed still unbuilt now that §1a is ruled. §4/§5 correctly still wait on a footprint-measurement field export that hasn't happened. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # DB-10 — retention, vacuum & storage-hygiene DECISION MEMO (S3.4)

@@ -6243,3 +6243,79 @@
     Extract the dependency in the suite that needs it, and never stub it, or the
     copy under test drifts from the shipped code, which is the one thing this
     whole harness exists to prevent.
+  - **A RULING CAN INVALIDATE THE PLAN THAT ASKED FOR IT, AND THE PLAN GOES ON READING AS
+    CURRENT (2026-09-07, the storage refresh):** `STORAGE_5TB_PLAN.md`'s whole priority order
+    rests on headline finding (3) -- "a default-page SQLCipher file caps at ~17.5 TB, so text
+    offload (Phase C) is MANDATORY". That ceiling is `max_page_count x page_size`, and the plan
+    itself is what asked for the DB-10 SS1b page-size measurement; when the ruling landed
+    (16384, wired 2026-08-13) the ceiling quadrupled to **64.00 TiB** and the premise died --
+    seven weeks before anyone read the plan again, with no line in it that looked stale. The 5 TB
+    milestone went from 28% of one file to 7.1%, and the plan's own "50 TB is not reachable by
+    any single-file design" became false. GENERAL FORM: the staleness guard is usually run as "is
+    this already built?" and the recorded refinement is "is the MEASUREMENT this item rests on
+    still one the code would produce today?"; this is the third form and the most expensive --
+    **a ruling changes an INPUT, and every premise COMPUTED from that input is stale the moment
+    it lands, including premises in the document that requested the ruling.** So when closing out
+    a ruling, grep the requesting document for numbers DERIVED from the value that changed, not
+    just for status lines about the ruling. The tell is a load-bearing figure with no citation to
+    a run -- "~17.5 TB" had been carried as a constant since 2026-07-12 and nobody re-derived it
+    because it did not look like a measurement.
+  - **A MECHANISM THAT WORKS ONLY AT THE OLD DEFAULT IS A TRAP THE NEW DEFAULT ARMS -- and it
+    fails toward SUCCESS (2026-09-07, `VACUUM INTO` under SQLCipher):** the plan and the
+    2026-07-18 folder-copy-parity ruling both name `VACUUM INTO` with pragmas set as an
+    alternative migration mechanism. MEASURED across the page-size ladder, it writes its product
+    at the compiled `DEFAULT_PAGE_SIZE` (4096) **whatever the source is, and reports success**:
+    usable at 4096, unopenable at 1024/2048/8192/16384/32768. So it worked on exactly the page
+    size every corpus HAD before 2026-08-13 and no corpus created since HAS -- the coincidence is
+    both why it was never noticed and why the ruling that removed it is what armed the trap.
+    (Not a plaintext leak: no plaintext runs, no table name, 261,051 of 262,144 bytes differ. The
+    source survives. No live call site, so it was a documented instruction rather than a shipped
+    bug -- which is the only reason this is cheap.) THE OBVIOUS REPAIR IS ALSO A TRAP: setting
+    `cipher_page_size` on a live keyed connection poisons the codec and the next statement fails
+    `file is not a database` **naming the SOURCE**, i.e. reporting corpus corruption that has not
+    happened; the stdlib spelling `PRAGMA page_size` is accepted SILENTLY and surfaces one
+    statement later. GENERAL FORM: when a default changes, grep for the operations that were only
+    ever exercised at the OLD value -- their correctness may have been a coincidence with that
+    default, and an operation that silently produces a wrong artifact is worse than one that
+    refuses. And scope the finding with its twin: on a PLAINTEXT store the same statement honours
+    declared pragmas exactly, which is why the Open-queue's "EMPIRICALLY PROVEN in-sandbox for
+    plaintext" was true and was never evidence about the encrypted path.
+  - **I HIT THE COINCIDENT-FIXTURE TRAP TWICE IN ONE HOUR, IN OPPOSITE DIRECTIONS, AND THE GUARD
+    CAUGHT THE PROBE (2026-09-07, same slice):** the recorded rule is that a fixture where two
+    values coincide cannot test which one is used. (a) My first C5 probe asked whether an
+    ATTACHed target INHERITS the source's pragmas, using a 4096 source against a compiled default
+    of 4096 -- so "inherited" and "took the compile default" gave the same answer and the arm
+    settled nothing. (b) Re-run from 16384 it discriminated, and I then read its result as
+    "`VACUUM INTO`'s product never opens" -- when the real rule was "the product is ALWAYS 4096",
+    which my 16384 fixture could not distinguish from "always broken". **What caught (b) was the
+    regression test failing**, not the probe: the guard used a 4096 source, the product opened,
+    and the contradiction is what produced the actual mechanism. GENERAL FORM: a probe and the
+    guard written from it are two instruments; when they disagree, the disagreement IS the
+    finding, and the answer is a matrix over the varying axis rather than a better story about
+    either run. COROLLARY, from the mutation matrix on my own guard: rewriting the negative-space
+    fixture back to the coincident 4096 made it pass again, so the fixture is what carries that
+    test -- closed with an anti-vacuity assertion that the source differs from the compile
+    default IN BOTH DIMENSIONS, because a comment saying so is exactly what the next edit will
+    not read.
+  - **VARYING ONE PARAMETER MOVES EVERYTHING THAT DEPENDS ON IT -- the sharding control inverted
+    my own finding (2026-09-07, the hash-shard BM25 measurement):** measuring cross-shard ranking
+    divergence at K = 2/8/32/128 over a FIXED 120,000-document corpus produced an alarming result
+    (top-20 overlap down to 30% at K=128, the top result itself changing) which I was one edit
+    from recording as "sharding degrades ranking". It is not: raising K over a fixed corpus also
+    THINS each shard, to 940 documents at K=128, and BM25's IDF is computed from per-shard
+    document frequency -- so the fixture had made shards statistically thin, which is not the
+    regime the plan proposes (~1,000,000 docs/shard). Holding K=32 and fattening the shards
+    instead, the divergence RECOVERS toward the proposed size: mid-frequency 60 -> 75 -> 90%,
+    rare tail 40 -> 75 -> 95% at 2k / 8k / 32k documents per shard. The control cost twelve
+    minutes and reversed the conclusion. GENERAL FORM: before recording a trend over a swept
+    parameter, list every OTHER quantity that parameter moves and hold the suspicious one fixed
+    -- this is the recorded "a probe that refutes a hypothesis is a claim about the fixture until
+    it is shown to be a claim about the system" trap, with the CONFOUND rather than the scale as
+    the varying axis. Two riders worth keeping. The RECALL half (100% of the matching set in all
+    44 cells) is structural rather than statistical -- the fan-out visits every shard with no
+    per-shard cutoff -- so it confirms the construction rather than discovering it, and saying
+    which of your numbers is which is what keeps the evidence section evidence. And FTS5's
+    `bm25()` takes column WEIGHTS and nothing else, so the plan's offer of "either maintain
+    global term stats or disclose the approximation" is not a real choice: there is no way to
+    hand FTS5 external statistics, and the options are fat shards, disclosure, or scoring
+    outside FTS5.
