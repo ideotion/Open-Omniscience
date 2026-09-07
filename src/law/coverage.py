@@ -143,6 +143,75 @@ def official_enumerations(catalog: dict | None = None) -> dict[str, list[dict]]:
     return by_country
 
 
+def _pdf_reach(session: Session, catalog: dict | None = None) -> dict:
+    """S7 / question L6: say plainly how much of the law catalog a default install
+    cannot read, instead of letting the report be silently narrower than the catalog.
+
+    ``[pdf]`` is an optional pip extra (``pypdf``) and ``src.ingest.pdf`` degrades
+    loudly without it, which is honest at the call site and invisible in a coverage
+    report. L6's stated default is to keep it optional and SAY SO here; this is that
+    sentence, with the numbers attached, because "some sources are PDF" and "63 of 275
+    sources publish nothing else" are different facts.
+
+    Both counts are FLOORS and say so in the payload. ``.pdf`` is a URL suffix, and a
+    portal that serves a PDF from an extensionless URL (content-type only) is invisible
+    to it; ``formats`` is a per-row declaration the producing session wrote down, and
+    52 of the 275 rows declare none at all.
+    """
+    if catalog is None:
+        from src.law.catalog import load_legal_catalog
+
+        catalog = load_legal_catalog()
+    from src.ingest.pdf import ocr_available, pdf_available
+
+    available = pdf_available()
+    declared = [s for s in catalog.get("sources", []) if (s.get("structured") or {}).get("formats")]
+    pdf_only = [
+        s for s in declared
+        if [str(f).lower() for f in s["structured"]["formats"]] == ["pdf"]
+    ]
+    tracked_pdf = (
+        session.query(LawDocument)
+        .filter(LawDocument.url.ilike("%.pdf"))
+        .count()
+    )
+    total_tracked = session.query(LawDocument).count()
+    return {
+        "pdf_extractor_available": available,
+        "ocr_available": ocr_available(),
+        "tracked_documents_whose_url_ends_pdf": tracked_pdf,
+        "tracked_documents": total_tracked,
+        "catalog_sources_with_a_declared_format_list": len(declared),
+        "catalog_sources_publishing_pdf_only": len(pdf_only),
+        "catalog_sources": len(catalog.get("sources", [])),
+        "method": (
+            "pypdf's presence (the [pdf] extra) and the OCR fallback's, reported as "
+            "found; the tracked-document figure counts this install's own rows whose "
+            "url ends .pdf; the catalog figures count rows whose declared format list "
+            "is exactly [pdf]. BOTH catalog and tracked figures are FLOORS: a portal "
+            "serving a PDF from an extensionless URL is invisible to a suffix test, and "
+            "rows that declare no format list at all are not counted either way."
+        ),
+        "caveat": (
+            (
+                "The [pdf] extra is NOT installed, so this install cannot read a PDF "
+                f"statute at all: {tracked_pdf} of the {total_tracked} documents it "
+                f"tracks are PDFs by URL, and {len(pdf_only)} of the "
+                f"{len(catalog.get('sources', []))} catalog sources publish nothing but "
+                "PDF. Everything below is therefore narrower than the catalog, and that "
+                "narrowing is a property of the install rather than of the law. "
+                "Install the [pdf] extra to close it."
+            )
+            if not available
+            else (
+                "The [pdf] extra is installed, so a PDF statute is readable here. The "
+                "counts below are kept because they are what a default install would "
+                "lose, not because anything is currently degraded."
+            )
+        ),
+    }
+
+
 def law_coverage_report(
     session: Session, *, enumerations: dict[str, list[dict]] | None = None
 ) -> dict:
@@ -241,6 +310,7 @@ def law_coverage_report(
         "documents": total_docs,
         "baselined": total_baselined,
         "jurisdictions": jurisdictions,
+        "extraction": _pdf_reach(session),
         "enumeration": {
             "countries_with_an_official_count": len(enum_by_country),
             "figures": sum(len(v) for v in enum_by_country.values()),

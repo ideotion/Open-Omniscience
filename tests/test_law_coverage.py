@@ -265,3 +265,64 @@ def test_the_real_catalog_supplies_dated_sourced_denominators():
         "it is a manual tally — carrying them verbatim is the second channel"
     )
     assert [f["value"] for f in enum["ng"]] == [0, 0], "Nigeria's measured zeros survive"
+
+
+# ---------------------------------------------------------------------------
+# S7 / question L6 (2026-09-07): the report says how much of the catalog a default
+# install cannot read, instead of being silently narrower than it.
+# ---------------------------------------------------------------------------
+
+
+def _pdf_fixture():
+    s = _session()
+    s.add_all([
+        LawDocument(jurisdiction="tl", title="CC", url="https://mj.example/Codigo_Civil.pdf"),
+        LawDocument(jurisdiction="uk", title="Act", url="https://law.example/uk", country="gb"),
+    ])
+    s.commit()
+    return s
+
+
+def test_a_default_install_says_it_cannot_read_a_pdf_statute(monkeypatch):
+    monkeypatch.setattr("src.ingest.pdf.pdf_available", lambda: False)
+    ex = law_coverage_report(_pdf_fixture(), enumerations={})["extraction"]
+    assert ex["pdf_extractor_available"] is False
+    assert ex["tracked_documents_whose_url_ends_pdf"] == 1
+    assert ex["tracked_documents"] == 2
+    assert "cannot read a PDF statute" in ex["caveat"]
+    assert "[pdf] extra" in ex["caveat"], "the caveat must name the way to close the gap"
+
+
+def test_an_install_with_the_extra_is_never_told_it_is_degraded(monkeypatch):
+    """The negative twin, and the one that stops this being a fabricated caveat: a
+    report that always says "narrower than the catalog" is wrong on every machine that
+    installed the extra, which is exactly as dishonest as hiding the narrowing."""
+    monkeypatch.setattr("src.ingest.pdf.pdf_available", lambda: True)
+    ex = law_coverage_report(_pdf_fixture(), enumerations={})["extraction"]
+    assert ex["pdf_extractor_available"] is True
+    assert "cannot read" not in ex["caveat"]
+    assert "is installed" in ex["caveat"]
+    # the counts survive either way -- they describe what a default install would lose
+    assert ex["catalog_sources_publishing_pdf_only"] > 0
+
+
+def test_both_pdf_counts_are_published_as_floors():
+    """A suffix test cannot see a PDF served from an extensionless URL, and 52 catalog
+    rows declare no format list at all. Publishing either number without saying it is a
+    floor would present a lower bound as a measurement."""
+    ex = law_coverage_report(_pdf_fixture(), enumerations={})["extraction"]
+    assert "FLOORS" in ex["method"]
+    assert ex["catalog_sources_with_a_declared_format_list"] < ex["catalog_sources"], (
+        "the gap between these two is the part the format-list count cannot see"
+    )
+
+
+def test_the_shipped_catalog_really_is_mostly_pdf():
+    """The claim that motivated L6, measured rather than asserted. Named as a floor, so
+    a change that improves the catalog's format coverage lowers it honestly."""
+    ex = law_coverage_report(_pdf_fixture(), enumerations={})["extraction"]
+    assert ex["catalog_sources"] >= 275
+    assert ex["catalog_sources_publishing_pdf_only"] >= 60, (
+        "63 of 275 sources publish nothing but PDF at the 2026-07-17 harvest; a large "
+        "drop here means the catalog or the format declarations changed shape"
+    )
