@@ -2840,7 +2840,7 @@
        dialog element inside a display:none ancestor does not render even via
        showModal(). Keeping them here is what lets Safety open the backup flow
        without navigating away (2026-07-31 Settings review). -->
-    <dialog id="ux-import" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
+    <dialog id="ux-import" style="max-width:560px;width:92%;padding:18px">
       <h3 style="margin:0 0 4px">Import</h3>
       <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
       <div><label for="ux-imp-src">Folder to import from</label>
@@ -2873,7 +2873,7 @@
         <button id="ux-imp-run" onclick="_uxImRun(this)" disabled>Import selected</button>
       </div>
     </dialog>
-    <dialog id="ux-export" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
+    <dialog id="ux-export" style="max-width:560px;width:92%;padding:18px">
       <h3 style="margin:0 0 4px">Export / Backup</h3>
       <p class="muted" id="ux-inv-status" style="margin-top:0">Loading what's available…</p>
       <div id="ux-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -2892,7 +2892,7 @@
       </div>
     </dialog>
 
-  <dialog id="corpus-win" style="width:min(760px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="corpus-win" style="width:min(760px,94vw);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="corpus-title" style="font-size:15px"></b>
       <span id="corpus-n" class="muted" style="font-size:12px"></span>
@@ -2924,7 +2924,7 @@
        hover-readout / legend; Item-Y bars when n<10) for a Trends sparkline or
        any small chart. The caveat shows VISIBLE by default (informed consent).
        Native showModal() traps focus implicitly (OO-D13-001). -->
-  <dialog id="chart-enlarge" style="width:min(940px,96vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="chart-enlarge" style="width:min(940px,96vw);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="chart-enlarge-title" style="font-size:15px"></b>
       <span style="margin-inline-start:auto"></span>
@@ -2941,7 +2941,7 @@
        picks the members. Step 2 shows the synthesis + caveat + provenance + the full
        corpus of synthesized articles WITH their metadata; export (Markdown / standalone
        page) + copy. Native showModal() traps focus (OO-D13-001). -->
-  <dialog id="synth-window" style="width:min(900px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="synth-window" style="width:min(900px,96vw);max-height:92vh;padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="synth-win-title" style="font-size:15px">Synthesis</b>
       <span style="margin-inline-start:auto"></span>
@@ -2956,7 +2956,7 @@
        evidence links): before any external link is followed, show what THIS
        database already knows about it; the outbound anchor's visible text IS
        the full URL, and clicking it still passes the external-link confirm. -->
-  <dialog id="link-preview" style="max-width:520px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+  <dialog id="link-preview" style="max-width:520px;padding:18px">
     <h3 style="margin:0 0 8px">Before you leave — what this app knows</h3>
     <div id="lp-body" style="display:flex;flex-direction:column;gap:5px"></div>
     <div id="lp-out" style="margin-top:10px"></div>
@@ -2972,7 +2972,7 @@
        (truncated per side, NOT a live re-diff), editor/comment metadata, and a
        "full text stored" marker. Honest window (showing N of M) + a visible caveat;
        flagged-only toggle reuses the endpoint param. Counts only, no score. -->
-  <dialog id="wiki-tc" style="width:min(820px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="wiki-tc" style="width:min(820px,96vw);max-height:92vh;padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <b style="font-size:13px">Tracked changes</b>
       <b id="wiki-tc-title" class="muted" style="font-size:13px;font-weight:500"></b>
@@ -2988,7 +2988,7 @@
     <div id="wiki-tc-method" class="card-caveat" style="padding:0 16px 14px"></div>
   </dialog>
 
-  <dialog id="folder-picker" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="folder-picker" style="width:min(560px,94vw);padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
       <strong>Pick a folder</strong>
       <span class="muted" style="margin-left:auto;font-size:12px">on this machine</span>
@@ -3004,7 +3004,7 @@
     </div>
   </dialog>
 
-  <dialog id="net-consent" style="max-width:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+  <dialog id="net-consent" style="max-width:440px;padding:18px">
     <h3 style="margin:0 0 8px">Go online?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
       <div id="net-consent-reason" style="margin-top:4px"><b></b></div></div>
@@ -3026,7 +3026,7 @@
        the collector stays stopped, and only the local-AI install is exempted.
        Every claim below is one the code actually enforces; the last paragraph is
        the limit, stated in the same breath rather than left to be inferred. -->
-  <dialog id="ai-egress-consent" style="max-width:460px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+  <dialog id="ai-egress-consent" style="max-width:460px;padding:18px">
     <h3 style="margin:0 0 8px">Let the AI install go online, without collecting?</h3>
     <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
       <div id="ai-egress-reason" style="margin-top:4px"><b></b></div></div>
@@ -3072,7 +3072,7 @@
        feedback 2026-07-17: two consecutive screens for the same decision).
        Zero-network on load by construction (only localStorage + the existing
        language list are read before the user acts). -->
-  <dialog id="guide-wizard" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+  <dialog id="guide-wizard" style="width:min(560px,94vw);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)">
       <svg class="mark" viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
         <path d="M2 16 C8 6.5, 24 6.5, 30 16 C24 25.5, 8 25.5, 2 16 Z" style="stroke:currentColor" stroke-width="2" stroke-linejoin="round"/>
