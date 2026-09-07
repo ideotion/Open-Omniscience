@@ -167,10 +167,16 @@ def test_validator_catches_the_fabrication_shaped_mistakes():
 def test_generated_sources_enable_by_default_and_lead_documents_never_register(tmp_path):
     """Maintainer ruling 2026-07-17: the merged catalog is maintainer-vetted (the PR
     review IS the gate), so generated sources ENABLE by default — the end user never
-    hand-enables anything. Safe by construction: no rss_url → collect passes never
-    fetch them; robots stays fail-closed; the bounded preflight verifies domains
-    automatically. The one exclusion is about unverified fetch TARGETS, not user
-    convenience: a lead document never silently becomes a watched LawDocument."""
+    hand-enables anything. Robots stays fail-closed and the bounded preflight verifies
+    domains automatically. The one exclusion is about unverified fetch TARGETS, not user
+    convenience: a lead document never silently becomes a watched LawDocument.
+
+    AMENDED 2026-09-07 (S2): the docstring used to add "safe by construction: no rss_url
+    → collect passes never fetch them". That is no longer true of every row — three rows
+    whose OWN gazette_feed_verification records a fetched feed now carry an rss_url, on
+    purpose (see the S2 block at the foot of this file). Updated deliberately rather than
+    left standing, because a stale safety sentence reads as a guarantee; the enable-by-
+    default posture this test is actually about is unchanged."""
     curated_p = _write(tmp_path, "curated.yml", CURATED)
     gen_p = _write(tmp_path, "gen.yml", {
         "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
@@ -241,3 +247,150 @@ def test_validator_batch_calibrations_from_the_first_real_batches():
     }])
     report2 = vlc.validate(gapless, CURATED)
     assert any("missing required field 'domain'" in e for e in report2["errors"])
+
+
+# ---------------------------------------------------------------------------
+# S2 (law-vertical brief 2026-07-17, built 2026-09-07): a verified gazette feed
+# becomes an ordinary rss_url, and an UNVERIFIED one never does.
+#
+# The negative direction is the load-bearing one here. Over-eager wiring is not a
+# broken fetch, it is a FABRICATED COVERAGE CLAIM: impo.com.uy's gazette_feed is the
+# site's generic WordPress news feed, so promoting it would file Uruguayan site news
+# posts in the corpus as that country's official gazette. Every assertion below
+# therefore has its twin.
+# ---------------------------------------------------------------------------
+
+feed_rss_url = _mod.feed_rss_url
+
+_FETCHED_FEED = {
+    "status": "fetched",
+    "retrieved_at": "2026-07-17",
+    "evidence": "fetched the feed; well-formed RSS 2.0 with dated items",
+}
+_LEAD_FEED = {"status": "lead", "evidence": "NOT FETCHED — the URL was written down, never asked"}
+
+
+def test_a_fetched_gazette_feed_becomes_an_rss_url_and_a_lead_one_never_does():
+    fetched = _gen_entry(
+        domain="gazette.example", gazette_feed="https://gazette.example/rss",
+        gazette_feed_verification=dict(_FETCHED_FEED),
+    )
+    lead = _gen_entry(
+        domain="newsfeed.example", gazette_feed="https://newsfeed.example/feed/",
+        gazette_feed_verification=dict(_LEAD_FEED),
+    )
+    assert feed_rss_url(fetched) == "https://gazette.example/rss"
+    assert feed_rss_url(lead) is None, (
+        "a feed nobody fetched must never be promoted — that is how a site's news feed "
+        "becomes 'the official gazette'"
+    )
+
+
+def test_a_row_level_fetched_status_is_not_the_feeds_status():
+    """The whole reason gazette_feed_verification exists. Both rows below are
+    ``verification.status: fetched`` at ROW level — that is a claim about the portal.
+    Only the feed's OWN tier may decide the feed."""
+    row = _gen_entry(
+        domain="portal.example", gazette_feed="https://portal.example/feed/",
+        verification={"status": "fetched", "retrieved_at": "2026-07-17",
+                      "evidence": "loaded the portal's contents page"},
+        gazette_feed_verification=dict(_LEAD_FEED),
+    )
+    assert row["verification"]["status"] == "fetched"
+    assert feed_rss_url(row) is None
+
+
+def test_a_gazette_feed_with_no_tier_at_all_is_never_promoted():
+    """The pre-2026-09-07 shape. Absent tier is not permission."""
+    assert feed_rss_url(_gen_entry(domain="x.example", gazette_feed="https://x.example/rss")) is None
+
+
+def test_an_explicit_rss_url_always_wins_over_a_feed():
+    row = _gen_entry(
+        domain="both.example", rss_url="https://both.example/curated.xml",
+        gazette_feed="https://both.example/other.rss",
+        gazette_feed_verification=dict(_FETCHED_FEED),
+    )
+    assert feed_rss_url(row) is None, "this only ever fills an absence, never overrides"
+
+
+def test_registration_carries_the_promoted_feed_and_only_that_one(tmp_path):
+    curated_p = _write(tmp_path, "curated.yml", CURATED)
+    gen_p = _write(tmp_path, "gen.yml", {
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [
+            _gen_entry(domain="gazette.example", gazette_feed="https://gazette.example/rss",
+                       gazette_feed_verification=dict(_FETCHED_FEED)),
+            _gen_entry(domain="newsfeed.example", gazette_feed="https://newsfeed.example/feed/",
+                       gazette_feed_verification=dict(_LEAD_FEED)),
+            _gen_entry(domain="plain.example"),
+        ],
+        "documents": [],
+    })
+    rows = {r["domain"]: r for r in registration_source_rows(
+        load_legal_catalog(curated_p, generated_path=gen_p))}
+    assert rows["gazette.example"]["rss_url"] == "https://gazette.example/rss"
+    assert "rss_url" not in rows["newsfeed.example"]
+    assert "rss_url" not in rows["plain.example"], (
+        "a row with no feed at all must stay feedless — 222 of the 225 generated rows are "
+        "this case and a collect pass must not start polling them"
+    )
+
+
+def test_the_validator_requires_a_tier_on_every_gazette_feed():
+    report = vlc.validate({
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [_gen_entry(domain="untiered.example",
+                               gazette_feed="https://untiered.example/rss")],
+    }, CURATED)
+    assert any("must carry gazette_feed_verification" in e for e in report["errors"])
+
+    # ANTI-VACUITY: the same row WITH a tier must pass, or the rule above is satisfied
+    # by anything at all and says nothing about tiers.
+    ok = vlc.validate({
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [_gen_entry(domain="tiered.example", gazette_feed="https://tiered.example/rss",
+                               gazette_feed_verification=dict(_FETCHED_FEED))],
+    }, CURATED)
+    assert not ok["errors"], ok["errors"]
+
+
+def test_the_validator_rejects_a_malformed_tier_in_each_direction():
+    def _errs(**over):
+        return vlc.validate({
+            "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+            "sources": [_gen_entry(domain="f.example", gazette_feed="https://f.example/rss", **over)],
+        }, CURATED)["errors"]
+
+    # "search-verified" is deliberately NOT a feed tier: a search snippet cannot say a
+    # URL serves a parseable feed, so admitting it would create a tier nothing can mean.
+    assert any("status must be one of" in e for e in
+               _errs(gazette_feed_verification={"status": "search-verified", "evidence": "snippet"}))
+    assert any("retrieved_at" in e for e in _errs(
+        gazette_feed_verification={"status": "fetched", "evidence": "fetched it"}))
+    assert any("evidence is required" in e for e in _errs(
+        gazette_feed_verification={"status": "fetched", "retrieved_at": "2026-07-17"}))
+    # And a tier with no feed is also incoherent.
+    orphan = vlc.validate({
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [_gen_entry(domain="o.example", gazette_feed_verification=dict(_FETCHED_FEED))],
+    }, CURATED)["errors"]
+    assert any("without a gazette_feed" in e for e in orphan)
+
+
+def test_the_shipped_catalog_promotes_exactly_the_three_fetched_feeds():
+    """A guard on the SHIPPED DATA, not on the mechanism: this is the assertion that
+    would redden if someone gave impo.com.uy a `fetched` tier without fetching it, or
+    dropped a real one. Named domains, because which four rows carry a feed is a fact
+    about this dated harvest, not a moving target."""
+    rows = {r["domain"]: r for r in registration_source_rows(load_legal_catalog())}
+    with_feed = {d: r for d, r in rows.items() if r.get("gazette_feed")}
+    assert set(with_feed) == {
+        "matsne.gov.ge", "impo.com.uy", "congbao.chinhphu.vn", "legal.gov.vc"
+    }, sorted(with_feed)
+    promoted = {d for d, r in rows.items() if r.get("rss_url")}
+    assert promoted == {"matsne.gov.ge", "congbao.chinhphu.vn", "legal.gov.vc"}, sorted(promoted)
+    assert "rss_url" not in rows["impo.com.uy"], (
+        "impo.com.uy's feed is the site's generic WordPress news feed and was never "
+        "fetched — its own notes say to verify before relying on it for gazette monitoring"
+    )
