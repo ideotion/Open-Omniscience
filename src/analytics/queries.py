@@ -786,15 +786,25 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
     #     cap to bound which examples are listed and never a reported number, so the
     #     list stays bounded and ``n_countries`` reports the exact total beside it.
     located = [(c, m, a) for c, m, a in rows if c]
-    unlocated = next(((m, a) for c, m, a in rows if not c), None)
+    # NULL and '' are DISTINCT groups to the GROUP BY and ONE fact to a reader
+    # ("source country unknown"), so they are SUMMED rather than picked between --
+    # the groups are disjoint (a source has one country value), so adding their
+    # distinct-article counts is exact. Defensive rather than observed: no catalog
+    # entry ships an empty country today (measured), but `Source.country` is a
+    # nullable String(2) with nothing forbidding one. The old code emitted both as
+    # separate country:null rows and the frontend kept whichever came last, so the
+    # bucket's own numbers could already disagree with the table beside it.
+    unlocated = [(m, a) for c, m, a in rows if not c]
     countries = [
         {"country": c, "mentions": int(m or 0), "articles": int(a or 0)}
         for c, m, a in located[:limit]
     ]
-    if unlocated is not None:
-        countries.append(
-            {"country": None, "mentions": int(unlocated[0] or 0), "articles": int(unlocated[1] or 0)}
-        )
+    if unlocated:
+        countries.append({
+            "country": None,
+            "mentions": sum(int(m or 0) for m, _a in unlocated),
+            "articles": sum(int(a or 0) for _m, a in unlocated),
+        })
     return {
         "ring_id": ring_id,
         "found": True,

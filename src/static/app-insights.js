@@ -457,10 +457,18 @@
         // When the two differ the ratio is stated -- visibly, and in the map's own aria
         // label, so a screen reader is not the one reader left with the cap.
         const shownCountries = Object.keys(values).length;
-        const totalCountries = (d.n_countries != null) ? d.n_countries : shownCountries;
-        const countLine = (d.truncated && tf)
-          ? tf("Countries listed: {shown} of {total}", {shown: shownCountries, total: totalCountries})
-          : `${totalCountries} ${t("countries")}`;
+        // NO fallback to the drawn count when n_countries is absent: that IS the cap
+        // this change removes, so defaulting to it would put the defect back through
+        // the error path. It cannot happen anyway -- the read cache is an in-process
+        // SimpleCache, so a payload predating the field cannot outlive the deploy that
+        // adds it -- and if it ever did, the label carries NO number rather than one
+        // that might silently be a bound.
+        const totalCountries = (d.n_countries != null) ? d.n_countries : null;
+        const countLine = (totalCountries == null) ? ""
+          : (d.truncated && tf)
+            ? tf("Countries listed: {shown} of {total}", {shown: shownCountries, total: totalCountries})
+            : `${totalCountries} ${t("countries")}`;
+        const ariaLabel = countLine ? `${label} — ${countLine}` : label;
         if (!shownCountries) {
           host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`;
         } else {
@@ -470,7 +478,7 @@
           await ooMap(host, {
             values, names, unit: t("articles"),
             valueLabel: (iso, v) => `${v} ${t("articles")}`,
-            aria: `${label} — ${countLine}`,
+            aria: ariaLabel,
             method: d.method || "", caveat: d.caveat || "",
             onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });

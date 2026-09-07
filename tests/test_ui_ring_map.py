@@ -97,7 +97,12 @@ def test_the_announced_country_figure_is_the_exact_total_not_the_drawn_count():
     )
     # The aria label is composed from that figure, never from the polygon count --
     # otherwise a screen reader is the one reader still handed the cap.
-    assert "aria: `${label} — ${countLine}`" in body
+    assert "const ariaLabel = countLine ?" in body and "aria: ariaLabel," in body
+    # And there is no fallback to the drawn count: defaulting to it when the exact
+    # total is absent would reinstate the very cap this guard exists to forbid.
+    assert "? d.n_countries : null" in body, (
+        "an absent exact total must yield NO number, never the polygon count"
+    )
     assert "Object.keys(values).length}" not in body, (
         "the announced figure must not be interpolated from the drawn-polygon count"
     )

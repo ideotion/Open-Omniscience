@@ -285,3 +285,29 @@ def test_a_split_with_nothing_indexed_reports_zero_rather_than_omitting_it(db, m
     assert out["n_keywords"] == 0
     assert out["n_countries"] == 0 and out["countries_listed"] == 0
     assert out["truncated"] is False
+
+
+def test_unlocated_buckets_are_summed_not_picked_between(db, monkeypatch):
+    """`NULL` and `''` are distinct GROUP BY buckets and one fact to a reader, so the
+    payload sums them. The groups are disjoint (a source carries one country value),
+    so adding their distinct-article counts is exact. Defensive rather than observed:
+    no shipped catalog entry has an empty country, but the column permits one, and the
+    frontend used to keep whichever unlocated row came last."""
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+
+    a = Source(name="NullCountry", domain="a.test", country=None)
+    b = Source(name="EmptyCountry", domain="b.test", country="")
+    db.add_all([a, b]); db.commit()
+    _add_kw_mention(db, term="alpha", language="en", source=a, n=1)
+    _add_kw_mention(db, term="alpha", language="en", source=b, n=1)
+
+    out = q.ring_country_split(db, ring_id="testconcept")
+    unlocated = [c for c in out["countries"] if c["country"] is None]
+    assert len(unlocated) == 1, "the two falsy-country groups must arrive as ONE bucket"
+    assert unlocated[0]["articles"] == 2, "both articles are counted, neither dropped"
+    # Neither falsy group may be mistaken for a located country.
+    assert out["n_countries"] == 0
