@@ -6157,3 +6157,34 @@
     resume, a restart), and folding them together would print an `idle_s` of ~0
     beside "no bytes received" for a transfer that is perfectly healthy and merely
     young.
+  - **ADDING A CALL INSIDE A FUNCTION MAKES EVERY NODE SUITE THAT EXTRACTS THAT
+    FUNCTION PART OF YOUR CHANGE — and the guard for it already existed; I pushed
+    ahead of it (2026-09-07, PERF-09's rate line):** the house pattern for testing
+    the UI engine is to EXTRACT a function from the real file by name and evaluate
+    it in isolation, precisely so a re-typed copy cannot pass while the shipped
+    code is broken. The cost of that isolation is that the extracted copy sees ONLY
+    what its own suite extracted: adding `_rateNote(j, t)` inside `_jobRow` left
+    `import_tail_phase_node_test.js` — a suite about IMPORT PHASES, which no search
+    for "rate" or "download" would ever reach — throwing `ReferenceError: _rateNote
+    is not defined`. I wrote my OWN node suite carefully (extracting `_fmtBytes`,
+    `_fmtDur` and `_rateNote` together) and never asked who else extracts the
+    function I had just added a call to. GENERAL FORM: before adding a call inside
+    any function, `grep -l "<function>" tests/*_node_test.js` — the enumeration is
+    by what the OTHER suites READ, never by what your change is about, because the
+    suite that breaks is named for its own subject and not for yours.
+    **THE PART THAT MATTERS MORE THAN THE FIX: the guard was not missing.** Every
+    node suite has a pytest driver (the `test_every_node_suite_has_a_driver`
+    ratchet exists because an unrun suite already cost a shipped defect), so the
+    full suite catches this in the ordinary way — I pushed before my full run
+    finished, at a stop-hook prompt, and CI found it 20 minutes later. When you
+    cannot wait for the full suite, the substitute is not hope: `for f in
+    tests/*_node_test.js; do node "$f" || echo "RED: $f"; done` runs all 28 in
+    SECONDS and would have caught it. Add it to the named tree-guard set for any
+    change that touches an `app-*.js` function other tests extract.
+    RIDER on the repair: the tempting fix is a `typeof _rateNote === "function"`
+    guard at the call site, and it is wrong for the reason the ledger already
+    records — a `hasattr`-style guard around a call you wrote is self-fulfilling,
+    and here it would make the PRODUCTION renderer paper over a broken harness.
+    Extract the dependency in the suite that needs it, and never stub it, or the
+    copy under test drifts from the shipped code, which is the one thing this
+    whole harness exists to prevent.
