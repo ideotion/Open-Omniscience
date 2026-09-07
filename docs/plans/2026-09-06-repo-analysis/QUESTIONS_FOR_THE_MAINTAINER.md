@@ -97,6 +97,23 @@ panel; (b) lower it with a stated new meaning; (c) add `high_link_density` (415 
 second extraction-failure criterion. Recommendation: (c), keeping (a)'s wording. *(gates: the
 `PROMPT_04` prompt's criteria slice; the data-safety-adjacent one.)*
 
+**B11 · ⛔ What identifies a source — a domain, or a feed?** (New, raised 2026-09-07 by measuring the
+catalogue rather than reading it.) `Source.domain` is UNIQUE and the seeder is create-only, so **227 of
+3,429 `configs/sources.yml` entries have never been registered on any install**, silently. They are not
+redundant rows: 108 of them are in a DIFFERENT language than the surviving sibling — `bbc.com` carries 31
+entries and the 30 that lose are BBC Arabic, Hausa, Swahili, Persian and the rest; `dw.com` shadows DW
+Arabic, Deutsch, Español and Brasil. So the catalogue describes multilingual coverage the app cannot hold,
+and deleting the losers to "clean up" would delete precisely the breadth the language-equilibrium lever
+exists to balance. The loss is now counted and ratcheted (`tests/test_catalog_domain_collisions.py`);
+recovering it is the open question. → (a) leave it, with the count visible — the app collects one feed per
+outlet and the ratchet stops it growing; (b) key a source on its FEED (`(domain, rss_url)`), which reaches
+the alias-aware dedup, the restore-merge's `m.domain = i.domain` joins, the `configs/source_qualification.yml`
+overlay, the citations tally and `is_disqualified_domain` — a migration plus a data-safety review, not a
+small slice; (c) split only the clear cases into distinct subdomains in the catalogue data
+(`feeds.bbci.co.uk/arabic` is a real distinct host), leaving shared-domain journal families alone.
+Recommendation: (c) as a reviewed data batch for the language services specifically, then (a) for the
+remainder — it recovers the mission-relevant half without a schema change. *(gates: `PROMPT_04` S7.)*
+
 **B7 · A recency-windowed re-check.** The 6-month re-verification reads a source's WHOLE history, so it
 cannot see a source that degraded recently. Adding a window touches `collect_article_stats`, which the
 audit report shares. → Build it as its own reviewed slice? Recommended default: yes, window = the last

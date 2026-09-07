@@ -6031,8 +6031,126 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     makes both failures end in the same place — ordinary resolution, plus a sentence saying
     the choice was not applied. Validate a selector against the set it claims to select
     from, rather than trusting it and hoping the value is still real.
+  - **A REPORT THAT RE-DERIVES WHAT A WRITE JUST DID DESCRIBES THE WORLD AFTER THE WRITE — and
+    when the field is emitted only-when-non-empty, the wrongness is an ABSENCE (2026-09-07, the
+    restore-merge's example rows):** three merge steps captured their `samples` by re-running the
+    INSERT's own `WHERE NOT EXISTS` predicate AFTER `_insert_tracked`. The INSERT has just made
+    that predicate false for exactly the rows it copied, so the list came back empty on every
+    restore since the reports were written — and `DomainResult.as_dict` emits `samples` only when
+    non-empty, so the report simply had no examples block, which reads as "this merge added
+    nothing". The omitted-field-versus-a-zero rule at the level of a whole section, and no test
+    covered `samples` at all. THE FIX GENERALISES PAST THE ORDERING BUG: read back from the
+    provenance the write already records (`merged_rows`), which reports what LANDED rather than
+    what was predicted to land and cannot drift from the statement — load-bearing here, because
+    the `articles` INSERT additionally joins `temp.map_sources`, so the obvious repair (hoist the
+    same query above the INSERT) keeps a second copy of the predicate that can name rows the
+    INSERT then skips. TWO RIDERS: the sibling `conflicts` lists at four other sites are
+    UNAFFECTED and worth checking rather than assuming (they query rows present on both sides,
+    which an insert into the target cannot falsify); and the negative twin is what makes the guard
+    real, since a repair that listed every INCOMING row satisfies every positive assertion while
+    inventing rows that never landed.
+  - **A RULED GUARANTEE THAT HOLDS AS A SIDE EFFECT OF AN UNRELATED MECHANISM IS UNTESTED, AND THE
+    CHANGE THAT BREAKS IT WILL LOOK UNRELATED (2026-09-07, the disqualified-domain skip):** the
+    plan recorded ruling clause (d) — never re-propose a domain this instance judged and refused —
+    as "not wired". Driven live before building anything, it already held: both discovery funnels
+    dedupe against every existing `Source` domain, disqualified ones included, so such a domain
+    never reached the staging call, and `select_unqualified` filters exactly `status ==
+    'unqualified'` so the ladder was already the only way back. The defect was not the behaviour;
+    it was that the guarantee rested on a dedup set whose PURPOSE is something else, nothing said
+    so, and no test would have noticed if that set were narrowed — precisely the shape the open
+    `enabled`-versus-`qualified` question would take. GENERAL FORM: when you find a ruling already
+    satisfied, ask WHAT satisfies it; if the answer is a mechanism that exists for another reason,
+    make the property explicit at the chokepoint every caller passes through (so a caller added
+    later inherits a check it never had to write) and pin it at BOTH levels, saying which is which
+    — the end-to-end test passes today and its value is that it KEEPS passing, while only the
+    chokepoint test is discriminating. The same slice's reporting half is the recorded
+    one-key-two-meanings defect: "we already collect this" and "we judged this and refused it"
+    shared one counter, and that is what hid the ruling.
+  - **A CREATE-ONLY, KEY-DEDUPED LOADER HAS TWO SKIP REASONS THAT MEAN OPPOSITE THINGS — and the
+    entries that look redundant may be the mission (2026-09-07, 227 unreachable catalogue
+    entries):** `seed_sources` counted "already in the database" (an idempotent re-run working
+    correctly) and "an earlier entry of this same input claims the domain" (a catalogue entry no
+    install can ever register) in one `skipped` number, so 227 of 3,429 entries had never been
+    registered anywhere, invisibly. THE PART THAT MATTERS IS THE REPAIR DIRECTION: the obvious
+    reading is "54 duplicate domains, clean up the data", and measuring refutes it — 108 of the
+    227 are in a DIFFERENT language than the surviving sibling; `bbc.com` carries 31 entries and
+    the 30 that lose are BBC Arabic, Hausa, Swahili and Persian, `dw.com` shadows DW Arabic,
+    Deutsch, Español and Brasil. Deleting them would delete precisely the multilingual breadth the
+    language-equilibrium lever exists to balance. So count the loss, ratchet it, and raise the
+    identity question (a domain, or a feed) as a ruling rather than taking it — the recovery
+    reaches the alias-aware dedup, the restore-merge's domain joins, the qualification overlay and
+    the citations tally. RIDER on the split itself, caught by the negative twin: shadowing is a
+    property of the CATALOGUE, not of the run, so it must be decided by the input's own first-wins
+    rule and never from database state — computed from database state, a re-seed reclassifies a
+    permanently-unreachable entry as a healthy idempotent skip and the count silently reads zero on
+    every install that has already seeded once.
+  - **MEASURING A PROPOSED ITEM CAN TURN IT INTO A NON-ITEM, AND REVEAL THE REAL ONE BEHIND IT
+    (2026-09-07):** "a NULL-only backfill migration so existing installs pick up the
+    `country_from_title` source-country recoveries" was a plausible, well-scoped item. Run against
+    the real catalogue it recovers **0** of the 1,599 entries carrying no explicit country — the
+    2026-06-16 batch promoted all 68 `(Country)`-suffix entries into explicit fields and a
+    regression guard keeps it that way — so the migration has no subject and building it would
+    have been pure risk. The gap it stood in for is real, broader and unmeasured: the seeder is
+    create-only, so NO catalogue metadata improvement (country, language, tags) ever reaches an
+    existing install. GENERAL FORM: before writing a migration, run its own predicate over the real
+    data and count the rows it would touch; a zero is a finding about the item, and asking what the
+    item was a proxy for is usually worth more than the item.
 
 ## Open queue (when maintainer says proceed)
+- **PROMPT-04 EXECUTION 2026-09-07 — source qualification, discovery, and ONE NEW RULING (B11).
+  Three slices shipped; S1 stays blocked on B1 and the promotion frontier is PARKED WHOLE (branch
+  `claude/source-qualification-frontier-00n7gr`; per-slice detail = the four 2026-09-07
+  `docs/ledger/shipped.csv` rows):** executed
+  `docs/plans/2026-09-06-repo-analysis/PROMPT_04_sources-qualification-and-promotion.md`. The staleness
+  guard paid more than in any prior sweep — **four of its seven slices were already shipped in whole or in
+  part**, and the prompt's own header claimed the tree was verified the day before, which is exactly the
+  class of claim rule 2 of the working mode exists for. Corrections landed in the prompt and the inventory
+  in the same PR.
+  **NEW RULING NEEDED — B11, WHAT IDENTIFIES A SOURCE: A DOMAIN, OR A FEED?** `Source.domain` is UNIQUE and
+  the seeder is create-only, so **227 of the 3,429 entries in `configs/sources.yml` have never been
+  registered on any install**, silently. They are not redundant rows: measured, **108 are in a DIFFERENT
+  language than the surviving sibling** — `bbc.com` carries 31 entries and the 30 that lose are BBC Arabic,
+  Hausa, Swahili, Persian and the rest; `dw.com` shadows DW Arabic, Deutsch, Español and Brasil; `rfi.fr`
+  its English, Spanish, Portuguese and Chinese services. So the catalogue describes multilingual coverage
+  the app cannot hold, and the prompt's own "fix the data" instruction would have DELETED precisely the
+  breadth the de-US-centring and language-equilibrium work exists to build — **refused, and raised as a
+  question rather than decided.** The loss is now counted, reported apart from an idempotent skip, and
+  ratcheted. THE OPTIONS: (a) leave it with the count visible (one feed per outlet; the ratchet stops it
+  growing); (b) key a source on its FEED — reaches the alias-aware dedup, the restore-merge's `m.domain =
+  i.domain` joins, the `configs/source_qualification.yml` overlay, the citations tally and
+  `is_disqualified_domain`, i.e. a migration plus a data-safety review; (c) split only the clear cases into
+  their real distinct hosts in the catalogue data (`feeds.bbci.co.uk/arabic` IS a distinct host), leaving
+  shared-domain journal families alone. **Recommendation: (c) as a reviewed data batch for the language
+  services, then (a) for the remainder** — it recovers the mission-relevant half with no schema change.
+  **SHIPPED:** the restore report's `samples` (empty at THREE sites since they were written — sources,
+  articles, wiki_pages — now read from `merged_rows`); the catalogue-collision count + ratchet; and the
+  clause-(d) disqualified-domain skip moved from EMERGENT to ENFORCED at the `_add_candidate` chokepoint
+  with its reason reported apart from `already_a_source`.
+  **VERIFIED-PRESENT, DO NOT REBUILD (the stale half):** the discovery TRAIL and the citations TALLY are
+  shipped end to end (`src/discovery/source_trail.py`, both endpoints, `app-sources.js:437`,
+  `tests/test_source_trail.py`), carrying the both-directions caveat verbatim and no score-shaped key; the
+  qualification COHORT HOIST shipped as S5.1 in the 2026-09-02 crash work (frozen once per run, and it
+  REFUSES a cohort frozen at a different `min_articles`); S4's publish-the-basis half is already in the
+  tunable's own `impact` (naming 0.211 and "a rare-catastrophe detector rather than an everyday gate"); S5's
+  disclosure half is already in the quality-gates payload's `recheck.scope_note`. **NON-ITEM:** the
+  `country_from_title` backfill migration would migrate NOTHING (measured: 0 of 1,599). The real gap behind
+  it is that **the seeder is create-only, so no catalogue metadata improvement — country, language or tags —
+  ever reaches an existing install**; the safe shape for both that and the retroactive-tag item is a
+  NULL-only reconcile (fill a local NULL from the catalogue, never overwrite a value — the merge's own
+  adoption rule one level down). Not built.
+  **PARKED, HONESTLY:** S1 (`enabled` vs `qualified`) stays ⛔ on B1. **S2, the Phase-2 promotion frontier,
+  is parked WHOLE rather than half-built — and it is more entangled with B1 than the prompt states:**
+  promoting a candidate ALREADY creates a DISABLED `Source`, and `select_unqualified` ALREADY trials it
+  (that is B1's own complaint), so under B1(b) most of the frontier IS the B1 answer, while under B1(a) the
+  candidate needs an enable step first. Building the state machine before B1 is answered would build the
+  wrong one. Also still open per their own rulings: B6 (`PATHOLOGY_ABS_FLOOR`, disclosure half done, the
+  constant untouched — never tune a data-safety threshold to make a number move), B7 (the recency window,
+  disclosure half done), and L9/L10 (`src/ai_layer/source_tags.py` already carries `_NON_TOPICAL_CLASSES`
+  "reported, never filtered", with its own comment saying deciding `independent` is not a topic is a
+  taxonomy ruling a human makes). **OPERATOR-GATED, unchanged:** generating `configs/source_qualification.yml`
+  from real instances (B5); the source-tag canary re-run for the 47 failed batches and the 59 domains below
+  the article floor; the source-diversification networked run; the Wikidata generator run for the 73 named
+  country gaps.
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
   the english term 'climate', the app should be able to automatically search for that term in all
   other available UI languages … we should find a solution to deal with keywords such as April (a

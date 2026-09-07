@@ -5792,3 +5792,66 @@ reconciles as 74 tag lines plus 6 opened headers. A separate check asserts every
 PROPOSED for that exact domain: its only two hits are the two rendered into the catalog's own
 vocabulary (fortune.com `finance` → `financial`, labiotech.eu `health` → `healthcare`). Mutation matrix: a reintroduced synonym pair
 and a neutered stem predicate each redden by name, restore verified green.
+
+## 2026-09-07 — prompt 04: source qualification, discovery and the restore report
+
+**A REPORT THAT RE-DERIVES WHAT A WRITE JUST DID DESCRIBES THE WORLD AFTER THE WRITE — and when the
+field is emitted only-when-non-empty, the wrongness is an ABSENCE (2026-09-07, the restore-merge's
+example rows):** three merge steps captured their `samples` by re-running the INSERT's own
+`WHERE NOT EXISTS` predicate *after* `_insert_tracked`. The INSERT has just made that predicate false
+for exactly the rows it copied, so the list came back empty on every restore since the reports were
+written, and `DomainResult.as_dict` emits `samples` only when non-empty — so the report simply had no
+examples block, which reads as "this merge added nothing". The omitted-field-versus-a-zero rule, at the
+level of a whole section. THE FIX GENERALISES BEYOND THE ORDERING BUG: reading back from the provenance
+the write already records (`merged_rows`) reports what LANDED instead of what was predicted to land, and
+cannot drift from the statement — which mattered here, because the `articles` INSERT additionally joins
+`temp.map_sources`, so the obvious repair (hoist the same query above the INSERT) would have kept a
+second copy of the predicate that could name rows the INSERT then skipped. TWO RIDERS. The sibling
+`conflicts` lists at four other sites are UNAFFECTED and worth checking rather than assuming: they query
+rows present on both sides, which an insert into the target cannot falsify. And the negative twin is
+what makes the guard real — a repair that listed every INCOMING row satisfies every positive assertion
+while inventing rows that never landed, so each positive case needs a twin merging a corpus that
+introduces nothing.
+
+**A RULED GUARANTEE THAT HOLDS AS A SIDE EFFECT OF AN UNRELATED MECHANISM IS UNTESTED, AND THE CHANGE
+THAT BREAKS IT WILL LOOK UNRELATED (2026-09-07, the disqualified-domain skip):** the plan recorded clause
+(d) — never re-propose a domain this instance judged and refused — as "not wired". Driven live before
+building anything, it already held: both discovery funnels dedupe against every existing `Source` domain,
+disqualified ones included, so such a domain never reached the staging call. The defect was not the
+behaviour, it was that the guarantee rested on a dedup set whose PURPOSE is something else, nothing said
+so, and no test would have noticed if that set were narrowed — which is precisely the shape the open
+`enabled`-versus-`qualified` question would take. GENERAL FORM: when you find a ruling already satisfied,
+ask WHAT satisfies it; if the answer is a mechanism that exists for another reason, make the property
+explicit at the chokepoint every caller passes through (so a caller added later inherits a check it never
+had to write) and pin it at BOTH levels, saying which is which — the end-to-end test passes today and its
+value is that it keeps passing, while only the chokepoint test is discriminating. The same slice's
+reporting half is the recorded one-key-two-meanings defect: "we already collect this" and "we judged this
+and refused it" were one counter, and that is what hid the ruling.
+
+**A CREATE-ONLY, KEY-DEDUPED LOADER HAS TWO SKIP REASONS THAT MEAN OPPOSITE THINGS — and the entries
+that look redundant may be the mission (2026-09-07, 227 unreachable catalogue entries):** `seed_sources`
+counted "already in the database" (an idempotent re-run working correctly) and "an earlier entry of this
+same input claims the domain" (a catalogue entry no install can ever register) in one `skipped` number,
+so 227 of 3,429 entries had never been registered anywhere, invisibly. THE PART THAT MATTERS IS THE
+REPAIR DIRECTION: the obvious reading is "54 duplicate domains, clean up the data", and measuring refutes
+it — 108 of the 227 are in a DIFFERENT language than the surviving sibling; `bbc.com` carries 31 entries
+and the 30 that lose are BBC Arabic, Hausa, Swahili and Persian, `dw.com` shadows DW Arabic, Deutsch,
+Español and Brasil. Deleting them would delete precisely the multilingual breadth the language-equilibrium
+lever exists to balance. So: count the loss, ratchet it, and raise the identity question (a domain, or a
+feed) as a ruling rather than taking it — the recovery reaches the alias-aware dedup, the restore-merge's
+domain joins, the qualification overlay and the citations tally. RIDER on the split itself, caught by the
+negative twin: shadowing is a property of the CATALOGUE, not of the run, so it must be decided by the
+input's own first-wins rule and not by database state — computed from database state, a re-seed
+reclassifies a permanently-unreachable entry as a healthy idempotent skip and the count silently drops
+to zero on every install that has already seeded once.
+
+**MEASURING A PROPOSED ITEM CAN TURN IT INTO A NON-ITEM, AND REVEAL THE REAL ONE BEHIND IT
+(2026-09-07):** "a NULL-only backfill migration so existing installs pick up the `country_from_title`
+source-country recoveries" was a plausible, well-scoped item. Run against the real catalogue it recovers
+**0** of the 1,599 entries carrying no explicit country — the 2026-06-16 batch promoted all 68
+`(Country)`-suffix entries into explicit fields and a regression guard keeps it that way, so the migration
+has no subject and building it would have been pure risk. The gap it was standing in for is real, broader
+and unmeasured: the seeder is create-only, so NO catalogue metadata improvement — country, language or
+tags — ever reaches an existing install. GENERAL FORM: before writing a migration, run its own predicate
+over the real data and count the rows it would touch; a zero is a finding about the item, and asking what
+the item was a proxy for is usually more valuable than the item.
