@@ -586,6 +586,8 @@
   "Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources).": "Abrir esta palabra clave como ventana de corpus: tendencia, artículos miembros y enlaces salientes compartidos (las fuentes de las fuentes).",
   "Full moon": "Luna llena",
   "New moon": "Luna nueva",
+  "First quarter moon": "Cuarto creciente",
+  "Last quarter moon": "Cuarto menguante",
   "Fetch weather context": "Obtener el contexto meteorológico",
   "Fetches the bounded Open-Meteo slice for this place and window — only after your consent.": "Obtiene el segmento acotado de Open-Meteo para este lugar y ventana — solo tras su consentimiento.",
   "Fetch weather context for one place and time window (Open-Meteo)": "Obtener el contexto meteorológico de un lugar y una ventana temporal (Open-Meteo)",
