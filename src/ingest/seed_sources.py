@@ -26,6 +26,10 @@ from src.catalog.countries import normalize_country
 from src.catalog.normalize import country_from_title
 from src.database.models import Source
 
+#: What a seed run reports. Mostly counts, plus a short list of examples for the
+#: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.
+SeedResult = dict[str, "int | list[dict[str, str | None]]"]
+
 # The full curated catalog shipped with the project.
 DEFAULT_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sources.yml"
 
@@ -165,7 +169,7 @@ def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
     return shadowed
 
 
-def seed_sources(session: Session, sources: list[dict]) -> dict[str, int]:
+def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     """Create Source rows for any domain not already present. Idempotent.
 
     Deduplicates both against the existing DB and within the input list, then bulk
@@ -217,7 +221,7 @@ def seed_sources(session: Session, sources: list[dict]) -> dict[str, int]:
     }
 
 
-def seed_default_sources(session: Session, path: Path | None = None) -> dict[str, int]:
+def seed_default_sources(session: Session, path: Path | None = None) -> SeedResult:
     """Convenience: load the curated catalog(s) and seed them.
 
     With the default catalog (``path is None``) the worldwide markets catalog and,

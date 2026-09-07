@@ -20,6 +20,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from src.database.models import LawDocument
+from src.ingest.seed_sources import SeedResult
 
 LEGAL_CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
 # The parallel-internet-session enrichment file (maintainer-ruled 2026-07-17; contract +
@@ -118,7 +119,7 @@ def registrable_documents(catalog: dict) -> list[dict]:
     return out
 
 
-def seed_legal_sources(session: Session, path: Path | None = None) -> dict[str, int]:
+def seed_legal_sources(session: Session, path: Path | None = None) -> SeedResult:
     """Seed the legal/IP portals as Source rows (idempotent, by domain)."""
     from src.ingest.seed_sources import seed_sources
 
