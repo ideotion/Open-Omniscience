@@ -9435,3 +9435,72 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+
+### 2026-09-07 — PROMPT 14 (governments, official statistics, the bloc lens): S2 shipped, and what is left
+
+Executed on branch `claude/governments-stats-bloc-lens-74pr64` (PR #1026). **S2's live defect is
+fixed and S7 turned out to be mostly already built.** What follows is the carry-over, each item
+with the thing that actually blocks it, so the next session does not re-derive any of it.
+
+**SHIPPED here.** `parse_sdmx_json` read observations only out of
+`dataSets[].series[<key>].observations`, and a `dimensionAtObservation=AllDimensions` message
+carries no `series` key at all — so a well-formed message parsed to ZERO rows and logged NOTHING.
+Both containers are read now; dataSet-level dimensions are a weakest-precedence fallback
+(observation > series > dataSet); a dataSet carrying NEITHER container is logged as unreadable
+while an empty-but-present one stays silent; and a 2.0 message is refused BY NAME telling the
+operator to pin 1.0. Six mutation-checked guards. The lesson is in `LESSONS.md`.
+
+**VERIFIED-PRESENT — do not rebuild** (anchor `58a4d6df`; `INVENTORY.md` rows corrected):
+GOV-06, the revision-anomaly detector, is shipped AND wired end to end (`src/stats/revision.py`
+→ `store.py:267` → `/api/stats/revision-anomalies` → `app-map.js:2143`, three test files);
+GOV-05, all three parser families (`parse_csv`, `parse_jsonstat`, `parse_csv_wide` + the ZIP
+reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists.
+
+**STILL OPEN, by what blocks it:**
+
+1. **⛔ EGRESS (S1, S5, S6, and the data half of S3) — one allowlist decision, not four tasks.**
+   `api.worldbank.org`, `sdmx.oecd.org` and `dataservices.imf.org` each answer
+   `CONNECT <host>:443` → `403` at the sandbox proxy, `pypi.org` 200 as the control. This is the
+   SEVENTH consecutive session to converge on that, and the hosts are already itemised in
+   `QUESTIONS_FOR_THE_MAINTAINER` **F1**. Blocked behind it: the 36 World Bank codes
+   (`scripts/verify_worldbank_indicators.py`, ONE command, and `EN.ATM.CO2E.PC` vs the newer
+   `EN.GHG.CO2.PC.CE.AR5` wants the same run); `news_url` for the agencies directory, still **0
+   of 29 populated** against a target of ~150; the BRICS Joint Statistical Publication; the AfDB
+   and UNECA continental endpoints (the WB lens has no continental-Africa figure at all, which is
+   why both lenses ship); and the two task-2 loose ends (`page=2` against a cache-disabled
+   request, and the tail of page 1). **Nothing in a session can route around a TCP-layer refusal
+   — do not spend another session rewriting the prompt.**
+
+2. **SDMX-JSON 2.0 itself — needs ONE real fetched body, and only that.** The refusal is in place
+   and now names the version; the fixtures written here are SPEC-SHAPED, not fetched, and the
+   test docstring says so. The mapping work is small once a body exists (`data.structures` is a
+   plural ARRAY and each dataSet links to one of them by index); what cannot be done without a
+   body is knowing that the mapping is right. Depends on item 1.
+
+3. **S3, the bloc rosters (G3) — its own networked session, and the acquisition RULE is the hard
+   part, not the fetching.** The registry ships deliberately empty (27 groups, 20 unpopulated,
+   verified unchanged). **The publisher's own page is an interested party for a membership fact**
+   — one search returned four mutually incompatible states for Saudi Arabia in BRICS with the
+   bloc's own page the most confident and the least reliable. A roster page corroborates
+   membership and cannot settle a contested one; that needs the acceding state's own statement,
+   and where none exists the honest answer is a permanent `joined: UNVERIFIED`. Two sub-items
+   need sourced dates from the SAME session: region membership is undated (`dates_apply=False`,
+   stated, cross-vintage unsafe), and a country that did not exist in the requested year lands in
+   the coverage gap beside non-reporters, which are two different facts. **Do not build the dating
+   plumbing ahead of the dates** — empty schema is the half-built migration the working mode warns
+   about, and the suspension-EPISODE model was worth doing early only because the registry was
+   still empty.
+
+4. **S4, the default aggregation strategy — a RULING, not a task.** Recorded as question **G11**
+   with the arithmetic both ways and a recommended default of *keep the member mean*. It was
+   deliberately NOT flipped: every strategy is already shown side by side, so this decides only
+   which one the surface opens on, and which figure a reader sees first is an editorial decision.
+   A population-weighted mean of a per-capita indicator EQUALS `Σ numerator / Σ denominator` — the
+   true aggregate — but only where the numerator is reconstructed and the weight series is real
+   for the same members and year; where that holds the code already classifies the basis `exact`
+   and opens on it, so G11 governs only the case where it does not. Gini stays refused either way.
+
+5. **PRH-24, the "Registered statistics sources" view — genuinely unbuilt** (checked, not assumed:
+   only `/api/stats/sources/ingest` exists, no view). A UI slice, so browser-gated; it is the one
+   item of S7 that was not already shipped.
