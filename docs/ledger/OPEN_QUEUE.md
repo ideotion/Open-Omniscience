@@ -9494,3 +9494,58 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   behind a count), D6 (pin + refuse), D7 (sweep yes; stay on `<1.0`), D8 (no build), D9 (drop),
   D10 (already in the recommended shape). Each is reversible and each is named here so a
   maintainer ruling that differs has one place to land.
+- **WHAT PROMPT_11 LEFT UNDONE — the standing list, written 2026-09-07 after #1024 merged
+  (`965e3e5`).** The executed record is the entry above; this is the actionable remainder, most
+  serious first. Items (1) and (5) are findings made while writing this list, not carry-over.
+  **(1) A LIVE HONESTY DEFECT IN MY OWN S5, and it is the exact collapse S1 was careful to
+  avoid.** `evidence` is written ONLY at insert time by `record_keywords`; there is no backfill
+  and no migration. So every `ai_keyword` row that existed before #1024 has `evidence = NULL`,
+  `GET /api/ai/articles/{id}/keywords` omits the field (`src/api/ai.py:210`), and the reader
+  renders "Not found in your stored copy of this article" (`src/static/reader.js:290`). For a
+  legacy row that sentence is FALSE: nothing ever searched. Two different facts — *searched and
+  genuinely absent* (the informative case: inferred, translated or invented) and *never searched*
+  — print as one, which is the same three-state collapse `weights_pin.py` refuses when it OMITS
+  `revision_matches_pin` rather than sending `False` for a cache nothing compared. The discipline
+  was applied in one slice of the PR and missed in the other, the same day. Anyone who ran the AI
+  keyword pass before 2026-09-07 sees the false label on EVERY term. **RECOMMENDED DEFAULT: a
+  deterministic offline top-up**, not a schema change — `evidence_for` needs only the stored
+  article text, is idempotent, and the repo already has the precedent in invariant #21's silent
+  `autoIndexInsights` backlog top-up. A `evidence_checked` column would also work and costs a
+  migration for a distinction a re-scan removes. Until one ships, the reader's absence line is
+  overclaiming and should be read as "no snippet stored", not as a finding.
+  **(2) BOTH PIN VALUES SHIP BLANK — the mechanism is complete, only the values are missing.**
+  `HF_REVISION_PINS` and `OLLAMA_DIGEST_PINS` in `src/llm/weights_pin.py` are empty dicts, so the
+  pin reports "not pinned, nothing was checked" — the honest third state, not a silent pass.
+  Resolving them needs `huggingface.co` / `ollama.com`, which answer this sandbox's proxy
+  `CONNECT ... 403` (`pypi.org` 200 as the control). OPERATOR STEP, on a connected machine:
+  resolve the Ministral snapshot's revision SHA and the Ollama manifest digest for
+  `MINISTRAL_TAG`, fill both dicts, and re-date `model-weights-revision` in
+  `configs/external_artifacts.yml`. The refusal path is already fixture-tested; a digest nobody
+  fetched, typed in from here, is the fabricated checksum the non-negotiables forbid.
+  **(3) AI-15 — ONE LOOKUP, still unanswered on its seventh consecutive session.** Is the Ollama
+  account `LiquidAI` the publisher's own? Same 403 as (2). Deliberately NOT guessed; it joins F1's
+  list. It gates nothing that ships, but it is the provenance claim behind the default model.
+  **(4) D8's HARNESS CANNOT BE STARTED, which is why its "operator step on the rig" is not
+  actually available.** `src/ai_layer/specialisation.py` ships 476 lines with its own suite, and
+  `run_shape` has no caller outside the test tree — no endpoint, no script, no button. NEEDS A
+  RULING before any build: D8's recommendation is "no build", and an invocation path IS a build.
+  The cheapest honest shape is a script rather than a surface, since the measurement is an
+  operator step and not a user feature. Read the deferral as "the harness cannot be run yet".
+  **(5) PRH-21's SECOND HALF IS MOOT AS WRITTEN, and the real question is different.** The
+  inventory says "the `OLLAMA_MODELS` hint is never keyed". The hint is `install.sh:526`, and it
+  sits INSIDE `configure_ollama_store_access()` (lines 495–528), which has exactly one occurrence
+  in the file — its own definition, zero call sites. So the string cannot be unkeyed FOR A USER:
+  it never prints. `install.sh` has no i18n machinery at all, so keying it is not a key addition
+  either. The live question is what to do with 34 lines of deliberately-dead shell that the
+  2026-06-20 ruling keeps uninvoked on purpose: keep it as a documented affordance an operator can
+  call by hand, or delete it. NEEDS A RULING; do NOT wire it (that runs `sudo chmod` during
+  install, which is exactly what the ruling removed).
+  **(6) D10 / S4's NUMERIC FLOORS remain the operator's graded gold set (R6).** The structural
+  half is built and test-pinned; the floors are a measurement nobody in a sandbox can take.
+  **(7) FOUR CI LANES HAD NOT REPORTED WHEN #1024 MERGED**, on the maintainer's instruction with
+  the full `test` suite and the `PQC signing path` lane already green: Core-only install, Columnar
+  store, Portability (windows-latest), SQLCipher wheel smoke (ubuntu-latest). They now run against
+  `main`. Core-only is the one to read first — it is the lane that proves the new probes report
+  UNAVAILABLE rather than raising when `pqcrypto`/`opentimestamps` are absent. It was reproduced
+  locally with a `builtins.__import__` shim (81 passed, 8 skipped, 0 failed); that is evidence,
+  not CI's verdict, and the two are not interchangeable.
