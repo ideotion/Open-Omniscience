@@ -14,8 +14,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+import src.utils.security as sec
 from src.ingest import BlockedTarget, EthicalFetcher
-from src.utils.security import csv_safe_cell, safe_href
+from src.utils.security import csv_safe_cell, safe_href, sanitize_url
 
 
 # --- S-004: CSV / spreadsheet formula injection ----------------------------- #
@@ -49,6 +50,55 @@ def test_safe_href_drops_dangerous_schemes(bad):
 def test_safe_href_keeps_http_links():
     assert safe_href("https://example.com/a") == "https://example.com/a"
     assert safe_href("http://example.com") == "http://example.com"
+
+
+# --- NET-02: the app-wide sanitizers catch ValueError ONLY ------------------ #
+# The two URL sanitizers held ``except Exception: return ""``. That is the right
+# ANSWER for the one exception ``urlparse`` genuinely raises (an unterminated
+# IPv6 literal) and the wrong one for everything else: a TypeError from a
+# bytes/None argument, a RecursionError, an AttributeError from a caller passing
+# the wrong object, all became a clean empty string indistinguishable from "this
+# link was unsafe". These are the app-wide sanitizers, so a silent swallow here
+# is silent everywhere -- every reader/law/link surface that renders an ingested
+# URL. Each function gets its ValueError fallback DRIVEN, and a propagation test
+# proving an unexpected exception escapes; widening either except back reddens
+# exactly the two propagation tests.
+
+# The exception ``urlparse`` genuinely raises: a '[' in the netloc with no ']'.
+_INVALID_IPV6 = "https://[::1/path"
+
+
+def test_the_invalid_ipv6_literal_really_is_the_valueerror_case():
+    """Anti-vacuity for the two fallback tests below: if ``urlparse`` ever stopped
+    raising here, they would pass without exercising the fallback at all."""
+    with pytest.raises(ValueError):
+        sec.urlparse(_INVALID_IPV6)
+
+
+def test_safe_href_invalid_ipv6_takes_the_valueerror_fallback():
+    assert safe_href(_INVALID_IPV6) == ""
+
+
+def test_safe_href_unexpected_exception_propagates(monkeypatch):
+    def _boom(url):
+        raise RuntimeError("planted: not a parse error")
+
+    monkeypatch.setattr(sec, "urlparse", _boom)
+    with pytest.raises(RuntimeError):
+        safe_href("https://example.com/x")
+
+
+def test_sanitize_url_invalid_ipv6_takes_the_valueerror_fallback():
+    assert sanitize_url(_INVALID_IPV6) == ""
+
+
+def test_sanitize_url_unexpected_exception_propagates(monkeypatch):
+    def _boom(url):
+        raise RuntimeError("planted: not a parse error")
+
+    monkeypatch.setattr(sec, "urlparse", _boom)
+    with pytest.raises(RuntimeError):
+        sanitize_url("https://example.com/x")
 
 
 # --- S-001: SSRF target guard ----------------------------------------------- #
