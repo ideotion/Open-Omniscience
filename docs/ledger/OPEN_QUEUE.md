@@ -10281,6 +10281,89 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   groups, so the cost grows with the corpus and has NOT been measured at the 500k scale. If a
   live run is slow, the fix is the explicit-action button the article-length figure already
   uses, not a cap.
+- **STORAGE PROMPT 22 (S1–S5) — THE PHASE-C DESIGN REFRESH: four rulings still open, three
+  carry-overs, one operator job (2026-09-07; refresh of record =
+  [`docs/design/STORAGE_5TB_REFRESH_2026-09-07.md`](../design/STORAGE_5TB_REFRESH_2026-09-07.md);
+  guard = `tests/test_db10_migration_mechanism.py`).** The session was scoped as a design
+  refresh and stayed one; nothing from Phase B or Phase C was built. What changed is recorded in
+  `shipped.csv` and the refresh doc. What is still the maintainer's to decide:
+
+  **C4 RULINGS 3–6 REMAIN OPEN, and two of them have new evidence since the plan's §8 table was
+  written.** They are recorded here as QUESTIONS, not answers — none was ruled this session.
+  (3) **Blob-store dedup ON?** Standing recommendation YES; unchanged by anything measured here.
+  (4) **Pack AEAD: OOENC2 or `age`?** Standing recommendation OOENC2, `age` as the recorded
+  fallback — but one input moved: `PRAGMA cipher_memory_security` **defaults to 0, OFF**
+  (MEASURED; open since 2026-07-12 as §7 item 3). The plan's §5 asks memory hygiene to "extend
+  to the blob path", which reads as though the SQL path already locks memory. It does not, so
+  "OOENC2 keeps the blob path consistent with the SQL path's hygiene" is not an argument
+  available to either side, and the choice rests where it did: one fewer dependency and already
+  tested, against audited-external and no AES-NI dependency. (5) **Keyed HMAC blob addressing +
+  opaque pack names?** Standing recommendation YES; the confirmation-attack threat model is
+  untouched. (6) **Authorise the `sqlite3mc` benchmark trial?** Standing recommendation YES,
+  benchmark-only. Its stated gate (a ChaCha20-vs-AES-CBC comparison on a no-AES-NI CPU) is
+  unchanged and is operator hardware this sandbox does not have.
+
+  **THE SEQUENCING QUESTION THE REFRESH RAISES, and it is the maintainer's rather than the
+  code's.** With the ceiling premise retired (64.00 TiB at the ruled page size, so 5 TB is 7.1%
+  of one file), Phase C is no longer a prerequisite for the 5 TB milestone. The refresh
+  re-scopes it behind **DB-10 §6's footprint measurement** — the per-table `dbstat` split of
+  `articles.content` against index and mention bytes, which has still never been taken and which
+  decides whether Phase C saves roughly half the store or most of it. **Nothing in the ledger
+  substitutes for it** — the two recorded field figures that look as though they might (~42.6 KiB
+  per article at 11.7 GB / 268,241, ~21.9 KiB at 32.1 GB / ~1.43 M) are the SAME quantity, store
+  bytes per article, on two different corpora, and they differ 2x between them; they say nothing
+  about the content-versus-index split. **Is the re-scope accepted, and is the footprint
+  measurement worth an operator run before any Phase-C code?**
+
+  **CARRY-OVER (1) — C5's remaining half.** The migration MECHANISM is verified and guarded
+  (ATTACH + declare `cipher_page_size` AND `auto_vacuum` on the alias + `sqlcipher_export`,
+  proven up, down, and rekey-plus-repage in one pass). A user-facing operation is NOT built,
+  deliberately: it still owes a free-disk preflight, a pragma self-verify that `int()`s the
+  read-back, and an honest app-stopped cost statement. **The instrument that measured that cost
+  no longer exists** — `src/monitoring/pagesize_bench.py` was removed under the 2026-07-31
+  ruling 6 once §1b was ratified, so the 10–17 s/GB figure survives only in this ledger. A build
+  must re-create the measurement or cite the ledger explicitly; it must not present the number
+  as something the tree can reproduce. Whether the operation should exist as a button at all is
+  still open (the 2026-07-18 ruling says "a user-facing migrate op is a separate build").
+
+  **CARRY-OVER (2) — DB-10 §2 is HALF shipped, found by the staleness guard while about to
+  rebuild it.** `app-settings.js:_confirmVacuum` discloses an estimated duration (10–17 s/GB)
+  and confirms before running — honest, translated, layered. Absent: any **backend** refusal
+  (`POST /api/database/vacuum` will start a full rebuild on a corpus of any size), any
+  **free-disk preflight** (a full VACUUM needs ~2× the file size in scratch; the repo already
+  has a `free_disk_bytes` helper in `src/safety/data_location.py`), and any pointer at the
+  incremental pass — which IS wired (`scheduler/maintenance.py` → `maybe_incremental_vacuum`)
+  and which was the section's actual ask. Not built here because it is outside prompt 22's
+  stated scope and this session is the design refresh; recorded so the next DB-10 slice does not
+  re-derive it.
+
+  **CARRY-OVER (3) — Phase B's FTS split moves BEHIND the sharding prototype**, on evidence
+  rather than preference: its "no second on-disk copy" bonus is already banked by the shipped
+  external-content table, and contentless-delete REFUSES `'rebuild'` (MEASURED), so the split
+  trades a minutes-to-hours engine primitive for a multi-day application-level re-feed at
+  current corpus size. If sharding lands, each shard is a separate file and the split comes free
+  with it. No ruling needed unless the maintainer wants the backup-exclusion win sooner.
+
+  **OPERATOR JOB — the 50–100 M sharding prototype, now costed rather than caveated.** MEASURED
+  here: 1,925 bytes of FTS5 index per synthetic document at 2,692 docs/s, so **89.6 GiB and
+  5.2 h per arm at 50 M** (179.3 GiB / 10.3 h at 100 M), and a single-vs-sharded comparison
+  needs two arms — against this sandbox's 30 GiB allowance that is 3.0x short for one arm at 50 M
+  and 6.0x for the comparison (6.0x and 12.0x at 100 M). Treat 89.6 GiB as an upper bound (the synthetic vocabulary is deliberately
+  tail-heavy) and measure the real corpus's index-bytes-per-article first. What the prototype
+  still has to answer is the SCALE half — query-latency knee, merge behaviour, tombstone
+  accumulation. What it no longer has to answer: recall is preserved structurally (100% in
+  44/44 cells) and the ranking divergence is per-shard statistical thinness that shrinks as
+  shards fatten toward the proposed ~1 M docs/shard. One finding for whoever runs it: FTS5's
+  `bm25()` takes column weights and nothing else, so the plan's "maintain global term stats"
+  option does not exist inside FTS5 — the real choices are fat shards, disclosure, or scoring
+  outside FTS5.
+
+  **C6 / DAT-05 — VERIFIED-PRESENT, no action.** The prompt recommended parking the httpfs
+  binaries explicitly with the reason rather than leaving them reading as pending work. That was
+  already done on 2026-09-07: `configs/external_artifacts.yml`'s `duckdb-httpfs-extension` entry
+  carries a `parked:` field naming the blocker (`extensions.duckdb.org` is not in the egress
+  allowlist, and a sha256 for a binary nobody fetched cannot be written without fabricating it)
+  and what it costs. Recorded here only so the next reader does not re-open it.
 - **WHAT PROMPT_11 LEFT UNDONE — the standing list, written 2026-09-07 after #1024 merged
   (`965e3e5`).** The executed record is the entry above; this is the actionable remainder, most
   serious first. Items (1) and (5) are findings made while writing this list, not carry-over.
@@ -10393,3 +10476,12 @@ reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists
   successes are the `schedule` cron**, so the cron referee already exists in fact. TWO ENTRIES NOW
   DESCRIBE ONE FINDING (this one and #1040's, from parallel sessions); both are kept per the
   additive rule, and #1040's is the one to cite.
+  **ONE FACT THAT BEARS ON OPTION (c) SPECIFICALLY, measured on this branch 2026-09-07 19:48:**
+  "PR runs are the referee" assumes PR runs COMPLETE, and at this merge cadence they can be starved
+  the same way. Any branch touching `docs/ledger/OPEN_QUEUE.md` is re-conflicted by the next merge
+  that appends to it — four times in four hours here — and each resolve-and-push CANCELS its own
+  queued PR run (`cancel-in-progress` is TRUE off the default branch, correctly) and restarts a
+  queue that was measured at 45+ minutes. Main moving roughly every ten minutes against a queue
+  that long means a ledger branch can be forced to re-merge faster than its own CI can conclude.
+  So (c) is not free either: it needs the queue to drain faster than `main` moves, which is the
+  same runner-capacity question option (b) raises, arriving from the other side.

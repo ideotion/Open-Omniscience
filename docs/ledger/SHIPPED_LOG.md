@@ -7117,3 +7117,33 @@ larger than the stages a preview actually walks.
 articles-first headline, labelled per-type breakdown, corpus delta and work-induced queue) and
 S4 (one aggregated conclusion for a whole queue with per-item rows beneath) were both already
 built; the descriptions that said otherwise were corrected in the same PR.
+### 2026-09-07 - Storage prompt 22 (S1-S5): the Phase-C plan refreshed against measurement
+
+A design-refresh session rather than a build, as the prompt sequenced it -- and re-deriving first
+is what found the two defects. The plan's central premise ("a default-page SQLCipher file caps at
+~17.5 TB, so Phase C is MANDATORY") was computed at a page size the app stopped creating seven
+weeks earlier: the ceiling is `max_page_count x page_size`, the bundled sqlcipher3 compiles
+`MAX_PAGE_COUNT=0xfffffffe`, and at the ruled 16384 it is **64.00 TiB**, so the 5 TB milestone
+sits at 7.1% of one file and Phase C is re-scoped from "mandatory, first" to a working-set lever
+gated on a footprint measurement nobody has taken. And the plan's second migration mechanism,
+`VACUUM INTO`, writes its product at the compiled default 4096 whatever the source is **while
+reporting success** -- usable at 4096 and unopenable at every other size, i.e. correct on exactly
+the page size no corpus created since 2026-08-13 has. The surviving mechanism (ATTACH + declare
+`cipher_page_size` AND `auto_vacuum` on the alias + `sqlcipher_export`) is verified up, down, and
+rekey-plus-repage in one pass, and both halves are pinned by
+`tests/test_db10_migration_mechanism.py`. Also: Phase C's design is unchanged but its ARGUMENT is
+not (the page-cache correction retires cache economics in favour of bytes-per-row through the
+codec) and its GC must be a bounded windowed sweep because `SQLITE_TEMP_STORE=2` puts temps in
+RAM invisibly; Phase B's FTS split is re-scored downward (its "no second copy" bonus is already
+banked by external content, and contentless-delete REFUSES `'rebuild'`); hash-sharding preserves
+recall structurally (100% in 44/44 cells) while its ranking divergence turns out to be per-shard
+thinness that shrinks as shards fatten; the 50-100M prototype is costed at 89.6 GiB and 5.2 h per
+arm rather than caveated; and plan SS7 items 1 and 3 are closed after fourteen months (SQLite
+3.51.1; `cipher_memory_security` defaults to OFF). Full row in `shipped.csv`.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a ruling can invalidate the
+plan that asked for it, and the plan goes on reading as current; a mechanism that works only at
+the old default is a trap the new default arms, and it fails toward success; the coincident-fixture
+trap hit twice in one hour in opposite directions, with the regression guard catching the probe;
+and varying one parameter moves everything that depends on it -- the sharding control inverted my
+own finding.

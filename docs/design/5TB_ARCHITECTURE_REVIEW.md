@@ -6,6 +6,18 @@
 > `src/database/maintenance.py:maybe_incremental_vacuum`. Existing corpora keep their create-time pragmas
 > and migrate only through a deliberate rebuild — that part of the banner still holds.
 >
+> **Two of this review's own claims are superseded (2026-09-07, measured — see
+> [`STORAGE_5TB_REFRESH_2026-09-07.md`](./STORAGE_5TB_REFRESH_2026-09-07.md)).** (a) **§B.3's
+> `page_size` seam is now RULED AND WIRED at 16384**, and that quadrupled the store's size
+> ceiling: `max_page_count` is 4,294,967,294 (MEASURED — the bundled sqlcipher3 compiles
+> `MAX_PAGE_COUNT=0xfffffffe`), so the ceiling is **64.00 TiB** at 16384 against 16.00 TiB at
+> 4096, and §B.1's "~1.3 billion pages at 5 TB" was computed at 4 KiB and is now ~4× lower.
+> (b) **§B.2's page-cache framing needs one correction**: its conclusion ("the lever is plan
+> shape, not cache size") is right, but SQLite SPILLS dirty pages as the cache fills, so
+> `cache_size` is a residency dial rather than a floor — the argument for a small hot working
+> set rests on BYTES-PER-ROW THROUGH THE CODEC (the column-order trap this section already
+> documents), not on cache-hit economics.
+>
 > **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the highest-value confirmed gap: `auto_vacuum=INCREMENTAL` + `page_size=16384` are STILL not set on the fresh-file creation path (`src/database/connect.py:86`), despite §1a being formally ruled (2026-07-17) and §1b's evidence being delivered ("16384 wins every dimension at scale", PR #726). Adaptive backup volume sizing, D2/D3 rollups, the cross-time-recall invariant test, and `journal_size_limit` are all confirmed SHIPPED (this doc was stale on those). See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
 
 # 5 TB Architecture — Verify-Before-Trust Review (A14 / P1.7)
