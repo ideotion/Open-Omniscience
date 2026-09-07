@@ -9,9 +9,21 @@ per edition — the DEFAULT kind new downloads use (src.wiki.dumps). These are
 coarse, dated ESTIMATES shown INLINE in the edition picker so it is informative
 WITHOUT firing a network probe per edition (zero-network boot / airplane mode
 stay intact — UI invariant #14). The exact size is always read from the dump
-server at download time; a consented one-call "refresh exact sizes" can later
-replace these with live figures (the dump date's dumpstatus.json lists every
-edition at once, so it is ONE request, not N HEADs).
+server at download time, and the consented "Refresh exact sizes" action reads it
+for the editions the operator has selected (``DumpDownloadManager.probe_sizes``,
+one HEAD per edition against the same ``latest`` URL the download fetches,
+spaced by the per-host politeness interval and bounded).
+
+A one-REQUEST variant was proposed here (2026-06-16) on the premise that "the
+dump date's dumpstatus.json lists every edition at once". **That premise is
+UNVERIFIED and is not repeated as fact any more (2026-09-07):** every
+``dumps.wikimedia.org`` path this repository builds is per-edition
+(``/<code>wiki/latest/...``), which is evidence against a single cross-edition
+document rather than for one, and the host is egress-blocked in the build
+sandbox (``curl`` to it returns 000 while pypi.org returns 200), so the shape
+could not be checked. Collapsing N HEADs into one request stays a real
+optimisation and is PARKED until someone can read the live endpoint; shipping a
+parser against a guessed shape would be a fabricated endpoint.
 
 HONESTY CONTRACT (mirrors the model catalog, src.llm.ollama.CATALOG_AS_OF): real
 dump sizes drift each cycle. ``DUMP_SIZES_AS_OF`` is shown wherever the estimates

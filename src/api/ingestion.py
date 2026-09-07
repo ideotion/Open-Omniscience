@@ -204,6 +204,26 @@ def _get_newsletter_source(db: Session) -> Source:
     return _ensure_import_source(db, domain=_NEWSLETTER_DOMAIN, name=_NEWSLETTER_NAME)
 
 
+@router.get("/newsletters/publisher-preview")
+def newsletter_publisher_preview(db: Session = Depends(get_db)) -> dict:
+    """Which publisher each imported newsletter WOULD be filed under.
+
+    A PREVIEW, not an action: the 2026-06-15 ruling pairs silent auto-attach with
+    an import UI that announces it and an undo for the automated attaches, so the
+    attach is not wired until those exist. This endpoint runs the real resolver
+    over the newsletters already in the corpus so the decision can be reviewed
+    against evidence rather than described -- and so the resolver has a caller
+    that is not a test.
+
+    Loopback and read-only: no write, no network (the Public Suffix List is a
+    vendored snapshot). A plain ``def`` so the DB work runs in the threadpool
+    rather than freezing the single event loop.
+    """
+    from src.ingest.newsletter_source import resolution_preview
+
+    return resolution_preview(db)
+
+
 # Starlette's MultiPartParser defaults to max_files=1000, so a selection of ~1300
 # .eml files returned HTTP 400 "Too many files" (maintainer field test 2026-06-20).
 # We parse the form ourselves with a higher cap for this local, single-user upload.

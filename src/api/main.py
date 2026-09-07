@@ -1734,12 +1734,71 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
     # TWO metadata classes, clearly differentiated (maintainer-ruled 2026-06-11):
     # what the SOURCE asserted vs what THIS APP deduced (explicitly less reliable).
+    # THE VERSION ANCHOR (S4, Wikipedia-as-a-living-source). A versioned source's
+    # text is amendable, and the standing ruling is that the audit trail only means
+    # something if a reader can see WHICH version they are looking at. The claim is
+    # narrow and stated: this is the revision the STORED TEXT came from, which is
+    # also the text every analytic on this page was computed over, because they are
+    # recomputed through the one index_article hook whenever the text changes.
+    #
+    # NULL is NOT rendered as "unknown": an article with no anchor came from no
+    # versioned source (or predates the column), and printing a blank version row
+    # would invent a question that does not apply to a news article.
+    version_row = ""
+    if a.source_revision:
+        _rev = _html.escape(a.source_revision)
+        _ref = None
+        try:
+            from src.wiki.corpus import wiki_page_ref
+
+            _ref = wiki_page_ref(a.canonical_url or a.url or "")
+        except Exception:  # noqa: BLE001 - the reader must never break on provenance
+            logger.warning("wiki page ref failed in reader", exc_info=True)
+        _bits = [f"<code>{_rev}</code>"]
+        if _ref and a.source_revision.isdigit():
+            # The revision AS PUBLISHED, on the wiki. An external link, so it goes
+            # through the same confirm every other outbound link on this page does.
+            _oldid = safe_href(
+                f"https://{_ref[0]}.wikipedia.org/w/index.php?oldid={a.source_revision}"
+            )
+            if _oldid:
+                _bits.append(
+                    f"<a href='{_html.escape(_oldid)}' target='_blank' rel='noopener'>"
+                    "view this revision ↗</a>"
+                )
+        # THE WAY IN to the local history -- offered ONLY when this machine actually
+        # holds tracked revisions for the page. A link to a history that does not
+        # exist here is the dead-end shape: it looks like a capability and answers
+        # nothing. A page ingested from a dump has no tracked revisions, and says so
+        # rather than offering a door to an empty room.
+        if _ref:
+            try:
+                from src.database.models import WikiPage
+
+                _wp = (
+                    db.query(WikiPage.id)
+                    .filter(WikiPage.wiki == _ref[0], WikiPage.title == _ref[1])
+                    .first()
+                )
+                if _wp:
+                    _bits.append(
+                        f"<a href='/?wikitc={int(_wp[0])}'>tracked changes on this machine</a>"
+                    )
+                else:
+                    _bits.append(
+                        "<span class='muted'>no tracked revisions stored here</span>"
+                    )
+            except Exception:  # noqa: BLE001
+                logger.warning("wiki page lookup failed in reader", exc_info=True)
+        version_row = _row("Version (this stored text)", " · ".join(_bits))
+
     source_rows = "".join(
         [
             _row("Source", src_name),
             _row("Published", _html.escape(published) if published else None),
             _row("Author", _html.escape(a.author) if a.author else None),
             _row("Language", lang if a.language else None),
+            version_row,
         ]
     )
     # App-deduced: capture facts + extracted event dates/locations + keywords.
@@ -1864,8 +1923,19 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             ),
         ]
     )
+    version_note = (
+        "<div class='mnote'>The version is the revision this stored text came from, "
+        "and is what every measurement on this page was computed over — a later "
+        "edit is not reflected here until the text is re-synced and re-indexed. "
+        "It does not claim to be the newest revision on the wiki.</div>"
+        if version_row
+        else ""
+    )
     meta_rows = (
-        "<div class='mgrp'><h3>From the source</h3>" + (source_rows or "<div class='mrow muted'>—</div>") + "</div>"
+        "<div class='mgrp'><h3>From the source</h3>"
+        + (source_rows or "<div class='mrow muted'>—</div>")
+        + version_note
+        + "</div>"
         "<div class='mgrp deduced'><h3>Deduced by this app — less reliable</h3>"
         + (deduced_rows or "<div class='mrow muted'>—</div>")
         + "<div class='mnote'>Extractions are lexical candidates with snippet provenance — "

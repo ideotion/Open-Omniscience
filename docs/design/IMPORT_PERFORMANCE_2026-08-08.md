@@ -260,6 +260,147 @@ guess.
 
 - **Anything about the 47-ruling 2026-08-07 field-feedback brief.** Different work.
 
+## 5b. ⚠ AMENDED 2026-09-07 — the two non-changes, MEASURED
+
+§5 below left `prepare_staged:validate` and `verify_copy`'s two whole-corpus PRAGMA
+checks alone, and every reason given was about RISK. The cost has since become the
+majority of what a queued import spends outside the merge, and a decision about
+whether to keep paying it cannot be made from an adjective. **Nothing here changes
+what those checks do.** They are measured, and the numbers are written down so the
+next decision is made on evidence.
+
+### What was measured, and on what
+
+`PRAGMA quick_check` and `PRAGMA foreign_key_check`, on synthetic corpora built
+through the project's own `src.testing.corpus_gen`, **plaintext and encrypted**,
+**cold** (`/proc/sys/vm/drop_caches` immediately before) and **warm** (immediately
+after the cold run, on the same file, while its pages are still resident).
+**n = 3 per configuration, interleaved at the round level.** Encrypted arms go
+through the real `src.database.connect.connect` factory, so they are real sqlcipher3
+at the DB-10 §1b page size.
+
+The two arms differ in PAGE SIZE, and that is faithful rather than a confound: a
+staged corpus is exported plaintext and gets SQLite's 4096 default, while the working
+copy preserves the live at-rest state and an encrypted store created under DB-10 §1b
+is 16384. So "plaintext 4096 versus encrypted 16384" IS the production comparison —
+`prepare_staged:validate` walks the first and `verify:quick_check` walks the second.
+
+Machine: 4 cores, 16 GiB RAM, the session sandbox's virtual disk. **That disk is much
+faster than the field's**, which is the single most important thing to carry out of
+this section — see "what does not transfer" below.
+
+### The numbers
+
+| store | bytes | page size | pages | articles | check | cache | median | min–max (n=3) | s/GiB |
+|---|---:|---:|---:|---:|---|---|---:|---:|---:|
+| 2048MB-plain | 2,171,211,776 | 4,096 | 530,081 | 76,000 | `quick_check` | cold | 12.80 s | 11.47–13.29 s | 6.3 |
+| 2048MB-plain | 2,171,211,776 | 4,096 | 530,081 | 76,000 | `quick_check` | warm | 5.20 s | 5.11–6.09 s | 2.6 |
+| 2048MB-plain | 2,171,211,776 | 4,096 | 530,081 | 76,000 | `foreign_key_check` | cold | 6.99 s | 6.78–7.07 s | 3.5 |
+| 2048MB-plain | 2,171,211,776 | 4,096 | 530,081 | 76,000 | `foreign_key_check` | warm | 3.99 s | 3.99–4.32 s | 2.0 |
+| 2048MB-enc | 2,163,949,568 | 16,384 | 132,077 | 76,000 | `quick_check` | cold | 16.45 s | 16.31–17.35 s | 8.2 |
+| 2048MB-enc | 2,163,949,568 | 16,384 | 132,077 | 76,000 | `quick_check` | warm | 12.14 s | 12.11–12.82 s | 6.0 |
+| 2048MB-enc | 2,163,949,568 | 16,384 | 132,077 | 76,000 | `foreign_key_check` | cold | 6.22 s | 5.82–6.31 s | 3.1 |
+| 2048MB-enc | 2,163,949,568 | 16,384 | 132,077 | 76,000 | `foreign_key_check` | warm | 3.88 s | 3.88–3.95 s | 1.9 |
+| 4096MB-plain | 4,336,390,144 | 4,096 | 1,058,689 | 150,000 | `quick_check` | cold | 24.39 s | 24.03–28.39 s | 6.0 |
+| 4096MB-plain | 4,336,390,144 | 4,096 | 1,058,689 | 150,000 | `quick_check` | warm | 9.64 s | 9.64–9.85 s | 2.4 |
+| 4096MB-plain | 4,336,390,144 | 4,096 | 1,058,689 | 150,000 | `foreign_key_check` | cold | 13.41 s | 13.25–13.44 s | 3.3 |
+| 4096MB-plain | 4,336,390,144 | 4,096 | 1,058,689 | 150,000 | `foreign_key_check` | warm | 8.09 s | 7.59–8.16 s | 2.0 |
+| 4096MB-enc | 4,316,594,176 | 16,384 | 263,464 | 150,000 | `quick_check` | cold | 33.83 s | 33.65–35.25 s | 8.4 |
+| 4096MB-enc | 4,316,594,176 | 16,384 | 263,464 | 150,000 | `quick_check` | warm | 24.66 s | 24.00–24.74 s | 6.1 |
+| 4096MB-enc | 4,316,594,176 | 16,384 | 263,464 | 150,000 | `foreign_key_check` | cold | 11.27 s | 11.21–12.10 s | 2.8 |
+| 4096MB-enc | 4,316,594,176 | 16,384 | 263,464 | 150,000 | `foreign_key_check` | warm | 7.91 s | 7.86–8.31 s | 2.0 |
+
+Codec multiplier — encrypted over plaintext, per byte, medians of n=3:
+
+| nominal size | `quick_check` cold | `quick_check` warm | `foreign_key_check` cold | `foreign_key_check` warm |
+|---|---:|---:|---:|---:|
+| 2048MB | 1.29x | 2.34x | 0.89x | 0.98x |
+| 4096MB | 1.39x | 2.57x | 0.84x | 0.98x |
+
+Worst spread within a configuration across all sixteen: **1.19x** — which is
+what says how much a single run of one of them is worth, and it is why the two earlier
+passes described below were not enough.
+
+### What they say
+
+1. **Both checks are LINEAR in bytes.** Doubling the corpus doubles both, with the
+   per-GiB rate flat to within the noise (`quick_check` encrypted 8.2 → 8.4 s/GiB,
+   `foreign_key_check` encrypted 3.1 → 2.8). So a rate, not a duration, is the
+   portable form — which is what the 2026-08-08 `working_copy_bytes` instrumentation
+   was added to make possible.
+
+2. **`foreign_key_check` costs about a THIRD of `quick_check`, and is CODEC-NEUTRAL.**
+   Encrypted over plaintext, per byte, it is 0.84–0.98x in BOTH regimes — it is
+   index-driven, so it never walks the pages `quick_check` walks. Encrypted and cold,
+   it is the cheaper of the two by a factor of 2.6–3.0, and it is not the place to
+   look first.
+
+3. **THE CODEC MULTIPLIER IS A WARM-CACHE NUMBER, and this refines how
+   `merge_diag.walk_probe`'s output should be used.** Warm, `quick_check` encrypted is
+   **2.34x / 2.57x** plaintext — an independent corroboration of `walk_probe`'s
+   recorded 2.40 / 2.39 / 2.42. Cold, the same comparison is **1.29x / 1.39x**,
+   because the encrypted store does a QUARTER as many reads, four times as large, and
+   once I/O dominates that pays for most of the codec. `walk_probe`'s docstring
+   recommends taking the field's own measured `validate` rate and applying this
+   multiplier. **The field's validate rate is disk-bound (17 MB/s on a 32 GB
+   artifact), so applying a warm-cache multiplier to it OVER-STATES the encrypted walk
+   — by about 1.8x** at the sizes measured here. The docstring is amended accordingly.
+
+### Extrapolation, and what does NOT transfer
+
+At this machine's cold encrypted medians:
+
+```
+2048MB-enc     quick_check          8.2 s/GiB ->   17.7 min at 130 GiB
+2048MB-enc     foreign_key_check    3.1 s/GiB ->    6.7 min at 130 GiB
+4096MB-enc     quick_check          8.4 s/GiB ->   18.2 min at 130 GiB
+4096MB-enc     foreign_key_check    2.8 s/GiB ->    6.1 min at 130 GiB
+```
+
+The brief that asked for this measurement carried "~17 + 7 minutes per item at 130 GB"
+as an estimate of unstated provenance; these rates agree with it closely, which is
+worth saying and is not the same as knowing where it came from.
+
+**It is a measurement of THIS DISK.** The field's own `prepare_staged:validate` ran at
+**17 MB/s** on a 32 GB artifact against **170–178 MB/s** here (the plaintext cold
+`quick_check` rows above, which are the same check on the same kind of file), so the
+operator's virtual disk is roughly an order of magnitude slower in this regime and the same
+130 GiB would be **hours**, not minutes. Two things follow, and only two:
+
+* the RATES above are this machine's and must not be quoted as the field's;
+* the RATIOS (fk_check ≈ a third of quick_check; the codec at ~1.3–1.4x cold against
+  ~2.3–2.6x warm) are measured in one regime on both arms, so the regime cancels and
+  they are what transfers.
+
+`verify_copy` has still never been observed in the field. When one completes, its own
+`verify:quick_check` / `verify:foreign_key_check` sub-timings and `working_copy_bytes`
+give the operator's real rates directly, and this section becomes a cross-check rather
+than a stand-in.
+
+### Two earlier passes, and why they are not the numbers above
+
+Recorded because the failures are the reusable part. **Pass 1** ran one repetition per
+configuration while this session was also running pytest, mypy and a mutation matrix;
+its cold codec ratios came out 1.51x / 1.08x / 0.95x / 1.58x — no trend, and a story
+was nearly written around the 0.95. **Pass 2** interleaved at the CONDITION level (all
+four arms cold, then all four arms warm), which spreads machine drift across arms and
+destroys any condition that depends on what ran immediately before: by the time the
+first arm's "warm" run happened, three later arms had each dropped the page cache and
+read gigabytes through it, so its 2 GiB warm `quick_check` measured 14.6 s against a
+genuinely-warm 5.2 s. It was stopped at round 0. Pass 3 interleaves one level out — a
+round visits every arm, and within an arm cold and warm run back to back — which keeps
+both properties.
+
+### What this does NOT decide
+
+Whether either check should be relaxed, moved or made per-run. That is a data-safety
+change, it needs its own reviewed slice, and the structural end-state the notes name
+(one working copy per queue run, or an in-place merge inside one transaction with
+in-transaction verification) is a full-skeptic-matrix slice of its own. **The
+2026-09-07 checkpoint interval K takes the first half of it** — one working copy per
+GROUP of K backups, so the whole-file walk is paid once per group instead of once per
+backup — with the durability cost stated and the number left to the maintainer.
+
 ## 6. Probes run and what they settled
 
 | probe | question | answer |

@@ -147,11 +147,14 @@ def _worldbank_observations(payload: Any) -> list[Any]:
 #
 # What is mapped: the layout below — ``data.structure`` (SINGULAR) plus ``data.dataSets`` —
 # which is SDMX-JSON 1.0. A 2.0 message carries ``data.structures`` as a plural ARRAY and is
-# NOT mapped; it now reads as a gap rather than as anonymous rows (see the ref_area/
-# time_period refusal further down). Adding 2.0 wants a real fetched 2.0 body to work
-# against — OECD is documented as serving both from one host, selected by the request's
-# ``format`` parameter, which means a caller can PIN the version instead of sniffing it.
-# That claim is search-only: no 2.0 message body has been read.
+# NOT mapped; it is now refused BY NAME at the top of the parser, with a log line that tells
+# the operator to pin 1.0 on the request (it previously fell through to the ref_area/
+# time_period refusal further down, which dropped the rows correctly but said nothing about
+# WHY, leaving a version mismatch to look like an empty publisher). Adding 2.0 wants a real
+# fetched 2.0 body to work against — OECD is documented as serving both from one host,
+# selected by the request's ``format`` parameter, which means a caller can PIN the version
+# instead of sniffing it. That claim is search-only: no 2.0 message body has been read
+# (re-probed 2026-09-07: ``sdmx.oecd.org`` is CONNECT-refused, 403 at the proxy).
 # --------------------------------------------------------------------------- #
 # Dimension ids that name the same concept across producers. Lower-cased on lookup.
 _REF_AREA_DIMS = ("ref_area", "geo", "reporting_area", "area", "country")
@@ -176,6 +179,20 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
                 "0:0": {"observations": {"0": [2957000000000.0], "1": [3010000000000.0]}},
                 ...}}]}}
 
+    ...or, when the request passed ``dimensionAtObservation=AllDimensions``, with NO series
+    level at all and the observations hanging straight off the dataSet::
+
+        {"data": {
+            "structure": {"dimensions": {
+                "dataSet": [], "series": [],
+                "observation": [{"id": "REF_AREA", ...}, {"id": "TIME_PERIOD", ...}]}},
+            "dataSets": [{"observations": {"0:0": [2957000000000.0], ...}}]}}
+
+    BOTH containers are read. A dataSet carrying neither is logged as unreadable rather
+    than returned as an empty result, since "we could not map this" and "the publisher has
+    no data" must never look the same to a caller. A container that IS present but empty
+    (``"series": {}``) is a real empty result and stays silent.
+
     A series key ``"0:0"`` indexes into the SERIES dimension ``values`` lists positionally;
     an observation key ``"1"`` indexes into the single OBSERVATION (time) dimension. We map
     each (series, observation) pair back to its dimension VALUE ids:
@@ -186,8 +203,9 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
       * ``unit``       ← a UNIT series/observation dimension value, else None
       * ``adjustment`` ← an ADJUSTMENT / s_adj dimension value, else None
 
-    A dimension may sit at SERIES or OBSERVATION level depending on the request's
-    ``dimensionAtObservation``, so each field is looked up at both, observation first.
+    A dimension may sit at DATASET, SERIES or OBSERVATION level depending on the request's
+    ``dimensionAtObservation``, so each field is looked up at all three, most specific
+    first: observation, then series, then dataSet (constant for the whole message).
 
     Missing OPTIONAL dimensions leave their field ``None`` (never guessed). A present
     observation cell whose value is null becomes ``value=None`` (a published gap, kept).
@@ -200,11 +218,40 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
     if not isinstance(data, dict):
         return []
 
+    if not isinstance(data.get("structure"), dict) and isinstance(data.get("structures"), list):
+        # A 2.0 message names the structure list `structures` (PLURAL) and links each
+        # dataSet to one of them. We do not map it, and the generic refusal below would
+        # already drop every row -- but silently, leaving the operator to guess. Naming the
+        # shape is the actionable half: OECD serves both versions from one host, selected by
+        # the request's `format` parameter, so the fix is to PIN 1.0 on the request rather
+        # than to sniff the response. (No 2.0 body has been read; see the module note.)
+        logger.warning(
+            "sdmx-json (%s): this message carries `data.structures` (plural), which is the "
+            "SDMX-JSON 2.0 layout; this parser maps 1.0 (`data.structure`, singular). No "
+            "rows were parsed -- this is a GAP, not a report that the publisher has no data. "
+            "Pin the 1.0 format on the request (the `format` parameter) rather than sniffing "
+            "the response.",
+            agency,
+        )
+        return []
+
     structure = data.get("structure") or {}
     dims = structure.get("dimensions") if isinstance(structure, dict) else None
     dims = dims or {}
     series_dims = _dim_list(dims.get("series"))
     obs_dims = _dim_list(dims.get("observation"))
+    # dataSet-level dimensions are constant across the whole message: one value each and no
+    # key to index with, so position 0 of every dimension. They are the WEAKEST source for a
+    # field (observation > series > dataSet), never an override -- a single-area query can
+    # legitimately carry REF_AREA here, which is a real `where` the refusal below would
+    # otherwise reject.
+    dataset_dims = _dim_list(dims.get("dataSet"))
+    ds_resolved = _resolve_dims(dataset_dims, [0] * len(dataset_dims))
+    ref_area_ds = _pick_value_id(ds_resolved, _REF_AREA_DIMS)
+    series_id_ds = _pick_value_id(ds_resolved, _SERIES_DIMS)
+    unit_ds = _pick_value_label(ds_resolved, _UNIT_DIMS)
+    adj_ds = _pick_value_id(ds_resolved, _ADJ_DIMS)
+    base_year_ds = _base_year_from(ds_resolved, _UNIT_DIMS)
 
     datasets = data.get("dataSets") or data.get("dataSet") or []
     if isinstance(datasets, dict):
@@ -214,16 +261,47 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
 
     figures: list[StatFigure] = []
     unmapped = 0
+    unreadable_datasets = 0
     for dataset in datasets:
         if not isinstance(dataset, dict):
+            unreadable_datasets += 1
             continue
-        series_map = dataset.get("series") or {}
-        if not isinstance(series_map, dict):
+
+        # A dataSet exposes its observations in ONE of two containers, and which one is
+        # decided by the request's `dimensionAtObservation`:
+        #   * NESTED -- `series: {"<key>": {"observations": {...}}}`, the default
+        #     (dimensionAtObservation=TIME_PERIOD);
+        #   * FLAT -- `observations: {...}` hanging straight off the dataSet, which is what
+        #     `AllDimensions` returns: `structure.dimensions.series` is empty, every
+        #     dimension sits at observation level, and there is no `series` key AT ALL.
+        # Reading only the nested container made a well-formed AllDimensions message parse
+        # to ZERO rows and log NOTHING, so "this parser could not read the message" was
+        # indistinguishable from "the publisher has no data for this query" -- the same
+        # class of defect as the identity-less row refused below, one layer up. The
+        # observation-level LOOKUP was already fixed for this mode (2026-08-13); the
+        # container it arrives in was not, and the fixture that was supposed to cover it
+        # kept a `series` map with an empty-string key, which no AllDimensions message emits.
+        series_map = dataset.get("series")
+        flat_obs = dataset.get("observations")
+        containers: list[tuple[list[int], dict]] = []
+        if isinstance(series_map, dict):
+            for series_key, series_body in series_map.items():
+                if not isinstance(series_body, dict):
+                    continue
+                nested = series_body.get("observations")
+                if isinstance(nested, dict):
+                    containers.append((_parse_index_key(series_key), nested))
+        if isinstance(flat_obs, dict):
+            containers.append(([], flat_obs))  # no series level: an empty index path
+        if not isinstance(series_map, dict) and not isinstance(flat_obs, dict):
+            # NEITHER container is present. Distinguished on purpose from a container that
+            # is present and EMPTY (`"series": {}`), which is a publisher honestly saying
+            # "no data for this query" and must stay silent -- crying wolf on a real empty
+            # result would be its own dishonesty.
+            unreadable_datasets += 1
             continue
-        for series_key, series_body in series_map.items():
-            if not isinstance(series_body, dict):
-                continue
-            series_idx = _parse_index_key(series_key)
+
+        for series_idx, observations in containers:
             resolved = _resolve_dims(series_dims, series_idx)  # {dim_id_lower: (id, name)}
 
             ref_area = _pick_value_id(resolved, _REF_AREA_DIMS)
@@ -232,9 +310,6 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
             adjustment = _pick_value_id(resolved, _ADJ_DIMS)
             base_year = _base_year_from(resolved, _UNIT_DIMS)
 
-            observations = series_body.get("observations") or {}
-            if not isinstance(observations, dict):
-                continue
             for obs_key, obs_cell in observations.items():
                 obs_idx = _parse_index_key(obs_key)
                 obs_resolved = _resolve_dims(obs_dims, obs_idx)
@@ -249,7 +324,7 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
                 # alone left them empty for a perfectly well-formed message.
                 ref_area_o = _pick_value_id(obs_resolved, _REF_AREA_DIMS)
                 series_id_o = _pick_value_id(obs_resolved, _SERIES_DIMS)
-                where = ref_area_o or ref_area
+                where = ref_area_o or ref_area or ref_area_ds
                 when = time_period
                 if not where or not when:
                     # A value with no WHERE and no WHEN is not an observation. The first cut
@@ -262,14 +337,14 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
                 figures.append(
                     StatFigure(
                         agency=agency,
-                        series_id=series_id_o or series_id or "",
+                        series_id=series_id_o or series_id or series_id_ds or "",
                         ref_area=where,
                         time_period=when,
                         value=_obs_value(obs_cell),
-                        unit=unit_o or unit,
+                        unit=unit_o or unit or unit_ds,
                         methodology_ref=None,
-                        adjustment=adj_o or adjustment,
-                        base_year=base_year,
+                        adjustment=adj_o or adjustment or adj_ds,
+                        base_year=base_year or base_year_ds,
                         extracted_at=extracted_at,
                     )
                 )
@@ -286,6 +361,20 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
             "usually means the message shape is one this parser does not map.",
             agency,
             unmapped,
+            len(figures),
+        )
+    if unreadable_datasets:
+        # Separate from the row-level count above, and separately fatal to trust: a dataSet
+        # carrying NEITHER a `series` map nor a flat `observations` map is a container shape
+        # this parser does not know. Returning [] for it without a word is how an unreadable
+        # message gets stored as "the publisher published nothing".
+        logger.warning(
+            "sdmx-json (%s): %s dataSet(s) carried neither a `series` map nor a flat "
+            "`observations` map, so no observation container could be read and %s row(s) "
+            "were parsed in total. Those dataSets are a GAP, not a report of no data. An "
+            "empty-but-present container is a real empty result and is NOT counted here.",
+            agency,
+            unreadable_datasets,
             len(figures),
         )
     return figures

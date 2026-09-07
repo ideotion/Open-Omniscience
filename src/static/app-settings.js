@@ -923,6 +923,13 @@
         const s = await api("/api/settings");
         $("set-limit").value = s.default_result_limit;
         DEFAULT_LIMIT = s.default_result_limit;
+        // The import checkpoint interval. Absent on an older server: leave the
+        // control alone rather than writing a 1 the server never said, which would
+        // then be POSTed back as an operator choice they did not make.
+        const _ck = $("set-checkpoint-k");
+        if (_ck && typeof s.import_checkpoint_k === "number") {
+          _ck.value = s.import_checkpoint_k;
+        }
         // The local "Customize" theme is authoritative; on first ever run, seed it
         // from the server preference so existing users keep their dark/light choice.
         if (!localStorage.getItem(UI_KEY)) {
@@ -970,6 +977,11 @@
     // by the type-to-filter box (matches name, autonym or code). The label leads
     // with the native name (autonym), the identifier per invariant #15. Keeps the
     // selection if it survives the filter; otherwise selects the first visible edition.
+    // Exact per-edition dump sizes read from the dump host by the ONE consented
+    // "Refresh exact sizes" action (app-map.js: refreshDumpSizes). Empty until
+    // the operator asks, so the picker's default state stays zero-network.
+    let _dumpExactSizes = {};
+
     function renderWikiLanguages() {
       const sel = $("dump-lang");
       if (!sel || !_wikiLangsFlat.length) return;
@@ -983,7 +995,13 @@
       const opt = l => {
         // Inline, instant size estimate (bundled + dated; never a network probe).
         // "~" + the dated caveat beside the picker keep it honestly an estimate.
-        const sz = l.size_estimate_bytes ? ` · ~${_fmtBytes(l.size_estimate_bytes)}` : "";
+        // An EXACT figure, once the operator has consented to read one, replaces
+        // it and is marked "=" so the two are never confused: one is a bundled
+        // estimate reviewed on a date, the other is what the host publishes now.
+        const exact = _dumpExactSizes[l.code];
+        const sz = (exact != null)
+          ? ` · =${_fmtBytes(exact)}`
+          : (l.size_estimate_bytes ? ` · ~${_fmtBytes(l.size_estimate_bytes)}` : "");
         return `<option value="${esc(l.code)}">${esc(l.autonym)} — ${esc(l.name)} (${esc(l.code)}, ${esc(_TIER_LABEL[l.tier]||l.tier)})${sz}</option>`;
       };
       sel.innerHTML = langs.length
@@ -1140,6 +1158,30 @@
         loadCardCatalog();   // re-read so the inputs show what is actually stored
       } catch (e) {
         msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+      }
+    }
+
+    // THE IMPORT CHECKPOINT INTERVAL K (2026-09-07). Saved on its own rather than
+    // folded into saveSettings(): that one belongs to the General panel and posts
+    // the theme, and a durability knob in the Data panel must not be able to carry
+    // an unrelated preference along with it. The backend applies only the fields it
+    // is sent, so a one-field PUT is the whole convention here.
+    async function saveImportCheckpointK(el) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const msg = $("set-checkpoint-k-msg");
+      const k = Number(el.value);
+      try {
+        const s = await api("/api/settings", {
+          method: "PUT", body: JSON.stringify({ import_checkpoint_k: k }),
+        });
+        // Read the STORED value back rather than trusting the input: the backend
+        // refuses an out-of-range K loudly instead of clamping, and showing the
+        // number it actually kept is what stops the control from claiming a
+        // setting the server declined.
+        el.value = s.import_checkpoint_k;
+        if (msg) msg.innerHTML = `<span class="note ok">${esc(t("Preferences saved."))}</span>`;
+      } catch (e) {
+        if (msg) msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
       }
     }
 
