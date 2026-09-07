@@ -3494,6 +3494,71 @@
   ship; LOCAL .eml FILE import is GREENLIT (ruled 2026-06-15) — not a scraper
   (zero network), no-recovery contingency RESOLVED via anonymize-at-ingest (see
   Non-negotiables + the ".eml newsletter import" entry below).**
+- **PROMPT_19 STALENESS SWEEP + WHAT PROMPT_19 S6 LEFT PARKED (2026-09-07, tree anchor
+  `main` @ `d9ee33e`).** The working mode's staleness guard, run over the four areas the prompt
+  scopes, so the next session inherits the measurement rather than the prompt's claim:
+  **(a) VERIFIED-ABSENT** — no `rrule`/`RRULE` anywhere in `src/` (S1's RRULE expansion of
+  imported VEVENTs is genuinely unbuilt); `src/hazards/parse.py` still covers only USGS and
+  GDACS (S2's NWS/ReliefWeb/FEWS NET/EONET/WHO are unbuilt); nothing in the tree referenced a
+  public-suffix list before this session (S6's resolver was unbuilt).
+  **(b) VERIFIED-PRESENT, and the prompt is HALF right about it** — S1 says "month-span banners
+  ('Dry January') and `since:`-origin display are unbuilt". The BACKEND is shipped and has a
+  dedicated test file: `catalog._in_active_range`, `catalog._span_end_date`, `catalog._span_for`,
+  the `origin_year`/`until_year`/`end_month`/`end_day` fields and floating (nth-weekday)
+  recurrence all exist, pinned by `tests/test_event_recurrence.py`. What is unbuilt is the
+  DISPLAY — `app-agenda.js` renders none of it. Say which half, per the working mode.
+  **(c) VERIFIED-PRESENT** — `src/privacy/link_sanitizer.py` exists, so the .eml plan's S1
+  anonymisation core shipped; `ooMap` is wired in seven `app-*.js` modules.
+  **(d) THE AGENDA'S CONFIDENCE TIERS ARE UNBUILT AS A VOCABULARY.** `catalog` carries one
+  boolean `confirmed`, and `agRow` renders three pill states from it (`next_occurrence` /
+  "confirmed" / "approx · check source"). The ruled third tier — `scheduled` (official, sourced)
+  · `window` (a legal window, the France-2027 `confirmed:false` pattern) · `projected` (a sourced
+  rule plus last-held), with a passed projected date marked "status unknown — check the official
+  source" and NEVER silently re-projected, and no entry at all where there is no sourced rule —
+  is NOT expressible in that boolean. Recorded as the next slice; not started, because it is a
+  schema + display change across `world_events.yml`, the catalog loader and the agenda, and
+  half-building a schema is worse than parking it.
+  **(e) WHAT S6 DELIBERATELY DID NOT WIRE.** The resolver and its read-only preview shipped
+  (`GET /api/newsletters/publisher-preview`); the WRITE-PATH auto-attach did not. Ruling (d)
+  pairs the silent auto-attach with a dedicated import UI announcing it and an UNDO for the
+  automated attaches, and the undo is only feasible because send-domain + attached source id are
+  stored as provenance — which today they are not (`ParsedEmail` gained `list_id` this session;
+  nothing persists the send domain or an attach record). So the remaining S6 work is, in order:
+  the provenance columns (an additive migration), then the attach behind them, then the import
+  UI + undo. The preview exists so that decision can be reviewed against this corpus's real
+  senders rather than against a description.
+  **(b2) MORE VERIFIED-PRESENT, and two of these matter because the prompt reads as though
+  they are pending.** The **lunar-effects framework is BUILT AND FULLY WIRED** —
+  `src/analytics/lunar.py` correlates any stored daily series against the moon's illuminated
+  fraction, with Benjamini-Hochberg FDR (`src/stats/fdr.py`) MANDATORY on a screen and a
+  DETERMINISTIC circular-shift permutation test (no scipy, no RNG) that preserves the
+  autocorrelation of both series, correlation-is-not-causation on every result and the null
+  outcome named as the expected one; served by `/api/insights/lunar-correlation`
+  (`src/api/insights.py:1404`) and drawn by `app-insights.js` `loadLunar()` with limit and
+  `fdr_q` controls. The only piece genuinely absent is the PRE-REGISTRATION hypothesis step:
+  the screen exists, "declare what you expect before you look" does not.
+  **Weather signal-keywords are BUILT** — `src/analytics/weather_signals.py` derives
+  `kind="signal"` rows into a SEPARATE store (its own design note says why it is not the
+  keyword table), read by `/api/signals`. The **anomaly baseline is HALF-BUILT and honest
+  about it**: the module names the baseline ("climatology of <vars> (Open-Meteo ERA5 daily)
+  for this place & window") and publishes the gap — "Not yet checked against a baseline:
+  confirming an anomaly requires the consented Open-Meteo reanalysis fetch" — so it is
+  operator-gated, not unbuilt. The **`_hazard_tier` no-promotion rule** lives at
+  `src/analytics/alerts.py:71` (not under `src/hazards/`), with its own comment "a magnitude
+  still never becomes urgency" and a test in `tests/test_alert_selection.py`.
+  **STILL ABSENT, checked:** the reader weather-context row (no weather reference in
+  `app-corpus.js`/`app-library.js`); any OSM preprocessing into boundary/gazetteer artifacts
+  (`src/geo` holds only `ip_geo.py`, `osm_downloads.py`, `osm_regions.py`, and the single
+  "gazetteer" mention is a comment at `ip_geo.py:217`); and a job-shaped live mailbox pull
+  (`import_mailbox` at `src/api/ingestion.py:511` is still synchronous, taking the password
+  in the request body and storing nothing — I1 is untouched).
+
+  **(f) A NOTE FOR WHOEVER WIRES THE ATTACH:** `resolve_newsletter_publisher` matches
+  `lower(Source.domain)`, which is a scan of a few-thousand-row table — free for a report, wrong
+  per message. A functional index over that column needs a migration AND the recorded
+  NOCASE/expression-index problem (alembic autogenerate cannot compare expression indexes, and
+  `alembic_stamp_align` then reports permanent drift), so it is a decision, not a tidy-up.
+
 - **MASS LOCAL .eml NEWSLETTER IMPORT (ruled across 2026-06-15; full design +
   slices + acceptance in `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`):**
   import a folder of .eml files as Articles in the ONE unified corpus (reuse
@@ -6680,6 +6745,16 @@
   import_feed's next save persists the cleanup). KNOWN ACCEPTED LOSS: the feed's first/last
   QUARTER phases (the computed layer covers full/new only; computing quarters via the same
   verified ch.49 method is the clean follow-up if wanted).
+  **LOSS CLOSED 2026-09-07 (PROMPT_19 S3, the follow-up this note named).** `phases_for_year`
+  now publishes four buckets — new · first quarter · full · last quarter — from Meeus ch.49's
+  own quarter series plus the ±W term, so nothing is re-imported from a method-unstated feed
+  and the scope fence holds. Verified NOT by a quoted constant (a fabricated reference is
+  what the fence forbids, and I misremembered 49.a's value before reading it out of the tree)
+  but by an INDEPENDENT elongation check from ch.47/ch.25, required to sit inside the same
+  error band that checker shows on the already-pinned new/full instants: measured 1900..2200,
+  new/full 0.0217° against quarters 0.0196°. Eleven mutations redden by name. Both agenda
+  grids draw them through one label map; +2 keys ×12 locales. Full entry in SHIPPED_LOG
+  2026-09-07.
   (3) **"Internet calendars should not be manually enabled" — VERIFIED ALREADY SHIPPED** (the
   staleness guard): `auto_import_due_feeds` has ridden every online collect pass DEFAULT-ON
   since the 2026-06-15 "auto-import everything" ruling (8 feeds/pass round-robin by
@@ -9678,3 +9753,132 @@ PR body is a carry-over nobody will read.
   seeding — they enter the qualification ladder, which they previously could not, because
   `trial_fetch` falls back to sitemap discovery without an `rss_url` and a gazette with neither
   produces no evidence and stays unqualified forever.
+
+---
+
+## 2026-09-07 — PRH-32/33 (PR #1029): what the browser measured and what is parked
+
+**QUESTION FOR THE MAINTAINER — should 41 invisible borders start rendering?**
+`var(--line)` is referenced **41 times fallback-lessly** across ten files of the SPA bundle
+(app.css 7 · index.html 14 · taskmanager.html 2 · app-analysis.js 5 · app-corpus.js 5 ·
+app-ai-tools.js 2 · app-core.js 2 · app-map.js 2 · app-insights.js 1 · app-settings.js 1) and
+is defined **nowhere the SPA loads**. It exists only in the two SERVER-RENDERED pages, each of
+which carries its own `:root` block (`src/api/main.py`'s reader, `src/api/law.py`) — so
+`reader.css` is correct and every SPA reference is not. A `var()` with no fallback that
+resolves to nothing makes the WHOLE declaration invalid at computed-value time, so each of
+those 41 silently does nothing: measured live, all eleven `<dialog>` elements declared
+`border:1px solid var(--line)` and `getComputedStyle` reported `border-top-style: none` on
+every one — nine of them have declared a border that has never once rendered.
+
+Twelve FURTHER references in `taskmanager.html` carry a fallback (`var(--line, …)`) and are
+valid by design. The raw grep says 53; the defect count is 41. Recorded because the first cut
+of the census flagged the fallback-carrying ones too (`--hover`, `--lead-h`, `--muted-bg` are
+all deliberate defaults, and `--lead-h` is set by JS at runtime), and a fabricated FAIL is
+exactly as dishonest as a fabricated pass.
+
+**NOT REPAIRED IN #1029, deliberately.** Defining the token (or sweeping the call sites to
+`--border`) makes 41 currently-invisible 1px borders appear at once across the shell, the task
+manager and seven JS modules. That is a visible change the maintainer should see on its own
+terms, not one riding inside a type-scale PR. Ratcheted meanwhile by
+`tests/test_dialog_theming.py::test_every_custom_property_the_spa_uses_is_defined_somewhere`:
+a NEW undefined token fails immediately, and `--line` can neither grow past 41 nor be left
+above the real count. **The ruling needed is simply: were those borders wanted?** If yes the
+repair is one line (`--line: var(--border)` beside the other tokens) plus a browser pass; if
+no, the 41 declarations should be deleted rather than left looking like styling.
+
+**ONE INSTANCE OF THE SAME CLASS WAS REPAIRED**, because its failure direction is worse than
+cosmetic: `app-diagnostics.js` drew its two chart axis titles with `fill="var(--text)"`, and
+`fill` INHERITS rather than falling back to nothing, so they rendered `rgb(0,0,0)` on a
+`rgb(20,24,31)` panel — **1.09:1**, effectively invisible, on all twelve dark themes. Fixed to
+`var(--fg)` and pinned by the same census.
+
+**DELIBERATE OMISSION — the dialog `::backdrop` change is visible and is called out in #1029.**
+The new `dialog::backdrop` gives the ten dialogs that had none the same `rgba(0,0,0,.5)` scrim
+`#guide-wizard` had already chosen for itself, so opening a dialog now dims the page behind it.
+Standard modal behaviour and consistent with the app's own precedent, but it is a change a
+reviewer will see rather than an invisible fix.
+
+**COVERAGE THIS SESSION DID NOT REACH** (stated rather than left to look covered):
+the five axe-core P2s from the 2026-08-20 worklist §11.1 are untouched; the S6 "no layout media
+query between 900 px and desktop" item is untouched (`max-width:900px` is still the widest);
+`#tab-help` and an Insights `keywords` subtab were **probe coordinate errors of mine**, not app
+findings — Help has no `.nav-item` (it is reached by `showTab('help')`) and Insights has no
+`keywords` subtab — and the standalone Reader is a server-rendered page with its own `:root`,
+outside the SPA scale's scope entirely. Commodities WAS measured once its real coordinate was
+found (`nav_tab="markets"`, not an Indices subtab) and is clean.
+
+**TWO S6 CLAIMS IN `PROMPT_15_ui-browser-backlog.md` WERE ALREADY STALE** and are corrected in
+the same PR, per the working mode's staleness rule: `prefers-contrast` IS handled (`app.css`,
+`@media (prefers-contrast: more)`, from the 2026-07-28 audit's finding G-3, and the 2026-08-20
+matrix measured it applying live under `emulate_media(contrast="more")`), and `.sr-only` IS
+present (`app.css:161`, used by `app-markets.js`, `app-map.js` and `app-library.js` for their
+chart data tables). Both VERIFIED-PRESENT.
+
+
+### 2026-09-07 — PROMPT 14 (governments, official statistics, the bloc lens): S2 shipped, and what is left
+
+Executed on branch `claude/governments-stats-bloc-lens-74pr64` (PR #1026). **S2's live defect is
+fixed and S7 turned out to be mostly already built.** What follows is the carry-over, each item
+with the thing that actually blocks it, so the next session does not re-derive any of it.
+
+**SHIPPED here.** `parse_sdmx_json` read observations only out of
+`dataSets[].series[<key>].observations`, and a `dimensionAtObservation=AllDimensions` message
+carries no `series` key at all — so a well-formed message parsed to ZERO rows and logged NOTHING.
+Both containers are read now; dataSet-level dimensions are a weakest-precedence fallback
+(observation > series > dataSet); a dataSet carrying NEITHER container is logged as unreadable
+while an empty-but-present one stays silent; and a 2.0 message is refused BY NAME telling the
+operator to pin 1.0. Six mutation-checked guards. The lesson is in `LESSONS.md`.
+
+**VERIFIED-PRESENT — do not rebuild** (anchor `58a4d6df`; `INVENTORY.md` rows corrected):
+GOV-06, the revision-anomaly detector, is shipped AND wired end to end (`src/stats/revision.py`
+→ `store.py:267` → `/api/stats/revision-anomalies` → `app-map.js:2143`, three test files);
+GOV-05, all three parser families (`parse_csv`, `parse_jsonstat`, `parse_csv_wide` + the ZIP
+reader). PROMPT 14 S7 calls the detector "the on-mission kernel here"; it exists.
+
+**STILL OPEN, by what blocks it:**
+
+1. **⛔ EGRESS (S1, S5, S6, and the data half of S3) — one allowlist decision, not four tasks.**
+   `api.worldbank.org`, `sdmx.oecd.org` and `dataservices.imf.org` each answer
+   `CONNECT <host>:443` → `403` at the sandbox proxy, `pypi.org` 200 as the control. This is the
+   SEVENTH consecutive session to converge on that, and the hosts are already itemised in
+   `QUESTIONS_FOR_THE_MAINTAINER` **F1**. Blocked behind it: the 36 World Bank codes
+   (`scripts/verify_worldbank_indicators.py`, ONE command, and `EN.ATM.CO2E.PC` vs the newer
+   `EN.GHG.CO2.PC.CE.AR5` wants the same run); `news_url` for the agencies directory, still **0
+   of 29 populated** against a target of ~150; the BRICS Joint Statistical Publication; the AfDB
+   and UNECA continental endpoints (the WB lens has no continental-Africa figure at all, which is
+   why both lenses ship); and the two task-2 loose ends (`page=2` against a cache-disabled
+   request, and the tail of page 1). **Nothing in a session can route around a TCP-layer refusal
+   — do not spend another session rewriting the prompt.**
+
+2. **SDMX-JSON 2.0 itself — needs ONE real fetched body, and only that.** The refusal is in place
+   and now names the version; the fixtures written here are SPEC-SHAPED, not fetched, and the
+   test docstring says so. The mapping work is small once a body exists (`data.structures` is a
+   plural ARRAY and each dataSet links to one of them by index); what cannot be done without a
+   body is knowing that the mapping is right. Depends on item 1.
+
+3. **S3, the bloc rosters (G3) — its own networked session, and the acquisition RULE is the hard
+   part, not the fetching.** The registry ships deliberately empty (27 groups, 20 unpopulated,
+   verified unchanged). **The publisher's own page is an interested party for a membership fact**
+   — one search returned four mutually incompatible states for Saudi Arabia in BRICS with the
+   bloc's own page the most confident and the least reliable. A roster page corroborates
+   membership and cannot settle a contested one; that needs the acceding state's own statement,
+   and where none exists the honest answer is a permanent `joined: UNVERIFIED`. Two sub-items
+   need sourced dates from the SAME session: region membership is undated (`dates_apply=False`,
+   stated, cross-vintage unsafe), and a country that did not exist in the requested year lands in
+   the coverage gap beside non-reporters, which are two different facts. **Do not build the dating
+   plumbing ahead of the dates** — empty schema is the half-built migration the working mode warns
+   about, and the suspension-EPISODE model was worth doing early only because the registry was
+   still empty.
+
+4. **S4, the default aggregation strategy — a RULING, not a task.** Recorded as question **G11**
+   with the arithmetic both ways and a recommended default of *keep the member mean*. It was
+   deliberately NOT flipped: every strategy is already shown side by side, so this decides only
+   which one the surface opens on, and which figure a reader sees first is an editorial decision.
+   A population-weighted mean of a per-capita indicator EQUALS `Σ numerator / Σ denominator` — the
+   true aggregate — but only where the numerator is reconstructed and the weight series is real
+   for the same members and year; where that holds the code already classifies the basis `exact`
+   and opens on it, so G11 governs only the case where it does not. Gini stays refused either way.
+
+5. **PRH-24, the "Registered statistics sources" view — genuinely unbuilt** (checked, not assumed:
+   only `/api/stats/sources/ingest` exists, no view). A UI slice, so browser-gated; it is the one
+   item of S7 that was not already shipped.

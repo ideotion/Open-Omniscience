@@ -6689,3 +6689,158 @@ S3/S4b and S5/A5 were both recorded as outstanding by the prompt and both were a
 shipped — the third and fourth law item in a row to turn out shipped-when-read (rulings 36
 and 37 were the first two, 2026-08-20). This vertical's status text ages faster than any
 other area's in the repo, so grep before building here, always.
+
+**Moon quarters: closing the one accepted loss of the retired moons feed (2026-09-07, PROMPT_19
+S3).** The 2026-07-17 ruling retired `monkeyness-moons` as redundant against the computed Meeus
+layer and recorded a single accepted loss — that feed carried the first/last QUARTER phases, which
+the computed layer did not have. It has them now, from the same chapter 49: the quarters carry
+their own periodic series plus the ±W term (added at first quarter, subtracted at last), and the
+planetary corrections are shared with new/full rather than copied. `phases_for_year` publishes four
+buckets; `_phase_of_k` REFUSES an off-grid k by name rather than silently computing a new moon,
+because Meeus' series are per-phase and there is no honest answer for k = 3.1.
+
+**The verification is the point, and it is not a quoted constant.** New/full are pinned against
+Meeus' own worked example 49.a. For the quarters the risk is a mistranscribed coefficient, and a
+constant written from memory would be the fabricated reference this project forbids — I confirmed
+that risk is real by misremembering 49.a's own value before reading it out of the tree. So the
+quarters are checked against an INDEPENDENT method: a principal phase IS the instant the Moon's
+apparent longitude leads the Sun's by 0/90/180/270°, computed from other chapters entirely (ch. 47
+for the Moon, ch. 25 for the Sun, no term shared with ch. 49). The anti-vacuity half is what makes
+it evidence: the same checker runs over the new and full instants, whose times are already verified
+to ~26 s, so its error there is its OWN truncation noise and the quarters must sit inside that band
+rather than under a tolerance picked by hand. Measured 1900..2200, worst elongation error: shipped
+code new/full 0.0217° · quarters 0.0196° (ratio 0.90); W sign flipped 0.1106° (5.09); leading
+coefficient mistyped 0.1137° (5.24); W dropped 0.0621° (2.86). The bars — ratio ≤ 2.0 and absolute
+≤ 0.035° — fail all three and clear the shipped code with ~2x margin both ways; the W-dropped
+mutant is the tight one, which is why the ratio bar is 2.0 rather than the 3.0 a first pass would
+have chosen. Two more mutations (the quarter branch never taken, an off-grid k accepted) and six
+over the wiring redden by name.
+
+**A guessed bound failed against correct code, again.** The interval check first asserted the four
+gaps were within ±0.8 d of a quarter synodic month; the real quarter-lunation runs **6.583..8.240 d**
+over 1900..2200, because the orbit is elliptical and the inequality itself varies. Measured, the
+bound is 6.3..8.5 with the numbers written beside it, and its job is stated: it catches a gross
+error, never a minute-scale one — the elongation guard is what has that resolution.
+
+Frontend: both agenda grids resolve every phase label through ONE map (a second hand-written
+ternary is how a month and a week view come to disagree about a glyph), four distinct glyphs, and
+two new labels keyed in all twelve locales. The non-English values are AI-drafted standard
+astronomical terms and are flagged for native review.
+
+**Newsletter publisher identity: the eTLD+1 and the inversion the list cannot give (2026-09-07,
+PROMPT_19 S6).** Every imported newsletter still lands in one bucket source, so the 2026-06-15
+ruling's question — is a newsletter from `email.bbc.com` the same publisher as the scraped
+`bbc.com`? — had no machinery behind it. Now it does: a vendored, dated, digest-verified Public
+Suffix List (registry entry, twelve-month window, refused outright on a digest mismatch so unknown
+bytes can never become publishers), then the ruled ladder — exact `Source.domain` → the alias map →
+a new DISABLED email source — and never a fuzzy merge. The list DEGRADES rather than guesses: the
+tempting two-label fallback reduces `bbc.co.uk` to `co.uk`, and a public suffix presented as a
+publisher merges every British site into one source. ICANN-vs-PRIVATE is an explicit argument at
+every entry point rather than a silent default, because both readings are defensible and picking
+one quietly is how two surfaces come to disagree about one quantity.
+
+**MEASURED, and it decides the design:** substack.com, beehiiv.com, ghost.io, mailchimp,
+buttondown.email, convertkit/kit.com and medium.com are in NEITHER section of the list, so the list
+alone performs exactly the collapse the ruling's platform-inversion clause forbids. That clause is
+load-bearing rather than a restatement, and it runs BEFORE the eTLD+1. A platform sender carrying
+no publication label — `hello@substack.com`, or an infrastructure label like `mail.` — is REFUSED,
+not attached to the platform: a refusal is a gap, a merge is a fabrication that reads as data.
+List-Id is parsed and kept (clause (a); recipient-safe by construction, which is why the same
+ruling keeps it and drops List-Unsubscribe) and rescues that case, but only when it corroborates
+the sending platform. The source lookup is case-insensitive on both sides, per the recorded
+one-sided-normalisation defect: `Source.domain` is BINARY-collated and stored as typed, and a
+match that does not fire is indistinguishable from a publisher nobody has.
+
+**What is deliberately NOT built.** The resolver decides nothing on the write path. The ruling
+pairs silent auto-attach with an import UI that announces it and an UNDO for the automated
+attaches; shipping the attach without those is half a data-placement change, which is worse than
+none. So the caller today is a read-only preview over the newsletters already imported — the
+evidence that decision needs, computed by the real function rather than described, which also
+keeps the resolver from being the dead-end shape the ledger records five times over.
+
+**FOUR LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** the publisher's own
+conformance vectors are evidence where hand-written cases measure the implementer's understanding
+(they found two defects, one of them invisible in the positive space); a mutation can apply
+textually and be semantically inert, so `assert new != old` is necessary and not sufficient; a
+restored source file is not a restored import, because `__pycache__` can serve the mutant's
+bytecode for a whole second; and a module that degrades honestly when its data file is absent is
+exactly the one whose packaging omission is silent (`src/geo/data` had been missing from every
+wheel since it was added).
+
+## 2026-09-07 — ui/type-scale — PRH-32 + PRH-33, and two defects the browser found on the way
+
+**PRH-32.** The 2026-08-11 type scale shipped scoped to `#tab-settings` "because that is what
+was asked", and its own comment recorded that the same inversion existed elsewhere. Measured in
+Chromium against a 440-article seeded corpus, on **all 17 themes**, it did: Home's section title
+"By channel" rendered **12.5px uppercase in `--muted` at 4.56–12.71:1** while a briefing card's
+own `<h4>` inside it rendered **15px in full `--fg` at 6.07–18.10:1** — bigger AND brighter than
+the section containing it, which is the maintainer's original words exactly. Library's
+`.lib-sub` had the same shape, and the Feed's article titles (`.feed-t`, an `h3` with no size
+rule) took the same UA `1.17em` the dialogs did. After: **17px at 7.00–19.80:1**, with 21 section
+titles lifted and 25 headings unchanged, and **0 horizontal overflow at 375px on 12 surfaces**
+(the overflow instrument self-tested against a 900px fixture first — it reports 525px, so a
+clean reading means something).
+
+The scale is written through `:where()`, which contributes ZERO specificity, so it is a DEFAULT
+any authored class overrides. That is the load-bearing part: a plain `.panel h3` rule carries
+(0,1,1) and would have beaten `.brief-bucket > h3` (12px), `.fig-title` (13px) and `.lib-sub`
+(13px), trading the reported inversion for three new ones.
+
+**TWO DEFECTS THE MEASUREMENT TURNED UP**, neither visible to a source read. Nine of the eleven
+`<dialog>` elements carried `background`/`color` inline and **two did not** (`#ux-import`,
+`#ux-export`), so those two alone fell back to the UA's `Canvas`/`CanvasText` and rendered
+identically on all 17 themes (ground `rgb(18,18,18)` on the twelve dark ones,
+`rgb(255,255,255)` on the five light ones) — the palette reached nine dialogs and stopped at
+two. And **`var(--line)` is defined nowhere the SPA loads**: 41 fallback-less references whose
+whole declaration is invalid at computed-value time, proven by `getComputedStyle` reporting
+`border-top-style: none` on all eleven dialogs. The same class had one case worse than
+cosmetic — `fill="var(--text)"` on the diagnostics chart's two axis titles, and `fill`
+INHERITS, so they rendered `rgb(0,0,0)` on a `rgb(20,24,31)` panel, **1.09:1**, on twelve dark
+themes. Fixed; the other 41 sites are ratcheted rather than repaired, because rendering them is
+a visible change wanting its own review (Open queue, same day).
+
+**PRH-33.** `Activity` / `Tracked` / `Database & storage` keyed ×12 by textual insert beside
+their sibling `World coverage` — `3 added / 0 deleted` per file — and verified rendering live in
+all twelve locales through the app's own `OOI18N.setLang()`. Untranslatable ratchet **560 → 557**,
+lowered in the same PR and re-checked at 556 to confirm it bites.
+
+Six mutations, each asserting it applied before its run counted, all redden **by name**. Full
+suite 9,229 passed / 125 skipped / 0 collection errors. Stamp: *Chromium-verified (remote
+sandbox) · awaiting human UX pass*. PR #1029.
+
+**FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a declaration naming an
+undefined custom property deletes itself rather than degrading, and the property's `unset` is
+what decides the severity; a zero-specificity `:where()` default is what lets a global scale
+coexist with deliberate exceptions; a property that lives at the call site reaches the call
+sites somebody remembered; one theme cannot answer for seventeen when the value comes from the
+UA; and a heading probe scoped to one container class reports a clean app.
+
+## 2026-09-07 — stats/sdmx: the observation CONTAINER, as opposed to the observation-level lookup (P14 S2)
+
+`parse_sdmx_json` read observations only out of `dataSets[].series[<key>].observations`. A message
+returned for `dimensionAtObservation=AllDimensions` carries no `series` key at all — its observations
+hang straight off the dataSet as `dataSets[].observations` — so a well-formed message parsed to **zero
+rows and logged nothing**. The 2026-08-13 session had fixed the observation-level LOOKUP for exactly
+this mode and written a test named for it; the fixture kept a `series` map with an empty-string key, a
+shape `AllDimensions` never emits, so the test covered the lookup and never the container.
+
+Shipped: both containers are read; dataSet-level dimensions become a weakest-precedence fallback
+(observation > series > dataSet — a single-area query can legitimately carry `REF_AREA` there, and
+refusing it would discard good data to look careful); a dataSet carrying **neither** container is
+logged as unreadable, while an empty-but-present container stays silent; and an SDMX-JSON **2.0**
+message is refused **by name**, with the instruction to pin 1.0 on the request rather than sniff the
+response. Every refusal from 2026-08-13 is retained, each pinned by a mutation-checked test (six
+mutants, all killed by name).
+
+Provenance, because it bounds what this proves: the fixtures are **spec-shaped, not fetched**.
+`sdmx.oecd.org`, `api.worldbank.org` and `dataservices.imf.org` each answer `CONNECT <host>:443` →
+`403` at the sandbox proxy, with `pypi.org` 200 as the control — the seventh consecutive session to
+converge on that, recorded as per-host evidence under `QUESTIONS_FOR_THE_MAINTAINER` F1. SDMX-JSON 2.0
+support itself therefore stays unbuilt: it still needs one real body.
+
+Also corrected in the same PR, under the staleness guard: the revision-anomaly detector (`GOV-06`) and
+all three parser families (`GOV-05`) were recorded as UNCHECKED/on-mission-to-build and are in fact
+**shipped and wired** — the detector runs `revision.py` → `store.py:267` → `/api/stats/revision-anomalies`
+→ `app-map.js:2143` with three test files guarding it. `PRH-24` (the "Registered statistics sources"
+view) really is unbuilt. `S4` (the default aggregation strategy) was **not** flipped: which figure a
+reader sees first is an editorial decision, so it is recorded as question `G11` instead.
