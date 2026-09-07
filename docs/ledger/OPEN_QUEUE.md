@@ -9642,11 +9642,20 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   networked-re-verification precondition that only the maintainer's own machine can discharge.
   This is the seventh consecutive session to record the same per-host evidence.
   **CARRY-OVER — WHAT THIS SESSION DID NOT DO, and why:**
-  (a) **The V1-7 second round** (dedup · OOENC2-vs-age · keyed addressing · sqlite3mc) is
-      OWED as a written decision brief and is NOT in this PR: each of the four wants a
-      measurement, three of them want one on a live corpus, and the ruling asked for them to
-      be ruled "now" on the evidence that can be gathered — gathering it is a session of its
-      own, and inventing four rulings from reasoning is exactly what rule (2) forbids.
+  (a) **The V1-7 second round** (dedup · OOENC2-vs-age · keyed addressing · sqlite3mc):
+      **the decision brief is now WRITTEN —
+      [`docs/design/STORAGE_RULINGS_ROUND2_2026-09-07.md`](../design/STORAGE_RULINGS_ROUND2_2026-09-07.md)**
+      — and the four RULINGS remain the maintainer's, deliberately not taken (rule (2)).
+      The brief separates what was measured in-session (ChaCha20-Poly1305 is 1.99x slower
+      than AES-256-GCM on an AES-NI box at 2,099 vs 4,172 MB/s — AES's BEST case, so it
+      cannot settle row 6; `apsw-sqlite3mc` 3.53.4.0 and `pyrage` 1.4.0 are both live on
+      PyPI) from what is already in the record (the ~90% field duplicate rate; OOENC2's six
+      suites) from what needs a machine this is not (anything on a no-AES-NI CPU, anything
+      at corpus scale). TWO THINGS IT ESTABLISHES BEYOND THE FOUR ROWS: none of them is
+      create-time irreversible, so V1-7's urgency is fully spent; and **rows 3 and 5 are one
+      honesty argument split across two rows** — dedup's residual equality/length leak is
+      confined ONLY by keyed addressing, so ruling 3 YES and 5 NO would ship the leak
+      without its confinement. Rule them as a pair.
   (b) **The K5/K7/K8 persisted-measurement channels** — see V1-6 above.
   (c) **No vertical INGESTION code**, per the egress finding: what shipped here is the
       network-free half of two verticals (the elections date model + coverage floor, the
