@@ -188,10 +188,14 @@ def article_ai_keywords(
     """The AI-derived keywords stored for one article (the read-only lens).
 
     Returns an empty list when an article has no AI keywords yet — the ``ai_keyword``
-    table always exists in the main DB, and a read never writes anything."""
+    table always exists in the main DB, and a read never writes anything (evidence is
+    RESOLVED here rather than persisted, precisely so that stays true)."""
     rows = ai_store.keywords_for_article(
         db, article_id, kind=kind, confirmed_only=confirmed_only
     )
+    # Resolve evidence against the stored copy NOW, so the three states below are facts
+    # about a search that actually ran rather than inferences from a NULL column.
+    evidence, has_text = ai_store.evidence_for_rows(db, article_id, rows)
     keywords = [
         {
             "id": r.id,
@@ -201,13 +205,23 @@ def article_ai_keywords(
             "model": r.model,
             "prompt_version": r.prompt_version,
             "confirmed": r.confirmed,
-            # Where the term occurs in the stored article, or ABSENT when it does not.
-            # A deterministic read of your own copy, never a model claim -- and the
-            # absence is the informative case: a term that is not in the text was
-            # inferred, translated or invented, and only saying nothing keeps that
-            # distinction. Omitted rather than sent as null, so a consumer cannot render
-            # "no evidence" as a measurement.
-            **({"evidence": r.evidence} if r.evidence else {}),
+            # THREE STATES, never two. A deterministic read of your own copy, never a
+            # model claim:
+            #   `evidence`         -- the term occurs HERE in your stored copy;
+            #   `evidence_absent`  -- the copy was searched and the term is not in it,
+            #                         which is the INFORMATIVE case (the term was
+            #                         inferred, translated, or invented);
+            #   neither key        -- the stored copy has no text, so nothing could be
+            #                         searched. That is not a weaker "not found", it is a
+            #                         different fact, and collapsing it into one would
+            #                         state a search that never happened.
+            # Before this resolved at read time, every row written before the evidence
+            # writer existed held NULL and rendered as "not found" -- a search nobody ran.
+            **(
+                {"evidence": evidence[r.id]}
+                if r.id in evidence
+                else ({"evidence_absent": True} if has_text else {})
+            ),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
