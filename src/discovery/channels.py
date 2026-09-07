@@ -166,9 +166,50 @@ def resolve_external_source(session, *, domain: str, name: str | None, discovere
         row.name = name
 
 
-def _add_candidate(session, *, domain: str, name: str | None, channel: str, evidence: dict):
+def is_disqualified_domain(session, domain: str) -> bool:
+    """Has this instance JUDGED this domain and refused it?
+
+    One indexed seek on the unique ``domain`` column. Deliberately a per-domain
+    question rather than a set built once: the callers are capped, and a set snapshot
+    is the shape that goes stale.
+    """
+    from src.catalog.qualification import STATUS_DISQUALIFIED
+    from src.database.models import Source
+
+    return (
+        session.query(Source.id)
+        .filter(Source.domain == domain.lower(), Source.status == STATUS_DISQUALIFIED)
+        .first()
+        is not None
+    )
+
+
+def _add_candidate(session, *, domain: str, name: str | None, channel: str, evidence: dict) -> bool:
+    """Stage one discovery candidate. Returns False when the domain is REFUSED.
+
+    RULING 2026-07-20 clause (d): a fresh citation of a DISQUALIFIED domain must never
+    re-register or re-trial it -- a mis-interpreted marketplace or a video blog the
+    operator's own instance already judged does not come back because three more
+    articles happened to link to it.
+
+    That property HELD before this check existed, but only as a side effect: every
+    channel dedupes against ``_existing_domains``, which contains every ``Source``
+    domain including disqualified ones, so a disqualified domain never reached here.
+    Verified live before the check was added -- both funnels already skipped it. The
+    problem was that nothing said so and nothing tested it, so the guarantee lived in
+    a dedup set whose PURPOSE is something else entirely; narrowing that set (scoping
+    it to enabled sources, say -- exactly the shape the open ``enabled``-vs-qualified
+    question would take) would reopen the hole silently.
+
+    So the refusal lives HERE, at the one chokepoint every channel stages through,
+    rather than in each channel: a channel added later cannot forget a check it never
+    had to write. It is a backstop, not the everyday path -- see the sibling test that
+    drives it directly, because through a channel the dedup gets there first.
+    """
     from src.database.models import SourceCandidate
 
+    if is_disqualified_domain(session, domain):
+        return False
     session.add(
         SourceCandidate(
             domain=domain.lower(),
@@ -182,6 +223,7 @@ def _add_candidate(session, *, domain: str, name: str | None, channel: str, evid
     )
     # Q4a: the same discovered domain resolves into the external_sources registry with provenance.
     resolve_external_source(session, domain=domain, name=name, discovered_via=channel)
+    return True
 
 
 def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -> list[str]:
@@ -198,7 +240,7 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
             by_domain[dom.lower()].add(aid)
 
     created: list[str] = []
-    skipped = {"commerce": 0, "social": 0, "infrastructure": 0}
+    skipped = {"commerce": 0, "social": 0, "infrastructure": 0, "disqualified": 0}
     for dom, ids in sorted(by_domain.items(), key=lambda kv: -len(kv[1])):
         if len(created) >= cap:
             break
@@ -218,7 +260,7 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
         if is_infrastructure_domain(dom):
             skipped["infrastructure"] += 1
             continue
-        _add_candidate(
+        if not _add_candidate(
             session,
             domain=dom,
             name=None,
@@ -228,7 +270,9 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
                 "distinct_citing_articles": len(ids),
                 "sample_article_ids": sorted(ids)[:5],
             },
-        )
+        ):
+            skipped["disqualified"] += 1
+            continue
         created.append(dom)
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
     if created:
@@ -236,7 +280,7 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
     if any(skipped.values()):
         _LOG.debug(
             "citation discovery skipped commerce=%(commerce)d social=%(social)d "
-            "infrastructure=%(infrastructure)d domain(s)",
+            "infrastructure=%(infrastructure)d disqualified=%(disqualified)d domain(s)",
             skipped,
         )
     return created
@@ -275,7 +319,7 @@ def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
         if not dom or dom in known or country not in targets:
             continue
         n_there = country_counts_from_session(session).get(country, 0)
-        _add_candidate(
+        if not _add_candidate(
             session,
             domain=dom,
             name=entry.get("name"),
@@ -286,7 +330,8 @@ def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
                 "your_sources_there": n_there,
                 "thin_threshold": thin_threshold,
             },
-        )
+        ):
+            continue
         created.append(dom)
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
     if created:
@@ -373,7 +418,7 @@ def wikipedia_reference_channel(session, *, cap: int, min_pages: int = _WIKI_MIN
         if len(pageids) < min_pages or dom in known:
             continue
         editions = sorted(by_domain_editions[dom])
-        _add_candidate(
+        if not _add_candidate(
             session,
             domain=dom,
             name=None,
@@ -384,7 +429,8 @@ def wikipedia_reference_channel(session, *, cap: int, min_pages: int = _WIKI_MIN
                 "editions": editions,  # the multi-edition de-biasing signal (never a score)
                 "sample_page_ids": sorted(pageids)[:5],
             },
-        )
+        ):
+            continue
         created.append(dom)
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
     if created:
