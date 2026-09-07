@@ -416,6 +416,21 @@ def index_article(
         article.top_keyword_tied_n,
     ) = top_keyword_of(new_contrib)
 
+    # THE ATTEMPT RECORD (PRH-01). Stamped on EVERY scope, including the keyword-only
+    # cleanup, because a keyword-only pass is still a keyword-indexing attempt and the
+    # backfill queue selects on keyword mentions. It records that the pass RAN -- never
+    # that it found anything: an article carrying a stamp and no mentions was examined
+    # and yielded nothing, which is a different fact from "never examined" and is the
+    # whole distinction that lets backfill_corpus make forward progress.
+    #
+    # Assigned HERE, beside top_keyword_*, and deliberately before the when/where/who
+    # savepoint below: begin_nested() autoflushes pending state before opening the
+    # SAVEPOINT, so this UPDATE lands outside it and a WWW-pass rollback cannot undo the
+    # record of a keyword pass that did in fact complete. Verified, not assumed --
+    # tests/test_backfill_cursor.py drives a failing WWW store and asserts the stamp
+    # survives.
+    article.keyword_indexed_at = datetime.now(UTC)
+
     # Keep the denormalised counters exact for THIS article's net change.
     _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
 
@@ -504,23 +519,98 @@ def _unindexed_query(session: Session):
     return session.query(Article).filter(~Article.id.in_(indexed))
 
 
+def _mark_index_attempt(session: Session, article_id: int) -> None:
+    """Record that the keyword pass RAN for ``article_id`` after it FAILED.
+
+    The success path stamps inside :func:`index_article`, but that stamp dies with the
+    ``session.rollback()`` a failure requires -- so an article that raises every time
+    would keep a NULL marker, keep sorting first, and wedge the queue exactly as a
+    zero-term article did before this column existed. The wedge would simply have moved
+    from "yields nothing" to "always fails".
+
+    Best-effort and isolated: if even this write cannot land, the batch carries on. A
+    lost attempt record costs one wasted retry, never data.
+    """
+    try:
+        session.query(Article).filter(Article.id == article_id).update(
+            {Article.keyword_indexed_at: datetime.now(UTC)}, synchronize_session=False
+        )
+        session.commit()
+    except Exception:  # noqa: BLE001 - the marker is bookkeeping, never the work
+        session.rollback()
+        _LOG.warning("could not record the index attempt for %s", article_id, exc_info=True)
+
+
 def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> dict:
-    """Index articles that have no mentions yet, up to ``limit``. Returns progress."""
-    q = _unindexed_query(session).order_by(Article.id)
+    """Index articles that have no mentions yet, up to ``limit``. Returns progress.
+
+    LEAST-RECENTLY-ATTEMPTED, NOT LOWEST-ID (PRH-01, live-reproduced in
+    ``scripts/analysis/repro_backfill_wedge.py``). "Unindexed" here means "has no
+    KeywordMention row", and an article can legitimately have none: an empty or
+    whitespace body, text that is all stopwords, a body killed by self-name suppression.
+    Such an article never leaves the set, so ordering by id alone re-selected the SAME
+    lowest-id duds on every call forever and nothing behind them was ever reached --
+    four passes over a seven-article fixture indexed the same four duds every time and
+    left the three real articles with zero mentions. Once enough duds fill one
+    ``limit``-sized window the queue is wedged permanently.
+
+    So the order is ``keyword_indexed_at`` ASC NULLS FIRST, id ASC: an article the pass
+    has NEVER attempted sorts ahead of every article it has already examined, and among
+    already-examined ones the oldest attempt goes first. A dud is therefore retried
+    occasionally -- a stoplist change or a new extractor generation can genuinely turn
+    one into a real article, so refusing to ever look again would be its own kind of
+    wrong -- but it can never again BLOCK an article that has not been looked at at all.
+    This is the 2026-07-23 qualification livelock and its repair, one subsystem over.
+
+    THE COUNTS ARE FOUR DIFFERENT FACTS, so they are reported as four:
+
+    * ``indexed`` -- articles ATTEMPTED. Kept under its original name and meaning so no
+      existing caller silently changes behaviour.
+    * ``newly_indexed`` -- articles that actually GAINED mentions. This is the progress
+      number; ``indexed`` never was one, which is why a caller breaking on
+      ``indexed == 0`` could not detect the wedge it was sitting in.
+    * ``no_terms`` -- attempted and yielded nothing. A real verdict, not a failure.
+    * ``failed`` -- attempted and raised.
+
+    and the backlog is reported twice for the same reason: ``remaining`` is articles with
+    no mentions (unchanged), while ``never_attempted`` is the subset the pass has never
+    examined. Only the second is a backlog a reader can act on, and only the second can
+    reach zero on a corpus that contains any un-indexable article at all.
+    """
+    q = _unindexed_query(session).order_by(
+        Article.keyword_indexed_at.asc().nullsfirst(), Article.id.asc()
+    )
     if limit:
         q = q.limit(limit)
     articles = q.all()
 
-    indexed = 0
+    attempted = newly_indexed = no_terms = failed = 0
     for art in articles:
+        art_id = art.id
         try:
-            index_article(session, art, extractor=extractor, country=art.country)
-            indexed += 1
+            out = index_article(session, art, extractor=extractor, country=art.country)
+            attempted += 1
+            if int(out.get("mentions") or 0) > 0:
+                newly_indexed += 1
+            else:
+                no_terms += 1
         except Exception:  # noqa: BLE001 - one bad article must not abort the batch
             session.rollback()
-            _LOG.warning("indexing article %s failed", art.id, exc_info=True)
-    remaining = _unindexed_query(session).count()
-    return {"indexed": indexed, "remaining": remaining}
+            attempted += 1
+            failed += 1
+            _LOG.warning("indexing article %s failed", art_id, exc_info=True)
+            _mark_index_attempt(session, art_id)
+    unindexed = _unindexed_query(session)
+    remaining = unindexed.count()
+    never_attempted = unindexed.filter(Article.keyword_indexed_at.is_(None)).count()
+    return {
+        "indexed": attempted,
+        "newly_indexed": newly_indexed,
+        "no_terms": no_terms,
+        "failed": failed,
+        "remaining": remaining,
+        "never_attempted": never_attempted,
+    }
 
 
 # Articles per precompute window (restore-merge re-index perf, 2026-07-19): bounds

@@ -107,18 +107,25 @@ def test_t6_divergent_merge_full(corpora):
     # The COUNTS, not the whole dict. `DomainResult.as_dict` is additive by design (it
     # omits an empty `samples`/`conflicts` and includes them when there is something to
     # say), so an equality assertion here breaks the day a plan gains a field -- which it
-    # did on 2026-09-07, when the sample collectors moved BEFORE their INSERT and articles
-    # started NAMING what a merge added instead of publishing an always-empty list. The
-    # property this line is about is the merge outcome, and that is checked exactly.
+    # did on 2026-09-07, when `samples` stopped being an always-empty list.
+    #
     # NB the name: `art` above is the ARTIFACT PATH, still needed by the --commit run
-    # below. A first draft of this amendment reused it for the plan and `str(art)` then
+    # below. A first draft of this amendment reused it for the plan, and `str(art)` then
     # handed the stringified dict to the helper as a path -- FileNotFoundError naming a
-    # dict, and every later test in this module inherited an unmerged corpus.
+    # dict, with every later test in this module inheriting an unmerged corpus.
     arts = preview["plan"]["articles"]
-    assert (arts["new"], arts["duplicate"], arts["conflict"]) == (2, 1, 0)
-    # And the samples are the outcome too: an import that says "2 new" and cannot name one
-    # of them is the always-empty list PRH-08 filed. Both of B's unique articles, by title.
-    assert sorted(arts["samples"]) == ["B filler", "Only in B"]
+    assert {k: arts[k] for k in ("new", "duplicate", "conflict")} == {
+        "new": 2,
+        "duplicate": 1,
+        "conflict": 0,
+    }
+    # The plan carries EXAMPLES of what it added, and this is the only place that
+    # proves it end to end -- through the real CLI, a real encrypted artifact and a
+    # real committed merge, rather than a fixture. Until 2026-09-07 the list was
+    # always empty (the sample query ran after its own INSERT, with the predicate
+    # that INSERT had just falsified), which is the only reason the assertion above
+    # could once compare the whole dict.
+    assert sorted(arts["samples"]) == ["B filler", "Only in B"], arts.get("samples")
     # The commodity disagreement is REPORTED with both values, local kept (never averaged).
     cp = preview["plan"]["commodity_prices"]
     assert cp["conflict"] == 1 and cp["conflicts"][0]["incoming"] != cp["conflicts"][0]["local"]

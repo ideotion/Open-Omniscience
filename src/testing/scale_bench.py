@@ -231,6 +231,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_article_ip_columns,
         ensure_article_quarantine_columns,
         ensure_article_top_keyword_columns,
+        ensure_article_keyword_indexed_column,
         ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
@@ -260,6 +261,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_article_quarantine_columns(engine)
     ensure_article_detected_language_column(engine)
     ensure_article_top_keyword_columns(engine)
+    ensure_article_keyword_indexed_column(engine)
     ensure_keyword_mention_source_column(engine)
     created = ensure_hot_indexes(engine)
     ensure_feed_backoff_columns(engine)

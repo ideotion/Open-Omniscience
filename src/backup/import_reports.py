@@ -153,23 +153,29 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             )
         lines.append("")
 
-        # A few NAMES of what actually arrived, beside the counts. The merge has always
-        # collected these for sources, articles and wiki pages; until 2026-09-07 it read
-        # them AFTER the INSERT, where the query's own `NOT EXISTS` can never match, so
-        # the list was empty on every import ever taken and nothing rendered it. They are
-        # examples, never a total -- `_SAMPLE_LIMIT` bounds the list and the count column
-        # above is the number.
-        sampled = [
-            (name, counts["samples"])
-            for name, counts in sorted(plan.items())
-            if isinstance(counts, dict) and not name.startswith("_") and counts.get("samples")
+        # A few of the rows this run actually added, by name. The counts above say how
+        # much arrived; a reader checking whether the right corpus was imported needs to
+        # see WHAT. The merge has always computed these (`DomainResult.samples`) and
+        # until 2026-09-07 always computed them empty, so nothing rendered them -- the
+        # field being populated is worth nothing if it stops at the JSON.
+        examples = [
+            (t, c["samples"])
+            for t, c in sorted(plan.items())
+            if isinstance(c, dict) and not t.startswith("_") and c.get("samples")
         ]
-        if sampled:
+        if examples:
             lines.append("### Examples of what was added")
             lines.append("")
-            for name, samples in sampled:
+            lines.append(
+                "A few per table, not a full list — the count above is the exact figure."
+            )
+            lines.append("")
+            for table_name, samples in examples:
+                # Code-spanned, because these are arbitrary strings off the web: an
+                # article title carrying `*` or `_` would otherwise render as emphasis
+                # and the name SHOWN would not be the name stored.
                 shown = ", ".join(f"`{str(x)}`" for x in samples)
-                lines.append(f"- **{name}** — {shown}")
+                lines.append(f"- **{table_name}**: {shown}")
             lines.append("")
 
     delta = report.get("corpus_delta")

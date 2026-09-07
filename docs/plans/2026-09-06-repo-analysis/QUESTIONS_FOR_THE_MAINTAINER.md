@@ -97,6 +97,44 @@ panel; (b) lower it with a stated new meaning; (c) add `high_link_density` (415 
 second extraction-failure criterion. Recommendation: (c), keeping (a)'s wording. *(gates: the
 `PROMPT_04` prompt's criteria slice; the data-safety-adjacent one.)*
 
+**B11 · ⛔ What identifies a source — a domain, or a feed?** (New, raised 2026-09-07 by measuring the
+catalogue rather than reading it; **recommendation corrected the same day after a skeptic pass refuted its
+premise — see below**.) `Source.domain` is UNIQUE and the seeder is create-only, so entries whose domain an
+earlier sibling already claims are never registered on any install, silently. **475 of the 3,870 entries a
+real boot seeds**, across 299 domains — 227 of them inside `configs/sources.yml` alone, which is the only
+figure the first cut of this question quoted. They are not redundant rows, and they are two different
+losses:
+
+- **Language services.** 75 shadowed entries declare a language and declare a DIFFERENT one than the sibling
+  that survives. `bbc.com` carries 31 entries and the 30 that lose are BBC Arabic, Hausa, Swahili, Persian
+  and the rest; `dw.com` shadows DW Arabic, Deutsch, Español and Brasil. (108 "differ" if a missing
+  `language` field is counted as a value; 33 of those are absent-vs-present artifacts on shared-domain
+  journal families, so 75 is the figure that carries the argument.)
+- **Editorial metadata.** 220 of the losses are `sources_spectrum.yml` losing to `sources.yml`, and **192
+  shadowed entries carry a `lean-*` tag the survivor does not have** — `cnn.com` loses `lean-center-left`,
+  `dailymail.co.uk` loses `lean-right`. `src/catalog/taxonomy.py` defines that scale, so the political-lean
+  catalogue is 79% shadowed and its vocabulary barely reaches the database it was written for.
+
+Deleting the losers to "clean up" would delete precisely the breadth the language-equilibrium lever exists
+to balance, and the editorial dimension the spectrum catalogue exists for. The loss is now counted and
+ratcheted at both scopes (`tests/test_catalog_domain_collisions.py`); recovering it is the open question.
+→ **(a)** leave it, with the count visible — the app collects one feed per outlet and the ratchet stops it
+growing; **(b)** key a source on its FEED, which reaches the alias-aware dedup, the restore-merge's
+`m.domain = i.domain` joins, the `configs/source_qualification.yml` overlay, the citations tally and
+`is_disqualified_domain` — a migration plus a data-safety review, not a small slice; **(c)** split the cases
+that genuinely live on distinct hosts into their own catalogue rows, leaving the rest alone.
+
+**Recommendation: (a) now, and (b) is the real question — because (c) cannot recover the language services
+at all.** The first draft recommended (c) on the premise that `feeds.bbci.co.uk/arabic` "is a real distinct
+host". **It is not: it is a PATH.** Measured — all 31 `bbc.com` entries share the one RSS host
+`feeds.bbci.co.uk`, all 22 `dw.com` share `rss.dw.com`, all 11 `rfi.fr` share `www.rfi.fr`; of the 54
+colliding domains only **3** have pairwise-distinct RSS hosts (`arxiv.org`, `edition.cnn.com`,
+`abcnews.go.com` — section families, not language services), and **zero** of the 3,429 catalogue entries
+carry a path in `domain`. So (c) is executable only for the least valuable third of the set and cannot touch
+the mission case; the language services differ by feed PATH, which is exactly what (b) keys on. The honest
+form of the question is therefore: **is one feed per outlet acceptable, or is per-outlet multilingual
+coverage worth a source-identity migration?** *(gates: `PROMPT_04` S7.)*
+
 **B7 · A recency-windowed re-check.** The 6-month re-verification reads a source's WHOLE history, so it
 cannot see a source that degraded recently. Adding a window touches `collect_article_stats`, which the
 audit report shares. → Build it as its own reviewed slice? Recommended default: yes, window = the last
@@ -215,8 +253,9 @@ in the next networked session? Recommended default: yes, IPTC Media Topics first
 ## F. Egress allowlist entries (one consolidated ask)
 
 **F1 · ⛔ Add these hosts to the build sandbox's egress allowlist**, or accept that the corresponding
-work stays operator-side forever. Five consecutive sessions have been refused at `CONNECT` with
-`"selective": false`; the variable was never the prompt. Hosts, by the work they unblock:
+work stays operator-side forever. Six consecutive sessions have been refused at `CONNECT` with
+`"selective": false` (the sixth re-probed `dumps.wikimedia.org` on 2026-09-07, `pypi.org` 200 as the
+control); the variable was never the prompt. Hosts, by the work they unblock:
 `dumps.wikimedia.org` (E2) · `api.worldbank.org`, `data.worldbank.org` (the 36-code verification is ONE
 command: `scripts/verify_worldbank_indicators.py`) · `sdmx.oecd.org`, `api.imf.org` (SDMX message-version
 verification) · `www.legislation.gov.uk`, `eur-lex.europa.eu`, `gesetze-im-internet.de` (the law

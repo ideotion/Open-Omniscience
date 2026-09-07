@@ -1538,8 +1538,15 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     diff two of these over time to see whether an optimization landed. With
     ``download=1`` it returns as a dated attachment."""
     from src.analytics.engine_report import keyword_engine_report
+    from src.monitoring.kpi import record_translation_coverage
 
     report = keyword_engine_report(db)
+    # Write the ring-coverage figure down where the scan is MADE. Until 2026-09-07 this
+    # report was computed, streamed and forgotten, so KPI K6 ("cross-language translation
+    # coverage") could only ever answer "not-measurable-here" — a metric listed on the
+    # board and structurally unwatchable. Best-effort by construction: a failed write
+    # records nothing and K6 then says so, rather than breaking this diagnostic.
+    record_translation_coverage(report)
     headers = {}
     if download:
         fname = f"oo-keyword-engine-{datetime.now().strftime('%Y%m%d')}.json"

@@ -35,6 +35,76 @@ _VERSIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 EXEMPT: dict[tuple[str, str], str] = {}
 
 
+def _module_sequences(tree: ast.Module) -> dict[str, list[tuple]]:
+    """Module-level sequences of tuples, with each element's STRING slots kept.
+
+    Exists because four real migrations add their columns from a loop over a
+    module-level table (``for name, type_ in _COLUMNS: op.add_column("articles",
+    sa.Column(name, type_))``) rather than one literal call per column. The
+    name-and-literal parser below cannot resolve a loop variable, so those four
+    files resolved to ZERO columns and were silently exempt from the drift guard --
+    12 columns across articles / sources / law_documents / law_revisions that a
+    reader would have read this guard as covering. A non-string slot (the SQLAlchemy
+    type call) is kept as None: only the string positions are ever needed.
+    """
+    seqs: dict[str, list[tuple]] = {}
+    for node in tree.body:
+        target = value = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        if not (isinstance(target, ast.Name) and isinstance(value, ast.Tuple | ast.List)):
+            continue
+        rows: list[tuple] = []
+        for elt in value.elts:
+            if isinstance(elt, ast.Tuple | ast.List):
+                rows.append(
+                    tuple(
+                        e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None
+                        for e in elt.elts
+                    )
+                )
+        if rows:
+            seqs[target.id] = rows
+    return seqs
+
+
+def _loop_added_columns(tree: ast.Module, consts: dict[str, str]) -> set[tuple[str, str]]:
+    """(table, column) pairs added inside ``for <targets> in <module sequence>:`` loops."""
+    seqs = _module_sequences(tree)
+    pairs: set[tuple[str, str]] = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.For) and isinstance(node.iter, ast.Name)):
+            continue
+        rows = seqs.get(node.iter.id)
+        if not rows:
+            continue
+        names = (
+            [t.id for t in node.target.elts if isinstance(t, ast.Name)]
+            if isinstance(node.target, ast.Tuple | ast.List)
+            else ([node.target.id] if isinstance(node.target, ast.Name) else [])
+        )
+        if not names:
+            continue
+        for row in rows:
+            bound = dict(consts)
+            for i, nm in enumerate(names):
+                if i < len(row) and isinstance(row[i], str):
+                    bound[nm] = row[i]
+            for sub in ast.walk(node):
+                if (
+                    isinstance(sub, ast.Call)
+                    and getattr(sub.func, "attr", None) == "add_column"
+                    and len(sub.args) >= 2
+                ):
+                    table = _resolve_str(sub.args[0], bound)
+                    col = _column_name(sub.args[1], bound)
+                    if table and col:
+                        pairs.add((table, col))
+    return pairs
+
+
 def _module_constants(tree: ast.Module) -> dict[str, str]:
     """Module-level string constants (``_TABLE = "articles"``), plain or annotated."""
     consts: dict[str, str] = {}
@@ -110,7 +180,7 @@ def added_columns(path: Path) -> set[tuple[str, str]]:
             col = _column_name(node.args[1], consts)
             if table and col:
                 pairs.add((table, col))
-    return pairs
+    return pairs | _loop_added_columns(tree, consts)
 
 
 def _all_migration_columns() -> set[tuple[str, str]]:
@@ -130,6 +200,12 @@ def test_the_sweep_actually_sees_the_migrations():
     assert ("wiki_pages", "latest_text") in pairs  # op.add_column(literal, ...)
     assert ("keywords", "extractor") in pairs  # batch_alter_table form
     assert ("articles", "detected_language") in pairs  # _TABLE/_COLUMN constants
+    # The loop form (`for name, type_ in _COLUMNS: op.add_column(...)`). Four migrations
+    # use it and resolved to ZERO columns until 2026-09-07, so the guard was silently
+    # exempting them; without this line the detector could go blind again and the drift
+    # test would keep passing for a reason unrelated to its claim.
+    assert ("articles", "top_keyword_id") in pairs
+    assert ("sources", "article_count") in pairs
 
 
 def test_every_add_column_has_a_self_heal_or_a_recorded_exemption():

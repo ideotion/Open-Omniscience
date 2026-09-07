@@ -15,11 +15,16 @@ PR #915 recorded the sources site. Measuring it found all three (2 sources, 3 ar
 2 wiki pages added; ``samples`` absent from all three), so this pins each one separately --
 a guard on one site would have left the class open at the other two.
 
-WHY THE SAMPLES MAY HONESTLY SAY "added" AND NOT "about to be added": each identity column
-is UNIQUE in the incoming corpus's OWN schema (``articles.hash``, ``sources.domain``, and
-the ``ix_wikipage_wiki_title`` unique index), so no two incoming rows can collapse onto one
-local row between the sample read and the INSERT. Read before the INSERT, the set is
-exactly the set that lands.
+WHY THE SAMPLES HONESTLY SAY "added" AND NOT "about to be added": :func:`_new_row_samples`
+reads them back out of ``merged_rows`` -- the provenance the merge already writes for every
+row it inserts -- so the list reports what LANDED rather than re-deriving what was predicted
+to land. (This file first fixed the ordering instead, by reading the samples BEFORE the
+INSERT; that also produced correct lists here, but it restates the INSERT's own predicate,
+and the ``articles`` INSERT additionally joins ``temp.map_sources``, so a restatement could
+name a row the INSERT then skipped. The provenance read cannot drift from the statement, so
+it is the one that survived the 2026-09-07 merge; these cases are kept because their
+fixtures differ from the ones in ``test_merge_report_samples.py`` -- an empty local corpus
+and a re-merge, against that file's shared-row discrimination.)
 """
 
 from __future__ import annotations

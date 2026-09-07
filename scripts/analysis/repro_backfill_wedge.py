@@ -14,6 +14,13 @@ Run:  .venv/bin/python3.13 scripts/analysis/repro_backfill_wedge.py
 Expected on unfixed code: four passes, ``indexed=4`` every time, ``remaining``
 unchanged, and the real articles behind the duds never gain a single mention.
 
+FIXED 2026-09-07 (``articles.keyword_indexed_at`` + least-recently-attempted
+ordering). Expected now: pass 1 spends the window on the four duds and stamps
+them, pass 2 reaches the three real articles, and ``never_attempted`` reaches 0
+while ``remaining`` correctly settles at 4 — the duds still have no mentions, but
+nothing is left that has never been looked at. Those are two different facts and
+the run prints both.
+
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
@@ -51,7 +58,9 @@ print("limit=4, seven articles: four un-indexable then three real\n")
 for p in range(1, 5):
     r = backfill_corpus(s, extractor=ex, limit=4)
     got = {a for (a,) in s.query(KeywordMention.article_id).distinct()}
-    print(f"  pass {p}: indexed={r['indexed']} remaining={r['remaining']}  articles with mentions={sorted(got)}")
+    print(f"  pass {p}: attempted={r['indexed']} new={r.get('newly_indexed', '?')} "
+          f"remaining={r['remaining']} never_attempted={r.get('never_attempted', '?')} "
+          f" articles with mentions={sorted(got)}")
 ids = [a.id for a in s.query(Article).order_by(Article.id)]
 print(f"\n  real article ids = {ids[4:]}")
 print("  -> if these never appear above, the queue is wedged and nothing behind it is ever reached.")

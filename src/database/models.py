@@ -718,6 +718,29 @@ class Article(Base):
     top_keyword_count: Mapped[int | None] = mapped_column(Integer)
     top_keyword_tied_n: Mapped[int | None] = mapped_column(Integer)
 
+    # WHEN THE KEYWORD PASS LAST RAN FOR THIS ARTICLE (PRH-01). Additive + NULLABLE with
+    # NO backfill, on the detected_language / quarantined / top_keyword_* pattern: NULL
+    # means "keyword indexing has never been attempted here", which on an existing store
+    # is also what a pre-column article reads as -- both correctly mean "worth trying".
+    #
+    # It exists because "has this article been indexed?" was answered by "does it have
+    # any KeywordMention row?", and those are DIFFERENT QUESTIONS for an article that
+    # legitimately yields zero terms (an empty or whitespace body, all-stopword text, a
+    # body killed by self-name suppression). Such an article can never leave a
+    # has-no-mentions queue, so it was re-selected on every backfill pass forever and
+    # everything behind it in id order was never reached -- the 2026-07-23 qualification
+    # livelock, one subsystem over, and live-reproduced before this column existed
+    # (scripts/analysis/repro_backfill_wedge.py).
+    #
+    # It is an ATTEMPT RECORD, never a verdict: it says the pass ran, not that it found
+    # anything, exactly as a `no_evidence` qualification attempt says a judgement could
+    # not be reached without pretending one was. Written by index_article on every scope
+    # (a keyword-only cleanup is still a keyword-indexing attempt) and, on the failure
+    # path, by backfill_corpus itself -- an article that raises every time must rotate
+    # out of the way too, or the wedge simply moves from "yields nothing" to "always
+    # fails".
+    keyword_indexed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
 

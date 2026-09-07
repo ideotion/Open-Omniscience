@@ -472,6 +472,15 @@ this history it reports the merge commit rather than the authoring one, and answ
   COMMON ANCESTOR rather than against zero — nine duplicates already existed there, so a bare
   "are there duplicates" test would have accused this merge of nine things it did not do. The
   tell in the diff is a numstat with DELETIONS on a merge you expect to be purely additive.
+  **AND IT RECURRED ON THE VERY NEXT BRANCH, WITH THE TELL FIRING AND A CHECK THAT WAS NOT THIS
+  ONE (2026-09-07, the same row):** any branch cut BEFORE a `PR pending` sweep re-creates the
+  duplicate on its own merge, because its stale copy and main's corrected one are both legitimate
+  lines — and one did, on this same 2026-09-06 row. The numstat tell FIRED (17 added / 11 deleted)
+  and was investigated by PAIRING each deleted row with its replacement; that came back clean and
+  was not the prescribed scan. Pairing accounts for the rows main edited that the branch does NOT
+  also carry, and is structurally blind to the one it DOES, because there each copy legitimately
+  belongs to one side and neither is unpaired. So run the duplicate-key scan ITSELF: a different
+  check that plausibly explains the same tell is not a substitute for the one named here.
   Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
@@ -6104,6 +6113,52 @@ this history it reports the merge commit rather than the authoring one, and answ
     makes both failures end in the same place — ordinary resolution, plus a sentence saying
     the choice was not applied. Validate a selector against the set it claims to select
     from, rather than trusting it and hoping the value is still real.
+  - **A REFACTOR THAT PRESERVES *WHAT* IS FOUND NEEDS A DIFFERENTIAL, BECAUSE A NAME-LEVEL
+    ASSERTION CANNOT SEE THE FIELD THAT BROKE (2026-09-07, the location extractor's
+    dispatch):** splitting `extract_locations` from one-scan-per-pattern into a scan half
+    plus an indexed half changes HOW candidates are found and must change nothing about
+    WHAT is found, so old and new ran side by side over ~22,000 (text x source_country)
+    pairs at both gazetteer scales. The first draft's NAMES were all correct and it was
+    still wrong: the result dict's `snippet` still read the loop variable `m` from the scan
+    half, so every indexed hit carried some other pattern's snippet, and with no scan match
+    at all it raised `UnboundLocalError`. Every assertion I would plausibly have written —
+    names, kinds, mention counts — passes against that; the differential compares the WHOLE
+    structure, which is why it showed up on the first run. THREE MEASURED FACTS, each
+    load-bearing: (a) `rx.match(text, pos)` DOES honour a leading `\b` against
+    `text[pos-1]`, so an anchored candidate check is exact and the index needs no boundary
+    logic of its own; (b) `re.IGNORECASE` and `str.lower()` DISAGREE on real input —
+    `"İ".lower()` is `i` plus a combining dot while IGNORECASE matches `İSTANBUL` against
+    `istanbul`, and `ſ` folds to `s` for the engine and to itself for `lower()` — so an
+    exact-token index over case-INSENSITIVE patterns is a false-NEGATIVE hazard, which is
+    why the ~140 case-insensitive patterns keep their scan and only the case-SENSITIVE half
+    is indexed; (c) **the ratio is the wrong headline**: 2,173 -> 86 ms at 4,500 cities
+    reads as "25x", but what describes the fix is that 86 ms at 4,500 cities is within noise
+    of 82 ms at 21 — the cost stopped scaling with the gazetteer. A ratio is a claim about
+    one fixture; a removed dimension is a claim about the next one. COROLLARY: two of four
+    mutations SURVIVED and both were test gaps, not redundant code — the discriminating
+    input is the one where the obvious simplification and the correct rule differ, and it is
+    never the obvious example. Position-order and pattern-order replay AGREE on "Northern
+    Ireland" (the longer name also starts first) and differ on "New Mexico City", where the
+    shorter guard opens at 0, claims the span, and the city silently disappears; trusting the
+    index without re-confirming with the pattern is harmless for every single-token name and
+    FABRICATES a place for a multi-word one ("New arrivals were reported." yields New York).
+    When a mutation survives, find the input on which the two versions actually differ before
+    concluding the mechanism is redundant.
+  - **A COMPLETENESS RATCHET WHOSE PARSER CANNOT READ A LOOP IS EXEMPTING WHOLE MIGRATIONS
+    (2026-09-07, found when a new column tripped the guard meant to catch it):**
+    `test_migration_self_heal_drift` exists so a migration adding a column without a boot
+    self-heal fails in CI instead of breaking a user's store at upgrade. Its AST parser read
+    `op.add_column` with literal or module-constant arguments and could not resolve a LOOP
+    VARIABLE — and four real migrations add their columns from a loop over a module-level
+    table, so those four resolved to ZERO columns and were silently exempt: 12 columns across
+    four tables that a reader would have read the guard as covering. Nothing was broken (all
+    four were genuinely self-healed; only the registry was blind), which is exactly why it
+    survived — a detector blind spot has no symptom. The recorded "a ratchet is only as good
+    as its detector" lesson with a new, one-grep tell: **compare what the parser resolves
+    against a crude textual count of the construct it looks for** (34 `.add_column(` calls
+    against 30 pairs resolved — the gap IS the blind spot). And when you extend such a
+    detector, put the newly-seen form into its own anti-vacuity assertion, or it can go blind
+    again while the guard it feeds keeps passing.
   - **A SESSION CLONE IS SHALLOW UNTIL PROVEN OTHERWISE, AND A BOUNDED HISTORY ANSWERS EVERY
     ARCHAEOLOGY QUESTION WITH ITS OWN BOUNDARY (2026-09-07, resolving twelve `PR pending`
     rows in `shipped.csv`):** the honest way to find which PR landed a ledger row is to
@@ -6128,6 +6183,128 @@ this history it reports the merge commit rather than the authoring one, and answ
     `git log -S` pickaxe over the same needle reports the MERGE commit rather than the
     authoring one on this history, so it agreed with the wrong answer — an agreement between
     two methods that share a defect is not corroboration.
+  - **A REPORT THAT RE-DERIVES WHAT A WRITE JUST DID DESCRIBES THE WORLD AFTER THE WRITE — and
+    when the field is emitted only-when-non-empty, the wrongness is an ABSENCE (2026-09-07, the
+    restore-merge's example rows):** three merge steps captured their `samples` by re-running the
+    INSERT's own `WHERE NOT EXISTS` predicate AFTER `_insert_tracked`. The INSERT has just made
+    that predicate false for exactly the rows it copied, so the list came back empty on every
+    restore since the reports were written — and `DomainResult.as_dict` emits `samples` only when
+    non-empty, so the report simply had no examples block, which reads as "this merge added
+    nothing". The omitted-field-versus-a-zero rule at the level of a whole section, and no test
+    covered `samples` at all. THE FIX GENERALISES PAST THE ORDERING BUG: read back from the
+    provenance the write already records (`merged_rows`), which reports what LANDED rather than
+    what was predicted to land and cannot drift from the statement — load-bearing here, because
+    the `articles` INSERT additionally joins `temp.map_sources`, so the obvious repair (hoist the
+    same query above the INSERT) keeps a second copy of the predicate that can name rows the
+    INSERT then skips. TWO RIDERS: the sibling `conflicts` lists at four other sites are
+    UNAFFECTED and worth checking rather than assuming (they query rows present on both sides,
+    which an insert into the target cannot falsify); and the negative twin is what makes the guard
+    real, since a repair that listed every INCOMING row satisfies every positive assertion while
+    inventing rows that never landed.
+  - **A RULED GUARANTEE THAT HOLDS AS A SIDE EFFECT OF AN UNRELATED MECHANISM IS UNTESTED, AND THE
+    CHANGE THAT BREAKS IT WILL LOOK UNRELATED (2026-09-07, the disqualified-domain skip):** the
+    plan recorded ruling clause (d) — never re-propose a domain this instance judged and refused —
+    as "not wired". Driven live before building anything, it already held: both discovery funnels
+    dedupe against every existing `Source` domain, disqualified ones included, so such a domain
+    never reached the staging call, and `select_unqualified` filters exactly `status ==
+    'unqualified'` so the ladder was already the only way back. The defect was not the behaviour;
+    it was that the guarantee rested on a dedup set whose PURPOSE is something else, nothing said
+    so, and no test would have noticed if that set were narrowed — precisely the shape the open
+    `enabled`-versus-`qualified` question would take. GENERAL FORM: when you find a ruling already
+    satisfied, ask WHAT satisfies it; if the answer is a mechanism that exists for another reason,
+    make the property explicit at the chokepoint every caller passes through (so a caller added
+    later inherits a check it never had to write) and pin it at BOTH levels, saying which is which
+    — the end-to-end test passes today and its value is that it KEEPS passing, while only the
+    chokepoint test is discriminating. The same slice's reporting half is the recorded
+    one-key-two-meanings defect: "we already collect this" and "we judged this and refused it"
+    shared one counter, and that is what hid the ruling.
+  - **A CREATE-ONLY, KEY-DEDUPED LOADER HAS TWO SKIP REASONS THAT MEAN OPPOSITE THINGS — and the
+    entries that look redundant may be the mission (2026-09-07, 227 unreachable catalogue
+    entries):** `seed_sources` counted "already in the database" (an idempotent re-run working
+    correctly) and "an earlier entry of this same input claims the domain" (a catalogue entry no
+    install can ever register) in one `skipped` number, so 227 of 3,429 entries had never been
+    registered anywhere, invisibly. THE PART THAT MATTERS IS THE REPAIR DIRECTION: the obvious
+    reading is "54 duplicate domains, clean up the data", and measuring refutes it — 108 of the
+    227 are in a DIFFERENT language than the surviving sibling; `bbc.com` carries 31 entries and
+    the 30 that lose are BBC Arabic, Hausa, Swahili and Persian, `dw.com` shadows DW Arabic,
+    Deutsch, Español and Brasil. Deleting them would delete precisely the multilingual breadth the
+    language-equilibrium lever exists to balance. So count the loss, ratchet it, and raise the
+    identity question (a domain, or a feed) as a ruling rather than taking it — the recovery
+    reaches the alias-aware dedup, the restore-merge's domain joins, the qualification overlay and
+    the citations tally. RIDER on the split itself, caught by the negative twin: shadowing is a
+    property of the CATALOGUE, not of the run, so it must be decided by the input's own first-wins
+    rule and never from database state — computed from database state, a re-seed reclassifies a
+    permanently-unreachable entry as a healthy idempotent skip and the count silently reads zero on
+    every install that has already seeded once.
+  - **MEASURING A PROPOSED ITEM CAN TURN IT INTO A NON-ITEM, AND REVEAL THE REAL ONE BEHIND IT
+    (2026-09-07):** "a NULL-only backfill migration so existing installs pick up the
+    `country_from_title` source-country recoveries" was a plausible, well-scoped item. Run against
+    the real catalogue it recovers **0** of the 1,599 entries carrying no explicit country — the
+    2026-06-16 batch promoted all 68 `(Country)`-suffix entries into explicit fields and a
+    regression guard keeps it that way — so the migration has no subject and building it would
+    have been pure risk. The gap it stood in for is real, broader and unmeasured: the seeder is
+    create-only, so NO catalogue metadata improvement (country, language, tags) ever reaches an
+    existing install. GENERAL FORM: before writing a migration, run its own predicate over the real
+    data and count the rows it would touch; a zero is a finding about the item, and asking what the
+    item was a proxy for is usually worth more than the item.
+
+  - **A NUMBER THAT DESCRIBES WHAT A FUNCTION DOES MUST BE CAPTURED FROM THAT FUNCTION, NEVER
+    FROM A REBUILD OF ITS INPUTS (2026-09-07, the catalogue-collision figure):** the seeder's
+    real loss is measured by `seed_default_sources`, which concatenates five catalogue files.
+    I re-assembled that list from the same five paths and got **494**; a skeptic re-assembled
+    it and got **475**; the truth is 475, because the shipped path loads the CURATED legal file
+    while my reconstruction merged the GENERATED one — a 224-entry difference in an input list
+    that looked identical at the level of "which files". Spying on the callee
+    (`ss.seed_sources = capture`) and driving the real function settles it in four lines and
+    cannot drift. This is the recorded "a standalone SQL probe is a lookalike" lesson one layer
+    up from SQL: the lookalike axis here is not table stats or ANALYZE state, it is **which
+    inputs the production path actually assembles**, and a reconstruction is wrong precisely
+    where the function has a detail you did not read. Corollary for the guard: make the FIXTURE
+    the capture, so the number can never be pinned against a rebuild again.
+  - **A RATCHET SCOPED TO ONE INPUT FILE CANNOT SEE THE CLASS IT NAMES WHEN PRODUCTION READS
+    FIVE (2026-09-07, same slice):** the budget pinned 54 domains / 227 entries measured on
+    `configs/sources.yml`, and its own docstring named the general class — "adding a second
+    entry for a domain the catalogue already claims is silently discarded". Production seeds
+    five catalogues, so **248 cross-catalogue collisions sat outside the guard entirely**,
+    including 220 that are the whole political-lean catalogue losing to the curated one: 192
+    shadowed entries carry a `lean-*` tag the survivor lacks (`cnn.com` loses
+    `lean-center-left`), so a vocabulary `src/catalog/taxonomy.py` defines barely reaches the
+    database it was written for. The tell is the mismatch between a guard's DOCSTRING (which
+    names a class) and its FIXTURE (which names one file); pin the number the production path
+    produces, and where a narrower figure is also worth keeping, say which is which rather than
+    letting the smaller one stand for the loss.
+  - **LOWERCASING THE NEEDLE AGAINST A CASE-SENSITIVE COLUMN IS WORSE THAN NOT NORMALISING AT
+    ALL (2026-09-07, `is_disqualified_domain`):** `Source.domain == domain.lower()` reads as
+    defensive and is not. The column is compared with SQLite's BINARY collation and
+    `POST /api/sources` stores the domain as typed, so a source added as `Example.COM` and later
+    disqualified became unrefusable by **every** spelling **including its own** — the
+    one-sided normalisation broke the exact-match caller that worked before it. And the failure
+    direction is the bad one: a refusal that does not fire looks exactly like a domain nobody
+    judged. Normalise both sides or neither; where the stored side cannot be normalised without
+    a write-path change, seek the SPELLINGS the caller can legitimately supply (`in_()` over a
+    unique index is still seeks, not a scan) and STATE the residual gap rather than implying it
+    is closed. The negative twin is mandatory — widening the spellings must not start refusing
+    a domain nobody judged.
+  - **"IT ALREADY PASSES" AND "IT CANNOT FAIL" ARE DIFFERENT CLAIMS, AND ONLY A PER-TEST
+    MUTATION TELLS YOU WHICH YOU WROTE (2026-09-07, same slice):** the new test file classified
+    its own tests — the two end-to-end ones as non-discriminating ("their value is that they
+    KEEP passing"), the chokepoint as "the only level where the refusal is discriminating".
+    Mutating each refusal separately showed one of the two end-to-end tests **fails without the
+    change**, because that funnel used to report a disqualified domain under the wrong reason
+    and the base commit has no such counter at all. A taxonomy of one's own guards is a claim
+    like any other; a mutation matrix is cheap and it is the only thing that measures it.
+  - **AN EXACT-DICT ASSERTION ENCODES EVERY FIELD THAT HAPPENED TO BE ABSENT — AND N RED NAMES
+    ARE NOT N CAUSES (2026-09-07, the torture suite):** filling in a report field that had
+    always been empty broke `test_t6_divergent_merge_full`, which compared the whole plan dict
+    and was therefore only ever satisfiable BECAUSE the field was dead — the test had encoded
+    the defect. It then broke `test_t2_duplicate_flood_is_idempotent` too, which touches none of
+    the changed code: t6 aborts at its assertion **before** its `--commit`, so t2's first
+    re-merge became the initial merge and legitimately created rows. **One regression, two red
+    names, in a module-scoped fixture chain.** Before triaging a suite diff, ask how many CAUSES
+    the failures have — a shared fixture makes the first failure a cause of the rest — and check
+    the baseline for each, because here the baseline was green on both and the temptation was to
+    read the second as an unrelated flake. The repair belongs in the assertion, not the code:
+    compare the fields the test is about, and pin the newly-live field by name.
 
   - **A REPORT WHOSE EVERY BLOCK DEGRADES HONESTLY HAS THE SAME SHAPE WHEN IT WAS HANDED
     NOTHING — so a shape assertion cannot tell a working member from a broken one
@@ -6162,6 +6339,52 @@ this history it reports the merge commit rather than the authoring one, and answ
     Before dividing an accumulated duration by a window, ask whether the thing being
     accumulated can happen in parallel with itself — and pin it, because the symmetry of the
     two field names is exactly what invites the second division.
+  - **A MODULE DOCSTRING CAN DESCRIBE A MECHANISM THAT DOES NOT EXIST — and the reader
+    auditing the module takes the sentence for the thing (2026-09-07, KPI K6):**
+    `src/monitoring/kpi.py` states its own contract in its header — an expensive
+    instrument "reports its last persisted value with an `as_of`, or
+    `not-measurable-here`" — and NO resolver read a persisted file anywhere. For K6,
+    cross-language translation coverage, the channel could not exist at all, because
+    `engine_report` is computed on demand, streamed to the caller and never written
+    down; so the metric the ring-lifecycle ruling asks the board to WATCH was on the
+    board and structurally unreadable, and "joins the KPI board" was satisfied by
+    LISTING it. GENERAL FORM: a docstring describing a MECHANISM is a claim of exactly
+    the kind the staleness guard distrusts in a status line — grep for the code that
+    implements it. The tell sat one screen away: K3's spec says "needs a P0-validation
+    report from the operator's live corpus run" while `last_p0_validation_report()` is
+    in the tree ready to serve one. THREE RIDERS, each found by a SURVIVING mutation
+    rather than by review. (a) **A second-precision clock makes a re-stamp invisible to
+    a same-second fixture:** `_now()` is `isoformat(timespec="seconds")`, so recording
+    and reading inside one second makes `as_of=measured_at` and `as_of=_now()` the same
+    string, and the mutation that re-stamps a months-old measurement as fresh passed a
+    test written to forbid exactly that — age the record deliberately (rewrite the file
+    with a `measured_at` 30 days old). (b) **Do not overload a sentinel:** reporting a
+    real figure under `not-measurable-here` because the bar is a pending ruling puts
+    "could not be read" and "read, no bar to judge it against" in one word; an EXISTING
+    guard caught it (`not-measurable ⇒ value is None and as_of is None`), a fourth state
+    (`measured-no-bar`) makes both honest, and widening a verdict domain owes the twin
+    that stops the new state parking a red — injecting BOTH abuses, since the
+    single-injector version leaves alive the dangerous one (a figure against a REAL
+    bar). (c) **A guard that iterates a condition it never creates is vacuous twice
+    over:** "no metric misuses the new verdict" passed with no metric using it AND with
+    the selftest's own check ranging over an empty list — create the condition, assert
+    the check SAW it (its own `detail` count), then feed it the abuse. FOURTH, on the
+    CONSUMER: two snapshots quoting ONE persisted measurement are not two agreeing
+    measurements — `kpi_diff.classify` compared values only, so an unmeasured cycle read
+    as `unchanged`, a fabricated stability finding on precisely the metrics a persisted
+    value exists for; it keys on the `as_of` now (`same-measurement`), never on the
+    value, because keying on the value would hide two genuine runs that agree.
+    **AND THE SIBLING, same session:** `scripts/generate_wikidata_rings.py` said its
+    output "augments" the live ring file; it has always REPLACED it and its default
+    `-o` IS that file, so an ordinary seed run was one command from deleting 684
+    hand-vetted rings with no error and no diff to notice (the refusal now fires BEFORE
+    the network run, so a refused pass costs no Wikidata calls). Where a script's prose
+    and its `write_text` disagree, the prose is what people act on. ONE MORE, from
+    building `--refresh` on it: batching `wbgetentities` turns a 684-ring refresh from
+    684 requests into 14 (measured offline against the real file), and it is only safe
+    because a QID ABSENT from a batch response is re-fetched ALONE before classification
+    — a truncated reply and a deleted item are opposite facts, and reading the first as
+    the second manufactures upstream drift out of a short answer.
   - **A `git worktree` BASELINE RUN SILENTLY TESTS *HEAD* UNDER AN EDITABLE INSTALL — so the
     strongest possible excuse for a regression ("the base is red too") is available for free
     and is false (2026-09-07, the t6 torture failure):** the discipline is right — before
@@ -6266,9 +6489,34 @@ this history it reports the merge commit rather than the authoring one, and answ
     are there" but a grep for the PATCH TARGET (`read_volume_backup`) across the whole test tree,
     and the durable close is a comment-stripped guard with an anti-vacuity floor (assert it finds
     the doubles at all), because the next such file will be about something else again.
+  - **TWO SESSIONS CAN FIX ONE DEFECT TWO WAYS, AND GIT MERGES BOTH WITHOUT A CONFLICT
+    MARKER ANYWHERE NEAR THE DAMAGE — the assignment operator is the only thing that
+    hid it (2026-09-07, merging #1020 with main's #1018/#1019):** this branch and main
+    independently found the same defect (the merge's `samples` were read AFTER their own
+    INSERT, with the predicate that INSERT had just falsified, so the list was empty on
+    every restore ever taken) and fixed it differently — this side moved the read BEFORE
+    the INSERT, main's added `_new_row_samples`, reading back from `merged_rows`. Git
+    reported three tiny conflicts, each with an EMPTY `HEAD` side, because the two fixes
+    touch DIFFERENT LINES: my loops merged in as ordinary context and main's assignments
+    merged in as additions, so the resolved file ran both. It was harmless ONLY because
+    main's line is `r.samples = ...`; had it been `.extend(...)` — an equally natural way
+    to write it — every sample would have been listed twice, in a report whose whole
+    purpose is to say what an import added. GENERAL FORM: when a conflict hunk has an
+    empty side, that is not "nothing to decide" — it means the other side ADDED something
+    where you CHANGED something nearby, so read what your side already does in that
+    function before taking theirs; a semantic double-fix leaves no marker at the place it
+    hurts. THE TIE-BREAK, once both were on the table, was not seniority but which claim
+    each could support: a restated predicate is a second copy of the INSERT (the
+    `articles` INSERT additionally joins `temp.map_sources`, so a restatement could name
+    a row the INSERT then skipped), while a provenance read reports what LANDED and
+    cannot drift from the statement. Both sides' test files were kept — their fixtures
+    differ (an empty local corpus and a re-merge, against shared-row discrimination) and
+    both pass against the one surviving implementation — but the LOSING side's docstring
+    had to be corrected in the same commit, because it described the mechanism that lost
+    and would otherwise have read as a live claim about how the code works.
 ## Open queue (when maintainer says proceed)
 - **PROMPT 07 — DATA SAFETY: backup completeness · restore honesty · the data-location
-  chooser (executed 2026-09-07, branch `claude/backup-restore-safety-04dict`; per-slice detail
+  chooser (executed 2026-09-07, PR #1020, branch `claude/backup-restore-safety-04dict`; per-slice detail
   = the seven 2026-09-07 `docs/ledger/shipped.csv` rows):** five of the six slices shipped; the
   sixth is REPORTED AND STOPPED, on the prompt's own instruction.
   **⛔ S2 (C1) — THE LEGACY SINGLE-FILE RESTORE CANNOT BE REMOVED, and the proof came out the
@@ -6338,6 +6586,143 @@ this history it reports the merge commit rather than the authoring one, and answ
   own remainder is honest and small: nothing yet REPORTS the artifact's file members before a
   restore commits (the plan/preview surfaces the corpus tables, not the carried files), so an
   operator learns what rode inside from the placement result rather than beforehand.
+- **KEYWORD-ENGINE QUALITY — PROMPT 05 EXECUTION (2026-09-07; branch
+  `claude/oos-backfill-cursor`, one draft PR onto `main`; three code slices shipped, the rest
+  recorded with the reason and, where it is a decision, as a QUESTION rather than a ruling):**
+  SHIPPED: the backfill wedge (PRH-01), the location extractor's dispatch (PRH-05), the
+  self-heal drift guard's loop-form blind spot, and the four standing stoplist refusals
+  (PRH-11) — per-slice detail in the four 2026-09-07 `docs/ledger/shipped.csv` rows.
+  **STILL RULING-GATED, unchanged: B2** (the (1)-vs-(2) stoplist ruling) and therefore **B3**
+  (the English 11,263 + French 881 batch, which can only enter the GLOBAL channel because
+  `get_stopwords` tests `language_stopwords` first and `en`/`fr` are its only two keys),
+  **B4** (the 64,910 `kind_overrides`, measured ~50% precision) and **PRH-13** (the dual-use
+  platform names). Nothing was globalised without the ruling.
+  **PRH-06 (the quarantine filter) IS A QUESTION, NOT A BUILD — and the measurement is the
+  useful half.** Reproduced on a fixture of 6 indexed articles with 3 quarantined: the
+  denormalised counter still reports `Keyword.article_count = 6` and `top_terms` reports 6
+  articles / 24 mentions, so every keyword aggregate served from the counters, the rollup or
+  the columnar store counts quarantined articles (`queries.py` holds 9 `quarantined`
+  references; `store.py`, `rollup_serve.py` and `columnar.py` hold 0 each). Three things make
+  this a ruling rather than a fix. (a) **The counters are maintained INCREMENTALLY at index
+  time**, so excluding quarantined articles means the quarantine job must apply counter deltas
+  when it stamps AND when it un-stamps — quarantine is reversible — on the counter this ledger
+  already records as drift-prone. (b) **A partial fix is worse than none**: the read side
+  (rollup/columnar) is a cheap index-only filter on `idx_article_quarantined`, but gating it
+  alone would make the same `top_terms` call answer differently depending on whether the
+  rollup served it; today the three at least AGREE. (c) `src/database/snapshots.py` already
+  records a DELIBERATE decision that the per-language series and `corpus_language_shares` do
+  NOT exclude quarantined articles and that **the two must move TOGETHER** — the keyword
+  aggregates are a third member of that same family, and `furniture_share` (which feeds the
+  qualification gate) reads a denominator that would move with them. So: should quarantined
+  articles leave the keyword aggregates, and if so does that ruling cover the language series
+  and the equilibrium lever in the same pass? Recommended default if a default is wanted:
+  yes for the aggregates, decided together with the language pair, shipped as ONE slice with
+  one disclosure and the `furniture_share` effect measured first — never piecemeal.
+  **A STALE LEDGER CLAIM CORRECTED, with evidence:** the standing line "the quarantine
+  remainder: omnibar/watches/reporting/framing exclusion (only `_query_articles` is gated
+  today)" is now wrong in three of its four parts — `search_omni`, `watches` and `framing` all
+  pass `exclude_quarantined=True` today. **`src/api/reporting.py` (lines 40 and 84, the SIGNED
+  EVIDENCE export) does not**, so an evidence bundle can carry an article the app itself has
+  quarantined as "not an article". Left alone deliberately: changing what a signed artifact
+  contains is not a session's call, and the honest options (exclude, or include with the
+  quarantine state stated in the bundle) differ in what they claim.
+  **S6 (skeleton fingerprint persistence) IS STILL GATED and the prompt's premise is stale.**
+  `src/analytics/skeleton.py`'s own docstring names two gates — OPERATOR-gated (schema +
+  migration + a corpus-scale backfill on the live encrypted corpus) and "this tier lands AFTER
+  the §8 triage batch cleans the worst junk (a cleaner keyword layer sharpens skeleton
+  matching)". The second has NOT lifted: only the 20-word 2026-09-05 batch landed (measured in
+  `CURATED_SCOPED_STOPWORDS` / `PUBLISHING_BOILERPLATE_SCOPED`), and the English/French batch
+  is B2/B3-gated above. Persisting fingerprints now would fingerprint exactly the junk the
+  cleanup exists to remove and then need a corpus-scale re-backfill after it.
+  **S7 (the measurement-gated tail) IS BLOCKED ON TEN MINUTES OF OPERATOR TIME, verified:**
+  `configs/ir_eval/` contains only `gold_set.example.json`, a template whose own text says it
+  is not bundled with real data. So P5.2 static embeddings, P6 entity->QID and the BM25F
+  default weights all still wait on a human-graded gold set over the maintainer's own corpus —
+  the builder is one click away in Settings -> Diagnostics, and picking weights without it
+  would be the fabricated-pass shape.
+  **NOT ATTEMPTED, honestly:** S5 (the review-loop panel that would consume
+  `analyze_keyword_log.py --generic-terms` proposals) and PRH-15 (a source-scoped boilerplate
+  channel, distinct from the language-scoped stoplist) — both are new surfaces rather than
+  fixes, and both i18n ratchets sit at zero slack, so each is its own slice.
+- **PROMPT-04 EXECUTION 2026-09-07 — source qualification, discovery, and ONE NEW RULING (B11).
+  Three slices shipped; S1 stays blocked on B1 and the promotion frontier is PARKED WHOLE (branch
+  `claude/source-qualification-frontier-00n7gr`; per-slice detail = the four 2026-09-07
+  `docs/ledger/shipped.csv` rows):** executed
+  `docs/plans/2026-09-06-repo-analysis/PROMPT_04_sources-qualification-and-promotion.md`. The staleness
+  guard paid more than in any prior sweep — **four of its seven slices were already shipped in whole or in
+  part**, and the prompt's own header claimed the tree was verified the day before, which is exactly the
+  class of claim rule 2 of the working mode exists for. Corrections landed in the prompt and the inventory
+  in the same PR.
+  **NEW RULING NEEDED — B11, WHAT IDENTIFIES A SOURCE: A DOMAIN, OR A FEED?** `Source.domain` is UNIQUE and
+  the seeder is create-only, so an entry whose domain an earlier sibling already claims is never registered
+  on any install, silently: **475 of the 3,870 entries a real boot seeds, across 299 domains** — 227 of them
+  inside `configs/sources.yml` alone, which is the only figure the first cut of this entry quoted (the
+  per-file number a reader of that file would compute, not the number `POST /api/sources/seed-defaults`
+  returns). They are not redundant rows, and they are TWO losses, not one: **75 shadowed entries declare a
+  language and declare a DIFFERENT one than the survivor** (`bbc.com` carries 31 and the 30 that lose are
+  BBC Arabic, Hausa, Swahili, Persian and the rest; `dw.com` shadows DW Arabic/Deutsch/Español/Brasil), and
+  **192 carry a `lean-*` tag the survivor does not have** — 220 of the cross-catalogue losses are
+  `sources_spectrum.yml` losing to `sources.yml`, so the political-lean catalogue is 79% shadowed and the
+  `src/catalog/taxonomy.py` scale barely reaches the database it was written for. (An earlier "108 differ in
+  language" counted a missing field as a value; 33 of those are absent-vs-present artifacts on shared-domain
+  journal families, so 75 is the figure that carries the argument.) The prompt's own "fix the data"
+  instruction would have DELETED precisely the breadth the de-US-centring and language-equilibrium work
+  exists to build — **refused, and raised as a question rather than decided.** The loss is now counted at
+  BOTH scopes, reported apart from an idempotent skip, and ratcheted. THE OPTIONS: (a) leave it with the
+  count visible (one feed per outlet; the ratchet stops it growing); (b) key a source on its FEED — reaches
+  the alias-aware dedup, the restore-merge's `m.domain = i.domain` joins, the
+  `configs/source_qualification.yml` overlay, the citations tally and `is_disqualified_domain`, i.e. a
+  migration plus a data-safety review; (c) split the cases that genuinely live on distinct hosts into their
+  own catalogue rows. **Recommendation: (a) now, and (b) is the real question — because (c) CANNOT RECOVER
+  THE LANGUAGE SERVICES AT ALL.** This entry first recommended (c) on the premise that
+  `feeds.bbci.co.uk/arabic` "IS a distinct host". **It is not — it is a PATH**, and a skeptic pass caught it
+  the same day: measured, all 31 `bbc.com` entries share the one host `feeds.bbci.co.uk`, all 22 `dw.com`
+  share `rss.dw.com`, all 11 `rfi.fr` share `www.rfi.fr`; only **3 of the 54** colliding domains have
+  pairwise-distinct RSS hosts (`arxiv.org`, `edition.cnn.com`, `abcnews.go.com` — section families, not
+  language services), and **zero** catalogue entries carry a path in `domain`. So (c) was unexecutable for
+  exactly the set it claimed to recover, and the honest question is whether per-outlet multilingual coverage
+  is worth a source-identity migration.
+  **SHIPPED:** the restore report's `samples` (empty at THREE sites since they were written — sources,
+  articles, wiki_pages — now read from `merged_rows`, and rendered in the markdown import report, because a
+  populated field that stops at the JSON is the dead-end shape); the catalogue-collision count + ratchet at
+  BOTH scopes; and the clause-(d) disqualified-domain skip moved from EMERGENT to ENFORCED at the
+  `_add_candidate` chokepoint with its reason reported apart from `already_a_source`.
+  **THE SKEPTIC ROUND CHANGED FOUR THINGS AND CAUGHT ONE REGRESSION — it is the reason this entry's own
+  numbers moved:** (1) the B11 recommendation rested on a FALSE premise (above); (2) `227` was the
+  per-file figure, not what an install reports — 475, with the 220-entry political-lean loss nobody had
+  named; (3) `is_disqualified_domain` lowercased the needle against a BINARY-collated column, so a
+  disqualified `Example.COM` was unrefusable by every spelling including its own — a real defect in new
+  code, fixed with its negative twin; (4) the refusal ran one indexed seek per candidate domain on an
+  `async def` handler for a question only already-known domains can answer, now asked once per known
+  domain. AND the full suite caught what the change itself broke: `test_t6_divergent_merge_full` compared
+  the WHOLE plan dict, which was only ever satisfiable because `samples` was dead, and its early abort
+  then failed `test_t2_duplicate_flood_is_idempotent` as collateral — one regression, two red names, both
+  green on the baseline. Five lessons recorded.
+  **VERIFIED-PRESENT, DO NOT REBUILD (the stale half):** the discovery TRAIL and the citations TALLY are
+  shipped end to end (`src/discovery/source_trail.py`, both endpoints, `app-sources.js:437`,
+  `tests/test_source_trail.py`), carrying the both-directions caveat verbatim and no score-shaped key; the
+  qualification COHORT HOIST shipped as S5.1 in the 2026-09-02 crash work (frozen once per run, and it
+  REFUSES a cohort frozen at a different `min_articles`); S4's publish-the-basis half is already in the
+  tunable's own `impact` (naming 0.211 and "a rare-catastrophe detector rather than an everyday gate"); S5's
+  disclosure half is already in the quality-gates payload's `recheck.scope_note`. **NON-ITEM:** the
+  `country_from_title` backfill migration would migrate NOTHING (measured: 0 of 1,599). The real gap behind
+  it is that **the seeder is create-only, so no catalogue metadata improvement — country, language or tags —
+  ever reaches an existing install**; the safe shape for both that and the retroactive-tag item is a
+  NULL-only reconcile (fill a local NULL from the catalogue, never overwrite a value — the merge's own
+  adoption rule one level down). Not built.
+  **PARKED, HONESTLY:** S1 (`enabled` vs `qualified`) stays ⛔ on B1. **S2, the Phase-2 promotion frontier,
+  is parked WHOLE rather than half-built — and it is more entangled with B1 than the prompt states:**
+  promoting a candidate ALREADY creates a DISABLED `Source`, and `select_unqualified` ALREADY trials it
+  (that is B1's own complaint), so under B1(b) most of the frontier IS the B1 answer, while under B1(a) the
+  candidate needs an enable step first. Building the state machine before B1 is answered would build the
+  wrong one. Also still open per their own rulings: B6 (`PATHOLOGY_ABS_FLOOR`, disclosure half done, the
+  constant untouched — never tune a data-safety threshold to make a number move), B7 (the recency window,
+  disclosure half done), and L9/L10 (`src/ai_layer/source_tags.py` already carries `_NON_TOPICAL_CLASSES`
+  "reported, never filtered", with its own comment saying deciding `independent` is not a topic is a
+  taxonomy ruling a human makes). **OPERATOR-GATED, unchanged:** generating `configs/source_qualification.yml`
+  from real instances (B5); the source-tag canary re-run for the 47 failed batches and the 59 domains below
+  the article floor; the source-diversification networked run; the Wikidata generator run for the 73 named
+  country gaps.
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
   the english term 'climate', the app should be able to automatically search for that term in all
   other available UI languages … we should find a solution to deal with keywords such as April (a
@@ -6529,9 +6914,13 @@ this history it reports the merge commit rather than the authoring one, and answ
   2 the month-occupancy diagnostic · 3 date-aware months + re-index (gated on 2) · 4 the ambiguity
   map · 5 ring-coverage expansion (operator: networked run) · 6 the sense INVENTORY (R2/R2a — the
   linker half is struck, evidence-refuted) · 7 the synonym tier (gated on the source ruling).
-  **Slices 1, 2, 3b and 4 need no network, no new dependency and no ruling** — and after BOTH
-  research passes NOTHING in slices 1-4 is gated on anything. Slice 3 is now cheaper (cross-check
-  (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the inventory half (R2a).
+  **Slices 1, 2 and 3b need no network, no new dependency and no ruling** — and after BOTH
+  research passes NOTHING in them is gated on anything. **⚠ CORRECTED 2026-09-07: this line read
+  "slices 1, 2, 3b AND 4" and "nothing in slices 1-4 is gated", which contradicts this entry's own
+  next paragraph — slice 4 is the ambiguity map and its one open number is settled only by a
+  Wikidata DUMP, so it has been dump-gated from the moment it was written.** Slice 3 is now
+  cheaper (cross-check (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the
+  inventory half (R2a).
   **EXECUTED 2026-09-05 (branch `claude/pr-1004-review-9ukgly`, draft PR #1010 onto `main`; five
   `docs/ledger/shipped.csv` rows): SLICES 1, 2 AND 3b ARE BUILT, plus the slice-3 ride-along.**
   Slice 1 = the ring dictionary finally read by search (R1 expansion on by default, disclosed, with
@@ -6656,7 +7045,11 @@ this history it reports the merge commit rather than the authoring one, and answ
   ENTRY, NOT A PROMPT:** pass 2's mandatory probe found wikidata/query.wikidata/en-word.net/kaikki/
   cldr.unicode/aclanthology ALL 403 `x-deny-reason: host_not_allowed` with the `pypi.org` control at
   200 and DNS resolving normally — **the FIFTH consecutive session to hit this allowlist on a
-  reach-named-publishers task**, and the second to characterise it rather than retry (its second
+  reach-named-publishers task** (**RE-PROBED 2026-09-07 rather than assumed, the SIXTH:
+  `dumps.wikimedia.org:443` answers `CONNECT … 403 Forbidden` through the agent proxy with
+  `pypi.org` at 200 as the control — so E2, and with it slices 4 and 6, is confirmed
+  operator-gated and no session should spend another pass rediscovering it**), and the second to
+  characterise it rather than retry (its second
   channel reached ceur-ws/arXiv but reports Wikimedia as cache-only, which is why every Wikidata
   claim in both reports is capped `search-verified`). Opening `dumps.wikimedia.org` is the single
   highest-value remaining step: it settles the one open number above. **RULINGS: (1) what R2 promises
@@ -13007,8 +13400,9 @@ this history it reports the merge commit rather than the authoring one, and answ
   uses the workflow AT THE TAG'S COMMIT (the old non-idempotent step), so the v0.2.0 unblock =
   maintainer deletes the asset-less release (KEEP the tag) → re-run the failed job → re-tick
   pre-release / re-edit notes; the idempotent step protects v0.3.0+.
-- **RING LIFECYCLE — LONG-TERM EVOLUTION STRATEGY (maintainer-agreed 2026-07-20; design note,
-  builds PENDING):** answers the maintainer's long-view question ("once the ~2000-ring target is
+- **RING LIFECYCLE — LONG-TERM EVOLUTION STRATEGY (maintainer-agreed 2026-07-20; BOTH AGREED
+  MECHANISMS SHIPPED 2026-09-07 — see the SHIPPED paragraph at the end of this entry; the
+  operator ring-batch half stays PENDING):** answers the maintainer's long-view question ("once the ~2000-ring target is
   reached, how does the selection evolve as the corpus grows? new words keep being invented — the
   strategy needs a very long term view"). GROUNDING recorded so the reasoning survives: (a) rings
   LAG, never GATE — keywords are captured uncapped instantly (the ChatGPT-2020 ruling), so an
@@ -13042,7 +13436,12 @@ this history it reports the merge commit rather than the authoring one, and answ
   `generate_wikidata_rings.py` OVERWRITES its `-o` target with only the current run's rings
   (emit-only, no merge — despite its docstring's "augments"; default `-o` IS the live
   `configs/keyword_rings_generated.yml`, so a naive `--seeds` run would WIPE the 540 vetted
-  rings) — always resolve to a temp file and append-merge, per the runbook; (ii) `nuclear fusion`
+  rings) — always resolve to a temp file and append-merge, per the runbook. **CLOSED 2026-09-07:
+  the docstring is corrected and replacing an existing non-empty ring file is now a loud REFUSAL
+  (`--force` to override), fired BEFORE any network call so a refused pass costs no Wikidata
+  requests; the temp-file discipline stays the runbook's instruction, it is simply no longer the
+  only thing between a seed run and the vetted corpus. The exposure had also GROWN since this
+  fact was recorded — the live file carries 684 rings now, not the 540 this line names**; (ii) `nuclear fusion`
   is a KNOWN REPEAT OFFENDER seed (already resolved wrong + dropped in the 2026-06-20 vetting;
   it sits in `test_wikidata_ring_gen.py`'s dropped-id guard). Batch overlap decisions
   recommended (vetter's call at run time): seed `right of asylum` not bare `asylum`
@@ -13050,6 +13449,36 @@ this history it reports the merge commit rather than the authoring one, and answ
   distinct concept from irreligion, which carries it as an alias); DROP `public relations`
   (marketing already carries `en:PR` + `en:public relations`); keep `pension` but strip
   `de:Pension` from the resolved members (bound to guest-house — a cross-language homograph).
+  **SHIPPED 2026-09-07 (branch `claude/keyword-search-remaining-slices-x6otsv`; the two agreed
+  mechanisms, plus PROMPT_06's S6 finding; one `docs/ledger/shipped.csv` row):** (1) the refresh
+  CADENCE is named — `docs/process/IMPROVEMENT_CYCLE.md` gains §1b THE RING REFRESH carrying both
+  passes' exact commands, the instruction to read the `unresolved` block FIRST, and both recorded
+  hazards; and `translation_coverage` is finally READABLE on the KPI board. **THE STALENESS GUARD
+  CORRECTED THE ASK HERE:** K6 was ALREADY listed on the board — with no resolver, so it could
+  only ever answer `not-measurable-here`, which is being LISTED rather than watched. The missing
+  half was the channel `kpi.py`'s own header already promised ("reports its last persisted value
+  with an `as_of`") and no resolver anywhere implemented, because `engine_report` is computed on
+  demand, streamed to the caller and never written down. `record_translation_coverage()` now
+  writes one small fixed-shape file where the scan is MADE (the keyword-engine endpoint, which
+  the bundle also drives — deliberately NOT an append-only journal, since "these events are rare"
+  is the premise that made this app unbootable once), and K6 reports the figure with the date it
+  was MEASURED and its age, never re-stamped as fresh. A FOURTH verdict `measured-no-bar` was
+  needed rather than reusing `not-measurable-here`: K6's target is `pending-ruling-V1-6`, so a
+  green/red would be invented, but a real figure behind a verdict whose whole meaning is "could
+  not be read" is two facts in one word. `kpi_diff` gains `same-measurement` for the same reason —
+  two snapshots quoting ONE persisted measurement are not two agreeing measurements, and calling
+  that `unchanged` is a fabricated stability finding on exactly the metrics a persisted value
+  exists for. (2) the QID-REFRESH PASS: `--refresh` re-reads the QIDs a human already vetted and
+  emits ONLY the members Wikidata has GAINED — never a re-search (which could silently re-point a
+  ring at another concept), never a removal (rings are never pruned), and never a `rings:`
+  document, so the artifact cannot be loaded as a ring file and replace a full ring with the
+  handful of members in it. Batched `wbgetentities`: 684 rings in **14 calls**, measured offline
+  against the real file, and safe only because a QID ABSENT from a batch is re-fetched ALONE
+  before classification (a truncated reply and a deleted item are opposite facts); four buckets
+  partition the input exactly — `unchanged` / additions / `unresolved` / `not_checked` — so a run
+  whose network flaked cannot report a clean bill of health. STILL PENDING here: the operator
+  ring-batch run itself (the 168-seed batch above, and any `--refresh` pass) — both need live
+  Wikidata, which the allowlist still refuses.
 - **SOURCE-MANAGEMENT ASKS — newsletter links · qualification funnel · language detection
   (maintainer asked 2026-07-20; INVESTIGATED same session, code-verified; builds PENDING —
   assessment-first, nothing built this turn):** three asks, each checked against the tree
@@ -15394,8 +15823,10 @@ this history it reports the merge commit rather than the authoring one, and answ
   (`#ins-term` / `exploreTerm`) is still live; and the P0 "100 GB" acceptance strings were corrected on
   2026-08-03, so the ledger sentence naming them as stale is itself the stale half.
   **WHAT IS GENUINELY OPEN, once the stale claims are removed** (§"What is actually open" in the index):
-  the egress allowlist (five consecutive sessions have now failed a reach-a-named-publisher task through
-  five different tool surfaces — it is not a prompt problem, and one allowlist entry unblocks ten items) ·
+  the egress allowlist (**six** consecutive sessions have now failed a reach-a-named-publisher task
+  through six different tool surfaces — the sixth re-probed it on 2026-09-07 rather than assuming it,
+  `dumps.wikimedia.org` `CONNECT … 403` against a `pypi.org` 200 control; it is not a prompt problem,
+  and one allowlist entry unblocks ten items) ·
   ~20 maintainer rulings, several create-time irreversible · the operator measurements (month occupancy,
   `configs/source_qualification.yml`, the graded gold sets, the ≥72 h soak, the committed full import) · the
   56 handlers · file members inside the signed backup artifact (the top parked data-safety item, and the

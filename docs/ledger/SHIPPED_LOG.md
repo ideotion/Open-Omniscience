@@ -3,6 +3,56 @@
 > The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into CLAUDE.md's Session-rituals 'Lessons' subsection. Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **A REFACTOR THAT PRESERVES *WHAT* IS FOUND NEEDS A DIFFERENTIAL, BECAUSE A NAME-LEVEL
+  ASSERTION CANNOT SEE THE FIELD THAT BROKE (2026-09-07, the location extractor's dispatch):**
+  splitting `extract_locations` from one-scan-per-pattern into a scan half plus an indexed half
+  is a change to HOW candidates are found and must be no change at all to WHAT is found, so it
+  was checked by running the old and new implementations side by side over ~22,000
+  (text x source_country) pairs at both gazetteer scales. The first draft's `names` were all
+  correct and it was still wrong: the result dict's `snippet` still read the loop variable `m`
+  from the scan half, so every indexed hit carried some other pattern's snippet, and once no
+  scan pattern matched at all it raised `UnboundLocalError`. Every assertion I would plausibly
+  have written -- on names, kinds, mention counts -- passes against that. The differential
+  compares the WHOLE returned structure, which is what made it visible in the first run.
+  THREE FACTS ESTABLISHED BY MEASUREMENT rather than assumed, each load-bearing:
+  (a) `rx.match(text, pos)` DOES honour a leading `\b` against `text[pos-1]` (the engine sees
+  the whole string, so an anchored candidate check is exact -- without this the index would
+  have needed its own boundary logic);
+  (b) `re.IGNORECASE` and `str.lower()` DISAGREE on real input -- `"İ".lower()` is `i` plus a
+  combining dot while IGNORECASE matches `İSTANBUL` against `istanbul`, and `ſ` folds to `s`
+  for the engine and to itself for `lower()` -- so an exact-token index over case-INSENSITIVE
+  patterns is a false-NEGATIVE hazard, which is why the ~140 case-insensitive patterns keep
+  their scan and only the case-SENSITIVE gazetteer half (the half that scales) is indexed;
+  (c) the ratio is the wrong headline. 2,173 -> 86 ms at 4,500 cities reads as "25x faster",
+  but the number that describes the fix is that 86 ms at 4,500 cities is within noise of 82 ms
+  at 21 -- the cost stopped scaling with the gazetteer. A ratio measured on one fixture says
+  nothing about the next one; a removed dimension does.
+  COROLLARY ON THE MUTATION MATRIX: two of four mutations SURVIVED, and both were findings about
+  the tests rather than redundant code -- the discriminating inputs are the ones where the
+  obvious simplification and the correct rule differ, and neither is the obvious example.
+  Position-order and pattern-order replay agree on "Northern Ireland" (the longer name also
+  starts first) and differ on "New Mexico City", where the shorter guard opens at 0, claims the
+  span, and the city silently disappears. Trusting the index without re-confirming with the
+  pattern is harmless for every single-token name (the key IS the whole name) and FABRICATES a
+  place for a multi-word one -- measured, "New arrivals were reported." yields New York. When a
+  mutation survives, find the input on which the two versions actually differ before concluding
+  the mechanism is redundant.
+
+- **A COMPLETENESS RATCHET WHOSE PARSER CANNOT READ A LOOP IS EXEMPTING WHOLE MIGRATIONS
+  (2026-09-07, found when a new column tripped the guard that was supposed to catch it):**
+  `test_migration_self_heal_drift` exists so a migration that adds a column without a boot
+  self-heal fails in CI instead of breaking a user's store at upgrade. Its AST parser read
+  `op.add_column` with literal or module-constant arguments, and four real migrations add their
+  columns from a LOOP over a module-level table -- so those four files resolved to ZERO columns
+  and were silently exempt: 12 columns across four tables that a reader would have read the
+  guard as covering. Nothing was broken (all four were genuinely self-healed; only the registry
+  was blind), which is exactly why it survived -- a detector blind spot has no symptom. The
+  general form is the recorded "a ratchet is only as good as its detector" lesson with a new
+  tell: **compare what the parser resolves against a crude textual count of the construct it is
+  looking for** (34 `.add_column(` calls in the tree against 30 pairs resolved) -- the gap is
+  the blind spot, and it costs one grep. And when you extend such a detector, put the newly-seen
+  form into its own anti-vacuity test (here: assert the loop-form columns ARE found), or the
+  detector can go blind again while the guard it feeds keeps passing.
 - **WINDOWS RESTORE, ROUND 2: `os.replace` WAS THE OTHER HALF OF THE LOCK FIX — plus the
   diagnostic that answers "who holds it" (2026-08-23, branch `claude/windows-repo-install-255ude`;
   two `shipped.csv` rows):** the same Win11 ARM64 machine, the same `-wal`, ten minutes in,
@@ -5928,7 +5978,6 @@ archival list, because its S4 (in-app review of analyzer proposals) is genuinely
 ledger's recorded "295 as of 2026-06-15" counted `index.html` alone and predates the module
 split, so it under-stated the debt by roughly half. Recorded as a correction, not fixed here:
 the retirement is browser-verify-gated and belongs to its own prompt.
-
 ## 2026-09-07 — security/deps: the [pqc] ceiling stops being a comment and starts being a mechanism
 
 PR #1016, opened right after the documentation reality check merged as #1013. One new test file, one pyproject byte
@@ -6021,6 +6070,201 @@ the CLASS underneath the instance — `PQC_AVAILABLE` is set from import success
 module that imports but lacks `generate_keypair` still reports itself available and crashes
 instead of degrading. That is a `src/custody/signing.py` change on a tamper-evidence path and
 belongs to its own reviewed slice.
+
+## 2026-09-07 — prompt 04: source qualification, discovery and the restore report
+
+**A REPORT THAT RE-DERIVES WHAT A WRITE JUST DID DESCRIBES THE WORLD AFTER THE WRITE — and when the
+field is emitted only-when-non-empty, the wrongness is an ABSENCE (2026-09-07, the restore-merge's
+example rows):** three merge steps captured their `samples` by re-running the INSERT's own
+`WHERE NOT EXISTS` predicate *after* `_insert_tracked`. The INSERT has just made that predicate false
+for exactly the rows it copied, so the list came back empty on every restore since the reports were
+written, and `DomainResult.as_dict` emits `samples` only when non-empty — so the report simply had no
+examples block, which reads as "this merge added nothing". The omitted-field-versus-a-zero rule, at the
+level of a whole section. THE FIX GENERALISES BEYOND THE ORDERING BUG: reading back from the provenance
+the write already records (`merged_rows`) reports what LANDED instead of what was predicted to land, and
+cannot drift from the statement — which mattered here, because the `articles` INSERT additionally joins
+`temp.map_sources`, so the obvious repair (hoist the same query above the INSERT) would have kept a
+second copy of the predicate that could name rows the INSERT then skipped. TWO RIDERS. The sibling
+`conflicts` lists at four other sites are UNAFFECTED and worth checking rather than assuming: they query
+rows present on both sides, which an insert into the target cannot falsify. And the negative twin is
+what makes the guard real — a repair that listed every INCOMING row satisfies every positive assertion
+while inventing rows that never landed, so each positive case needs a twin merging a corpus that
+introduces nothing.
+
+**A RULED GUARANTEE THAT HOLDS AS A SIDE EFFECT OF AN UNRELATED MECHANISM IS UNTESTED, AND THE CHANGE
+THAT BREAKS IT WILL LOOK UNRELATED (2026-09-07, the disqualified-domain skip):** the plan recorded clause
+(d) — never re-propose a domain this instance judged and refused — as "not wired". Driven live before
+building anything, it already held: both discovery funnels dedupe against every existing `Source` domain,
+disqualified ones included, so such a domain never reached the staging call. The defect was not the
+behaviour, it was that the guarantee rested on a dedup set whose PURPOSE is something else, nothing said
+so, and no test would have noticed if that set were narrowed — which is precisely the shape the open
+`enabled`-versus-`qualified` question would take. GENERAL FORM: when you find a ruling already satisfied,
+ask WHAT satisfies it; if the answer is a mechanism that exists for another reason, make the property
+explicit at the chokepoint every caller passes through (so a caller added later inherits a check it never
+had to write) and pin it at BOTH levels, saying which is which — the end-to-end test passes today and its
+value is that it keeps passing, while only the chokepoint test is discriminating. The same slice's
+reporting half is the recorded one-key-two-meanings defect: "we already collect this" and "we judged this
+and refused it" were one counter, and that is what hid the ruling.
+
+**A CREATE-ONLY, KEY-DEDUPED LOADER HAS TWO SKIP REASONS THAT MEAN OPPOSITE THINGS — and the entries
+that look redundant may be the mission (2026-09-07, 227 unreachable catalogue entries):** `seed_sources`
+counted "already in the database" (an idempotent re-run working correctly) and "an earlier entry of this
+same input claims the domain" (a catalogue entry no install can ever register) in one `skipped` number,
+so 227 of 3,429 entries had never been registered anywhere, invisibly. THE PART THAT MATTERS IS THE
+REPAIR DIRECTION: the obvious reading is "54 duplicate domains, clean up the data", and measuring refutes
+it — 108 of the 227 are in a DIFFERENT language than the surviving sibling; `bbc.com` carries 31 entries
+and the 30 that lose are BBC Arabic, Hausa, Swahili and Persian, `dw.com` shadows DW Arabic, Deutsch,
+Español and Brasil. Deleting them would delete precisely the multilingual breadth the language-equilibrium
+lever exists to balance. So: count the loss, ratchet it, and raise the identity question (a domain, or a
+feed) as a ruling rather than taking it — the recovery reaches the alias-aware dedup, the restore-merge's
+domain joins, the qualification overlay and the citations tally. RIDER on the split itself, caught by the
+negative twin: shadowing is a property of the CATALOGUE, not of the run, so it must be decided by the
+input's own first-wins rule and not by database state — computed from database state, a re-seed
+reclassifies a permanently-unreachable entry as a healthy idempotent skip and the count silently drops
+to zero on every install that has already seeded once.
+
+**MEASURING A PROPOSED ITEM CAN TURN IT INTO A NON-ITEM, AND REVEAL THE REAL ONE BEHIND IT
+(2026-09-07):** "a NULL-only backfill migration so existing installs pick up the `country_from_title`
+source-country recoveries" was a plausible, well-scoped item. Run against the real catalogue it recovers
+**0** of the 1,599 entries carrying no explicit country — the 2026-06-16 batch promoted all 68
+`(Country)`-suffix entries into explicit fields and a regression guard keeps it that way, so the migration
+has no subject and building it would have been pure risk. The gap it was standing in for is real, broader
+and unmeasured: the seeder is create-only, so NO catalogue metadata improvement — country, language or
+tags — ever reaches an existing install. GENERAL FORM: before writing a migration, run its own predicate
+over the real data and count the rows it would touch; a zero is a finding about the item, and asking what
+the item was a proxy for is usually more valuable than the item.
+
+### 2026-09-07 — lessons from the prompt-04 skeptic round
+
+Three adversarial passes (negative-space, data-safety/write-path, honesty/guard-vacuity)
+ran read-only before the push. Two of their findings changed a number in a maintainer-facing
+ruling; one was a real defect in new code; one was a regression the change itself caused.
+
+  - **A NUMBER THAT DESCRIBES WHAT A FUNCTION DOES MUST BE CAPTURED FROM THAT FUNCTION, NEVER
+    FROM A REBUILD OF ITS INPUTS (2026-09-07, the catalogue-collision figure):** the seeder's
+    real loss is measured by `seed_default_sources`, which concatenates five catalogue files.
+    I re-assembled that list from the same five paths and got **494**; a skeptic re-assembled
+    it and got **475**; the truth is 475, because the shipped path loads the CURATED legal file
+    while my reconstruction merged the GENERATED one — a 224-entry difference in an input list
+    that looked identical at the level of "which files". Spying on the callee
+    (`ss.seed_sources = capture`) and driving the real function settles it in four lines and
+    cannot drift. This is the recorded "a standalone SQL probe is a lookalike" lesson one layer
+    up from SQL: the lookalike axis here is not table stats or ANALYZE state, it is **which
+    inputs the production path actually assembles**, and a reconstruction is wrong precisely
+    where the function has a detail you did not read. Corollary for the guard: make the FIXTURE
+    the capture, so the number can never be pinned against a rebuild again.
+  - **A RATCHET SCOPED TO ONE INPUT FILE CANNOT SEE THE CLASS IT NAMES WHEN PRODUCTION READS
+    FIVE (2026-09-07, same slice):** the budget pinned 54 domains / 227 entries measured on
+    `configs/sources.yml`, and its own docstring named the general class — "adding a second
+    entry for a domain the catalogue already claims is silently discarded". Production seeds
+    five catalogues, so **248 cross-catalogue collisions sat outside the guard entirely**,
+    including 220 that are the whole political-lean catalogue losing to the curated one: 192
+    shadowed entries carry a `lean-*` tag the survivor lacks (`cnn.com` loses
+    `lean-center-left`), so a vocabulary `src/catalog/taxonomy.py` defines barely reaches the
+    database it was written for. The tell is the mismatch between a guard's DOCSTRING (which
+    names a class) and its FIXTURE (which names one file); pin the number the production path
+    produces, and where a narrower figure is also worth keeping, say which is which rather than
+    letting the smaller one stand for the loss.
+  - **LOWERCASING THE NEEDLE AGAINST A CASE-SENSITIVE COLUMN IS WORSE THAN NOT NORMALISING AT
+    ALL (2026-09-07, `is_disqualified_domain`):** `Source.domain == domain.lower()` reads as
+    defensive and is not. The column is compared with SQLite's BINARY collation and
+    `POST /api/sources` stores the domain as typed, so a source added as `Example.COM` and later
+    disqualified became unrefusable by **every** spelling **including its own** — the
+    one-sided normalisation broke the exact-match caller that worked before it. And the failure
+    direction is the bad one: a refusal that does not fire looks exactly like a domain nobody
+    judged. Normalise both sides or neither; where the stored side cannot be normalised without
+    a write-path change, seek the SPELLINGS the caller can legitimately supply (`in_()` over a
+    unique index is still seeks, not a scan) and STATE the residual gap rather than implying it
+    is closed. The negative twin is mandatory — widening the spellings must not start refusing
+    a domain nobody judged.
+  - **"IT ALREADY PASSES" AND "IT CANNOT FAIL" ARE DIFFERENT CLAIMS, AND ONLY A PER-TEST
+    MUTATION TELLS YOU WHICH YOU WROTE (2026-09-07, same slice):** the new test file classified
+    its own tests — the two end-to-end ones as non-discriminating ("their value is that they
+    KEEP passing"), the chokepoint as "the only level where the refusal is discriminating".
+    Mutating each refusal separately showed one of the two end-to-end tests **fails without the
+    change**, because that funnel used to report a disqualified domain under the wrong reason
+    and the base commit has no such counter at all. A taxonomy of one's own guards is a claim
+    like any other; a mutation matrix is cheap and it is the only thing that measures it.
+  - **AN EXACT-DICT ASSERTION ENCODES EVERY FIELD THAT HAPPENED TO BE ABSENT — AND N RED NAMES
+    ARE NOT N CAUSES (2026-09-07, the torture suite):** filling in a report field that had
+    always been empty broke `test_t6_divergent_merge_full`, which compared the whole plan dict
+    and was therefore only ever satisfiable BECAUSE the field was dead — the test had encoded
+    the defect. It then broke `test_t2_duplicate_flood_is_idempotent` too, which touches none of
+    the changed code: t6 aborts at its assertion **before** its `--commit`, so t2's first
+    re-merge became the initial merge and legitimately created rows. **One regression, two red
+    names, in a module-scoped fixture chain.** Before triaging a suite diff, ask how many CAUSES
+    the failures have — a shared fixture makes the first failure a cause of the rest — and check
+    the baseline for each, because here the baseline was green on both and the temptation was to
+    read the second as an unrelated flake. The repair belongs in the assertion, not the code:
+    compare the fields the test is about, and pin the newly-live field by name.
+
+## 2026-09-07 — monitoring/kpi + the ring lifecycle: a docstring that described a channel nobody built
+
+**A MODULE DOCSTRING CAN DESCRIBE A MECHANISM THAT DOES NOT EXIST, and every later reader —
+including the one auditing the module — takes the sentence for the thing.** `src/monitoring/kpi.py`
+states its own contract in its header: an expensive instrument "reports its last persisted value
+with an ``as_of``, or ``not-measurable-here``". No resolver read a persisted file anywhere.
+`_RESOLVERS` held two entries, both live in-process, and the other twelve metrics returned a
+constant reason string. For K6 — cross-language translation coverage, the metric the 2026-07-20
+ring-lifecycle ruling asks the board to WATCH so coverage decay is *seen rather than discovered* —
+the channel could not exist at all, because `engine_report` is computed on demand, streamed to the
+caller and never written down. So the metric was on the board and structurally unreadable, and
+"joins the KPI board" was satisfied by LISTING it. GENERAL FORM: a docstring describing a
+MECHANISM is a claim of exactly the kind the staleness guard already distrusts in a status line —
+grep for the code that implements it. The tell was cheap and sat one screen away: K3's spec says
+"needs a P0-validation report from the operator's live corpus run" while
+`last_p0_validation_report()` sits in the tree ready to serve one.
+
+**THREE RIDERS, each of which a surviving mutation found rather than review.**
+
+(a) **A SECOND-PRECISION CLOCK MAKES A RE-STAMP INVISIBLE TO A SAME-SECOND FIXTURE.** `_now()` is
+`isoformat(timespec="seconds")`, so recording and reading inside one second makes
+`as_of=measured_at` and `as_of=_now()` the SAME STRING — and the mutation that re-stamps a
+months-old measurement as fresh passed a test written to forbid exactly that. Age the record
+deliberately (write the file back with a `measured_at` 30 days old) and the correct resolver
+reports the old date while the re-stamping one cannot. Re-stamping is not cosmetic: it turns a
+record of the past into a claim about today, which is the fabricated-freshness trap the
+qualification clock already paid for once.
+
+(b) **DO NOT OVERLOAD A SENTINEL TO CARRY A SECOND MEANING.** The first cut reported the real
+figure under `not-measurable-here`, because K6's target is `pending-ruling-V1-6` and a green/red
+verdict would be invented. That is two facts in one word — "could not be read" and "read, with no
+bar to judge it against" — and an EXISTING guard caught it before it shipped
+(`not-measurable ⇒ value is None and as_of is None`). A fourth state (`measured-no-bar`) makes both
+honest. Widening a verdict domain then owes the twin that stops the new state becoming a place to
+park a red, and that twin must inject BOTH abuses — an entry carrying no figure, and an entry
+carrying a figure against a REAL bar — because the single-injector version leaves the more
+dangerous one alive (measured, judgeable, and quietly unjudged).
+
+(c) **A GUARD THAT ITERATES A CONDITION IT NEVER CREATES IS VACUOUS TWICE OVER.** "No metric
+misuses the new verdict" passed with no metric using it AND with the selftest's own check ranging
+over an empty list. Create the condition first, assert the check actually SAW it (its own `detail`
+count), then feed it the abuse.
+
+**FOURTH, ON THE CONSUMER: two snapshots quoting ONE persisted measurement are not two agreeing
+measurements.** `kpi_diff.classify` compared values only, so a cycle in which nobody re-ran the
+expensive instrument read as `unchanged` — a fabricated stability finding on precisely the metrics
+a persisted value exists for. It keys on the `as_of` now (`same-measurement`), never on the value,
+because keying on the value would hide two genuine runs that happen to agree — the negative-space
+twin, and the one that decides which of the two designs is honest.
+
+**AND THE SIBLING, in the same session's other half:** `scripts/generate_wikidata_rings.py` said in
+its docstring that its output "augments" the live ring file. It has always REPLACED it, and its
+default `-o` is that file — so an ordinary seed run was one command away from deleting 684
+hand-vetted rings with no error and no diff to notice. The docstring is corrected and the
+replacement of an existing non-empty file is now a loud refusal, checked BEFORE the network run so
+a refused pass costs no Wikidata calls. GENERAL FORM: where a script's prose and its `write_text`
+disagree, the prose is what people act on.
+
+**ONE MORE, from building `--refresh` on top of that:** a batched `wbgetentities` turns a 684-ring
+refresh from 684 requests into 14 (measured offline against the real ring file), and the batching
+is only safe because a QID **absent from a batch response** is re-fetched ALONE before it is
+classified. A truncated reply and a deleted item are opposite facts; reading the first as the
+second would manufacture upstream drift out of a short answer, and "this ring's identity is now
+wrong" is the single most valuable thing the refresh can report. The same discipline gives the
+pass four buckets that partition its input exactly — `unchanged`, additions, `unresolved`,
+`not_checked` — so a run whose network flaked can never report a clean bill of health.
+
 ---
 
 ## 2026-09-07 — prompt 07: backup completeness, restore honesty, the data-location chooser

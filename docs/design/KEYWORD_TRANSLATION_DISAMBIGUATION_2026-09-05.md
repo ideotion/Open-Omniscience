@@ -811,14 +811,15 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 | 2 | Month-occupancy diagnostic (§5) — how often is a month token outside a claimed date span? | **✅ BUILT 2026-09-05** — `analytics/month_occupancy.py`, `GET /api/diagnostics/month-occupancy`, rides the all-diagnostics bundle. **The number itself is an OPERATOR step**: it needs a real corpus (§8b) |
 | 3 | Date-aware month handling + re-index | slice 2's number. **Cheaper than it looked** — `dateextract` already carries ru (all three cases tested, incl. the prepositional CLDR omits), ar Gulf + *part of* Levantine, hi, bn, th, fa; §6b.2(c). Ride-alongs: the 7-form Maghrebi gap and the 4 missing Levantine forms, §6b.2(d) |
 | 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | **✅ BUILT 2026-09-05** — and `ru.yml` carried a 61-entry Latin block the plan had not seen; both moved, set-identity proved by digest, a script guard added |
-| 4 | Ambiguity map from the existing Wikidata fetch + the triage's `ambiguous_language` | none. Mechanism + prior art confirmed by pass 2 (§6c.1(2)); **size unmeasured** — the one open number (§6c.5) |
-| 5 | Ring coverage expansion (more seeds) | operator: networked run. ru/hi/bn need a source OMW structurally cannot provide (§6b.1(3)) — the SKOS family covers ru+ar (§6b.3) |
+| 4 | Ambiguity map from the existing Wikidata fetch + the triage's `ambiguous_language` | **the dump.** Mechanism + prior art confirmed by pass 2 (§6c.1(2)); **size unmeasured** — the one open number (§6c.5). **⚠ CORRECTED 2026-09-07: this cell read "none", contradicting its own next sentence** — the index is HARVESTED from a Wikidata dump, so `dumps.wikimedia.org` gates the slice, not merely its number |
+| 5 | Ring coverage expansion (more seeds) | operator: networked run. ru/hi/bn need a source OMW structurally cannot provide (§6b.1(3)) — the SKOS family covers ru+ar (§6b.3). **TOOLING SHIPPED 2026-09-07**: the generator's silent replacement of the live vetted file is now a loud refusal, a `--refresh` pass re-reads the already-vetted QIDs and emits only the ADDITIONS, and `IMPROVEMENT_CYCLE.md` §1b names both passes' commands — the RUN is still the operator's |
 | 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4. **The CHOICE MECHANISM shipped early (§8c)**: R2a's pick runs today over the 91 ring-covered collisions. What is still gated is the inventory's COVERAGE, which needs the dump |
 | ~~6b~~ | ~~Sense linker + eval~~ | **evidence-refuted** (§6c.1(3)): 0.335 F1 on news, measured on the subset where an answer exists |
 | 7 | Synonym tier, separately disclosed | **answered NEGATIVE for OMW** (§6b.1(2)) — the translated synsets already contain hypernyms. Open only for the SKOS family, gated on its licence |
-| — | Per-language month scoping | **not free here**: a stopwords-architecture change, not a data file (§6c.2(a)), and it recovers 3 of 7 named losses (§6c.2(b)). Complement to slice 3, not a substitute |
+| — | Per-language month scoping | **not free here**: a stopwords-architecture change, not a data file (§6c.2(a)), and it recovers 3 of 7 named losses (§6c.2(b)). Complement to slice 3, not a substitute. **RECORDED 2026-09-07 AT THE CODE** (`services/stopwords.get_stopwords`'s docstring + a behavioural branch-order guard), so a reader meets the constraint where they would act on it |
 
-Slices 1, 2, 3b and 4 need no network, no new dependency, and no ruling.
+Slices 1, 2 and 3b need no network, no new dependency, and no ruling. **Slice 4 does need the
+dump** — see the corrected gate in its row; this line said "1, 2, 3b and 4" until 2026-09-07.
 
 ### 8b. What slice 2 does and does not settle — read this before quoting its number
 
@@ -857,7 +858,8 @@ language-agnostic table — so `by_language` differences will be driven by what 
 prose contains, not by the extractor treating the languages differently.
 
 
-**After both research passes, nothing in slices 1–4 is gated on anything.** Two decisions
+**After both research passes, nothing in slices 1–3b is gated on anything** (this sentence read
+"slices 1–4" until 2026-09-07 — slice 4 is dump-gated, as its own row now says). Two decisions
 were owed; one has been taken and one remains, and neither blocks those slices:
 
 1. **What R2 promises** (§6c.4) — **RULED 2026-09-05: a query-time user choice.**
@@ -868,7 +870,9 @@ were owed; one has been taken and one remains, and neither blocks those slices:
 The **one open number** in the whole plan is slice 4's: whether an ambiguous-only,
 twelve-language surface-form index fits under 100 MB. At the measured 35.8 bytes/row that
 file holds ~2.8 M forms, and the row count is unknown because the dump is behind the same
-allowlist that has now blocked five consecutive sessions (§6c.0). Opening it for
+allowlist that has now blocked **six** consecutive sessions (§6c.0; the sixth re-probed it on
+2026-09-07 rather than assuming it — `dumps.wikimedia.org` `CONNECT … 403`, `pypi.org` 200 as the
+control). Opening it for
 `dumps.wikimedia.org` is the single highest-value operator step remaining.
 ### 8c. R2a's pick shipped with slice 1, and why it did not wait for slice 6
 

@@ -38,8 +38,9 @@ rather than being quietly upgraded.
 
 Once the stale claims are removed, the genuinely open work concentrates in eleven places:
 
-1. **The egress allowlist.** Five consecutive sessions have failed a reach-a-named-publisher task through five
-   different tool surfaces. It is not a prompt problem. It blocks ten items across the law, governments and
+1. **The egress allowlist.** Six consecutive sessions have failed a reach-a-named-publisher task through six
+   different tool surfaces — the sixth (2026-09-07, P06) re-probed it rather than assuming it:
+   `dumps.wikimedia.org` `CONNECT … 403 Forbidden` against a `pypi.org` 200 control. It is not a prompt problem. It blocks ten items across the law, governments and
    keyword-translation prompts, and one allowlist entry unblocks most of them.
 2. **About twenty maintainer rulings**, several of which are create-time irreversible (the storage §8 set).
 3. **Operator measurements** — the month-occupancy number, `configs/source_qualification.yml`, the graded gold
