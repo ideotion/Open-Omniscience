@@ -6555,3 +6555,38 @@ own `from __future__ import annotations` made FastAPI answer 422 without ever ca
 51 of 56 `async def` handlers awaited nothing at all, and the measured shape chose the mechanism;
 "it is only one row" is not a reason to touch the database on the event loop; and a half-shipped
 numbered slice is invisible from both directions.
+
+
+## 2026-09-07 -- PROMPT_20 (structural debt, dependencies, test hygiene): the parked URL backlog, the orphaned dependency, the SQLite-only ruling, and an order-dependent red on main
+
+Four slices, all from PROMPT_20. The details are in `shipped.csv`; what follows is what a later
+session would otherwise re-derive.
+
+**PRH-03 -- every real DuckDuckGo result was being discarded, in the one sanctioned external
+channel.** The HTML endpoint never links a result directly: every `result__a` href is a
+protocol-relative hop through DuckDuckGo's own `/l/` redirect with the target percent-encoded in
+`uddg`. `_clean_url` stripped the query string BEFORE validating, so the target went and the
+remaining `//duckduckgo.com/l/` was refused as scheme-less. The existing test asserted only
+`isinstance(results, list)`, which is why it survived. The unwrap runs before the strip, only for
+DuckDuckGo's own hop, and the unwrapped target meets the same `safe_href` allowlist a direct href
+does. Six mutants, all killed by name, two of which were findings rather than confirmations (below).
+
+**PRH-04 -- the item understated it.** `scripts/setup_llm.py` was recorded as "dead code calling a
+method on a module that no longer exists"; running it shows both its imports name modules that are
+gone, so it died at import before parsing an argument, while `scripts/README.md` advertised it as
+the way to provision the local model. Deleted, with the removal recorded in the README the way that
+file already records a previous one.
+
+**NET-02 -- the parked BLOCKER was false.** PARKED.md had parked the narrowing on "changes
+behaviour for non-str inputs of an app-wide sanitizer". Both functions run `re.sub` on the input
+BEFORE the `try`, so a truthy non-str already raised `TypeError` outside the block; the broad except
+never covered that case at all.
+
+**J2, J3, S7, S6 -- see the four lessons below.**
+
+**SIX LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a "must be gone" guard over a
+MARKDOWN document trips on the sentence recording the removal, and the narrowing that works is
+fenced code blocks; a memory or RATIO assertion taken over a SHARED path is a claim about the whole
+pytest session; an ADVISORY lane cannot report that it is failing worse; a parked item's stated
+BLOCKER is a claim like any other; a document can be right at the top and wrong a hundred lines
+down; and a "dead code" claim is a claim about a line when the file may not import at all.

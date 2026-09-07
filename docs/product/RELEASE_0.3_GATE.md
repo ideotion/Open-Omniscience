@@ -922,6 +922,11 @@ carries `0.3.0` on `main`:
 > — by whichever change keyed the strings; read the workflow, not this table, before
 > running the gates. (Re-measured 2026-09-07 at `fb51d7b`: 560 and 297, so the ratchets
 > carry no slack and the next unkeyed string reddens.)
+>
+> **And `ci.yml` gained a blocking gate the table above predates** (2026-09-07, PROMPT_20
+> S7): `python scripts/ruff_ratchet.py --max 432` — a NON-GROWTH ratchet on the *advisory*
+> style lane, which stays advisory. Nothing above is re-measured for it; this is the note
+> the table's own instruction points at. See `docs/maintenance/RUFF_STYLE_LANE.md`.
 
 The pass count carries its own proof at every step: 8390 → **8406** is exactly the 16 tests
 the first pass added, 8406 → **8415** is exactly the 9 that arrived with `origin/main`'s

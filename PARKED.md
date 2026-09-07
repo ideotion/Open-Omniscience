@@ -60,9 +60,18 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   every other file, and the list is documented shrink-only.
 
 ## Refactors (behaviour-preserving; gated on existing tests)
-- `view_article` (`src/api/main.py`, 197 lines): extract row-rendering helpers.
-- `build_families` (`src/analytics/families.py`, cc=31): split scoring from grouping.
-- Other cc≥C functions from `docs/audit/raw/radon_cc.txt`.
+**Re-measured 2026-09-07 (PROMPT_20 S5/STR-05). The figures below were stale by 3x and
+the source file had moved; corrected rather than repeated:**
+- `view_article` (`src/api/main.py`): **611 lines**, not the 197 this entry claimed —
+  measured on `main` @ `d9ee33e7` by slicing the function to the next top-level `def`.
+  Extract row-rendering helpers. NOT attempted in the 2026-09-07 pass: it is the largest
+  single refactor here and wants its own slice with the endpoint's own tests, not a
+  drive-by inside a prompt whose other slices are behaviour-neutral.
+- `build_families` (`src/analytics/families.py:257`): split scoring from grouping. The
+  `cc=31` figure is NOT re-verified — `radon` is not installed in the analysis extra, so
+  it is repeated as a HISTORICAL reading rather than a current one.
+- Other cc≥C functions from **`docs/archive/audits/raw/radon_cc.txt`** (the path in this
+  entry, `docs/audit/raw/`, has not existed since the audits were archived).
 
 ## Performance (non-urgent; measured as fine today)
 - **MinHash micro-optimization** (PERF-01): vectorise the 128-permutation hashing (numpy) to cut the
@@ -91,7 +100,22 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   an `except Exception` in `_clean_url`'s validation chain — the one remaining broad except in the
   URL-parsing path. Narrowing it changes behaviour for non-str inputs of an app-wide sanitizer, so
   it wants its own reviewed slice, not a drive-by.
-- **DDG redirect results are dropped** (found 2026-08-20, recorded not fixed — behaviour change):
+  **SHIPPED 2026-09-07 (NET-02, PROMPT_20 S5) — AND THE STATED BLOCKER WAS REFUTED, which is the
+  part worth keeping.** "Changes behaviour for non-str inputs" is not true of either function:
+  `safe_href` and `sanitize_url` both run `re.sub` on the input BEFORE the `try`, so a truthy
+  non-str already raised `TypeError` outside the block and the broad except never covered that case.
+  Measured as a test rather than argued. Both are now `except ValueError` — the one exception
+  `urlparse` raises for a str — so the realistic failure still fails CLOSED and only an unexpected
+  one escapes; a blanket except in a sanitizer means a genuine bug inside it reads as "this link is
+  unsafe" forever with nothing saying so. `tests/test_security_url_excepts.py`; both re-widening
+  mutants redden by name.
+- **DDG redirect results are dropped** — **SHIPPED 2026-09-07 (PRH-03, PROMPT_20 S5):** the unwrap
+  now runs BEFORE the query strip, only for DuckDuckGo's own `/l/` hop, and the unwrapped target
+  meets the same `safe_href` allowlist a direct href does; the target keeps its own query string,
+  because `uddg` is the complete address DuckDuckGo resolved. `tests/test_duckduckgo_redirect.py`
+  (six mutants, all killed by name; the fixture is a specimen of the DOCUMENTED shape, since
+  duckduckgo.com is egress-blocked from the build sandbox — stated in the file). The original
+  finding, for the record:
   `_clean_url` strips the query string BEFORE validation, so a real DuckDuckGo result href of the
   `//duckduckgo.com/l/?uddg=<encoded-target>` redirect form loses its target and is then rejected
   as scheme-less — every real DDG redirect result is silently discarded, and the existing search
@@ -107,8 +131,17 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
   ("Core-only install (no [analysis] extra)": installs `-e ".[dev]"`, boot-checks the app, runs the
   full suite with analysis tests skipping cleanly).
 - **mypy / ruff blocking in CI**: once the debt is paid, flip both from advisory to blocking.
-  Still open. Progress 2026-08-20: ruff's advisory lane is down to 344 findings (E402, a third of
-  it, zeroed via the per-file-ignores carve-out); mypy sits at the 127-error ratchet baseline.
+  **mypy: DONE — the ratchet no longer exists.** The 2026-08-20 paydown took the residue to zero and
+  `ci.yml` runs a plain blocking `python -m mypy src/` (re-verified 2026-09-07: rc 0, 502 files). The
+  "127-error ratchet baseline" this entry claimed is a record of how the number fell, not of what to
+  check.
+  **ruff: RULED 2026-09-07 (PROMPT_20 S7) — it STAYS ADVISORY, and may no longer GROW.** The
+  composition, the verdict and the burn-down instructions are in
+  `docs/maintenance/RUFF_STYLE_LANE.md`. The finding that decided it: this entry recorded 344
+  findings on 2026-08-20 and the lane measured **432** on 2026-09-07 — 88 of drift in eighteen days,
+  unnoticed, because a lane that is allowed to fail says nothing when it fails a little more.
+  `scripts/ruff_ratchet.py --max 432` is now a blocking step; ruff is version-bounded in pyproject
+  for the same reason mypy is pinned.
 - **Endpoint test coverage** (TEST-05): keyword_management, reporting, framing, llm HTTP integration.
   **SHIPPED (core in 0.0.8 WP4; residue closed 2026-08-20, this PR):** WP4 delivered
   `tests/test_llm_api.py` + `tests/test_reporting_api.py` + `tests/test_framing_keywords_api.py`

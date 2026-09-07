@@ -171,7 +171,7 @@ claim lives · owning prompt.
 | DAT-07 | Storage plan Phase C (packed/keyed/OOENC2 store, contentless FTS, hash-sharding prototype) + §8 rulings 3–6 | RULING-GATED (C4) | STORAGE_5TB_PLAN §8 | design doc | P22 |
 | DAT-08 | `_MERGE_NOT_CARRIED` five identity-less tables — handlers | BUILT (2026-08-03 rulings received + built) | CHANGES 0.3.0; `src/backup/merge.py:1696` list now only derived/per-machine tables | — | — |
 | DAT-09 | Run-journal + `run_logs` in backups? (journal files are per-machine; not carried) | UNCHECKED | `docs/maintenance/RUN_JOURNAL.md` | — | P07 |
-| DAT-10 | Postgres parity vs SQLite-only | RULING-GATED (J3) | PARKED ARCH-06 | PARKED | P20 |
+| DAT-10 | Postgres parity vs SQLite-only | **SHIPPED 2026-09-07** (J3 ruled SQLite-only; ARCHITECTURE.md's lower half rewritten, session.py degrades loudly, init-postgres.sql bannered) | `tests/test_sqlite_only_backend.py` | PARKED ARCH-06 | P20 |
 | DAT-11 | `sqlite3mc` benchmark trial | RULING-GATED (C4 #6) | STORAGE_5TB_PLAN §6 | design doc | P22 |
 | DAT-12 | Merge step 3 unexplained 15–65× gap (FTS relocated; residual candidates: codec over multi-GB FTS segments, virtual disk); `cost_probe` measures on the operator's machine | OPERATOR-GATED | CLAUDE.md MERGE STEP 3 entry | CLAUDE.md | P08 |
 
@@ -193,7 +193,7 @@ claim lives · owning prompt.
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
 |---|---|---|---|---|---|
 | NET-01 | SSRF TOCTOU: connect-time IP pinning (custom transport adapter) | UNBUILT | PARKED "Still open (2026-08-20)" | PARKED | P21 |
-| NET-02 | `safe_href` broad `except Exception` in `src/utils/security.py:246,287` | UNBUILT (own slice) | PARKED | PARKED | P21 |
+| NET-02 | `safe_href` broad `except Exception` in `src/utils/security.py:246,287` (the 246 site is `sanitize_url`, not `safe_href` — both narrowed) | **SHIPPED 2026-09-07**; the parked blocker ("changes behaviour for non-str inputs") was REFUTED by measurement | `tests/test_security_url_excepts.py` | PARKED | P20 (PROMPT_20 S5 claims it; this column said P21) |
 | NET-03 | DDG redirect results dropped (`uddg` unwrap; zero hits for `uddg` in src) | UNBUILT (behaviour change) | PARKED; grep | PARKED | P21 |
 | NET-04 | Nonce-based CSP (blocked on inline-handler retirement) | UNBUILT | `src/api/main.py:555` | audit S-008/S-012 residuals | P21 |
 | NET-05 | S-012 indirect prompt-injection posture for LLM inputs | UNCHECKED | D1 notes #34 | PR history | P21 |
@@ -206,10 +206,10 @@ claim lives · owning prompt.
 ## STRUCT — structural debt and test hygiene
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
 |---|---|---|---|---|---|
-| STR-01 | S-1 `src/api/diagnostics.py` 6,200 lines / 126 routes → package split | RULING-GATED (J1) | `wc -l`; `grep -c @router` | ROADMAP S-1 | P20 |
+| STR-01 | S-1 `src/api/diagnostics.py` **6,291 lines / 100 GET + 128 total routes** → package split | UNBUILT; J1 answered "yes" but NOT attempted 2026-09-07 — see the carry-over. The completeness ratchet the prompt says is needed ALREADY EXISTS (`test_all_diagnostics_bundle_covers_every_get_diagnostic`), and it plus **20 other source-read sites across 4 test files** read `diagnostics.py` AS A FILE, so the split must ship a concatenating reader first (the 2026-08-20 `app.js` lesson) | `wc -l`; `grep -c @router` | ROADMAP S-1 | P20 |
 | STR-02 | S-2 import cycles: 6 modules import `src.api.main` (diagnostics, llm, ai, insights, unlock, scale_bench) | UNBUILT | grep | ROADMAP S-2 | P20 |
 | STR-03 | S-4 ad-hoc slicer budget 232 → lower (route through `js_source_helper`) | UNBUILT (ratchet) | `tests/test_source_slicing_discipline.py:253` | ROADMAP S-4 | P20 |
-| STR-04 | `structlog` orphaned core dependency (pyproject:79, 0 call sites) | RULING-GATED (J2) | grep | PARKED MAINT-04 | P20 |
+| STR-04 | `structlog` orphaned core dependency (pyproject:79, 0 call sites) | **SHIPPED 2026-09-07** (J2 ruled drop; pyproject + lockfile + ETHICS table; both venv profiles re-verified) | `tests/test_dependency_hygiene.py` | PARKED MAINT-04 | P20 |
 | STR-05 | `view_article` (`src/api/main.py`) / `build_families` refactors; cc≥C list | UNBUILT | PARKED | PARKED | P20 |
 | STR-06 | MinHash vectorisation (PERF-01) | UNBUILT (low) | PARKED | PARKED | P20 |
 | STR-07 | ruff advisory lane 344 → 0; mypy/ruff-style blocking flip | PARTIAL (mypy blocking; ruff style advisory) | PARKED; ci.yml | PARKED | P20 |
@@ -283,8 +283,8 @@ would look.
 |---|---|---|---|---|---|
 | PRH-01 | `backfill_corpus` (the automatic Insights top-up) has **no cursor** — an article that legitimately yields zero terms is re-selected on every call, forever, and occupies the front of the queue | UNBUILT (live-reproduced) | `src/analytics/store.py:507` `_unindexed_query(...).order_by(Article.id).limit(...)`; reproducer `scripts/analysis/repro_backfill_wedge.py` | PR #851 | P05 |
 | PRH-02 | `structlog` is an orphaned core dependency: declared in `pyproject.toml:79`, **zero** call sites in `src/` (stdlib logging ~612 sites) | RULING-GATED (J2) | `grep -c structlog src/**/*.py` → 0 | PR #967 (PARKED) | P20 |
-| PRH-03 | `_clean_url` strips the query string **before** validation, so every real DuckDuckGo `/l/?uddg=<target>` redirect result loses its target and is discarded as scheme-less; the existing test asserts only `isinstance(results, list)` | UNBUILT (behaviour change) | `src/services/duckduckgo.py:195,217` | PR #967 | P21 |
-| PRH-04 | `scripts/setup_llm.py::start_ollama` is dead code calling `self.model_manager.start_ollama()` on a module that no longer exists | UNBUILT (delete or repair) | `scripts/setup_llm.py:141,299` | PR #793 | P20 |
+| PRH-03 | `_clean_url` strips the query string **before** validation, so every real DuckDuckGo `/l/?uddg=<target>` redirect result loses its target and is discarded as scheme-less | **SHIPPED 2026-09-07** (unwrap before the strip, DuckDuckGo's own hop only, target still met by `safe_href`; six mutants killed by name) | `tests/test_duckduckgo_redirect.py` | PR #967 | P20 (PROMPT_20 S5 claims it; this column said P21) |
+| PRH-04 | `scripts/setup_llm.py` — WORSE than recorded: BOTH its imports (`src.llm.config`, `src.llm.model_manager`) name modules that are gone, so it died at import with `ModuleNotFoundError` before parsing an argument; `start_ollama` was never reachable | **SHIPPED 2026-09-07** (deleted; the capability is in-app, and `scripts/README.md` records the removal) | reproduced, not read | PR #793 | P20 |
 | PRH-05 | `extract_locations` compiles and scans the whole text once **per gazetteer entry** (~4,700 regexes; 2,558 ms/article at 4,500 cities) — only bites installs that ran `build_city_gazetteer.py` | UNBUILT (measured, not fixed) | `src/timemap/locextract.py:164` `for rx, name, kind in _patterns(): for m in rx.finditer(text)` | PR #799 | P05 |
 | PRH-06 | Keyword aggregates in `store.py`, `rollup_serve.py` and `columnar.py` have **no quarantine filter** (`queries.py` has 9 references, the other three have 0) — the two must move together with `corpus_language_shares` | UNBUILT | grep counts above | PR #817 / #863 | P05 |
 | PRH-07 | `AiKeyword.evidence` (`models.py:1944`) has zero writers, and `POST /api/ai/keywords/confirm` has no frontend consumer | UNBUILT (wire or retire) | grep: no `AiKeyword(... evidence=` writer; no `ai/keywords/confirm` in `src/static/` | PR #787 / #802 | P11 |
@@ -309,7 +309,7 @@ would look.
 | PRH-26 | `src/api/main.py` still holds inline endpoints that belong in the `core` router, and `observability.py` (Prometheus globals + middleware order) was never extracted | UNBUILT (refactor debt) | PR #236 | PR history | P20 |
 | PRH-27 | `tests/test_installer.py` leaves an `oo.env` behind in the checkout when it runs | UNBUILT (test hygiene) | PR #931 | PR history | P20 |
 | PRH-28 | `natural-earth-geometry` carries a blank `sha256` in the external-artifact registry (existence-only check) — the same one-line fix Alpine's entry got | UNBUILT | PR #976; `configs/external_artifacts.yml` | PR history | P02 |
-| PRH-29 | The Windows `pytest` lane HANGS (3 h 21 m → failure; ~6 h → cancelled) and "deserves a bisect against the suite, separately" | UNBUILT | PR #977 | PR history | P20 |
+| PRH-29 | The Windows `pytest` lane HANGS (3 h 21 m → failure; ~6 h → cancelled) | **PARTIAL 2026-09-07**: `timeout-minutes: 45` caps the cost and makes the hang diagnosable (a log that stops at a known minute). The BISECT is still unbuilt and still deserves its own task — no Windows runner here | `.github/workflows/ci.yml` `portability` | PR #977 | P20 |
 | PRH-30 | `RestoreAborted` labels the outcome `cancelled` and journals "stopped-by-operator" when the operator cancelled nothing (also the quiesce barrier) | UNBUILT (re-labelling slice) | PR #987, recorded in a source comment | PR history | P07 |
 | PRH-31 | `_window_daily_series` omits zero-count days, so the index axis compresses (day 1 and day 5 render adjacent); repair is zero-FILLING and touches the trending sparklines | UNBUILT | PR #850 / #863 | PR history | P15 |
 | PRH-32 | The `h3`-over-`h2` type inversion fixed for `#tab-settings` still exists on Home, Insights, Markets panels and the two Export/Import dialogs | UNBUILT | PR #921 | PR history | P15 |

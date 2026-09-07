@@ -9435,3 +9435,100 @@ budget is per-job or per-process, and how it composes with the existing collecti
 governor (`#rate-toggle`, "maximum" ↔ "target 500 KiB/s"), which already owns a global rate
 target for the collector. Building a second, unrelated rate authority next to it is how two
 surfaces come to disagree about one quantity. Recorded for a ruling.
+
+
+---
+
+## 2026-09-07 — PROMPT_20: four questions ANSWERED ON THEIR RECOMMENDED DEFAULTS (not maintainer rulings), and what stayed unbuilt
+
+**READ THE FIRST SENTENCE BEFORE CITING ANY OF THIS AS A RULING.** No maintainer answer was
+given for J1, J2, J3 or L8. `QUESTIONS_FOR_THE_MAINTAINER.md` says an unanswered question that
+is **not** marked ⛔ is proceeded on under its own recommended default, with the assumption
+recorded — the 2026-06-15 "always choose autonomously" ruling. None of these four carries ⛔.
+So each is recorded here as an ASSUMPTION TAKEN, reversible by a word from the maintainer, and
+`CLAUDE.md`'s "never invent a ruling the maintainer did not give" is why it is worded this way
+rather than as a decision from above.
+
+**J2 — `structlog`: DROPPED** (default: drop). Zero call sites against ~612 stdlib-`logging`
+ones. Gone from `pyproject.toml`, `requirements.lock` and the `docs/ETHICS.md` third-party
+table; both venv profiles re-verified; `tests/test_dependency_hygiene.py` pins that it is
+neither declared nor imported and is written to be SUPERSEDED in the PR that adds the first real
+call site, should it ever be adopted. **This also closes PARKED MAINT-04 in both directions:**
+that entry's migration TARGET was structlog and its migration SET was already empty, so the item
+had no subject at either end.
+
+**J3 — SQLite-only, DOCUMENTED** (default: SQLite-only). Half of it turned out to be shipped and
+unrecorded — `docs/ARCHITECTURE.md` has said "the only supported, tested backend" at the top
+since the v0.0.7 audit. The unshipped half was the same file's lower sections still handing out
+PostgreSQL recipes, and `session.py`'s docstring calling a PostgreSQL URL "honoured". Both
+fixed; `_build_engine` now warns once, naming the four things a non-SQLite engine actually
+loses, printing only the URL scheme. **What was NOT taken, deliberately: it does not REFUSE a
+non-SQLite URL.** Refusing would break an install in the name of documenting it, and turning a
+documented non-choice into a hard error is a bigger decision than the question asked. If the
+maintainer wants a refusal, that is a one-line change and a ruling.
+
+**L8 — `PR pending` in `shipped.csv`: ALREADY SWEPT, nothing to do.** Verified rather than
+assumed: `grep -c "PR pending"` over `shipped.csv` is **0**. The convention itself is recorded in
+`CLAUDE.md` rule (5b). This entry exists so the next session reading PROMPT_20's "Gated on … L8"
+does not re-open a closed item.
+
+**J1 — the `src/api/diagnostics.py` split: ANSWERED "yes", NOT ATTEMPTED, and the
+reconnaissance is the deliverable.** Three measurements the prompt did not have, each of which
+changes how the next session should size it:
+1. **The completeness ratchet the prompt says is needed ALREADY EXISTS.** PROMPT_20 S1 describes
+   it as the thing that "proves nothing was lost"; it is
+   `tests/test_repo_invariants.py::test_all_diagnostics_bundle_covers_every_get_diagnostic`,
+   built 2026-07-17 and extended 2026-07-25, importing its covered/exempt maps FROM
+   `src.api.diagnostics` so the CI-time check and the runtime coverage block cannot diverge. It
+   does not need building. It DOES need to survive the split.
+2. **It, and 20 other source-read sites across 4 test files, read `diagnostics.py` AS A FILE**
+   (`(_SRC / "api" / "diagnostics.py").read_text(...)`), and the ratchet additionally regexes
+   `@router.get("...")` out of that text plus every file in `_DIAG_SIBLING_FILES`. Turning the
+   module into a package makes that path a DIRECTORY. This is exactly the 2026-08-20 `app.js`
+   split, whose recorded lesson is that a POSITIVE assertion fails loudly and gets fixed while a
+   NEGATIVE one passes FOR FREE against a file that no longer contains what it checks — 151
+   sites went vacuous in one commit that way. So the split's FIRST commit is a concatenating
+   reader that returns the package's modules in a defined order, read from the package rather
+   than hard-coded, before a single route moves.
+3. **The current shape:** 6,291 lines, 128 route decorators of which 100 are GET.
+
+   Not attempted here because it is a whole session's work and this one had six other slices; a
+   half-moved package is worse than an unsplit file. Recorded so the next session starts from
+   the reader rather than from `git mv`.
+
+**S7 / the ruff style lane — RULED HERE (it had no J-number): STAYS ADVISORY, AND MAY NOT
+GROW.** The composition, the verdict and the burn-down route are in
+`docs/maintenance/RUFF_STYLE_LANE.md`. Converging it is not behaviour-neutral (I001 is 128 of
+432 and reorders imports where import order is load-bearing). The lane grew 344 → 432 in
+eighteen days unnoticed, so the count is now ratcheted and ruff is version-bounded. **A
+maintainer decision is still open behind it:** whether the 231 auto-fixable findings are worth a
+dedicated import-ordering PR with a full-suite diff, which is the only way that block converges.
+
+**CARRY-OVER — what PROMPT_20 asked for and this session did NOT build, each with why:**
+* **S1** (the diagnostics split) — above.
+* **S2 / PRH-26** (the import cycles; the inline endpoints that belong in `core`; the
+  `observability.py` extraction). Untouched. The Prometheus duplicate-registration collision the
+  prompt names as what makes several test files fail when they share a process was NOT
+  reproduced here — the full suite is green on it in one process — so the next session should
+  establish that symptom before extracting for it.
+* **S4** (the ad-hoc slicer budget, 232 with zero slack). Untouched, and untouched deliberately:
+  the recorded rule is "prefer being stopped by this ratchet over lowering it", and this
+  session's four new test files were written through the existing helpers and did not move the
+  number. The 1,063 unaudited source assertions the prompt names remain unaudited.
+* **STR-05** (`view_article`, now measured at **611** lines rather than the 197 PARKED.md
+  claimed; `build_families`; the rest of the cc≥C list). Untouched. `radon` is not in the
+  analysis extra, so the cc figures could not be re-measured and are repeated in PARKED.md as
+  HISTORICAL readings rather than current ones.
+* **PRH-27** (`tests/test_installer.py` leaves an `oo.env` in the checkout) — **REFUTED, not
+  built.** A full 9,347-test run left no `oo.env` and a clean `git status`; `test_installer.py`
+  never sets `OO_DATA_DIR`, so `install.sh`'s `persist_data_dir` returns early, and the only
+  test that drives the Python writer (`test_data_location.py`) monkeypatches `env_file_path` to
+  a tmp path. Recorded as VERIFIED-ABSENT at `d9ee33e7` rather than fixed.
+* **PRH-29** (the Windows hang) — the BISECT is unbuilt and still deserves its own task. There
+  is no Windows runner here. What shipped is a 45-minute cap so the hang stops costing six hours
+  a push and leaves a log that stops at a known minute.
+* **S6's other siblings** — `test_export_sources_to_yaml` against the legacy shared engine,
+  `test_get_source_statistics`, the prometheus duplicate-registration collisions, the port-8001
+  ordering collision between the two vLLM files. Untouched. The one member this session DID fix
+  was not on the prompt's list: it was found by the mandatory baseline run, and it was RED on
+  `main`.
