@@ -6160,3 +6160,22 @@
     having examined what it claims to. RULE: put `--include`/`--exclude` only on a bare recursive
     search, and when a grep over explicitly-named files returns nothing, re-run it on ONE of those
     files alone before believing the absence.
+  - **A GUARD ANCHORED ON A LITERAL OPERAND LIST REDDENS WHEN YOU ADD AN OPERAND BESIDE THE
+    ONE IT IS ABOUT — and the tell is that it fails against code where its own named property
+    is untouched (2026-09-07, the ring-map dumbbell):** `test_dumbbell_wired_into_ring_map_detail`
+    asserted the string `"langs + langBd + unlocNote + dumb + tbl"`. Inserting a SIXTH,
+    unrelated operand (a truncation disclosure) between two of them reddened it — while the
+    dumbbell it is named for was wired exactly as before. That is the recorded
+    "anchored on a landmark that merely coincided with the property" class, in the cheapest
+    possible form: a concatenation's operand ORDER is not the claim, membership is. Re-anchor
+    STRUCTURALLY — select the composed render assignment (not the `= ""` resets that clear the
+    block) and assert the term is one of its operands — which is strictly stronger, since it
+    still fails when the term is dropped and stops failing when a neighbour is added; pin BOTH
+    directions, because a re-anchor that only relaxes is indistinguishable from deleting the
+    guard. **THE ROOT CAUSE IS THE CHEAP HABIT I SKIPPED:** before changing any string in
+    `src/static/`, grep the TEST tree for it. The ledger already carries that rule twice (the
+    `async def view_article` rename, the `did not grow` reason string) and I paid for it again
+    by running only the suites I had touched; the full run is what caught it, ~20 minutes after
+    it could have been caught in seconds. The grep is not "which tests are about this file" —
+    it is the literal string, because the file that anchors on it will be named for something
+    else entirely (here: a dumbbell chart).

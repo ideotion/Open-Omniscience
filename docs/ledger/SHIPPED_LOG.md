@@ -6576,3 +6576,8 @@ load-bearing row rides along with is safe only by accident; a MIN gate expressed
 percentage grows slack as its denominator grows, and at 3040 keys exactly one missing translation
 is invisible; and `grep --include` is a whole-invocation filter, so naming files of another type
 positionally beside it silently searches none of them.
+
+**A FOURTH LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** a guard anchored on a
+literal operand list reddens when you add an operand beside the one it is about — re-anchor it on
+the property, pin both directions, and grep the TEST tree for any string you change in
+`src/static/` before you change it.
