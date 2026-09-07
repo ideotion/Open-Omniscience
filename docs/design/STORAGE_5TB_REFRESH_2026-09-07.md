@@ -179,10 +179,12 @@ is not the mechanism.
 
 **The mechanism that survives is stronger and is already measured elsewhere in this repo:
 bytes-per-row through the codec.** `articles.content` sits ahead of the small columns in row
-order, so any heap access drags the whole ~22 KB row through AES — the recorded column-order
-trap, which cost 26 s of a 32 s wall on a single query at field scale, and 4,775 ms × 154 calls
-on the date-range probe. Relocating `content` shortens every heap row that *must* be read,
-whatever the cache does. That is a per-access saving with no cache assumption in it at all.
+order, so any heap access drags the **whole article row** through AES — recorded variously as
+~22 KB and ~35 KB, which is itself a reason to run the §8 item 2 measurement rather than pick
+one. That is the recorded column-order trap, which cost 26 s of a 32 s wall on a single query at
+field scale, and 4,775 ms × 154 calls on the date-range probe. Relocating `content` shortens
+every heap row that *must* be read, whatever the cache does — a per-access saving with no cache
+assumption in it at all.
 
 **Design impact: none. Argument impact: replace the cache-economics justification wherever it
 appears, or the next reader tests the wrong thing** — a Phase-C benchmark built on cache-hit
@@ -268,9 +270,9 @@ Zipf-shaped vocabulary with a long tail, contentless-delete, `hashsize` 64 MiB, 
 | 50 M docs | **89.6 GiB** | **5.2 h** |
 | 100 M docs | **179.3 GiB** | **10.3 h** |
 
-A single-vs-sharded comparison needs **two arms**. Against this sandbox's **30 GB** writable
-allowance that is short by roughly 6× at 50 M for one arm, 12× for the comparison. This is an
-operator job, and it now has numbers rather than a caveat. One rider on the figure: the
+A single-vs-sharded comparison needs **two arms**. Against this sandbox's **30 GiB** writable
+allowance that is **3.0× short for one arm at 50 M and 6.0× for the comparison** (6.0× and 12.0×
+at 100 M). This is an operator job, and it now has numbers rather than a caveat. One rider on the figure: the
 synthetic vocabulary is deliberately tail-heavy (2 M distinct tail terms), which pushes
 bytes-per-document toward an **upper** bound; real prose recurs more, so an operator should
 treat 89.6 GiB as a ceiling and measure their own corpus's ratio first.
@@ -316,9 +318,14 @@ proposal. So the *trend* is measured and the production regime is extrapolated.
 
 ### 5.3 The consequence v1 does not state
 
-v1 offers *"either maintain global term stats or DISCLOSE the approximation."* FTS5's `bm25()`
-takes column **weights** and nothing else — it scores from the index it is called on and accepts
-no external statistics. So "maintain global stats" is **not available inside FTS5**. The real
+v1 offers *"either maintain global term stats or DISCLOSE the approximation."* What is
+**[MEASURED]** here is the consequence — identical documents receive different scores, and
+different orderings, in a shard than in the single index — which is the divergence itself. The
+mechanism behind it is **documented rather than measured here**, and stated as such: `bm25()` is
+an FTS5 auxiliary function scoring from the index it is invoked on, and its only documented extra
+arguments are per-column **weights**. (Probed: extra trailing arguments are accepted silently
+rather than rejected, so the probe does not strengthen the claim — the documentation is the
+basis.) On that basis "maintain global stats" is **not available inside FTS5**. The real
 options are: keep shards fat enough that the divergence is immaterial (what §5.2 measures, and
 the direction v1's own 1 M-docs/shard hypothesis already points), disclose the approximation, or
 move ranking to a re-scoring layer outside FTS5. The first is the cheapest and the measurement
@@ -371,10 +378,13 @@ v1 §9's order was set by the ceiling premise. With that retired:
    the honest cost statement (§2.3). Ruling-gated, not evidence-gated.
 2. **DB-10 §6's footprint measurement** — the per-table `dbstat` split of `articles.content`
    against index and mention bytes. **This has still never been taken**, and it is the gate on
-   Phase C's actual value. Two independently recorded field numbers bracket it — ~44 KB of
-   database per article overall, ~22 KB average article row on the 32.1 GB field artifact — which
-   puts article rows at roughly *half* the store. That is an inference from two measurements, not
-   a measurement; a 50% saving and a 90% saving justify very different amounts of Phase C.
+   Phase C's actual value. **Nothing in the ledger substitutes for it**, and a draft of this
+   section wrongly claimed otherwise: the two recorded field figures that look as though they
+   might (~42.6 KiB per article at 11.7 GB / 268,241, and ~21.9 KiB at 32.1 GB / ~1.43 M) are the
+   **same quantity** — store bytes per article — measured on two different corpora, and they
+   differ by **2× between them**. They say nothing about how that total splits between
+   `articles.content` and the index and mention rows. A 50% saving and a 90% saving justify very
+   different amounts of Phase C, and today nobody knows which it is.
 3. **The sharding prototype**, as a specified operator job (§5.1) rather than a caveat.
 4. **Phase B's FTS split** — behind the prototype now, not ahead of it (§4).
 5. **Phase C**, gated on (2), with §3.2's windowed GC baked in from the first line.

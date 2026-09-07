@@ -9462,11 +9462,12 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   of one file), Phase C is no longer a prerequisite for the 5 TB milestone. The refresh
   re-scopes it behind **DB-10 §6's footprint measurement** — the per-table `dbstat` split of
   `articles.content` against index and mention bytes, which has still never been taken and which
-  decides whether Phase C saves roughly half the store or most of it. Two independently recorded
-  field numbers bracket it at ~half (~44 KB of database per article overall; ~22 KB average
-  article row on the 32.1 GB field artifact), but that is an inference from two measurements,
-  not a measurement. **Is the re-scope accepted, and is the footprint measurement worth an
-  operator run before any Phase-C code?**
+  decides whether Phase C saves roughly half the store or most of it. **Nothing in the ledger
+  substitutes for it** — the two recorded field figures that look as though they might (~42.6 KiB
+  per article at 11.7 GB / 268,241, ~21.9 KiB at 32.1 GB / ~1.43 M) are the SAME quantity, store
+  bytes per article, on two different corpora, and they differ 2x between them; they say nothing
+  about the content-versus-index split. **Is the re-scope accepted, and is the footprint
+  measurement worth an operator run before any Phase-C code?**
 
   **CARRY-OVER (1) — C5's remaining half.** The migration MECHANISM is verified and guarded
   (ATTACH + declare `cipher_page_size` AND `auto_vacuum` on the alias + `sqlcipher_export`,
@@ -9500,8 +9501,8 @@ surfaces come to disagree about one quantity. Recorded for a ruling.
   **OPERATOR JOB — the 50–100 M sharding prototype, now costed rather than caveated.** MEASURED
   here: 1,925 bytes of FTS5 index per synthetic document at 2,692 docs/s, so **89.6 GiB and
   5.2 h per arm at 50 M** (179.3 GiB / 10.3 h at 100 M), and a single-vs-sharded comparison
-  needs two arms — against this sandbox's 30 GB allowance, short by ~6× for one arm and ~12× for
-  the comparison. Treat 89.6 GiB as an upper bound (the synthetic vocabulary is deliberately
+  needs two arms — against this sandbox's 30 GiB allowance that is 3.0x short for one arm at 50 M
+  and 6.0x for the comparison (6.0x and 12.0x at 100 M). Treat 89.6 GiB as an upper bound (the synthetic vocabulary is deliberately
   tail-heavy) and measure the real corpus's index-bytes-per-article first. What the prototype
   still has to answer is the SCALE half — query-latency knee, merge behaviour, tombstone
   accumulation. What it no longer has to answer: recall is preserved structurally (100% in
