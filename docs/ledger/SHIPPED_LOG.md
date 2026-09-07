@@ -6741,6 +6741,83 @@ bytecode for a whole second; and a module that degrades honestly when its data f
 exactly the one whose packaging omission is silent (`src/geo/data` had been missing from every
 wheel since it was added).
 
+## 2026-09-07 — ui/type-scale — PRH-32 + PRH-33, and two defects the browser found on the way
+
+**PRH-32.** The 2026-08-11 type scale shipped scoped to `#tab-settings` "because that is what
+was asked", and its own comment recorded that the same inversion existed elsewhere. Measured in
+Chromium against a 440-article seeded corpus, on **all 17 themes**, it did: Home's section title
+"By channel" rendered **12.5px uppercase in `--muted` at 4.56–12.71:1** while a briefing card's
+own `<h4>` inside it rendered **15px in full `--fg` at 6.07–18.10:1** — bigger AND brighter than
+the section containing it, which is the maintainer's original words exactly. Library's
+`.lib-sub` had the same shape, and the Feed's article titles (`.feed-t`, an `h3` with no size
+rule) took the same UA `1.17em` the dialogs did. After: **17px at 7.00–19.80:1**, with 21 section
+titles lifted and 25 headings unchanged, and **0 horizontal overflow at 375px on 12 surfaces**
+(the overflow instrument self-tested against a 900px fixture first — it reports 525px, so a
+clean reading means something).
+
+The scale is written through `:where()`, which contributes ZERO specificity, so it is a DEFAULT
+any authored class overrides. That is the load-bearing part: a plain `.panel h3` rule carries
+(0,1,1) and would have beaten `.brief-bucket > h3` (12px), `.fig-title` (13px) and `.lib-sub`
+(13px), trading the reported inversion for three new ones.
+
+**TWO DEFECTS THE MEASUREMENT TURNED UP**, neither visible to a source read. Nine of the eleven
+`<dialog>` elements carried `background`/`color` inline and **two did not** (`#ux-import`,
+`#ux-export`), so those two alone fell back to the UA's `Canvas`/`CanvasText` and rendered
+identically on all 17 themes (ground `rgb(18,18,18)` on the twelve dark ones,
+`rgb(255,255,255)` on the five light ones) — the palette reached nine dialogs and stopped at
+two. And **`var(--line)` is defined nowhere the SPA loads**: 41 fallback-less references whose
+whole declaration is invalid at computed-value time, proven by `getComputedStyle` reporting
+`border-top-style: none` on all eleven dialogs. The same class had one case worse than
+cosmetic — `fill="var(--text)"` on the diagnostics chart's two axis titles, and `fill`
+INHERITS, so they rendered `rgb(0,0,0)` on a `rgb(20,24,31)` panel, **1.09:1**, on twelve dark
+themes. Fixed; the other 41 sites are ratcheted rather than repaired, because rendering them is
+a visible change wanting its own review (Open queue, same day).
+
+**PRH-33.** `Activity` / `Tracked` / `Database & storage` keyed ×12 by textual insert beside
+their sibling `World coverage` — `3 added / 0 deleted` per file — and verified rendering live in
+all twelve locales through the app's own `OOI18N.setLang()`. Untranslatable ratchet **560 → 557**,
+lowered in the same PR and re-checked at 556 to confirm it bites.
+
+Six mutations, each asserting it applied before its run counted, all redden **by name**. Full
+suite 9,229 passed / 125 skipped / 0 collection errors. Stamp: *Chromium-verified (remote
+sandbox) · awaiting human UX pass*. PR #1029.
+
+**FIVE LESSONS, copied verbatim into `LESSONS.md` per rule (5a)(b):** a declaration naming an
+undefined custom property deletes itself rather than degrading, and the property's `unset` is
+what decides the severity; a zero-specificity `:where()` default is what lets a global scale
+coexist with deliberate exceptions; a property that lives at the call site reaches the call
+sites somebody remembered; one theme cannot answer for seventeen when the value comes from the
+UA; and a heading probe scoped to one container class reports a clean app.
+
+## 2026-09-07 — stats/sdmx: the observation CONTAINER, as opposed to the observation-level lookup (P14 S2)
+
+`parse_sdmx_json` read observations only out of `dataSets[].series[<key>].observations`. A message
+returned for `dimensionAtObservation=AllDimensions` carries no `series` key at all — its observations
+hang straight off the dataSet as `dataSets[].observations` — so a well-formed message parsed to **zero
+rows and logged nothing**. The 2026-08-13 session had fixed the observation-level LOOKUP for exactly
+this mode and written a test named for it; the fixture kept a `series` map with an empty-string key, a
+shape `AllDimensions` never emits, so the test covered the lookup and never the container.
+
+Shipped: both containers are read; dataSet-level dimensions become a weakest-precedence fallback
+(observation > series > dataSet — a single-area query can legitimately carry `REF_AREA` there, and
+refusing it would discard good data to look careful); a dataSet carrying **neither** container is
+logged as unreadable, while an empty-but-present container stays silent; and an SDMX-JSON **2.0**
+message is refused **by name**, with the instruction to pin 1.0 on the request rather than sniff the
+response. Every refusal from 2026-08-13 is retained, each pinned by a mutation-checked test (six
+mutants, all killed by name).
+
+Provenance, because it bounds what this proves: the fixtures are **spec-shaped, not fetched**.
+`sdmx.oecd.org`, `api.worldbank.org` and `dataservices.imf.org` each answer `CONNECT <host>:443` →
+`403` at the sandbox proxy, with `pypi.org` 200 as the control — the seventh consecutive session to
+converge on that, recorded as per-host evidence under `QUESTIONS_FOR_THE_MAINTAINER` F1. SDMX-JSON 2.0
+support itself therefore stays unbuilt: it still needs one real body.
+
+Also corrected in the same PR, under the staleness guard: the revision-anomaly detector (`GOV-06`) and
+all three parser families (`GOV-05`) were recorded as UNCHECKED/on-mission-to-build and are in fact
+**shipped and wired** — the detector runs `revision.py` → `store.py:267` → `/api/stats/revision-anomalies`
+→ `app-map.js:2143` with three test files guarding it. `PRH-24` (the "Registered statistics sources"
+view) really is unbuilt. `S4` (the default aggregation strategy) was **not** flipped: which figure a
+reader sees first is an editorial decision, so it is recorded as question `G11` instead.
 ## 2026-09-07 — insights/observatory — the Observatory ships, and the real corpus picked both refusals
 
 The design of record (`docs/design/OBSERVATORY_DESIGN.md`, ruled 2026-07-18) had been carried as

@@ -293,9 +293,31 @@
     /* ---- Cards / panels --------------------------------------------- */
     .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
       padding:var(--pad); box-shadow:var(--shadow); }
+    /* Every dialog wears the theme, from ONE rule (2026-09-07). Two things were
+       measured live in Chromium before this existed, and both were invisible to a
+       source read:
+         * nine of the eleven dialogs carried background/color inline and TWO did not
+           (#ux-import, #ux-export) — so those two alone fell back to the UA's
+           Canvas/CanvasText and rendered identically on all 17 themes (ground
+           rgb(18,18,18) on the twelve dark ones, rgb(255,255,255) on the five light
+           ones, never the theme's --panel). The palette reached nine dialogs and
+           stopped at two, because the property lived at the call site.
+         * all eleven declared `border:1px solid var(--line)` and --line IS DEFINED
+           NOWHERE in this stylesheet, so the whole shorthand was invalid at
+           computed-value time and every dialog computed `0px none`: nine of them
+           declared a border that has never once rendered. Measured, not inferred —
+           getComputedStyle reported borderTopStyle "none" on all eleven.
+       So the rule is here rather than in eleven style attributes, and a twelfth
+       dialog is themed by construction instead of by whoever writes it remembering.
+       tests/test_dialog_theming.py pins both halves. */
+    dialog { background:var(--panel); color:var(--fg); border:1px solid var(--border);
+      border-radius:12px; box-shadow:var(--shadow); }
+    dialog::backdrop { background:rgba(0,0,0,.5); }
     .panel > h2:first-child, .panel > .phead:first-child { margin-top:0; }
-    .panel h2 { margin:0 0 12px; font-size:12.5px; text-transform:uppercase; letter-spacing:.06em;
-      color:var(--muted); font-weight:700; }
+    /* .panel h2's own size/weight/colour moved to the app-wide type scale further down
+       (2026-09-07, PRH-32). It used to be 12.5px uppercase --muted HERE, which is the
+       inversion that fix removes; the scale lives in one place now so a section title
+       cannot mean two different things on two tabs. */
     .phead { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
     .phead h2 { margin:0; }
     .phead .sp { flex:1; }
@@ -1318,7 +1340,7 @@
     .pal-item.sel, .pal-item:hover { background:color-mix(in srgb,var(--accent) 16%, transparent); }
     .pal-group { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
 
-    /* ---- Settings type scale ---------------------------------------- */
+    /* ---- The app-wide type scale ------------------------------------ */
     /* Maintainer 2026-08-11: "some inner parts of the sections appear bigger or
        brighter than section titles which is confusing." They did, and by a wide
        margin: a bare <h3> takes the browser's 1.17em (~17.5px, bold, full --fg)
@@ -1330,17 +1352,37 @@
        small-caps title silently degraded to "small dim text" in five of the twelve
        locales this ships in — the hierarchy has to survive translation.
          18   .adv-sec-t   an Advanced fold
-         17   .panel h2    a section
-         15.5 .panel h3    a sub-section
-         15                body prose
+         17   a section title (.panel h2, and a dialog's own title)
+         15.5 a sub-section (h3)
+         15   body prose
          12.5 .small
          12   .hint
-       Scoped to Settings because that is what was asked. The same inversion exists
-       on panels elsewhere in the app and can be lifted globally on request. */
-    #tab-settings .panel h2 { font-size:17px; font-weight:700; color:var(--fg);
-      text-transform:none; letter-spacing:0; }
-    #tab-settings .panel h3 { font-size:15.5px; font-weight:700; color:var(--fg);
-      margin:16px 0 6px; }
+
+       LIFTED APP-WIDE 2026-09-07 (PRH-32). It shipped scoped to #tab-settings
+       "because that is what was asked", and the same inversion was still live
+       everywhere else — measured in Chromium on ALL 17 themes before this change:
+       Home's section title "By channel" rendered 12.5px in --muted at 4.56–12.71:1
+       while a briefing card's own <h4> inside it rendered 15px in full --fg at
+       6.07–18.10:1, i.e. bigger AND brighter than the section that contains it, on
+       every theme. Library's .lib-sub had the same shape.
+
+       SPECIFICITY IS THE MECHANISM, not an accident: the scale is written through
+       :where(), which contributes ZERO specificity, so it is a DEFAULT that any
+       authored class overrides without an !important or a re-scoping war. That is
+       what keeps the deliberately-small labels deliberately small — .brief-bucket
+       > h3 (12px, a family lens label), .fig-title (13px), .lib-sub (13px) — while
+       a bare <h3> that nobody styled stops taking the browser's 1.17em. A plain
+       `.panel h3` rule here would have beaten all three of those and blown them up
+       to 15.5px, which is the regression this shape exists to avoid. */
+    :where(.panel, dialog) :where(h2) { margin:0 0 12px; font-size:17px; font-weight:700;
+      color:var(--fg); text-transform:none; letter-spacing:0; }
+    :where(.panel, dialog) :where(h3) { margin:16px 0 6px; font-size:15.5px; font-weight:700;
+      color:var(--fg); }
+    /* A <dialog>'s own title is that dialog's SECTION name, and the house convention
+       writes it as a direct-child <h3> (all eleven dialogs do). It therefore takes the
+       section step, not the sub-section one. Must stay AFTER the rule above: both are
+       zero-specificity, so source order is what decides. */
+    :where(dialog) > :where(h3) { margin:0 0 8px; font-size:17px; }
 
     /* ---- Appearance section (Settings) ------------------------------ */
     /* These used to be scoped under the retired .drawer — the Appearance

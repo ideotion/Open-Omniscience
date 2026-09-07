@@ -6447,6 +6447,103 @@
     BUILD (`python -m build --wheel`, then read the zip's namelist) rather than
     with the declaration — the existing packaging guard is config-shape only and
     was green throughout, which is what let the gap live.
+
+- **A DECLARATION THAT NAMES AN UNDEFINED CUSTOM PROPERTY DOES NOT DEGRADE — IT DELETES
+  ITSELF, AND NINE AUTHORS IN A ROW WILL NOT NOTICE (2026-09-07, PRH-32):** `var(--line)` is
+  referenced 41 times fallback-lessly across ten files of the SPA bundle and defined in none
+  of them — only in the two SERVER-RENDERED pages, which carry their own `:root`, so
+  `reader.css` is correct and everything the SPA loads is not. CSS does not fall back here: a
+  `var()` that resolves to nothing makes the whole declaration **invalid at computed-value
+  time**, so it becomes `unset`, and for `border` that is `0px none`. Measured with
+  `getComputedStyle`: all eleven `<dialog>` elements declared `border:1px solid var(--line)`
+  and every one computed `border-top-style: none` — nine have declared a border that has never
+  once rendered. THREE THINGS WORTH KEEPING. (a) This is the recorded `class="small"` lesson
+  one level down — there a class with no rule, here a NAME with no definition — and the same
+  tell applies: the defect is not in any line you can point at, it is in a line that does not
+  exist, so reading the markup tells you the opposite of what the screen shows. (b) **The
+  property's `unset` decides the severity**, so ask what it is before ranking one: `border`
+  disappears (cosmetic) while `fill` INHERITS, and the inherited value is black — the
+  diagnostics chart's two axis titles rendered `rgb(0,0,0)` on a `rgb(20,24,31)` panel,
+  **1.09:1**, on all twelve dark themes. (c) **A census must NOT flag `var(--x, fallback)`** —
+  that form is valid whether or not the token exists, and the first cut of this guard reported
+  `--hover`, `--lead-h` and `--muted-bg` as defects when all three are deliberate defaults
+  (`--lead-h` is set by JS at runtime). A fabricated FAIL is exactly as dishonest as a
+  fabricated pass; anchor the pattern on the closing paren. Reconciling the two counts is what
+  turned "53 broken references" into "41 broken and 12 fine" — the raw prefix grep overstated
+  the defect by a quarter.
+- **A ZERO-SPECIFICITY `:where()` DEFAULT IS WHAT LETS A GLOBAL SCALE COEXIST WITH DELIBERATE
+  EXCEPTIONS (2026-09-07, PRH-32):** lifting the 2026-08-11 Settings type scale app-wide as a
+  plain `.panel h3` rule would have carried (0,1,1) and beaten `.brief-bucket > h3` (12px, a
+  family lens label), `.fig-title` (13px) and `.lib-sub` (13px) — blowing three
+  deliberately-small labels up to 15.5px, i.e. trading the reported inversion for three new
+  ones. Written as `:where(.panel, dialog) :where(h3)` the rule contributes ZERO specificity,
+  so it is a DEFAULT any authored class overrides with no `!important` and no re-scoping war,
+  while a bare `<h3>` nobody styled stops taking the browser's 1.17em. Pinned by a guard
+  asserting BOTH `:where()` wrappers survive — the mutation that unwraps one reddens by name,
+  which is how you learn the mechanism is load-bearing rather than decoration. GENERAL FORM:
+  when a base rule must lose to every component that disagrees with it, express that as
+  SPECIFICITY rather than as source order — order only decides ties, and a class selector beats
+  an element-descendant one whatever the order.
+- **A PROPERTY THAT LIVES AT THE CALL SITE REACHES THE CALL SITES SOMEBODY REMEMBERED
+  (2026-09-07, PRH-32):** nine of eleven `<dialog>` elements carried
+  `background:var(--panel);color:var(--fg)` in their own `style=` attribute and two did not —
+  so those two alone fell back to the UA's `Canvas`/`CanvasText` and rendered IDENTICALLY on
+  all 17 themes (ground `rgb(18,18,18)` on the twelve dark ones, `rgb(255,255,255)` on the five
+  light ones). The palette reached nine dialogs and stopped at two, and nothing said so,
+  because a per-call-site convention has no place to fail. This is "gate EVERY entry point" in
+  a stylesheet: the repair is one `dialog { }` rule, so a twelfth dialog is themed by
+  construction. RIDER, and why the guard has two halves: an inline `style=` beats every
+  stylesheet rule, so the chokepoint is only a chokepoint while nothing re-inlines what it
+  owns — the guard therefore forbids the inline re-declaration as well as requiring the rule,
+  and both mutations redden separately.
+- **ONE THEME CANNOT ANSWER FOR SEVENTEEN WHEN THE VALUE COMES FROM THE UA (2026-09-07):** the
+  two off-palette dialogs measured 18.73:1 on ink and 21.00:1 on paper — *better* than the
+  app's own pairs, so a contrast-only check on one or two themes reports them as the healthiest
+  surfaces in the app. The finding is not the ratio, it is that the GROUND was the same two
+  values for all 17 themes while every themed surface's ground differs per theme. When a check
+  can be satisfied by a value the app did not choose, measure the GROUND as well as the ratio,
+  and sweep the axis the app actually varies.
+- **A HEADING PROBE SCOPED TO ONE CONTAINER CLASS REPORTS A CLEAN APP (2026-09-07, PRH-32):**
+  the first cut of the inversion probe defined "a section" as `.panel` and assigned each
+  heading by `closest('.panel')`. It found **zero** inner headings on six of fourteen surfaces
+  and reported **0 inversions** — a perfect-looking result from an instrument that could not
+  see its subject, because most of this app's content sits in `.an-panel` / `.card` /
+  `.fig-block`. The tell was the count, not the verdict: an anti-vacuity line printing
+  `sections / titled / inner_headings` per surface is what showed six zeros. Measure EVERY
+  candidate and post-process, rather than pre-filtering by a container you happened to name;
+  and for any "no violations found" result, print the population the check actually examined.
+
+- **A TEST NAMED FOR A MODE IS NOT COVERAGE OF THAT MODE — CHECK THE FIXTURE AGAINST THE SHAPE
+  THE MODE EMITS, NOT AGAINST THE CODE PATH YOU JUST CHANGED (2026-09-07, `parse_sdmx_json`
+  and `dimensionAtObservation=AllDimensions`):** the 2026-08-13 session fixed the
+  observation-level LOOKUP for that mode, wrote
+  `test_ref_area_is_read_at_observation_level_too_for_dimensionAtObservation_all`, and recorded
+  the lesson *"run the parser; do not reason about it."* It followed its own lesson — and the
+  fixture it ran the parser against kept `dataSets[].series[""]`, a container `AllDimensions`
+  never emits. So the test exercised the lookup, never the container, and stayed green for
+  three weeks while the mode returned **nothing**: `AllDimensions` hangs its observations
+  straight off the dataSet (`dataSets[].observations`, no `series` key at all), the parser read
+  them only out of `dataSets[].series[<key>].observations`, and a well-formed message parsed to
+  zero rows. **THE SHARP EDGE: "run the parser" bounds only as much as the INPUT is real.** A
+  fixture written by the same reasoning that wrote the fix inherits the same blind spot, and a
+  green test then certifies the blind spot. When a fixture stands in for someone else's wire
+  format, the thing to verify is the fixture against the format's own documented shape — a
+  fixture derived from your code's expectations tests your code against itself. The tell here
+  was cheap and general: the fixture had a `series` container in the one mode whose defining
+  property is that it has none.
+- **`[]` WITH NO LOG IS THE IDENTITY-LESS ROW INVERTED, AND THE ALARM MUST BE SCOPED TO A
+  MISSING CONTAINER RATHER THAN TO ZERO ROWS (same session, the honesty half):** the 2026-08-13
+  fix stopped a real number being emitted with no country, indicator or year. The mirror defect
+  survived it — an unreadable message returning an empty list without a word, so *"this parser
+  could not read the message"* and *"the publisher has no data for this query"* reached the
+  caller as the same fact. Both are a gap published as something else; only the direction
+  differs, and the silent one is harder to find precisely because nothing looks wrong. **AND
+  THE OBVIOUS GUARD IS THE WRONG ONE:** warning whenever a dataSet yields zero rows would fire
+  on `"series": {}` — a publisher honestly answering "nothing matches" — so the alarm has to
+  key on a container that is ABSENT, never on one that is present and empty. An over-eager
+  alarm is its own dishonesty: it trains a reader to ignore the real one. Both directions are
+  pinned by mutation-checked tests, because the guard that cries wolf and the guard that stays
+  silent fail in opposite directions and one test cannot see both.
   - **A POLAR "IMPORTANCE" AXIS IS A LOG AXIS WAITING TO FABRICATE ITSELF, AND THE REAL CORPUS
     PICKS THE FALLBACK (2026-09-07, the Observatory / `ooSky`):** the design specified a
     log-scaled radius with labelled orbit rings, which is right for the measure it was
