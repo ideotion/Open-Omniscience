@@ -6513,6 +6513,46 @@ rather than "it never started". When a component is chosen at runtime because a 
 is merely importable, ask what that component does on first use.
 
 
+## 2026-09-07 — Bulletin completion: the four rulings, Layer B as a job, the §18 enumeration
+
+**RULINGS (maintainer, in answer to `QUESTIONS_FOR_THE_MAINTAINER.md` D1–D4).** The design
+record's §20 list is CLOSED. D1: the hardware gate covers NARRATION, not the document. D2: the
+introduction is narrated by the model, with the deterministic template beside it. D3: mail
+sending is NEVER. D4: the eight sections and the checkbox review screen are ratified. Each is
+recorded verbatim in `docs/ledger/OPEN_QUEUE.md` and in the design record's own §20, with the
+question kept beside its answer — a closed question that vanishes is one the next session
+re-opens.
+
+**WHAT SHIPPED.** `src/bulletin/gate.py` (two verdicts, one read, a correct caveat in both
+states of the constant) · `src/bulletin/narration_job.py` (§14's `BackgroundJob` with a persisted
+cursor, resume-by-default, an outage that never advances the cursor and raises rather than ending
+`done`) · `src/bulletin/introduction.py` (D2, grounded in the edition's own figures) ·
+`src/bulletin/privacy.py` (§18's enumeration, per artifact, tri-state) · the card period seam
+(`run_all_bounded(as_of=…)`, five producers converted, per-card anchoring rendered).
+
+**THE FIVE REUSABLE LESSONS ARE IN `LESSONS.md`**, appended the same day: a one-line flip owes a
+disclosure true on both sides of it (and one gate answering two questions owes two keys, the
+hardware one reading no policy constant) · a worker whose per-item function degrades instead of
+raising finishes `complete` on a dead backend, and the negative-space twin is where its fix goes
+wrong · a mutation is only evidence about the suite that could have seen it, and a
+translation-completeness guard is blind to a deleted render line by construction · an exclusive
+period end does not map onto every consumer's clock and the two are one day apart · a surviving
+mutant can survive for a reason unrelated to the property.
+
+**ONE REAL DEFECT FOUND WHILE BUILDING,** worth recording because the number looked fine: the
+§18 newsletter count filtered on `Source.domain` with no join to `Article` — a cartesian product,
+so the count came back as articles times matching sources. SQLAlchemy warns and the figure is
+still plausible, which is how a privacy number would have shipped wrong. Pinned by a test that a
+two-source corpus holding two newsletters reports 2.
+
+**WHAT IS DELIBERATELY NOT DONE.** §18's named *publication profile* is not built: the
+enumeration is what that section says is owed before a first archive leaves a machine, and a
+whitelist is a mechanism the operator has not been asked about. The card period seam converts
+FIVE producers of thirty-seven; the rest are called exactly as before and every card says which
+window its figures came from, because a section-wide verdict is true of only part of a mixed
+section. And the annexes' full-text default raises a question about each publisher's terms that
+is the maintainer's — recorded in the Open queue with its options, not decided.
+
 ## 2026-09-07 — S3.6's other half, and the first-run preflight becomes a job
 
 **S3.6 (the half PR-10 did not ship): 56 DB-touching `async def` handlers come off the single

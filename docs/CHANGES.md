@@ -369,10 +369,38 @@ copied from the English are counted apart, so a catalog of copies cannot report 
 finished. Design of record:
 [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](design/BULLETIN_DESIGN_2026-07-31.md).
 
-**Not claimed:** the feature is gated on hardware capable of practical local inference, which
-currently denies a GPU-less machine even the deterministic document — a single constant, and an
-open question. Narration still runs inside the generate request rather than as a resumable
-background job, which is right for a bounded number of stories and wrong for a long run.
+**The hardware gate covers the narration, not the document (2026-09-07).** It used to deny a
+GPU-less machine even the deterministic report, which was one constant and an open question; the
+question is answered and the constant is flipped. The availability check now returns **two**
+verdicts rather than one — whether the document can be built, and whether the model can narrate
+it — because below the bar those are opposite answers and one key could not honestly carry both.
+So a machine with no GPU gets Layer A in full and is told plainly that narration is what its
+hardware cannot do.
+
+**Narration is a resumable background job (2026-09-07).** It used to run inside the generate
+request, which is right for a bounded number of stories and wrong for a long one. Each narrated
+unit is now written back into the saved record with a cursor beside it, so an interrupted run
+loses at most the paragraph in flight and what is on disk is always a real edition with fewer
+paragraphs; picking it up again resumes by default, and restarting is the destructive reading you
+have to ask for. A dead model does not quietly become a finished document: an outage never
+advances the cursor, and a run that cannot reach the backend ten times in a row **fails** rather
+than reporting itself complete over a document of templates.
+
+**An export says what a reader of it could see.** Before an evidence archive or an annexes bundle
+leaves the machine, the review screen lists — per artifact, measured against the exact articles
+that export carries — what someone opening the file would learn: which sources and domains, how
+many articles and what share of the corpus, newsletter subject lines, timestamps and time zone,
+the app version, the signing key, and whether publishers' full text is inside. Each item is
+three-valued, not two: measured-present, measured-absent, or **not measured** — an item nobody
+checked publishes no count at all, because an unknown reported as an all-clear is exactly the
+fabricated reassurance this app refuses. The same list travels inside both ZIPs.
+
+**Not claimed:** the card section is the one part of the document whose figures are not all the
+period's. Card producers are being converted to accept the period's end; five of thirty-seven do
+today, so each card states which window its figures actually came from rather than the section
+carrying one verdict that would be true of only part of it. And whether redistributing a
+publisher's full text in the annexes bundle is the operator's to do is a question about each
+publisher's terms — the export list states that the text is there and deliberately stops.
 
 ### Still on the board, not in this release
 

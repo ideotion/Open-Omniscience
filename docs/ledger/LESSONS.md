@@ -6056,6 +6056,77 @@
     allocation that makes the failure look like a regression somewhere else. Fixed by
     `_server_env()` setting `VLLM_USE_FLASHINFER_SAMPLER=0` whenever `cuda_toolkit_present()`
     is false (`src/llm/vllm_lifecycle.py`), an operator's explicit setting still winning.
+  - **A ONE-LINE FLIP OWES A DISCLOSURE THAT IS TRUE ON BOTH SIDES OF IT — and nothing about
+    flipping a boolean will tell you the wording did not follow (2026-09-07, the Bulletin's
+    open question 4):** the ledger had recorded for months that answering it was "one constant
+    with exactly one read … a one-line change, not an audit", and the code half was exactly
+    that. The other half was not: the caveat beside the constant said the deterministic
+    document "is withheld only because the feature is gated as a whole", which became FALSE the
+    moment the flip landed — a refusal an operator never received, printed in the one place
+    they would go to understand why. A guard counting the READS cannot see it, and neither can
+    a passing suite, because both states are internally consistent. **THE MECHANISM THAT MAKES
+    BOTH TRUE AND KEEPS THE GUARD MEANINGFUL:** read the constant ONCE into a local at the top
+    of the function and derive the verdict, the reason AND the caveat from that local — a local
+    is not a second place to flip, it is the same place read once — then pin BOTH states with
+    tests that monkeypatch the constant, plus the twin asserting the shipped state does NOT
+    claim the refusal. Three mutations redden: the caveat pinned to either state, and the
+    unmeasured-probe path claiming a gate it never measured. **THE SECOND HALF IS SHARPER AND
+    GENERALISES FURTHER: when one gate answers two questions, the verdict is two keys.**
+    `available` had to become the DOCUMENT verdict with `narration_available` beside it, because
+    below the bar those are opposite answers and a caller reading a single `available` would
+    have to guess which one it got — the recorded one-key-two-meanings defect, in a policy
+    flag. And the key that is a HARDWARE FACT must read the POLICY constant NOWHERE, or
+    flipping the policy silently changes what the app claims about the machine; the mutation
+    that makes the narration verdict read the constant reddens by name.
+  - **A WORKER WHOSE PER-ITEM FUNCTION DEGRADES INSTEAD OF RAISING WILL FINISH `complete` ON A
+    DEAD BACKEND — the abort-to-done defect wearing a graceful-degrade hat (2026-09-07, the
+    Bulletin's narration job):** `narrate_story` never raises; a model failure resolves to the
+    deterministic template with the reason recorded, which is right for the document and is
+    precisely what makes a naive loop walk every story, write a template for each, advance its
+    cursor and end `done`. Nothing in the run looks like a failure. The design record had
+    warned against exactly this three fixes running, and the warning is not enough on its own
+    because the defect arrives through the CORRECT behaviour of the callee. **THE FIX IS TO
+    CLASSIFY THE FALLBACK REASON**, not to make the callee raise: an outage does not advance
+    the cursor, is retried with backoff, and after N in a row the run RAISES so the job state
+    is genuinely `error`. **THE NEGATIVE-SPACE TWIN IS MANDATORY AND IS WHERE THE FIX GOES
+    WRONG:** not every fallback is the backend. A story whose articles carry no readable text
+    fails for a reason retrying cannot change, so treating every fallback as an outage stalls
+    the whole run on one empty item, for ever, having looked conservative. Both directions need
+    a test, and the mutation for each reddens a different one.
+  - **A MUTATION IS ONLY EVIDENCE ABOUT THE SUITE THAT COULD HAVE SEEN IT (2026-09-07):** a
+    mutation deleting a per-card disclosure line from the renderer SURVIVED, run against the
+    translation-coverage suite — and coverage genuinely cannot see it, because a line the
+    renderer stopped emitting is a line the translator is never asked for, so the catalog stays
+    100% complete while the sentence vanishes. Re-pointed at the suite that claims the property
+    it reddened immediately. The recorded `pytest -k` lesson says a selector matching zero tests
+    reads like a pass; this is the same family one level up, where the selector matches plenty
+    of tests and none of them is about the thing. Before reading a survival as a finding, name
+    the test that would have to fail. **AND THE FINDING UNDERNEATH IS WORTH ITS OWN LINE: a
+    translation-completeness guard is blind to a deleted render line by construction**, which
+    makes a behavioural render assertion the twin every new disclosure line needs — with its own
+    negative-space half, since a record written before the field existed must get NO line rather
+    than a fabricated answer.
+  - **AN EXCLUSIVE PERIOD END DOES NOT MAP ONTO EVERY CONSUMER'S CLOCK, AND THE TWO ARE ONE DAY
+    APART (2026-09-07, the card producers' period seam):** handing producers an `as_of` anchor,
+    `on_the_horizon` looks FORWARD and takes `end` directly — the first instant after the period
+    is exactly "what was on the horizon when this closed" — while `through_time` is an
+    anniversary on a CALENDAR DATE and must take `end - 1 day`, the period's own last covered
+    day. Anchoring it on `end` picks the day AFTER the edition's last, finds a different set,
+    and every ordinary fixture still passes. A fixture whose articles sit on the last covered
+    day discriminates them; nothing else does. GENERAL FORM: when one anchor is threaded through
+    several consumers, ask each one what its own clock MEANS before passing the value, and write
+    the fixture that separates the two readings — a shared parameter name is not a shared
+    semantics.
+  - **A SURVIVING MUTANT CAN SURVIVE FOR A REASON UNRELATED TO THE PROPERTY — check WHY the
+    fixture failed before writing a better assertion (2026-09-07, the same seam):** the mutant
+    that made a derived anchor override an explicit `today` survived a test written for exactly
+    that precedence. It survived because the mutated code returned `[]` too — for want of a
+    trending term inside the anchored window, not because the precedence held. The fixture had
+    seeded its mentions two months before the period, so BOTH versions took an early return and
+    the assertion could not tell them apart. Moving the mentions inside the window made the two
+    diverge and the mutation reddens by name. The recorded rule that the discriminating input is
+    never the obvious example has a corollary: when a mutant survives, run the mutated code and
+    find out which branch it took, rather than assuming the assertion is too weak.
 
 - **A TIMING HARNESS THAT DOES NOT ASSERT THE WORK HAPPENED CAN REPORT A PASS FROM A SERVER
   THAT DID NOTHING (2026-09-07, S3.6, caught before it could lie):** the concurrency

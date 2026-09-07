@@ -105,8 +105,28 @@ def evidence_plan(session, period: Period, *, dest: str | os.PathLike | None = N
         _LOG.warning("bulletin: evidence size estimate failed", exc_info=True)
         estimate, sampled = 0, 0
 
+    # THE §18 ENUMERATION RIDES THE PLAN. The plan step exists so the operator
+    # decides with the real numbers in front of them; what a recipient could read
+    # off the file is one of those numbers, and stating it only afterwards would be
+    # stating it after the decision.
+    try:
+        from src.bulletin.privacy import export_privacy
+
+        privacy = export_privacy(session, {}, kind="evidence", article_ids=ids)
+    except Exception as exc:  # noqa: BLE001 - a failed enumeration is stated, never silent
+        _LOG.warning("bulletin: export privacy enumeration failed", exc_info=True)
+        privacy = {
+            "kind": "evidence",
+            "error": f"{type(exc).__name__}: {exc}",
+            "caveat": (
+                "The list of what a reader of this archive could see could not be "
+                "computed. That is an unanswered question, not an all-clear."
+            ),
+        }
+
     out: dict[str, Any] = {
         "articles": len(ids),
+        "privacy": privacy,
         "estimated_bytes": estimate or None,
         "estimate_basis": (
             f"mean stored content length over the first {sampled} articles, times the "
@@ -138,6 +158,10 @@ def _toc(edition: dict) -> str:
     lines = ["## Contents", "", "| file | what it is |", "|---|---|"]
     lines.append("| `edition.json` | the edition record these numbers come from |")
     lines.append("| `manifest.json` | every file in this archive with its SHA-256 |")
+    lines.append(
+        "| `WHAT-A-READER-CAN-SEE.md` | the §18 enumeration: what a recipient of "
+        "this file could read off it |"
+    )
     lines.append("| `sources.json` | every source that contributed during the period |")
     lines.append("| `articles/<id>.json` | one file per article, full text and metadata |")
     lines.append("")
@@ -228,6 +252,28 @@ def build_evidence_archive(
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             _add(zf, "README.md", _readme(edition, period, len(ids)))
             _add(zf, "edition.json", json.dumps(edition, indent=2, default=str))
+            # The enumeration travels INSIDE the archive too: the person who opens
+            # this file months from now is not always the one who exported it, and
+            # by then the panel that stated this is somewhere else entirely.
+            try:
+                from src.bulletin.privacy import export_privacy, privacy_markdown
+
+                _add(
+                    zf,
+                    "WHAT-A-READER-CAN-SEE.md",
+                    privacy_markdown(
+                        export_privacy(session, edition, kind="evidence", article_ids=ids)
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 - never lose the archive to its own note
+                _LOG.warning("bulletin: could not write the privacy note", exc_info=True)
+                _add(
+                    zf,
+                    "WHAT-A-READER-CAN-SEE.md",
+                    "# What a reader of this file can see\n\n"
+                    f"This list could not be computed: {type(exc).__name__}: {exc}.\n"
+                    "That is an unanswered question, not an all-clear.\n",
+                )
 
             srcs = {
                 int(sid): {

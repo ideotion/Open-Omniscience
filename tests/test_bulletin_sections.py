@@ -413,3 +413,54 @@ def test_there_is_deliberately_no_top_story_section():
     item is elevated, something had to rank them."""
     keys = {k for k, _ in sections.SECTIONS}
     assert not any("top_story" in k or "lead" in k or "headline" in k for k in keys)
+
+
+# --------------------------------------------------------------------------- #
+#  D4 — THE RULED SECTION LIST
+#
+#  §20 questions 1 and 5 were answered on 2026-09-07: the eight shipped sections
+#  are the section list, and the checkbox-per-section review screen is the design.
+#  A ratified list that nothing enforces is a list that drifts, so it is pinned
+#  here — ADDING a section stays cheap, which is what the registry is for; the
+#  guard only makes an addition a deliberate edit of the ruling rather than a
+#  silent one, and its failure message says exactly that.
+# --------------------------------------------------------------------------- #
+_RULED_SECTIONS = (
+    "rising_concepts",
+    "across_channels",
+    "country_coverage",
+    "by_topic_tag",
+    "changes_of_record",
+    "alerts",
+    "through_time",
+    "cards",
+)
+
+
+def test_the_eight_ruled_sections_are_registered_in_the_ruled_order():
+    from src.bulletin.sections import SECTIONS
+
+    assert tuple(key for key, _ in SECTIONS) == _RULED_SECTIONS, (
+        "the section list was RULED on 2026-09-07 (design record §20 Q1). Adding or "
+        "removing one is a change to that ruling: record it in docs/ledger/OPEN_QUEUE.md "
+        "and update this list in the same commit."
+    )
+
+
+def test_cards_is_last_and_the_ruling_says_why():
+    """Not incidental ordering. It is the slowest (it runs every producer) and the
+    only section whose figures may not be the period's, so a reader meets the
+    period's own record before meeting cards observed at generation time."""
+    from src.bulletin.sections import SECTIONS
+
+    assert SECTIONS[-1][0] == "cards"
+
+
+def test_the_registry_is_still_the_cheap_way_to_add_one():
+    """The ruling pins the LIST, not the mechanism. Sections stay registered
+    producers over facts — which is what makes changing the list a one-line edit
+    rather than a refactor, and is the reason §11 registered them at all."""
+    from src.bulletin.sections import SECTIONS, build_sections
+
+    assert all(callable(build) for _, build in SECTIONS)
+    assert callable(build_sections)

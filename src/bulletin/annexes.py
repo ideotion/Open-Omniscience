@@ -809,6 +809,36 @@ def build_annexes(
             )
             written.append(name)
 
+        # The §18 enumeration, INSIDE the bundle. The annexes ZIP is the artifact
+        # that most often leaves a machine — it is what the download button hands
+        # over beside the report — so the list of what a recipient can read off it
+        # travels with the file rather than only in the panel that made it.
+        try:
+            from src.bulletin.privacy import export_privacy, privacy_markdown
+
+            zf.writestr(
+                f"{stem}/WHAT-A-READER-CAN-SEE.md",
+                privacy_markdown(
+                    export_privacy(
+                        session,
+                        edition,
+                        kind="annexes",
+                        article_ids=ids,
+                        full_text=bool(full_text),
+                    )
+                ),
+            )
+            written.append("WHAT-A-READER-CAN-SEE.md")
+        except Exception as exc:  # noqa: BLE001 - never lose the bundle to its own note
+            _LOG.warning("bulletin: could not write the annex privacy note", exc_info=True)
+            zf.writestr(
+                f"{stem}/WHAT-A-READER-CAN-SEE.md",
+                "# What a reader of this file can see\n\n"
+                f"This list could not be computed: {type(exc).__name__}: {exc}.\n"
+                "That is an unanswered question, not an all-clear.\n",
+            )
+            written.append("WHAT-A-READER-CAN-SEE.md")
+
         # Written LAST because it reports what the loop above actually did.
         zf.writestr(
             f"{stem}/{contents_filename(edition)}",
