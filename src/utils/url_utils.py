@@ -40,13 +40,21 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Known domain aliases for equivalent domain checking
+# Known domain aliases for equivalent domain checking.
+#
+# NOTE: "washingtonpost.com" used to appear here mapped to itself
+# (["washingtonpost.com"]) -- a self-referential no-op. is_equivalent_domain()
+# already returns True on the domain1 == domain2 short-circuit before this
+# table is ever consulted, so that entry could never affect its result for any
+# input; it was removed rather than kept as dead weight. No genuine alternate
+# domain for washingtonpost.com has been independently verified, so no
+# replacement entry was added -- add one here only once a real alias domain
+# has been confirmed (see git history / PR discussion for this comment).
 DOMAIN_ALIASES: dict[str, list[str]] = {
     "bbc.com": ["bbc.co.uk"],
     "theguardian.com": ["guardian.co.uk"],
     "independent.co.uk": ["independent.com"],
     "nytimes.com": ["nyt.com"],
-    "washingtonpost.com": ["washingtonpost.com"],
 }
 
 
