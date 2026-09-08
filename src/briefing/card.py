@@ -66,7 +66,17 @@ _BANNED_FIELD_FRAGMENTS: tuple[str, ...] = (
 )
 # Bare "score"/"rating"/"rank" are banned as *standalone* field names; we keep the
 # check name-based so a legitimate measured quantity can still live in ``signal``.
-_BANNED_FIELD_NAMES: frozenset[str] = frozenset({"score", "rating", "rank", "trust"})
+# "confidence"/"probability"/"likelihood" join the same bare-word set: an unstated-
+# method single number under one of these names reads as a measured trust level to a
+# journalist reading a card at a glance, which is exactly the fabricated-certainty
+# shape §6 bans -- dressed in more academic language than "score" but carrying the
+# same risk. This does not reach the (legitimate, categorical, method-stated)
+# "confidence" tiers other modules emit outside a Card -- the ban is scoped to
+# Card.signal/Card.trigger by construction, since that is all this function ever
+# walks.
+_BANNED_FIELD_NAMES: frozenset[str] = frozenset(
+    {"score", "rating", "rank", "trust", "confidence", "probability", "likelihood"}
+)
 
 
 class CardSchemaError(TypeError):
