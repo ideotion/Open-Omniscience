@@ -23,13 +23,13 @@ HONESTY BY CONSTRUCTION
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
 
 from src.ai_layer import source_tags as ST
+from src.jobs import progress_state as _progress_state
 
 _LOG = logging.getLogger("ai_layer.source_tags_job")
 
@@ -400,20 +400,19 @@ def _progress_state_path() -> Path:
 
 def load_progress_state(state_path: Path | None = None) -> dict:
     """The persisted sweep cursor ({} when no sweep ever ran / the file is
-    unreadable -- a corrupt/missing state file just means "start fresh")."""
-    p = state_path or _progress_state_path()
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:  # noqa: BLE001
-        return {}
+    unreadable -- a corrupt/missing state file just means "start fresh").
+
+    The generic read/write logic lives in ``src.jobs.progress_state``, shared with
+    the other progressive job modules; only this module's default state PATH is
+    module-specific.
+    """
+    return _progress_state.load_progress_state(state_path or _progress_state_path())
 
 
 def _save_progress_state(state: dict, state_path: Path) -> None:
-    """Atomic write (tmp + os.replace) so a crash mid-save never corrupts the cursor."""
-    tmp = state_path.with_name(state_path.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, state_path)
+    """Atomic write (tmp + os.replace) so a crash mid-save never corrupts the cursor --
+    see ``src.jobs.progress_state`` for the shared implementation."""
+    _progress_state.save_progress_state(state, state_path)
 
 
 def run_progressive_source_tags_job(
