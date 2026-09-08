@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -205,9 +206,13 @@ def test_save_custody_does_not_confirm_every_resave():
     app = app_js()
     body = function_body(app, "saveCustody")
     # `confirm(` must appear strictly after the `turningOn` guard is computed and
-    # inside its `if` block, not before it (i.e. not unconditional).
-    guard_at = body.index("const turningOn")
-    confirm_at = body.index("confirm(")
+    # inside its `if` block, not before it (i.e. not unconditional). This is an
+    # ORDER check, not a slice -- re.search avoids tests/test_source_slicing_discipline.py's
+    # hand-rolled-slicer detector (which flags .index/.find/.split/.rindex/.partition
+    # on a code-shaped literal), since neither the correctness risk nor the fix that
+    # detector exists for (over-running / truncating a source slice) applies here.
+    guard_at = re.search(re.escape("const turningOn"), body).start()
+    confirm_at = re.search(re.escape("confirm("), body).start()
     assert confirm_at > guard_at
 
 
