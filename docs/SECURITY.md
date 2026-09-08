@@ -20,25 +20,51 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`OO_DISCOVERY_EXTERNAL=1` for headless use). It is strictly user-triggered — never
   part of ingestion, the scheduler, or any default path. (The browser-rendered `/docs` Swagger page also
   references a CDN for its own assets; the app itself never fetches it.)
-- **Every other outbound call is user-consented and off the default/boot path.** For
-  completeness, the full set of endpoints the app can reach beyond article ingestion,
-  each by explicit user action:
+- **Every other outbound call is consented and off the default/boot path — most by
+  explicit user action, one (the hazard feeds, below) by an opt-out setting rather
+  than a click.** For completeness, the full set of endpoints the app can reach
+  beyond article ingestion, re-verified against the current tree (last checked
+  2026-09-08):
   - **DuckDuckGo** — the opt-in *Discover by topic* channel above.
   - **Open-Meteo** (`src/weather/openmeteo.py`, `archive-api.open-meteo.com`) —
     weather-context reanalysis, fetched only when you click "fetch" on a corroboration
     Lead. CC BY 4.0, disclosed at the point of use.
   - **Official-statistics endpoints** (`src/stats/fetch.py`: World Bank
-    `api.worldbank.org`, Eurostat) — official figures, fetched on click; a tracked
-    figure can auto-refresh on the scheduler's markets pass only if you subscribed it.
+    `api.worldbank.org`, Eurostat, Our World In Data `ourworldindata.org/grapher`,
+    and any JSON-stat/PxWeb URL you paste in, e.g. IRENA) — official figures, fetched
+    on click; a tracked figure can auto-refresh on the scheduler's markets pass only
+    if you subscribed it.
   - **GitHub releases API** (`src/llm/installer.py`, `api.github.com/repos/ollama/…`) —
     to fetch the official Ollama installer and its attested `sha256` digest when you run
     the in-app installer.
   - **Ollama's own model pulls** — when you pull a model, Ollama downloads it over
     **clearnet via its own process** (not our fetcher, not Tor); this is disclosed at the
     consent step.
+  - **USGS earthquake + GDACS disaster-alert feeds** (`src/api/hazards.py`:
+    `earthquake.usgs.gov`, `gdacs.org`) — the one **automatic, opt-out** exception on
+    this list: fetched through the same ethical fetcher, but on every scheduler pass
+    rather than by click, unless you set the scheduler's `auto_track_signals` to
+    `false` (`src/scheduler/settings.py`, via `PUT /api/scheduler/config`), which
+    defaults **on** and has no dedicated Settings-panel toggle today.
+  - **IMAP/POP3 newsletter mailbox pull** (`src/ingest/email.py`,
+    `POST /api/newsletters/mailbox`) — connects, only when you trigger a pull, to a
+    mail server *you* configure, over raw `imaplib`/`poplib` rather than the ethical
+    fetcher (mail protocols have no robots.txt or HTML to parse); its own explicit
+    kill-switch check refuses while offline is engaged.
+  - **OpenTimestamps calendar submission** (`src/custody/timestamp.py`: three public
+    calendar hosts including `a.pool.opentimestamps.org`) — submits an opaque SHA-256
+    digest of your content (never the content itself) to public Bitcoin-calendar
+    servers, only when you enable the opt-in "opentimestamps" chain-of-custody
+    anchoring mode (off by default). The module's own docstring discloses that the
+    *act of submitting* reveals your IP and timing to the calendar operator, and
+    recommends routing it over Tor for a source who needs anonymity. Uses the
+    OpenTimestamps client library's own HTTP calls, not our ethical fetcher.
 
-  All of the above are gated behind the airplane kill switch: while offline is engaged
-  the request is refused before any socket is opened (see *Data at rest & airplane mode*).
+  All of the above are gated behind the airplane kill switch. Most add their own
+  explicit per-call refusal; the two that bypass the ethical fetcher (mailbox pull,
+  OpenTimestamps) still cannot open a socket while offline, because the kill switch
+  is enforced process-wide at the socket level, not only inside the fetcher (see
+  *Data at rest & airplane mode*, next).
 
 ## Data at rest & airplane mode
 

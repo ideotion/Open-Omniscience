@@ -66,9 +66,9 @@ never the way to make room for something rules (5)/(5a) would have sent to
 `docs/ledger/`.
 
 ## Non-negotiables (project §0.5 + maintainer rulings)
-- Local-first, loopback-only; the ONLY external service call is the gated,
-  off-by-default DuckDuckGo topic discovery. Producers/briefing/discovery NEVER
-  touch the network. App boot makes zero network calls.
+- Local-first, loopback-only; every external call is consented, disclosed, and
+  socket-level kill-switch-gated (exceptions enumerated in `docs/SECURITY.md`,
+  never here). Producers/briefing/discovery never touch the network; boot makes zero calls.
 - robots.txt fail-closed, per-host politeness, honest bot UA, single fetch path
   (`EthicalFetcher`), **global network kill switch** (`src/ingest`
   activate/clear_kill_switch — the Collect Stop button trips it).
