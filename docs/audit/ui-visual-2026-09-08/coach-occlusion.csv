@@ -1,0 +1,81 @@
+viewport,surface,coach_shown,rect_x,rect_y,rect_w,rect_h,z_index,pointer_events,blocked_controls_n,blocked_controls,covered_text_elements
+375x812,home,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",10
+375x812,feed,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",3
+375x812,insights,True,64,8,270,173,360,auto,9,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Explore"" | button ""Trends"" | button ""Sources"" | button ""Super-groups""",8
+375x812,observatory,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",4
+375x812,timemap,True,64,8,270,173,360,auto,8,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Coverage"" | button ""Stories"" | button ""Places"" | button ""Server IPs""",6
+375x812,law,True,64,8,270,173,360,auto,9,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Countries"" | button ""Compare"" | button ""Groups"" | button ""Law""",8
+375x812,agenda,True,64,8,270,173,360,auto,10,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Week"" | button ""Trimester"" | button ""Semester"" | button ""Year""",9
+375x812,indices,True,64,8,270,173,360,auto,9,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Africa"" | button ""Asia"" | button ""Europe"" | button ""North America""",8
+375x812,markets,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",3
+375x812,library,True,64,8,270,173,360,auto,9,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Overview"" | button ""Activity"" | button ""Tracked"" | button ""Composition""",7
+375x812,settings,True,64,8,270,173,360,auto,10,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Graphics"" | button ""General"" | button ""Cards"" | button ""AI""",7
+375x812,search,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",3
+375x812,analyze,True,64,8,270,173,360,auto,9,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """" | button ""Overview"" | button ""Keywords"" | button ""Trend"" | button ""Mindmap""",7
+375x812,custody,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",3
+375x812,integrity,True,64,8,270,173,360,auto,4,"#tm-open """" | #lang-switch ""🇬🇧EN"" | button """" | #app-shutdown """"",3
+375x812,help,True,64,8,270,173,360,auto,4,"#tm-open """" | #rate-toggle """" | button """" | #app-shutdown """"",13
+768x1024,home,True,490,62,270,173,360,auto,0,,6
+768x1024,feed,True,490,62,270,173,360,auto,0,,5
+768x1024,insights,True,490,62,270,173,360,auto,2,"button ""Super-groups"" | button ""Map""",4
+768x1024,observatory,True,490,62,270,173,360,auto,0,,4
+768x1024,timemap,True,490,62,270,173,360,auto,0,,2
+768x1024,law,True,490,62,270,173,360,auto,2,"button ""Statistics"" | #gov-load-btn ""Load standard country da""",4
+768x1024,agenda,True,490,62,270,173,360,auto,2,"button ""Decade"" | button ""List""",7
+768x1024,indices,True,490,62,270,173,360,auto,2,"button ""South America"" | button ""Oceania""",5
+768x1024,markets,True,490,62,270,173,360,auto,0,,2
+768x1024,library,True,490,62,270,173,360,auto,1,"button ""Database & storage""",4
+768x1024,settings,True,490,62,270,173,360,auto,2,"button ""OpenStreetMap"" | button ""Agenda""",5
+768x1024,search,True,490,62,270,173,360,auto,0,,3
+768x1024,analyze,True,490,62,270,173,360,auto,4,"button ""Articles"" | button ""When/Where/Who"" | button ""Competitive"" | button ""Advanced""",6
+768x1024,custody,True,490,62,270,173,360,auto,0,,6
+768x1024,integrity,True,490,62,270,173,360,auto,0,,2
+768x1024,help,True,490,62,270,173,360,auto,0,,10
+1024x800,home,True,746,62,270,173,360,auto,0,,6
+1024x800,feed,True,746,62,270,173,360,auto,0,,4
+1024x800,insights,True,746,62,270,173,360,auto,2,"button ""Map"" | button ""Convergence""",5
+1024x800,observatory,True,746,62,270,173,360,auto,0,,3
+1024x800,timemap,True,746,62,270,173,360,auto,0,,2
+1024x800,law,True,746,62,270,173,360,auto,1,"#gov-load-btn ""Load standard country da""",3
+1024x800,agenda,True,746,62,270,173,360,auto,1,"button ""List""",5
+1024x800,indices,True,746,62,270,173,360,auto,2,"button ""South America"" | button ""Oceania""",5
+1024x800,markets,True,746,62,270,173,360,auto,0,,2
+1024x800,library,True,746,62,270,173,360,auto,1,"button ""Database & storage""",3
+1024x800,settings,True,746,62,270,173,360,auto,2,"button ""OpenStreetMap"" | button ""Agenda""",4
+1024x800,search,True,746,62,270,173,360,auto,0,,3
+1024x800,analyze,True,746,62,270,173,360,auto,2,"button ""When/Where/Who"" | button ""Links""",5
+1024x800,custody,True,746,62,270,173,360,auto,0,,6
+1024x800,integrity,True,746,62,270,173,360,auto,0,,2
+1024x800,help,True,746,62,270,173,360,auto,0,,10
+1440x900,home,True,1162,62,270,173,360,auto,0,,1
+1440x900,feed,True,1162,62,270,173,360,auto,0,,3
+1440x900,insights,True,1162,62,270,173,360,auto,0,,2
+1440x900,observatory,True,1162,62,270,173,360,auto,0,,2
+1440x900,timemap,True,1162,62,270,173,360,auto,0,,2
+1440x900,law,True,1162,62,270,173,360,auto,1,"#gov-load-btn ""Load standard country da""",2
+1440x900,agenda,True,1162,62,270,173,360,auto,0,,2
+1440x900,indices,True,1162,62,270,173,360,auto,0,,3
+1440x900,markets,True,1162,62,270,173,360,auto,0,,2
+1440x900,library,True,1162,62,270,173,360,auto,0,,3
+1440x900,settings,True,1162,62,270,173,360,auto,0,,3
+1440x900,search,True,1162,62,270,173,360,auto,0,,3
+1440x900,analyze,True,1162,62,270,173,360,auto,2,"button ""Sources"" | button ""Competitive""",4
+1440x900,custody,True,1162,62,270,173,360,auto,0,,5
+1440x900,integrity,True,1162,62,270,173,360,auto,0,,2
+1440x900,help,True,1162,62,270,173,360,auto,0,,10
+1920x1080,home,True,1642,62,270,173,360,auto,0,,0
+1920x1080,feed,True,1642,62,270,173,360,auto,0,,0
+1920x1080,insights,True,1642,62,270,173,360,auto,0,,0
+1920x1080,observatory,True,1642,62,270,173,360,auto,0,,0
+1920x1080,timemap,True,1642,62,270,173,360,auto,0,,0
+1920x1080,law,True,1642,62,270,173,360,auto,0,,0
+1920x1080,agenda,True,1642,62,270,173,360,auto,0,,2
+1920x1080,indices,True,1642,62,270,173,360,auto,0,,0
+1920x1080,markets,True,1642,62,270,173,360,auto,0,,0
+1920x1080,library,True,1642,62,270,173,360,auto,0,,0
+1920x1080,settings,True,1642,62,270,173,360,auto,0,,0
+1920x1080,search,True,1642,62,270,173,360,auto,0,,0
+1920x1080,analyze,True,1642,62,270,173,360,auto,0,,0
+1920x1080,custody,True,1642,62,270,173,360,auto,0,,0
+1920x1080,integrity,True,1642,62,270,173,360,auto,0,,0
+1920x1080,help,True,1642,62,270,173,360,auto,0,,0

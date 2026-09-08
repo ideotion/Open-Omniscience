@@ -1,0 +1,146 @@
+selector,sample_text,worst_ratio,required,worst_theme,worst_surface,font_px,weight,fg_rgb,bg_rgb,themes_failing,themes_swept,surfaces_seen
+button.lead-flip-hint.back,⟲ Back,1.01,4.5,mint,home,11,600,"rgb(95, 116, 102)","rgb(46, 125, 91)",17,17,1
+span.chip,recycled claim,1.47,4.5,dawn,home,10.5,400,"rgb(209, 198, 71)","rgb(242, 233, 225)",5,17,1
+span.ag-dn,31,1.56,4.5,paper,agenda,11,400,"rgb(206, 201, 189)","rgb(251, 248, 241)",17,17,1
+span.chip,diet self audit,1.56,4.5,dawn,home,10.5,400,"rgb(71, 209, 198)","rgb(242, 233, 225)",5,17,1
+span.chip,lonely signal,1.99,4.5,solar,home,10.5,400,"rgb(129, 71, 209)","rgb(10, 65, 80)",12,17,1
+span.chip,source laundering,2.52,4.5,dawn,home,10.5,400,"rgb(209, 129, 71)","rgb(242, 233, 225)",6,17,1
+span.tier-badge,Developing corpus,3.2,4.5,solar,home,10.5,700,"rgb(59, 130, 196)","rgb(7, 54, 66)",14,17,1
+button.active,Overview,3.47,4.5,solar,home,15,700,"rgb(181, 137, 0)","rgb(10, 65, 80)",5,17,2
+a.oo-tip-target,Technology coverage (edition 12) — zh,3.47,4.5,solar,home,12.5,400,"rgb(181, 137, 0)","rgb(10, 65, 80)",5,17,1
+a,Sources — manage your coverage,3.47,4.5,solar,home,12.5,400,"rgb(181, 137, 0)","rgb(10, 65, 80)",5,17,1
+button.active,Explore,3.47,4.5,solar,insights,15,700,"rgb(181, 137, 0)","rgb(10, 65, 80)",5,17,1
+button.active,Graphics,3.47,4.5,solar,settings,15,700,"rgb(181, 137, 0)","rgb(10, 65, 80)",5,17,1
+button.active,Month,3.47,4.5,solar,agenda,15,700,"rgb(181, 137, 0)","rgb(10, 65, 80)",5,17,1
+span#version,v0.3.0,3.85,4.5,paper,home,11,400,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,8
+span#health.oo-tip-target,healthy,3.85,4.5,paper,home,12,400,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,8
+span#lang-flag,🇬🇧,3.85,4.5,paper,home,15,600,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,8
+span#lang-code,EN,3.85,4.5,paper,home,12,600,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,8
+button,Trends,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Sources,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Families,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Super-groups,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Map,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Convergence,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Watches,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Lunar,3.85,4.5,paper,insights,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,General,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Cards,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,AI,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Wikipedia,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,OpenStreetMap,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Agenda,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Data & backup,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Advanced,3.85,4.5,paper,settings,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Activity,3.85,4.5,paper,library,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Tracked,3.85,4.5,paper,library,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Composition,3.85,4.5,paper,library,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Database & storage,3.85,4.5,paper,library,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,World coverage,3.85,4.5,paper,library,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Week,3.85,4.5,paper,agenda,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Trimester,3.85,4.5,paper,agenda,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Semester,3.85,4.5,paper,agenda,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Year,3.85,4.5,paper,agenda,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,Decade,3.85,4.5,paper,agenda,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+button,List,3.85,4.5,paper,agenda,15,500,"rgb(122, 113, 92)","rgb(235, 229, 214)",4,17,1
+a.chip.tiny.oo-tip-target,"избирателей 2 mentions, against 2 in the prior period — too ",3.86,4.5,mist,home,15,400,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a.ov-more,More in Insights →,3.86,4.5,mist,home,12,400,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a.ov-more,all 1 →,3.86,4.5,mist,home,12,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a.ov-more,all 3 →,3.86,4.5,mist,home,12,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a.ov-more,all 4 →,3.86,4.5,mist,home,12,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a.ov-more,all 5 →,3.86,4.5,mist,home,12,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a,Elections coverage (edition 18) — ar,3.86,4.5,mist,feed,15.5,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",1,17,1
+a,Climate coverage (edition 1) — de,3.86,4.5,mist,feed,15.5,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",1,17,1
+a,Technology coverage (edition 19) — zh,3.86,4.5,mist,feed,15.5,700,"rgb(94, 129, 172)","rgb(249, 250, 252)",1,17,1
+a,Manage calendars & sources in Settings → Agenda.,3.86,4.5,mist,agenda,12,400,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+a.oo-tip-target,open,3.86,4.5,mist,search,14,400,"rgb(94, 129, 172)","rgb(249, 250, 252)",4,17,1
+span.pill,stopped,3.95,4.5,solar,home,12,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.sig,distinct_sources = 3 · n=3,3.95,4.5,solar,home,12,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+span.lead-flip-hint,Details & corpus ⟲,3.95,4.5,solar,home,11,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.mc,Method: Outbound origins cited by >= 3 distinct sources (and,3.95,4.5,solar,home,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+b,Method:,3.95,4.5,solar,home,11.5,700,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.why-mathlabel,Why am I seeing this?,3.95,4.5,solar,home,11,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+summary,The exact math,3.95,4.5,solar,home,12,700,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Articles citing this origin,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Distinct sources (the independence measure),3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Minimum distinct sources for this Lead,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.sig,voices = 1 · n=1,3.95,4.5,solar,home,12,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.mc,Method: A near-duplicate story cluster of size 1 (one source,3.95,4.5,solar,home,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Sources that carried this story,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Sources that repeated it (near-identical text),3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Window scanned (days),3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+span.muted,— ZH Regional Herald cn,3.95,4.5,solar,home,12.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.sig,gap_days = 319 · n=10,3.95,4.5,solar,home,12,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.mc,"Method: Near-duplicate clusters (MinHash+LSH, Jaccard >= 0.7",3.95,4.5,solar,home,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Dormancy gap,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Articles in the cluster,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Spread,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Minimum gap for this Lead,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.sig,top3_share = 0.4090909090909091 · n=12,3.95,4.5,solar,home,12,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.mc,Method: Gini coefficient + top-N share over actor totals 'Le,3.95,4.5,solar,home,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Articles collected in the last 30 days,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,"Of which, from your top 3 sources",3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Top-3 share = top-3 articles ÷ all articles,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,How sure can we be? (95% interval),3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+td,Minimum required: 5 articles across 2 sources,3.95,4.5,solar,home,14,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.ls-h,Themes 16,3.95,4.5,solar,insights,12,700,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+span.muted,16,3.95,4.5,solar,insights,12,700,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Avg words / article,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Avg keywords / article,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Articles / day (avg since first),3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Articles / hour (last 24h),3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Wikipedia pages tracked,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Wikipedia revisions,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Wikipedia dumps,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,OpenStreetMap regions,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Market price points,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Law documents,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Law revisions,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Official statistics figures,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Local AI models,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,AI summaries,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,AI-extracted keywords,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+div.k,Active watches,3.95,4.5,solar,library,11.5,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+span.ag-tag.oo-tip-target,EU State of the Union address (President of the European Com,3.95,4.5,solar,agenda,11,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+span.ag-tag.oo-tip-target,Sweden — General election 2026 (Riksdag),3.95,4.5,solar,agenda,11,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+span.ag-tag.oo-tip-target,UN General Assembly — general debate,3.95,4.5,solar,agenda,11,400,"rgb(141, 157, 158)","rgb(10, 65, 80)",5,17,1
+a,Elections coverage (edition 12) — pt,4.04,4.5,dawn,feed,15.5,700,"rgb(180, 99, 122)","rgb(255, 250, 243)",1,17,1
+a,Technology coverage (edition 13) — zh,4.04,4.5,dawn,feed,15.5,700,"rgb(180, 99, 122)","rgb(255, 250, 243)",1,17,1
+a,Climate coverage (edition 16) — ru,4.04,4.5,dawn,feed,15.5,700,"rgb(180, 99, 122)","rgb(255, 250, 243)",1,17,1
+a,Climate coverage (edition 2) — ru,4.05,4.5,solar,feed,15.5,700,"rgb(181, 137, 0)","rgb(7, 54, 66)",1,17,1
+a,Elections coverage (edition 7) — zh,4.05,4.5,solar,feed,15.5,700,"rgb(181, 137, 0)","rgb(7, 54, 66)",1,17,1
+a,Technology coverage (edition 22) — zh,4.05,4.5,solar,feed,15.5,700,"rgb(181, 137, 0)","rgb(7, 54, 66)",1,17,1
+a,Weekly Coastal Digest — July 10,4.05,4.5,solar,feed,15.5,700,"rgb(181, 137, 0)","rgb(7, 54, 66)",1,17,1
+p.sum,"3 articles from 3 distinct sources (DE Regional Herald de, E",4.31,4.5,dawn,home,13.5,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.why-plain,Several of your sources cite the very same origin for this. ,4.31,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button.ghost.tiny,Dismiss,4.31,4.5,dawn,home,12,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.sum,Only ZH Regional Herald cn carried this; no other source pub,4.31,4.5,dawn,home,13.5,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.why-plain,"Only one of your sources carried this story, and nobody else",4.31,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.sum,Near-identical text first seen 2025-10-11 reappeared 2026-08,4.31,4.5,dawn,home,13.5,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.why-plain,This reads almost word-for-word like something published muc,4.31,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.sum,"Over the last 30 days, the top 3 of 12 sources account for ~",4.31,4.5,dawn,home,13.5,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+p.why-plain,Most of what you've collected recently comes from just a few,4.31,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button.active,Keywords,4.31,4.5,dawn,insights,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button.active,Mind-map,4.31,4.5,dawn,insights,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Word cloud,4.31,4.5,dawn,insights,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Compact,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Cantarell,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Inter,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Outfit,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Manrope,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Source Serif,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,JetBrains Mono,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+button,Collapsed,4.31,4.5,dawn,settings,15,500,"rgb(110, 106, 134)","rgb(242, 233, 225)",1,17,1
+span,Feed,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,7
+span,Insights,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,7
+span,Observatory,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,7
+span,World map,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,8
+span,Governments,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,8
+span,Agenda,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,7
+span,Indices,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,8
+span,Commodities,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,8
+span,Library,4.41,4.5,dawn,home,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,7
+span,Home,4.41,4.5,dawn,feed,15,400,"rgb(110, 106, 134)","rgb(244, 236, 226)",1,17,7
+a,Elections coverage (edition 13) — pt,4.42,4.5,paper,feed,15.5,700,"rgb(154, 106, 47)","rgb(251, 248, 241)",1,17,1
+a,Technology coverage (edition 17) — zh,4.42,4.5,paper,feed,15.5,700,"rgb(154, 106, 47)","rgb(251, 248, 241)",1,17,1
+a,Climate coverage (edition 10) — ar,4.42,4.5,paper,feed,15.5,700,"rgb(154, 106, 47)","rgb(251, 248, 241)",1,17,1
