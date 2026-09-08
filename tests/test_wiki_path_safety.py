@@ -80,3 +80,54 @@ def test_api_dump_endpoints_reject_traversal_with_400():
                   "kind": "pages-articles-multistream"}).status_code == 400
     assert c.post("/api/wiki/dumps/corpus-ingest", json={"wiki": "a/b",
                   "titles": ["Foo"]}).status_code == 400
+
+
+def _pages_client(tmp_path):
+    """A TestClient wired to a scratch DB, for the watched-pages CRUD endpoint."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.api.main import app
+    from src.database.models import Base
+    from src.database.session import get_db
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'wiki.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    return app, TestClient(app)
+
+
+def test_add_watched_page_rejects_url_injection_and_traversal_with_400(tmp_path):
+    """POST /api/wiki/pages stores ``wiki`` unescaped into a LIVE fetch URL
+    (``mediawiki.api_endpoint``: ``f"https://{code}.wikipedia.org/w/api.php"``), on
+    every scheduled tracking pass thereafter — so it needs the exact same guard the
+    dump endpoints already use, not just the dumps' own filesystem path.
+
+    ``"attacker.example#"`` is the concrete reproduction: unvalidated, it would
+    turn the fetch host into ``https://attacker.example#.wikipedia.org/...`` whose
+    parsed netloc is ``attacker.example`` (everything after ``#`` is the fragment).
+    """
+    app, c = _pages_client(tmp_path)
+    try:
+        with c:
+            for bad in ["attacker.example#", *EVIL]:
+                r = c.post("/api/wiki/pages", json={"wiki": bad, "title": "Some Page"})
+                assert r.status_code == 400, f"{bad!r} should be rejected, got {r.status_code}"
+            # Legitimate edition codes are unaffected.
+            for code in VALID:
+                r = c.post("/api/wiki/pages", json={"wiki": code, "title": f"Page for {code}"})
+                assert r.status_code == 200, f"{code!r} should be accepted, got {r.status_code}"
+                assert r.json()["wiki"] == code
+    finally:
+        app.dependency_overrides.clear()

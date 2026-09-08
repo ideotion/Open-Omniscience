@@ -165,3 +165,18 @@ def test_top_phrases_categorize_and_process_respond():
 def test_top_requires_text_param():
     with TestClient(app) as client:
         assert client.get("/api/keywords/top").status_code == 422
+
+
+def test_process_returns_correctly_named_ngram_keys():
+    """Regression for the "nngrams"/"nnngrams" key-naming bug (audit 10, P2-10):
+    GET /api/keywords/process returns process_text()'s dict verbatim, so its
+    n-gram keys must be the documented "bigrams"/"trigrams", not the
+    f"{'n' * n}grams" typo's output."""
+    with TestClient(app) as client:
+        r = client.get("/api/keywords/process", params={"text": _TEXT})
+        assert r.status_code == 200
+        result = r.json()["result"]
+        for key in ("unigrams", "bigrams", "trigrams", "all_ngrams", "words"):
+            assert key in result, f"process_text() response missing {key!r}"
+        assert "nngrams" not in result
+        assert "nnngrams" not in result

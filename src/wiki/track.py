@@ -29,8 +29,18 @@ _BURST_WINDOW = timedelta(hours=24)
 def ensure_page(
     session: Session, wiki: str, title: str, *, category: str | None = None
 ) -> WikiPage:
-    """Get or create a watched page row for (wiki, title)."""
-    wiki = (wiki or "en").strip().lower()
+    """Get or create a watched page row for (wiki, title).
+
+    ``wiki`` is validated (not just normalised) here, defensively, in addition to
+    the API-boundary check ``add_page`` already does — this is the sole write path
+    into ``WikiPage`` and its stored code later flows unescaped into a live fetch
+    URL (``mediawiki.api_endpoint``), so any current or future caller gets the same
+    path/URL-injection protection without having to remember to validate first.
+    Raises ``ValueError`` for a malformed code (see ``validate_wiki_code``).
+    """
+    from src.wiki.dumps import validate_wiki_code
+
+    wiki = validate_wiki_code(wiki or "en")
     title = title.strip()
     page = session.query(WikiPage).filter_by(wiki=wiki, title=title).first()
     if page is None:

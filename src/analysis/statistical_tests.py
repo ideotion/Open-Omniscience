@@ -630,12 +630,18 @@ class StatisticalTests:
         else:
             raise ImportError("Either scipy or pingouin is required for Mann-Whitney U test")
 
-        # Calculate effect size (rank-biserial correlation)
+        # Calculate effect size (rank-biserial correlation): r = 1 - 2*U / (n1*n2),
+        # where U is the Mann-Whitney U statistic for sample1 already computed above.
+        # Both branches share this formula and produce the same U: scipy's
+        # mannwhitneyu(arr1, arr2, ...) returns U for arr1 (the count of pairs
+        # favouring arr1 over arr2), and pingouin's mwu(arr1, arr2, ...) computes its
+        # "U-val" via that same scipy call with the same argument order, so the two
+        # are not oriented differently. This is signed, not abs()-ed: a positive
+        # effect_size means sample2 tends to rank higher than sample1 (verified
+        # against hand-worked cases: perfect separation with sample1 all lower gives
+        # +1.0, not -1.0).
         n1, n2 = len(arr1), len(arr2)
-        ranks = stats.rankdata(np.concatenate([arr1, arr2]))
-        r1 = np.mean(ranks[:n1])
-        r2 = np.mean(ranks[n1:])
-        effect_size = 1 - (2 * min(r1, r2) / (n1 + n2 + 1))
+        effect_size = 1 - (2 * u_stat) / (n1 * n2)
 
         return TestResult(
             test_name="Mann-Whitney U",
