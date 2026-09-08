@@ -246,6 +246,71 @@ def test_the_endpoint_refuses_an_empty_selection(client):
     assert client.get("/api/wiki/dumps/sizes", params={"wikis": " , "}).status_code == 400
 
 
+# --------------------------------------------------------------------------- #
+# /dumps/probe: the single-edition sibling, invariant #14e (2026-09-07)
+# --------------------------------------------------------------------------- #
+
+
+def test_the_probe_route_names_an_airplane_refusal_instead_of_a_bare_null(client, monkeypatch):
+    """``/dumps/probe`` used to read only ``.size_bytes`` off the shared
+    ``_read_url_size`` reading, discarding the reason -- so an airplane-mode
+    refusal reported as an unexplained ``size_bytes: null``, indistinguishable
+    from a genuinely unreachable host. This pins the fix: the route must
+    surface the same named ``reason`` its batch sibling ``/dumps/sizes``
+    already does."""
+    import src.wiki.dumps as dumps
+
+    class _Fake:
+        def probe_sizes(self, wikis, kind, **kw):
+            (w,) = wikis
+            return [
+                dumps.DumpSizeReading(wiki=w, kind=kind, url="", size_bytes=None, reason="airplane")
+            ]
+
+    monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
+    r = client.get("/api/wiki/dumps/probe", params={"wiki": "en"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["size_bytes"] is None
+    assert d["reason"] == "airplane", "an airplane-mode refusal must be named, not a bare null"
+
+
+@pytest.mark.parametrize(
+    "reason",
+    ["unreachable", "no-content-length"],
+)
+def test_the_probe_route_names_every_absence_reason(client, monkeypatch, reason):
+    """The twin of the guard above: every absence reason the manager can
+    produce must reach the route unchanged, not just the airplane case."""
+    import src.wiki.dumps as dumps
+
+    class _Fake:
+        def probe_sizes(self, wikis, kind, **kw):
+            (w,) = wikis
+            return [dumps.DumpSizeReading(wiki=w, kind=kind, url="", size_bytes=None, reason=reason)]
+
+    monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
+    r = client.get("/api/wiki/dumps/probe", params={"wiki": "en"})
+    assert r.status_code == 200
+    assert r.json()["reason"] == reason
+
+
+def test_the_probe_route_reports_a_real_size_with_no_reason(client, monkeypatch):
+    import src.wiki.dumps as dumps
+
+    class _Fake:
+        def probe_sizes(self, wikis, kind, **kw):
+            (w,) = wikis
+            return [dumps.DumpSizeReading(wiki=w, kind=kind, url="https://x", size_bytes=4242, reason=None)]
+
+    monkeypatch.setattr(dumps, "get_manager", lambda: _Fake())
+    r = client.get("/api/wiki/dumps/probe", params={"wiki": "en"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["size_bytes"] == 4242
+    assert d["reason"] is None
+
+
 def test_the_endpoint_is_a_sync_def_so_its_network_batch_leaves_the_event_loop_free():
     """A blocking body inside an ``async def`` freezes the single worker for the
     whole batch. Starlette runs a plain ``def`` route in the threadpool."""

@@ -350,11 +350,20 @@ def dumps_list() -> dict:
 
 @router.get("/dumps/probe")
 def dumps_probe(wiki: str, kind: str = "pages-articles-multistream") -> dict:
-    from src.wiki.dumps import dump_url, get_manager
+    """Read the CURRENT published dump size for ONE edition.
+
+    Goes through the same ``probe_sizes`` batch path ``/dumps/sizes`` uses
+    (via ``get_manager().probe_sizes(...)``) rather than the size-only
+    ``probe_size()``, so a refusal is reported with its NAMED reason --
+    ``airplane`` (the kill switch refused it: nothing left this machine),
+    ``unreachable`` or ``no-content-length`` -- instead of collapsing all
+    three into an unexplained ``size_bytes: null`` (invariant #14e).
+    """
+    from src.wiki.dumps import get_manager
 
     wiki = _validated_wiki(wiki)
-    size = get_manager().probe_size(wiki, kind)
-    return {"wiki": wiki, "kind": kind, "url": dump_url(wiki, kind), "size_bytes": size}
+    (reading,) = get_manager().probe_sizes([wiki], kind, max_editions=1)
+    return reading.to_dict()
 
 
 @router.get("/dumps/sizes")
