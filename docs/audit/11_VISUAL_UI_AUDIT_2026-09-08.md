@@ -79,9 +79,9 @@ Named rather than silently omitted:
 
 ---
 
-## 1. The twelve things that matter most
+## 1. The thirteen things that matter most
 
-Ranked by consequence, not by discovery order. Every one was reproduced live. The eight marked
+Ranked by consequence, not by discovery order. Every one was reproduced live. The nine marked
 **[hand-verified]** were measured by the orchestrating session itself, not taken from any agent.
 
 | # | Sev | Finding | Why it matters |
@@ -89,6 +89,7 @@ Ranked by consequence, not by discovery order. Every one was reproduced live. Th
 | 0 | **P0** | **The commodity Price × coverage overlay reports a measured correspondence that does not exist** — `Dy` silently resolves to the English word "already", `Nd` to the French "indiqué", `Pr` to "proposed", and the chart is labelled with the commodity. **[hand-verified]** §4.1 | A fabricated correspondence presented as measurement, on the one product whose stated reason to exist is that it does not do that. The guard against exactly this is already written, with its reasoning, elsewhere in the same repository. |
 | 0b | **P0** | **A malformed API response renders as a confident, false statement about the user's corpus**: "Your library is empty" on a database holding 453 articles and 3,618 sources, with no error text anywhere and the health pill still reading "healthy". **[hand-verified]** §4.2 | The "degrade loudly" non-negotiable inverted — the app asserts the opposite of the truth in the voice it reserves for facts. |
 | 0c | **P0** | **The airplane-mode toggle is functionally dead for the first ~5 seconds after every boot.** `#net-toggle`'s only state signal — its `off` class — is set exclusively by the first resolved `GET /api/system/network`, which is queued behind ~30 other boot calls and lands at a median **4,887 ms** after DOMContentLoaded (measured 4,820 / 4,887 / 4,907 across three runs; an agent independently measured 4,837–4,941 in two separate sessions). Clicking at ~700 ms leaves `#net-consent` closed — the click is **silently swallowed**, because `goingOnline = btn.classList.contains("off")` reads false and takes the "already offline, no-op" branch. **[hand-verified]** | The kill switch is the single most safety-critical control in a local-first privacy tool, and for five seconds after every launch it neither shows its state nor responds to a click, with no feedback that nothing happened. The failure mode is a no-op rather than an unconsented transition — so it is **not** a consent bypass — but it is the moment a user is most likely to press it. It is also the eager-boot finding (#2) arriving as a *safety* defect rather than a performance one. |
+| 0d | **P0** | **The Observatory's ranked-table drill-through answers with the wrong articles.** `openAnalysisFor(hit.name)` uses a curated cluster label as a literal full-text query: "Elections & democracy" → 0 results, "Public finance" → **19 unrelated articles presented as that galaxy's evidence** against its real 150-mention / 6-source membership. **[hand-verified]** §4.3 | The table exists to take a user from a number to its evidence. It fails open into a plausible wrong answer rather than closed into an honest refusal — and together with §4.1 and the code audit's own P0 #2 it makes **three unrelated subsystems using a text match where an identity is meant** (§4.4). |
 | 1 | **P0** | **The offline coachmark `#net-coach` covers page content on 16/16 surfaces at every viewport, and at 375 px it blocks interactive controls on 16/16 surfaces — including the top-bar buttons its own placement logic was written to protect.** On Governments at 375 px, Playwright's actionability check times out with *"#net-coach intercepts pointer events"*: the entire sub-tab strip is untappable until it is dismissed. **[hand-verified]** | A first-launch nudge makes parts of every screen unusable on a phone, for up to six launches, before the user has done anything wrong. It is also the mechanism by which a *caveat* gets hidden — on the Observatory it covers the sentence disclosing that the angle channel is meaningless. |
 | 2 | **P0** | **A single hidden dropdown costs 714 KB on every page load.** The frontend calls `GET /api/sources` (no trailing slash) — a second, legacy, unpaginated handler at `main.py:2372` that **silently ignores `?limit=`** — instead of the correct paginated `GET /api/sources/`. Measured: `?limit=5` returns 714,399 B either way on the bare route, 1,687 B on the slashed one. **91.4 % of all boot API bytes** are for surfaces Home never shows, and 98.8 % of that waste is this one call. It then trips its own 100/hour rate limit. **[hand-verified]** | This is the whole boot budget spent on data nobody sees, on a local-first app whose corpus is meant to grow. At 10× the sources it is 7 MB per page load. |
 | 3 | **P0** | **The Search surface can lock itself out for an hour.** `GET /api/articles` is rate-limited to 100/hour, and `api()` in `app-core.js` auto-retries a 429 up to 4 times — so **one user click can fire five requests**. Ordinary exploratory querying exhausts the budget, after which every search returns only a transient toast and an empty results table. The message *"Too many requests. Please try again later."* is also untranslated in all 12 locales. | The app's largest, most iterative surface (135 controls, 5 inputs, boolean syntax, five time-range presets) is designed for exactly the usage pattern that breaks it, and it fails quietly. |
@@ -361,6 +362,41 @@ app stating a falsehood with the same confidence it states a truth.
 The fix is small and entirely within the project's existing grammar: distinguish *"the server answered
 and the answer was empty"* from *"the answer could not be read"*, and give the second one a loud,
 translated, method-bearing state of its own.
+
+### 4.3 P0 — the Observatory's drill-through answers with the wrong articles, and looks right doing it
+
+**[hand-verified]** The ranked table exists so a user can go from a number to its evidence. Clicking a
+row calls `openAnalysisFor(hit.name, {source:"observatory"})` (`app-observatory.js:444`), which passes
+the galaxy's **curated cluster label** into the analysis window as a **literal full-text query**. A
+cluster label is a name for a set of keywords; it is not text that appears in articles. Measured:
+
+| galaxy | `GET /api/articles?query=<label>` | what the user sees |
+|---|---|---|
+| Elections & democracy (the corpus's #1 galaxy by mentions) | **total = 0** | "No keywords yet / Nothing extracted yet / No sources yet" |
+| Ecology & biodiversity | **total = 0** | same |
+| **Public finance** | **total = 19** | **a populated, plausible, entirely wrong article set** — 19 articles that happen to contain those two words, presented as the galaxy's evidence, against its real 150-mention / 6-source membership, with nothing in the UI signalling the mismatch |
+
+The empty case is bad and visible. The **Public finance** case is worse and invisible: the drill-through
+succeeds, looks exactly like a correct answer, and is not one.
+
+### 4.4 The pattern these three share, which is the real finding
+
+§4.1, §4.3 and the 2026-09-08 code audit's own P0 #2 are **the same defect in three unrelated
+subsystems**:
+
+| where | identity that was meant | text match used instead | result |
+|---|---|---|---|
+| `resolve_keyword()` → commodity Price overlay (§4.1) | the keyword *is* this term | `normalized_term LIKE '%Dy%'` | `Dy` → "already"; a chart of an unrelated word, labelled with the commodity |
+| `openAnalysisFor(g.name)` → Observatory table (§4.3) | the articles *belong to* this cluster | full-text search for the cluster's label | "Public finance" → 19 unrelated articles presented as the cluster's evidence |
+| `src/bulletin/grounding.py` (code audit P0 #2) | the figure *appears in* the evidence | substring containment | "40" counted as grounded by a real "1,240" |
+
+Each one **fails open into a plausible answer rather than closed into an honest refusal**, which is why
+none of them looks broken and none was caught by a test. The project already knows this: it wrote
+`_exact_keyword_id` with the reasoning in the docstring, and its own chart rules forbid inventing data.
+**The durable fix is not three more exact-match helpers.** It is a rule the codebase can check — where a
+display surface resolves an identity, a text match may never stand in for it, and a failure to resolve
+must render the honest empty state rather than the nearest thing found. Two audits have now each paid
+for this lesson separately.
 
 ---
 
