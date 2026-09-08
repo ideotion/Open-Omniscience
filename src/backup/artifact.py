@@ -630,10 +630,14 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
     root = staging.resolve()
     for info in zf.infolist():
         name = info.filename
-        if name.startswith("/") or ".." in Path(name).parts:
+        if Path(name).is_absolute() or ".." in Path(name).parts:
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
         target = (staging / name).resolve()
-        if not str(target).startswith(str(root)):
+        # Containment must be checked with ``is_relative_to``, never a string prefix
+        # (see folder_backup.py's place_artifact_file_members docstring for the same
+        # rule) -- a sibling directory (e.g. ``staging-12`` vs ``staging-1``) shares a
+        # string prefix without being contained.
+        if not target.is_relative_to(root):
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
     zf.extractall(staging)
 
