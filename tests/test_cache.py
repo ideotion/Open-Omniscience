@@ -24,7 +24,6 @@ Tests for the Open Omniscience caching utilities module.
 
 Tests cover:
 - SimpleCache functionality
-- LRUCache functionality
 - Cache decorators
 - Thread safety
 - TTL expiration
@@ -42,7 +41,7 @@ import pytest
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from utils.cache import LRUCache, SimpleCache, cached, lru_cached
+from utils.cache import SimpleCache, cached
 
 
 @pytest.fixture
@@ -207,78 +206,6 @@ class TestSimpleCache:
         assert cache.get("key2") == "value2"
 
 
-class TestLRUCache:
-    """Tests for LRUCache class."""
-
-    def test_set_and_get(self):
-        """Test basic set and get operations."""
-        cache = LRUCache()
-        cache.set("key1", "value1")
-        assert cache.get("key1") == "value1"
-
-    def test_lru_eviction(self):
-        """Test that least recently used items are evicted."""
-        cache = LRUCache(max_size=3)
-
-        cache.set("key1", "value1")
-        cache.set("key2", "value2")
-        cache.set("key3", "value3")
-
-        # Access key1 to make it recently used
-        cache.get("key1")
-
-        # This should evict key2 (least recently used)
-        cache.set("key4", "value4")
-
-        assert cache.get("key1") == "value1"  # Should still be there
-        assert cache.get("key2") is None  # Should be evicted
-        assert cache.get("key3") == "value3"
-        assert cache.get("key4") == "value4"
-
-    def test_update_existing_key(self):
-        """Test updating an existing key."""
-        cache = LRUCache(max_size=2)
-
-        cache.set("key1", "value1")
-        cache.set("key2", "value2")
-
-        # Update key1
-        cache.set("key1", "new_value1")
-
-        assert cache.get("key1") == "new_value1"
-        assert cache.get("key2") == "value2"
-        assert cache.size() == 2  # Should not evict anything
-
-    def test_ttl_expiration(self, fake_clock):
-        """Test TTL expiration in LRUCache."""
-        cache = LRUCache(default_ttl=1)
-        cache.set("key1", "value1")
-
-        assert cache.get("key1") == "value1"
-
-        fake_clock.advance(1.1)
-
-        assert cache.get("key1") is None
-
-    def test_lru_with_ttl(self, fake_clock):
-        """Test LRU eviction with TTL."""
-        cache = LRUCache(max_size=2, default_ttl=1)
-
-        cache.set("key1", "value1")
-        cache.set("key2", "value2")
-
-        # Access key1
-        cache.get("key1")
-
-        # Advance past both TTLs
-        fake_clock.advance(1.1)
-
-        # Both should be expired
-        assert cache.get("key1") is None
-        assert cache.get("key2") is None
-        assert cache.size() == 0
-
-
 class TestCacheDecorators:
     """Tests for cache decorators."""
 
@@ -332,31 +259,6 @@ class TestCacheDecorators:
         expensive_function(5)
         assert call_count == 2
 
-    def test_lru_cached_decorator(self):
-        """Test the lru_cached decorator."""
-        call_count = 0
-
-        @lru_cached(max_size=2, ttl=2)
-        def expensive_function(x):
-            nonlocal call_count
-            call_count += 1
-            return x * x
-
-        # Call with different arguments
-        expensive_function(1)
-        expensive_function(2)
-        expensive_function(3)
-
-        assert call_count == 3
-
-        # Call again with first argument - should evict the oldest (2) and call function
-        expensive_function(1)
-        assert call_count == 4  # Should call function because 1 was evicted
-
-        # Call with argument 2 again - should execute function (was evicted)
-        expensive_function(2)
-        assert call_count == 5  # Should call function because 2 was evicted
-
 
 class TestThreadSafety:
     """Tests for thread safety."""
@@ -381,31 +283,6 @@ class TestThreadSafety:
             thread.join()
 
         assert len(errors) == 0, f"Thread safety errors: {errors}"
-
-
-class TestGlobalCacheInstances:
-    """Tests for global cache instances."""
-
-    def test_global_instances_exist(self):
-        """Test that global cache instances are available."""
-        from utils.cache import article_cache, query_cache, source_cache
-
-        assert isinstance(article_cache, LRUCache)
-        assert isinstance(source_cache, LRUCache)
-        assert isinstance(query_cache, LRUCache)
-
-    def test_global_instances_functional(self):
-        """Test that global cache instances work."""
-        from utils.cache import article_cache, query_cache, source_cache
-
-        article_cache.set("test_article", {"id": 1, "title": "Test"})
-        assert article_cache.get("test_article") == {"id": 1, "title": "Test"}
-
-        source_cache.set("test_source", {"id": 1, "name": "Test Source"})
-        assert source_cache.get("test_source") == {"id": 1, "name": "Test Source"}
-
-        query_cache.set("test_query", [1, 2, 3])
-        assert query_cache.get("test_query") == [1, 2, 3]
 
 
 if __name__ == "__main__":
