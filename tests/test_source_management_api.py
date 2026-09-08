@@ -94,6 +94,76 @@ def test_blank_required_field_400(client):
     assert client.post("/api/sources/", json={"name": "X", "domain": 123}).status_code == 400
 
 
+def test_update_source_id_in_body_never_changes_primary_key(client):
+    """Mass-assignment fix (audit P2): a PUT body carrying an "id" key must never
+    move the row's actual primary key, and must not corrupt a sibling row either."""
+    a = client.post("/api/sources/", json={"name": "Alpha", "domain": "alpha2.example"}).json()
+    b = client.post("/api/sources/", json={"name": "Beta", "domain": "beta2.example"}).json()
+
+    r = client.put(f"/api/sources/{a['id']}", json={"id": b["id"], "name": "Alpha Renamed"})
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == a["id"]  # never moved to b's id
+
+    # both rows still exist, independently, at their original ids
+    assert client.get(f"/api/sources/{a['id']}").json()["name"] == "Alpha Renamed"
+    assert client.get(f"/api/sources/{b['id']}").json()["name"] == "Beta"
+
+
+def test_update_source_every_supported_field_still_works(client):
+    """Existing legitimate PUT behavior for every currently-supported field must
+    keep working exactly as before the allowlist was added."""
+    sid = client.post(
+        "/api/sources/", json={"name": "Gamma", "domain": "gamma2.example"}
+    ).json()["id"]
+
+    body = {
+        "name": "Gamma Renamed",
+        "domain": "gamma2-renamed.example",
+        "rss_url": "https://gamma2-renamed.example/feed",
+        "rate_limit_ms": 3000,
+        "enabled": False,
+        "priority": 3,
+        "tags": "renamed,gamma",
+    }
+    r = client.put(f"/api/sources/{sid}", json=body)
+    assert r.status_code == 200, r.text
+
+    got = client.get(f"/api/sources/{sid}").json()
+    assert got["name"] == "Gamma Renamed"
+    assert got["domain"] == "gamma2-renamed.example"
+    assert got["priority"] == 3
+
+
+def test_update_source_malformed_allowlisted_field_400_not_500(client):
+    sid = client.post(
+        "/api/sources/", json={"name": "Delta", "domain": "delta2.example"}
+    ).json()["id"]
+
+    r = client.put(f"/api/sources/{sid}", json={"rate_limit_ms": "not-a-number"})
+    assert r.status_code == 400, r.text
+
+    r = client.put(f"/api/sources/{sid}", json={"enabled": "yes"})
+    assert r.status_code == 400, r.text
+
+    # the source is untouched by the rejected update
+    assert client.get(f"/api/sources/{sid}").json()["name"] == "Delta"
+
+
+def test_update_source_unrecognized_field_dropped_not_500(client):
+    sid = client.post(
+        "/api/sources/", json={"name": "Epsilon", "domain": "epsilon2.example"}
+    ).json()["id"]
+
+    r = client.put(
+        f"/api/sources/{sid}",
+        json={"priority": 1, "not_a_real_column": "whatever"},
+    )
+    assert r.status_code == 200, r.text
+
+    got = client.get(f"/api/sources/{sid}").json()
+    assert got["priority"] == 1
+
+
 def test_group_flow_and_refresh_endpoint(client):
     # create a tag-based group, then refresh it (this endpoint used to 500 on a
     # nonexistent manager.get_group()).
@@ -108,3 +178,112 @@ def test_group_flow_and_refresh_endpoint(client):
 
 def test_refresh_unknown_group_404(client):
     assert client.post("/api/sources/groups/99999/refresh").status_code == 404
+
+
+def test_list_and_get_source_article_count_avoid_full_article_load(tmp_path):
+    """P1 fix: list_sources/get_source's article_count must read the maintained
+    Source.article_count counter (source_io.py's already-shipped pattern, migration
+    d2f8a9df7168) rather than ``len(s.articles)``, which used to force SQLAlchemy to
+    fully load -- and, on the real SQLCipher-encrypted store, decrypt -- every one of
+    a source's Article rows (including the Text/LargeBinary content columns) just to
+    produce an integer count.
+
+    Two sources: one with a fresh reconciled counter (article_count set + reconciled
+    within 24h -- must trigger ZERO queries against the articles table at all) and one
+    with a NULL counter (never reconciled -- must fall back to exactly ONE batched
+    ``COUNT(*) ... GROUP BY source_id`` query, never one query per source and never a
+    query that selects the content columns).
+    """
+    import hashlib
+    from datetime import UTC, datetime
+
+    from sqlalchemy import event
+
+    from src.database.models import Article, Source
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'article_count.db'}",
+        future=True,
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+
+    with Sess() as db:
+        reconciled = Source(
+            name="Reconciled",
+            domain="reconciled.example",
+            article_count=2,
+            counter_reconciled_at=datetime.now(UTC),
+        )
+        unreconciled = Source(name="Unreconciled", domain="unreconciled.example", article_count=None)
+        db.add_all([reconciled, unreconciled])
+        db.commit()
+        db.refresh(reconciled)
+        db.refresh(unreconciled)
+        for src, n in ((reconciled, 2), (unreconciled, 3)):
+            for i in range(n):
+                digest = hashlib.sha256(f"{src.domain}-{i}".encode()).hexdigest()
+                db.add(
+                    Article(
+                        url=f"https://{src.domain}/a{i}",
+                        canonical_url=f"https://{src.domain}/a{i}",
+                        source_id=src.id,
+                        content="x" * 5000,  # stand-in for a real (decrypted) article body
+                        hash=digest,
+                    )
+                )
+        db.commit()
+        reconciled_id, unreconciled_id = reconciled.id, unreconciled.id
+
+    def _db():
+        db = Sess()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    statements: list[str] = []
+
+    def _capture(conn, cursor, statement, params, ctx, many):  # noqa: ANN001
+        if "from articles" in statement.lower():
+            statements.append(statement)
+
+    app.dependency_overrides[get_db] = _db
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        with TestClient(app) as c:
+            statements.clear()
+            r = c.get("/api/sources/?limit=1000")
+            assert r.status_code == 200, r.text
+            by_domain = {s["domain"]: s for s in r.json()}
+            assert by_domain["reconciled.example"]["article_count"] == 2
+            assert by_domain["reconciled.example"]["count_basis"] == "exact"
+            assert by_domain["unreconciled.example"]["article_count"] == 3
+            assert by_domain["unreconciled.example"]["count_basis"] == "live"
+
+            # Exactly one batched fallback query for the whole page (only the
+            # NULL-counter source needs it) -- never one query per source, and it
+            # must be a plain COUNT, never a row/content SELECT.
+            assert len(statements) == 1, f"expected exactly one batched query, got: {statements}"
+            assert "count(" in statements[0].lower()
+            assert "content" not in statements[0].lower()
+
+            statements.clear()
+            r2 = c.get(f"/api/sources/{reconciled_id}")
+            assert r2.status_code == 200, r2.text
+            assert r2.json()["article_count"] == 2
+            assert r2.json()["count_basis"] == "exact"
+            assert statements == [], f"a fresh reconciled counter must not query articles: {statements}"
+
+            statements.clear()
+            r3 = c.get(f"/api/sources/{unreconciled_id}")
+            assert r3.status_code == 200, r3.text
+            assert r3.json()["article_count"] == 3
+            assert r3.json()["count_basis"] == "live"
+            assert len(statements) == 1, f"expected exactly one live-fallback query, got: {statements}"
+            assert "count(" in statements[0].lower()
+            assert "content" not in statements[0].lower()
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+        app.dependency_overrides.clear()

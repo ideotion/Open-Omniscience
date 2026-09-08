@@ -67,6 +67,31 @@ def test_a_percentage_is_checked_on_its_number_not_its_symbol():
     assert check_sentence("Some 99% of sources.", _EV, language="en")["supported"] is False
 
 
+def test_a_fabricated_number_that_is_a_character_substring_of_a_real_one_is_caught():
+    """"40" is a literal character substring of "1240" but is a different number
+    than the evidence states — containment on a joined evidence string cannot
+    tell these apart; exact membership in the set of numbers the evidence
+    actually asserts can."""
+    out = check_sentence(
+        "Coverage reached 40 articles this week.",
+        "The corpus holds 1,240 articles about the European Commission this week.",
+        language="en",
+    )
+    assert out["supported"] is False
+    assert "40" in out["checks"]["numbers"]["missing"]
+
+
+@pytest.mark.parametrize(
+    "fabricated",
+    ["1420", "124", "12400", "01240"],
+    ids=["transposed-digit", "truncated", "extra-trailing-digit", "extra-leading-digit"],
+)
+def test_near_miss_digit_variants_of_a_real_number_are_all_caught(fabricated):
+    out = check_sentence(f"Coverage reached {fabricated} articles.", _EV, language="en")
+    assert out["supported"] is False
+    assert fabricated in out["checks"]["numbers"]["missing"]
+
+
 # -- names: fires, and abstains --------------------------------------------- #
 
 
@@ -78,6 +103,33 @@ def test_an_invented_name_is_caught():
 
 def test_a_real_name_passes():
     assert _check("Reporting cited the European Commission.")["supported"] is True
+
+
+def test_a_fabricated_name_that_is_a_character_substring_of_a_real_one_is_caught():
+    """"Continental Bank" is a literal character substring of "Intercontinental
+    Bank" ("inter" + "continental bank") but names a different entity. A
+    character-substring containment check cannot tell them apart; a
+    word-boundary check can."""
+    out = check_sentence(
+        "The Continental Bank made a statement.",
+        "The Intercontinental Bank made a statement.",
+        language="en",
+    )
+    assert out["supported"] is False
+    assert "Continental Bank" in out["checks"]["names"]["missing"]
+
+
+def test_a_genuine_partial_name_reference_still_passes():
+    """"the Commission" for "the European Commission" is a legitimate partial
+    reference to the same entity — a real journalistic shorthand, not an
+    invention — and must stay supported even though the fix tightens the
+    substring case above."""
+    out = check_sentence(
+        "The Commission published a statement.",
+        "The European Commission published a statement today.",
+        language="en",
+    )
+    assert out["supported"] is True
 
 
 def test_case_and_accents_are_forgiven():

@@ -26,10 +26,7 @@ Author: Open Omniscience Team
 """
 
 import math
-from collections import Counter
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from collections import Counter, defaultdict
 
 from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor
@@ -37,11 +34,72 @@ from src.utils.logging_config import setup_logging
 
 logger = setup_logging("services.article_intelligence")
 
+# numpy/scikit-learn are only needed by the TF-IDF cosine-similarity path below
+# (`calculate_similarity(..., method="cosine", use_tfidf=True)`); every other
+# method on this class is pure-Python on top of keyword_extractor/text_processor,
+# neither of which has an ML dependency. Both packages live behind pyproject's
+# optional `[analysis]` extra, so importing this module must not hard-fail on a
+# core-only install — the import is deferred to a flag, and the one method that
+# actually needs it raises a clear, actionable error when the extra is missing,
+# rather than this whole module (and everything that imports it) disappearing.
+try:
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    HAS_SKLEARN = True
+except ImportError:
+    np = None  # type: ignore[assignment]
+    TfidfVectorizer = None  # type: ignore[assignment,misc]
+    cosine_similarity = None  # type: ignore[assignment]
+    HAS_SKLEARN = False
+
+_SKLEARN_MISSING_MSG = (
+    "TF-IDF cosine similarity requires numpy + scikit-learn, which are part of "
+    "this project's optional '[analysis]' extra. Install with: "
+    "pip install -e '.[analysis]' — or call calculate_similarity(..., "
+    "use_tfidf=False) for a pure-Python fallback that needs no extra dependency."
+)
+
 
 class ArticleIntelligenceAnalyzer:
     def __init__(self):
         self.keyword_extractor = keyword_extractor
         self.text_processor = text_processor
+
+    def extract_terms_with_metadata(self, text, language="en"):
+        if not text:
+            return {"terms": [], "metadata": {}, "statistics": {}}
+
+        processed = self.text_processor.process_text(text, language=language, remove_stopwords=True)
+        words = processed["words"]
+
+        ke = self.keyword_extractor
+        term_result = ke.extract_keywords(text, language=language)
+
+        word_positions = defaultdict(list)
+        for idx, word in enumerate(words):
+            word_positions[word].append(idx)
+
+        terms_with_metadata = []
+        for term in term_result["keywords"]:
+            positions = word_positions.get(term, [])
+            if positions:
+                terms_with_metadata.append(
+                    {
+                        "term": term,
+                        "frequency": len(positions),
+                        "first_position": positions[0],
+                        "last_position": positions[-1],
+                        "all_positions": positions,
+                    }
+                )
+
+        return {
+            "terms": terms_with_metadata,
+            "frequencies": term_result["frequencies"],
+            "statistics": term_result,
+        }
 
     def calculate_similarity(self, text1, text2, method="cosine", use_tfidf=True):
         """Calculate similarity between two texts."""
@@ -61,6 +119,8 @@ class ArticleIntelligenceAnalyzer:
 
         elif method == "cosine":
             if use_tfidf:
+                if not HAS_SKLEARN:
+                    raise ImportError(_SKLEARN_MISSING_MSG)
                 try:
                     vectorizer = TfidfVectorizer(tokenizer=lambda x: x.split(), lowercase=False)
                     tfidf_matrix = vectorizer.fit_transform([text1, text2])
@@ -103,6 +163,82 @@ class ArticleIntelligenceAnalyzer:
 
         else:
             raise ValueError(f"Unknown similarity method: {method}")
+
+    def group_by_similarity(self, articles, threshold=0.7, method="cosine"):
+        """Group articles by similarity using hierarchical clustering."""
+        if not articles or len(articles) < 2:
+            return [{"cluster_id": 0, "articles": articles, "size": len(articles)}]
+
+        texts = [article.get("content", "") for article in articles]
+        n = len(texts)
+        # Plain nested list, not np.zeros: the matrix itself is pure bookkeeping
+        # (only ever indexed, never vectorised), and keeping it numpy-free means
+        # this method needs no ML dependency beyond whatever `method` requires
+        # from calculate_similarity (which raises its own clear error above).
+        similarity_matrix = [[0.0] * n for _ in range(n)]
+
+        for i in range(n):
+            for j in range(i, n):
+                if i == j:
+                    similarity_matrix[i][j] = 1.0
+                else:
+                    sim = self.calculate_similarity(texts[i], texts[j], method=method)
+                    similarity_matrix[i][j] = sim
+                    similarity_matrix[j][i] = sim
+
+        clusters = [[i] for i in range(n)]
+        cluster_merged = [False] * n
+
+        for i in range(n):
+            if cluster_merged[i]:
+                continue
+            for j in range(i + 1, n):
+                if cluster_merged[j]:
+                    continue
+                if similarity_matrix[i][j] >= threshold:
+                    cluster_i = None
+                    cluster_j = None
+                    for idx, cluster in enumerate(clusters):
+                        if i in cluster:
+                            cluster_i = idx
+                        if j in cluster:
+                            cluster_j = idx
+                    if cluster_i is not None and cluster_j is not None and cluster_i != cluster_j:
+                        clusters[cluster_i].extend(clusters[cluster_j])
+                        del clusters[cluster_j]
+                        for member in clusters[cluster_i]:
+                            cluster_merged[member] = True
+                    elif cluster_i is not None:
+                        clusters[cluster_i].append(j)
+                        cluster_merged[j] = True
+
+        result_clusters = []
+        for cluster_idx, cluster in enumerate(clusters):
+            cluster_articles = [articles[i] for i in cluster]
+            avg_sim = self._calculate_cluster_avg_similarity(cluster, similarity_matrix)
+            result_clusters.append(
+                {
+                    "cluster_id": cluster_idx,
+                    "articles": cluster_articles,
+                    "size": len(cluster_articles),
+                    "average_similarity": avg_sim,
+                }
+            )
+
+        result_clusters.sort(key=lambda x: x["size"], reverse=True)
+        return result_clusters
+
+    def _calculate_cluster_avg_similarity(self, cluster, similarity_matrix):
+        if len(cluster) < 2:
+            return 1.0
+        total = 0.0
+        count = 0
+        for i in cluster:
+            for j in cluster:
+                if i != j:
+                    total += similarity_matrix[i][j]
+                    count += 1
+        return total / count if count > 0 else 1.0
 
 
 # Global instance
