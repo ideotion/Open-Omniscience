@@ -46,6 +46,27 @@ def test_assert_no_score_fields_rejects_a_score_field():
         assert_no_score_fields(Bad)
 
 
+@pytest.mark.parametrize("banned_key", ["confidence", "probability", "likelihood"])
+def test_card_rejects_confidence_probability_likelihood_signal_keys(banned_key):
+    """An unstated-method single number under 'confidence'/'probability'/'likelihood'
+    reads as a measured trust level to a journalist reading a card at a glance --
+    exactly the fabricated-certainty shape the §6 honesty guard exists to prevent,
+    just dressed in more academic language than 'score'."""
+    with pytest.raises(CardSchemaError):
+        Card(
+            type="x", title="t", summary="s", bucket="rising", method="m", caveat="c",
+            signal={banned_key: 0.9},
+        )
+
+
+def test_card_rejects_confidence_in_trigger_too():
+    with pytest.raises(CardSchemaError):
+        Card(
+            type="x", title="t", summary="s", bucket="rising", method="m", caveat="c",
+            trigger={"plain": "p", "math": [{"label": "l", "value": "v"}], "likelihood": "high"},
+        )
+
+
 def test_card_rejects_unknown_bucket():
     with pytest.raises(ValueError):
         Card(type="x", title="t", summary="s", bucket="not-a-bucket", method="m", caveat="c")
