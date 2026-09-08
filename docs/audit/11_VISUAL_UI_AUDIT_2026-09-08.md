@@ -228,3 +228,50 @@ ratios left in the source as comments). What does not exist:
   between them.
 - **Almost no motion:** 14 `transition` declarations and 8 `@keyframes` in the entire stylesheet.
   `prefers-reduced-motion` and `prefers-contrast: more` are both handled globally — those are positives.
+
+### 2.6 Server memory, measured on one clean instance
+
+A controlled run against a freshly booted instance (port 8038, nothing else touching it, corpus of 453
+articles / 3,618 sources), reading `VmRSS` of the `uvicorn` process directly:
+
+| moment | RSS |
+|---|---|
+| idle, straight after boot | **315 MB** |
+| after loading Home | 376 MB |
+| **after visiting all 16 surfaces once** | **922 MB** |
+| after a further 20 s idle | 922 MB (no release) |
+
+**Measured, not diagnosed.** Whether this is retained objects or allocator arenas that never return to
+the OS needs a heap profile that was not run here, and a server process is not the same thing as a
+desktop app's footprint. But the user-visible fact stands: a local-first tool aimed at a journalist's
+laptop reaches ~1 GB resident after a single tour of its own tabs on a very small corpus, and does not
+come back down. (Corroborating, from the sandbox rather than from the app: with 19 instances running,
+the kernel OOM-killer took one of them out mid-audit.)
+
+---
+
+## 3. Corrections to the existing record
+
+Every one of these was re-derived live against today's tree rather than trusted from the ledger or from
+the previous audit. Recording them matters as much as the new findings: a backlog that carries a fixed
+defect wastes the next session's time.
+
+| claim on record | verdict today | how it was re-derived |
+|---|---|---|
+| *"Settings → Source qualification's two scope checkboxes silently fail to save and then visibly revert, right after a false 'Saved.' toast"* (10-audit §1 #6) | **Did not reproduce** | Two independent agents, change → save → full page reload → re-read against both the DOM and a direct `GET`, including single-click, uncheck and rapid-race variants |
+| *"theme-select-lossy-overwrite"* — the `#set-theme` 3-way bucket destroying a full theme choice | **Fixed**, verified live | Picked a theme in the gallery, then touched `#set-theme`, then reloaded |
+| *"eleven `ooViz` primitives remain unwired"* | **7 of 19**, not eleven | Read the 19 exports out of `ooviz.js:571-591` and traced both dot-access and aliased/destructured `V.` access in `oosky.js` |
+| *"the retired temporal-map cluster is dead code interleaved with live helpers"* | **Already fully resolved** | Zero live callers and no `#tmap-*` DOM targets remain |
+| *"`prefers-contrast` is unhandled"* / *"`.sr-only` is absent"* (already corrected in the backlog on 2026-09-07) | **Confirmed present** | `@media (prefers-contrast: more)` applies live under `emulate_media(contrast="more")`; `.sr-only` at `app.css:161` |
+| *"~590 inline `on*=` handlers"* | **585 measured** (332 in `index.html`, 253 across `app-*.js`) against 135 `addEventListener` — the same order, restated with today's count | `grep -o` on both file sets |
+| **This audit's own first contrast harness** | **Wrong, corrected mid-run** | See §0.1. One agent's `LAW-6` contrast finding (a claimed 1.08:1) was subsequently **REFUTED** by its verifier running the *corrected* harness on the identical surface, which returns an empty array |
+
+One correction went the other way, and is the better story. An agent reported the Tracked-laws
+"official ↗" links as **functionally dead** — click, nothing happens, no navigation, no local preview —
+and reproduced it byte-for-byte. Its adversarial verifier reproduced the same symptom and then found the
+diagnosis was wrong: the app-wide capture-phase `_externalLinkGuard` (invariant #7) intercepts the click
+and raises a `confirm()`, which a headless browser with no dialog handler silently dismisses. The link is
+not dead; it is gated. **But the verifier then found a real defect underneath**: that guard shows a
+factually wrong *"this leaves the app"* warning on anchors whose own `onclick` already routes through the
+local `openLinkPreview` path and therefore do not leave the app. A confirmed symptom, a refuted cause,
+and a new finding — which is what the adversarial layer is for.
