@@ -95,6 +95,65 @@ def test_parse_gdacs_alertlevel_to_tier_and_nested_url():
     assert next(r for r in rows if r["type"] == "flood")["severity"] == "watch"  # Orange -> watch
 
 
+def test_parse_gdacs_green_maps_to_info():
+    green = json.dumps(
+        {
+            "features": [
+                {
+                    "properties": {
+                        "eventid": 1003,
+                        "eventtype": "DR",
+                        "alertlevel": "Green",
+                        "name": "Drought",
+                        "fromdate": "2026-06-03T00:00:00",
+                        "country": "Kenya",
+                        "url": "https://www.gdacs.org/y",
+                    },
+                    "geometry": {"coordinates": [37.0, -1.0]},
+                }
+            ]
+        }
+    )
+    assert parse_gdacs(green)[0]["severity"] == "info"  # Green -> info
+
+
+def test_parse_gdacs_missing_or_unrecognized_level_is_unknown_not_info():
+    # a malformed/renamed alertlevel must never be silently reported as the
+    # lowest provider tier ("info") -- honest "unknown" is the only correct
+    # answer here, mirroring _quake_band(None) -> "unknown" above.
+    missing = json.dumps(
+        {
+            "features": [
+                {
+                    "properties": {
+                        "eventid": 1004,
+                        "eventtype": "VO",
+                        "name": "Volcano with no alertlevel",
+                        "fromdate": "2026-06-04T00:00:00",
+                        "country": "Indonesia",
+                        "url": "https://www.gdacs.org/z",
+                    },
+                    "geometry": {"coordinates": [110.0, -7.0]},
+                },
+                {
+                    "properties": {
+                        "eventid": 1005,
+                        "eventtype": "VO",
+                        "alertlevel": "yellow",  # not a GDACS level this app recognises
+                        "name": "Volcano with an unrecognized alertlevel",
+                        "fromdate": "2026-06-05T00:00:00",
+                        "country": "Indonesia",
+                        "url": "https://www.gdacs.org/z2",
+                    },
+                    "geometry": {"coordinates": [110.1, -7.1]},
+                },
+            ]
+        }
+    )
+    rows = parse_gdacs(missing)
+    assert [r["severity"] for r in rows] == ["unknown", "unknown"]
+
+
 def test_api_relays_and_is_best_effort(monkeypatch):
     import src.api.hazards as hz
     from src.api.main import app
