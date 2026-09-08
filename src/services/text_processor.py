@@ -136,10 +136,11 @@ class TextProcessor:
         if remove_stopwords:
             words = self.remove_stopwords(words, language)
 
+        ngram_names = {1: "unigrams", 2: "bigrams", 3: "trigrams"}
         ngrams = {}
         if include_ngrams:
             for n in range(ngram_range[0], ngram_range[1] + 1):
-                ngram_key = "unigrams" if n == 1 else f"{'n' * n}grams"
+                ngram_key = ngram_names.get(n, f"{n}-grams")
                 ngrams[ngram_key] = self.extract_ngrams(words, n)
 
         result = {"words": words, "unigrams": words, **ngrams}

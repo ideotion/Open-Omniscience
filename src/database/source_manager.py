@@ -196,13 +196,24 @@ class SourceManager:
         logger.info(f"Created new source: {name} ({domain})")
         return source
 
+    # Fixed allowlist of fields this method may set (mass-assignment fix, audit P2).
+    # `hasattr(source, key)` used to gate the old loop, which is True for essentially
+    # every attribute the ORM instance exposes -- including `id`, the primary key.
+    # `id` must never appear here: it is not a field this method updates, full stop,
+    # regardless of what a caller's kwargs contain. Mirrors the fields create_source
+    # already accepts explicitly by name a few lines above.
+    _UPDATABLE_FIELDS = frozenset(
+        {"name", "domain", "rss_url", "rate_limit_ms", "enabled", "priority", "tags"}
+    )
+
     def update_source(self, source_id: int, **kwargs) -> Source | None:
         """
         Update a source.
 
         Args:
             source_id: ID of the source to update
-            **kwargs: Attributes to update
+            **kwargs: Attributes to update -- restricted to _UPDATABLE_FIELDS; any
+                other key (notably ``id``) is silently ignored rather than applied.
 
         Returns:
             The updated Source object, or None if not found
@@ -213,7 +224,7 @@ class SourceManager:
             return None
 
         for key, value in kwargs.items():
-            if hasattr(source, key):
+            if key in self._UPDATABLE_FIELDS:
                 setattr(source, key, value)
 
         self.session.commit()

@@ -218,6 +218,35 @@ class TestSourceOperations:
         assert updated.name == "BBC News Updated"
         assert updated.rate_limit_ms == 5000
 
+    def test_update_source_ignores_id_mass_assignment(self, source_manager, sample_sources):
+        """Mass-assignment fix (audit P2): an ``id`` kwarg must never move the
+        primary key, even though ``Source.id`` is a plain mapped attribute the old
+        hasattr()-gated loop would happily setattr onto the already-fetched row."""
+        victim_id = sample_sources[0].id
+        other_id = sample_sources[1].id
+
+        updated = source_manager.update_source(
+            victim_id, name="Still BBC", id=other_id
+        )
+
+        assert updated is not None
+        assert updated.id == victim_id  # primary key unchanged
+        assert updated.name == "Still BBC"
+        # the row that used to sit at other_id is untouched
+        assert source_manager.get_source_by_id(other_id) is not None
+        assert source_manager.get_source_by_id(other_id).id == other_id
+
+    def test_update_source_drops_unrecognized_fields(self, source_manager, sample_sources):
+        """A field outside the allowlist is silently ignored, not applied and not
+        an error -- it must not reach setattr() at all."""
+        updated = source_manager.update_source(
+            sample_sources[0].id, name="Renamed", not_a_real_field="whatever"
+        )
+
+        assert updated is not None
+        assert updated.name == "Renamed"
+        assert "not_a_real_field" not in updated.__dict__
+
     def test_delete_source(self, source_manager, sample_sources):
         """Test deleting a source."""
         source_id = sample_sources[0].id

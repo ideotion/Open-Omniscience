@@ -17,6 +17,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +25,9 @@ from sqlalchemy.orm import Session
 from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.database.models import AiCustomPrompt, Article
 from src.llm.ollama import DEFAULT_MODEL, OllamaClient
+
+if TYPE_CHECKING:
+    from src.llm.backend import LlmBackend
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +71,7 @@ def _recent_work(session: Session, limit: int) -> list[ArticleWork]:
 
 def run_auto_on_ingest(
     session: Session,
-    client: OllamaClient | None = None,
+    client: OllamaClient | LlmBackend | None = None,
     *,
     model: str | None = None,
     limit: int = AUTO_LIMIT,
@@ -78,7 +82,15 @@ def run_auto_on_ingest(
     Returns a tally ``{prompts, ran, stored, skipped, failed}``. ``ran`` is ``False`` when
     there are no auto prompts (the default) or the local model is unavailable — in the
     latter case we do nothing rather than spam failed events. One prompt failing never
-    stops the others."""
+    stops the others.
+
+    When no explicit ``client`` is supplied, resolves through the dual-backend seam
+    (``src.llm.backend.get_client_with_name`` -- vLLM on a GPU machine, Ollama otherwise,
+    RULED A12) instead of hardcoding Ollama, mirroring ``src.law.summarize.advance_law_summaries``
+    -- the exact same scheduler-ride-along role. A bare ``OllamaClient()`` default here meant
+    this specific auto-on-ingest lane silently never fired on a vLLM-only host (no Ollama
+    installed): ``OllamaClient.is_available()`` would deterministically return ``False`` even
+    though a working vLLM client was reachable."""
     # PREEMPTION (2026-08-01 ruling 13): the SAME exclusive hold every other
     # background-AI entry point checks. A user's own batch owns the model; these
     # extractors are unattended work and can wait for the next pass.
@@ -98,7 +110,10 @@ def run_auto_on_ingest(
     out["prompts"] = len(prompts)
     if not prompts:
         return out
-    client = client or OllamaClient()
+    if client is None:
+        from src.llm.backend import get_client_with_name
+
+        _, client = get_client_with_name()
     try:
         if not client.is_available():
             return out  # local model down -> no-op (never a wall of failed events)
