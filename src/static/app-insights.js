@@ -378,7 +378,7 @@
       groupsHost.innerHTML = members.length
         ? members.filter((r) => _conceptMatches(r.id) || _conceptMatches((r.languages || []).join("/")))
             .map((r) => `<button class="chip lvl-group${_conceptActiveBucket && r.id === _conceptSelectedRing ? " active" : ""}"
-               onclick="selectConceptGroup('${esc(r.id)}')" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
+               onclick="selectConceptGroup(${esc(JSON.stringify(r.id))})" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
                <span class="muted">(${esc((r.languages || []).join("/"))})</span></button>`).join(" ")
         : (_conceptActiveBucket ? `<div class="muted">${esc(t("No groups in this bucket."))}</div>` : "");
 

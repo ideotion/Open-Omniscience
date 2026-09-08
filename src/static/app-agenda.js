@@ -253,9 +253,9 @@
           <td>${esc(r.covers_through || r.filename)}</td>
           <td>${esc(r.cadence || "—")}</td>
           <td class="row" style="gap:6px;justify-content:flex-end">
-            <button class="secondary" onclick="bulletinReview('${esc(r.filename)}')">${esc(_bulT("Review"))}</button>
-            <button class="secondary" onclick="bulletinOpenFile('${esc(r.filename)}')">${esc(_bulT("Open"))}</button>
-            <button class="secondary" onclick="bulletinDelete('${esc(r.filename)}')">${esc(_bulT("Delete"))}</button>
+            <button class="secondary" onclick="bulletinReview(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Review"))}</button>
+            <button class="secondary" onclick="bulletinOpenFile(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Open"))}</button>
+            <button class="secondary" onclick="bulletinDelete(${esc(JSON.stringify(r.filename))})">${esc(_bulT("Delete"))}</button>
           </td></tr>`).join("") + "</table></div>";
     }
 
@@ -327,7 +327,7 @@
           ? ` <span class="warn">${esc(_bulT("failed:"))} ${esc(s.error)}</span>`
           : (s.skipped ? ` <span class="muted">${esc(_bulT("skipped:"))} ${esc(s.skipped)}</span>` : "");
         return `<label class="row" style="gap:8px;align-items:baseline">
-          <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleSection('${esc(s.section)}')">
+          <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleSection(${esc(JSON.stringify(s.section))})">
           <span><strong>${esc(String(s.section).replace(/_/g, " "))}</strong>
             <span class="muted">${esc(s.rows)} ${esc(_bulT("row(s)"))}</span>${win}${why}</span></label>`;
       }).join("");
@@ -699,7 +699,7 @@
             ${f.imported_events ? `<span class="pill ok">${f.imported_events} imported</span>` : ""}
             ${isExcl ? `<span class="pill warn">excluded</span>` : ""}
             <span class="muted">· ${esc(f.kind)}${f.country ? " · " + esc(f.country) : ""}</span>
-            <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude('${esc(f.key)}')">${isExcl ? "Include" : "Exclude"}</button></summary>
+            <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude(${esc(JSON.stringify(f.key))})">${isExcl ? "Include" : "Exclude"}</button></summary>
           ${feeds}</details>`;
       }).join("") + (total > 40 ? `<div class="hint">+${total - 40} — type to filter</div>` : "");
     }
