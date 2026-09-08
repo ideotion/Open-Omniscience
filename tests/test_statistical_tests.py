@@ -230,6 +230,29 @@ class TestStatisticalTests:
         assert result.statistic is not None
         assert 0 <= result.p_value <= 1
         assert result.effect_size is not None
+        # The rank-biserial correlation is bounded to [-1, 1]; a formula bug can
+        # silently produce a value outside that range or a value that is merely
+        # "not None" but wrong (see test_mann_whitney_u_effect_size below for the
+        # actual correctness check against hand-computed cases).
+        assert -1 <= result.effect_size <= 1
+
+    def test_mann_whitney_u_effect_size(self):
+        """The effect size is the rank-biserial correlation, not min(mean_rank)/n.
+
+        Hand-computed against two known cases: perfect separation gives the
+        maximal effect size, and an interleaved arrangement gives a known
+        fractional value. A previous bug (`1 - 2*min(r1, r2)/(n1+n2+1)`) returned
+        ~0.4286 and ~0.1429 for these two cases respectively -- both wrong.
+        """
+        # Perfect separation: sample1 entirely below sample2. By this module's sign
+        # convention (see the comment above the effect_size line in
+        # mann_whitney_u()), a positive value means sample2 tends to rank higher.
+        result = self.tests.mann_whitney_u([1, 2, 3], [4, 5, 6])
+        assert result.effect_size == pytest.approx(1.0)
+
+        # Interleaved samples: hand-computed rank-biserial correlation is 1/3.
+        result = self.tests.mann_whitney_u([1, 3, 5], [2, 4, 6])
+        assert result.effect_size == pytest.approx(1 / 3)
 
     def test_wilcoxon_signed_rank(self):
         """Test Wilcoxon signed-rank test."""

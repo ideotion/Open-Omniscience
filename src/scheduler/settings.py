@@ -387,6 +387,14 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
         )
+    if "scrape_unqualified" in updates and updates["scrape_unqualified"] is not None:
+        current.scrape_unqualified = _coerce_bool(
+            updates["scrape_unqualified"], current.scrape_unqualified
+        )
+    if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
+        current.scrape_app_provided_only = _coerce_bool(
+            updates["scrape_app_provided_only"], current.scrape_app_provided_only
+        )
     if "collect_rate_mode" in updates and updates["collect_rate_mode"] is not None:
         rm = str(updates["collect_rate_mode"])
         if rm not in VALID_RATE_MODES:
