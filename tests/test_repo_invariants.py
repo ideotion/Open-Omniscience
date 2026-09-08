@@ -7730,7 +7730,16 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 616
+#:
+#: RAISED 2026-09-08: the A3 restructuring that set the original 616 ceiling had also, as
+#: an unintended side effect, dropped six numbered UI-invariant paragraphs (#9-#13, #22)
+#: that test_ui_invariants never stopped enforcing -- the ratchet caught growth but had no
+#: way to catch a REMOVAL of protected content, since a smaller file only ever reads as
+#: slack, never as a violation. Restoring those six paragraphs (this is documentation
+#: content the ratchet is meant to protect, per the invariant clause above -- not the kind
+#: of growth rules (5)/(5a) route to docs/ledger/) raised the real count to 665; the
+#: ceiling is raised to match, honestly measured, with zero slack restored on top.
+_CLAUDE_MD_LINE_CEILING = 665
 
 
 def _claude_md_lines() -> int:
