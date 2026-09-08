@@ -64,32 +64,6 @@ def find_flooded_topics(
     b_start = r_start - timedelta(days=baseline_days)
     r_hi = today + timedelta(days=1)
 
-    def _distinct_articles(source_id, lo, hi):
-        return (
-            session.query(func.count(distinct(KeywordMention.article_id)))
-            .filter(
-                KeywordMention.source_id == source_id,
-                KeywordMention.observed_on >= lo,
-                KeywordMention.observed_on < hi,
-            )
-            .scalar()
-            or 0
-        )
-
-    def _per_keyword(source_id, lo, hi):
-        return dict(
-            session.query(
-                KeywordMention.keyword_id, func.count(distinct(KeywordMention.article_id))
-            )
-            .filter(
-                KeywordMention.source_id == source_id,
-                KeywordMention.observed_on >= lo,
-                KeywordMention.observed_on < hi,
-            )
-            .group_by(KeywordMention.keyword_id)
-            .all()
-        )
-
     # Candidate sources: enough RECENT articles (km-only, source_id index).
     src_recent = dict(
         session.query(KeywordMention.source_id, func.count(distinct(KeywordMention.article_id)))
@@ -142,14 +116,67 @@ def find_flooded_topics(
                 if lg:
                     active_by_lang[lg] = active_by_lang.get(lg, 0) + 1
 
+    # Batched per-source data for the surviving candidates: the up-to-three per-source
+    # round trips (a baseline distinct-article count + two per-keyword breakdowns) become
+    # three GROUP BY queries, chunked over the candidate ids at the same 400-per-chunk
+    # IN() boundary find_buried_topics uses below -- replacing what used to be up to
+    # 3 * max_sources sequential single-source queries with a small, chunk-bounded number.
+    prior_count_by_source: dict[int, int] = {}
+    recent_kw_by_source: dict[int, dict[int, int]] = {}
+    prior_kw_by_source: dict[int, dict[int, int]] = {}
+    if cands:
+        cand_ids = [s for s, _ in cands]
+        for i in range(0, len(cand_ids), 400):  # bounded IN() under the SQLite variable limit
+            chunk = cand_ids[i : i + 400]
+            for sid, n in (
+                session.query(
+                    KeywordMention.source_id, func.count(distinct(KeywordMention.article_id))
+                )
+                .filter(
+                    KeywordMention.source_id.in_(chunk),
+                    KeywordMention.observed_on >= b_start,
+                    KeywordMention.observed_on < r_start,
+                )
+                .group_by(KeywordMention.source_id)
+            ):
+                prior_count_by_source[int(sid)] = int(n or 0)
+            for sid, kid, n in (
+                session.query(
+                    KeywordMention.source_id,
+                    KeywordMention.keyword_id,
+                    func.count(distinct(KeywordMention.article_id)),
+                )
+                .filter(
+                    KeywordMention.source_id.in_(chunk),
+                    KeywordMention.observed_on >= r_start,
+                    KeywordMention.observed_on < r_hi,
+                )
+                .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+            ):
+                recent_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
+            for sid, kid, n in (
+                session.query(
+                    KeywordMention.source_id,
+                    KeywordMention.keyword_id,
+                    func.count(distinct(KeywordMention.article_id)),
+                )
+                .filter(
+                    KeywordMention.source_id.in_(chunk),
+                    KeywordMention.observed_on >= b_start,
+                    KeywordMention.observed_on < r_start,
+                )
+                .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+            ):
+                prior_kw_by_source.setdefault(int(sid), {})[int(kid)] = int(n or 0)
+
     is_hidden = _hidden_predicate()
     items: list[dict] = []
     for source_id, n_now in cands:
-        n_prior = int(_distinct_articles(source_id, b_start, r_start))
+        n_prior = prior_count_by_source.get(source_id, 0)
         if n_prior < min_prior_articles:
             continue  # not enough baseline -> stay silent
-        recent_kw = _per_keyword(source_id, r_start, r_hi)
-        prior_kw = _per_keyword(source_id, b_start, r_start)
+        recent_kw = recent_kw_by_source.get(source_id, {})
+        prior_kw = prior_kw_by_source.get(source_id, {})
         for kid, a_now in recent_kw.items():
             a_now = int(a_now or 0)
             if a_now < min_recent_count:
