@@ -84,6 +84,59 @@ the source file had moved; corrected rather than repeated:**
   50 ms → 11 ms warm at 1,776 matches; the win grows with match count).
 
 ## Reliability
+- **The `main` CI gate is starved by an advisory job with no timeout** (found 2026-09-07, while
+  checking whether CI had reported on a merge). The blocking verdict exists in ~20 minutes and then
+  waits hours on a lane that cannot fail the build. MEASURED over the last 100 `main` push runs
+  (2026-08-11 -> 2026-09-07): **90 cancelled, 5 failure, 3 success**; 68 of the 90 ended within 15 s
+  of the *next* `main` push starting, median offset **1.0 s**. PR #1038's merge commit
+  (`ddb60454`, run 4948) was cancelled 69 s in having **allocated zero jobs** -- it never executed.
+  **The A18-CI-01 exemption is NOT the bug and must not be "fixed".** `cancel-in-progress` is
+  correctly false on the default branch, so an *in-progress* `main` run is never cancelled; what
+  GitHub cancels is the *pending* one, because a concurrency group holds at most one queued run and
+  each new merge supersedes it. The bug is that the slot is held for hours: `Portability observation
+  (windows-latest)` is `continue-on-error: true` -- advisory, its verdict cannot fail the run -- and
+  `timeout-minutes` appears **nowhere** in `ci.yml`, so every job inherits GitHub's 360-minute
+  default. Run 4496 (2026-08-14): that job ran **00:48:57 -> 04:10:05 = 3 h 21 m** and ended
+  `failure` with no steps recorded, while the blocking `test` job was green at **19.5 min**.
+  **AND `continue-on-error` DOES NOT PROTECT THE RUN FROM THAT LANE -- watched to completion on run
+  4814 (2026-09-07), and this is the sharp end of the finding.** Every blocking job was green at
+  **12:56:23**. The Windows `Test (pytest)` step ran **12:35:28 -> 18:33:46 = 5 h 58 m** and the job
+  **12:33:37 -> 18:33:51 = 6 h 00 m 14 s** -- the 360-minute default, to the second -- and the run
+  concluded **`cancelled` at 18:33:52**. So `6bd3db5e` got **no verdict at all**, 5 h 37 m after it
+  had already earned a green one. `continue-on-error` shields the run's conclusion from a job's
+  FAILURE, not from its TIMEOUT: GitHub reports a timeout kill as a *cancellation*, and a cancelled
+  job cancels the run. The lane that by design cannot fail the build destroys the build's result
+  instead.
+  **The 90 cancellations are therefore TWO mechanisms, not one** (this corrects a residual the first
+  pass left vague): **68 never executed**, superseded while pending after a median 21.6 min wait;
+  and **20 of the remaining 22 ran to the 360-minute ceiling and were killed there** (8 land on 360
+  exactly; the longer 384-692 min figures are queue time plus the same 6 h kill, since a run's
+  clock starts when it is created, not when it starts). Only 2 short outliers are unaccounted for.
+  The fix direction is a `timeout-minutes` on the observation lane, **but the number is a ruling and
+  the measurement for it does not exist**: no Windows portability run in the sampled window ever
+  finished its pytest step, so what a *healthy* Windows suite costs here is unknown. The honest
+  comparables are the same suite elsewhere in run 4496 -- macOS **16.5 min**, ubuntu core-only
+  **15.6 min**, ubuntu `test` **17.2 min**. Whether to cap the lane, fix the hang, or drop Windows
+  from the matrix is a maintainer call; capping is the one that restores the gate today, and a cap
+  BELOW 360 converts a 6 h run-killing cancellation into a fast advisory failure the run survives.
+  CONSEQUENCE worth stating plainly: for most merges in this window `main` carries **no CI verdict
+  at all**, and the five concluded `failure` runs are unreviewed red on the protected branch.
+  **AND IT IS NOT ONLY `main` -- observed 2026-09-07 20:12, this has backed CI up across the whole
+  repo.** SEVEN `ci.yml` runs were simultaneously `in_progress`, the oldest since 14:29 (5 h 42 m),
+  every one of them alive ONLY on its Windows lane. Spot-checked on run 4823
+  (`claude/async-handlers-event-loop-qfyl1n`, `8d53e006`): **10 of its 11 jobs were green by
+  15:00:06** and `Portability observation (windows-latest)` was still running its pytest step
+  **5 h 34 m** later. Feature-branch runs DO cancel-in-progress, so these are not superseded -- they
+  simply sit, each pinning a Windows runner until the 6 h kill.
+  **THE MEASUREMENT GAP IS NARROWER THAN THE FIRST PASS SAID, AND IT POINTS AT "HUNG", NOT "SLOW".**
+  On that SAME COMMIT the macOS lane ran the SAME suite in **22 m 48 s** (14:37:10 -> 14:59:58,
+  `success`) while Windows passed 5 h 34 m on it. That is not a platform being slower; a suite that
+  finishes in 23 minutes elsewhere and never finishes here is hanging. So `fix the hang` gains
+  evidence, and a cap can be set at a modest multiple of 23 min without risking a legitimate run.
+  STATED AS INFERENCE, NOT FACT: that the queue backlog is runner-concurrency starvation is a READING
+  of the queue behaviour -- 22 jobs on PR #1042 sat `queued` for over an hour with none starting,
+  including its ubuntu jobs -- and GitHub exposes neither the concurrency ceiling nor a queue reason
+  through the API, so it cannot be read directly. The seven stuck runs and their durations ARE facts.
 - **SSRF TOCTOU** (TEST-03 residual): the SSRF guard resolves-and-checks, but `requests` re-resolves
   at connect time, leaving a DNS-rebinding TOCTOU window. Closing it needs connect-time IP pinning
   (a custom `requests` transport adapter). Exotic; hardening, not a known exploit path.
