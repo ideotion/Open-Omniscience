@@ -4347,6 +4347,11 @@ def test_temporal_map_retired_into_ooMap():
     map had must survive on ooMap before its panel is removed. This REPLACES the old
     test_tmap_mention_layer (the mention layer is now ooMap's Places overlay, slice 4,
     covered in test_ooMap_choropleth).
+
+    UI-04 dead-code cleanup (2026-09-08): the temporal-only cluster this test's
+    assertion (5) used to require be FLAGGED as unreachable ("RETIRED (slice 5b)")
+    has since actually been DELETED (loadTimemap had zero live callers, confirmed by
+    grep) — the assertion below now checks the deletion itself, not the marker.
     """
     html = _ui_source()
 
@@ -4382,8 +4387,24 @@ def test_temporal_map_retired_into_ooMap():
     # 4) The shared helpers ooMap reuses are NOT removed by the retire.
     assert "function tmapFindCoverage(" in html, "tmapFindCoverage (reused by the ooMap detail) must survive"
 
-    # 5) The now-unreachable temporal-only functions are flagged for the deletion-cleanup.
-    assert "RETIRED (slice 5b)" in html, "the dead temporal functions must be flagged unreachable"
+    # 5) The now-unreachable temporal-only functions have been DELETED (UI-04 cleanup,
+    #    2026-09-08) — loadTimemap's only caller was its own declaration, so nothing
+    #    reachable could still call these; the shared helpers asserted present above
+    #    (tmapFindCoverage, _ooMapSignalDetail, etc.) are unaffected.
+    for dead in (
+        "async function loadTimemap(", "function renderTimemap(", "function buildTmapSvg(",
+        "function buildTmapStrip(", "function buildTmapCoast(", "function buildTmapLegend(",
+        "function buildTmapMentionLayer(", "function buildTmapMentionLegend(",
+        "function showTmapDetail(", "function showTmapWhereDetail(", "function tmapNearby(",
+        "function tmapSavePrefs(", "function tmapRestorePrefs(", "function tmapSpan(",
+        "function tmapExpand(", "function onTmapSlide(", "function onTmapSpanChange(",
+        "function onTmapDate(", "function onTmapWindowChange(", "function wireTmapDrag(",
+        "function wireTmapWheel(", "function applyTmapVB(", "function zoomTmap(",
+        "function resetTmap(", "function stopTmapPlay(", "function toggleTmapPlay(",
+        "function toggleTmapKind(", "function toggleTmapMentions(", "function stripClick(",
+        "function sliderToT(", "function tToSlider(", "function tToDate(", "function dateToT(",
+    ):
+        assert dead not in html, f"the unreachable temporal-map cluster must be deleted, found: {dead}"
 
 
 def test_ooMap_choropleth():
@@ -4440,7 +4461,13 @@ def test_ooMap_choropleth():
     assert "async function loadOoMapCoverage()" in html, "the Map-tab loader must exist"
     assert "/api/insights/map-coverage" in html, "the loader must fetch the coverage endpoint"
     assert 'id="oo-coverage-map"' in html, "the Map tab must host the choropleth"
-    assert "loadOoMapCoverage();" in html, "the loader must be wired into the Map-tab open path"
+    # Matched the same way as test_temporal_map_retired_into_ooMap's assertion (2): every
+    # TAB_LOADERS entry became an arrow when the engine was split into modules (S-3,
+    # 2026-08-20), so a literal "loadOoMapCoverage();" (true only while the now-deleted
+    # loadTimemap() called it as its first statement) is no longer the right shape to check.
+    assert re.search(r"timemap:\s*(?:\(\)\s*=>\s*)?loadOoMapCoverage\b", html), (
+        "the loader must be wired into the Map-tab open path"
+    )
 
     # Caveat VISIBLE by default (#23) + unlocated data surfaced, never placed.
     assert 'class="card-caveat"' in html and "${esc(opts.caveat)}" in html, (
@@ -4510,7 +4537,13 @@ def test_ooMap_choropleth():
     assert "data-oomap-focus" in html and "opts.onFocus(+fs.value)" in html, "the in-map time slider must exist"
     assert "Math.abs(s.t - focus) <= win" in html, "signals must filter by the focus window (space AND time)"
     # Honest event convention carried over: future/unconfirmed = a hollow/dashed ring.
-    assert "const future = focus != null && s.t > focus" in html, "future events stay distinct (hollow/dashed)"
+    # (UI-04 cleanup, 2026-09-08: the old assertion string only ever matched the DEAD
+    # buildTmapSvg's "future" variable, deleted with the rest of that cluster — the
+    # live certainty-class system below is what actually renders this distinction now.)
+    assert "function _ooSigClass(" in html, "the signal certainty-class classifier must exist"
+    assert 'cls === "confirmed"' in html and 'fill="transparent" stroke="${col}"' in html, (
+        "a non-confirmed (future/unconfirmed/deduced) event must render as a hollow ring, not filled"
+    )
 
     # --- slice 5a.2: signal CLICK-TO-DETAIL (ported faithfully so 5b's retire loses nothing) --- #
     assert "data-oomap-sig=" in html and "opts.onSignal(s, host._ooSigVisible" in html, (
@@ -7355,8 +7388,11 @@ def test_evidence_links_underlined_and_use_the_shared_extlink_class():
     # must no longer carry text-decoration:none.
     assert "text-decoration:none;align-self:center" not in js, \
         "no extLink() call site may re-introduce an inline text-decoration:none override"
-    assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 2, \
-        "both temporal-map/insights source-link call sites must keep their style but drop the override"
+    # Was >= 2 (the live ooMap signal-detail site + the dead temporal-map showTmapDetail's
+    # duplicate). The UI-04 dead-code cleanup (2026-09-08) deleted showTmapDetail — it had
+    # zero live callers — leaving the one live ooMap call site, which must keep its style.
+    assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 1, \
+        "the live ooMap signal-detail source-link call site must keep its style but drop the override"
 
 
 def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
