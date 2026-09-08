@@ -27,7 +27,12 @@ Tests for canonicalize_url and generate_content_hash functions.
 Author: Ideotion
 """
 
-from src.utils.url_utils import DOMAIN_ALIASES, canonicalize_url, generate_content_hash, is_equivalent_domain
+from src.utils.url_utils import (
+    DOMAIN_ALIASES,
+    canonicalize_url,
+    generate_content_hash,
+    is_equivalent_domain,
+)
 
 
 def test_canonicalize_url():
