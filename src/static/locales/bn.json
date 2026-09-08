@@ -3138,5 +3138,8 @@
   "Date set by the electoral authority. Confirm at the official source.": "নির্বাচন কর্তৃপক্ষ তারিখ নির্ধারণ করেছে। সরকারি উৎসে যাচাই করুন।",
   "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "সঠিক দিন এখনও নির্ধারিত হয়নি — কেবল আইনি সময়সীমা জানা আছে। সরকারি উৎসে যাচাই করুন।",
   "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "পুনরাবৃত্তির নিয়ম থেকে প্রক্ষেপিত, ঘোষিত নয়। নির্বাচন স্থগিত, পরিবর্তিত বা বাতিল হয় — এটিকে সরকারি উৎস যাচাই করার সংকেত হিসেবে দেখুন, কখনও তারিখ হিসেবে নয়।",
-  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "প্রক্ষেপিত তারিখ পেরিয়ে গেছে এবং এখানে কোনো ফলাফল নথিভুক্ত নেই — অবস্থা অজানা। সরকারি উৎসে যাচাই করুন।"
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "প্রক্ষেপিত তারিখ পেরিয়ে গেছে এবং এখানে কোনো ফলাফল নথিভুক্ত নেই — অবস্থা অজানা। সরকারি উৎসে যাচাই করুন।",
+  "window": "সময়সীমা",
+  "projected": "প্রক্ষেপিত",
+  "projected · passed": "প্রক্ষেপিত · অতীত"
 }

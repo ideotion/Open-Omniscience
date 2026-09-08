@@ -3138,5 +3138,8 @@
   "Date set by the electoral authority. Confirm at the official source.": "Fecha fijada por la autoridad electoral. Compruébelo en la fuente oficial.",
   "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "El día exacto aún no está fijado: solo se conoce el plazo legal. Compruébelo en la fuente oficial.",
   "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "Proyectada a partir de una regla de periodicidad, no anunciada. Las elecciones se aplazan, se trasladan o se cancelan: tómelo como un aviso para consultar la fuente oficial, nunca como una fecha.",
-  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "La fecha proyectada ya pasó y aquí no consta ningún resultado: situación desconocida. Compruébelo en la fuente oficial."
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "La fecha proyectada ya pasó y aquí no consta ningún resultado: situación desconocida. Compruébelo en la fuente oficial.",
+  "window": "plazo",
+  "projected": "proyectada",
+  "projected · passed": "proyectada · pasada"
 }
