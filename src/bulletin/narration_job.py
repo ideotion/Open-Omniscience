@@ -50,13 +50,14 @@ already records.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.jobs import progress_state as _progress_state
 
 _LOG = logging.getLogger("bulletin.narration_job")
 
@@ -104,24 +105,18 @@ def load_progress_state(state_path: Path | None = None) -> dict:
     A missing or unreadable state file means "no run is paused", never an error: a
     corrupt cursor must not make the feature unusable, and the worst it costs is
     starting a run again.
+
+    The generic read/write logic lives in ``src.jobs.progress_state``, shared with
+    the other progressive job modules; only this module's default state PATH is
+    module-specific.
     """
-    p = state_path or _state_path()
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:  # noqa: BLE001 - an unreadable cursor is "no paused run"
-        return {}
+    return _progress_state.load_progress_state(state_path or _state_path())
 
 
 def _save_progress_state(state: dict, path: Path) -> None:
-    """Atomic write, so a crash mid-save never leaves a cursor that parses."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        tmp.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    """Atomic write, so a crash mid-save never leaves a cursor that parses --
+    see ``src.jobs.progress_state`` for the shared implementation."""
+    _progress_state.save_progress_state(state, path)
 
 
 def story_digest(stories: list[dict]) -> str:
