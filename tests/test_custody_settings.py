@@ -135,6 +135,7 @@ def test_put_then_get_roundtrip(client):
         json={
             "anchoring_mode": "opentimestamps",
             "auto_log_on_ingest": True,
+            "ots_consent": True,
         },
     )
     body = client.get("/api/custody/settings").json()
@@ -142,3 +143,52 @@ def test_put_then_get_roundtrip(client):
     assert body["auto_log_on_ingest"] is True
     # ots_effective must reflect availability, not the request alone.
     assert body["ots_effective"] == body["ots_available"]
+
+
+# --------------------------------------------------------------------------- #
+# P1 audit finding (2026-09-08): the informed-consent gate on turning
+# OpenTimestamps anchoring ON (see also tests/test_custody_consent_gates.py,
+# which covers the same rule at the src.custody.settings.save_settings level
+# without needing the full app import).
+# --------------------------------------------------------------------------- #
+
+
+def test_put_opentimestamps_without_consent_is_refused(client):
+    r = client.put("/api/custody/settings", json={"anchoring_mode": "opentimestamps"})
+    assert r.status_code == 400, r.text
+    assert "consent" in r.json()["detail"].lower()
+    # Refused BEFORE anything was written -- the effective state is still local.
+    assert client.get("/api/custody/settings").json()["anchoring_mode"] == "local"
+
+
+def test_put_opentimestamps_with_consent_succeeds(client):
+    r = client.put(
+        "/api/custody/settings",
+        json={"anchoring_mode": "opentimestamps", "ots_consent": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["anchoring_mode"] == "opentimestamps"
+
+
+def test_put_resave_while_already_opentimestamps_does_not_need_consent_again(client):
+    r1 = client.put(
+        "/api/custody/settings",
+        json={"anchoring_mode": "opentimestamps", "ots_consent": True},
+    )
+    assert r1.status_code == 200, r1.text
+    # Resave some OTHER field, mode included but unchanged, no consent this time.
+    r2 = client.put(
+        "/api/custody/settings",
+        json={"anchoring_mode": "opentimestamps", "default_actor": "reporter"},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["default_actor"] == "reporter"
+
+
+def test_put_ots_consent_flag_is_not_echoed_back_or_persisted(client):
+    client.put(
+        "/api/custody/settings",
+        json={"anchoring_mode": "opentimestamps", "ots_consent": True},
+    )
+    body = client.get("/api/custody/settings").json()
+    assert "ots_consent" not in body

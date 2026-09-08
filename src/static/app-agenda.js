@@ -787,6 +787,67 @@
         ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
         : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
     }
+    // Election date-confidence tiers (src/civic/elections.py, maintainer ruling
+    // 2026-07-14, V1_PATHWAY §4.5): catalog.agenda() annotates every ELECTIONS-calendar
+    // event with date_confidence + date_caveat (and, for a projected entry, a
+    // projection object) -- this was computed on every response and never rendered
+    // (audit P1-04). Four renderable states: scheduled / window / projected, plus a
+    // PASSED sub-state -- a projected date that has gone by with no confirmed result,
+    // which the backend module frames as an investigative lead, never a routine caveat,
+    // and deliberately never re-projects to a next cycle. date_confidence is null for
+    // every non-election event AND for the refusal-1 gap (an election with no sourced
+    // date at all), so callers fall back to the plain e.confirmed pill exactly as
+    // before whenever it is absent -- non-election calendars must not regress.
+    // Never reads e.cadence for anything: the backend deliberately doesn't either
+    // (free prose, not a sourced recurrence rule), and re-reading it here would be the
+    // same fabrication risk one layer up.
+    function agElectionTier(e) {
+      if (e.date_confidence == null) return null;
+      if (e.date_confidence === "projected" && e.projection && e.projection.status === "passed")
+        return "passed";
+      return e.date_confidence;                      // "scheduled" | "window" | "projected"
+    }
+    // ONE {pill class, chip class, short label} map so the full pill (agRow) and the
+    // small grid chips (Year / Month-card / Month-grid / Week) can never disagree
+    // about what a tier means. PASSED gets its own colour + class -- distinguishable
+    // from a routine "approx" chip, never blended into it.
+    const _AG_TIER_META = {
+      scheduled: { pillCls: "ok",           chipCls: "",          label: "scheduled" },
+      window:    { pillCls: "tier-window",  chipCls: "tier-window", label: "window" },
+      projected: { pillCls: "warn",         chipCls: "approx",    label: "projected" },
+      passed:    { pillCls: "err",          chipCls: "leadpassed", label: "projected · passed" },
+    };
+    // The confidence pill for one full row (agRow / the day-detail lists): tier-aware
+    // for elections, byte-identical to the pre-existing markup for everything else.
+    function agConfPill(e) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (e.deduced)
+        return `<span class="pill warn" title="${esc(T("A date your articles mention — deduced from text, never confirmed."))}">${esc(T("deduced · never confirmed"))}</span>`;
+      const tier = agElectionTier(e);
+      if (tier) {
+        const meta = _AG_TIER_META[tier];
+        const glyph = tier === "passed" ? "⚑ " : "";     // the lead marker, untranslated
+        return `<span class="pill ${meta.pillCls}" title="${esc(T(e.date_caveat || ""))}">${glyph}${esc(T(meta.label))}</span>`;
+      }
+      return e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
+                          : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+    }
+    // The small calendar-grid chips' modifier class -- tier-aware for elections,
+    // "approx"/"" for everything else exactly as before.
+    function agChipCls(e) {
+      const tier = agElectionTier(e);
+      return tier ? _AG_TIER_META[tier].chipCls : (e.confirmed ? "" : "approx");
+    }
+    // The chips' hover-title suffix: the backend's OWN translated caveat for a tier,
+    // else `fallback` (which a call site sets to its pre-existing suffix, or "" where
+    // none existed) -- so a non-election chip's title is untouched by this change.
+    function agChipTitleSuffix(e, fallback) {
+      const tier = agElectionTier(e);
+      if (!tier) return fallback || "";
+      if (!e.date_caveat) return "";
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return " — " + T(e.date_caveat);
+    }
     // Feed id -> {name, url} from the calendar directory, for the visible provenance
     // pill on imported events (maintainer 2026-07-17: "when clicking on events, the
     // source should be clear"). Lazy: reuses the Calendars panel's _feedDir when
@@ -812,10 +873,7 @@
     }
     function agRow(e) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const conf = e.deduced
-        ? `<span class="pill warn" title="${esc(T("A date your articles mention — deduced from text, never confirmed."))}">${esc(T("deduced · never confirmed"))}</span>`
-        : e.confirmed ? '<span class="pill ok" title="fixed annual date">confirmed</span>'
-                      : '<span class="pill" title="follow the official source for the exact date">approx · check source</span>';
+      const conf = agConfPill(e);
       const tags = (e.tags||[]).map(t => `<span class="ag-tag" onclick="$('agenda-tag').value='${esc(t)}';renderAgenda()">${esc(t)}</span>`).join("");
       const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
       const imp = (e.imported && e.source_count > 1)
@@ -947,7 +1005,7 @@
         const name = new Intl.DateTimeFormat(loc, { month: "long" }).format(new Date(y, m - 1, 1));
         const isCur = y === curY && m === curM;
         const chips = evs.slice(0, 4).map(e =>
-          `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
+          `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e))}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
         cards += `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" onclick="agOpenMonth(${m})" title="${esc(name)}">
           <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
@@ -974,7 +1032,7 @@
       const name = new Intl.DateTimeFormat(loc, { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
       const isCur = y === curY && m === curM;
       const chips = evs.slice(0, 4).map(e =>
-        `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
+        `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e))}">${esc(e.title.length > 20 ? e.title.slice(0, 19) + "…" : e.title)}</span>`).join("");
       const more = evs.length > 4 ? `<span class="ag-more">+${evs.length - 4}</span>` : "";
       return `<div class="ag-ycard${isCur ? " today" : ""}${evs.length ? " has" : ""}" onclick="agOpenMonthYear(${y},${m})" title="${esc(name)}">
         <div class="ag-ymon">${esc(name)} <span class="muted">${evs.length || ""}</span></div>${chips}${more}</div>`;
@@ -1147,7 +1205,7 @@
           ? `<span class="ag-season" style="float:inline-end;font-size:11px;margin-inline-end:2px" title="${esc(t9m(season.name) + " " + season.time + " UTC — " + season.method + "; " + season.acc)}">${season.glyph}</span>`
           : "";
         const chips = evs.slice(0, 3).map(e =>
-          `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}${e.confirmed ? "" : " — exact date moves; check the official source"}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
+          `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 22 ? e.title.slice(0, 21) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 3 ? `<span class="ag-more">+${evs.length - 3}</span>` : "";
         return `<div class="ag-cell${today ? " today" : ""}${evs.length ? " has" : ""}${AGV.day === c.d ? " sel" : ""}" onclick="agShowDay(${c.d})">
           <span class="ag-dn">${c.d}</span>${moonHtml}${seasonHtml}${chips}${more}</div>`;
@@ -1204,7 +1262,7 @@
         const wd = new Intl.DateTimeFormat(loc, { weekday: "short" }).format(d);
         const dn = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short" }).format(d);
         const chips = evs.slice(0, 6).map(e =>
-          `<span class="ag-chip${e.confirmed ? "" : " approx"}" title="${esc(e.title)}${e.confirmed ? "" : " — exact date moves; check the official source"}">${esc(e.title.length > 30 ? e.title.slice(0, 29) + "…" : e.title)}</span>`).join("");
+          `<span class="ag-chip${agChipCls(e) ? " " + agChipCls(e) : ""}" title="${esc(e.title + agChipTitleSuffix(e, e.confirmed ? "" : " — exact date moves; check the official source"))}">${esc(e.title.length > 30 ? e.title.slice(0, 29) + "…" : e.title)}</span>`).join("");
         const more = evs.length > 6 ? `<span class="ag-more">+${evs.length - 6}</span>` : "";
         return `<div class="ag-cell${isToday ? " today" : ""}${evs.length ? " has" : ""}${isSel ? " sel" : ""}" onclick="agPickDate(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})">
           <div class="ag-wd">${esc(wd)} <span class="ag-wd-d">${esc(dn)}</span>${moonHtml}</div>${chips}${more}</div>`;
