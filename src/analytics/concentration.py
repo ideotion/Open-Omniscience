@@ -436,19 +436,23 @@ def find_buried_topics(
     fdr = benjamini_hochberg(pvals, q=fdr_q)
     survivors = set(fdr.rejected)
     hits = [
-        t for idx, t in enumerate(tests)
+        (idx, t) for idx, t in enumerate(tests)
         if idx in survivors and t["z"] <= -z_min  # survive FDR AND clear the effect gate
     ]
-    hits.sort(key=lambda t: t["z"])  # most-below first
+    hits.sort(key=lambda pair: pair[1]["z"])  # most-below first
     hits = hits[:max_items]
 
     items: list[dict] = []
-    for t in hits:
+    for idx, t in hits:
         kw = session.get(Keyword, t["kid"])
         if kw is None or is_hidden(kw.normalized_term):
             continue
         src = session.get(Source, t["sid"])
-        adj_q = fdr.adjusted[tests.index(t)] if t in tests else None
+        # idx came directly from enumerate(tests) above, so it always indexes fdr.adjusted
+        # (same length as tests, built from pvals which is built 1:1 with tests); the bounds
+        # check is a cheap defensive guard, not a re-derivation (was: an O(n) tests.index(t)
+        # scan through up to max_sources*max_topics dict entries, per surfaced hit).
+        adj_q = fdr.adjusted[idx] if 0 <= idx < len(fdr.adjusted) else None
         # The exact analyzed set for a click-through: the widely-covered topic's own
         # corpus-wide articles in this window -- the "elsewhere" this source is under-
         # covering (the source's own on-topic set, t["a_s"], is often near-empty by
