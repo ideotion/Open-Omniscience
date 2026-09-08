@@ -470,8 +470,9 @@ class EthicalFetcher:
                 pass
         # Protected fetch (Theme 2): route through the user's proxy (e.g. Tor at
         # socks5://127.0.0.1:9050). We *use* the proxy and verify it is set; we do NOT
-        # guarantee anonymity — the user must run and trust the proxy. SOCKS proxies need
-        # the optional [safety] extra (PySocks); HTTP/HTTPS proxies work out of the box.
+        # guarantee anonymity — the user must run and trust the proxy. SOCKS proxies
+        # additionally need PySocks (pip install pysocks) — there is no packaged extra
+        # for it; HTTP/HTTPS proxies work out of the box.
         # A POOL's actual per-host endpoint is chosen at FETCH TIME (_isolated_proxies,
         # every real request path routes through it) -- this session-level default is
         # only ever a defensive fallback (the first member) for anything that might
