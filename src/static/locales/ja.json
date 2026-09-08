@@ -3136,5 +3136,18 @@
   "Date set by the electoral authority. Confirm at the official source.": "選挙管理機関が定めた期日です。公式の情報源で確認してください。",
   "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "正確な日はまだ決まっていません — 法定の期間のみが判明しています。公式の情報源で確認してください。",
   "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "周期の規則から推定したもので、公告されたものではありません。選挙は延期・変更・中止されます — これは公式の情報源を確認するための手がかりであり、期日ではありません。",
-  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "推定した期日は過ぎており、ここには結果が記録されていません — 状況は不明です。公式の情報源で確認してください。"
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "推定した期日は過ぎており、ここには結果が記録されていません — 状況は不明です。公式の情報源で確認してください。",
+  "Collection is ON — click to turn off": "収集はオンです — クリックしてオフにします",
+  "Collection is OFF — click to turn on": "収集はオフです — クリックしてオンにします",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "収集速度：最大 — 接続を最大限に使用します（ホストごとの礼儀は変わりません）。控えめな500 KiB/s目標に切り替えるにはクリックしてください。",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "収集速度：500 KiB/s目標 — 意図的に控えめです。最大(フル速度)に切り替えるにはクリックしてください。",
+  "Collection speed set to Maximum — applies from the next pass.": "収集速度を最大に設定しました — 次のパスから適用されます。",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "収集速度を500 KiB/s目標に設定しました — 次のパスから適用されます。",
+  "Scale": "スケール",
+  "Absolute": "絶対値",
+  "Indexed (=100)": "指数化（=100）",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "共通の時間軸上の生の値 — 規模が大きく異なる系列は平坦に見えることがあります。",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "各系列はウィンドウ開始時点で100に再基準化 — 絶対水準ではなく相対的な動きを示します。",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "対数スケール（底10）— 比率が等しければ距離も等しくなります。ホバーすると実際の値が表示されます。",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.jsを使用 — ローカルに同梱された小さなフレームワーク（MIT、ネットワーク接続なし）。"
 }
