@@ -36,6 +36,16 @@ found-resolved-not-rebuilt rule. Statuses are the file's contract: keep them tru
     correction makes the emitted total genuinely fractional — the type now matches the value, but
     whether a *corrected* total should be published under that name is a statistics call, not a
     typing one, so the value is unchanged and the wart is recorded in the module.
+    **REACHABILITY RE-CHECKED (audit 10, 2026-09-08, still open):** a repo-wide grep found that of
+    the two call sites carrying the wart, only `odds_ratio_ci` was reachable from anywhere outside
+    `src/analysis/confidence_intervals.py` itself, and even that was only true of `mean_ci` (which
+    never triggers the fractional case). `odds_ratio_ci` is now wired to a real endpoint (`POST
+    /api/analysis/confidence-interval/odds-ratio`, `src/api/analysis.py`), so the fractional
+    `sample_size` this note describes is a live, user-reachable response field, not a hypothetical
+    one. `relative_risk_ci` remains unwired, tested-but-unreached library code — that is recorded
+    inline (`src/analysis/confidence_intervals.py`, just above `odds_ratio_ci`) rather than fixed,
+    since wiring it needs a real near-term use case, which this pass did not find one for. The
+    typing question itself is unchanged and still open.
 - **`print()` → logger** (MAINT-04): remaining live `print()` calls → structured `structlog`
   loggers. Re-measured 2026-08-20: **72** statement-position `print(` in `src/`, not the "~50"
   this entry used to claim, and its file list was stale — `src/discovery/duckduckgo.py` no

@@ -71,6 +71,32 @@ def test_mean_confidence_interval(client):
     assert body["estimate"] == pytest.approx(11.5)
 
 
+def test_odds_ratio_confidence_interval(client):
+    r = client.post(
+        "/api/analysis/confidence-interval/odds-ratio",
+        json={"a": 10, "b": 20, "c": 5, "d": 30, "confidence_level": 0.95},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["method"] == "Odds ratio (Wald)"
+    # OR = (10*30)/(20*5) = 3
+    assert body["estimate"] == pytest.approx(3.0)
+    assert body["sample_size"] == 65
+
+
+def test_odds_ratio_confidence_interval_zero_cell_fractional_sample_size(client):
+    # a zero cell triggers the Haldane-Anscombe continuity correction (+0.5 to
+    # every cell), so the reported sample_size is genuinely fractional -- this
+    # is the reachable case the honesty-by-construction typing exists for.
+    r = client.post(
+        "/api/analysis/confidence-interval/odds-ratio",
+        json={"a": 0, "b": 20, "c": 5, "d": 30, "confidence_level": 0.95},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["sample_size"] == pytest.approx(57.0)  # (0+20+5+30) + 4*0.5
+
+
 def test_mismatched_lengths_400(client):
     r = client.post("/api/analysis/correlation/pearson", json={"x": [1, 2, 3], "y": [1, 2]})
     assert r.status_code in (400, 422)

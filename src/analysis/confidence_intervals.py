@@ -78,6 +78,9 @@ class ConfidenceInterval:
     # triggers it. Every other producer passes a genuine int. This annotation
     # describes what the code emits today; whether a CORRECTED total should be
     # called the sample size at all is a separate question (see PARKED.md).
+    # odds_ratio_ci is reachable via POST /api/analysis/confidence-interval/odds-ratio
+    # (src/api/analysis.py), so this is now a live response field, not a dormant
+    # one -- relative_risk_ci is still unwired library code (see its own comment).
     sample_size: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -710,6 +713,15 @@ class ConfidenceIntervals:
         )
 
     # ==================== ODDS RATIO AND RELATIVE RISK ====================
+    #
+    # Reachability, as of this comment: odds_ratio_ci is wired to a real endpoint
+    # (POST /api/analysis/confidence-interval/odds-ratio, src/api/analysis.py).
+    # relative_risk_ci below is NOT wired to any API route -- tested-but-unreached
+    # library code, not broken code with a missing caller. Every other
+    # ConfidenceIntervals method except mean_ci and odds_ratio_ci is likewise
+    # unreached from outside this module; a repo-wide grep for the method name is
+    # the fastest way to confirm current reachability before assuming a caller
+    # exists.
 
     def odds_ratio_ci(
         # float, not int: the cells arrive as counts, but the Haldane-Anscombe
