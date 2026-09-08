@@ -352,11 +352,14 @@ The docs are consolidated into a small set of complete guides
 Single local user, loopback-only (`127.0.0.1`), no accounts/RBAC. No telemetry; your
 corpus never leaves the machine, and LLM inference is local (loopback Ollama). **All
 scraping** goes through the ethical, robots-respecting fetcher. The only outbound
-traffic beyond that is a small set of **consented, disclosed exceptions**: **Ollama
-model pulls** (they egress over **clearnet via the Ollama process**, not the app's Tor
-path — stated at consent), and the **opt-in DuckDuckGo** topic-discovery/ingest channel.
-App boot makes **zero** network calls, and a top-bar **airplane-mode** kill switch is a
-socket-level guarantee that trips all non-loopback traffic instantly.
+traffic beyond that is a small number of **consented, disclosed exceptions** — Ollama
+model pulls (clearnet, via the Ollama process, not the app's Tor path), the opt-in
+DuckDuckGo topic-discovery channel, weather/statistics lookups, hazard-feed relay, a
+mailbox-import pull, and OpenTimestamps anchoring among them. **[SECURITY.md](docs/SECURITY.md)
+is the authoritative, complete list** of every one, with its trigger and consent
+mechanism named per item — this paragraph is a summary, not that list. App boot makes
+**zero** network calls, and a top-bar **airplane-mode** kill switch is a socket-level
+guarantee that trips all non-loopback traffic instantly, everywhere on this list.
 
 **At-rest encryption is on by default for new corpora** (SQLCipher 4): the app asks
 for one stable passphrase at every start. The honest limit is stated wherever it
