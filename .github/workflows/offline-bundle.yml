@@ -37,6 +37,13 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write   # only so the optional "attach to a release" step can upload
+    env:
+      # Routed through the shell as a variable rather than spliced into the
+      # script text via ${{ }} templating -- a free-text workflow_dispatch
+      # input must never be interpolated directly into a run: block (that is
+      # unquoted script-injection, not a quoting problem). Same pattern as
+      # TAG below and in release.yml.
+      EXTRAS: ${{ inputs.extras }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -48,7 +55,7 @@ jobs:
       - name: Build the bundle
         run: |
           OO_PYTHON=python3.13 ./scripts/build_offline_bundle.sh \
-            --extras "${{ inputs.extras }}" --zip
+            --extras "$EXTRAS" --zip
 
       - name: Show what was built
         run: |
@@ -79,7 +86,7 @@ jobs:
             --find-links "$BUNDLE"bootstrap pip setuptools wheel
           /tmp/verify/bin/python -m pip install --no-index --no-build-isolation \
             --find-links "$BUNDLE"wheels --find-links "$BUNDLE"bootstrap \
-            -e ".[${{ inputs.extras }}]"
+            -e ".[$EXTRAS]"
           /tmp/verify/bin/python -c "
           from src.api.main import app
           print('offline install verified —', len(app.routes), 'routes')
