@@ -655,7 +655,7 @@ class StatisticalTests:
     def wilcoxon_signed_rank(
         self,
         sample1: list | np.ndarray | pd.Series,
-        sample2: list | np.ndarray | pd.Series = None,
+        sample2: list | np.ndarray | pd.Series | None = None,
         alternative: str = "two-sided",
     ) -> TestResult:
         """
