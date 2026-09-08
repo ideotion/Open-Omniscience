@@ -114,7 +114,12 @@
       '</div>' +
       '<p class="cmd-hint hint">Every section and action is one keystroke away. Press ' +
         '<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd> anywhere for the full federated palette.</p>';
-    home.insertBefore(sec, home.firstChild);
+    // Land right after the at-a-glance strip, never before it: invariant #19
+    // pins that strip to the top of Home, and the sandbox latitude for this
+    // gallery (invariant #30) does not extend to displacing it.
+    var glance = home.querySelector(".home-glance");
+    if (glance) home.insertBefore(sec, glance.nextSibling);
+    else home.insertBefore(sec, home.firstChild);
   }
 
   OOGUIs.whenReady(function () {
