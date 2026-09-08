@@ -113,7 +113,15 @@ artifacts:
     # script's 5-row check: known IPs resolve (8.8.8.8 us, 1.1.1.1 au, 212.27.48.10 fr,
     # 2001:4860:4860::8888 ca) and the RFC-5737 documentation range still returns the honest
     # level="unavailable" rather than a fabricated country.
-    last_verified: "2026-08-22"
+    #
+    # Refreshed AGAIN 2026-09-08 to the 2026-09 DB-IP release (freshness issue #998). Mirror's
+    # last dbip-country data commit is 20260901_231920, fixing the vintage month the same way
+    # (commit history, not today's date). 706,466 -> 717,152 rows; 0 malformed; country
+    # vocabulary still unchanged at 250 codes; v4/v6 grew proportionally (357,311 / 359,841) --
+    # another routine monthly delta. Re-ran the same production-reader verification: the same
+    # four known IPs still resolve to their same countries (db_vintage now "2026-09"), and the
+    # RFC-5737 range still returns the honest level="unavailable".
+    last_verified: "2026-09-08"
 
   - id: windows-x64-python-nuget
     title: CPython x64 for Windows (NuGet, Python Software Foundation)
@@ -439,7 +447,7 @@ artifacts:
     # scripts/check_upstream_updates.py:review_baseline for why the two must stay apart.
     upstream_check:
       {github: "alpinejs/alpine", type: release, current: "v3.14.1",
-       reviewed_through: "v3.16.2"}
+       reviewed_through: "v3.17.2"}
     # Reviewed 2026-08-22 (freshness issue #440 flagged v3.16.1; upstream had already moved
     # to v3.16.2 by the time it was read -- read the tags, not the issue body). Evidence,
     # from the upstream git history rather than release-note prose:
@@ -462,7 +470,39 @@ artifacts:
     # egress-blocked from the build sandbox (403), so this is a code-level review of the
     # upstream diff, NOT an advisory-database clearance. A CVE filed against v3.14.1 with
     # no new release would be invisible to this watch.
-    last_verified: "2026-08-22"
+    #
+    # Reviewed AGAIN 2026-09-08 (freshness issue #998 flagged v3.17.1; the true latest tag
+    # by the time it was read was v3.17.2 -- same "read the tags, not the issue body" lesson
+    # as last time). Evidence, v3.16.2..v3.17.2 (the previous reviewed_through to the new
+    # latest):
+    #   * Only 15 commits in range -- a keyword scan (secur|vulnerab|xss|cve|ghsa|sanitiz|
+    #     escap|inject|exploit|csp|prototype pollut), run over the FULL diffs this time (not
+    #     just commit subjects), surfaced matches confined entirely to packages/csp/ (two
+    #     genuine CSP-parser fixes, #4893 sandboxed-iframe init + #4881 Unicode string-escape
+    #     parsing) plus one test-literal string ("escaped") inside a CSP-parser spec. Nothing
+    #     touched packages/alpinejs/ (core) or packages/morph/.
+    #   * Re-ran the same four token probes over our vendored alpine.min.js (morph /
+    #     Alpine.morph / hostDiv / monkeyPatchDomSetAttributeToAllowAtSymbols) plus a `new
+    #     Function` probe (the added-sink concern from the LAST review) -- all still 0. Our
+    #     bundle is confirmed to still be the CORE build, not the CSP build (no `csp` string
+    #     anywhere in the minified file).
+    #   * The three non-CSP, non-docs commits in range (Alpine.deferInit() #4887, an
+    #     x-mask/x-model interaction fix #4852, dwell timing on the intersect PLUGIN #4884)
+    #     are features/bugfixes, not security-shaped by the keyword scan. The intersect
+    #     plugin's own file is not vendored: a bare "intersect" grep alone is NOT the right
+    #     test (core registers the directive NAME as a magic-method stub regardless of
+    #     whether the plugin is loaded -- 1 match, alongside the same stub pattern for
+    #     collapse/trap/mask), but zero IntersectionObserver usage anywhere in our bundle
+    #     confirms the plugin's actual logic, and so #4884's dwell-timing change, is absent.
+    #   * The one keyword-matched commit outside packages/csp/ in the raw scan
+    #     ("decode-uri-component advisory" #4889) is a devDependency-only fix
+    #     (package-lock.json marks it `"dev": true`) in Alpine's OWN test/build toolchain --
+    #     never shipped in any dist/ bundle, vendored or not.
+    # So: no security fix applies to what we vendor, again -> correctly NOT re-vendored.
+    # Same LIMIT as last time: github.com/advisories and api.osv.dev remain egress-blocked
+    # (403) from this sandbox too -- still a code-level diff review, not an advisory-database
+    # clearance.
+    last_verified: "2026-09-08"
 
   - id: vendored-axe-core
     title: axe-core (vendored, browser-harness a11y engine)
