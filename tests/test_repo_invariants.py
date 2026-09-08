@@ -1023,6 +1023,20 @@ def test_bounded_concurrency_helper_is_the_one_seam_for_batch_generation():
         "advance_law_summaries must resolve the active backend when no client is given"
     )
 
+    # P1-11 (2026-09-08 audit): a FOURTH scheduler-wired consumer -- the
+    # auto-on-ingest custom AI extractors -- was missed by both the original fix and
+    # this very test, and hardcoded ``OllamaClient()`` directly, silently no-opping
+    # forever on a vLLM-only host. Pin it too, so a future scheduler-wired LLM
+    # consumer bypassing the seam fails here by name instead of shipping quietly a
+    # fifth time.
+    auto = (_SRC / "ai_layer" / "auto.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in auto, (
+        "run_auto_on_ingest must resolve the active backend when no client is given"
+    )
+    assert "client = client or OllamaClient()" not in auto, (
+        "run_auto_on_ingest must not hardcode OllamaClient() as its default client"
+    )
+
 
 def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     """2026-07-24 field-feedback Session B (B5, ruled): the numeric limit/top-N
@@ -2231,6 +2245,24 @@ def test_ui_invariants():
             f"{fn} egresses to the dump host, so it must pass the ONE consent popup "
             "(CLAUDE.md #14, extended #14e)"
         )
+    # 14f (P1 audit finding, 2026-09-08): OpenTimestamps chain-of-custody anchoring
+    #      is real, IP-revealing egress to public Bitcoin calendar servers, and had
+    #      no consent gate on any of its three reachable paths -- the same failure
+    #      shape #14e was written to close, recurring in a code path #14e's own fix
+    #      never touched. The manual "Anchor root" button and turning the setting ON
+    #      both route through the ONE consent popup, mirroring every other
+    #      network-triggering action.
+    anchor_body = _strip_js_comments(_js_function_body(app_js(), "anchorRoot"))
+    assert "ensureOnline(" in anchor_body, (
+        "anchorRoot must pass the ONE consent popup before submitting to a non-local "
+        "anchor provider (CLAUDE.md #14, extended #14f)"
+    )
+    save_custody_body = _strip_js_comments(_js_function_body(app_js(), "saveCustody"))
+    assert "ensureOnline(" in save_custody_body and "confirm(" in save_custody_body, (
+        "saveCustody must confirm before turning OpenTimestamps anchoring ON -- a "
+        "background, per-ingest, RECURRING egress with no button click of its own, "
+        "so the one-time consent must happen at save time (CLAUDE.md #14, extended #14f)"
+    )
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
@@ -2382,8 +2414,12 @@ def test_ui_invariants():
     #    opens the LOCAL preview popup first — never a bare outbound jump — and
     #    the popup's outbound anchor shows the FULL URL as its visible text.
     assert 'id="link-preview"' in html, "the local link-preview dialog must exist (CLAUDE.md #6e)"
-    assert "openLinkPreview('${esc(safeUrl(e.url))}')" in html, (
-        "card evidence must route external links through the local preview (CLAUDE.md #6e)"
+    # (P0 XSS fix, 2026-09-08: the URL is interpolated via esc(JSON.stringify(...)),
+    # not a hand-written inner single-quoted JS string literal — see the
+    # onclick-inner-JS-string-breakout fix and onclick_xss_esc_node_test.js.)
+    assert "openLinkPreview(${esc(JSON.stringify(safeUrl(e.url)))})" in html, (
+        "card evidence must route external links through the local preview (CLAUDE.md #6e), "
+        "safely interpolated via esc(JSON.stringify(...)) rather than a bare inner JS string literal"
     )
     assert ">${esc(d.url)}</a>" in html, (
         "the outbound anchor's visible text must BE the full URL (CLAUDE.md #6e)"
@@ -7766,7 +7802,25 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 616
+#:
+#: RAISED 2026-09-08: the A3 restructuring that set the original 616 ceiling had also, as
+#: an unintended side effect, dropped six numbered UI-invariant paragraphs (#9-#13, #22)
+#: that test_ui_invariants never stopped enforcing -- the ratchet caught growth but had no
+#: way to catch a REMOVAL of protected content, since a smaller file only ever reads as
+#: slack, never as a violation. Restoring those six paragraphs (this is documentation
+#: content the ratchet is meant to protect, per the invariant clause above -- not the kind
+#: of growth rules (5)/(5a) route to docs/ledger/) raised the real count to 665 against
+#: this branch's own pre-merge base.
+#:
+#: RE-MEASURED AT THE MERGE POINT (matching the ruff-ratchet precedent above): several
+#: other PRs merged into main first (#1047's OpenTimestamps consent invariant #14f, among
+#: others) grew CLAUDE.md independently and had already moved the ceiling to 644 before
+#: this branch's restored-invariants change landed on top. Measured like-for-like in this
+#: merge commit's own tree -- not either parent's number -- at 693: this branch's six
+#: restored paragraphs ARE present, and so is every intervening PR's own growth. Shipping
+#: either parent's stale number would either falsely accuse main's later growth of being
+#: slack (665) or silently drop this branch's restored content back below protection (644).
+_CLAUDE_MD_LINE_CEILING = 693
 
 
 def _claude_md_lines() -> int:

@@ -209,6 +209,24 @@ def ots_stamp(
     if len(digest) != 32:
         raise TimestampError("OpenTimestamps expects a 32-byte SHA-256 digest.")
 
+    # UI invariant #14e's corollary: "a refusal BY THE KILL SWITCH must be named as
+    # such wherever it can surface." Without this, airplane mode meant every
+    # RemoteCalendar.submit() below raised deep inside the socket layer (an
+    # AirplaneModeError caught by the per-calendar except below and folded into a
+    # generic "no calendar could be reached" message) -- true, but it buries the
+    # actual, nameable reason in three stack-shaped strings instead of stating it
+    # once, plainly. This is a courtesy early check, not a new enforcement point:
+    # the process-wide airplane socket guard (src/ingest/airplane.py) still refuses
+    # the real connection either way, so this can never be bypassed by removing it.
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise TimestampUnavailable(
+            "The network kill switch is engaged (airplane mode) -- OpenTimestamps "
+            "requires egress to public calendar servers, so this submission is "
+            "refused rather than silently queued for later."
+        )
+
     ts = Timestamp(digest)
     reached = 0
     errors: list[str] = []
