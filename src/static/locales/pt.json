@@ -3138,5 +3138,18 @@
   "Date set by the electoral authority. Confirm at the official source.": "Data fixada pela autoridade eleitoral. Confirme na fonte oficial.",
   "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "O dia exato ainda não está fixado — apenas o prazo legal é conhecido. Confirme na fonte oficial.",
   "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "Projetada a partir de uma regra de periodicidade, não anunciada. As eleições são adiadas, transferidas ou canceladas — veja isto como um aviso para consultar a fonte oficial, nunca como uma data.",
-  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "A data projetada já passou e nenhum resultado está registado aqui — situação desconhecida. Confirme na fonte oficial."
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "A data projetada já passou e nenhum resultado está registado aqui — situação desconhecida. Confirme na fonte oficial.",
+  "Collection is ON — click to turn off": "A coleta está LIGADA — clique para desligar",
+  "Collection is OFF — click to turn on": "A coleta está DESLIGADA — clique para ligar",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "Velocidade de coleta: Máxima — usa sua conexão por completo (a cortesia por host não muda). Clique para a meta moderada de 500 KiB/s.",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "Velocidade de coleta: meta de 500 KiB/s — deliberadamente suave. Clique para Máxima (velocidade total).",
+  "Collection speed set to Maximum — applies from the next pass.": "Velocidade de coleta definida como Máxima — aplica-se a partir da próxima passagem.",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "Velocidade de coleta definida na meta de 500 KiB/s — aplica-se a partir da próxima passagem.",
+  "Scale": "Escala",
+  "Absolute": "Absoluta",
+  "Indexed (=100)": "Indexada (=100)",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Valores brutos em um eixo de tempo compartilhado — séries de magnitudes muito diferentes podem se achatar.",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Cada série reajustada para 100 no início da janela — movimentos relativos, não níveis absolutos.",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Escala logarítmica (base 10) — proporções iguais são distâncias iguais; passar o cursor mostra o valor real.",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Usa Alpine.js — um framework minúsculo incluído localmente (MIT, zero rede)."
 }
