@@ -169,6 +169,22 @@ def save_settings(updates: dict) -> CustodySettings:
     Only keys present in ``updates`` are changed; unknown keys are ignored.
     Raises :class:`CustodySettingsError` on an invalid value (e.g. a bad
     anchoring mode) before anything is written.
+
+    **Consent gate (P1 audit finding, UI invariant #14/#14e).** Turning
+    ``anchoring_mode`` ON to ``"opentimestamps"`` starts a RECURRING, silent,
+    per-article network submission to public OpenTimestamps calendar servers (see
+    ``src.custody.log._default_timestamp`` / ``src.ingest.pipeline._maybe_record_custody``)
+    that can fire minutes or hours after this call, with no button click of its own
+    -- there is no later moment to gate the way every other network-triggering
+    action in this app is gated (``ensureOnline``). So the ONE transactional
+    confirmation has to happen HERE, at the moment the preference is saved: this
+    call refuses (rather than silently persisting) a transition INTO
+    ``"opentimestamps"`` unless ``updates["ots_consent"]`` is truthy. It is a
+    transition check, not a standing requirement -- re-saving other fields while
+    already anchoring via OpenTimestamps does not re-demand consent every time
+    (that would be a rubber stamp, not an informed decision); turning it off, or
+    saving while it stays "local", never needs it. ``ots_consent`` itself is never
+    persisted -- it is a one-shot instruction to this call, not a preference.
     """
     current = load_settings()
 
@@ -177,6 +193,17 @@ def save_settings(updates: dict) -> CustodySettings:
         if mode not in VALID_ANCHORING:
             raise CustodySettingsError(
                 f"unknown anchoring_mode {mode!r}; use one of: {', '.join(VALID_ANCHORING)}"
+            )
+        if (
+            mode == "opentimestamps"
+            and current.anchoring_mode != "opentimestamps"
+            and not updates.get("ots_consent")
+        ):
+            raise CustodySettingsError(
+                "turning on OpenTimestamps anchoring requires explicit consent "
+                "(ots_consent: true) -- it submits a hash to public Bitcoin calendar "
+                "servers, revealing your IP and timing, on every future ingested "
+                "article for as long as this stays on"
             )
         current.anchoring_mode = mode
     if "pqc_enabled" in updates and updates["pqc_enabled"] is not None:

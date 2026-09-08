@@ -48,6 +48,20 @@ class FakeClient:
         )
 
 
+def test_ensure_page_rejects_malformed_wiki_code(db):
+    """Defense in depth: ``ensure_page`` is the sole write path into ``WikiPage``
+    and the stored code later reaches a live fetch URL unescaped
+    (``mediawiki.api_endpoint``), so it must reject a structurally invalid code
+    itself and not rely solely on the API-boundary check in ``add_page``."""
+    with pytest.raises(ValueError):
+        ensure_page(db, "attacker.example#", "Some Page")
+    with pytest.raises(ValueError):
+        ensure_page(db, "../../etc", "Some Page")
+    # Legitimate codes (incl. the default) are unaffected.
+    assert ensure_page(db, "en", "Berlin").wiki == "en"
+    assert ensure_page(db, "", "Default").wiki == "en"
+
+
 def test_baseline_captured_on_first_update(db):
     page = ensure_page(db, "en", "Berlin")
     client = FakeClient(current={"revid": 100, "text": "baseline text", "size": 1200, "pageid": 5})

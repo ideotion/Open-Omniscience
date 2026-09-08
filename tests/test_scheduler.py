@@ -185,6 +185,34 @@ def test_scheduler_api(tmp_path, monkeypatch):
         bad2 = client.put("/api/scheduler/config", json={"interval_minutes": 0})
         assert bad2.status_code == 400
 
+        # Regression (P1-10): the two qualification-scope checkboxes PUT
+        # {scrape_unqualified, scrape_app_provided_only} and the Settings panel re-GETs
+        # /api/sources/qualification/config's "scope" block to confirm the save. Both fields
+        # were previously absent from SchedulerConfigUpdate, so Pydantic silently dropped them
+        # before save_settings() ever saw them -- a PUT that reported 200/"Saved" and never
+        # actually persisted. This must round-trip through the real HTTP path, not just
+        # select_sources() against a hand-built SchedulerSettings.
+        scoped = client.put(
+            "/api/scheduler/config",
+            json={"scrape_unqualified": True, "scrape_app_provided_only": True},
+        )
+        assert scoped.status_code == 200
+        assert scoped.json()["scrape_unqualified"] is True
+        assert scoped.json()["scrape_app_provided_only"] is True
+        scope = client.get("/api/sources/qualification/config").json()["scope"]
+        assert scope["scrape_unqualified"] is True
+        assert scope["scrape_app_provided_only"] is True
+
+        # And back off, to confirm the write is a real two-way toggle, not a stuck default.
+        unscoped = client.put(
+            "/api/scheduler/config",
+            json={"scrape_unqualified": False, "scrape_app_provided_only": False},
+        )
+        assert unscoped.status_code == 200
+        scope2 = client.get("/api/sources/qualification/config").json()["scope"]
+        assert scope2["scrape_unqualified"] is False
+        assert scope2["scrape_app_provided_only"] is False
+
         try:
             started = client.post("/api/scheduler/start").json()
             assert started["started"] is True

@@ -122,3 +122,65 @@ def test_public_chain_anchor_returns_503(client):
 
 def test_verify_missing_item_404(client):
     assert client.get("/api/custody/nope/verify").status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# P1 audit finding (2026-09-08): OpenTimestamps anchoring is real, IP-revealing
+# network egress and must not fire without explicit per-call consent (see also
+# tests/test_custody_consent_gates.py for the shared-egress-point coverage in
+# src.custody.timestamp.ots_stamp, which does not need the full app import).
+# --------------------------------------------------------------------------- #
+
+
+def test_opentimestamps_anchor_without_consent_is_refused(client):
+    r = client.post(
+        "/api/custody/anchor",
+        json={"merkle_root": "f" * 64, "provider": "opentimestamps"},
+    )
+    assert r.status_code == 400, r.text
+    assert "consent" in r.json()["detail"].lower()
+
+
+def test_opentimestamps_anchor_with_consent_reaches_the_provider(client, monkeypatch):
+    """consent: true must actually let the request through to the provider --
+    proven by monkeypatching the provider's egress point to a controlled,
+    NETWORK-FREE stand-in, so the assertion is about routing, not real Bitcoin
+    calendar reachability (which this test suite never depends on)."""
+    from src.custody import anchor as anchor_mod
+    from src.custody.timestamp import TimestampProof
+
+    def _fake_ots_stamp(digest, **kwargs):
+        return TimestampProof(
+            kind="opentimestamps",
+            digest=digest.hex(),
+            asserted_time=None,
+            proof_b64="ZmFrZQ==",
+            detail="fake proof (test)",
+        )
+
+    monkeypatch.setattr(anchor_mod, "ots_stamp", _fake_ots_stamp)
+    r = client.post(
+        "/api/custody/anchor",
+        json={"merkle_root": "f" * 64, "provider": "opentimestamps", "consent": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["provider"] == "opentimestamps"
+
+
+def test_public_chain_anchor_without_consent_still_returns_503_not_400(client):
+    """The consent gate is scoped to "opentimestamps" specifically: the
+    ethereum/ipfs/arweave stubs never attempt egress at all, so they must keep
+    their own honest 503 "not implemented" rather than a misleading 400 about
+    consent for an action that was never going to happen (see test_custody_api's
+    pre-existing test_public_chain_anchor_returns_503, unaffected by this gate)."""
+    r = client.post(
+        "/api/custody/anchor",
+        json={"merkle_root": "f" * 64, "provider": "ipfs"},  # no consent field
+    )
+    assert r.status_code == 503
+    assert "not implemented" in r.json()["detail"].lower()
+
+
+def test_local_anchor_needs_no_consent(client):
+    r = client.post("/api/custody/anchor", json={"merkle_root": "f" * 64, "provider": "local"})
+    assert r.status_code == 200, r.text
