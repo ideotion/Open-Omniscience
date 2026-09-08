@@ -854,6 +854,19 @@ class Article(Base):
         # 200,000-article corpus: 314 ms -> 35 ms per page, and the gap is wider on a real
         # encrypted store, where a row read is also a codec read.
         Index("idx_article_feed_scan", "quarantined", "source_id", "id"),
+        # Sort key for backfill_corpus's PRH-01 queue order (src/analytics/store.py):
+        # `ORDER BY keyword_indexed_at ASC NULLS FIRST, id ASC`, run on every call and,
+        # per that function's own docstring, exactly the query the un-indexed-backlog
+        # scenario stresses hardest. SINGLE-COLUMN, not compound with `id` the way
+        # idx_article_feed_scan pairs its trailing columns: `id` here is a plain
+        # `Integer, primary_key=True` with no composite key, which SQLite treats as a
+        # rowid alias, and every index on a rowid table already carries the rowid as an
+        # implicit trailing key to break ties -- so an index on `keyword_indexed_at`
+        # alone already orders equal values (overwhelmingly the NULL "never attempted"
+        # group) by rowid ascending, i.e. exactly `id ASC`, for free. Adding `id`
+        # explicitly would duplicate that implicit key without helping the plan, at the
+        # cost of a wider index entry on every keyword-indexing write.
+        Index("idx_article_keyword_indexed_at", "keyword_indexed_at"),
     )
 
     @property
