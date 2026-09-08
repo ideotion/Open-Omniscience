@@ -36,7 +36,12 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "python-multipart>=0.0.9",
-    "jinja2>=3.1",
+    # jinja2 REMOVED 2026-09-08 (audit 10, P2-14, same shape as the structlog removal
+    # below): declared since before the ledger's records with ZERO call sites -- no
+    # `import jinja2`, no Jinja2Templates (the FastAPI integration one would expect
+    # for HTML templating) anywhere in the tree. tests/test_dependency_hygiene.py
+    # holds both halves and is written to be superseded if it is ever genuinely
+    # adopted.
     "slowapi>=0.1.9",
     "prometheus-client>=0.20",
     # Data / ORM
@@ -56,7 +61,10 @@ dependencies = [
     "trafilatura>=1.12",          # robust article extraction (title/body/date/lang)
     # Config / validation
     "pydantic>=2.7",
-    "pydantic-settings>=2.2",
+    # pydantic-settings REMOVED 2026-09-08 (audit 10, P2-14): ZERO call sites --
+    # no `import pydantic_settings`, no BaseSettings subclass anywhere; this app's
+    # real settings pattern is hand-rolled dataclasses/dicts per module (e.g.
+    # src/scheduler/settings.py). Same shape as structlog below.
     "pyyaml>=6.0.1",
     # Security (real implementations; the code must fail loudly if these are
     # absent rather than silently degrading -- see src/utils/security.py).
@@ -85,9 +93,12 @@ dependencies = [
     # tests/test_dependency_hygiene.py holds both halves (not declared, not imported)
     # and is written to be superseded if it is ever genuinely adopted.
     "python-dateutil>=2.9",
-    "tenacity>=8.2",
-    "cachetools>=5.3",
-    "orjson>=3.10",
+    # tenacity / cachetools / orjson REMOVED 2026-09-08 (audit 10, P2-14): three more
+    # ZERO-call-site core deps, verified by direct grep against the whole tree (not
+    # just src/) -- no import of any of the three anywhere. Same shape as structlog
+    # and the jinja2/pydantic-settings removals above; tests/test_dependency_hygiene.py
+    # holds the guard for all six and is written to be superseded if any is ever
+    # genuinely adopted.
     "psutil>=5.9",
 ]
 
@@ -107,7 +118,14 @@ analysis = [
     "scipy>=1.13",
     "scikit-learn>=1.5",
     "statsmodels>=0.14",
-    "networkx>=3.3",
+    # networkx MOVED to [dev] 2026-09-08 (audit 10, P2-14): it IS imported, but only
+    # by scripts/analysis/phase4_analyzer.py (inside a try/except ImportError degrade)
+    # and referenced by tests/conftest.py's generic optional-extra skip list -- never
+    # by any runtime code under src/. install.sh's default end-user install pulls in
+    # [analysis] (see OO_COMPONENTS), so leaving it here shipped a maintainer-script-only
+    # package to every default install; [dev] already installs alongside [analysis] in
+    # every CI lane that needs it (and alone in the core-only lane), so this is a
+    # footprint fix with no behaviour change.
     # nltk REMOVED 2026-07-02: it was never imported anywhere (vaderSentiment
     # bundles its own lexicon) and PYSEC-2026-597 landed against it with no fixed
     # release -- dropping the unused dependency beats ignoring the advisory.
@@ -172,10 +190,17 @@ segmentation = [
     "pythainlp>=5.0",
 ]
 
-# Optional GPG-based signing path (cryptography/Ed25519 is in core).
-crypto = [
-    "python-gnupg>=0.5.2",
-]
+# The `crypto` extra (its only member was python-gnupg) was REMOVED 2026-09-08
+# (audit 10, P2-14): ZERO references anywhere in the tree, including in
+# src/custody/signing.py (this project's real, live signing implementation --
+# Ed25519 + optional PQC ML-DSA, never GPG). src/crypto/signatures.py's GPGSigner
+# class is an explicit, admitted stub whose methods raise NotImplementedError and
+# direct callers to the real Ed25519 path; it never called into python-gnupg or any
+# GPG library, so nothing regresses -- GPGSigner itself is untouched by this
+# removal (a separate, complementary cleanup covers that dead-code question).
+# No install.sh component, README, USER_MANUAL, CONTRIBUTING or CI job named the
+# `crypto` extra (checked before deleting it), and it was never in requirements.lock
+# (the lock is generated with --extra analysis only).
 
 # Optional derived COLUMNAR read-model (data-architecture Slice 4): a DuckDB
 # accelerator for the heavy whole-corpus aggregations. Kept OUT of core: when absent
@@ -268,6 +293,10 @@ dev = [
     # PR with no code change. Bump deliberately, re-measuring the baseline.
     "mypy==2.3.1",
     "httpx>=0.27",
+    # Moved from [analysis] 2026-09-08 (audit 10, P2-14) -- see the comment at its old
+    # spot above. Used by scripts/analysis/phase4_analyzer.py (circular-import check,
+    # degrades honestly without it) and tests/conftest.py's optional-extra probe list.
+    "networkx>=3.3",
 ]
 
 [project.scripts]
