@@ -7820,7 +7820,13 @@ def test_docs_index_covers_live_docs():
 #: restored paragraphs ARE present, and so is every intervening PR's own growth. Shipping
 #: either parent's stale number would either falsely accuse main's later growth of being
 #: slack (665) or silently drop this branch's restored content back below protection (644).
-_CLAUDE_MD_LINE_CEILING = 693
+#:
+#: RE-MEASURED AGAIN AT THIS MERGE POINT (#1078, 2026-09-08): main had independently moved
+#: to 693 (the number above) before #1078's own Coverage-subtab documentation (raising its
+#: own pre-merge base from 616 to 628) landed on top. Measured like-for-like in THIS merge
+#: commit's own tree -- not either parent's number -- at 705: #1078's added paragraphs ARE
+#: present, and so is every intervening PR's own growth since 693 was set.
+_CLAUDE_MD_LINE_CEILING = 705
 
 
 def _claude_md_lines() -> int:

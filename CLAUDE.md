@@ -383,7 +383,8 @@ never the way to make room for something rules (5)/(5a) would have sent to
    Enforced in test_ui_invariants (#19/#19b).
 20. **The task-manager is a WINDOW, not a bubble (SHIPPED #130, slice 1):** the
    vitals popover is a wider tabbed window via ooSubtabs (now Active · Queue ·
-   System; the live job controls + vitals reused unchanged). **ACTIVE/QUEUE
+   Schedule · Coverage · System; the live job controls + vitals reused
+   unchanged). **ACTIVE/QUEUE
    SPLIT SHIPPED (slice 2, draft PR):** the jobs view is now two subtabs — Active
    (running pass, downloading dumps, the in-flight fetch, the idle loop,
    paused/failed downloads) and Queue (jobs waiting their turn = the
@@ -401,7 +402,18 @@ never the way to make room for something rules (5)/(5a) would have sent to
    countdown. `_renderSchedule` reuses the `_actData` the window ALREADY polls
    from /api/scheduler/activity (no new endpoint, no extra poll; only while the
    window is open); honest empty state ×12; +20 strings ×12. Enforced in
-   test_ui_invariants (#20 + #20b + #20c). PER-JOB CONTROLS EXTENDED (Item 2,
+   test_ui_invariants (#20 + #20b + #20c). **COVERAGE SUBTAB SHIPPED
+   (2026-07-01/07-02, PR #534):** a 5th subtab (`#tm-coverage` / `#cov-tm-body`,
+   `data-tab="coverage"` via ooSubtabs) surfaces per-tag scraping REACH — which
+   catalog tags have been reached, how many sources remain, at what percentage —
+   built ONLY from the collector's own fetch timestamps
+   (`FeedFetchState.last_checked_at`/`last_status`/`skip_until`): reach/fresh/
+   never_reached/backed_off counts, status mix, oldest-age, least-reached-first
+   ordering, honest method+caveat strings — counts only, NEVER a fabricated
+   completion claim or score. `loadTagCoverage`/`_renderCoverage` read the
+   read-only `/api/scheduler/coverage` endpoint, loaded lazily when the subtab
+   opens. Enforced in test_ui_invariants (#20e); ledgered in `shipped.csv`
+   (`scheduler/coverage`, 2026-07-02). PER-JOB CONTROLS EXTENDED (Item 2,
    SHIPPED 2026-06-16, conservative/browser-unverified): the ONE `_jobRow`
    renderer now serves BOTH bulk-download kinds — OSM-region downloads gained the
    wiki-dump control grammar (pause/↑↓-reorder/cancel) and EVERY paused/failed
