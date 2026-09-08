@@ -65,6 +65,11 @@ class SchedulerConfigUpdate(BaseModel):
     # backlog. 0 disables re-verification. Absent from this model = silently unwritable,
     # since save_settings only sees the fields the body declares.
     qualification_recheck_per_pass: int | None = None
+    # SCRAPING SCOPE (maintainer amendment 2026-08-03; see SchedulerSettings for the full
+    # rationale). Absent from this model = silently unwritable, same trap as
+    # qualification_recheck_per_pass above -- these two were missed when that fix landed.
+    scrape_unqualified: bool | None = None
+    scrape_app_provided_only: bool | None = None
     # Optional per-language cadence lever (default OFF): a {lang: weight} target
     # the operator opts into; {} or omitted keeps the pure random rotation.
     language_equilibrium: dict | None = None

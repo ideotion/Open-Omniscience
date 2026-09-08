@@ -30,8 +30,6 @@ Features:
 - Multiple compression algorithms (zlib, bz2, lzma, zstandard, lz4, blosc)
 - Automatic algorithm selection based on content type and size
 - Compression level optimization
-- Chunked compression for large data
-- Streaming compression/decompression
 - Compression benchmarking
 - Metadata preservation
 
@@ -47,8 +45,7 @@ import time
 import zlib
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -666,306 +663,6 @@ class Compressor:
 
 
 # =============================================================================
-# Chunked Compression for Large Data
-# =============================================================================
-
-
-class ChunkedCompressor:
-    """
-    Compress large data in chunks for better memory efficiency.
-
-    This is particularly useful for compressing large files or database dumps
-    where loading the entire data into memory is not feasible.
-    """
-
-    def __init__(self, compressor: Compressor | None = None, chunk_size: int = 65536):
-        """
-        Initialize the chunked compressor.
-
-        Args:
-            compressor: Compressor instance to use.
-            chunk_size: Size of chunks in bytes.
-        """
-        self.compressor = compressor or Compressor()
-        self.chunk_size = chunk_size
-
-    def compress_file(
-        self,
-        input_path: str | Path,
-        output_path: str | Path,
-        algorithm: CompressionAlgorithm | None = None,
-    ) -> CompressionStats:
-        """
-        Compress a file in chunks.
-
-        Args:
-            input_path: Path to input file.
-            output_path: Path to output compressed file.
-            algorithm: Compression algorithm to use.
-
-        Returns:
-            Compression statistics.
-        """
-        input_path = Path(input_path)
-        output_path = Path(output_path)
-
-        total_original_size = 0
-        total_compressed_size = 0
-        start_time = time.time()
-
-        with open(output_path, "wb") as output_file:
-            # Write header placeholder (will be updated later)
-            output_file.write(b"\x00" * HEADER_SIZE)
-
-            with open(input_path, "rb") as input_file:
-                while True:
-                    chunk = input_file.read(self.chunk_size)
-                    if not chunk:
-                        break
-
-                    total_original_size += len(chunk)
-
-                    # Compress this chunk
-                    compressed_chunk = self.compressor.compress(
-                        chunk,
-                        algorithm=algorithm,
-                        config=CompressionConfig(
-                            algorithm=algorithm or self.compressor.config.algorithm,
-                            level=self.compressor.config.level,
-                            chunk_size=self.chunk_size,
-                        ),
-                    )
-
-                    total_compressed_size += len(compressed_chunk)
-                    output_file.write(compressed_chunk)
-
-            # Seek back and write the actual header
-            output_file.seek(0)
-            header = self.compressor._create_header(
-                algorithm=algorithm or self.compressor.config.algorithm,
-                level=self.compressor.config.level,
-                original_size=total_original_size,
-                data_hash=self._compute_file_hash(input_path),
-            )
-            output_file.write(header)
-
-        compression_time = time.time() - start_time
-        compression_ratio = (
-            total_compressed_size / total_original_size if total_original_size > 0 else 0
-        )
-
-        return CompressionStats(
-            algorithm=algorithm or self.compressor.config.algorithm,
-            original_size=total_original_size,
-            compressed_size=total_compressed_size,
-            compression_time=compression_time,
-            decompression_time=0,  # Will be measured during decompression
-            compression_ratio=compression_ratio,
-        )
-
-    def decompress_file(self, input_path: str | Path, output_path: str | Path) -> CompressionStats:
-        """
-        Decompress a file in chunks.
-
-        Args:
-            input_path: Path to input compressed file.
-            output_path: Path to output decompressed file.
-
-        Returns:
-            Compression statistics.
-        """
-        input_path = Path(input_path)
-        output_path = Path(output_path)
-
-        start_time = time.time()
-
-        with open(input_path, "rb") as input_file:
-            # Read and parse header
-            header = input_file.read(HEADER_SIZE)
-            algorithm, level, original_size, data_hash = self.compressor._parse_header(header)
-
-            with open(output_path, "wb") as output_file:
-                while True:
-                    compressed_chunk = input_file.read(self.chunk_size * 2)  # Read larger chunks
-                    if not compressed_chunk:
-                        break
-
-                    # Decompress this chunk
-                    decompressed_chunk = self.compressor.decompress(
-                        compressed_chunk, expected_algorithm=algorithm
-                    )
-                    output_file.write(decompressed_chunk)
-
-        decompression_time = time.time() - start_time
-        compressed_size = input_path.stat().st_size
-
-        # Verify the decompressed file
-        actual_hash = self._compute_file_hash(output_path)
-        if actual_hash != data_hash:
-            raise CompressionError("File integrity check failed after decompression")
-
-        return CompressionStats(
-            algorithm=algorithm,
-            original_size=original_size,
-            compressed_size=compressed_size,
-            compression_time=0,  # Not measured during decompression
-            decompression_time=decompression_time,
-            compression_ratio=compressed_size / original_size if original_size > 0 else 0,
-        )
-
-    def _compute_file_hash(self, file_path: str | Path) -> bytes:
-        """Compute SHA-256 hash of a file."""
-        hasher = hashlib.sha256()
-        file_path = Path(file_path)
-
-        with open(file_path, "rb") as f:
-            while True:
-                chunk = f.read(self.chunk_size)
-                if not chunk:
-                    break
-                hasher.update(chunk)
-
-        return hasher.digest()
-
-
-# =============================================================================
-# Streaming Compression
-# =============================================================================
-
-
-class StreamingCompressor:
-    """
-    Streaming compressor for handling large data streams.
-    """
-
-    def __init__(self, compressor: Compressor | None = None):
-        """
-        Initialize the streaming compressor.
-
-        Args:
-            compressor: Compressor instance to use.
-        """
-        self.compressor = compressor or Compressor()
-
-    def compress_stream(
-        self,
-        input_stream: BinaryIO,
-        output_stream: BinaryIO,
-        algorithm: CompressionAlgorithm | None = None,
-        chunk_size: int = 65536,
-    ) -> CompressionStats:
-        """
-        Compress a data stream.
-
-        Args:
-            input_stream: Input stream to compress.
-            output_stream: Output stream for compressed data.
-            algorithm: Compression algorithm to use.
-            chunk_size: Chunk size for reading.
-
-        Returns:
-            Compression statistics.
-        """
-        total_original_size = 0
-        total_compressed_size = 0
-        start_time = time.time()
-        hasher = hashlib.sha256()
-
-        # Write header placeholder
-        output_stream.write(b"\x00" * HEADER_SIZE)
-
-        while True:
-            chunk = input_stream.read(chunk_size)
-            if not chunk:
-                break
-
-            total_original_size += len(chunk)
-            hasher.update(chunk)
-
-            # Compress this chunk
-            compressed_chunk = self.compressor.compress(chunk, algorithm=algorithm)
-
-            total_compressed_size += len(compressed_chunk)
-            output_stream.write(compressed_chunk)
-
-        # Write actual header
-        output_stream.seek(0)
-        header = self.compressor._create_header(
-            algorithm=algorithm or self.compressor.config.algorithm,
-            level=self.compressor.config.level,
-            original_size=total_original_size,
-            data_hash=hasher.digest(),
-        )
-        output_stream.write(header)
-
-        compression_time = time.time() - start_time
-        compression_ratio = (
-            total_compressed_size / total_original_size if total_original_size > 0 else 0
-        )
-
-        return CompressionStats(
-            algorithm=algorithm or self.compressor.config.algorithm,
-            original_size=total_original_size,
-            compressed_size=total_compressed_size,
-            compression_time=compression_time,
-            decompression_time=0,
-            compression_ratio=compression_ratio,
-        )
-
-    def decompress_stream(
-        self, input_stream: BinaryIO, output_stream: BinaryIO
-    ) -> CompressionStats:
-        """
-        Decompress a data stream.
-
-        Args:
-            input_stream: Input stream of compressed data.
-            output_stream: Output stream for decompressed data.
-
-        Returns:
-            Compression statistics.
-        """
-        start_time = time.time()
-
-        # Read and parse header
-        header = input_stream.read(HEADER_SIZE)
-        algorithm, level, original_size, data_hash = self.compressor._parse_header(header)
-
-        hasher = hashlib.sha256()
-        total_decompressed_size = 0
-
-        while True:
-            compressed_chunk = input_stream.read(65536 * 2)
-            if not compressed_chunk:
-                break
-
-            # Decompress this chunk
-            decompressed_chunk = self.compressor.decompress(
-                compressed_chunk, expected_algorithm=algorithm
-            )
-
-            total_decompressed_size += len(decompressed_chunk)
-            output_stream.write(decompressed_chunk)
-            hasher.update(decompressed_chunk)
-
-        decompression_time = time.time() - start_time
-        compressed_size = input_stream.tell() - HEADER_SIZE
-
-        # Verify hash
-        if hasher.digest() != data_hash:
-            raise CompressionError("Stream integrity check failed")
-
-        return CompressionStats(
-            algorithm=algorithm,
-            original_size=original_size,
-            compressed_size=compressed_size,
-            compression_time=0,
-            decompression_time=decompression_time,
-            compression_ratio=compressed_size / original_size if original_size > 0 else 0,
-        )
-
-
-# =============================================================================
 # Database-Specific Compression
 # =============================================================================
 
@@ -1097,26 +794,6 @@ class DatabaseCompressor:
 
 
 # =============================================================================
-# Utility Functions
-# =============================================================================
-
-
-def get_compression_algorithm_by_name(name: str) -> CompressionAlgorithm:
-    """Get compression algorithm by name."""
-    for algorithm in CompressionAlgorithm:
-        if algorithm.value.lower() == name.lower():
-            return algorithm
-    raise ValueError(f"Unknown compression algorithm: {name}")
-
-
-def create_compressor(algorithm: str = "zstandard", level: int = 6) -> Compressor:
-    """Create a compressor with the specified algorithm and level."""
-    algo = get_compression_algorithm_by_name(algorithm)
-    config = CompressionConfig(algorithm=algo, level=level)
-    return Compressor(config)
-
-
-# =============================================================================
 # Default Compressor Instance
 # =============================================================================
 
@@ -1125,12 +802,6 @@ default_compressor = Compressor()
 
 # Create database compressor
 database_compressor = DatabaseCompressor()
-
-# Create chunked compressor
-chunked_compressor = ChunkedCompressor()
-
-# Create streaming compressor
-streaming_compressor = StreamingCompressor()
 
 
 __all__ = [
@@ -1143,17 +814,10 @@ __all__ = [
     # Main compressor
     "Compressor",
     # Specialized compressors
-    "ChunkedCompressor",
-    "StreamingCompressor",
     "DatabaseCompressor",
     # Default instances
     "default_compressor",
     "database_compressor",
-    "chunked_compressor",
-    "streaming_compressor",
-    # Utility functions
-    "get_compression_algorithm_by_name",
-    "create_compressor",
     # Constants
     "COMPRESSION_MAGIC",
     "HEADER_SIZE",

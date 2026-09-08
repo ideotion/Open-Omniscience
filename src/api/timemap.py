@@ -56,7 +56,7 @@ def _hazard_signals(db: Session | None = None) -> tuple[list[dict], list[str]]:
         return [], ["hazards module not installed"]
     snap = load_snapshot()
     if not snap.get("available"):
-        return [], ["no local hazard snapshot yet — refresh it in Settings to see hazards here"]
+        return [], ["no local hazard snapshot yet — it fills in automatically during your next online collect pass"]
     failures: list[str] = ["hazard snapshot is stale"] if snap.get("stale") else []
 
     # Batch-resolve the internal Article id per event (one query, never N+1) so a

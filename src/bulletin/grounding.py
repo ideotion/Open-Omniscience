@@ -165,7 +165,12 @@ def check_sentence(sentence: str, evidence: str, *, language: str | None = None)
             "reason": "the sentence states no figure — nothing to check",
         }
     else:
-        missing = [n for n in nums if n not in _fold(_normalised_evidence_numbers(evidence))]
+        # Exact membership against the SET of distinct numbers the evidence
+        # actually asserts — never a substring test. "40" is a character
+        # substring of "1240" but is not the number the evidence states; a
+        # plain `in` check on a joined string cannot tell those apart.
+        evidence_numbers = set(numbers_in(evidence))
+        missing = [n for n in nums if n not in evidence_numbers]
         checks["numbers"] = {
             "applied": True,
             "passed": not missing,
@@ -198,7 +203,7 @@ def check_sentence(sentence: str, evidence: str, *, language: str | None = None)
                 "reason": "the sentence names nothing — nothing to check",
             }
         else:
-            missing = [r for r in runs if _fold(r) not in ev]
+            missing = [r for r in runs if not _name_supported(r, ev)]
             checks["names"] = {
                 "applied": True,
                 "passed": not missing,
@@ -234,10 +239,23 @@ def check_sentence(sentence: str, evidence: str, *, language: str | None = None)
     }
 
 
-def _normalised_evidence_numbers(evidence: str) -> str:
-    """The evidence with its own numbers normalised, so grouping style cannot
-    cause a false failure — "1,240" in the sentence must match "1240" in the text."""
-    return " ".join(numbers_in(evidence or "")) + " " + (evidence or "")
+def _name_supported(name: str, folded_evidence: str) -> bool:
+    """Does ``name`` appear in the evidence as a run of whole WORDS, not merely
+    as a run of characters?
+
+    A plain substring test (``needle in haystack``) is exploitable: "Continental
+    Bank" is a literal character substring of "Intercontinental Bank" even
+    though they are different entities, because the match falls mid-word
+    ("inter|continental"). Anchoring the match to word boundaries on both ends
+    closes that gap while DELIBERATELY preserving legitimate partial references
+    — "the Commission" for "the European Commission" still matches, because
+    "commission" there starts and ends on real word boundaries (surrounded by
+    whitespace/punctuation, never by another letter).
+    """
+    folded_name = _fold(name)
+    if not folded_name:
+        return False
+    return re.search(r"\b" + re.escape(folded_name) + r"\b", folded_evidence) is not None
 
 
 def run_grounding_selftest() -> dict:
