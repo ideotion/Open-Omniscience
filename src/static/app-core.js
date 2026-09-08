@@ -1166,25 +1166,25 @@
                  `<div class="muted" style="font-size:11px">${amount}${_rateNote(j, t)} · ${pct}%</div>`;
         }
         const acts = [];
-        if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);
-        if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Pause"))}</button>`);
+        if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Stop"))}</button>`);
+        if (_isDownloadKind(j.kind) && j.state === "running") acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
         if (_isDownloadKind(j.kind) && j.state === "queued") {
           const k = _dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);
           if (idx > 0) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', -1, '${esc(j.kind)}')" title="${esc(t("Move earlier in the queue"))}">\u2191</button>`);
           if (idx >= 0 && idx < keys.length - 1) acts.push(`<button class="tiny secondary" onclick="jobMove('${esc(k)}', 1, '${esc(j.kind)}')" title="${esc(t("Move later in the queue"))}">\u2193</button>`);
-          acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Cancel"))}</button>`);
+          acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Cancel"))}</button>`);
         }
         // Paused/failed downloads gain a Resume control (start() continues the
         // partial file). It routes through the ONE network-consent popup.
         if (_isDownloadKind(j.kind) && (j.state === "paused" || j.state === "failed"))
-          acts.push(`<button class="tiny secondary" onclick="jobResume('${esc(j.id)}')">${esc(t("Resume"))}</button>`);
+          acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
         // The whole-corpus re-index (Phase 1.1) is a DB-writer job pausable from here:
         // pause (running) stops between batches; resume continues from the persisted
         // cursor — so closing the tab no longer restarts it from article 0.
         if (j.kind === "reindex" && j.state === "running")
-          acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Pause"))}</button>`);
+          acts.push(`<button class="tiny secondary" onclick="jobCancel(${esc(JSON.stringify(j.id))})">${esc(t("Pause"))}</button>`);
         if (j.kind === "reindex" && (j.state === "paused" || j.state === "failed"))
-          acts.push(`<button class="tiny secondary" onclick="jobResume('${esc(j.id)}')">${esc(t("Resume"))}</button>`);
+          acts.push(`<button class="tiny secondary" onclick="jobResume(${esc(JSON.stringify(j.id))})">${esc(t("Resume"))}</button>`);
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
           `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
