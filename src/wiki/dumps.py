@@ -463,7 +463,9 @@ class DumpDownloadManager:
             self._save()
         return e
 
-    def _download_segmented(self, entry: DownloadEntry, fetch_url: str, dest: Path) -> bool:
+    def _download_segmented(
+        self, entry: DownloadEntry, fetch_url: str, dest: Path, resume: int = 0
+    ) -> bool:
         """C11: attempt a segmented multi-circuit fetch. Returns True when it
         engaged and the file is written + entry updated; False when it declines
         (no size known, too large, or too small to split — the caller falls
@@ -475,11 +477,32 @@ class DumpDownloadManager:
         total = self._read_url_size(fetch_url).size_bytes or entry.total_bytes
         if not total:
             return False
+        # PERF-09: the same owner-measured registry the sequential path uses —
+        # never a second, parallel rate mechanism (invariant #20). This method
+        # is only ever entered with resume==0 (the caller's own fresh-start
+        # gate), but the real value is threaded through rather than hardcoded.
+        rate = self._rates.start(entry.key, resume)
+        # segmented_fetch's own fetch_segment contract is (url, start, end) ->
+        # bytes, run concurrently across a ThreadPoolExecutor -- segments land
+        # in COMPLETION order, not byte order, so this closure only needs a
+        # monotonically increasing running total for RateSampler to compute a
+        # real throughput from, never byte-exact positional accuracy.
+        received = 0
+        received_lock = threading.Lock()
+
+        def _observed_fetch_segment(url: str, start: int, end: int) -> bytes:
+            nonlocal received
+            chunk = self._fetch_segment(url, start, end)
+            with received_lock:
+                received += end - start
+                rate.observe(received)
+            return chunk
+
         data = segmented_fetch(
             fetch_url,
             total_bytes=total,
             expected_sha256=entry.expected_sha256,
-            fetch_segment=self._fetch_segment,
+            fetch_segment=_observed_fetch_segment,
             min_seg=self._segment_min_bytes,
         )
         if data is None:
@@ -520,7 +543,7 @@ class DumpDownloadManager:
             if (
                 resume == 0
                 and entry.expected_sha256
-                and self._download_segmented(entry, fetch_url, dest)
+                and self._download_segmented(entry, fetch_url, dest, resume)
             ):
                 return entry
 
