@@ -167,3 +167,59 @@ def test_no_score_and_caveat(db):
     assert res["caveat"] and res["method"]
     for it in res["items"]:
         assert not any(k.lower() == "score" or k.lower().endswith("_score") for k in it)
+
+
+def test_flood_prefilter_uses_batched_queries_not_per_candidate(db):
+    """P2-16 regression guard: the per-candidate baseline-count + per-keyword-breakdown
+    queries must be BATCHED (grouped, chunked over source ids, mirroring find_buried_topics)
+    rather than reissued once per candidate source. 20 candidates (15 silent, 5 flooding)
+    with well under one keyword_mentions query per candidate proves the pre-filter stage
+    does not scale with the candidate count -- the pre-fix loop issued 3 separate
+    single-source queries PER candidate (60 for the silent cohort alone, before even
+    counting the flooding cohort or the src_recent/article_ids queries)."""
+    from sqlalchemy import event
+
+    n_silent = 15
+    n_flood = 5
+    for i in range(n_silent):
+        sid = 200 + i
+        db.add(Source(id=sid, name=f"quiet{sid}", domain=f"quiet{sid}.test"))
+    for i in range(n_flood):
+        sid = 300 + i
+        db.add(Source(id=sid, name=f"loud{sid}", domain=f"loud{sid}.test"))
+    db.commit()
+    for i in range(n_silent):
+        sid = 200 + i
+        _spread(db, sid, RECENT, n=5, k_hits=5)  # consistently high share -> no jump -> silent
+        _spread(db, sid, PRIOR, n=8, k_hits=8)
+    for i in range(n_flood):
+        sid = 300 + i
+        _spread(db, sid, RECENT, n=5, k_hits=5)  # a real flood
+        _spread(db, sid, PRIOR, n=8, k_hits=1)
+
+    statements: list[str] = []
+    engine = db.get_bind()
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _cap(conn, cursor, statement, params, context, executemany):  # noqa: ANN001
+        statements.append(" ".join(statement.split()).lower())
+
+    try:
+        res = find_flooded_topics(db, **KW)
+    finally:
+        event.remove(engine, "before_cursor_execute", _cap)
+
+    assert res["count"] == n_flood, res  # the silent cohort produced no items
+
+    km_selects = [
+        s for s in statements if s.startswith("select") and "from keyword_mentions" in s
+    ]
+    n_candidates = n_silent + n_flood
+    assert len(km_selects) < n_candidates, km_selects
+    # The batched per-source breakdown queries are GROUP BY source_id, keyword_id (never a
+    # single-source `source_id = ?` scoped query reissued per candidate).
+    grouped_pair = [
+        s for s in km_selects
+        if "group by keyword_mentions.source_id, keyword_mentions.keyword_id" in s
+    ]
+    assert len(grouped_pair) == 2, km_selects  # one for the recent window, one for baseline
