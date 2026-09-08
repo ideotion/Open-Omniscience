@@ -210,7 +210,7 @@ def detect_coordination(
     actors: list[Actor] = []
     for comp in comps.values():
         comp_sources = sorted(comp)
-        comp_events = [ev for ev in events if any(s in comp for s in ev.sources)]
+        comp_events = [ev for ev in events if all(s in comp for s in ev.sources)]
         docs = sorted({d for ev in comp_events for d in ev.documents})
         hosts = sorted({h for d in docs if (h := by_id[d].get("host"))})
         actors.append(

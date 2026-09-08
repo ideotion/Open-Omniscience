@@ -132,6 +132,52 @@ def test_spread_out_near_dup_is_not_lockstep():
     assert res.actors == []  # near-dup, but 10 days apart -> not coordinated
 
 
+def test_min_shared_stories_above_default_does_not_leak_outside_sources():
+    # A regression test for a comp_events misattribution bug: an event whose sources
+    # span TWO components (only one of which meets min_shared_stories) must not have
+    # its documents/host attributed to either component. C only ever co-publishes
+    # once with A and once with B -- below a min_shared_stories=2 threshold -- so C
+    # must never be pulled into the {A, B} actor (which itself shares two stories:
+    # the mixed A/B/C story and a second A/B-only story).
+    now = datetime.now(UTC)
+    docs = [
+        {"id": "mixed_a", "source": "A", "text": _WIRE, "published_at": now, "host": "a.example"},
+        {"id": "mixed_b", "source": "B", "text": _WIRE, "published_at": now, "host": "b.example"},
+        {"id": "mixed_c", "source": "C", "text": _WIRE, "published_at": now, "host": "c.example"},
+        {
+            "id": "ab_only_a",
+            "source": "A",
+            "text": _INDEPENDENT,
+            "published_at": now,
+            "host": "a.example",
+        },
+        {
+            "id": "ab_only_b",
+            "source": "B",
+            "text": _INDEPENDENT,
+            "published_at": now,
+            "host": "b.example",
+        },
+    ]
+    res = detect_coordination(docs, threshold=0.6, window_hours=48, min_shared_stories=2)
+
+    # (A, B) share 2 stories (the mixed one + the AB-only one) -> meets the threshold.
+    # (A, C) and (B, C) share only the mixed story each -> below it, so C is never
+    # unioned into the {A, B} actor.
+    assert len(res.actors) == 1
+    actor = res.actors[0]
+    assert actor.sources == ["A", "B"]
+    assert "C" not in actor.sources
+
+    # The mixed story spans a source (C) outside this actor's component, so it must
+    # NOT be attributed here -- only the AB-only story is purely internal to {A, B}.
+    assert actor.shared_stories == 1
+    assert actor.documents == ["ab_only_a", "ab_only_b"]
+    assert "mixed_c" not in actor.documents
+    assert actor.shared_hosts == ["a.example", "b.example"]
+    assert "c.example" not in actor.shared_hosts
+
+
 # --------------------------------------------------------------------------- #
 #  Novelty — original is novel, echo is not
 # --------------------------------------------------------------------------- #
