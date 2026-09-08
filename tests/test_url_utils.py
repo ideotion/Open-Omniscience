@@ -27,7 +27,12 @@ Tests for canonicalize_url and generate_content_hash functions.
 Author: Ideotion
 """
 
-from src.utils.url_utils import canonicalize_url, generate_content_hash
+from src.utils.url_utils import (
+    DOMAIN_ALIASES,
+    canonicalize_url,
+    generate_content_hash,
+    is_equivalent_domain,
+)
 
 
 def test_canonicalize_url():
@@ -81,8 +86,36 @@ def test_generate_content_hash():
     assert len(hash1) == 64
 
 
+def test_is_equivalent_domain_same_domain():
+    """A domain is always equivalent to itself, via the equality short-circuit --
+    independent of whatever DOMAIN_ALIASES happens to contain (or not) for it."""
+    assert is_equivalent_domain("washingtonpost.com", "washingtonpost.com") is True
+    assert is_equivalent_domain("www.washingtonpost.com", "washingtonpost.com") is True
+    assert is_equivalent_domain("example.com", "example.com") is True
+
+
+def test_is_equivalent_domain_known_aliases():
+    """Real (non-self-referential) alias pairs from DOMAIN_ALIASES resolve as
+    equivalent in both directions."""
+    assert is_equivalent_domain("bbc.com", "bbc.co.uk") is True
+    assert is_equivalent_domain("bbc.co.uk", "bbc.com") is True
+    assert is_equivalent_domain("nytimes.com", "nyt.com") is True
+
+
+def test_domain_aliases_has_no_self_referential_entries():
+    """DOMAIN_ALIASES must never map a domain to itself -- such an entry is dead
+    weight, since is_equivalent_domain() already returns True on domain1 ==
+    domain2 before the alias table is consulted (regression test for a
+    washingtonpost.com -> ["washingtonpost.com"] no-op entry)."""
+    for domain, aliases in DOMAIN_ALIASES.items():
+        assert domain not in aliases, f"{domain!r} is listed as its own alias"
+
+
 if __name__ == "__main__":
     # Run tests manually
     test_canonicalize_url()
     test_generate_content_hash()
+    test_is_equivalent_domain_same_domain()
+    test_is_equivalent_domain_known_aliases()
+    test_domain_aliases_has_no_self_referential_entries()
     print("All tests passed!")
