@@ -7204,3 +7204,75 @@ BLOCKER is a claim like any other; a document can be right at the top and wrong 
 down; a "dead code" claim is a claim about a line when the file may not import at all; and two
 sessions built the same parked item on the same day, because a parked item is claimable and
 nothing in this repository lets a session claim one.
+
+## 2026-09-07 — PROMPT 23: the nine V1 rulings, and the verticals' network-free halves
+
+Branch `claude/v1-pathway-planning-4pf6n8`. The full shipped record is the `shipped.csv` row of the
+same date (`planning/civic+climate`); the rulings themselves, with their per-vertical consequences,
+are the Open-queue entry "THE NINE V1 RULINGS ANSWERED". Recorded here for the three reusable
+lessons it earned, which are copied verbatim into `LESSONS.md` per protocol rule (5a)(b):
+
+1. A status re-check is itself a claim, and one dated today can be wrong about work that shipped two
+   months ago — search for the CAPABILITY, never for the design's own vocabulary.
+2. A decision recorded as urgent can have been spent months earlier, and urgency is the attribute
+   nobody re-checks.
+3. A ratchet's value in a doc is not the ratchet.
+
+### 2026-09-07 addendum — the merge that produced a fourth lesson
+
+Merging origin/main into `claude/v1-pathway-planning-4pf6n8` hit the `shipped.csv`
+union-merge collision in a form the ledger's recorded TELL cannot detect: main had EDITED
+two rows and `merge=union` kept its corrected row beside this branch's stale one, with a
+numstat of 17 added / 0 deleted. Only the duplicate-key scan against the common ancestor
+saw it. The lesson is appended verbatim to `LESSONS.md` per rule (5a)(b); its two riders
+are that the obvious repair re-earns the CRLF-normalisation defect, and that a
+verification assertion assuming tail-only additions fires on a correct head-insertion.
+
+### 2026-09-07 addendum 2 — a fifth lesson, and a correction to lesson 2 above
+
+**Lesson 2's sibling clause was false, and the falsehood cost a maintainer decision.** In
+putting V1-7 to the maintainer I described `page_size=16384` as shipping on a *"FIRM
+recommendation, never a ruling"*. It had been ruled twice: merging **PR #749** was the
+ratification under the §4.1.5 self-labeling convention, and the maintainer made it explicit
+on **2026-08-13** — *"Let's consider this as finished"* — with 0.3 gate row 6 recorded CLOSED
+in `OPEN_QUEUE.md`. The claim came from `src/database/connect.py`'s own comment, three weeks
+stale; the ledger, which is one grep away and is the only authority on whether a ruling
+exists, was never checked. So a maintainer decision was spent re-ratifying a settled ruling —
+the exact cost the three-file ledger protocol exists to prevent, and the third stale-downstream-
+copy failure in this one session after the status banner and the i18n ratchets.
+
+The corrections are in place and keep the wrong text beside them: `src/database/connect.py`
+(the artifact that misled), the Open-queue V1-7 entry, `V1_PATHWAY_2026-07-14.md` §7, the
+decision brief, and lesson 2 in `LESSONS.md` itself. The substantive half of V1-7 — *"rule all
+four now"* — is unaffected and was delivered as
+`docs/design/STORAGE_RULINGS_ROUND2_2026-09-07.md`.
+
+**FIFTH LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** *a code comment may
+state the EVIDENCE for a decision; whether the decision was TAKEN is the ledger's to say.* Its
+operational tell: a comment that editorialises about PROCESS ("firm recommendation", "pending
+ruling", "provisional until X") is a claim about a conversation the code cannot observe, and is
+stale from the moment that conversation moves — where evidence ("the 4K point-lookup win at 3 GB
+inverts at 22 GB") stays true wherever the decision goes.
+
+### 2026-09-07 addendum 3 — the new ruff ratchet, measured on the base branch first
+
+`main`'s advisory-ruff non-growth ratchet (`scripts/ruff_ratchet.py`, arrived with #1035) reddened
+on this branch at **451**. Two facts came out of checking it rather than reacting to it.
+
+**The ceiling is 450, not the 442 printed in the introducing PR's body and in
+`docs/maintenance/RUFF_STYLE_LANE.md`.** `ci.yml` pins 450 with a comment saying why: shipping the
+tighter number *"would redden main on the merge commit over findings that are not this PR's"*. So
+the doc is not a stale copy of the gate — **the author deliberately shipped a different number than
+the one they measured**, which is a case the recorded "stale copy" framing does not cover. Read at
+442 this branch was red and the next step would have been fixing eight findings it did not write.
+
+**The ratchet has ZERO slack.** `main` alone measures exactly **450 against its ceiling of 450**,
+verified like-for-like in a detached worktree at `bcc80990`. One new style finding in any PR
+reddens it. This branch had one — a `SIM108` in `src/civic/elections.py` — fixed rather than argued
+up, per the ratchet's own rule and its author's precedent of fixing the finding their own first run
+caught. The branch now contributes zero: 450 with it, 450 without.
+
+**LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b), as a rider on the existing ratchet
+entry:** read the gate out of `ci.yml`, never out of prose — and when a ratchet lands at zero slack,
+**measure the BASE BRANCH before concluding the red is yours**, because the delta is the only number
+that says whose finding it is.

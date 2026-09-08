@@ -21,6 +21,8 @@ from typing import cast
 
 import yaml
 
+from src.civic.elections import annotate as annotate_election
+
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_events.yml"
 
 _CATEGORIES = ("civic", "political", "economic", "technology")
@@ -95,6 +97,12 @@ def load_events() -> list[dict]:
                 "week": e.get("week"),
                 "end_month": e.get("end_month"),
                 "end_day": e.get("end_day"),
+                # An explicit, SOURCED "this election falls within calendar year N"
+                # bound, for an entry whose law fixes a year but not a month. Never
+                # inferred from a title or a tag: "due BY 2029" (a dissolution
+                # DEADLINE, which an early election beats) and "falls IN 2029" are
+                # different claims, and only the second is a window.
+                "window_year": _coerce_year(e.get("window_year")),
                 "origin_year": _coerce_year(e.get("origin_year")),
                 "until_year": _coerce_year(e.get("until_year")),
                 "confirmed": bool(e.get("confirmed", False)),
@@ -286,7 +294,12 @@ def agenda(
             origin_year=e.get("origin_year"), until_year=e.get("until_year"),
             weekday=e.get("weekday"), week=e.get("week"),
         )
-        items.append({**e, "next_occurrence": nxt, "span": _span_for(e, today)})
+        # Elections carry the ruled three-tier date confidence (scheduled / window /
+        # projected). `annotate` is a no-op for every other calendar, so a summit or an
+        # observance comes back byte-identical -- this cannot change what they render.
+        items.append(
+            annotate_election({**e, "next_occurrence": nxt, "span": _span_for(e, today)}, today)
+        )
     items.sort(key=lambda x: (x["next_occurrence"] is None, x["next_occurrence"] or "", x["title"]))
     return items
 

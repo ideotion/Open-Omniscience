@@ -2897,6 +2897,23 @@ def columnar_status() -> dict:
     }
 
 
+@router.get("/elections-floor")
+def elections_coverage_floor() -> dict:
+    """The elections coverage floor (K13's elections component) — network-free.
+
+    Maintainer ruling 2026-07-14 (V1_PATHWAY §4.5(1)): the vertical must cover at least
+    every country whose official or major language is one of the twelve UI languages.
+    This reports that floor as a DENOMINATOR and what the shipped calendar reaches of it,
+    with the four states kept apart (covered · only-a-passed-projection · present-but-
+    dateless · missing) because a single "covered" count would let the floor be cleared by
+    entries that tell a reader nothing. Counts only, no score; the country mapping's own
+    verification status rides every answer, since the share is measured against a
+    denominator that has not yet been checked against a primary source."""
+    from src.civic.coverage_floor import floor_coverage
+
+    return floor_coverage()
+
+
 @router.get("/freshness")
 def external_freshness() -> dict:
     """Self-report the freshness of every registered external artifact (network-free).
@@ -3691,6 +3708,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("benchmark.json", lambda: benchmark_report(repeats=2, db=db)),
         ("columnar.json", lambda: columnar_status()),
         ("freshness.json", lambda: external_freshness()),
+        ("elections-floor.json", lambda: elections_coverage_floor()),
         # Recursive-augmentation logs #1-#5 (maintainer 2026-07-02).
         ("request-latency.json", lambda: request_latency()),
         # S2.6 (2026-09-02): the two pins, named. Point-in-time and in-memory, so
@@ -4120,6 +4138,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/network": "network.json",
     "/columnar": "columnar.json",
     "/freshness": "freshness.json",
+    "/elections-floor": "elections-floor.json",
     "/session-forensics": "session-forensics.json",
     "/data-dir-persistence": "data-dir-persistence.json",
     "/storage-footprint": "storage-footprint.json",

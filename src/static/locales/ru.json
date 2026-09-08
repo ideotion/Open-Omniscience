@@ -3134,5 +3134,9 @@
   "Dominated by one member: {member} holds {pct}% of the mentions.": "Доминирует один участник: на {member} приходится {pct} % упоминаний.",
   "Shares a member keyword with: {names}": "Общее ключевое слово-участник с: {names}",
   "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.": "Корпус как небо: {plotted} галактик показано по мере {measure}, {unplaced} ещё не наблюдались. Самая большая — {top}. Ранжированная таблица ниже содержит все значения.",
-  "Quarantined articles are held out of this distribution: {n} excluded.": "Статьи в карантине исключены из этого распределения: {n} исключено."
+  "Quarantined articles are held out of this distribution: {n} excluded.": "Статьи в карантине исключены из этого распределения: {n} исключено.",
+  "Date set by the electoral authority. Confirm at the official source.": "Дата назначена избирательным органом. Проверьте по официальному источнику.",
+  "The exact day is not yet set — only the legal window is known. Confirm at the official source.": "Точный день ещё не назначен — известен только установленный законом период. Проверьте по официальному источнику.",
+  "Projected from a recurrence rule, not announced. Elections are postponed, moved or cancelled — treat this as a prompt to check the official source, never as a date.": "Рассчитано по правилу периодичности, а не объявлено. Выборы переносят, меняют или отменяют — считайте это поводом проверить официальный источник, но никогда — датой.",
+  "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "Расчётная дата прошла, и результат здесь не зафиксирован — статус неизвестен. Проверьте по официальному источнику."
 }

@@ -7289,3 +7289,132 @@
     the merge == 0`, and refuse to delete a `PR pending` row that has no
     identical-except-refs swept twin, because then it is not a duplicate but somebody's
     real, unswept row.
+
+  - **A STATUS RE-CHECK IS ITSELF A CLAIM, AND ONE DATED TODAY CAN BE WRONG ABOUT WORK THAT
+    SHIPPED TWO MONTHS AGO — search for the CAPABILITY, never for the design's own vocabulary
+    (2026-09-07, PROMPT 23's staleness guard):** `docs/FUTURE_DEVELOPMENTS.md` carried a
+    "Status re-check 2026-09-07 (docs-hygiene + reality-check pass)" banner listing three
+    manipulation-card items as "genuinely open". Two of the three were shipped, one of them
+    since **PR #568** — so the banner was not merely stale, it was BORN wrong, on the same
+    day, by a pass whose entire job was checking status. The recorded 2026-08-20 lesson
+    ("a status line ages faster than the finding it describes") does not cover this case:
+    nothing had aged. **THE MECHANISM IS THE SEARCH VOCABULARY.** The design said the bury
+    half of card #4 "needs a real external trigger", so a re-check naturally greps for a
+    trigger — and the shipped implementation had resolved that blocker by a substitution the
+    design never anticipated: the REST OF THE CORPUS is the trigger (a two-proportion z-test
+    of the source's topic share against the rest-of-corpus share, BH-FDR corrected). Nothing
+    in the code says "external trigger", so every search phrased in the design's words came
+    back empty and read as confirmation. The same pass called outrage-intensity open because
+    it is SECONDARY — which is its spec ("annotates, never fires alone"), not a deferral;
+    that is *designed-as-partial* misread as *not built*. GENERAL FORM: when checking whether
+    a designed item exists, grep for the CAPABILITY a user would get (`buried_topic`, the
+    producer registry, the endpoint) rather than for the blocker the design named, because an
+    implementation that solved the blocker differently is invisible to the design's own
+    vocabulary — and it is precisely the item whose blocker was *interesting* that someone
+    was most likely to solve creatively. COROLLARY, cheap and worth doing every time: when a
+    re-check concludes "still open", cost one `git log -S` on the obvious identifier before
+    writing it down; here that single command dates the answer to PR #568 in seconds. And
+    when correcting such a banner, KEEP the wrong one beside the correction — a status line
+    that was wrong is itself the finding, and deleting it hides that the re-check mechanism
+    can fail.
+  - **A DECISION RECORDED AS URGENT CAN HAVE BEEN SPENT MONTHS EARLIER, AND URGENCY IS THE
+    ATTRIBUTE NOBODY RE-CHECKS (2026-09-07, same session, ruling V1-7):** the plan listed the
+    storage rulings as "urgent, because they are CREATE-time irreversible", and a prompt built
+    from it repeated that verbatim. Both create-time seams had already shipped —
+    `_FRESH_AUTO_VACUUM` and `_FRESH_PAGE_SIZE = 16384` are the defaults in
+    `src/database/connect.py`, one ruled 2026-07-17 and one shipped on a measured evidence
+    pair — so no window was closing and had not been for weeks. The staleness guard is
+    normally run as "is this already BUILT?"; run it also as **"is the URGENCY still real?"**,
+    because a deadline attribute is written once, is never revisited by the sessions that
+    inherit it, and mis-sequences whole prompts: it had this one leading with a decision that
+    turned out to need only ratification. **⚠ AND THE "ONLY RATIFICATION" HALF WAS ITSELF
+    WRONG — see the entry directly below, which this sentence's original sibling clause
+    caused.** That clause said: ~~`page_size=16384` had been shipping on a *"FIRM
+    recommendation"* and never a ruling, which is the mirror defect — a decision everyone
+    treats as made because the code assumes it. When you find one, get it ratified rather
+    than leaving the default resting on a recommendation.~~ It had been ruled twice over. The
+    part of this entry that SURVIVES is the part about urgency, which is independently true
+    and was verified against the code: both create-time seams are shipped and defaulted, so
+    the deadline attribute really was spent.
+  - **A CODE COMMENT MAY STATE THE EVIDENCE FOR A DECISION; WHETHER THE DECISION WAS TAKEN IS
+    THE LEDGER'S TO SAY (2026-09-07, same session, and it cost a maintainer decision):** I put
+    "ratify `page_size=16384`" to the maintainer on the strength of
+    `src/database/connect.py`'s own comment, which read *"FIRM recommendation … not yet a
+    maintainer ruling"*. It had been ruled TWICE — implicitly by merging **PR #749** under the
+    §4.1.5 self-labeling convention, and **explicitly on 2026-08-13** when the maintainer said
+    *"Let's consider this as finished"* and 0.3 gate row 6 was closed in `OPEN_QUEUE.md`. The
+    comment simply never followed, and three weeks later it was the only thing I read. **A
+    scarce maintainer decision was spent re-ratifying a settled ruling** — the one cost this
+    project's whole ledger protocol exists to prevent. Two things generalise. (a) **The
+    ledger is the ONLY authority on whether a ruling exists** — `OPEN_QUEUE.md` and
+    `shipped.csv` — and checking it is one `grep`, so there is no version of this that was
+    expensive to avoid; a comment, a design doc's status line, and a plan's framing are all
+    downstream copies that go stale silently, exactly as the two entries above this one
+    describe for banners and ratchets. This is the same failure a THIRD time in one session,
+    which is what makes it a rule rather than a slip. (b) **The tell is a comment that
+    editorialises about PROCESS.** Evidence ages well ("the 4K point-lookup win at 3 GB
+    inverts at 22 GB") and stays true wherever the decision goes; process status ("firm
+    recommendation", "pending ruling", "provisional until X") is a claim about a conversation
+    the code cannot observe, and it is stale from the moment the conversation moves. When you
+    write the second kind, you are writing a fact with an expiry date into the artifact
+    nobody re-reads. Prefer the evidence and a pointer to the ledger row.
+  - **A RATCHET'S VALUE IN A DOC IS NOT THE RATCHET (2026-09-07, same session):** the working
+    mode named the i18n ratchets as 560 and 297; `ci.yml` pins **558 and 296**, one step
+    lower, because a previous PR correctly lowered them and the doc did not follow. A session
+    trusting the doc believes it has two slots of slack against gates that in fact have ZERO,
+    and the recorded "lower it in the same PR that adds the keys" habit is what closes that
+    gap — so the stale copy invites exactly the drift the ratchet exists to catch. Read the
+    number out of `ci.yml`, never out of prose, and reproduce each of the three i18n commands
+    separately (gate 1 passing is no evidence at all about gate 2 — it compares locale files
+    against `en.json` and is structurally blind to a brand-new string with no key).
+    **RE-EARNED THE SAME DAY, ON A RATCHET THAT DID NOT EXIST WHEN THIS WAS WRITTEN
+    (2026-09-07, merging #1035):** the new advisory-ruff non-growth ratchet arrived on `main`,
+    and I ran it at **442** — the number in its PR's body and in its own design doc. `ci.yml`
+    pins **450**, and says why in a comment right above the step: shipping the tighter number
+    *"would redden main on the merge commit over findings that are not this PR's"*. So the doc
+    was not stale, it was never the gate: **the author deliberately shipped a different number
+    than the one they measured**, which is a case the "stale copy" framing does not even
+    cover. At 442 my branch read RED and I was one step from either fixing eight findings I did
+    not write or arguing a ceiling up; at the real 450 it is green. Same instruction, stronger
+    reason: `ci.yml` is the gate, and everything else is commentary about it.
+    **AND THE MEASUREMENT WORTH KEEPING: that ratchet has ZERO slack.** `main` alone measures
+    exactly 450 against its ceiling of 450, verified like-for-like in a detached worktree — so
+    ONE new style finding in any PR reddens it, and mine had one (a `SIM108` in
+    `src/civic/elections.py`). Fixed rather than argued, per the ratchet's own rule and its
+    author's precedent of fixing the finding their own first run caught. The general point:
+    when a ratchet lands at zero slack, measure the BASE BRANCH before concluding the red is
+    yours — the delta is the only number that says whose finding it is.
+  - **THE `shipped.csv` UNION-MERGE DEFECT HAS A THIRD FORM, AND THE RECORDED TELL DOES NOT
+    FIRE ON IT — only the duplicate-key scan does (2026-09-07, merging #1041 with main's
+    #1021 sweep):** the ledger already records this collision twice, and both times the
+    diagnostic offered was *"the tell in the diff is a numstat with DELETIONS on a merge you
+    expect to be purely additive"*. **Here the numstat was 17 added / 0 deleted — flawless —
+    and the file was still corrupt.** The mechanism is worth stating exactly, because it is
+    the case both earlier entries describe from the other side: main had EDITED two rows
+    (sweeping their `refs` to add `PR #1021` per rule 5b), my branch carried the ancestor's
+    unedited copies, and `merge=union` **added main's corrected row without removing my stale
+    one**. Nothing is deleted, so there is nothing for a deletion-count to notice; the union
+    did exactly what union means. So the earlier entries' tell is a symptom of *some*
+    instances, never a test for the class — the only check that sees it is the one those
+    entries also name and which is easy to skip once the numstat looks clean: a
+    DUPLICATE-KEY scan over `(date, area, item)` compared against the COMMON ANCESTOR (9
+    pre-existing here; 11 after the merge). Run it on every merge that touches the file,
+    whatever the numstat says.
+    **THE REPAIR HAS ITS OWN TRAP, and I walked into it:** having found the two stale rows, I
+    rebuilt the file through `csv.writer(lineterminator="\n")`, which normalised all 22 CRLF
+    rows and turned a 2-line fix into **57 added / 42 deleted** — the recorded
+    "`read_text()` normalises line endings" lesson, re-earned in the repair for the defect
+    beside it. The safe rebuild needs no CSV round-trip at all: *the union minus the stale
+    ancestor copies IS main's file plus your own new rows*, so take `MERGE_HEAD`'s bytes
+    verbatim and append, which preserves every existing line by construction. Verify with
+    `git diff --ignore-cr-at-eol --numstat` AND a raw CRLF count, since the first flag hides
+    exactly the damage the second measures.
+    **SIBLING, from the same merge: a verification assertion can be wrong in the safe
+    direction and still cost you.** Resolving the three ledger `.md` conflicts I asserted
+    that nothing outside the conflict hunk had moved — which assumed every addition lands at
+    the TAIL. Main had inserted an entry at the HEAD of the Open-queue section, git
+    auto-merged it correctly, and my assertion fired on a perfectly good resolution. A
+    guard that reddens on correct code gets relaxed, and a relaxed guard catches nothing, so
+    the fix is not to loosen it but to assert the property that actually matters: every line
+    EITHER side added relative to the common ancestor must survive in the result. That one
+    holds whatever the insertion point, and it is what proves an additive merge additive.

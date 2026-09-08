@@ -32,8 +32,14 @@ elections and climate, 0.7 patents and medical, 0.8 conflict and the 360° dossi
 ### S1 — Answer the eight rulings (G1)
 
 V1-2 user-supplied API keys; V1-3 restrictive-license policy (the ACLED class); V1-4 PubMed bulk versus API;
-V1-5 Windows and macOS at 1.0; V1-6 the KPI bars; V1-7 the storage rulings (already prompt 22's C4, and
-**urgent** because they are create-time irreversible); V1-8 whether elections are required for 1.0; V1-9 the
+V1-5 Windows and macOS at 1.0; V1-6 the KPI bars; V1-7 the storage rulings (already prompt 22's C4; the
+**"urgent because create-time irreversible" framing was STALE — corrected 2026-09-07**: §1a
+`auto_vacuum=INCREMENTAL` was ruled 2026-07-17 and §1b `page_size=16384` was ruled TWICE — implicitly by
+merging PR #749, then EXPLICITLY on 2026-08-13 — and both are already the defaults in
+`src/database/connect.py`, so no window is closing. **⚠ THE SECOND HALF OF THAT SENTENCE IS A CORRECTION TO
+THIS SESSION'S OWN WORK:** it first read *"shipped on its evidence pair"*, on the strength of a stale
+`connect.py` comment, and V1-7 was put to the maintainer as *"ratify 16384"* — spending a maintainer
+decision on a settled ruling); V1-8 whether elections are required for 1.0; V1-9 the
 Wikipedia edition-count bar at 1.0.
 
 ### S2 — G2: elections, with the coverage floor and the projection tiers
@@ -62,9 +68,16 @@ disclosed imperfection, or the tool punishes transparency.
 
 ### S3 — The remaining scenario and manipulation cards
 
-Six of nine manipulation cards ship. What is left: the **bury** half of flood/bury (it needs a real external
+~~Six of nine manipulation cards ship. What is left: the **bury** half of flood/bury (it needs a real external
 trigger), the event-timed operation (it needs the elections candidate roster, so it follows S2), and
-outrage-intensity, which is secondary by design — it annotates another card and is never a standalone Lead.
+outrage-intensity, which is secondary by design — it annotates another card and is never a standalone Lead.~~
+**CORRECTED 2026-09-07 by the staleness guard this prompt mandates (tree-anchored `main` @ 965e3e54): it is
+EIGHT of nine.** The **bury** half SHIPS — `buried_topic` / `find_buried_topics` / `BURY_CAVEAT`, registered
+and catalogued, landed in PR #568; its "real external trigger" is the REST OF THE CORPUS (a two-proportion
+z-test of the source's topic share against the rest-of-corpus share, BH-FDR corrected). **Outrage-intensity
+SHIPS** as `src/analytics/outrage.py`, annotating `headline_body.py` — which is its spec, not a deferral.
+**Only #9 (event-timed operation) is open**, and V1-8 (2026-09-07) puts it past 1.0 by ruling, since the
+calendar is the 1.0 bar and #9 needs the candidate roster.
 `disputed_chronology` and `story_propagation` exist; check before rebuilding. The news-desert atlas and
 "warnings existed" remain unbuilt.
 
