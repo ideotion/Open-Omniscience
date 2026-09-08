@@ -7730,7 +7730,7 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 616
+_CLAUDE_MD_LINE_CEILING = 628
 
 
 def _claude_md_lines() -> int:
