@@ -63,9 +63,10 @@ def build_methods_markdown(
     lines.append("|---|-------|--------|-----------|-----|-----------------|")
     for i, a in enumerate(sorted(articles, key=lambda x: x.id), 1):
         pub = a.published_at.date().isoformat() if a.published_at else ""
-        src = getattr(a.source, "name", "") or ""
+        src = (getattr(a.source, "name", "") or "").replace("|", "\\|")
         title = (a.title or "(untitled)").replace("|", "\\|")
-        lines.append(f"| {i} | {title} | {src} | {pub} | {a.url} | `{a.hash}` |")
+        url = a.url.replace("|", "\\|")
+        lines.append(f"| {i} | {title} | {src} | {pub} | {url} | `{a.hash}` |")
     lines.append("")
     lines.append("## Verification")
     lines.append("")
