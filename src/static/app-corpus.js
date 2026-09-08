@@ -541,28 +541,74 @@
           });
         }
       } else {
-        // family / super-group: concentric rings by weight rank (outward =
-        // lighter), each node linked only to its single strongest neighbour.
+        // family / super-group: ONE spanning tree grown outward from the
+        // heaviest node, so a node's position and the edge that connects it
+        // to the tree are the SAME relationship -- mirrors the keyword-level
+        // pattern above (parentOf couples position + edge selection) so an
+        // edge can never jump to an arbitrary angle/ring: each node's angle
+        // is derived from its parent's angle, confined to a narrowing slice
+        // of the parent's own sector, exactly like the keyword level's
+        // leaves-around-an-arm placement. Nodes stay weight-ranked (heavier
+        // = closer to centre, "centre -> arms -> always outward"); only the
+        // position/connectivity coupling changes.
         const sorted = [...nodes].sort((a, b) => (b.size || 1) - (a.size || 1));
-        sorted.forEach((n, i) => {
-          if (i === 0) { n.x = W / 2; n.y = H / 2; return; }
-          const ring = i <= 8 ? 1 : i <= 24 ? 2 : 3;
-          const start = ring === 1 ? 0 : ring === 2 ? 8 : 24;
-          const count = ring === 1 ? Math.min(8, sorted.length - 1) : ring === 2 ? Math.min(16, sorted.length - 9) : sorted.length - 25;
-          const ang = ((i - start) / Math.max(count, 1)) * 2 * Math.PI - Math.PI / 2 + ring * 0.3;
-          const R = Math.min(W, H) * (0.16 + 0.15 * ring);
-          n.x = W / 2 + R * Math.cos(ang) * 1.25; n.y = H / 2 + R * Math.sin(ang);
-        });
-        const best = {};
+        const rankOf = {}; sorted.forEach((n, i) => { rankOf[n.id] = i; });
+        const adj = {};
         for (const e of g.edges) {
           if (!byId[e.a] || !byId[e.b]) continue;
-          if (!(e.a in best) || e.weight > best[e.a].w) best[e.a] = {o: e.b, w: e.weight};
-          if (!(e.b in best) || e.weight > best[e.b].w) best[e.b] = {o: e.a, w: e.weight};
+          (adj[e.a] = adj[e.a] || []).push({o: e.b, w: e.weight});
+          (adj[e.b] = adj[e.b] || []).push({o: e.a, w: e.weight});
         }
-        const seen = new Set();
-        for (const id in best) {
-          const key = [id, best[id].o].sort().join("|");
-          if (!seen.has(key)) { seen.add(key); treeEdges.push({a: byId[id], b: byId[best[id].o], w: best[id].w}); }
+        const root = sorted[0];
+        root.x = W / 2; root.y = H / 2; root.ring = 0;
+        const kidsOf = {};
+        sorted.forEach((n, i) => {
+          if (i === 0) return;
+          // Parent = the single strongest-weighted edge to a node that is
+          // ALREADY placed closer to the centre (earlier in weight rank) --
+          // built outward from the root, the way the keyword level's
+          // parentOf is built from the centre outward.
+          const closer = (adj[n.id] || []).filter(x => rankOf[x.o] < i);
+          let parentId = root.id, parentW = 0;
+          if (closer.length) {
+            let best = closer[0];
+            for (const x of closer) if (x.w > best.w) best = x;
+            parentId = best.o; parentW = best.w;
+          }
+          // A node with no edge at all to anything closer (a disconnected
+          // node, or one whose only neighbours are themselves unplaced)
+          // falls back to its own second-tier arm off the root -- the same
+          // fallback shape as the keyword level's `arms[0]` default --
+          // rather than being left unplaced.
+          n._parentId = parentId; n._parentW = parentW;
+          (kidsOf[parentId] = kidsOf[parentId] || []).push(n);
+        });
+        const ringR = (ring) => Math.min(W, H) * (0.16 + 0.15 * Math.min(ring, 3));
+        const arms = kidsOf[root.id] || [];
+        arms.forEach((n, i) => {
+          n.ang = (i / arms.length) * 2 * Math.PI - Math.PI / 2;
+          n.ring = 1; n._span = (2 * Math.PI) / arms.length;
+          const r = ringR(1);
+          n.x = W / 2 + r * Math.cos(n.ang) * 1.25; n.y = H / 2 + r * Math.sin(n.ang);
+          treeEdges.push({a: root, b: n, w: n._parentW || 1});
+        });
+        let frontier = arms;
+        while (frontier.length) {
+          const next = [];
+          frontier.forEach(p => {
+            const kids = kidsOf[p.id];
+            if (!kids || !kids.length) return;
+            const span = p._span * 0.8;
+            kids.forEach((n, j) => {
+              n.ang = p.ang + span * ((j + 1) / (kids.length + 1) - 0.5);
+              n.ring = p.ring + 1; n._span = span / kids.length;
+              const r = ringR(n.ring);
+              n.x = W / 2 + r * Math.cos(n.ang) * 1.25; n.y = H / 2 + r * Math.sin(n.ang);
+              treeEdges.push({a: p, b: n, w: n._parentW || 1});
+              next.push(n);
+            });
+          });
+          frontier = next;
         }
       }
 
