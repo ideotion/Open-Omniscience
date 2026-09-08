@@ -234,6 +234,39 @@ never the way to make room for something rules (5)/(5a) would have sent to
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): capture-phase `_externalLinkGuard` in BOTH UIs; loopback
    exempt; message via `OOI18N.t`.
+9. **Evidence-tiered cards carry a trigger audit trail** (ruled 2026-06-10):
+   every card explains itself in plain words FIRST ("Why am I seeing this?"),
+   with the exact math beneath ("The exact math"), both translatable ×12.
+   Enforced in test_ui_invariants (#9).
+10. **Bundled open-source fonts, never an external font host** (ruled
+   2026-06-11): OFL license texts ship in the repo alongside the six bundled
+   `.woff2` families (Cantarell, Inter, Outfit, Manrope, JetBrains Mono,
+   Source Serif 4) under `src/static/fonts/`; `@font-face` declarations are
+   local (≥6 in `index.html`); `fonts.googleapis.com`/`fonts.gstatic.com`
+   must never appear. Enforced in test_ui_invariants (#10).
+11. **Themed form widgets** (the Settings "font cursor" bug, 2026-06-11):
+   range sliders are styled to the active theme
+   (`input[type="range"]::-webkit-slider-thumb`); the retired drawer's dead
+   `.drawer .seg` selector scoping must never regress back in. Enforced in
+   test_ui_invariants (#11).
+12. **The Typeface picker exists, and the theme catalog never shrinks**:
+   `#dr-faces` must be present, and the theme catalog is pinned at ≥16
+   `html[data-theme="..."]` CSS blocks (17 named themes; Ink lives in
+   `:root`, System is JS-only). Enforced in test_ui_invariants (#12).
+13. **The agenda shows DATA, never plumbing** (maintainer principle
+   2026-06-11): the calendar-feed directory (`#agenda-feeds`) never appears
+   inside the Agenda tab itself; it lives in Settings (`#set-agenda`).
+   **AMENDED 2026-07-31:** the directory moved one level further out — out of
+   the Agenda SUBTAB and into Advanced (`#set-advanced`), on the same
+   principle (it is the catalogue that FEEDS the agenda, not agenda
+   configuration) — pinned so it cannot drift back into either place. The
+   month grid + view switcher (`#agenda-month`/`#agenda-views`) are the tab's
+   default view (`localStorage["oo.agenda.view"] || "month"`). **13b:**
+   article-DEDUCED dates flow through the SAME event pipeline as imported
+   events (`/api/events/deduced` → `mapDeducedToAgenda`) as their own
+   filterable `"deduced"` category, the never-confirmed caveat visible, and a
+   deduced event's title opens the EXACT article set that produced it
+   (`openAnalysisForIds`). Enforced in test_ui_invariants (#13).
 14. **Network toggle is AIRPLANE-MODE (ruled 2026-06-12, SHIPPED T2):** one
    constant plane glyph, FILL = state (filled = offline engaged); never ▶/⏸
    action glyphs. **REFINED #14d (§3, SHIPPED #139):** the button MOVED to the
@@ -245,7 +278,8 @@ never the way to make room for something rules (5)/(5a) would have sent to
    IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
    public-IP wording. Scheduler responses carry `online` → immediate repaint,
    never the 5 s poll. Gated: toggle, collect (start/run-now/first-run),
-   markets/indices imports, wiki page add, dump start, dump size read. Enforced in
+   markets/indices imports, wiki page add, dump start, dump size read,
+   OpenTimestamps anchor (manual button + turning the setting on). Enforced in
    test_ui_invariants + tests/test_network_consent.py (incl. the
    socket-importer RATCHET: no new module may import requests/httpx).
    **EXTENDED #14e (2026-09-07, from a measured breach): THE GATE COVERS WHAT THE
@@ -259,6 +293,33 @@ never the way to make room for something rules (5)/(5a) would have sent to
    from the same breach: a refusal BY THE KILL SWITCH must be named as such
    wherever it can surface — that probe reported airplane mode as "size check
    failed", pointing an operator at someone else's server for their own setting.
+   **EXTENDED #14f (P1 audit finding, 2026-09-08): the SAME failure shape recurring
+   in a path #14e's own fix never touched.** OpenTimestamps chain-of-custody
+   anchoring — a real submission to three public Bitcoin calendar servers,
+   revealing IP + timing — had NO consent gate on any of its three reachable paths:
+   the `POST /api/custody/anchor` endpoint, the manual "Anchor root" button, and
+   (worst) `anchoring_mode: "opentimestamps"` firing silently on EVERY future
+   ingested article once the setting is on, with no button click of its own. Fixed
+   coherently across all three: `anchorRoot()` gates through `ensureOnline` before
+   a non-local anchor (mirrors every other button); the endpoint itself refuses
+   (400) an `"opentimestamps"` anchor without an explicit `consent: true`, so a
+   caller that never went through the UI gets the same honest refusal (scoped to
+   `"opentimestamps"` only — the already-refusing public-chain stubs keep their own
+   503, never masked by a consent 400); and — since the per-ingest path has no
+   later button to gate — `saveCustody()` demands a genuine, one-time `confirm()`
+   naming the RECURRING nature of the egress at the moment the operator turns the
+   setting ON, and `save_settings()` mirrors that requirement server-side
+   (`ots_consent: true`, required only on the local→opentimestamps TRANSITION, not
+   re-demanded on every resave — a stamp on every save would be a rubber stamp, not
+   informed consent). `ots_stamp()` (the shared egress point for both the endpoint
+   and the per-ingest path) also gained an early, NAMED kill-switch refusal before
+   any calendar is even constructed, closing the #14e corollary for this path too.
+   Enforced in test_ui_invariants (#14f) + tests/test_custody_consent_gates.py +
+   tests/test_custody_api.py + tests/test_custody_settings.py. NOTED, not
+   fixed here (separate, tooling-level, out of scope): `test_network_consent.py`'s
+   socket-importer ratchet regex matches only `requests`/`httpx` imports, so it
+   was and remains blind to `opentimestamps.calendar`'s import shape — a future
+   session widening that regex should know this gap predates it.
    **REFINED #14c (UI_SHELL §3, SHIPPED #133):** the transition flash is now
    DIRECTION-AWARE — go-on = live accent, go-off = calm/grounded (never the old
    single red wash that conflated both meanings); consent/semantics unchanged.
@@ -382,6 +443,22 @@ never the way to make room for something rules (5)/(5a) would have sent to
    Insights opens (the "N to index" count ticks to 0 on its own); the button +
    its palette action are removed. Insights sections were already subtabs (#127).
    Enforced in test_ui_invariants (#21).
+22. **The analysis window** (Group F, keystone #4): a full-screen
+   `#tab-analyze` window driven by THE universal subtab component
+   (`ooSubtabs($("an-subtabs")...)`), opened from the Search tab's Analyze
+   button — never a sidebar entry, retired 2026-06-20 — and fed by the
+   article-SET keyword endpoint (`/api/insights/corpus-keywords` via
+   `openAnalysis(`). Its subtabs are all article-set AGGREGATIONS over the
+   matched set — counts, never a verdict: When/Where/Who
+   (`/api/insights/corpus-www`, clickable facets drilling via
+   `/api/insights/corpus-facet-articles`), shared-origin Links
+   (`/api/links/corpus`), Sentiment (`/api/insights/corpus-sentiment`),
+   source coverage (`/api/insights/corpus-sources`), and Advanced-search
+   (`anRunAdvanced`, re-runs the analysis from refined filters). **22b:** a
+   commodity click opens the window with a conditionally-shown Price subtab
+   overlaying the price curve with the corpus coverage timeline on a shared
+   time axis (dual labelled axes; co-occurrence, never causation). Enforced
+   in test_ui_invariants (#22 + #22b).
 23. **BRIEFING CAVEATS ARE VISIBLE BY DEFAULT (audit PR A, 2026-06-15 — enforces
    the permanent informed-consent non-negotiable; resolves a REGRESSION):** every
    Home briefing card renders `c.caveat` inline in a visible `.card-caveat` line
@@ -611,6 +688,6 @@ rather than reading all of it (rule (1)). New rulings are recorded THERE, in the
 are given (rule (2)).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
-Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (read those — mandatory every session, per rule (1)).
+Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 855 entries as of 2026-09-08. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (read those — mandatory every session, per rule (1)).
 
 **APPEND-RULE (replaces the old inline log):** record newly-shipped work as a `shipped.csv` ROW, not a CLAUDE.md bullet. Add a verbatim entry to `SHIPPED_LOG.md` only when it carries a reusable lesson/empirical fact, and copy that lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md). Pending rulings, contingencies, and deliberate-omissions still go in [`docs/ledger/OPEN_QUEUE.md`](docs/ledger/OPEN_QUEUE.md) as prose (never compressed away).

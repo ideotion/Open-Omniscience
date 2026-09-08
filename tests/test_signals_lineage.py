@@ -60,3 +60,26 @@ def test_undated_sort_last():
     lin = trace_lineage(docs)
     assert lin.primary.doc_id == "b"  # the dated one leads; undated sorts last
     assert lin.chain[-1].doc_id == "a"
+
+
+def test_all_undated_primary_is_an_arbitrary_pick_not_an_earliest():
+    """P2-06: when NO document in the cluster carries a known ``published_at``, ``dated``
+    is empty so ``chain == undated`` in whatever order the caller supplied — ``primary``
+    is the first of an UNORDERED list, not a genuinely earliest-dated item. This is the
+    signal ``producers.py`` must check (``primary.published_at is None``) before a card
+    is allowed to say "traces earliest to" it."""
+    docs = [
+        {"id": "z", "source": "Zebra Times", "text": "no date here", "published_at": None},
+        {"id": "a", "source": "Alpha Gazette", "text": "also no date", "published_at": None},
+        {"id": "m", "source": "Mid Wire", "text": "still no date", "published_at": None},
+    ]
+    lin = trace_lineage(docs)
+    # Whichever doc happened to be first in input order — "z" — becomes primary, purely
+    # because of caller-supplied ordering, not because it is temporally earliest.
+    assert lin.primary.doc_id == "z"
+    assert lin.primary.published_at is None
+    assert all(i.published_at is None for i in lin.chain)
+    # Reversing the caller's input order flips the "arbitrary" pick too — proof there is
+    # no real temporal information behind it.
+    lin_reversed = trace_lineage(list(reversed(docs)))
+    assert lin_reversed.primary.doc_id == "m"

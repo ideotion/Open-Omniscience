@@ -52,7 +52,12 @@ def test_mann_whitney(client):
         "/api/analysis/mann-whitney", json={"sample1": [1, 2, 3, 4], "sample2": [10, 11, 12, 13]}
     )
     assert r.status_code == 200
-    assert "p_value" in r.json()
+    body = r.json()
+    assert "p_value" in body
+    # sample1 is entirely below sample2 (perfect separation) -- the rank-biserial
+    # correlation must be the maximal +1.0, not a fabricated/miscalculated number
+    # (a previous formula bug returned ~0.4286 for this exact shape of input).
+    assert body["effect_size"] == pytest.approx(1.0)
 
 
 def test_mean_confidence_interval(client):

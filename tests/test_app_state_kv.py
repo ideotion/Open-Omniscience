@@ -134,7 +134,9 @@ def test_custody_settings_round_trip_through_db(tmp_path):
     from src.custody import settings as cset
 
     assert cset.load_settings().anchoring_mode == "local"  # honest default
-    cset.save_settings({"anchoring_mode": "opentimestamps", "pqc_enabled": True})
+    cset.save_settings(
+        {"anchoring_mode": "opentimestamps", "pqc_enabled": True, "ots_consent": True}
+    )
     assert not (tmp_path / "custody_settings.json").exists()
     s = cset.load_settings()
     assert s.anchoring_mode == "opentimestamps" and s.pqc_enabled is True

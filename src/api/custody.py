@@ -109,6 +109,10 @@ class SettingsUpdate(BaseModel):
     anchoring_mode: str | None = None
     auto_log_on_ingest: bool | None = None
     default_actor: str | None = None
+    # Informed-consent gate for the ONE transition that starts a recurring, silent,
+    # per-ingest network egress (P1 audit finding): turning anchoring_mode ON to
+    # "opentimestamps". See src.custody.settings.save_settings.
+    ots_consent: bool = False
 
 
 @router.get("/settings")
@@ -168,6 +172,19 @@ class AnchorRequest(BaseModel):
     merkle_root: str
     provider: str = "local"
     metadata: dict | None = None
+    # Informed-consent gate (P1 audit finding, UI invariant #14/#14e): OpenTimestamps
+    # is REAL, IP-revealing network egress to a third party, so the ENDPOINT -- not
+    # just today's one "Anchor root" button -- must refuse to fire it without an
+    # explicit, per-call yes. The frontend only ever sets this to True after
+    # ensureOnline()'s consent flow has run; a caller that never went through the UI
+    # (a script, a future surface, an MCP tool) gets the same honest 400 a
+    # missing/unknown provider gets, never a silent submission. Scoped to
+    # "opentimestamps" specifically, not every non-local name: the public-chain
+    # stubs (ethereum/ipfs/arweave) never actually attempt egress -- they always
+    # raise AnchorUnavailable/503 with their own "not implemented" reason -- and
+    # gating consent ahead of that would swap an honest 503 for a misleading 400
+    # about consent for an action that was never going to happen anyway.
+    consent: bool = False
 
 
 @router.post("/anchor")
@@ -176,11 +193,23 @@ def anchor(req: AnchorRequest) -> dict:
 
     Non-local providers may require network and carry privacy implications; an
     unavailable provider returns 503 with a clear reason rather than a fake receipt.
+    The "opentimestamps" provider also requires ``consent: true`` -- see
+    :class:`AnchorRequest`.
     """
     try:
         provider = get_provider(req.provider)
     except AnchorError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if req.provider == "opentimestamps" and not req.consent:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The {req.provider!r} anchor provider requires network egress to a "
+                "third party and reveals your IP and timing to it. Retry with "
+                "consent: true after the operator has explicitly confirmed this "
+                "specific submission."
+            ),
+        )
     try:
         receipt = provider.anchor(req.merkle_root, req.metadata)
         return receipt.to_dict()
