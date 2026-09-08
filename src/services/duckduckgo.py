@@ -64,24 +64,6 @@ class DuckDuckGoSearch:
     MIN_DELAY_SECONDS = 2.0  # Minimum delay between requests
     last_request_time: float = 0  # set from time.time() -- seconds, not a whole number
 
-    # Common RSS feed patterns
-    RSS_PATTERNS = [
-        r"\.rss\b",
-        r"\.xml\b",
-        r"\.atom\b",
-        r"/rss\b",
-        r"/feed\b",
-        r"/feeds\b",
-        r"feed\.xml",
-        r"rss\.xml",
-        r"atom\.xml",
-        r"/rss\.php",
-        r"/feed\.php",
-        r"\.rdf\b",
-        r"/news/rss",
-        r"/rss/news",
-    ]
-
     # Common RSS link text patterns
     RSS_LINK_PATTERNS = [
         r"RSS",
@@ -371,7 +353,7 @@ class DuckDuckGoSearch:
         This method:
         1. Fetches the HTML content of the URL
         2. Looks for <link> tags with RSS/Atom types
-        3. Looks for common RSS feed URL patterns
+        3. Probes common RSS feed paths
         4. Validates found feeds
 
         All HTTP fetches go through the shared :class:`~src.ingest.EthicalFetcher`
@@ -421,18 +403,7 @@ class DuckDuckGoSearch:
                 if feed_url and feed_url not in feeds:
                     feeds.append(feed_url)
 
-            # Method 2: Look for common RSS feed URL patterns in the HTML
-            for pattern in cls.RSS_PATTERNS:
-                url_matches = re.findall(pattern, html, re.IGNORECASE)
-                for match in url_matches:
-                    # Try to extract full URL
-                    if "http" in match:
-                        feed_url = match.strip()
-                        feed_url = cls._resolve_url(feed_url, url)
-                        if feed_url and feed_url not in feeds:
-                            feeds.append(feed_url)
-
-            # Method 3: Try common RSS feed paths
+            # Method 2: Try common RSS feed paths
             common_paths = [
                 "/rss",
                 "/rss.xml",

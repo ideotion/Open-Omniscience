@@ -38,6 +38,7 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 from datetime import UTC
 
 from services.duckduckgo import DuckDuckGoSearch
+from src.ingest import FetchError
 
 
 class TestDuckDuckGoSearch:
@@ -89,7 +90,7 @@ class TestDuckDuckGoSearch:
                 <link rel="alternate" type="application/rss+xml" href="https://example.com/rss.xml" />
             </head>
             <body>
-                <a href="https://example.com/rss">RSS Feed</a>
+                <p>No inline feed links here.</p>
             </body>
         </html>
         """
@@ -102,10 +103,40 @@ class TestDuckDuckGoSearch:
             )
 
         assert isinstance(feeds, list)
+        # Found via the <link> tag (the method's only text-scan strategy now
+        # that the dead regex-pattern scan has been removed).
         assert "https://example.com/rss.xml" in feeds
         # The page + each candidate feed are fetched through the injected fetcher
         # (the ethical path), never a bare requests call.
         assert fake_fetcher.fetch.called
+
+    def test_discover_rss_feeds_no_link_tag_falls_back_to_common_paths(self):
+        """With no <link> tag, discovery still finds feeds by probing common paths.
+
+        This isolates the "probe common paths" method's contribution: the mock
+        HTML carries no <link> tag at all, so the only way a feed can surface is
+        the fixed-path probe -- guarding against a regression where discovery
+        silently returns nothing once the (now-removed) dead regex-pattern scan
+        is gone.
+        """
+        mock_html = "<html><body><p>No feed links at all.</p></body></html>"
+        fake_fetcher = MagicMock()
+
+        def fake_fetch(target_url, **kwargs):
+            if target_url == "https://example.com":
+                return MagicMock(content=mock_html)
+            if target_url == "https://example.com/rss.xml":
+                return MagicMock(content_type="application/rss+xml", content=b"<rss></rss>")
+            raise FetchError("not found")
+
+        fake_fetcher.fetch.side_effect = fake_fetch
+
+        with patch.object(DuckDuckGoSearch, "_validate_rss_feed", return_value=True):
+            feeds = DuckDuckGoSearch.discover_rss_feeds(
+                "https://example.com", fetcher=fake_fetcher
+            )
+
+        assert feeds == ["https://example.com/rss.xml"]
 
     def test_discover_rss_feeds_failure(self):
         """A fetch failure degrades to an empty list, never an exception."""
