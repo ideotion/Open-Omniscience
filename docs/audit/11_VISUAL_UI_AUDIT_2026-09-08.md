@@ -79,13 +79,15 @@ Named rather than silently omitted:
 
 ---
 
-## 1. The nine things that matter most
+## 1. The eleven things that matter most
 
-Ranked by consequence, not by discovery order. Every one was reproduced live; the first five were
-measured by the orchestrating session itself.
+Ranked by consequence, not by discovery order. Every one was reproduced live. The seven marked
+**[hand-verified]** were measured by the orchestrating session itself, not taken from any agent.
 
 | # | Sev | Finding | Why it matters |
 |---|---|---|---|
+| 0 | **P0** | **The commodity Price × coverage overlay reports a measured correspondence that does not exist** — `Dy` silently resolves to the English word "already", `Nd` to the French "indiqué", `Pr` to "proposed", and the chart is labelled with the commodity. **[hand-verified]** §4.1 | A fabricated correspondence presented as measurement, on the one product whose stated reason to exist is that it does not do that. The guard against exactly this is already written, with its reasoning, elsewhere in the same repository. |
+| 0b | **P0** | **A malformed API response renders as a confident, false statement about the user's corpus**: "Your library is empty" on a database holding 453 articles and 3,618 sources, with no error text anywhere and the health pill still reading "healthy". **[hand-verified]** §4.2 | The "degrade loudly" non-negotiable inverted — the app asserts the opposite of the truth in the voice it reserves for facts. |
 | 1 | **P0** | **The offline coachmark `#net-coach` covers page content on 16/16 surfaces at every viewport, and at 375 px it blocks interactive controls on 16/16 surfaces — including the top-bar buttons its own placement logic was written to protect.** On Governments at 375 px, Playwright's actionability check times out with *"#net-coach intercepts pointer events"*: the entire sub-tab strip is untappable until it is dismissed. **[hand-verified]** | A first-launch nudge makes parts of every screen unusable on a phone, for up to six launches, before the user has done anything wrong. It is also the mechanism by which a *caveat* gets hidden — on the Observatory it covers the sentence disclosing that the angle channel is meaningless. |
 | 2 | **P0** | **A single hidden dropdown costs 714 KB on every page load.** The frontend calls `GET /api/sources` (no trailing slash) — a second, legacy, unpaginated handler at `main.py:2372` that **silently ignores `?limit=`** — instead of the correct paginated `GET /api/sources/`. Measured: `?limit=5` returns 714,399 B either way on the bare route, 1,687 B on the slashed one. **91.4 % of all boot API bytes** are for surfaces Home never shows, and 98.8 % of that waste is this one call. It then trips its own 100/hour rate limit. **[hand-verified]** | This is the whole boot budget spent on data nobody sees, on a local-first app whose corpus is meant to grow. At 10× the sources it is 7 MB per page load. |
 | 3 | **P0** | **The Search surface can lock itself out for an hour.** `GET /api/articles` is rate-limited to 100/hour, and `api()` in `app-core.js` auto-retries a 429 up to 4 times — so **one user click can fire five requests**. Ordinary exploratory querying exhausts the budget, after which every search returns only a transient toast and an empty results table. The message *"Too many requests. Please try again later."* is also untranslated in all 12 locales. | The app's largest, most iterative surface (135 controls, 5 inputs, boolean syntax, five time-range presets) is designed for exactly the usage pattern that breaks it, and it fails quietly. |
@@ -275,3 +277,86 @@ not dead; it is gated. **But the verifier then found a real defect underneath**:
 factually wrong *"this leaves the app"* warning on anchors whose own `onclick` already routes through the
 local `openLinkPreview` path and therefore do not leave the app. A confirmed symptom, a refuted cause,
 and a new finding — which is what the adversarial layer is for.
+
+---
+
+## 4. The two findings that outrank everything else
+
+Both were claimed by agents, and both were then **re-derived by the orchestrating session directly**
+because of what they are: this project's whole moral position is that it does not fabricate and does not
+fail silently, and these are one of each.
+
+### 4.1 P0 — the Price × coverage overlay reports a real, measured correspondence that does not exist
+
+**What the user sees.** Clicking a commodity opens the analysis window's Price subtab, which draws a
+clean chart headed **"Price × coverage — Dy"** with **"Articles: 36 · 35×"** beneath it. Every visual cue
+says: 36 articles in your corpus mention this element, and here is how that tracks its price.
+
+**What is actually happening.** **[hand-verified]** Probing the same loopback endpoint the client calls:
+
+```
+GET /api/insights/trend?bucket=week&term=Dy  -> resolved.normalized = "already"   (35 points, 36 mentions)
+GET /api/insights/trend?bucket=week&term=Nd  -> resolved.normalized = "indiqué"   (26 points, 28 mentions)
+GET /api/insights/trend?bucket=week&term=Pr  -> resolved.normalized = "proposed"  (34 points, 37 mentions)
+GET /api/insights/trend?bucket=week&term=lithium -> resolved = {}                 (0 points)
+GET /api/insights/trend?bucket=week&term=cobalt  -> resolved = {}                 (0 points)
+```
+
+`Dy` is being silently resolved to the English word **"already"** (`alrea·dy`), `Nd` to the French
+**"indiqué"** (`i·nd·iqué`), `Pr` to **"proposed"**. The chart is real data about an unrelated word,
+labelled with the commodity's name. Terms with no substring collision (`lithium`, `cobalt`) correctly
+resolve to nothing — which is why this never looks broken.
+
+**Why it is the worst finding here.** It is not a rendering defect; it is a **fabricated correspondence
+presented as measurement**, on the one product whose stated reason to exist is that it does not do that.
+It is also *silent by construction*: in the very same analysis window, seeded by the very same commodity,
+the Keywords tile honestly says "No keywords yet", When/Where/Who says "Nothing extracted yet", and
+Sources says "No sources yet". Every other lens tells the truth. Only the one with a chart lies.
+
+**The root cause, and the fix, are already written down in this repository.**
+`src/analytics/queries.py:149` `resolve_keyword()` — *"Map a user term to a stored keyword: exact
+normalized match, else best LIKE"* — falls back to `Keyword.normalized_term.like(f"%{norm}%")` ordered by
+mention count. Meanwhile `src/analytics/supply_chain_ripple.py:110` already carries the guard and the
+reasoning, in its own docstring:
+
+> `_exact_keyword_id` — *"EXACT normalized-term match only — never the fuzzy `LIKE %term%` fallback
+> `resolve_keyword` uses for other, human-driven callers. A commodity label/symbol that has no keyword
+> under its OWN exact normalized form must resolve to NOTHING, never an unrelated keyword that merely
+> CONTAINS it as a substring (the 'significant words of the label' homograph vector — a commodity 'Lead'
+> silently matching the unrelated common word/verb 'lead')."*
+
+The hazard was identified, the guard was written, the reasoning was recorded — and the commodity-seeded
+Price overlay calls the **unguarded** path. The fix is to route it through exact resolution and render
+the honest empty state its sibling lenses already render.
+
+**A pattern worth naming.** The 2026-09-08 code audit's own P0 #2 was *also* a substring-containment
+defect, in a completely different subsystem (`src/bulletin/grounding.py`, where a fabricated figure that
+is a substring of a real one verdicts as grounded). Two independent audits, two different subsystems, the
+same failure mode: **substring containment used where identity is meant.** That is now a codebase-level
+pattern, not a coincidence, and it deserves a guard test of its own rather than a third fix in a third
+place.
+
+### 4.2 P0 — a data-layer failure renders as a confident, false statement about the user's corpus
+
+**[hand-verified]** With `/api/briefing` and `/api/database/stats` intercepted to return HTTP 200 with a
+malformed body (`{not valid json!!! <<<`), against a database containing **453 articles and 3,618
+sources**, Home renders:
+
+> **Your library is empty — head to Collect to gather your first material.**
+> **No Leads yet** — that's expected on a young corpus… Leads are computed from YOUR collected material;
+> an empty feed means the signals haven't accumulated, never that the engine is gone.
+
+Measured on that page: **zero** occurrences of *failed*, *error*, *unavailable*, *could not* or *retry*;
+**zero** uncaught exceptions; **zero** console errors; and the top-bar health pill still reads
+**healthy**.
+
+The app does not merely fail quietly — it **asserts the opposite of the truth, in the reassuring voice it
+reserves for facts**, and the empty-state copy it reuses goes out of its way to promise the user that
+this state "never" means the engine is gone. That copy is well-written and correct for a genuinely empty
+corpus. Reached through a parse failure, it is the app telling the user something false about their own
+data. Against the "degrade loudly" non-negotiable this is a P0, and it is the same family as §4.1: the
+app stating a falsehood with the same confidence it states a truth.
+
+The fix is small and entirely within the project's existing grammar: distinguish *"the server answered
+and the answer was empty"* from *"the answer could not be read"*, and give the second one a loud,
+translated, method-bearing state of its own.
