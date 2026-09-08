@@ -3141,5 +3141,18 @@
   "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "Tanggal proyeksi telah lewat dan tidak ada hasil yang tercatat di sini — status tidak diketahui. Periksa pada sumber resmi.",
   "Anchor this Merkle root into Bitcoin via OpenTimestamps": "Jangkarkan akar Merkle ini ke Bitcoin melalui OpenTimestamps",
   "Turn on OpenTimestamps anchoring? From now on, every article this app ingests will submit a hash to public Bitcoin calendar servers — revealing your IP and the timing to those servers — for as long as this stays on. This repeats on every future ingest, not just once.": "Aktifkan penjangkaran OpenTimestamps? Mulai sekarang, setiap artikel yang dikumpulkan aplikasi akan mengirim hash ke server kalender Bitcoin publik — mengungkap IP dan waktu Anda ke server tersebut — selama pengaturan ini aktif. Ini berulang pada setiap pengumpulan berikutnya, bukan hanya sekali.",
-  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "Aktifkan penjangkaran OpenTimestamps (mengirim hash ke server kalender publik pada setiap pengumpulan berikutnya)"
+  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "Aktifkan penjangkaran OpenTimestamps (mengirim hash ke server kalender publik pada setiap pengumpulan berikutnya)",
+  "Collection is ON — click to turn off": "Pengumpulan AKTIF — klik untuk mematikan",
+  "Collection is OFF — click to turn on": "Pengumpulan NONAKTIF — klik untuk mengaktifkan",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "Kecepatan pengumpulan: Maksimum — memakai koneksi Anda sepenuhnya (kesopanan per host tidak berubah). Klik untuk target yang lebih santun, 500 KiB/s.",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "Kecepatan pengumpulan: target 500 KiB/s — sengaja dibuat lembut. Klik untuk Maksimum (kecepatan penuh).",
+  "Collection speed set to Maximum — applies from the next pass.": "Kecepatan pengumpulan diatur ke Maksimum — berlaku mulai putaran berikutnya.",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "Kecepatan pengumpulan diatur ke target 500 KiB/s — berlaku mulai putaran berikutnya.",
+  "Scale": "Skala",
+  "Absolute": "Absolut",
+  "Indexed (=100)": "Terindeks (=100)",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Nilai mentah pada sumbu waktu bersama — seri dengan besaran yang sangat berbeda dapat tampak mendatar.",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Setiap seri dibasiskan ulang ke 100 pada awal jendela — pergerakan relatif, bukan tingkat absolut.",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Skala log (basis 10) — rasio yang sama berarti jarak yang sama; arahkan kursor untuk melihat nilai sebenarnya.",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Memakai Alpine.js — kerangka kerja kecil yang disertakan secara lokal (MIT, tanpa jaringan)."
 }

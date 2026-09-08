@@ -3141,5 +3141,18 @@
   "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "প্রক্ষেপিত তারিখ পেরিয়ে গেছে এবং এখানে কোনো ফলাফল নথিভুক্ত নেই — অবস্থা অজানা। সরকারি উৎসে যাচাই করুন।",
   "Anchor this Merkle root into Bitcoin via OpenTimestamps": "OpenTimestamps-এর মাধ্যমে এই মার্কল রুটটি বিটকয়েনে অ্যাঙ্কর করুন",
   "Turn on OpenTimestamps anchoring? From now on, every article this app ingests will submit a hash to public Bitcoin calendar servers — revealing your IP and the timing to those servers — for as long as this stays on. This repeats on every future ingest, not just once.": "OpenTimestamps অ্যাঙ্করিং চালু করবেন? এখন থেকে, অ্যাপটি সংগ্রহ করা প্রতিটি নিবন্ধ সর্বজনীন বিটকয়েন ক্যালেন্ডার সার্ভারে একটি হ্যাশ পাঠাবে — যা আপনার আইপি ও সময় সেই সার্ভারগুলোর কাছে প্রকাশ করে দেয় — যতক্ষণ এটি চালু থাকবে। এটি প্রতিটি ভবিষ্যৎ সংগ্রহে পুনরাবৃত্তি হবে, শুধু একবার নয়।",
-  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "OpenTimestamps অ্যাঙ্করিং চালু করুন (প্রতিটি ভবিষ্যৎ সংগ্রহে সর্বজনীন ক্যালেন্ডার সার্ভারে একটি হ্যাশ পাঠায়)"
+  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "OpenTimestamps অ্যাঙ্করিং চালু করুন (প্রতিটি ভবিষ্যৎ সংগ্রহে সর্বজনীন ক্যালেন্ডার সার্ভারে একটি হ্যাশ পাঠায়)",
+  "Collection is ON — click to turn off": "সংগ্রহ চালু — বন্ধ করতে ক্লিক করুন",
+  "Collection is OFF — click to turn on": "সংগ্রহ বন্ধ — চালু করতে ক্লিক করুন",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "সংগ্রহের গতি: সর্বোচ্চ — আপনার সংযোগ সম্পূর্ণভাবে ব্যবহার করে (প্রতি হোস্ট ভদ্রতা অপরিবর্তিত)। বিবেচক ৫০০ কিলোবাইট/সেকেন্ড লক্ষ্যের জন্য ক্লিক করুন।",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "সংগ্রহের গতি: ৫০০ কিলোবাইট/সেকেন্ড লক্ষ্য — ইচ্ছাকৃতভাবে মৃদু। সর্বোচ্চের (পূর্ণ গতি) জন্য ক্লিক করুন।",
+  "Collection speed set to Maximum — applies from the next pass.": "সংগ্রহের গতি সর্বোচ্চ নির্ধারণ করা হয়েছে — পরবর্তী পর্যায় থেকে কার্যকর হবে।",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "সংগ্রহের গতি ৫০০ কিলোবাইট/সেকেন্ড লক্ষ্যে নির্ধারণ করা হয়েছে — পরবর্তী পর্যায় থেকে কার্যকর হবে।",
+  "Scale": "স্কেল",
+  "Absolute": "পরম",
+  "Indexed (=100)": "সূচকায়িত (=১০০)",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "কাঁচা মান একটি ভাগ করা সময়-অক্ষে — খুব ভিন্ন মাত্রার সিরিজগুলো চ্যাপ্টা দেখাতে পারে।",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "প্রতিটি সিরিজ উইন্ডোর শুরুতে ১০০-এ পুনর্বেসড — আপেক্ষিক পরিবর্তন, পরম স্তর নয়।",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "লগ স্কেল (বেস ১০) — সমান অনুপাত মানে সমান দূরত্ব; হোভার করলে প্রকৃত মান দেখা যায়।",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.js ব্যবহার করে — স্থানীয়ভাবে ভেন্ডর করা একটি ক্ষুদ্র ফ্রেমওয়ার্ক (MIT, নেটওয়ার্ক ছাড়াই)।"
 }

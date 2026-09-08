@@ -2400,8 +2400,12 @@ def test_ui_invariants():
     #    opens the LOCAL preview popup first — never a bare outbound jump — and
     #    the popup's outbound anchor shows the FULL URL as its visible text.
     assert 'id="link-preview"' in html, "the local link-preview dialog must exist (CLAUDE.md #6e)"
-    assert "openLinkPreview('${esc(safeUrl(e.url))}')" in html, (
-        "card evidence must route external links through the local preview (CLAUDE.md #6e)"
+    # (P0 XSS fix, 2026-09-08: the URL is interpolated via esc(JSON.stringify(...)),
+    # not a hand-written inner single-quoted JS string literal — see the
+    # onclick-inner-JS-string-breakout fix and onclick_xss_esc_node_test.js.)
+    assert "openLinkPreview(${esc(JSON.stringify(safeUrl(e.url)))})" in html, (
+        "card evidence must route external links through the local preview (CLAUDE.md #6e), "
+        "safely interpolated via esc(JSON.stringify(...)) rather than a bare inner JS string literal"
     )
     assert ">${esc(d.url)}</a>" in html, (
         "the outbound anchor's visible text must BE the full URL (CLAUDE.md #6e)"
