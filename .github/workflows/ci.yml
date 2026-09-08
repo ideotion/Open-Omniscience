@@ -430,3 +430,37 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --dry-run --require-hashes -r requirements.lock
+
+  # lockfile-resolve above proves the pins are publishable and hash-correct, but never
+  # actually installs anything -- it would stay green even if install.sh's lock-based
+  # path (_pip_install_from_lock) silently broke. This lane runs the REAL two-step
+  # sequence that path uses (hash-verified deps, then the project itself editable +
+  # --no-deps) in a clean-room venv, exactly as a `./install.sh` run for the
+  # requirements.lock's own covered extras would, so a future PR can't regress the
+  # wiring without CI catching it.
+  lockfile-install:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    name: Lock file installs clean (requirements.lock, real install)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Real install from requirements.lock (hash-checked)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.lock
+
+      # A second, unguarded call: --require-hashes refuses a local/editable
+      # requirement outright ("no single file to hash"), so the project itself has
+      # to install separately, with --no-deps so it can't silently re-resolve (and
+      # drift away from) the pinned set the step above just verified.
+      - name: Install the project package itself (editable, no re-resolve)
+        run: python -m pip install -e . --no-deps
+
+      - name: Smoke-check the installed package imports
+        run: python -c "import src.api.main; print('ok:', src.api.main.__name__)"

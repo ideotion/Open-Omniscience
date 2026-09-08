@@ -14,13 +14,37 @@ pytest -q          # full suite, a few minutes
 
 `pyproject.toml` stays the single source of truth for dependencies (we install
 latest-within-floors so CI catches upstream breakage early). For a **reproducible /
-release install** there is an optional hash-pinned lock derived from it:
+release install** there is a hash-pinned lock derived from it:
 
 ```bash
 pip install -r requirements.lock          # exact, hash-verified core + analysis pins
 # regenerate after a dependency change:
 pip-compile --generate-hashes --extra analysis -o requirements.lock pyproject.toml
 ```
+
+**This is wired into `./install.sh`, not just a command you run by hand.** The online
+install path (`pip_install()`) uses `requirements.lock` automatically whenever it is
+present, was generated for the Python you're running, and covers every component you
+asked for (`OO_COMPONENTS`) — checked against the lock's own `pip-compile ... --extra=...`
+header, never hand-maintained. When any of those don't hold (the lock is stale for your
+Python, or asks for a component the lock wasn't generated with, or a pin fails to
+resolve for this platform) it falls back to the ordinary floor-based `pip install -e
+".[...]"` resolve, with a loud message saying why the audited path wasn't used —
+`OO_USE_LOCK=0` opts out of the lock unconditionally. **As shipped, the lock only covers
+`--extra analysis`**, while `install.sh`'s own default component set is
+`analysis,compression,columnar` — so a default, unattended `./install.sh` run falls back
+to the floor-based resolve today (compression/columnar aren't in the lock's coverage).
+Run `OO_COMPONENTS=analysis ./install.sh` to exercise the audited path as it stands, or
+widen the lock's coverage with `pip-compile --extra analysis --extra compression --extra
+columnar ...` to make the default install path lock-based too.
+
+The **offline/air-gapped bundle** (`scripts/build_offline_bundle.sh`, consumed by
+`install.sh`'s `--no-index` offline path for the Qubes/Tails target) is **not yet
+wired to the lock** — it still resolves fresh from `pyproject.toml`'s floors every time
+it's built. That's a known, open gap, not an oversight: making the offline bundle
+lock-based too (`pip download --require-hashes -r requirements.lock`, with the
+`$SPEC`-based resolve kept as a fallback for whatever extras the lock doesn't cover) is
+tracked as follow-up work.
 
 ## Workflow
 
