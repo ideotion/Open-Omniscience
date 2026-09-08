@@ -150,6 +150,17 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_created_lang "
         "ON articles (created_at, language, detected_language)"
     ),
+    # Sort key for backfill_corpus's PRH-01 queue order (src/analytics/store.py):
+    # `ORDER BY keyword_indexed_at ASC NULLS FIRST, id ASC`, run on every call and worst
+    # on exactly the large-unindexed-backlog scenario that query exists to fix. The
+    # column itself is additive (migration 7280ec4d08b1, 2026-09-07), so this index needs
+    # the same _INDEX_REQUIRES guard below as the other post-hoc columns in this table.
+    # Mirrored on the model (fresh DBs) + migration (alembic-managed); this self-heal
+    # covers installs that never run `make migrate`.
+    "idx_article_keyword_indexed_at": (
+        "CREATE INDEX IF NOT EXISTS idx_article_keyword_indexed_at "
+        "ON articles (keyword_indexed_at)"
+    ),
 }
 
 # --------------------------------------------------------------------------- #
@@ -210,6 +221,7 @@ _INDEX_REQUIRES: dict[str, tuple[str, tuple[str, ...]]] = {
     "idx_article_quarantined": ("articles", ("quarantined",)),
     "idx_article_top_keyword": ("articles", ("top_keyword_count", "top_keyword_id")),
     "idx_article_feed_scan": ("articles", ("quarantined", "source_id", "id")),
+    "idx_article_keyword_indexed_at": ("articles", ("keyword_indexed_at",)),
 }
 
 
