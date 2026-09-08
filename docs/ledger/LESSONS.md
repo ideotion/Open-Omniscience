@@ -7519,3 +7519,21 @@
   ("law (port 8013, ink theme…)"), match by token overlap rather than equality — and always print
   matched-vs-unmatched counts, because a join that silently drops or mis-attaches is indistinguishable
   from one that works.
+
+- **A SYNTHESIS FED A TRUNCATED BLOB REPORTS THE GAP AS THE APP'S, NOT THE HARNESS'S — AND IT DOES IT
+  MOST CONFIDENTLY IN THE HONESTY SECTION (2026-09-08, the visual audit's own matrix workflow):** the
+  workflow script handed its ten stream results to the synthesiser as
+  `JSON.stringify(ok).slice(0, 220000)`. The blob was larger, so four streams fell off the end, and the
+  synthesis stated in its coverage section that "none of the 8 GUI-gallery skins were tested by any
+  agent in this batch" and that "`reduced_motion`, `prefers-contrast` and any browser-zoom test were
+  never exercised" — when both skin agents had run 164 combinations and the media-prefs agent had
+  exercised all three plus greyscale, colour-blind simulation and a full axe pass. It also reported 365
+  combinations against an actual 599. **Every one of those sentences is the good behaviour — an agent
+  saying what it did not reach — pointed at the wrong subject**, which is exactly what makes it
+  dangerous: the section a reader trusts most is the section a truncated input corrupts first, and it
+  corrupts it into a *false negative about coverage*, the one error class an honesty section exists to
+  prevent. TWO RULES FOLLOW. (1) Never silently `.slice()` an aggregate into a synthesis prompt: pass a
+  count alongside it (`N streams, M findings`) so the synthesiser can notice the arithmetic does not
+  add up, or summarise per-stream first and synthesise the summaries. (2) When a synthesis claims
+  something was **not** covered, check that claim against the per-agent results before repeating it —
+  a coverage claim is the cheapest of all claims to verify and the most expensive to get wrong.
