@@ -1023,6 +1023,20 @@ def test_bounded_concurrency_helper_is_the_one_seam_for_batch_generation():
         "advance_law_summaries must resolve the active backend when no client is given"
     )
 
+    # P1-11 (2026-09-08 audit): a FOURTH scheduler-wired consumer -- the
+    # auto-on-ingest custom AI extractors -- was missed by both the original fix and
+    # this very test, and hardcoded ``OllamaClient()`` directly, silently no-opping
+    # forever on a vLLM-only host. Pin it too, so a future scheduler-wired LLM
+    # consumer bypassing the seam fails here by name instead of shipping quietly a
+    # fifth time.
+    auto = (_SRC / "ai_layer" / "auto.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in auto, (
+        "run_auto_on_ingest must resolve the active backend when no client is given"
+    )
+    assert "client = client or OllamaClient()" not in auto, (
+        "run_auto_on_ingest must not hardcode OllamaClient() as its default client"
+    )
+
 
 def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     """2026-07-24 field-feedback Session B (B5, ruled): the numeric limit/top-N
@@ -2231,6 +2245,24 @@ def test_ui_invariants():
             f"{fn} egresses to the dump host, so it must pass the ONE consent popup "
             "(CLAUDE.md #14, extended #14e)"
         )
+    # 14f (P1 audit finding, 2026-09-08): OpenTimestamps chain-of-custody anchoring
+    #      is real, IP-revealing egress to public Bitcoin calendar servers, and had
+    #      no consent gate on any of its three reachable paths -- the same failure
+    #      shape #14e was written to close, recurring in a code path #14e's own fix
+    #      never touched. The manual "Anchor root" button and turning the setting ON
+    #      both route through the ONE consent popup, mirroring every other
+    #      network-triggering action.
+    anchor_body = _strip_js_comments(_js_function_body(app_js(), "anchorRoot"))
+    assert "ensureOnline(" in anchor_body, (
+        "anchorRoot must pass the ONE consent popup before submitting to a non-local "
+        "anchor provider (CLAUDE.md #14, extended #14f)"
+    )
+    save_custody_body = _strip_js_comments(_js_function_body(app_js(), "saveCustody"))
+    assert "ensureOnline(" in save_custody_body and "confirm(" in save_custody_body, (
+        "saveCustody must confirm before turning OpenTimestamps anchoring ON -- a "
+        "background, per-ingest, RECURRING egress with no button click of its own, "
+        "so the one-time consent must happen at save time (CLAUDE.md #14, extended #14f)"
+    )
     assert "st.online" in html, (
         "scheduler responses carry network state for the immediate repaint"
     )
@@ -2382,8 +2414,12 @@ def test_ui_invariants():
     #    opens the LOCAL preview popup first — never a bare outbound jump — and
     #    the popup's outbound anchor shows the FULL URL as its visible text.
     assert 'id="link-preview"' in html, "the local link-preview dialog must exist (CLAUDE.md #6e)"
-    assert "openLinkPreview('${esc(safeUrl(e.url))}')" in html, (
-        "card evidence must route external links through the local preview (CLAUDE.md #6e)"
+    # (P0 XSS fix, 2026-09-08: the URL is interpolated via esc(JSON.stringify(...)),
+    # not a hand-written inner single-quoted JS string literal — see the
+    # onclick-inner-JS-string-breakout fix and onclick_xss_esc_node_test.js.)
+    assert "openLinkPreview(${esc(JSON.stringify(safeUrl(e.url)))})" in html, (
+        "card evidence must route external links through the local preview (CLAUDE.md #6e), "
+        "safely interpolated via esc(JSON.stringify(...)) rather than a bare inner JS string literal"
     )
     assert ">${esc(d.url)}</a>" in html, (
         "the outbound anchor's visible text must BE the full URL (CLAUDE.md #6e)"
@@ -7730,7 +7766,25 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 616
+#:
+#: RAISED 2026-09-08: the A3 restructuring that set the original 616 ceiling had also, as
+#: an unintended side effect, dropped six numbered UI-invariant paragraphs (#9-#13, #22)
+#: that test_ui_invariants never stopped enforcing -- the ratchet caught growth but had no
+#: way to catch a REMOVAL of protected content, since a smaller file only ever reads as
+#: slack, never as a violation. Restoring those six paragraphs (this is documentation
+#: content the ratchet is meant to protect, per the invariant clause above -- not the kind
+#: of growth rules (5)/(5a) route to docs/ledger/) raised the real count to 665 against
+#: this branch's own pre-merge base.
+#:
+#: RE-MEASURED AT THE MERGE POINT (matching the ruff-ratchet precedent above): several
+#: other PRs merged into main first (#1047's OpenTimestamps consent invariant #14f, among
+#: others) grew CLAUDE.md independently and had already moved the ceiling to 644 before
+#: this branch's restored-invariants change landed on top. Measured like-for-like in this
+#: merge commit's own tree -- not either parent's number -- at 693: this branch's six
+#: restored paragraphs ARE present, and so is every intervening PR's own growth. Shipping
+#: either parent's stale number would either falsely accuse main's later growth of being
+#: slack (665) or silently drop this branch's restored content back below protection (644).
+_CLAUDE_MD_LINE_CEILING = 693
 
 
 def _claude_md_lines() -> int:
@@ -7769,6 +7823,136 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
     n = _claude_md_lines()
     assert n == _CLAUDE_MD_LINE_CEILING, (
         f"lower _CLAUDE_MD_LINE_CEILING to {n}"
+    )
+
+
+#: Accepted duplicate-key count for docs/ledger/shipped.csv, measured 2026-09-08 immediately
+#: after removing the file's 3 byte-for-byte-identical 2026-08-04 accidental double-appends
+#: (analytics/brush-selection x1, ui/brush-selection x2). The 6 that remain are the DOCUMENTED,
+#: ACCEPTED "brief vs later PR-number" pattern LESSONS.md describes: a placeholder row (refs=
+#: "brief") from a 2026-07-18 planning session, later paired with a second row for the same
+#: (date, area, item) once the delegated PR landed and its number was known -- the two rows
+#: differ only in `refs` (and, for two pairs, one word of `summary`), never across all seven
+#: fields. This is NOT slack to be silently raised: a genuinely new duplicate is exactly the
+#: shipped.csv union-merge defect LESSONS.md records at least three times over (search
+#: "duplicate-key" there) -- a row one branch edits and another branch still carries stale
+#: shows up as two rows on a `merge=union` merge, invisible to both a conflict-marker grep
+#: (union merges never produce a marker) and the "numstat shows deletions" heuristic (that tell
+#: fires only when the OTHER side did the deleting; when you are the editor, or when neither
+#: side deletes anything, the merge reports a clean, purely-additive numstat while still
+#: producing a duplicate). Comparing against zero would be wrong the other way: 9 duplicates
+#: already existed in this file's history before this baseline was set (6 accepted + 3
+#: accidental), so a bare "no duplicates" assertion would falsely accuse every future merge of
+#: pre-existing history it did not create. Raising this number is a decision, not a drift --
+#: it must be a deliberate, reasoned acceptance of a NEW brief/PR-number pair (verified to
+#: differ only in refs/one summary word, never a full-row accidental copy), recorded as such,
+#: never a silent bump to make a red test green.
+_SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS = 6
+
+
+def _shipped_csv_rows() -> tuple[list[str], list[list[str]]]:
+    """Parse docs/ledger/shipped.csv with the csv module so the multi-paragraph, embedded-
+    newline `summary` field is handled correctly (a naive line count or line-by-line read
+    would miscount rows). Reading via read_text() is safe here -- the binary-safety concern
+    this file's own maintainer instructions describe is specifically about WRITING (a CSV-
+    module round-trip write silently normalizes this file's 22 CRLF-terminated rows among
+    ~830 LF-terminated ones into a huge, misleading diff); csv.reader over already-decoded
+    text handles mixed line endings fine for read-only parsing."""
+    import csv
+    import io
+
+    text = (_ROOT / "docs" / "ledger" / "shipped.csv").read_text(encoding="utf-8")
+    rows = list(csv.reader(io.StringIO(text)))
+    return rows[0], rows[1:]
+
+
+def _shipped_csv_duplicate_groups() -> dict[tuple[str, str, str], list[list[str]]]:
+    from collections import defaultdict
+
+    header, data = _shipped_csv_rows()
+    idx = {name: i for i, name in enumerate(header)}
+    groups: dict[tuple[str, str, str], list[list[str]]] = defaultdict(list)
+    for row in data:
+        key = (row[idx["date"]], row[idx["area"]], row[idx["item"]])
+        groups[key].append(row)
+    return {key: rows for key, rows in groups.items() if len(rows) > 1}
+
+
+def test_shipped_csv_has_no_new_duplicate_rows():
+    """Guards the shipped.csv union-merge duplicate defect LESSONS.md records recurring in at
+    least three distinct shapes across different merges (search "duplicate-key" and
+    "shipped.csv" there) -- each time restated as "a DUPLICATE-KEY scan over (date, area,
+    item), compared against the COMMON ANCESTOR rather than against zero" being the one check
+    that sees every shape, because the file's `.gitattributes` sets `merge=union` on it: a row
+    one branch edits and another branch still carries stale shows up as two duplicate rows on
+    merge, and that is invisible to a conflict-marker grep (union merges never produce a
+    marker) AND to the "numstat shows deletions" heuristic this project first reached for
+    (that tell fires only when the OTHER side did the deleting -- when you are the editor, or
+    when neither side deletes, the merge reports a clean, purely-additive numstat while still
+    silently producing a duplicate).
+
+    The comparison below is against _SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS, never against zero,
+    because this ledger already carries an accepted, documented duplicate shape: a 2026-07-18
+    "brief" placeholder row later paired with a "PR #nnn" row for the same item once the
+    delegated work landed (differing only in `refs`, or in `refs` plus one `summary` word) --
+    a bare "assert no duplicates" test would incorrectly redden on that pre-existing, accepted
+    history. This test's job is narrower and sharper: fail if the duplicate-key COUNT ever
+    increases past the recorded baseline (a genuine new duplicate slipping in unnoticed), and
+    fail (symmetrically, via the companion test below) if the baseline is ever left above the
+    real count, so an accepted reduction can't quietly leave slack for a future accidental
+    duplicate to hide in."""
+    dups = _shipped_csv_duplicate_groups()
+    assert len(dups) <= _SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS, (
+        f"docs/ledger/shipped.csv now has {len(dups)} duplicate (date, area, item) keys, "
+        f"over the accepted baseline of {_SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS}. This is very "
+        "likely the shipped.csv merge=union duplicate defect LESSONS.md records repeatedly "
+        "(search 'duplicate-key' there) -- a row your branch and another branch both carry, "
+        "one of them edited, surviving as two rows after a union merge. Run the scan this "
+        "test performs against MERGE_HEAD/main to find the stale copy and remove it with a "
+        "BINARY-SAFE edit (read_bytes()/write_bytes(), never a csv-module round-trip write, "
+        "which silently normalizes this file's mixed CRLF/LF line endings into a huge, "
+        "misleading diff) -- do not raise the baseline to paper over a genuine new duplicate. "
+        "If this genuinely is a new, deliberately-accepted brief-vs-PR-number pair (verify it "
+        "differs only in refs/one summary word, never a full accidental copy), raise "
+        "_SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS in the same PR and say so."
+    )
+
+    # Stronger than the bare count: every KNOWN duplicate must still match the documented
+    # brief-vs-PR-number shape (differs only in `refs`, and optionally one `summary` word) --
+    # never a full accidental copy across all seven fields. This is exactly the check that
+    # would have caught the 2026-08-04 defect this test's baseline was set after removing:
+    # three duplicate pairs there were byte-for-byte identical across all fields, not a
+    # brief/PR-number pair at all, and nothing before this test would have distinguished the
+    # two shapes.
+    non_shape_conforming = []
+    for key, rows in dups.items():
+        assert len(rows) == 2, f"expected exactly 2 rows per accepted duplicate key, got {rows}"
+        a, b = rows
+        diff_fields = [i for i, (fa, fb) in enumerate(zip(a, b, strict=True)) if fa != fb]
+        # refs is index 4; summary is index 6. Accept: refs differs alone, or refs + summary
+        # differ (with summary differing by at most a few words, not the whole paragraph).
+        if diff_fields not in ([4], [4, 6]):
+            non_shape_conforming.append((key, diff_fields))
+    assert not non_shape_conforming, (
+        "docs/ledger/shipped.csv duplicate rows found that do NOT match the accepted "
+        "brief-vs-PR-number shape (differ only in `refs`, optionally plus `summary`): "
+        f"{non_shape_conforming}. These read as accidental full-row double-appends (the "
+        "2026-08-04 defect this test's baseline excludes), not the documented pattern -- "
+        "verify and remove the accidental copy with a binary-safe edit rather than accepting "
+        "it into the baseline."
+    )
+
+
+def test_the_shipped_csv_duplicate_baseline_is_not_left_above_the_real_count():
+    """The ratchet must ratchet, mirroring test_the_claude_md_ceiling_is_not_left_above_the_
+    real_count: a baseline left above the real duplicate-key count is slack, and slack in
+    this specific ratchet is exactly where a future accidental duplicate could hide unnoticed
+    behind an already-inflated accepted number. If this fails, LOWER
+    _SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS to the reported count -- never raise it to match a
+    ceiling that is already too high."""
+    n = len(_shipped_csv_duplicate_groups())
+    assert n == _SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS, (
+        f"lower _SHIPPED_CSV_ACCEPTED_DUPLICATE_KEYS to {n}"
     )
 
 

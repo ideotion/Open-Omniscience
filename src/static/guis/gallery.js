@@ -13,6 +13,11 @@
 (function () {
   "use strict";
 
+  // Same local-alias convention as the rest of the app (app-sources.js,
+  // app-corpus.js, ...): OOI18N.t under a short name, degrading to the
+  // identity function when the engine hasn't loaded yet.
+  var t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : function (s) { return s; };
+
   // Per-interface copy (the at-a-glance critical argument; the full rationale
   // lives in docs/product/GUI_ALTERNATIVES.md). Each string is a locale key.
   var META = {
@@ -87,7 +92,7 @@
     var badge = isDefault ? "Default interface"
       : (g.engine === "alpine" ? "Alpine.js" : "No framework");
     var badgeTitle = g.engine === "alpine"
-      ? "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network)."
+      ? t9("Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).")
       : "";
     var btn = active
       ? '<span class="gui-active">Active</span>'

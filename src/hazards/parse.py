@@ -128,7 +128,7 @@ def parse_gdacs(text: str) -> list[dict]:
                 or p.get("eventname")
                 or p.get("htmldescription")
                 or "Disaster alert",
-                "severity": _GDACS_LEVEL.get(level, "info"),
+                "severity": _GDACS_LEVEL.get(level, "unknown"),
                 "magnitude": None,
                 "lat": lat,
                 "lon": lon,

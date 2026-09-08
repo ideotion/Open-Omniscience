@@ -403,25 +403,3 @@ def verify_password(password: str, hashed: str) -> bool:
     except ValueError:
         # Malformed/old non-bcrypt hash -> not a valid match (never a silent pass).
         return False
-
-
-# Security headers for HTTP responses
-SECURITY_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "X-XSS-Protection": "1; mode=block",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
-    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
-}
-
-
-def get_security_headers() -> dict[str, str]:
-    """
-    Get security headers for HTTP responses.
-
-    Returns:
-        Dictionary of security headers.
-    """
-    return SECURITY_HEADERS.copy()

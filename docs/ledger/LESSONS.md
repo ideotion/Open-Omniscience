@@ -7418,3 +7418,27 @@
     the fix is not to loosen it but to assert the property that actually matters: every line
     EITHER side added relative to the common ancestor must survive in the result. That one
     holds whatever the insertion point, and it is what proves an additive merge additive.
+- **A SIZE RATCHET WITH ZERO SLACK STILL HAS A BLIND SIDE: IT CANNOT SEE A REMOVAL (found
+  2026-09-08, audit edition 10, P1-08):** `_CLAUDE_MD_LINE_CEILING` (rule 5c) was measured at
+  exactly 616 immediately after the 2026-09-07 A3 restructuring split `LESSONS.md` and
+  `OPEN_QUEUE.md` out of `CLAUDE.md` — and in that same edit, six numbered UI-invariant
+  paragraphs (#9, #10, #11, #12, #13, #22) were lost, with a dangling cross-reference
+  ("invariant #13 in test_ui_invariants") left pointing at nothing. `test_ui_invariants`
+  never stopped enforcing all six mechanically, so the loss was invisible to every test in
+  the suite except the one thing that could have caught it and didn't: the ratchet itself,
+  because a smaller file only ever reads as SLACK to a `<=` check, never as a violation. A
+  ceiling that fires on growth past a number is not the same guarantee as "the protected
+  content is still present" — the two were conflated here because the ratchet was born at the
+  same moment as the loss, so its first honest measurement already excluded the missing
+  content and had nothing to compare against. The general lesson: a line/byte-count ratchet
+  on a document that also carries NAMED, individually-load-bearing sections (numbered
+  invariants, in this case) protects the whole only against bloat, not against a shrink that
+  quietly drops one of the named things — that needs its own check (here, restored by this
+  same fix: the six numbers are back, the cross-reference resolves, and the ceiling was
+  re-measured to 665). No content-presence guard for individual invariant NUMBERS existed
+  before or after this fix beyond `test_ui_invariants` itself asserting their DOM/JS
+  fingerprints — which is real enforcement of the behavior, just not of the constitution's
+  own prose describing it. Worth a maintainer decision, not resolved here: whether a cheap
+  "every `#N` referenced by test_ui_invariants's own comments has a matching CLAUDE.md
+  paragraph" check is worth adding, or whether periodic human/audit review remains the
+  intended catch for this specific failure mode.
