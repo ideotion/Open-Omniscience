@@ -50,6 +50,16 @@ class MeanCI(BaseModel):
     confidence_level: float = Field(0.95, gt=0, lt=1)
 
 
+class OddsRatioCI(BaseModel):
+    """A 2x2 contingency table (exposed/unexposed x case/control)."""
+
+    a: float = Field(..., ge=0, description="exposed cases")
+    b: float = Field(..., ge=0, description="exposed controls")
+    c: float = Field(..., ge=0, description="unexposed cases")
+    d: float = Field(..., ge=0, description="unexposed controls")
+    confidence_level: float = Field(0.95, gt=0, lt=1)
+
+
 def _result(obj) -> dict:
     return obj.to_dict()
 
@@ -100,3 +110,15 @@ def mann_whitney(req: TwoSample) -> dict:
 def mean_confidence_interval(req: MeanCI) -> dict:
     """Confidence interval for a population mean (t-distribution)."""
     return _result(_ci.mean_ci(req.data, confidence_level=req.confidence_level))
+
+
+@router.post("/confidence-interval/odds-ratio")
+def odds_ratio_confidence_interval(req: OddsRatioCI) -> dict:
+    """Confidence interval for an odds ratio (2x2 contingency table, Wald method).
+
+    A zero cell triggers the Haldane-Anscombe continuity correction (+0.5 to
+    every cell); when that happens the response's sample_size is the
+    corrected, genuinely fractional total, not the raw observation count --
+    reported as-is, never rounded or hidden.
+    """
+    return _result(_ci.odds_ratio_ci(req.a, req.b, req.c, req.d, confidence_level=req.confidence_level))
