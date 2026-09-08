@@ -67,7 +67,12 @@ dependencies = [
     "defusedxml>=0.7.1",
     # Tamper-evident reporting (Ed25519 signatures + Merkle) is a core value
     # proposition of this tool, so its crypto lib ships in the core.
-    "cryptography>=42.0",
+    # Floor >=50.0.0 (bumped 2026-09-08, transversal audit 10, PYSEC-2026-3552):
+    # 49.0.0 (the exact version requirements.lock had pinned) carries a timing/
+    # length side-channel in the PKCS7 decryption functions, fixed in 50.0.0.
+    # This app's own code never calls the PKCS7 path (grep-verified), but a
+    # floor-based install must not be able to resolve to the vulnerable range.
+    "cryptography>=50.0.0",
     # Image metadata / EXIF verification (honest extraction, no forensics claims).
     # Floor >=12.3.0 (bumped 2026-07-25, transversal audit 09): 12.2.0 carried real
     # PYSEC-2026-* advisories reachable via POST /api/verify/image-metadata's
