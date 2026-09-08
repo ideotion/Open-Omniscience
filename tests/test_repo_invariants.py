@@ -1023,6 +1023,20 @@ def test_bounded_concurrency_helper_is_the_one_seam_for_batch_generation():
         "advance_law_summaries must resolve the active backend when no client is given"
     )
 
+    # P1-11 (2026-09-08 audit): a FOURTH scheduler-wired consumer -- the
+    # auto-on-ingest custom AI extractors -- was missed by both the original fix and
+    # this very test, and hardcoded ``OllamaClient()`` directly, silently no-opping
+    # forever on a vLLM-only host. Pin it too, so a future scheduler-wired LLM
+    # consumer bypassing the seam fails here by name instead of shipping quietly a
+    # fifth time.
+    auto = (_SRC / "ai_layer" / "auto.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in auto, (
+        "run_auto_on_ingest must resolve the active backend when no client is given"
+    )
+    assert "client = client or OllamaClient()" not in auto, (
+        "run_auto_on_ingest must not hardcode OllamaClient() as its default client"
+    )
+
 
 def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     """2026-07-24 field-feedback Session B (B5, ruled): the numeric limit/top-N
