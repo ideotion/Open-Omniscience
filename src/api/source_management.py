@@ -30,6 +30,7 @@ Author: Ideotion
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
@@ -692,6 +693,26 @@ def create_source(request: Request, source_data: dict, db: Session = Depends(get
         }
 
 
+# Fixed allowlist of fields a PUT body may set on a source, each with its expected
+# type -- mass-assignment fix (audit P2). `id` is deliberately absent: it must never
+# be settable through this route, regardless of what the request body contains.
+# Mirrors the fields create_source (above) already accepts explicitly by name rather
+# than forwarding the raw dict. A field not in this set is silently dropped rather
+# than rejected (lower-risk default: it can't reject a legitimate client sending an
+# extra field it doesn't need) -- consistent with create_source's own handling of
+# fields beyond its required_fields, and with the Pydantic-model PATCH precedent in
+# src/api/watches.py (extras ignored by default).
+_SOURCE_UPDATE_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
+    "name": str,
+    "domain": str,
+    "rss_url": (str, type(None)),
+    "rate_limit_ms": int,
+    "enabled": bool,
+    "priority": int,
+    "tags": str,
+}
+
+
 @router.put("/{source_id}", response_model=dict)
 @limiter.limit("50/hour")
 def update_source(
@@ -699,11 +720,34 @@ def update_source(
 ):
     """
     Update a source.
+
+    Only the fixed allowlist in _SOURCE_UPDATE_FIELD_TYPES may be set -- a body
+    field outside it (including "id") is dropped, never applied. A present
+    allowlisted field with the wrong type is a clean 400, not the generic 500 a bad
+    value used to surface as at commit() time.
     """
     logger.info(f"Update source request: source_id={source_id}, data={source_data}")
 
+    updates: dict[str, Any] = {}
+    for field, expected_type in _SOURCE_UPDATE_FIELD_TYPES.items():
+        if field not in source_data:
+            continue
+        value = source_data[field]
+        # bool is a subclass of int in Python: without this, a stray True/False
+        # would silently pass the `int` check for rate_limit_ms/priority.
+        if expected_type is int and (isinstance(value, bool) or not isinstance(value, int)):
+            raise HTTPException(status_code=400, detail=f"Field '{field}' must be an integer")
+        if not isinstance(value, expected_type):
+            type_name = (
+                "string" if expected_type is str
+                else "boolean" if expected_type is bool
+                else "string or null"
+            )
+            raise HTTPException(status_code=400, detail=f"Field '{field}' must be a {type_name}")
+        updates[field] = value
+
     with SourceManager(session=db) as manager:
-        source = manager.update_source(source_id, **source_data)
+        source = manager.update_source(source_id, **updates)
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
 
