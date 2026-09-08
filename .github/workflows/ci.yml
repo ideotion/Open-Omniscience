@@ -91,6 +91,20 @@ jobs:
           # text", never a crash).
           python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr]"
 
+      # PySocks, CI-ONLY (audit 10, P2-03): the three
+      # tests/test_airplane_socket_guard.py SOCKS-proxy regression tests
+      # (`test_socks_proxy_*`) each start with `pytest.importorskip("socks")`, so
+      # without this they silently SKIP in every CI lane -- zero red signal if a
+      # future refactor reopened the exact Tor/SOCKS bypass those tests exist to
+      # keep closed. Installed here, the same way bandit/pip-audit are pinned
+      # inline above rather than added to pyproject, deliberately NOT as a
+      # pyproject extra: docs/SECURITY.md states plainly that PySocks has "no
+      # packaged extra" and end users who want Tor/SOCKS support install it
+      # themselves -- that stance is unchanged; this only gives the guard's own
+      # regression tests real coverage in CI.
+      - name: Install PySocks (for the SOCKS airplane-guard regression tests)
+        run: python -m pip install PySocks==1.7.1  # pinned: unpinned CI-only deps redden PRs through no code change
+
       # BLOCKING correctness lint (audit PR D): F (pyflakes — undefined names,
       # used-before-assignment, unused imports/vars) + B (bugbear — likely bugs).
       # B008 stays ignored (the idiomatic FastAPI `Depends()`-in-defaults pattern,

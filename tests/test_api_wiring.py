@@ -15,6 +15,7 @@ earlier guard flaky in CI).
 from __future__ import annotations
 
 import importlib
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -48,14 +49,43 @@ def test_wiring_module_imports_and_includes_each_router():
     assert "from src.api.commodity import router" in _WIRING, (
         "_wiring must preserve the optional [analysis] router block"
     )
-    # The other two optional-[analysis] routers (framing / keyword_management) are
-    # anchored the same way as commodity — they cannot join _SPINE because a
-    # core-only install legitimately does not mount them.
+    # framing is genuinely [analysis]-only (needs numpy/scipy/vaderSentiment via
+    # its dependencies) and cannot join _SPINE because a core-only install
+    # legitimately does not mount it.
     assert "from src.api.framing import router" in _WIRING, (
         "_wiring must import the optional framing router"
     )
+    # keyword_management has ZERO ML dependency (keyword_extractor/text_processor
+    # are pure stdlib) — it cannot join _SPINE only because it is not a spine
+    # router by convention, NOT because it needs [analysis]. See the dedicated
+    # decoupling test below (P1 fix, previously it was wrongly bundled into the
+    # analysis-only try/except and silently disabled by an unrelated ImportError).
     assert "from src.api.keyword_management import router" in _WIRING, (
-        "_wiring must import the optional keyword_management router"
+        "_wiring must import the keyword_management router"
+    )
+
+
+def test_keyword_management_import_is_not_inside_the_analysis_try_block():
+    """Regression pin for the P1 finding ("core install loses keyword endpoints"):
+    keyword_management_router has zero ML dependency and must be imported and
+    included OUTSIDE the try/except that guards the genuinely ML-dependent
+    analysis/commodity/framing/keyword_analysis routers. Before the fix, all five
+    imports shared one try block, so an ImportError raised importing any of the
+    first four (all legitimately [analysis]-gated) silently took keyword_management
+    down with it too, even though it needs nothing from that extra.
+    """
+    km_match = re.search(r"from src\.api\.keyword_management import router", _WIRING)
+    assert km_match, "keyword_management import not found in _wiring.py"
+
+    try_match = re.search(
+        r"try:\s*\n\s*from src\.api\.analysis import router", _WIRING
+    )
+    assert try_match, "the analysis-only try block was not found in _wiring.py"
+
+    assert km_match.start() < try_match.start(), (
+        "keyword_management's import must sit BEFORE (and structurally outside) "
+        "the analysis-only try/except block, so a broken analysis/commodity/"
+        "framing/keyword_analysis import can never disable it"
     )
 
 
@@ -74,3 +104,27 @@ def test_wired_endpoints_dispatch_not_404():
     for path in ("/api/scheduler/status", "/api/system/network", "/api/briefing",
                  "/api/llm/prompts"):
         assert c.get(path).status_code != 404, f"{path} is not wired (got 404)"
+
+
+def test_keyword_management_endpoints_dispatch_regardless_of_analysis_extra():
+    """Runtime pin for the P1 fix: every keyword_management endpoint dispatches on
+    the ACTUAL production app, whether or not the [analysis] extra (numpy/scikit-
+    learn) happens to be installed in this environment — unlike commodity/analysis/
+    framing, keyword_management has no ML dependency to require it for. An HTTP
+    dispatch through the real app (not a positive app.routes singleton read, per
+    the documented flakiness lesson) is the robust check here too."""
+    c = TestClient(app)
+    for path in (
+        "/api/keywords/extract?text=hello",
+        "/api/keywords/extract/article",
+        "/api/keywords/categories",
+        "/api/keywords/categorize?text=hello",
+        "/api/keywords/top?text=hello",
+        "/api/keywords/phrases?text=hello",
+        "/api/keywords/statistics?text=hello",
+        "/api/keywords/process?text=hello",
+        "/api/keywords/frequencies?text=hello",
+    ):
+        status = c.get(path).status_code
+        assert status != 404, f"{path} is not wired (got 404) — keyword_management " \
+            "must never be disabled by an unrelated [analysis] import failure"

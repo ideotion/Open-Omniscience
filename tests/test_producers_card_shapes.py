@@ -353,3 +353,84 @@ def test_the_emotion_producer_does_not_hand_the_raw_category_dict_to_signal():
     assert isinstance(entry, ast.ListComp), (
         "expected the list-of-objects shape that carries the category name as a VALUE"
     )
+
+
+# --------------------------------------------------------------------------- #
+# P2-06: story_lineage() must not claim "traces earliest to X" when no document
+# in the traced chain carries a known publish date -- primary is then an arbitrary
+# pick (whichever doc the caller happened to hand first), not a genuine earliest.
+# --------------------------------------------------------------------------- #
+
+
+def _lineage_corpus(monkeypatch, tmp_path, dated: bool):
+    """Three sources carrying near-identical text, so story_lineage() fires reliably --
+    near_duplicate_clusters itself is monkeypatched to a fixed cluster over the three
+    inserted articles rather than relying on the real MinHash detector to agree the
+    short fixture texts are near-duplicate (mirrors this file's `corpus` fixture)."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(name="Alpha Gazette", domain="alpha.test"))
+    s.add(Source(name="Beta Wire", domain="beta.test"))
+    s.add(Source(name="Gamma Post", domain="gamma.test"))
+    s.commit()
+
+    now = datetime.now(UTC)
+    text = "The council vote drew wide coverage. " * 10  # >= 200 chars
+    ids = []
+    for i, src_id in enumerate((1, 2, 3)):
+        a = Article(
+            url=f"https://x.test/lineage-{i}",
+            canonical_url=f"https://x.test/lineage-{i}",
+            source_id=src_id,
+            title=f"Lineage story {i}",
+            hash=f"lin{i}",
+            language="en",
+            content=text,
+            published_at=(now - timedelta(hours=i)) if dated else None,
+            created_at=now,
+        )
+        s.add(a)
+        s.commit()
+        ids.append(str(a.id))
+
+    from src.signals import near_dup
+
+    def _fixed_cluster(texts, threshold=0.6):
+        cluster = near_dup.DuplicateCluster(
+            members=ids, representative=ids[0], avg_similarity=0.9
+        )
+        return near_dup.NearDupResult(
+            method="fixed-for-test", n=len(texts), threshold=threshold, clusters=[cluster]
+        )
+
+    monkeypatch.setattr(near_dup, "near_duplicate_clusters", _fixed_cluster)
+    return s
+
+
+def test_story_lineage_undated_cluster_does_not_claim_earliest(monkeypatch, tmp_path):
+    """When NO article in the traced chain has a known published_at, the card must not
+    say "traces earliest to" -- that phrasing asserts a chronology the data never
+    established (src/signals/lineage.py's own honesty bar)."""
+    s = _lineage_corpus(monkeypatch, tmp_path, dated=False)
+    cards = P.story_lineage(s)
+    assert cards, "story_lineage should fire on the fixed cluster"
+    card = cards[0]
+    assert "traces earliest to" not in card.summary
+    assert "no publish dates are available" in card.summary
+    # The caveat mechanism (invariant #23) is untouched by this fix.
+    assert card.caveat
+
+
+def test_story_lineage_dated_cluster_still_claims_earliest(monkeypatch, tmp_path):
+    """The dated case is unaffected: at least one article has a real published_at, so the
+    original "traces earliest to {source}" phrasing still renders."""
+    s = _lineage_corpus(monkeypatch, tmp_path, dated=True)
+    cards = P.story_lineage(s)
+    assert cards, "story_lineage should fire on the fixed cluster"
+    card = cards[0]
+    assert "traces earliest to" in card.summary
+    assert "no publish dates are available" not in card.summary

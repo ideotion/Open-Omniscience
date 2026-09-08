@@ -31,11 +31,9 @@ Author: Ideotion
 """
 
 from .security import (
-    SECURITY_HEADERS,
     SecurityError,
     escape_html,
     generate_secure_token,
-    get_security_headers,
     hash_password,
     safe_path_join,
     sanitize_html,
@@ -67,8 +65,6 @@ __all__ = [
     "generate_secure_token",
     "hash_password",
     "verify_password",
-    "get_security_headers",
-    "SECURITY_HEADERS",
     # URL utilities
     "normalize_domain",
     "is_equivalent_domain",
