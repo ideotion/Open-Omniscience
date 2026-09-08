@@ -5,6 +5,58 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-09-08 · Transversal audit — edition 10 (full re-derivation, not a delta)
+
+- **Base commit:** `main` tip at session start (`faff1fc4bc08b028a54ed76fc1b20c35a53d1f91`); commissioned
+  as a general "transversal, functional, comprehensive audit" covering visual/UI, translation, code
+  structure, function/tools/claims, documentation, and code health/simplicity/efficiency/safety —
+  **report-only per the commissioning instruction; no fixes were applied this session.**
+- **Method:** a 68-agent orchestrated workflow (20 generation agents, one per disjoint area of the ~46
+  `src/` modules + docs/ledger/tests, + 48 independent adversarial skeptic re-verifications of every
+  P0/P1/P2 candidate) plus a further set of facts the orchestrating session hand-verified directly
+  (`mypy`, the correctly-pinned `ruff 0.16.6`, `bandit`, `pip-audit` against `requirements.lock`, a
+  ledger conflict-marker/duplicate-key scan, the CLAUDE.md line ratchet). ~6.9M subagent tokens, 1,884
+  tool calls, ~93 minutes wall-clock, zero agent failures. §2 of the full report first disposes of every
+  P0/P1 from edition 09 (2026-07-25) against today's tree rather than re-deriving from scratch.
+- **115 raw findings** — after adversarial re-severity-adjustment: **2 P0 · 13 P1 · 25 P2 · 26 P3 · 32
+  positive · 16 info** (one raw P2 candidate was independently investigated and refuted). Two P0s: a
+  live, reachable stored-XSS in the article-evidence-link `onclick` handler (the HTML-entity-escape
+  defense doesn't stop an inner-JS-string breakout, decoded before the JS is compiled — a different,
+  newly-live bug from the one the 0.0.9 audit's G1 closed); and a substring-containment bug in the
+  bulletin narration's anti-hallucination grounding check (`"40"` reads as grounded against real
+  `"1,240"`), which is the sole mechanical guarantee behind the shipped "every figure and name appears in
+  the evidence" honesty claim.
+- **Disposition of edition 09's P0/P1s:** the SOCKS/Tor airplane-mode bypass (09 §2, P0) is fixed and
+  further hardened with an independent second connect-time SSRF guard — but the regression tests for the
+  fix itself silently skip in every CI lane (PySocks isn't installed anywhere CI runs). The B6
+  who/where/when gating bug, the folder-backup symlink-follow bug, the Pillow CVE, and the USER_MANUAL
+  qualification-documentation gap are all genuinely fixed and independently re-confirmed. Two 09 items
+  (a missing-rollback bug, a Tor-RESOLVE gate-doc mismatch) fell outside this session's 20 scopes and
+  were neither re-confirmed nor found regressed.
+- **Notable P1s beyond the P0s:** OpenTimestamps custody anchoring egresses to three public calendar
+  servers with no consent-popup gate anywhere on three independent reachable paths (found from three
+  different angles — the ingest pipeline, the API endpoint, and the manual UI button — a strong triple
+  corroboration); the i18n completeness CI gate is structurally blind to the `t9()`/`t9m()` alias family
+  used throughout newer UI modules, certifying green while ≥10 production strings (the top-bar Collection
+  toggle among them) ship untranslated in all 11 non-English locales; six numbered UI invariants (#9-#13,
+  #22) are still enforced by `test_ui_invariants()` but have silently vanished from CLAUDE.md's own
+  numbered list — including a dangling self-reference proving it isn't a renumbering, i.e. rule (4)'s own
+  failure mode has now happened to rule (4) itself; the source-qualification→collection promotion
+  frontier is still fully unbuilt (re-verified fresh, not trusted from the 2026-09-06/07 inventory); a
+  Mann-Whitney effect-size formula is mathematically wrong on an endpoint whose own docstring advertises
+  "never a fabricated number"; and a watched-Wikipedia-page code path lacks the exact URL-validation guard
+  its sibling dump-download path already has, with a live-reproduced host-hijack primitive.
+- **What's holding up well:** locale key parity is exact (3,134/3,134) across all 12 languages with no
+  lazy-MT leftovers found; the Observatory faithfully implements all five of its non-negotiable rules in
+  actual code; the GUI gallery's scoping/consent/no-inline-handler discipline is genuinely clean; zero
+  import/module drift across all 851 test files; the TODO/FIXME sweep of ~196k lines of `src/` is
+  genuinely clean; `mypy`/the `ruff` style-lane ratchet/both i18n ratchets/the CLAUDE.md line ratchet all
+  currently sit at exactly zero slack; and no composite/fabricated trust or quality score was found
+  anywhere in the API surface examined.
+- **Full log:** [`docs/audit/10_TRANSVERSAL_AUDIT_2026-09-08.md`](docs/audit/10_TRANSVERSAL_AUDIT_2026-09-08.md).
+
+---
+
 ## 2026-08-20 · UI click-through — the browser-verification matrix expansion
 
 - **Base commit:** `main` tip at session start; brief of record:
