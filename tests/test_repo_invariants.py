@@ -7752,7 +7752,25 @@ def test_docs_index_covers_live_docs():
 #: invariant, and an amendment to the protocol block itself -- rare, deliberate, and worth
 #: seeing in a diff. Raising this number is therefore a normal part of such a PR, not a
 #: workaround.
-_CLAUDE_MD_LINE_CEILING = 644
+#:
+#: RAISED 2026-09-08: the A3 restructuring that set the original 616 ceiling had also, as
+#: an unintended side effect, dropped six numbered UI-invariant paragraphs (#9-#13, #22)
+#: that test_ui_invariants never stopped enforcing -- the ratchet caught growth but had no
+#: way to catch a REMOVAL of protected content, since a smaller file only ever reads as
+#: slack, never as a violation. Restoring those six paragraphs (this is documentation
+#: content the ratchet is meant to protect, per the invariant clause above -- not the kind
+#: of growth rules (5)/(5a) route to docs/ledger/) raised the real count to 665 against
+#: this branch's own pre-merge base.
+#:
+#: RE-MEASURED AT THE MERGE POINT (matching the ruff-ratchet precedent above): several
+#: other PRs merged into main first (#1047's OpenTimestamps consent invariant #14f, among
+#: others) grew CLAUDE.md independently and had already moved the ceiling to 644 before
+#: this branch's restored-invariants change landed on top. Measured like-for-like in this
+#: merge commit's own tree -- not either parent's number -- at 693: this branch's six
+#: restored paragraphs ARE present, and so is every intervening PR's own growth. Shipping
+#: either parent's stale number would either falsely accuse main's later growth of being
+#: slack (665) or silently drop this branch's restored content back below protection (644).
+_CLAUDE_MD_LINE_CEILING = 693
 
 
 def _claude_md_lines() -> int:

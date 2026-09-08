@@ -234,6 +234,39 @@ never the way to make room for something rules (5)/(5a) would have sent to
 7. **External links ALWAYS confirmed with a popup before opening** (ruled
    2026-06-10): capture-phase `_externalLinkGuard` in BOTH UIs; loopback
    exempt; message via `OOI18N.t`.
+9. **Evidence-tiered cards carry a trigger audit trail** (ruled 2026-06-10):
+   every card explains itself in plain words FIRST ("Why am I seeing this?"),
+   with the exact math beneath ("The exact math"), both translatable ×12.
+   Enforced in test_ui_invariants (#9).
+10. **Bundled open-source fonts, never an external font host** (ruled
+   2026-06-11): OFL license texts ship in the repo alongside the six bundled
+   `.woff2` families (Cantarell, Inter, Outfit, Manrope, JetBrains Mono,
+   Source Serif 4) under `src/static/fonts/`; `@font-face` declarations are
+   local (≥6 in `index.html`); `fonts.googleapis.com`/`fonts.gstatic.com`
+   must never appear. Enforced in test_ui_invariants (#10).
+11. **Themed form widgets** (the Settings "font cursor" bug, 2026-06-11):
+   range sliders are styled to the active theme
+   (`input[type="range"]::-webkit-slider-thumb`); the retired drawer's dead
+   `.drawer .seg` selector scoping must never regress back in. Enforced in
+   test_ui_invariants (#11).
+12. **The Typeface picker exists, and the theme catalog never shrinks**:
+   `#dr-faces` must be present, and the theme catalog is pinned at ≥16
+   `html[data-theme="..."]` CSS blocks (17 named themes; Ink lives in
+   `:root`, System is JS-only). Enforced in test_ui_invariants (#12).
+13. **The agenda shows DATA, never plumbing** (maintainer principle
+   2026-06-11): the calendar-feed directory (`#agenda-feeds`) never appears
+   inside the Agenda tab itself; it lives in Settings (`#set-agenda`).
+   **AMENDED 2026-07-31:** the directory moved one level further out — out of
+   the Agenda SUBTAB and into Advanced (`#set-advanced`), on the same
+   principle (it is the catalogue that FEEDS the agenda, not agenda
+   configuration) — pinned so it cannot drift back into either place. The
+   month grid + view switcher (`#agenda-month`/`#agenda-views`) are the tab's
+   default view (`localStorage["oo.agenda.view"] || "month"`). **13b:**
+   article-DEDUCED dates flow through the SAME event pipeline as imported
+   events (`/api/events/deduced` → `mapDeducedToAgenda`) as their own
+   filterable `"deduced"` category, the never-confirmed caveat visible, and a
+   deduced event's title opens the EXACT article set that produced it
+   (`openAnalysisForIds`). Enforced in test_ui_invariants (#13).
 14. **Network toggle is AIRPLANE-MODE (ruled 2026-06-12, SHIPPED T2):** one
    constant plane glyph, FILL = state (filled = offline engaged); never ▶/⏸
    action glyphs. **REFINED #14d (§3, SHIPPED #139):** the button MOVED to the
@@ -410,6 +443,22 @@ never the way to make room for something rules (5)/(5a) would have sent to
    Insights opens (the "N to index" count ticks to 0 on its own); the button +
    its palette action are removed. Insights sections were already subtabs (#127).
    Enforced in test_ui_invariants (#21).
+22. **The analysis window** (Group F, keystone #4): a full-screen
+   `#tab-analyze` window driven by THE universal subtab component
+   (`ooSubtabs($("an-subtabs")...)`), opened from the Search tab's Analyze
+   button — never a sidebar entry, retired 2026-06-20 — and fed by the
+   article-SET keyword endpoint (`/api/insights/corpus-keywords` via
+   `openAnalysis(`). Its subtabs are all article-set AGGREGATIONS over the
+   matched set — counts, never a verdict: When/Where/Who
+   (`/api/insights/corpus-www`, clickable facets drilling via
+   `/api/insights/corpus-facet-articles`), shared-origin Links
+   (`/api/links/corpus`), Sentiment (`/api/insights/corpus-sentiment`),
+   source coverage (`/api/insights/corpus-sources`), and Advanced-search
+   (`anRunAdvanced`, re-runs the analysis from refined filters). **22b:** a
+   commodity click opens the window with a conditionally-shown Price subtab
+   overlaying the price curve with the corpus coverage timeline on a shared
+   time axis (dual labelled axes; co-occurrence, never causation). Enforced
+   in test_ui_invariants (#22 + #22b).
 23. **BRIEFING CAVEATS ARE VISIBLE BY DEFAULT (audit PR A, 2026-06-15 — enforces
    the permanent informed-consent non-negotiable; resolves a REGRESSION):** every
    Home briefing card renders `c.caveat` inline in a visible `.card-caveat` line
