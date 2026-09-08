@@ -36,7 +36,7 @@ rather than being quietly upgraded.
 
 ## What is actually open
 
-Once the stale claims are removed, the genuinely open work concentrates in eleven places:
+Once the stale claims are removed, the genuinely open work concentrates in ten places:
 
 1. **The egress allowlist.** Six consecutive sessions have failed a reach-a-named-publisher task through six
    different tool surfaces — the sixth (2026-09-07, P06) re-probed it rather than assuming it:
@@ -45,20 +45,23 @@ Once the stale claims are removed, the genuinely open work concentrates in eleve
 2. **About twenty maintainer rulings**, several of which are create-time irreversible (the storage §8 set).
 3. **Operator measurements** — the month-occupancy number, `configs/source_qualification.yml`, the graded gold
    sets, the ≥72 h soak, the committed full import.
-4. **Fifty-six `async def` handlers** still taking `Depends(get_db)`, fifty of them in one file, with no guard
-   preventing the fifty-seventh.
-5. **File members inside the signed backup artifact** — the top parked data-safety item, and the reason both
+4. **File members inside the signed backup artifact** — the top parked data-safety item, and the reason both
    the wiki-dump and the models-in-backup rulings sit unbuilt.
-6. **The Phase-2 promotion frontier** — a source can be judged and a judged source can be adopted, but nothing
+5. **The Phase-2 promotion frontier** — a source can be judged and a judged source can be adopted, but nothing
    moves a candidate through trial into collection.
-7. **The static-embedding recall layer and the BM25F default**, both waiting on ten minutes of gold-set grading.
-8. **The Observatory frontend**, which is designed completely and built not at all.
-9. **The UI backlog** — roughly 590 inline handlers, the dead temporal-map cluster, the Insights search bar,
+6. **The static-embedding recall layer and the BM25F default**, both waiting on ten minutes of gold-set grading.
+7. **The Observatory frontend**, which is designed completely and built not at all.
+8. **The UI backlog** — roughly 590 inline handlers, the dead temporal-map cluster, the Insights search bar,
    240 unkeyed strings against two zero-slack ratchets, five accessibility findings, and the P2 tier of the
    2026-07-22 report that a shipped-ledger row describes as closed.
-10. **Documentation hygiene**, which is worth more than it sounds for the reason above.
-11. **Thirty-five items that live only in a pull-request body** — deliberate decisions and known defects that
+9. **Documentation hygiene**, which is worth more than it sounds for the reason above.
+10. **Thirty-five items that live only in a pull-request body** — deliberate decisions and known defects that
     stopped being written down anywhere a future session would look.
+
+*(An eleventh item used to sit here — fifty-six `async def` handlers still taking `Depends(get_db)`,
+fifty of them in one file. It shipped 2026-09-07, commit `984258be`; see `INVENTORY.md`'s `PERF-01` row
+for the pointers. The item is removed rather than kept as a closed entry, matching this section's own
+framing as an enumeration of what is still open.)*
 
 ## The prompts
 
