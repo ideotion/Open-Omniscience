@@ -245,7 +245,8 @@ never the way to make room for something rules (5)/(5a) would have sent to
    IPs from kernel tables (NEVER a public-IP echo pre-consent), honest
    public-IP wording. Scheduler responses carry `online` → immediate repaint,
    never the 5 s poll. Gated: toggle, collect (start/run-now/first-run),
-   markets/indices imports, wiki page add, dump start, dump size read. Enforced in
+   markets/indices imports, wiki page add, dump start, dump size read,
+   OpenTimestamps anchor (manual button + turning the setting on). Enforced in
    test_ui_invariants + tests/test_network_consent.py (incl. the
    socket-importer RATCHET: no new module may import requests/httpx).
    **EXTENDED #14e (2026-09-07, from a measured breach): THE GATE COVERS WHAT THE
@@ -259,6 +260,33 @@ never the way to make room for something rules (5)/(5a) would have sent to
    from the same breach: a refusal BY THE KILL SWITCH must be named as such
    wherever it can surface — that probe reported airplane mode as "size check
    failed", pointing an operator at someone else's server for their own setting.
+   **EXTENDED #14f (P1 audit finding, 2026-09-08): the SAME failure shape recurring
+   in a path #14e's own fix never touched.** OpenTimestamps chain-of-custody
+   anchoring — a real submission to three public Bitcoin calendar servers,
+   revealing IP + timing — had NO consent gate on any of its three reachable paths:
+   the `POST /api/custody/anchor` endpoint, the manual "Anchor root" button, and
+   (worst) `anchoring_mode: "opentimestamps"` firing silently on EVERY future
+   ingested article once the setting is on, with no button click of its own. Fixed
+   coherently across all three: `anchorRoot()` gates through `ensureOnline` before
+   a non-local anchor (mirrors every other button); the endpoint itself refuses
+   (400) an `"opentimestamps"` anchor without an explicit `consent: true`, so a
+   caller that never went through the UI gets the same honest refusal (scoped to
+   `"opentimestamps"` only — the already-refusing public-chain stubs keep their own
+   503, never masked by a consent 400); and — since the per-ingest path has no
+   later button to gate — `saveCustody()` demands a genuine, one-time `confirm()`
+   naming the RECURRING nature of the egress at the moment the operator turns the
+   setting ON, and `save_settings()` mirrors that requirement server-side
+   (`ots_consent: true`, required only on the local→opentimestamps TRANSITION, not
+   re-demanded on every resave — a stamp on every save would be a rubber stamp, not
+   informed consent). `ots_stamp()` (the shared egress point for both the endpoint
+   and the per-ingest path) also gained an early, NAMED kill-switch refusal before
+   any calendar is even constructed, closing the #14e corollary for this path too.
+   Enforced in test_ui_invariants (#14f) + tests/test_custody_consent_gates.py +
+   tests/test_custody_api.py + tests/test_custody_settings.py. NOTED, not
+   fixed here (separate, tooling-level, out of scope): `test_network_consent.py`'s
+   socket-importer ratchet regex matches only `requests`/`httpx` imports, so it
+   was and remains blind to `opentimestamps.calendar`'s import shape — a future
+   session widening that regex should know this gap predates it.
    **REFINED #14c (UI_SHELL §3, SHIPPED #133):** the transition flash is now
    DIRECTION-AWARE — go-on = live accent, go-off = calm/grounded (never the old
    single red wash that conflated both meanings); consent/semantics unchanged.

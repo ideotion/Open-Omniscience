@@ -3141,5 +3141,21 @@
   "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "Das hochgerechnete Datum ist verstrichen und hier ist kein Ergebnis verzeichnet — Status unbekannt. Bei der offiziellen Quelle prüfen.",
   "window": "Zeitraum",
   "projected": "hochgerechnet",
-  "projected · passed": "hochgerechnet · verstrichen"
+  "projected · passed": "hochgerechnet · verstrichen",
+  "Anchor this Merkle root into Bitcoin via OpenTimestamps": "Diese Merkle-Wurzel per OpenTimestamps in Bitcoin verankern",
+  "Turn on OpenTimestamps anchoring? From now on, every article this app ingests will submit a hash to public Bitcoin calendar servers — revealing your IP and the timing to those servers — for as long as this stays on. This repeats on every future ingest, not just once.": "OpenTimestamps-Verankerung aktivieren? Ab sofort sendet die App bei jedem erfassten Artikel einen Hash an öffentliche Bitcoin-Kalenderserver — wodurch Ihre IP-Adresse und der Zeitpunkt diesen Servern offengelegt werden — solange diese Einstellung aktiv bleibt. Das wiederholt sich bei jeder künftigen Erfassung, nicht nur einmal.",
+  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "OpenTimestamps-Verankerung aktivieren (sendet bei jeder künftigen Erfassung einen Hash an öffentliche Kalenderserver)",
+  "Collection is ON — click to turn off": "Sammlung ist AN — zum Ausschalten klicken",
+  "Collection is OFF — click to turn on": "Sammlung ist AUS — zum Einschalten klicken",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "Sammelgeschwindigkeit: Maximum — nutzt Ihre Verbindung voll aus (Höflichkeit pro Host bleibt unverändert). Klicken für das rücksichtsvolle Ziel von 500 KiB/s.",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "Sammelgeschwindigkeit: Ziel 500 KiB/s — bewusst behutsam. Klicken für Maximum (volle Geschwindigkeit).",
+  "Collection speed set to Maximum — applies from the next pass.": "Sammelgeschwindigkeit auf Maximum gesetzt — gilt ab dem nächsten Durchlauf.",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "Sammelgeschwindigkeit auf das Ziel von 500 KiB/s gesetzt — gilt ab dem nächsten Durchlauf.",
+  "Scale": "Skala",
+  "Absolute": "Absolut",
+  "Indexed (=100)": "Indexiert (=100)",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Rohwerte auf einer gemeinsamen Zeitachse — Reihen sehr unterschiedlicher Größenordnung können abflachen.",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Jede Reihe auf 100 am Fensteranfang neu skaliert — relative Bewegungen, keine absoluten Werte.",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Logarithmische Skala (Basis 10) — gleiche Verhältnisse ergeben gleiche Abstände; beim Überfahren wird der reale Wert angezeigt.",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Nutzt Alpine.js — ein winziges, lokal mitgeliefertes Framework (MIT, kein Netzwerkzugriff)."
 }

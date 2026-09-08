@@ -164,6 +164,7 @@ def add_page(payload: AddPage, db: Session = Depends(get_db)) -> dict:
             status_code=400,
             detail="wiki is required (or paste a full Wikipedia URL as the title).",
         )
+    wiki = _validated_wiki(wiki)
     page = ensure_page(db, wiki, title, category=payload.category)
     return _serialize_page(page)
 

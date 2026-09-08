@@ -3141,5 +3141,21 @@
   "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "Расчётная дата прошла, и результат здесь не зафиксирован — статус неизвестен. Проверьте по официальному источнику.",
   "window": "период",
   "projected": "расчётная",
-  "projected · passed": "расчётная · прошла"
+  "projected · passed": "расчётная · прошла",
+  "Anchor this Merkle root into Bitcoin via OpenTimestamps": "Закрепить этот корень Меркла в Bitcoin через OpenTimestamps",
+  "Turn on OpenTimestamps anchoring? From now on, every article this app ingests will submit a hash to public Bitcoin calendar servers — revealing your IP and the timing to those servers — for as long as this stays on. This repeats on every future ingest, not just once.": "Включить привязку OpenTimestamps? Отныне каждая статья, собранная приложением, будет отправлять хеш на публичные календарные серверы Bitcoin — раскрывая ваш IP-адрес и время этим серверам — пока эта настройка включена. Это повторяется при каждом будущем сборе, а не один раз.",
+  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "Включить привязку OpenTimestamps (отправляет хеш на публичные календарные серверы при каждом будущем сборе)",
+  "Collection is ON — click to turn off": "Сбор ВКЛЮЧЁН — нажмите, чтобы выключить",
+  "Collection is OFF — click to turn on": "Сбор ВЫКЛЮЧЕН — нажмите, чтобы включить",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "Скорость сбора: максимальная — полностью использует ваше соединение (вежливость на хост не меняется). Нажмите для щадящей цели 500 КиБ/с.",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "Скорость сбора: цель 500 КиБ/с — намеренно бережная. Нажмите для максимальной (полной скорости).",
+  "Collection speed set to Maximum — applies from the next pass.": "Скорость сбора установлена на максимальную — применяется со следующего прохода.",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "Скорость сбора установлена на цель 500 КиБ/с — применяется со следующего прохода.",
+  "Scale": "Шкала",
+  "Absolute": "Абсолютная",
+  "Indexed (=100)": "Индексированная (=100)",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Необработанные значения на общей временной оси — ряды с очень разными масштабами могут выглядеть плоскими.",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Каждый ряд пересчитан к 100 в начале окна — относительные изменения, а не абсолютные уровни.",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Логарифмическая шкала (основание 10) — равные отношения соответствуют равным расстояниям; при наведении показывается реальное значение.",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Использует Alpine.js — крошечный фреймворк, поставляемый локально (MIT, без сети)."
 }

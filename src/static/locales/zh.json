@@ -3141,5 +3141,21 @@
   "The projected date has passed and no result is recorded here — status unknown. Check the official source.": "推算日期已过，此处没有记录任何结果——状态未知。请在官方来源核实。",
   "window": "期间",
   "projected": "推算",
-  "projected · passed": "推算 · 已过"
+  "projected · passed": "推算 · 已过",
+  "Anchor this Merkle root into Bitcoin via OpenTimestamps": "通过 OpenTimestamps 将此 Merkle 根锚定到比特币",
+  "Turn on OpenTimestamps anchoring? From now on, every article this app ingests will submit a hash to public Bitcoin calendar servers — revealing your IP and the timing to those servers — for as long as this stays on. This repeats on every future ingest, not just once.": "开启 OpenTimestamps 锚定？从现在起，只要此设置保持开启，应用采集的每一篇文章都会向公开的比特币日历服务器提交一个哈希值——这会向这些服务器暴露你的 IP 和提交时间。这会在未来每一次采集时重复发生，而不仅仅是一次。",
+  "Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)": "开启 OpenTimestamps 锚定（在未来每次采集时都会向公开日历服务器发送哈希值）",
+  "Collection is ON — click to turn off": "采集已开启 — 点击关闭",
+  "Collection is OFF — click to turn on": "采集已关闭 — 点击开启",
+  "Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.": "采集速度：最大 — 充分使用您的连接(每个主机的礼貌限制不变)。点击切换为更为温和的 500 KiB/s 目标。",
+  "Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).": "采集速度：500 KiB/s 目标 — 刻意放缓。点击切换为最大(全速)。",
+  "Collection speed set to Maximum — applies from the next pass.": "采集速度已设为最大 — 从下一轮开始生效。",
+  "Collection speed set to the 500 KiB/s target — applies from the next pass.": "采集速度已设为 500 KiB/s 目标 — 从下一轮开始生效。",
+  "Scale": "刻度",
+  "Absolute": "绝对值",
+  "Indexed (=100)": "指数化(=100)",
+  "Raw values on a shared time axis — series of very different magnitudes may flatten.": "共享时间轴上的原始值 — 量级差异很大的序列可能显得扁平。",
+  "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "每个序列在窗口起点重新基准为 100 — 显示相对变化,而非绝对水平。",
+  "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "对数刻度(以 10 为底)— 相等比例对应相等距离;悬停可显示真实值。",
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "使用 Alpine.js — 一个本地随附的微型框架(MIT 许可,零网络)。"
 }
