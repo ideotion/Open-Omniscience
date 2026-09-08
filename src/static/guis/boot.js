@@ -4,7 +4,7 @@
  *
  * Maintainer-ruled 2026-06-17 (sandbox gallery): eight opt-in alternative
  * interfaces, selectable from Settings -> GUIs, applied at boot. Each one is a
- * SHARED-CORE SHELL: it reuses the ONE app.js render logic (which targets
+ * SHARED-CORE SHELL: it reuses the core UI engine's render logic (which targets
  * elements by id) under a different, fully-scoped skin (html[data-ui="<id>"])
  * plus, for a couple of them, a thin interaction layer. The default interface
  * is untouched and stays the guarded reference.
@@ -27,7 +27,8 @@
   //           skin/JS file stem.
   // name    : a proper noun (NOT translated).
   // engine  : "vanilla" | "alpine" (shown as a badge; Alpine is vendored MIT).
-  // css/js  : assets under /static/guis/ (js optional; self-gates on app.js).
+  // css/js  : assets under /static/guis/ (js optional; self-gates on the core
+  //           UI engine's app-*.js modules).
   var GUIS = [
     { id: "aurora",    name: "Aurora",    engine: "vanilla", css: "ui-aurora.css" },
     { id: "atlas",     name: "Atlas",     engine: "vanilla", css: "ui-atlas.css" },
@@ -68,11 +69,12 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
-  // -- whenReady: run AFTER app.js has booted (its globals exist) and the DOM
-  //    is parsed. Skin JS self-gates on this, so injection order never matters. //
+  // -- whenReady: run AFTER the app-*.js modules have booted (their globals
+  //    exist) and the DOM is parsed. Skin JS self-gates on this, so injection
+  //    order never matters. //
   function whenReady(fn) {
     function go() {
-      // app.js defines showTab at the end of <body>; poll briefly for it so a
+      // app-shell.js defines showTab at the end of <body>; poll briefly for it so a
       // skin never touches the DOM before the core has wired itself up.
       var tries = 0;
       (function poll() {
