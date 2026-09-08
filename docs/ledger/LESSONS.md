@@ -7442,3 +7442,80 @@
   "every `#N` referenced by test_ui_invariants's own comments has a matching CLAUDE.md
   paragraph" check is worth adding, or whether periodic human/audit review remains the
   intended catch for this specific failure mode.
+
+- **SUBSTRING CONTAINMENT USED WHERE IDENTITY IS MEANT IS NOW A TWICE-FOUND P0 CLASS IN THIS CODEBASE,
+  IN TWO UNRELATED SUBSYSTEMS, AND THE GUARD FOR IT WAS ALREADY WRITTEN BOTH TIMES (2026-09-08, live
+  visual audit §4.1):** the commodity Price × coverage overlay draws a clean chart headed
+  "Price × coverage — Dy · Articles: 36" in which `Dy` has been silently resolved to the English word
+  **"already"** (`alrea·dy`), `Nd` to the French **"indiqué"** (`i·nd·iqué`) and `Pr` to **"proposed"** —
+  because `resolve_keyword()` (`src/analytics/queries.py:149`) falls back from exact match to
+  `normalized_term LIKE '%term%'` ordered by mention count. Terms with no substring collision (`lithium`,
+  `cobalt`) resolve to nothing, which is exactly **why it never looks broken**: the failure is invisible
+  on every term that would have exposed it. The same window's Keywords, When/Where/Who and Sources
+  lenses all honestly report zero for the same seed — **only the lens with a chart lies**, so a
+  cross-lens consistency check inside one window is a cheap, general detector for this whole class.
+  THE PART THAT MATTERS MOST: `src/analytics/supply_chain_ripple.py:110` already carries
+  `_exact_keyword_id` whose docstring names this exact hazard, this exact fallback, and even the exact
+  worked example ("a commodity 'Lead' silently matching the unrelated common word/verb 'lead'") — the
+  hazard was identified, the guard was written, the reasoning was recorded, and the commodity path calls
+  the **unguarded** resolver anyway. Six weeks earlier the 2026-09-08 transversal audit found the same
+  shape in `src/bulletin/grounding.py`, where a fabricated figure that is a substring of a real one
+  verdicts as grounded. **A guard that lives in one caller is a comment, not an invariant.** When a
+  fuzzy resolver and an exact resolver both exist for one quantity, the fuzzy one is the default every
+  new caller will reach for; the durable fix is a test that enumerates the callers of the fuzzy path and
+  asserts that none of them is a display surface, not a third exact-match helper in a third file.
+
+- **AN EMPTY STATE REACHED THROUGH A PARSE FAILURE IS THE APP STATING A FALSEHOOD IN THE VOICE IT
+  RESERVES FOR FACTS (2026-09-08, live visual audit §4.2):** with `/api/briefing` and
+  `/api/database/stats` returning HTTP 200 and a malformed body, Home rendered "**Your library is
+  empty** — head to Collect to gather your first material" and "**No Leads yet** … an empty feed means
+  the signals haven't accumulated, **never** that the engine is gone" against a database holding 453
+  articles and 3,618 sources — with zero occurrences of *failed*, *error*, *unavailable* or *retry*,
+  zero uncaught exceptions, and the health pill still reading **healthy**. The empty-state copy is
+  genuinely good writing and correct for a genuinely empty corpus; that is what makes this dangerous.
+  **"Degrade loudly" is not satisfied by a well-written empty state, because an empty state is a
+  positive claim about the user's data.** The distinction a UI must keep is not success-vs-failure but
+  *"the server answered and the answer was empty"* vs *"the answer could not be read"* — and a
+  `try/catch` that falls through to the render path collapses exactly those two. Test the malformed-body
+  case, not only the 500 case: a 500 usually has a handler, and a 200 with garbage usually does not.
+
+- **A `#`-ANCHOR ANYWHERE IN CONTENT IS A NAVIGATION HAZARD WHEN A `popstate` HANDLER TREATS THE HASH AS
+  A TAB NAME (2026-09-08, live visual audit):** Help renders 50 visible in-page table-of-contents links
+  against **103 headings, of which 0 carry an `id`** (`mdToHtml()` emits bare `<h2>/<h3>`). Clicking one
+  changes the hash, `app-shell.js:166`'s `popstate` listener calls
+  `showTab(location.hash.slice(1), false)`, `showTab` finds no `tab-1-install--first-run`, falls back to
+  home and rewrites the URL — measured: visible panel `tab-help` → `tab-home`, hash `#help` → `#home`.
+  **The defect is not in Help.** Any surface that ever renders an internal anchor — an article body, a
+  law document, any future markdown — hits the identical path, so this is a risk *category* rather than
+  a documentation bug, and the fix belongs in the `popstate` handler (check the hash against the known
+  tab-id set before calling `showTab`, else let the browser do its native in-page scroll), not in the
+  markdown renderer alone.
+
+- **A CONTRAST HARNESS THAT EXCLUDES THE ELEMENT'S OWN BACKGROUND IS WRONG IN BOTH DIRECTIONS, AND TWO
+  AGENTS CATCHING IT INDEPENDENTLY IS THE ONLY REASON IT WAS CAUGHT (2026-09-08, this audit's own
+  instrument):** the first cut composited text against the *ancestor* chain and popped the element
+  itself, so a filled button's label was scored against the panel *behind* the button — inventing
+  failures on filled controls (two were hand-verified at a real 6.65:1) and missing real ones. The
+  recorded lesson "score the composited colour, not the declared token" is necessary and **not
+  sufficient**: the composite must include every layer the text is actually painted on, the element's own
+  `background-color` first among them. Corrected mid-run and the whole 17-theme sweep re-run; one agent
+  finding was subsequently REFUTED by its own verifier using the fixed instrument. **An audit's
+  instrument is part of its subject matter** — when two independent agents report the same
+  false-positive class, that is data about the tool, not noise from the agents.
+
+- **ASSIGNING ONE APP INSTANCE TO TWO AGENTS MANUFACTURES A FINDING (2026-09-08, fleet hygiene):** port
+  8020 was handed to both a first-run-journey agent and a first-launch-state agent. The first created a
+  passphrase; the second then reported as a P0 that "the assigned virgin locked instance was already
+  unlocked-encrypted before this session began." It was a true observation and an entirely manufactured
+  defect. **A stateful fixture is single-assignment.** Where two agents genuinely need the same
+  irreversible flow, give them separate data directories, and treat any finding about the *initial state*
+  of a shared fixture as suspect until the assignment map is checked.
+
+- **A CONSOLIDATION JOIN KEYED ON A SHORT LOCAL ID SILENTLY CROSS-WIRES AGENTS (2026-09-08, the same
+  audit's own bookkeeping):** merging 466 findings with their verifiers' verdicts on the bare finding id
+  (`F1`, `LAW-1`) attached one agent's verdict to another agent's finding, because a dozen agents each
+  number their findings `F1…Fn` independently. The tell was the row count changing when it should not
+  have. Key the join on **(workflow, scope, id)** and, where a scope string is decorated
+  ("law (port 8013, ink theme…)"), match by token overlap rather than equality — and always print
+  matched-vs-unmatched counts, because a join that silently drops or mis-attaches is indistinguishable
+  from one that works.
