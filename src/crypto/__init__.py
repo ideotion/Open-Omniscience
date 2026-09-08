@@ -22,29 +22,23 @@ For inquiries, contact: open-omniscience@ideotion.com
 """
 Cryptographic Module for Open-Omniscience Pillar 4
 
-Provides cryptographic provenance and digital signature functionality
-for ensuring legal admissibility of data.
+Provides the SHA-256 Merkle tree primitive used by the app's real, live
+provenance/chain-of-custody mechanism.
 
 Components:
-- merkle_tree: SHA-256 Merkle tree implementation
-- provenance: SQLite-based cryptographic ledger
-- signatures: GPG signing and verification (Phase 4.2)
+- merkle_tree: SHA-256 Merkle tree implementation, imported and called by
+  src/reporting/evidence.py (Ed25519 + Merkle) and src/backup/artifact.py.
+
+Note: this package previously also re-exported a `ProvenanceLedger` (a
+plaintext-sqlite provenance ledger) and a `GPGSigner` stub. Neither was ever
+wired into any live code path, imported nowhere outside this package's own
+files, and both were removed as orphaned dead code (their docstrings claimed
+"legal admissibility" which they never delivered for the live app). The
+app's actual, live legal-admissibility / chain-of-custody mechanism is
+`src/custody/log.py`'s `CustodyLog` (hash-chained, Ed25519-signed, optional
+post-quantum ML-DSA), reachable through the `/api/custody/*` routes.
 """
 
 from .merkle_tree import MerkleNode, MerkleTree
-from .provenance import DataProvenance, ProvenanceLedger
 
-try:
-    # Redundant aliases mark these as intentional re-exports (added to __all__
-    # below) so the optional-signing API is importable from `src.crypto`.
-    from .signatures import GPGNotAvailableError as GPGNotAvailableError
-    from .signatures import GPGSigner as GPGSigner
-    from .signatures import SignatureResult as SignatureResult
-
-    HAS_SIGNATURES = True
-except Exception:
-    HAS_SIGNATURES = False
-
-__all__ = ["MerkleTree", "MerkleNode", "ProvenanceLedger", "DataProvenance"]
-if HAS_SIGNATURES:
-    __all__.extend(["GPGSigner", "SignatureResult", "GPGNotAvailableError"])
+__all__ = ["MerkleTree", "MerkleNode"]
