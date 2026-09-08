@@ -29,7 +29,6 @@ Author: Ideotion
 """
 
 import logging
-from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -91,45 +90,8 @@ def setup_logging(
     return logger
 
 
-def log_audit_trail(action: str, details: dict, user: str | None = None):
-    """
-    Log an action to the central audit trail file.
-
-    Args:
-        action: Type of action (e.g., "scrape", "search", "export").
-        details: Dictionary of details about the action.
-        user: Optional user identifier (default: None for automated actions).
-    """
-    audit_file = (
-        AUDIT_DIR / f"{datetime.now(UTC).strftime('%Y%m%d')}_OpenOmniscience_AUDIT_TRAIL.md"
-    )
-    timestamp = datetime.now(UTC).isoformat()
-
-    # Format details as a string
-    details_str = ", ".join(f"{k}: {v}" for k, v in details.items())
-
-    # Write to audit file
-    with open(audit_file, "a", encoding="utf-8") as f:
-        f.write(f"### {timestamp}\n")
-        f.write(f"- **Action**: {action}\n")
-        if user:
-            f.write(f"- **User**: {user}\n")
-        f.write(f"- **Details**: {details_str}\n\n")
-
-
 # Example usage
 if __name__ == "__main__":
     # Test logger
     logger = setup_logging("test")
     logger.info("This is a test log message.")
-
-    # Test audit trail
-    log_audit_trail(
-        action="scrape",
-        details={
-            "source": "BBC News",
-            "url": "https://bbc.com/news",
-            "status": "success",
-            "articles": 10,
-        },
-    )
