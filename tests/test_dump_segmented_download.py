@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from src.ingest.download_rate import RateSampler
 from src.wiki.dumps import DumpDownloadManager
 
 PAYLOAD = b"segmented-dump-fixture-" * 100  # a few KB
@@ -189,6 +190,56 @@ def test_a_corrupt_segmented_download_is_recorded_as_a_genuine_error(tmp_path):
     assert res.error and "checksum" in res.error.lower()
     # The dest file must NOT exist / must not be silently accepted as complete.
     assert not Path(res.dest).exists() or Path(res.dest).read_bytes() != bytes(tampered)
+
+
+def test_a_segmented_download_is_measured_by_the_shared_rate_registry(tmp_path):
+    """PERF-09 (invariant #20) wires the SAME ``RateRegistry`` the sequential
+    path uses into the segmented path too -- before this fix, a segmented
+    transfer left the registry untouched and the task manager would show
+    "not measured in this session" for the whole duration, even though real
+    bytes were landing. A hand-cranked clock (injected by pre-seeding the
+    registry, since ``RateRegistry.start`` reuses an existing sampler rather
+    than replacing it) makes the measurement deterministic rather than a
+    real-time threshold that would be flaky on a slow runner."""
+
+    class _Clock:
+        def __init__(self, t: float = 1000.0):
+            self.t = float(t)
+
+        def __call__(self) -> float:
+            return self.t
+
+        def advance(self, dt: float) -> None:
+            self.t += float(dt)
+
+    clock = _Clock()
+
+    def fetch_segment(url: str, start: int, end: int) -> bytes:
+        # Each segment "lands" 0.6s apart on the clock the sampler reads --
+        # enough for the retained samples to span the 1.0s measurement floor.
+        clock.advance(0.6)
+        return PAYLOAD[start:end]
+
+    m = DumpDownloadManager(
+        base_dir=tmp_path,
+        http_head=lambda url: _HeadResp(len(PAYLOAD)),
+        fetch_segment=fetch_segment,
+        mirror_probe=_no_probe,
+        segment_min_bytes=100,
+    )
+    key = "en:pages-articles"
+    # Pre-seed the registry with the injected clock; _download_segmented's
+    # own self._rates.start(...) call resets (not replaces) it.
+    m._rates._by_key[key] = RateSampler(clock=clock)
+    entry = m._entry_for("en", "pages-articles", expected_sha256=PAYLOAD_SHA256)
+    res = m._download(entry)
+    assert res.status == "done"
+
+    snap = m._rates.snapshot(key)
+    assert snap.get("reason") != "not measured in this session", snap
+    assert snap["measured"] is True, snap
+    assert snap["samples"] >= 2, "each completed segment must be its own observation"
+    assert snap["bytes_per_s"] > 0
 
 
 def test_start_seeds_mirrors_and_checksum_only_on_a_new_entry(tmp_path):
