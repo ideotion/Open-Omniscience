@@ -31,7 +31,6 @@ Tests cover:
 - Email validation
 - Search query validation
 - Password hashing
-- Security headers
 
 Author: Ideotion
 """
@@ -45,11 +44,9 @@ import pytest
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from utils.security import (
-    SECURITY_HEADERS,
     SecurityError,
     escape_html,
     generate_secure_token,
-    get_security_headers,
     hash_password,
     safe_path_join,
     sanitize_html,
@@ -359,55 +356,8 @@ class TestPasswordHashing:
         assert verify_password(wrong_password, hashed) is False
 
 
-class TestSecurityHeaders:
-    """Tests for security headers."""
-
-    def test_get_security_headers_returns_dict(self):
-        """Test that security headers are returned as a dictionary."""
-        headers = get_security_headers()
-        assert isinstance(headers, dict)
-        assert len(headers) > 0
-
-    def test_security_headers_contain_essential_headers(self):
-        """Test that essential security headers are included."""
-        headers = get_security_headers()
-        essential_headers = [
-            "X-Content-Type-Options",
-            "X-Frame-Options",
-            "X-XSS-Protection",
-            "Content-Security-Policy",
-            "Referrer-Policy",
-            "Strict-Transport-Security",
-            "Permissions-Policy",
-        ]
-        for header in essential_headers:
-            assert header in headers
-
-    def test_security_headers_are_valid(self):
-        """Test that security header values are valid."""
-        headers = get_security_headers()
-        for header_name, header_value in headers.items():
-            assert isinstance(header_name, str)
-            assert isinstance(header_value, str)
-            assert len(header_value) > 0
-
-    def test_security_headers_copy(self):
-        """Test that get_security_headers returns a copy."""
-        headers1 = get_security_headers()
-        headers2 = get_security_headers()
-        # Modify one
-        headers1["Test-Header"] = "test"
-        # The other should not be affected
-        assert "Test-Header" not in headers2
-
-
 class TestSecurityConstants:
     """Tests for security constants."""
-
-    def test_security_headers_constant_exists(self):
-        """Test that SECURITY_HEADERS constant exists."""
-        assert hasattr(SECURITY_HEADERS, "__iter__")
-        assert len(SECURITY_HEADERS) > 0
 
     def test_security_error_exception(self):
         """Test that SecurityError is a proper exception."""

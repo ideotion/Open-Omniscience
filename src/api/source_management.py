@@ -28,8 +28,9 @@ including groups, metadata, and discovery functionality.
 Author: Ideotion
 """
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
@@ -381,7 +382,7 @@ def list_sources(
     types: str | None = None,
     q: str | None = None,
     group_id: int | None = None,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=1000),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
@@ -412,7 +413,7 @@ def list_sources(
 
     from sqlalchemy import and_, or_
 
-    from src.database.models import Source
+    from src.database.models import Article, Source
 
     def _vals(raw: str | None) -> list[str]:
         return [v.strip() for v in (raw or "").split(",") if v.strip()]
@@ -448,6 +449,39 @@ def list_sources(
             query = query.order_by(Source.priority.asc(), Source.id.asc())
             sources = query.offset(offset).limit(limit).all()
 
+        # article_count via the maintained counter (source_io.py's already-shipped pattern,
+        # migration d2f8a9df7168) — never len(s.articles), which forces SQLAlchemy to load
+        # every Article row (including the encrypted content/compressed_content columns) just
+        # to count them. Batched live COUNT(*) fallback for any row whose counter is still
+        # NULL (never reconciled) — ONE grouped query for the whole page, never one per source.
+        null_ids = [s.id for s in sources if s.article_count is None]
+        live: dict = {}
+        if null_ids:
+            for sid, cnt in (
+                db.query(Article.source_id, func.count(Article.id))
+                .filter(Article.source_id.in_(null_ids))
+                .group_by(Article.source_id)
+                .all()
+            ):
+                live[sid] = cnt
+
+        def _count(s) -> int:
+            return int(s.article_count) if s.article_count is not None else int(live.get(s.id, 0))
+
+        _now = datetime.now(UTC)
+
+        def _basis(s) -> str:
+            # Honesty envelope, same vocabulary as source_io.py's list_catalog_sources:
+            # "live" = counted now (NULL counter); "exact" = maintained + fresh (reconciled
+            # within 24h); "estimated" = maintained but stale (never presented as exact).
+            if s.article_count is None:
+                return "live"
+            ra = s.counter_reconciled_at
+            if ra is None:
+                return "estimated"
+            aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
+            return "exact" if (_now - aware) < timedelta(hours=24) else "estimated"
+
         # Format results
         results = [
             {
@@ -459,7 +493,8 @@ def list_sources(
                 "enabled": s.enabled,
                 "priority": s.priority,
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],
-                "article_count": len(s.articles) if s.articles else 0,
+                "article_count": _count(s),
+                "count_basis": _basis(s),  # exact (fresh) | estimated (stale) | live (NULL)
                 "groups": [g.name for g in s.groups.all()] if s.groups else [],
                 "has_metadata": s.source_metadata is not None,
                 # Geo/type metadata — powers the batch-ingest source picker's filters.
@@ -529,6 +564,8 @@ def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
     """
     logger.info(f"Get source request: source_id={source_id}")
 
+    from src.database.models import Article
+
     with SourceManager(session=db) as manager:
         source = manager.get_source_by_id(source_id)
         if not source:
@@ -540,6 +577,26 @@ def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
         # Get metadata
         metadata = manager.get_metadata(source_id)
 
+        # article_count via the maintained counter (source_io.py's already-shipped pattern,
+        # migration d2f8a9df7168) — never len(source.articles), which forces a full load
+        # (and, on this SQLCipher-encrypted store, a real decrypt) of every Article row's
+        # content just to count them. A single-row live COUNT(*) fallback covers a source
+        # whose counter is still NULL (never reconciled) — this endpoint handles one source
+        # at a time, so there's no batching concern here, unlike list_sources.
+        if source.article_count is not None:
+            article_count = int(source.article_count)
+            count_basis = "estimated"
+            ra = source.counter_reconciled_at
+            if ra is not None:
+                aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
+                if (datetime.now(UTC) - aware) < timedelta(hours=24):
+                    count_basis = "exact"
+        else:
+            article_count = int(
+                db.query(func.count(Article.id)).filter(Article.source_id == source.id).scalar() or 0
+            )
+            count_basis = "live"
+
         result = {
             "id": source.id,
             "name": source.name,
@@ -549,7 +606,8 @@ def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
             "enabled": source.enabled,
             "priority": source.priority,
             "tags": [t.strip() for t in (source.tags or "").split(",") if t.strip()],
-            "article_count": len(source.articles) if source.articles else 0,
+            "article_count": article_count,
+            "count_basis": count_basis,  # exact (fresh) | estimated (stale) | live (NULL)
             "groups": [
                 {"id": g.id, "name": g.name, "color": g.color, "description": g.description}
                 for g in groups
@@ -635,6 +693,26 @@ def create_source(request: Request, source_data: dict, db: Session = Depends(get
         }
 
 
+# Fixed allowlist of fields a PUT body may set on a source, each with its expected
+# type -- mass-assignment fix (audit P2). `id` is deliberately absent: it must never
+# be settable through this route, regardless of what the request body contains.
+# Mirrors the fields create_source (above) already accepts explicitly by name rather
+# than forwarding the raw dict. A field not in this set is silently dropped rather
+# than rejected (lower-risk default: it can't reject a legitimate client sending an
+# extra field it doesn't need) -- consistent with create_source's own handling of
+# fields beyond its required_fields, and with the Pydantic-model PATCH precedent in
+# src/api/watches.py (extras ignored by default).
+_SOURCE_UPDATE_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
+    "name": str,
+    "domain": str,
+    "rss_url": (str, type(None)),
+    "rate_limit_ms": int,
+    "enabled": bool,
+    "priority": int,
+    "tags": str,
+}
+
+
 @router.put("/{source_id}", response_model=dict)
 @limiter.limit("50/hour")
 def update_source(
@@ -642,11 +720,34 @@ def update_source(
 ):
     """
     Update a source.
+
+    Only the fixed allowlist in _SOURCE_UPDATE_FIELD_TYPES may be set -- a body
+    field outside it (including "id") is dropped, never applied. A present
+    allowlisted field with the wrong type is a clean 400, not the generic 500 a bad
+    value used to surface as at commit() time.
     """
     logger.info(f"Update source request: source_id={source_id}, data={source_data}")
 
+    updates: dict[str, Any] = {}
+    for field, expected_type in _SOURCE_UPDATE_FIELD_TYPES.items():
+        if field not in source_data:
+            continue
+        value = source_data[field]
+        # bool is a subclass of int in Python: without this, a stray True/False
+        # would silently pass the `int` check for rate_limit_ms/priority.
+        if expected_type is int and (isinstance(value, bool) or not isinstance(value, int)):
+            raise HTTPException(status_code=400, detail=f"Field '{field}' must be an integer")
+        if not isinstance(value, expected_type):
+            type_name = (
+                "string" if expected_type is str
+                else "boolean" if expected_type is bool
+                else "string or null"
+            )
+            raise HTTPException(status_code=400, detail=f"Field '{field}' must be a {type_name}")
+        updates[field] = value
+
     with SourceManager(session=db) as manager:
-        source = manager.update_source(source_id, **source_data)
+        source = manager.update_source(source_id, **updates)
         if not source:
             raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
 

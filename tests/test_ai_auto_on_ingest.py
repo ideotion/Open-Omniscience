@@ -109,3 +109,47 @@ def test_runs_due_prompt_with_correct_args(tmp_path, monkeypatch):
         assert calls["kind"] == "figure" and calls["system"] == "extract X"
         assert calls["prompt_version"].startswith("custom:") and calls["skip_existing"] is True
         assert calls["n"] == 1  # the one recent article, as a snapshot
+
+
+def test_run_auto_on_ingest_resolves_the_active_backend_when_no_client_given(tmp_path, monkeypatch):
+    """P1-11 (2026-09-08 audit): omitting ``client`` must resolve through the
+    dual-backend seam (vLLM on a GPU machine, Ollama otherwise -- RULED A12) instead of
+    hardcoding OllamaClient(), mirroring advance_law_summaries's own fix for the exact
+    same scheduler-ride-along role.
+
+    Reproduces the vLLM-only host bug directly: with Ollama unreachable (is_available()
+    -> False, exactly like OllamaClient().is_available() on a machine with no Ollama
+    installed) and a working vLLM-shaped client available, the seam must be consulted --
+    and the extractor must actually run against the resolved client, not silently no-op."""
+    from src.llm import backend as llm_backend
+
+    S = _sess(tmp_path)
+    with S() as s:
+        _article(s)
+        s.add(_prompt(label="Figures", kind="figure"))
+        s.commit()
+
+        vllm_client = _StubClient(up=True)  # stands in for a reachable vLLM client
+        seen: list[str] = []
+
+        def _fake_get_client_with_name(*, backend=None):
+            seen.append("resolved")
+            return "vllm", vllm_client
+
+        monkeypatch.setattr(llm_backend, "get_client_with_name", _fake_get_client_with_name)
+
+        def fake_extract(work, client, *, model, kind, system, prompt_version,
+                         skip_existing, **kw):
+            assert client is vllm_client, "must extract using the RESOLVED (vLLM) client"
+            yield {"event": "start", "total": len(work)}
+            yield {"event": "item", "status": "stored"}
+            yield {"event": "done"}
+
+        monkeypatch.setattr(ai_auto, "extract_for_articles", fake_extract)
+
+        out = ai_auto.run_auto_on_ingest(s)  # NO client argument -- the bug's exact call shape
+
+        assert seen == ["resolved"], "must resolve through the backend seam, not OllamaClient()"
+        assert out["ran"] is True and out["stored"] == 1, (
+            "on a vLLM-only host this must actually run, not silently no-op"
+        )

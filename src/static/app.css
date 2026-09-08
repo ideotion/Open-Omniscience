@@ -387,6 +387,10 @@
     .pill.ok{ color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
     .pill.warn{ color:var(--warn-fg); border-color:color-mix(in srgb,var(--warn) 40%,var(--border)); }
     .pill.err{ color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,var(--border)); }
+    /* Election date-confidence "window" tier (src/civic/elections.py) — its own hue,
+       distinct from ok/warn/err, so a legally-bounded window never reads as either a
+       confirmed date or an uncertain projection (audit P1-04). */
+    .pill.tier-window{ color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
     .dot { display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--muted); }
     .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }
     .dot.err{ background:var(--err); box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 22%,transparent); }
@@ -825,6 +829,12 @@
       background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--fg);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ag-chip.approx { background:color-mix(in srgb, var(--warn, orange) 14%, transparent); }
+    /* Election date-confidence tiers on the small grid chips (Year/Month-card/Month-grid/
+       Week) — "window" keeps the pill's own accent hue; "leadpassed" (a projected date
+       gone by, unconfirmed) is deliberately the strongest of the four -- an investigative
+       lead, not a routine caveat (P1-04). */
+    .ag-chip.tier-window { background:color-mix(in srgb, var(--accent) 16%, transparent); }
+    .ag-chip.leadpassed { background:color-mix(in srgb, var(--err, red) 22%, transparent); font-weight:700; }
     .ag-more { font-size:10px; color:var(--muted); }
     /* Year view: a 12-month overview of clickable month cards. */
     .ag-ygrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:8px; }
