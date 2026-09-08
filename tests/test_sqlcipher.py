@@ -85,6 +85,27 @@ def test_factory_plaintext_and_fresh_policy(tmp_path, monkeypatch):
     assert is_encrypted_file(fresh) in (False, None)
 
 
+def test_export_alias_is_escaped_and_guarded():
+    """``_export`` builds ``SELECT sqlcipher_export('{alias}')`` via an
+    f-string (no bound-parameter support for that argument); the escaping
+    helper it shares with ``_apply_key`` must double an embedded single quote
+    rather than let it break out of the literal, and the alnum assertion must
+    reject a non-literal-shaped alias loudly, before the connection is ever
+    touched (P3 audit finding, sqlcipher-export-unescaped-fstring)."""
+    from src.database.connect import _export, _sql_literal_escape
+
+    assert _sql_literal_escape("a'b") == "a''b"
+    assert _sql_literal_escape("plain") == "plain"
+    assert _sql_literal_escape("snap'); DROP TABLE t; --") == "snap''); DROP TABLE t; --"
+
+    with pytest.raises(AssertionError):
+        _export(object(), "snap'; DROP TABLE t; --")  # never reaches object().cursor()
+
+    # every real call site stays a fixed literal and keeps working
+    for alias in ("snap", "enc"):
+        assert alias.isalnum()
+
+
 def test_snapshot_helpers_cross_boundary(tmp_path):
     from src.database.connect import (
         connect,

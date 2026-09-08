@@ -179,16 +179,21 @@ def is_encrypted_file(path: Path | str) -> bool | None:
         return None
 
 
-def _quote_key(key: str) -> str:
-    # PRAGMA takes no bound parameters; single quotes are doubled (SQL string
-    # literal escaping). The key never reaches any log.
-    return key.replace("'", "''")
+def _sql_literal_escape(value: str) -> str:
+    """SQL string-literal escaping: double embedded single quotes so ``value``
+    stays a correct literal instead of breaking out of its surrounding quotes.
+    Neither PRAGMA nor ``sqlcipher_export`` accepts a bound parameter for the
+    strings they take, so this is the interpolation-site defense used
+    wherever this module builds one of those statements (the passphrase in
+    ``_apply_key``/the two ATTACH ... KEY sites, and ``_export``'s alias)."""
+    return value.replace("'", "''")
 
 
 def _apply_key(conn, key: str) -> None:
     cur = conn.cursor()
     try:
-        cur.execute(f"PRAGMA key = '{_quote_key(key)}'")
+        # The key never reaches any log.
+        cur.execute(f"PRAGMA key = '{_sql_literal_escape(key)}'")
     finally:
         cur.close()
 
@@ -465,9 +470,17 @@ def _is_sqlcipher_conn(conn) -> bool:
 
 
 def _export(conn, alias: str) -> None:
+    # Every real caller passes a fixed module-level literal ("snap"/"enc") for
+    # the ATTACHed alias it just created — the assertion makes a future caller
+    # that derives ``alias`` from anything else (a filename, a table name) fail
+    # loudly here rather than silently opening a single-quote breakout inside
+    # sqlcipher_export's string argument; _sql_literal_escape is the belt
+    # underneath that suspenders, so a legitimately quote-containing value
+    # (should this ever loosen) still produces a correct, safe literal.
+    assert alias.isalnum(), f"_export alias must be alphanumeric, got {alias!r}"
     cur = conn.cursor()
     try:
-        cur.execute(f"SELECT sqlcipher_export('{alias}')")
+        cur.execute(f"SELECT sqlcipher_export('{_sql_literal_escape(alias)}')")
     finally:
         cur.close()
 
@@ -532,7 +545,7 @@ def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Pat
     dest_p.unlink(missing_ok=True)
     conn = sqc.connect(str(src_p))  # a plaintext file opens with no key
     try:
-        conn.execute(f"ATTACH DATABASE ? AS enc KEY '{_quote_key(key)}'", (str(dest_p),))
+        conn.execute(f"ATTACH DATABASE ? AS enc KEY '{_sql_literal_escape(key)}'", (str(dest_p),))
         _match_source_pragmas(conn, "enc")
         _export(conn, "enc")
         conn.execute("DETACH DATABASE enc")
@@ -635,7 +648,7 @@ def snapshot_preserving(
         dest_p.unlink(missing_ok=True)  # never let a partial copy be mistaken for one
     conn = connect(src_p, check_same_thread=False)
     try:
-        conn.execute(f"ATTACH DATABASE ? AS snap KEY '{_quote_key(key)}'", (str(dest_p),))
+        conn.execute(f"ATTACH DATABASE ? AS snap KEY '{_sql_literal_escape(key)}'", (str(dest_p),))
         _match_source_pragmas(conn, "snap")
         _export(conn, "snap")
         conn.execute("DETACH DATABASE snap")
