@@ -28,15 +28,38 @@ Author: Open Omniscience Team
 import math
 from collections import Counter, defaultdict
 
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
 from src.services.keyword_extractor import keyword_extractor
 from src.services.text_processor import text_processor
 from src.utils.logging_config import setup_logging
 
 logger = setup_logging("services.article_intelligence")
+
+# numpy/scikit-learn are only needed by the TF-IDF cosine-similarity path below
+# (`calculate_similarity(..., method="cosine", use_tfidf=True)`); every other
+# method on this class is pure-Python on top of keyword_extractor/text_processor,
+# neither of which has an ML dependency. Both packages live behind pyproject's
+# optional `[analysis]` extra, so importing this module must not hard-fail on a
+# core-only install — the import is deferred to a flag, and the one method that
+# actually needs it raises a clear, actionable error when the extra is missing,
+# rather than this whole module (and everything that imports it) disappearing.
+try:
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    HAS_SKLEARN = True
+except ImportError:
+    np = None  # type: ignore[assignment]
+    TfidfVectorizer = None  # type: ignore[assignment,misc]
+    cosine_similarity = None  # type: ignore[assignment]
+    HAS_SKLEARN = False
+
+_SKLEARN_MISSING_MSG = (
+    "TF-IDF cosine similarity requires numpy + scikit-learn, which are part of "
+    "this project's optional '[analysis]' extra. Install with: "
+    "pip install -e '.[analysis]' — or call calculate_similarity(..., "
+    "use_tfidf=False) for a pure-Python fallback that needs no extra dependency."
+)
 
 
 class ArticleIntelligenceAnalyzer:
@@ -96,6 +119,8 @@ class ArticleIntelligenceAnalyzer:
 
         elif method == "cosine":
             if use_tfidf:
+                if not HAS_SKLEARN:
+                    raise ImportError(_SKLEARN_MISSING_MSG)
                 try:
                     vectorizer = TfidfVectorizer(tokenizer=lambda x: x.split(), lowercase=False)
                     tfidf_matrix = vectorizer.fit_transform([text1, text2])
@@ -146,7 +171,11 @@ class ArticleIntelligenceAnalyzer:
 
         texts = [article.get("content", "") for article in articles]
         n = len(texts)
-        similarity_matrix = np.zeros((n, n))
+        # Plain nested list, not np.zeros: the matrix itself is pure bookkeeping
+        # (only ever indexed, never vectorised), and keeping it numpy-free means
+        # this method needs no ML dependency beyond whatever `method` requires
+        # from calculate_similarity (which raises its own clear error above).
+        similarity_matrix = [[0.0] * n for _ in range(n)]
 
         for i in range(n):
             for j in range(i, n):

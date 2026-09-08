@@ -124,23 +124,34 @@ def wire(app) -> None:
     for router in spine:
         app.include_router(router)
 
+    # --- keyword-management router (zero ML dependency) ---------------------- #
+    # keyword_management.py only ever imports keyword_extractor/text_processor
+    # (both pure stdlib) — it must not share a try/except with routers that
+    # genuinely need numpy/scikit-learn below, or a legitimate [analysis]-extra
+    # import failure there silently takes this one down too (it has, before).
+    from src.api.keyword_management import router as keyword_management_router
+
+    app.include_router(keyword_management_router)
+
     # --- analysis-dependent routers (optional [analysis] extra) -------------- #
+    # These genuinely require numpy/scipy/scikit-learn (TF-IDF vectors, cosine
+    # similarity, statistical analysis). keyword_analysis.py is grouped here —
+    # not with keyword_management above — because it imports
+    # article_intelligence_analyzer, whose TF-IDF similarity path needs sklearn.
     try:
         from src.api.analysis import router as analysis_router
         from src.api.commodity import router as commodity_router
         from src.api.framing import router as framing_router
         from src.api.keyword_analysis import router as keyword_analysis_router
-        from src.api.keyword_management import router as keyword_management_router
     except ImportError:
         _LOG.warning(
-            "Commodity, statistical-analysis & keyword endpoints disabled: install the "
-            "[analysis] extra (pip install -e '.[analysis]') to enable them."
+            "Commodity, statistical-analysis & article-similarity endpoints disabled: "
+            "install the [analysis] extra (pip install -e '.[analysis]') to enable them."
         )
     else:
         for router in (
             commodity_router,
             analysis_router,
-            keyword_management_router,
             keyword_analysis_router,
             framing_router,
         ):

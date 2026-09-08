@@ -1286,7 +1286,7 @@
           ? `<a href="/api/articles/${e.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${label}</a>`
           : (e.url
             ? (ext
-              ? `<a href="${esc(safeUrl(e.url))}" onclick="event.preventDefault();openLinkPreview('${esc(safeUrl(e.url))}')" title="Opens the local preview first — what your database knows about this link">${label}</a>`
+              ? `<a href="${esc(safeUrl(e.url))}" onclick="event.preventDefault();openLinkPreview(${esc(JSON.stringify(safeUrl(e.url)))})" title="Opens the local preview first — what your database knows about this link">${label}</a>`
               : `<a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">${label}</a>`)
             : label);
         return `<span>${link}${meta ? ` <span class="muted">— ${meta}</span>` : ""}</span>`;
@@ -1492,7 +1492,7 @@
       const u = safeUrl(url);
       const classes = cls ? `ext-link ${cls}` : "ext-link";
       return `<a class="${classes}"${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
-        + `onclick="event.preventDefault();openLinkPreview('${esc(u)}')" `
+        + `onclick="event.preventDefault();openLinkPreview(${esc(JSON.stringify(u))})" `
         + `title="Opens the local preview first — what your database knows about this link">`
         + `${esc(label)}</a>`;
     }

@@ -1656,9 +1656,17 @@
         (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>`;
     }
 
+    // The server's LAST-KNOWN anchoring_mode, tracked so saveCustody() can tell a
+    // fresh opt-in (needs the consent flow below) apart from a resave of some other
+    // field while OpenTimestamps was already on (does not -- see save_settings'
+    // own docstring for why re-demanding consent every save would be a rubber
+    // stamp, not an informed decision).
+    let _custodyOtsWasOn = false;
+
     function applyCustodyToggles(s) {
       $("cust-pqc").checked = !!s.pqc_enabled;
       $("cust-ots").checked = s.anchoring_mode === "opentimestamps";
+      _custodyOtsWasOn = $("cust-ots").checked;
       $("cust-autolog").checked = !!s.auto_log_on_ingest;
       $("cust-actor").value = s.default_actor || "";
       $("cust-ots-warn").style.display = $("cust-ots").checked ? "block" : "none";
@@ -1672,12 +1680,31 @@
     }
 
     async function saveCustody() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const wantsOts = $("cust-ots").checked;
+      // Turning OpenTimestamps ON is the one transition that starts a RECURRING,
+      // silent, per-article network submission with no button click of its own
+      // (P1 audit finding, UI invariant #14/#14e) -- there is no later moment to
+      // gate the usual way, so the transactional confirmation has to happen HERE,
+      // once, at the moment the operator opts in. Resaving other fields while it
+      // was already on, or turning it off, needs neither dialog.
+      const turningOn = wantsOts && !_custodyOtsWasOn;
+      if (turningOn) {
+        const ok = confirm(t("Turn on OpenTimestamps anchoring? From now on, every article this app ingests will submit a hash to public Bitcoin calendar servers — revealing your IP and the timing to those servers — for as long as this stays on. This repeats on every future ingest, not just once."));
+        if (!ok) { $("cust-ots").checked = false; return; }
+        // Also route through the app's one go-online consent mechanism (invariant
+        // #14): if currently offline this asks first and lists local interfaces;
+        // if already online it simply confirms so (no second, redundant dialog).
+        const online = await ensureOnline(t("Enable OpenTimestamps anchoring (submits a hash to public calendar servers on every future ingest)"));
+        if (!online) { $("cust-ots").checked = false; return; }
+      }
       const body = {
         pqc_enabled: $("cust-pqc").checked,
-        anchoring_mode: $("cust-ots").checked ? "opentimestamps" : "local",
+        anchoring_mode: wantsOts ? "opentimestamps" : "local",
         auto_log_on_ingest: $("cust-autolog").checked,
         default_actor: $("cust-actor").value.trim() || null,
       };
+      if (turningOn) body.ots_consent = true;
       try {
         const s = await api("/api/custody/settings", {method: "PUT", body: JSON.stringify(body)});
         renderCustodyStatus(s); applyCustodyToggles(s);
@@ -1686,7 +1713,12 @@
         else if (s.anchoring_mode === "opentimestamps" && !s.ots_available)
           toast("OpenTimestamps requested, but the 'timestamping' extra is not installed.", "warn");
         else toast("Custody settings saved.");
-      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
+      } catch (e) {
+        // The PUT was refused (e.g. a stale consent) -- the checkbox must not keep
+        // showing a state the server never actually saved.
+        if (turningOn) $("cust-ots").checked = false;
+        toast(_failMsg("Save failed: {error}", e), "err");
+      }
     }
 
     function custItem() {
@@ -1732,12 +1764,18 @@
     }
 
     async function anchorRoot() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const root = $("cust-root").value.trim();
       if (!root) { toast("Enter a Merkle root (hex).", "err"); return; }
       const provider = $("cust-ots").checked ? "opentimestamps" : "local";
+      // "local" is fully offline (a row in the local anchor book) and needs no
+      // gate; "opentimestamps" is real, IP-revealing egress to public calendar
+      // servers, so it goes through the same one consent mechanism every other
+      // network-triggering button in this app uses (invariant #14).
+      if (provider !== "local" && !(await ensureOnline(t("Anchor this Merkle root into Bitcoin via OpenTimestamps")))) return;
       try {
         const r = await api("/api/custody/anchor",
-          {method: "POST", body: JSON.stringify({merkle_root: root, provider})});
+          {method: "POST", body: JSON.stringify({merkle_root: root, provider, consent: provider !== "local"})});
         $("cust-result").innerHTML = `Anchored via <span class="pill ok">${esc(r.provider)}</span> — ${esc(r.detail)}`;
       } catch (e) { toast("Anchor: " + e.message, "err"); }
     }
