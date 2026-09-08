@@ -106,6 +106,26 @@ def _aux_js() -> tuple[str, ...]:
     assert mods, "index.html loads no app module -- the script tags moved or were renamed"
     return (*mods, "reader.js")
 
+
+def _guis_js() -> tuple[str, ...]:
+    """The GUIs-gallery JS surface: every module under src/static/guis/, except
+    the vendored third-party library (audit finding P1-01).
+
+    _aux_js() finds its files by scanning index.html's <script src> tags, which
+    works for boot.js and gallery.js (ordinary static tags) but CANNOT reach the
+    two Alpine-powered skins, ui-command.js and ui-canvas.js: per CLAUDE.md
+    invariant #30, boot.js's own GUIS registry injects those at RUNTIME
+    (`document.createElement("script"); s.src = ...; appendChild`), so they never
+    appear as a <script src> in any static HTML -- no widening of the markup
+    regex can find them. Enumerating the directory directly reaches all four
+    (and any future addition) without needing to parse boot.js's JS object
+    literal. `vendor/` is excluded: it holds Alpine.js itself, a third-party
+    library, not app chrome.
+    """
+    mods = sorted(f"guis/{p.name}" for p in (_static_dir() / "guis").glob("*.js"))
+    assert mods, "src/static/guis has no .js files -- the gallery moved or was removed"
+    return tuple(mods)
+
 # String shapes in JS that reach the DOM (and so are translatable by i18n.js
 # if a key exists). Deliberately conservative: a shape that could match a
 # non-user-facing literal is left out rather than inflating the count.
@@ -124,8 +144,16 @@ _JS_SHAPES = (
     # with no en.json key renders verbatim English in all 11 other locales --
     # including, before this landed, .card-caveat text and the additive-restore
     # assurance, which the non-negotiables require to ship x12.
-    re.compile(r'\bt\(\s*"((?:[^"\\{`$]|\\.){3,200})"'),
-    re.compile(r"\bt\(\s*'((?:[^'\\{`$]|\\.){3,200})'"),
+    #
+    # Matches `t(`, `t9(` AND `t9m(` -- many modules locally alias OOI18N.t to
+    # `t9`/`t9m` (`const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s) => s`)
+    # rather than calling it `t` directly. `\bt\(` alone never matches `t9(` --
+    # the character after `t` is the digit `9`, which is a word character, so
+    # there is no `\b` between them either -- so every t9()/t9m() call site was
+    # structurally invisible here, not merely undercounted (audit finding P1-01).
+    # `t9m` is tried before `t9` so it isn't partially matched as `t9` + literal `m`.
+    re.compile(r'\bt(?:9m|9)?\(\s*"((?:[^"\\{`$]|\\.){3,200})"'),
+    re.compile(r"\bt(?:9m|9)?\(\s*'((?:[^'\\{`$]|\\.){3,200})'"),
 )
 
 
@@ -158,9 +186,14 @@ def _static_dir() -> Path:
 # slice of the untranslatable count and the one worth driving to zero on its own
 # schedule, rather than leaving it inside a blended number that also carries
 # regex guesses. Reported by --audit-chrome; gated by --max-unkeyed-t-calls.
+#
+# Also matches the `t9(`/`t9m(` local-alias convention -- see the identical note
+# on the duplicate pair inside _JS_SHAPES above (audit finding P1-01): a plain
+# `\bt\(` never matches `t9(`/`t9m(` at all, so every aliased call site was
+# invisible to this gate, not merely undercounted.
 _T_CALL = (
-    re.compile(r'\bt\(\s*"((?:[^"\\{`$]|\\.){1,400})"'),
-    re.compile(r"\bt\(\s*'((?:[^'\\{`$]|\\.){1,400})'"),
+    re.compile(r'\bt(?:9m|9)?\(\s*"((?:[^"\\{`$]|\\.){1,400})"'),
+    re.compile(r"\bt(?:9m|9)?\(\s*'((?:[^'\\{`$]|\\.){1,400})'"),
 )
 
 
@@ -169,7 +202,7 @@ def unkeyed_t_calls() -> dict:
     en_keys = _keys(_load(_LOCALES / "en.json"))
     sites = 0
     unkeyed: set[str] = set()
-    for name in _aux_js():
+    for name in (*_aux_js(), *_guis_js()):
         path = _static_dir() / name
         assert path.exists(), f"{name} is listed by index.html but missing from src/static"
         text = path.read_text(encoding="utf-8")
@@ -199,7 +232,7 @@ def audit_chrome() -> dict:
         per_file[name] = len(aux.texts)
         texts |= aux.texts
 
-    for name in _aux_js():
+    for name in (*_aux_js(), *_guis_js()):
         path = _static_dir() / name
         assert path.exists(), f"{name} is listed by index.html but missing from src/static"
         found = _js_chrome(path.read_text(encoding="utf-8"))

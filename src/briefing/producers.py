@@ -1576,8 +1576,20 @@ def story_lineage(session) -> list[Card]:
                 ),
                 title=f"One story, {len(sources)} outlets — tracing the source",
                 summary=(
-                    f"A story echoed across {len(sources)} sources traces earliest to "
-                    f"{lin.primary.source or 'an unknown source'}"
+                    (
+                        f"A story echoed across {len(sources)} sources traces earliest to "
+                        f"{lin.primary.source or 'an unknown source'}"
+                        if lin.primary.published_at is not None
+                        # No document in the traced chain carries a known publish date, so
+                        # `lin.primary` is an arbitrary pick, not a genuinely earliest one —
+                        # say that plainly rather than implying a chronology that was never
+                        # established (src/signals/lineage.py's own honesty bar).
+                        else (
+                            f"A story echoed across {len(sources)} sources — "
+                            f"{lin.primary.source or 'an unknown source'} among them — but no "
+                            "publish dates are available to say which ran first"
+                        )
+                    )
                     + (f", attributed to the wire **{lin.wire_origin}**" if lin.wire_origin else "")
                     + ". Foreground the original; weigh the echoes."
                 ),
