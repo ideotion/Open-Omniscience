@@ -1185,13 +1185,3 @@ if __name__ == "__main__":
         # Test statistics
         stats = manager.get_source_statistics()
         print(f"Statistics: {stats}")
-
-        # Test source discovery (commented out to avoid network calls)
-        # print("Discovering sources for 'technology news'...")
-        # discovered = manager.discover_sources_by_topic("technology news", max_sources=5)
-        # print(f"Discovered {len(discovered)} sources")
-
-        # Test RSS discovery (commented out to avoid network calls)
-        # print("Discovering missing RSS feeds...")
-        # results = manager.discover_rss_feeds(timeout=5)
-        # print(f"Found RSS feeds for {len([r for r in results if r.get('rss_url')])} sources")
