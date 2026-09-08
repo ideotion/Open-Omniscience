@@ -485,13 +485,28 @@ direction.
 | integrity | 13 / 32 | — | **critic spot-check only** |
 | help | 4 / 13 | — | **critic spot-check only** — and it found the batch's worst defect |
 
-**Verification coverage is partial and must be read that way.** 95 verdicts were returned across the
-verifier agents that had finished at the time of writing: **68 CONFIRMED · 23 PARTIALLY_CONFIRMED ·
-3 UNREPRODUCIBLE · 1 REFUTED**, plus **25 findings the verifiers found themselves** while re-checking.
-That leaves a large share of the finding set carrying its **claimed** severity rather than a verified
-one, and `findings.csv` marks every such row `NOT_YET_VERIFIED` in its own column. **Do not treat an
-unverified P1 in that file as established.** The eleven headline findings in §1 are the exception: seven
-were measured by the orchestrating session directly, and the rest carry a verifier's verdict.
+**Verification, final numbers.** All seven workflows completed: **26 adversarial verifier agents
+returned 203 verdicts, every one of which matched its finding** (the join is on workflow + scope + id;
+0 unmatched):
+
+| verdict | n |
+|---|---|
+| CONFIRMED | 141 |
+| PARTIALLY_CONFIRMED | 47 |
+| UNREPRODUCIBLE | 4 |
+| **REFUTED** | **5** — removed from the finding set entirely |
+
+**The verifiers changed the severity of 17 findings, and mostly downward**: P2→P3 ×7, P1→P2 ×5,
+P1→P3 ×1, against P2→P1 ×3 and one IDEA promoted to POSITIVE. They also found **55 defects the walk
+agents missed**, including 3 at P0. That asymmetry — a layer built to refute producing a sixth of the
+finding set itself — is the single best argument for keeping it.
+
+**The finding set after verification: 527 rows — 13 P0 · 115 P1 · 113 P2 · 86 P3 · 18 IDEA ·
+127 POSITIVE.** But **191 of 345 non-positive findings (55 %) carry a verdict**; the rest are marked
+`NOT_YET_VERIFIED` in their own column, because three workflows used one batch verifier rather than one
+per agent. **Do not treat an unverified P1 in that file as established.** The thirteen headline findings
+in §1 are the exception: nine were measured by the orchestrating session directly, and the others carry
+a verifier's verdict.
 
 ### Not reached, by cause
 
@@ -545,3 +560,48 @@ Ordered by measured benefit per unit of effort, not by severity alone.
 
 Items 1, 2 and 8 are correctness. Items 3–7 and 9 are each a single-selector or single-function change
 with disproportionate reach. Item 10 is the one that stops the others regressing silently.
+
+---
+
+## 9. Where the detail lives
+
+| document | what it holds |
+|---|---|
+| [`ui-visual-2026-09-08/findings.csv`](ui-visual-2026-09-08/findings.csv) | all 527 findings, with **both** the claimed and the post-verification severity, the verdict, the repro, the evidence path and what the verifier re-derived |
+| [`ui-visual-2026-09-08/contrast-corrected.csv`](ui-visual-2026-09-08/contrast-corrected.csv) | the corrected composited sweep: 17 themes × 8 surfaces, worst ratio and composited pair per element |
+| [`ui-visual-2026-09-08/coach-occlusion.csv`](ui-visual-2026-09-08/coach-occlusion.csv) | 16 surfaces × 5 viewports, blocked controls and covered text per cell |
+| [`ui-visual-2026-09-08/WALK_FLAGSHIP_SURFACES.md`](ui-visual-2026-09-08/WALK_FLAGSHIP_SURFACES.md) | Home, Feed, Insights, Search, Observatory, Timemap |
+| [`ui-visual-2026-09-08/WALK_SECONDARY_SURFACES.md`](ui-visual-2026-09-08/WALK_SECONDARY_SURFACES.md) | law, indices, library, settings, analyze, custody |
+| [`ui-visual-2026-09-08/CRITIC_SECONDARY_SURFACES.md`](ui-visual-2026-09-08/CRITIC_SECONDARY_SURFACES.md) | the completeness critic — and the Help defect it found in a surface nobody had walked |
+| [`ui-visual-2026-09-08/THEME_LOCALE_RESPONSIVE_MATRIX.md`](ui-visual-2026-09-08/THEME_LOCALE_RESPONSIVE_MATRIX.md) | 599 rendered combinations; eight root causes. **Its coverage section is corrected in its header** — a truncation in my script hid four of its own ten streams from it |
+| [`ui-visual-2026-09-08/RUNTIME_I18N_AUDIT.md`](ui-visual-2026-09-08/RUNTIME_I18N_AUDIT.md) | 12 locales, the gate's four blind mechanisms, per-language quality review |
+| [`ui-visual-2026-09-08/SPEED_MEMORY_AND_STATES.md`](ui-visual-2026-09-08/SPEED_MEMORY_AND_STATES.md) | boot, bundle, idle, memory, first launch, every empty and failure state, dialogs, ten consent gates |
+| [`../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md`](../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md) | the design-system audit and the proposal catalogue, each item ruled on by three screening panels |
+| [`../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md`](../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md) | the complexity measurement, the automation set, the decision test, the recommended architecture |
+| [`../ledger/OPEN_QUEUE.md`](../ledger/OPEN_QUEUE.md) | Q-VIS-1…7: the seven rulings this session deliberately did not take |
+
+## 10. What this audit would do differently next time
+
+Recorded because the instrument is part of the subject:
+
+1. **One stateful fixture per agent.** Two agents on port 8020 manufactured a P0 out of a passphrase the
+   first one created.
+2. **Cap the fleet by memory, not by port count.** 19 instances at up to ~900 MB is how the OOM-killer
+   got a vote in the findings.
+3. **Never `.slice()` an aggregate into a synthesis prompt** without passing a count beside it. Four of
+   ten matrix streams silently fell off the end and the synthesis reported their absence as the app's
+   coverage gap, in the honesty section.
+4. **Score contrast against the element's own background from the first line of the harness.** Two
+   agents had to find that for me.
+5. **Assign a verifier per agent, not per workflow.** The workflows that did produced 141 confirmations
+   and 5 refutations; the ones that batched left 45 % of their findings carrying a claimed severity.
+6. **Budget a walk for every surface.** The two surfaces I under-resourced — integrity and help — were
+   where a spot-check found the batch's worst defect.
+
+---
+
+**Verification stamp:** live browser audit, 7 orchestrated workflows, 107 agents, ~21.9 M subagent
+tokens, ~7,800 tool calls, 1,697 screenshots, 26 adversarial verifiers returning 203 verdicts;
+nine headline findings re-derived by the orchestrating session with its own hands. **Chromium-verified
+(remote sandbox) · awaiting human UX pass** — never "verified". No fixes applied: report-only, per the
+commissioning instruction.
