@@ -44,8 +44,32 @@ _STATIC = _ROOT / "src" / "static"
 # would have kept passing against the one remaining slice while the other
 # sixteen went unscanned -- finding I-1 all over again, in its own guard.
 _ENGINE_MODULES = tuple(app_modules())
-_MUST_SCAN = ("index.html", *_ENGINE_MODULES, "reader.js",
+
+# The GUIs-gallery JS surface (CLAUDE.md invariant #30), added by audit finding
+# P1-01 (2026-09-08): _aux_js()'s <script src> scan of index.html cannot reach
+# these files -- boot.js/gallery.js ARE ordinary static tags but the two Alpine
+# skins are injected at RUNTIME by boot.js's own GUIS registry, so no markup
+# regex can ever discover them, however it is widened. Computed INDEPENDENTLY
+# of scripts/i18n_report.py's own _guis_js() (a separate glob over the same
+# directory, mirroring how _ENGINE_MODULES is a separate read of index.html
+# rather than a call into the tool's own _aux_js()) -- so a regression that
+# narrows the tool's glob (e.g. an accidental vendor/ inclusion or exclusion)
+# is still caught here instead of the guard silently agreeing with the bug.
+_GUIS_DIR = _STATIC / "guis"
+_GUIS_MODULES = tuple(sorted(f"guis/{p.name}" for p in _GUIS_DIR.glob("*.js")))
+assert _GUIS_MODULES, "src/static/guis has no .js files -- the gallery moved or was removed"
+
+_MUST_SCAN = ("index.html", *_ENGINE_MODULES, *_GUIS_MODULES, "reader.js",
               "taskmanager.html", "unlock.html", "investigate.html")
+
+# boot.js is pure registry/loader logic -- no rendered chrome at all (its GUI
+# `name` fields are deliberately UNTRANSLATED proper nouns, per its own source
+# comment). It must still be SCANNED (finding P1-01: a future string added
+# there needs to be seen), but requiring a non-zero count from a file that
+# genuinely renders nothing would be demanding a fabricated string just to
+# satisfy the test -- exactly the kind of dishonesty this project's
+# non-negotiables forbid. Every other file in _MUST_SCAN carries real chrome.
+_ALLOWED_EMPTY = frozenset({"guis/boot.js"})
 
 
 def _module():
@@ -65,6 +89,8 @@ def test_audit_scans_every_chrome_bearing_surface(name):
         "(finding I-1: that is exactly how the number read 100% while the "
         "field kept meeting untranslated surfaces)"
     )
+    if name in _ALLOWED_EMPTY:
+        return
     assert per_file[name] > 0, (
         f"{name} is scanned but yielded 0 strings -- the extractor shapes "
         "probably stopped matching; verify before assuming the file is clean"
@@ -115,3 +141,55 @@ def test_audit_reports_a_per_file_breakdown():
         "scope is visible in the report rather than only in this test"
     )
     assert audit["ui_strings"] >= sum(1 for _ in _MUST_SCAN), "implausible total"
+
+
+def test_guis_gallery_is_in_scope():
+    """Audit finding P1-01 (2026-09-08): the entire GUIs-gallery JS surface
+    used to be invisible to --audit-chrome -- boot.js/gallery.js because the
+    file-discovery regex required a name starting with "app", and the two
+    Alpine skins (ui-command.js, ui-canvas.js) because they are never a
+    <script src> tag in any static HTML at all (CLAUDE.md invariant #30: they
+    are injected at runtime by boot.js's own GUIS registry). Pinned directly
+    here, on top of the general _MUST_SCAN parametrization above, so a
+    regression reads unambiguously as "the guis/ scope P1-01 closed reopened"
+    rather than as one row failing among many unrelated ones.
+    """
+    per_file = _module().audit_chrome().get("per_file", {})
+    for name in _GUIS_MODULES:
+        assert name in per_file, f"{name} is not scanned by the chrome audit"
+    non_empty = [m for m in _GUIS_MODULES if m not in _ALLOWED_EMPTY]
+    assert non_empty, "no guis/*.js module carries chrome to check"
+    for name in non_empty:
+        assert per_file[name] > 0, (
+            f"{name} is scanned but yielded 0 strings -- the extractor shapes "
+            "probably stopped matching; verify before assuming the file is clean"
+        )
+
+
+def test_t9_and_t9m_aliases_are_not_invisible_to_the_t_call_gate():
+    """Audit finding P1-01: many modules locally alias OOI18N.t to `t9`/`t9m`
+    (`const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s) => s`) instead of
+    calling it `t` directly. A plain `\\bt\\(` regex never matches `t9(`/`t9m(`
+    at all -- not a near-miss, a structural blind spot -- so every aliased call
+    site was invisible to both --max-unkeyed-t-calls and --max-untranslatable.
+    This proves the widened regex actually counts them, on a real, currently
+    shipping call site (src/static/guis/gallery.js's Alpine-engine badge
+    tooltip), rather than only asserting the regex object's pattern text.
+    """
+    mod = _module()
+    tcalls = mod.unkeyed_t_calls()
+    assert tcalls["sites"] > 0
+    # The badge tooltip is wrapped in t9(...) and IS keyed (this PR added the
+    # key in all 12 locales) -- so it must count as a SITE but never appear in
+    # the unkeyed list. If the regex regressed back to matching only literal
+    # `t(`, this call site would vanish from `sites` entirely rather than
+    # merely moving to `unkeyed`, which is the failure this test is for.
+    gallery = (_STATIC / "guis" / "gallery.js").read_text(encoding="utf-8")
+    assert "t9(" in gallery, "gallery.js no longer uses the t9(...) alias -- update this test"
+    badge_tooltip = (
+        "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network)."
+    )
+    assert badge_tooltip not in tcalls["unkeyed"], (
+        "the t9(...)-wrapped Alpine badge tooltip is unkeyed -- either the key "
+        "was lost from a locale file, or the t9(/t9m( regex widening regressed"
+    )
