@@ -152,7 +152,9 @@ def test_no_score_fields_and_caveat(db):
 
 def test_endpoint_is_wired():
     ins = (_ROOT / "src" / "api" / "insights.py").read_text(encoding="utf-8")
-    assert '@router.get("/keyword-stats")' in ins
+    # response_model=KeywordStatsResponse (audit P3-10 POC) landed on this route; match
+    # the route path rather than the exact decorator argument list.
+    assert '@router.get("/keyword-stats"' in ins
     assert "q.keyword_stats(" in ins
 
 

@@ -230,7 +230,9 @@ def test_endpoints_and_row_are_wired():
     assert '"source_type": src.source_type if src else None' in main
     assert "source_type: str | None = None" in main
     ins = (_ROOT / "src" / "api" / "insights.py").read_text(encoding="utf-8")
-    assert '@router.get("/source-types")' in ins
+    # response_model=SourceTypeFacetsResponse (audit P3-10 POC) landed on this route;
+    # match the route path rather than the exact decorator argument list.
+    assert '@router.get("/source-types"' in ins
     assert "q.source_type_facets(" in ins
 
 

@@ -41,6 +41,98 @@ router = APIRouter(prefix="/api/insights", tags=["insights"])
 
 _VALID_KINDS = ("term", "entity", "non_term", "person", "org", "location")
 
+# --------------------------------------------------------------------------- #
+# Response-model POC (audit P3-10, exploratory): field-typed Pydantic response
+# schemas for a handful of routes, as a demonstration of what a real (not
+# response_model=dict) schema contract would look like on this app's
+# dict-first API. See the "response_model coverage" trade-off note in the PR
+# description this landed with for the reasoning and the cost/benefit call.
+# Deliberately NOT a repo-wide migration — every other route in this module
+# (and the other 57 api modules) keeps its bare ``-> dict`` return, unchanged.
+# --------------------------------------------------------------------------- #
+
+
+class _CacheEnvelopeFields(BaseModel):
+    """The three keys ``_cached``/``_deadlined`` (see below) splice onto EVERY payload
+    they wrap, whenever the read cache is enabled (``OO_INSIGHTS_CACHE_TTL`` != 0, the
+    default): ``cached`` (was this a hit), ``computed_at`` (when the underlying compute
+    last ran) and ``cache_ttl_s``. They are not part of any handler's own return value —
+    read the handler bodies below and you will not find them — but they ARE part of what
+    the route actually sends over the wire, so a real response_model has to declare them
+    or FastAPI silently drops them from the JSON response, which is exactly the kind of
+    response-shape regression this POC exists to prevent, not to introduce. Optional
+    because they vanish entirely when the cache is disabled (``OO_INSIGHTS_CACHE_TTL=0``)."""
+
+    cached: bool | None = None
+    computed_at: str | None = None
+    cache_ttl_s: int | None = None
+
+
+class InsightsStatus(_CacheEnvelopeFields):
+    """Shape of ``queries.status`` -- indexing progress + corpus totals."""
+
+    total_articles: int
+    indexed_articles: int
+    remaining: int
+    keywords: int
+    entities: int
+    mentions: int
+
+
+class SourceTypeFacet(BaseModel):
+    source_type: str
+    articles: int
+
+
+class SourceTypeFacetsResponse(_CacheEnvelopeFields):
+    """Shape of ``queries.source_type_facets``."""
+
+    facets: list[SourceTypeFacet]
+    total: int
+    method: str
+    caveat: str
+
+
+class KeywordStatsResolved(BaseModel):
+    term: str
+    normalized: str
+    kind: str
+    language: str | None = None
+
+
+class KeywordStatsTrend(BaseModel):
+    window_days: int
+    baseline_days: int
+    recent: int
+    prior: int
+    recent_per_day: float
+    prior_per_day: float
+    expected: float
+    growth: float
+    growth_is_ratio: bool
+
+
+class KeywordCooccurrence(BaseModel):
+    term: str
+    normalized: str | None = None
+    cooccur: int
+    pmi: float
+
+
+class KeywordStatsResponse(_CacheEnvelopeFields):
+    """Shape of ``queries.keyword_stats`` -- BOTH branches (a resolved keyword
+    and the honest "not in your corpus yet" miss both return this same shape;
+    ``resolved`` is the only field that differs, so it stays optional here)."""
+
+    term: str
+    resolved: KeywordStatsResolved | None = None
+    mentions: int
+    articles: int
+    trend: KeywordStatsTrend
+    cooccurrences: list[KeywordCooccurrence]
+    method: str
+    caveat: str
+
 # ---------------------------------------------------------------------------- #
 # Whole-corpus read cache (perf, field report 2026-06-18).
 #
@@ -502,7 +594,7 @@ def _status_cache_key(db: Session) -> str:
     return "|".join(parts)
 
 
-@router.get("/status")
+@router.get("/status", response_model=InsightsStatus)
 def insights_status(db: Session = Depends(get_db)) -> dict:
     """Indexing progress + corpus keyword/entity totals.
 
@@ -1210,7 +1302,7 @@ def insights_associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
-@router.get("/source-types")
+@router.get("/source-types", response_model=SourceTypeFacetsResponse)
 def insights_source_types(db: Session = Depends(get_db)) -> dict:
     """Article counts per raw source CHANNEL (content-provenance S2 facet), so the
     corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
@@ -1237,7 +1329,7 @@ def insights_reading_diet_by_type(
                       lambda: reading_diet_by_type(db, days=days))
 
 
-@router.get("/keyword-stats")
+@router.get("/keyword-stats", response_model=KeywordStatsResponse)
 def insights_keyword_stats(
     term: str,
     window_days: int = Query(7, ge=1, le=365),
