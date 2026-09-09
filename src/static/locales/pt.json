@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "positiva (mais cobertura à medida que a lua enche)",
   "negative (less coverage as the moon fills)": "negativa (menos cobertura à medida que a lua enche)",
   "Help": "Ajuda",
-  "date moves each year — see the official source": "a data muda todos os anos — consulte a fonte oficial"
+  "date moves each year — see the official source": "a data muda todos os anos — consulte a fonte oficial",
+  "Citing sources": "Fontes citantes",
+  "Independence": "Independência",
+  "distinct outlets": "veículos distintos",
+  "one path": "um único caminho",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "Quantos artigos distintos entre os correspondentes citam esta ligação — uma contagem exata, nunca uma pontuação.",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "De quantas fontes distintas provêm esses artigos citantes. É o limite máximo de caminhos independentes que as citações podem representar.",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "Se as citações provêm de tantos veículos quantas são as citações. Apenas estrutura — nunca um juízo de credibilidade.",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "Cada artigo citante provém de um veículo diferente, pelo que as citações são tantos caminhos quantos aparentam. Ainda assim podem partilhar uma origem a montante que esta vista não vê.",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "Os artigos citantes não provêm de tantos veículos quantas são as citações — um veículo cita esta página mais do que uma vez, ou apenas um o faz. A sua concordância é um caminho, não uma confirmação independente."
 }

@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "положительная (больше освещения по мере роста луны)",
   "negative (less coverage as the moon fills)": "отрицательная (меньше освещения по мере роста луны)",
   "Help": "Справка",
-  "date moves each year — see the official source": "дата меняется каждый год — см. официальный источник"
+  "date moves each year — see the official source": "дата меняется каждый год — см. официальный источник",
+  "Citing sources": "Цитирующие источники",
+  "Independence": "Независимость",
+  "distinct outlets": "разные издания",
+  "one path": "один путь",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "Сколько различных найденных статей ссылаются на эту ссылку — точный подсчёт, а не оценка.",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "Из скольких различных источников происходят эти цитирующие статьи. Это верхняя граница числа независимых путей, которые могут представлять ссылки.",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "Происходят ли ссылки из стольких же изданий, сколько имеется ссылок. Только структура — никогда не оценка достоверности.",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "Каждая цитирующая статья происходит из разного издания, поэтому ссылок столько же путей, сколько кажется. Они всё же могут иметь общий вышестоящий источник, невидимый в этом представлении.",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "Цитирующие статьи происходят не из стольких изданий, сколько имеется ссылок: одно издание ссылается на эту страницу неоднократно либо ссылается только оно. Их согласие — один путь, а не независимое подтверждение."
 }

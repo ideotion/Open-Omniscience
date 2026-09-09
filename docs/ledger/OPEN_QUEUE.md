@@ -11243,3 +11243,58 @@ Enter-to-corpus-window absorption gate.
   browser connection and dies with the tab), NOT attempted here because converting a
   StreamingResponse to a polled job removes the progressive stream that is currently the
   progress mechanism, which is a UX change rather than a wiring one.
+
+**THE `#corpus-win` SUPERSET CLAIM IS NOW AUDITED FACET BY FACET (2026-09-09), and the audit
+found the GUARD, not just the gaps.** The retirement note in `index.html` says every subtab of
+the retired modal is "covered by the ONE #an window (a strict superset)", and that claim is what
+licenses the deletion. The test that was supposed to enforce it —
+`test_ui_corpus_win_retired.py::test_an_window_absorbs_every_modal_subtab` — asserts only that the
+`#an` nav carries a `data-tab` with each facet's NAME. **A name is not a capability, and that test
+was green for the entire time three facets were strict SUBSETS.** So the round-two note ("nobody
+has audited the other five subtabs") understated it: the audit that was missing was not five
+subtabs' worth of reading, it was the difference between checking a tab exists and checking what
+is behind it.
+
+**THREE GAPS FOUND AND CLOSED.**
+1. **LINKS — the independence pair.** The modal showed the distinct-SOURCE count beside the
+   distinct-ARTICLE count and rendered a per-link verdict discriminating "one path" from "cited
+   across distinct sources". `#an` showed the article count alone under ONE blanket caveat applied
+   to every row. Those are not the same fact: three articles from one outlet and three from three
+   outlets produce the same number and mean opposite things, and this is the one view in the app
+   whose entire purpose is to make that difference visible. `/api/links/corpus` now returns
+   `citing_sources` and a machine-readable `independence`, rendered as its own column and a
+   translated per-row pill (the modal's note was server-side English prose; this is ×12).
+   **The non-obvious half is the rule:** more articles than sources reads as `single_origin` even
+   when several outlets are involved, because one outlet citing twice makes the article count
+   overstate the number of independent paths.
+2. **SOURCES — the half-closed gap.** The 2026-09-09 first pass named
+   "country / region / language / type / tags" as what the modal showed, and shipped three of the
+   five. `region` and `tags` were already on the `corpus_sources` row, so the loss was in the
+   renderer alone, both times.
+3. **KEYWORDS — numbers fetched and thrown away.** `/api/insights/keyword-stats` returns each
+   co-occurrence with its shared-article count AND its PMI; the `#oo-tip` hover mapped straight to
+   `c.term` and dropped both. PMI is the only association STRENGTH anywhere in the `#an` window and
+   it was already on the wire.
+
+**TWO GAPS LEFT OPEN, because closing them is a product call and not a wiring one.**
+- **The modal's Keywords was a different INSTRUMENT, not a different layout.** It ranked a sortable
+  table on `cooccur` / `n_b` / PMI **relative to the corpus term**. What `#an` now has is PMI of a
+  hovered keyword against *its own* co-occurrences — a real measure, and a different one.
+  Reconstituting the modal's table needs `/api/insights/corpus-keywords` to carry `pmi` and `n_b`
+  against the corpus term (it returns `term`/`normalized`/`kind`/`mentions`/`articles` today).
+  Whether the chip cloud should GAIN a table view, or whether the hover is now enough, is a
+  maintainer decision — recommended default: **leave it**, since the chips carry the corpus-scoped
+  counts and the table's own value was the sort, which nobody has asked for since the modal died.
+- **The mind-map LEVELS control.** The modal relocated the whole `#mm-kit` (levels / cloud / period
+  / text-size / enlarge). `#an` has cloud, text-size and enlarge; PERIOD is inherited from the
+  window's own scope, which is the better design; LEVELS is hardcoded to `level=keyword`, with
+  super-group navigation offered through the `⊕` chips instead. Partial by design, recorded so the
+  deletion pass is not asked to re-derive it.
+
+**THE DELETION BAR IS UNCHANGED and this does not clear it.** The markup and `corpusTab` /
+`renderCorpus*` are still unreachable in the tree, still gated on the browser-verified deletion
+pass (the Desk-lesson "made unreachable" bar). What has changed is that the claim licensing that
+deletion is now enforced by execution rather than asserted in a comment:
+`tests/test_corpus_win_absorption_content.py` pins the FACTS facet by facet, and
+`tests/an_source_catalog_node_test.js` runs the one cell whose source-text guard was provably
+vacuous. A future session may delete on that basis; it should not delete on the name check alone.

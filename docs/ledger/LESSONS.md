@@ -7982,3 +7982,39 @@
   case is not complete until the consumer case exists, and the guard belongs in the same
   commit — an `else` that logs the unknown kind is the cheaper structural fix where the
   surface can afford it.**
+
+- **A GUARD THAT CHECKS A CAPABILITY'S NAME IS NOT CHECKING THE CAPABILITY (2026-09-09).**
+  `index.html` claims the `#an` window is "a strict superset" of the retired `#corpus-win`
+  modal, and that claim is what licenses deleting the modal. The test enforcing it asserted
+  that the `#an` nav carries a `data-tab` with each retired facet's NAME — and passed for
+  months while three facets were strict SUBSETS: Sources dropped every catalogue fact,
+  Links dropped the distinct-source count that separates echo from corroboration, Keywords
+  dropped PMI. **GENERAL FORM: when a test exists to license a DELETION, the thing it must
+  compare is what the survivor DISPLAYS against what the deleted thing displayed. A tab
+  called "Sources" existing is compatible with every fact behind it having been lost, and
+  the check that a name is present is the cheapest possible assertion to write and the
+  easiest to mistake for the expensive one.** Same family as the `app.js`-split lesson (a
+  negative assertion passing for free against a file that no longer contains what it
+  checks); this is its positive-space twin.
+
+- **A SOURCE-TEXT ASSERTION FOR "X IS RENDERED" SURVIVES CODE THAT READS X AND THROWS IT
+  AWAY (2026-09-09, found by a mutant against my own new test).** The guard was
+  `assert_present(renderer_source, "s.tags")`. The mutant `const tags = (false &&
+  s.tags.length)` — read the field, discard it — kept the substring and the test stayed
+  green. **GENERAL FORM: a substring proves a field is MENTIONED, never that it reaches the
+  output. Where the fact matters, extract the fragment into a pure named function and
+  EXECUTE it; where it does not, keep the grep but write down that it is a smoke check, so
+  the next reader does not bank on it.** The extraction is cheap and pays twice: the cell
+  became testable, and the ten assertions it now carries (tags-only rows, empty arrays, a
+  null row, escaping) are cases no grep could have expressed.
+
+- **A DEFAULT PARAMETER VALUE HIDES A BRANCH FROM EVERY TEST THAT USES THE DEFAULT
+  (2026-09-09).** A per-link independence verdict guarded on `sources > 1 and citations ==
+  sources`. Dropping the `sources > 1` half killed nothing: the fixture's floor was
+  `min_citations=2`, so `citations == sources == 1` never occurred. But `min_citations` is a
+  caller-settable `Query(ge=1)`, so the case is one query-string away — and there the mutant
+  labels a link cited by ONE article from ONE outlet as coming from distinct outlets, the
+  most misleading verdict the field can carry on the least corroborated row there is.
+  **GENERAL FORM: when a mutant survives, check whether a DEFAULT is what makes it look
+  equivalent before concluding that it is. The branch is unreachable only for callers who
+  take the default, and the parameter exists precisely because some caller will not.**

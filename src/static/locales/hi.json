@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "धनात्मक (चाँद भरने के साथ अधिक कवरेज)",
   "negative (less coverage as the moon fills)": "ऋणात्मक (चाँद भरने के साथ कम कवरेज)",
   "Help": "सहायता",
-  "date moves each year — see the official source": "तारीख हर साल बदलती है — आधिकारिक स्रोत देखें"
+  "date moves each year — see the official source": "तारीख हर साल बदलती है — आधिकारिक स्रोत देखें",
+  "Citing sources": "उद्धृत करने वाले स्रोत",
+  "Independence": "स्वतंत्रता",
+  "distinct outlets": "अलग-अलग स्रोत",
+  "one path": "एक ही रास्ता",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "मिलान किए गए कितने अलग-अलग लेख इस लिंक का उद्धरण देते हैं — एक सटीक गणना, कभी कोई स्कोर नहीं।",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "वे उद्धृत करने वाले लेख कितने अलग-अलग स्रोतों से आते हैं। यह इस बात की अधिकतम सीमा है कि उद्धरण कितने स्वतंत्र रास्तों का प्रतिनिधित्व कर सकते हैं।",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "क्या उद्धरण उतने ही माध्यमों से आते हैं जितने उद्धरण हैं। केवल संरचना — कभी विश्वसनीयता का निर्णय नहीं।",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "हर उद्धृत करने वाला लेख एक अलग माध्यम से आता है, इसलिए उद्धरण उतने ही रास्ते हैं जितने दिखते हैं। फिर भी उनका कोई ऊपरी स्रोत साझा हो सकता है जो यहाँ नहीं दिखता।",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "उद्धृत करने वाले लेख उतने माध्यमों से नहीं आते जितने उद्धरण हैं — कोई एक माध्यम इस पृष्ठ को एक से अधिक बार उद्धृत करता है, या केवल एक ही माध्यम ऐसा करता है। उनकी सहमति एक ही रास्ता है, स्वतंत्र पुष्टि नहीं।"
 }

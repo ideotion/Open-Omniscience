@@ -248,7 +248,19 @@
           bits.push(fb ? `${t("trend")}: ${fb}`
                        : `${t("trend")} ${tr.growth}× (${tr.window_days}d ${t("vs")} ${tr.baseline_days}d)`);
         }
-        const co = (d.cooccurrences || []).slice(0, 4).map((c) => c.term).filter(Boolean);
+        // THE MEASURED NUMBERS, not just the names. keyword-stats returns each
+        // co-occurrence with its shared-article count AND its PMI, and this line used
+        // to map straight to c.term and drop both -- so the one surface in the #an
+        // window that carries an association strength was fetching it and throwing it
+        // away. Shown beside the term, because a co-occurrence with no count and no
+        // strength cannot be read: it says "these appear together" without saying how
+        // often or how much more than chance. PMI stays paired with the raw count on
+        // purpose (it is noisy on small samples, exactly as the endpoint's caveat says).
+        const co = (d.cooccurrences || []).slice(0, 4).filter((c) => c && c.term).map((c) => {
+          const n = (c.cooccur != null) ? ` (${c.cooccur} ${t("articles")}` : "";
+          const pmi = (n && c.pmi != null) ? `, ${t("Association")} ${c.pmi.toFixed(1)}` : "";
+          return `${c.term}${n}${pmi}${n ? ")" : ""}`;
+        });
         if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
         const head = d.resolved.term || d.term || "";
         return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;

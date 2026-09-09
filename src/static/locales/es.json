@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "positiva (más cobertura al llenarse la luna)",
   "negative (less coverage as the moon fills)": "negativa (menos cobertura al llenarse la luna)",
   "Help": "Ayuda",
-  "date moves each year — see the official source": "la fecha cambia cada año: consulta la fuente oficial"
+  "date moves each year — see the official source": "la fecha cambia cada año: consulta la fuente oficial",
+  "Citing sources": "Fuentes citantes",
+  "Independence": "Independencia",
+  "distinct outlets": "medios distintos",
+  "one path": "una sola vía",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "Cuántos artículos distintos de los coincidentes citan este enlace: un recuento exacto, nunca una puntuación.",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "De cuántas fuentes distintas proceden esos artículos citantes. Es el techo del número de vías independientes que pueden representar las citas.",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "Si las citas proceden de tantos medios como citas hay. Solo estructura: nunca un juicio de credibilidad.",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "Cada artículo citante procede de un medio distinto, así que las citas son tantas vías como aparentan. Aun así pueden compartir un origen anterior que esta vista no ve.",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "Los artículos citantes no proceden de tantos medios como citas hay: un mismo medio cita esta página más de una vez, o solo lo hace uno. Su coincidencia es una sola vía, no una confirmación independiente."
 }

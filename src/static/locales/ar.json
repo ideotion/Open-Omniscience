@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "موجب (تغطية أكثر كلما اكتمل القمر)",
   "negative (less coverage as the moon fills)": "سالب (تغطية أقل كلما اكتمل القمر)",
   "Help": "مساعدة",
-  "date moves each year — see the official source": "التاريخ يتغيّر كل عام — راجع المصدر الرسمي"
+  "date moves each year — see the official source": "التاريخ يتغيّر كل عام — راجع المصدر الرسمي",
+  "Citing sources": "المصادر المُستشهِدة",
+  "Independence": "الاستقلالية",
+  "distinct outlets": "وسائل إعلام مختلفة",
+  "one path": "مسار واحد",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "كم عدد المقالات المتطابقة المختلفة التي تستشهد بهذا الرابط — عدد دقيق، وليس تقييمًا.",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "من كم مصدرًا مختلفًا تأتي تلك المقالات المستشهِدة. هذا هو الحد الأقصى لعدد المسارات المستقلة التي يمكن أن تمثلها الاستشهادات.",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "ما إذا كانت الاستشهادات تأتي من عدد من الوسائل مساوٍ لعدد الاستشهادات. البنية فقط — وليس حكمًا على المصداقية.",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "كل مقال مستشهِد يأتي من وسيلة مختلفة، لذا فإن الاستشهادات تمثل فعليًا العدد الظاهر من المسارات. ومع ذلك قد تشترك في أصل أعلى لا تراه هذه الواجهة.",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "المقالات المستشهِدة لا تأتي من عدد من الوسائل مساوٍ لعدد الاستشهادات — إذ تستشهد وسيلة واحدة بهذه الصفحة أكثر من مرة، أو تستشهد بها وسيلة واحدة فقط. اتفاقها مسار واحد، وليس تأكيدًا مستقلًا."
 }

@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "positif (liputan lebih banyak saat bulan memenuh)",
   "negative (less coverage as the moon fills)": "negatif (liputan lebih sedikit saat bulan memenuh)",
   "Help": "Bantuan",
-  "date moves each year — see the official source": "tanggal berubah tiap tahun — lihat sumber resmi"
+  "date moves each year — see the official source": "tanggal berubah tiap tahun — lihat sumber resmi",
+  "Citing sources": "Sumber pengutip",
+  "Independence": "Independensi",
+  "distinct outlets": "media berbeda",
+  "one path": "satu jalur",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "Berapa banyak artikel berbeda yang cocok mengutip tautan ini — hitungan persis, bukan skor.",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "Dari berapa banyak sumber berbeda artikel pengutip itu berasal. Ini adalah batas atas jumlah jalur independen yang dapat diwakili kutipan tersebut.",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "Apakah kutipan berasal dari sebanyak media dengan jumlah kutipannya. Hanya struktur — bukan penilaian kredibilitas.",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "Setiap artikel pengutip berasal dari media yang berbeda, jadi kutipan itu memang sebanyak jalur yang tampak. Semuanya masih mungkin berbagi asal hulu yang tidak terlihat pada tampilan ini.",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "Artikel pengutip tidak berasal dari sebanyak media dengan jumlah kutipannya — satu media mengutip halaman ini lebih dari sekali, atau hanya satu media yang mengutipnya. Kesesuaian mereka adalah satu jalur, bukan konfirmasi independen."
 }

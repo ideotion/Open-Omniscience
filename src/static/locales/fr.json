@@ -3237,5 +3237,14 @@
   "positive (more coverage as the moon fills)": "positive (plus de couverture quand la lune se remplit)",
   "negative (less coverage as the moon fills)": "négative (moins de couverture quand la lune se remplit)",
   "Help": "Aide",
-  "date moves each year — see the official source": "la date change chaque année — voir la source officielle"
+  "date moves each year — see the official source": "la date change chaque année — voir la source officielle",
+  "Citing sources": "Sources citantes",
+  "Independence": "Indépendance",
+  "distinct outlets": "médias distincts",
+  "one path": "un seul chemin",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "Combien d'articles distincts parmi les résultats citent ce lien — un décompte exact, jamais une note.",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "De combien de sources distinctes proviennent ces articles citants. C'est le plafond du nombre de chemins indépendants que les citations peuvent représenter.",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "Si les citations proviennent d'autant de médias qu'il y a de citations. Structure uniquement — jamais un jugement de crédibilité.",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "Chaque article citant provient d'un média différent : les citations représentent donc bien autant de chemins qu'il y paraît. Elles peuvent malgré tout partager une origine en amont invisible ici.",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "Les articles citants ne proviennent pas d'autant de médias qu'il y a de citations : un même média cite cette page plusieurs fois, ou un seul le fait. Leur accord est un seul chemin, pas une confirmation indépendante."
 }
