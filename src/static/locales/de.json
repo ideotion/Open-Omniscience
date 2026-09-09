@@ -3212,5 +3212,18 @@
   "Runs {start} – {end}": "Läuft vom {start} bis {end}",
   "since {year}": "seit {year}",
   "nothing listed after {year}": "nach {year} ist nichts gelistet",
-  "Stated by the event catalog (asserted, not deduced).": "Vom Ereigniskatalog angegeben (behauptet, nicht abgeleitet)."
+  "Stated by the event catalog (asserted, not deduced).": "Vom Ereigniskatalog angegeben (behauptet, nicht abgeleitet).",
+  "Pulling from your mailbox…": "Rufe aus deinem Postfach ab…",
+  "Still pulling in the background — the task manager shows it.": "Läuft weiter im Hintergrund — der Task-Manager zeigt es an.",
+  "Anonymisation:": "Anonymisierung:",
+  "recipient echoes redacted,": "Empfänger-Echos geschwärzt,",
+  "tracker tokens stripped,": "Tracker-Token entfernt,",
+  "tracker wrappers flagged.": "Tracker-Wrapper markiert.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Zeigt die Tags dieses Schlüsselworts und lässt dich eigene hinzufügen oder entfernen. Ein Tag ist ein Label, das du behauptest — nie eine Bewertung.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "Entfernt dieses Tag. Umkehrbar — jederzeit wieder hinzufügbar; ein entferntes Basis-Tag wird nicht erneut gesetzt.",
+  "baseline": "Basis",
+  "you": "du",
+  "No tags yet.": "Noch keine Tags.",
+  "new tag": "neues Tag",
+  "Could not load:": "Konnte nicht laden:"
 }

@@ -798,13 +798,94 @@
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const r = await api(`/api/insights/keyword-tags/keywords?axis=${encodeURIComponent(ax)}&tag=${encodeURIComponent(tag)}&limit=200`);
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
         box.innerHTML = `<div class="muted" style="margin:6px 0">${r.total} keyword(s) tagged ${esc(ax)}=${esc(tag)}</div>` +
           (r.keywords || []).map(k =>
-            `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)">
-               <span style="flex:1">${esc(k.term)} <span class="muted">${esc(k.language || "?")} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
-               <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxHide(this)">Hide</button>
+            `<div style="padding:3px 0;border-bottom:1px solid var(--line)">
+               <div style="display:flex;gap:8px;align-items:center">
+                 <span style="flex:1">${esc(k.term)} <span class="muted">${esc(k.language || "?")} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
+                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxToggleTags(this)"
+                   title="${esc(t("Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score."))}">${esc(t("Tags"))}</button>
+                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxHide(this)">Hide</button>
+               </div>
+               <div class="kx-tagbox" data-norm="${esc(k.normalized)}" hidden style="margin:4px 0 6px 2px"></div>
              </div>`).join("");
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    // -- Per-keyword TAG editor (the docket's REMAINING half of Item AC) ------ //
+    // The write endpoints have existed and been tested since the tags shipped; the
+    // explorer could only EXPLORE, HIDE and BACKFILL, so an operator could read the
+    // baseline's labels and never correct one. Opened per row and fetched lazily: the
+    // tag list is a per-keyword read, and firing 200 of them to render a list would
+    // be a self-inflicted stampede.
+    //
+    // PROVENANCE IS SHOWN, always: a tag reads "baseline" or "you", because the whole
+    // point of a curation surface is knowing which labels are yours. Both can be true
+    // of one tag and it says so, rather than picking a winner.
+    async function kxToggleTags(btn) {
+      const norm = btn.dataset.norm;
+      const row = btn.closest("div").parentNode;
+      const boxEl = row ? row.querySelector(".kx-tagbox") : null;
+      if (!boxEl) return;
+      boxEl.hidden = !boxEl.hidden;
+      if (!boxEl.hidden) await kxRenderTags(boxEl, norm);
+    }
+
+    async function kxRenderTags(boxEl, norm) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      boxEl.innerHTML = `<span class="muted">${esc(t("Loading…"))}</span>`;
+      try {
+        const d = await api(`/api/insights/keyword-tags?normalized=${encodeURIComponent(norm)}`);
+        const tags = d.tags || {}, srcs = d.sources || {};
+        const chips = [];
+        for (const ax of Object.keys(tags)) {
+          for (const tg of (tags[ax] || [])) {
+            // The endpoint keys provenance as "axis:tag" -> "baseline" | "user".
+            const who = srcs[`${ax}:${tg}`] === "user" ? t("you") : t("baseline");
+            chips.push(`<span class="pill" style="margin:0 4px 4px 0">${esc(ax)}=${esc(tg)}`
+              + ` <span class="muted">· ${esc(who)}</span>`
+              + ` <button class="ghost tiny" style="padding:0 4px" data-norm="${esc(norm)}"`
+              + ` data-ax="${esc(ax)}" data-tag="${esc(tg)}" onclick="kxRemoveTag(this)"`
+              + ` title="${esc(t("Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied."))}"`
+              + ` aria-label="${esc(t("Remove"))}">×</button></span>`);
+          }
+        }
+        const axisOpts = ["type", "topic"].map(a => `<option value="${a}">${esc(a)}</option>`).join("");
+        boxEl.innerHTML =
+          (chips.length ? chips.join("") : `<span class="muted">${esc(t("No tags yet."))}</span>`)
+          + `<div class="row" style="gap:4px;margin-top:5px;align-items:center">
+               <select class="kx-tag-ax" style="width:auto">${axisOpts}</select>
+               <input class="kx-tag-val" type="text" maxlength="64" style="width:12em"
+                 placeholder="${esc(t("new tag"))}">
+               <button class="ghost tiny" data-norm="${esc(norm)}" onclick="kxAddTag(this)">${esc(t("Add"))}</button>
+             </div>`;
+      } catch (e) {
+        boxEl.innerHTML = `<span class="muted">${esc(t("Could not load:"))} ${esc(e.message)}</span>`;
+      }
+    }
+
+    async function kxAddTag(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const boxEl = btn.closest(".kx-tagbox");
+      if (!boxEl) return;
+      const axEl = boxEl.querySelector(".kx-tag-ax"), valEl = boxEl.querySelector(".kx-tag-val");
+      const tag = (valEl && valEl.value || "").trim();
+      if (!tag) { if (valEl) valEl.focus(); return; }
+      try {
+        await api("/api/insights/keyword-tags", {method: "POST", body: JSON.stringify(
+          {normalized: btn.dataset.norm, axis: axEl.value, tag})});
+        await kxRenderTags(boxEl, btn.dataset.norm);
+      } catch (e) { toast(_failMsg("Add failed: {error}", e), "err"); }
+    }
+
+    async function kxRemoveTag(btn) {
+      try {
+        await api("/api/insights/keyword-tags/remove", {method: "POST", body: JSON.stringify(
+          {normalized: btn.dataset.norm, axis: btn.dataset.ax, tag: btn.dataset.tag})});
+        const boxEl = btn.closest(".kx-tagbox");
+        if (boxEl) await kxRenderTags(boxEl, btn.dataset.norm);
+      } catch (e) { toast(_failMsg("Remove failed: {error}", e), "err"); }
     }
 
     async function kxHide(btn) {

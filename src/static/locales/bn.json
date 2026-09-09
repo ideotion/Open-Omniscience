@@ -3212,5 +3212,18 @@
   "Runs {start} – {end}": "{start} থেকে {end}",
   "since {year}": "{year} সাল থেকে",
   "nothing listed after {year}": "{year}-এর পরে কিছুই তালিকাভুক্ত নেই",
-  "Stated by the event catalog (asserted, not deduced).": "ইভেন্ট ক্যাটালগ দ্বারা ঘোষিত (দাবিকৃত, অনুমিত নয়)।"
+  "Stated by the event catalog (asserted, not deduced).": "ইভেন্ট ক্যাটালগ দ্বারা ঘোষিত (দাবিকৃত, অনুমিত নয়)।",
+  "Pulling from your mailbox…": "আপনার মেলবক্স থেকে আনা হচ্ছে…",
+  "Still pulling in the background — the task manager shows it.": "পটভূমিতে এখনও আনা হচ্ছে — টাস্ক ম্যানেজারে দেখা যাবে।",
+  "Anonymisation:": "বেনামীকরণ:",
+  "recipient echoes redacted,": "প্রাপকের প্রতিধ্বনি সরানো হয়েছে,",
+  "tracker tokens stripped,": "ট্র্যাকার টোকেন সরানো হয়েছে,",
+  "tracker wrappers flagged.": "ট্র্যাকার র‍্যাপার চিহ্নিত করা হয়েছে।",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "এই কীওয়ার্ডের ট্যাগ দেখুন, এবং নিজের ট্যাগ যোগ বা সরান। ট্যাগ হলো আপনার দেওয়া একটি লেবেল, কখনোই স্কোর নয়।",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "এই ট্যাগটি সরান। এটি ফেরানো যায় — যেকোনো সময় আবার যোগ করুন; সরানো বেসলাইন ট্যাগ পুনরায় প্রয়োগ হয় না।",
+  "baseline": "বেসলাইন",
+  "you": "আপনি",
+  "No tags yet.": "এখনও কোনো ট্যাগ নেই।",
+  "new tag": "নতুন ট্যাগ",
+  "Could not load:": "লোড করা যায়নি:"
 }

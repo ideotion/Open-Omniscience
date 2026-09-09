@@ -7777,3 +7777,61 @@
   anchor marks every start" — and the weaker reading is the one that looks obviously right while
   someone is optimising.** Kept as a named test with the counterexample, because the next
   performance pass will reach for exactly that change.
+
+- **A DOCKET ENTRY CAN FILE A PRODUCT DEFECT AS A CHORE, AND THE FILING IS WHY NOBODY LOOKS
+  AGAIN (2026-09-09).** `test_doctor_healthy_returns_zero` was recorded as an order-dependent
+  test needing "a future test-hygiene pass" — a category that reads as *our tests are untidy*,
+  which nobody urgently reads. It reproduced in one command, and the cause was not the tests:
+  `doctor` reported a database file that exists with no tables as a CRITICAL, with the driver's
+  fifteen-line `SELECT` dump as its detail, in a report written for someone who is not a
+  programmer. The state is reachable by a real operator (an interrupted first launch; a
+  stamped-but-unupgraded database), and the branch directly above already handled the same
+  situation gracefully when the file was merely absent. **GENERAL FORM: when a test's failure is
+  attributed to test hygiene, ask whether the assertion it makes is one a USER would also make.
+  If it is, the ambient state it stumbled into is a state a user can be in, and the test found a
+  defect rather than caused one.** Verified by mutant which half carried it: the product fix
+  alone closes the ordering failure; the test's own tidy-up changes nothing.
+
+- **PRICE THE CHECK A DEFERRAL ASKS FOR, NOT THE CHANGE IT DEFERS (2026-09-09).** The docket
+  had carried "fr publishing furniture still leaks — a fr batch would globalise
+  (collision-check needed); low-df, deferred" for months. The deferral was reasoned, and its
+  cost model was wrong: the *change* needed corpus measurement, but the *check* was
+  corpus-independent and took one query. It came back NO — `fr:publicité` is the French member
+  of the Wikidata-verified `advertising` ring, so the edit would have deleted the French side of
+  a concept English keeps, which is the blind-by-language filter the maintainer rejected in
+  2026-06-19. **And running it found the larger thing nobody had looked for: the same mechanism
+  already fires in the opposite direction, 38 times, unmeasured** — `fr:dette` (debt) killed by
+  Danish *dette*, `pt:lei` (statute) by Italian *lei*, and `de:Podcast`/`fr:podcast`/`pt:podcast`
+  removed from the *podcast* ring by the deliberate global "podcast" furniture entry, the rule
+  eating its own ring. **GENERAL FORM: a deferral names its blocker; check whether the blocker is
+  the decision or the evidence, because evidence often costs a fraction of what the deferral
+  assumed — and a check run for one direction reports on both.**
+
+- **REMOVING A `GROUP BY` KEY TO MERGE DUPLICATE ROWS SILENTLY DOUBLES THE AGGREGATES
+  (2026-09-09).** `keywords_by_tag` grouped by `(Keyword.id, KeywordTag.source)`, so a keyword
+  tagged by both the baseline pass and the operator came back twice. The obvious repair — drop
+  `source` from the `GROUP BY` — removes the duplicate row and is worse than the bug: the two tag
+  rows FAN OUT the outer join to `KeywordMention`, so `sum(count)` doubles while
+  `count(distinct article_id)` stays right, which is exactly the pattern that survives a
+  cursory check. The fix is to select the matching keywords as a DISTINCT id subquery and take
+  the aggregate against that, with the tag table absent from the aggregating query. **GENERAL
+  FORM: the row count is the symptom you were looking at, so it is the thing you will verify.
+  When a `GROUP BY` key is removed, re-derive every aggregate in the same `SELECT` — a wrong
+  number looks exactly like a right one.**
+
+- **A TEST FOR "THIS IS ASYNCHRONOUS" MUST OBSERVE DURING, NOT AFTER (2026-09-09).** The first
+  guard that the mailbox pull is enumerable in `/api/jobs` joined the worker thread and then
+  asserted the job was listed. It failed — correctly, because `/api/jobs` lists running and
+  failed jobs, and a finished one is neither. Rewritten to block the fake fetch on an event and
+  read `/api/jobs` while the worker is stuck, it proves the thing that matters: the request
+  already returned while the work is still going. **GENERAL FORM: the old synchronous
+  implementation passes any assertion made after the work is done. Put the observation inside
+  the window the change created, or the test is about nothing.**
+
+- **`git checkout <file>` RESTORES TO THE INDEX, WHICH IS NOT WHERE UNCOMMITTED WORK IS
+  (2026-09-09).** Mid mutation-run, a mutant was reverted with `git checkout -q src/api/jobs.py`
+  on a file carrying an *uncommitted* change — which silently discarded it, and the next run
+  reported two failures that read like a broken fix. Caught in seconds only because the guard
+  under test named the missing registration. **GENERAL FORM: when mutating a working tree
+  deliberately, back up by COPY and restore by COPY. Reaching for git during a mutation run
+  restores someone else's idea of the file.**

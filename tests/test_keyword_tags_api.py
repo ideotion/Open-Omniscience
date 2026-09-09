@@ -96,3 +96,50 @@ def test_facets_and_keywords_by_tag():
     row = kb["keywords"][0]
     assert row["normalized"] == "election"
     assert row["articles"] == 1 and row["mentions"] == 3 and row["source"] == "baseline"
+
+
+def test_a_keyword_tagged_by_both_the_baseline_and_the_operator_is_ONE_row():
+    """The explorer listed it twice.
+
+    ``add_keyword_tag`` de-duplicates only within ``source="user"``, so tagging a
+    keyword the baseline pass already tagged writes a SECOND row -- and the listing
+    grouped by ``(keyword, source)``, so it came back once per source. The per-keyword
+    tag editor makes that a normal thing to do rather than a corner case.
+
+    The counts are asserted too, because the obvious fix (group by keyword alone) is
+    wrong in a way that is invisible until you look: two tag rows fan the outer join
+    to mentions out, and ``sum(count)`` doubles."""
+    s = _sess()
+    s.add(Source(name="Src", domain="s.test"))
+    s.flush()
+    art = Article(url="https://x.example/a", canonical_url="https://x.example/a",
+                  source_id=1, title="a", content="c", hash="h1")
+    kw = Keyword(term="Berlin", normalized_term="berlin", language="en")
+    s.add_all([art, kw])
+    s.flush()
+    s.add(KeywordMention(keyword_id=kw.id, article_id=art.id, count=7))
+    s.add(KeywordTag(keyword_id=kw.id, axis="type", tag="place", source="baseline"))
+    s.add(KeywordTag(keyword_id=kw.id, axis="type", tag="place", source="user"))
+    s.commit()
+
+    out = keywords_by_tag(axis="type", tag="place", limit=50, db=s)
+    assert out["total"] == 1, f"one keyword must be one row, got {out['keywords']}"
+    row = out["keywords"][0]
+    assert row["normalized"] == "berlin"
+    assert row["sources"] == ["baseline", "user"], "both assertions are true; say both"
+    assert row["source"] == "baseline+user"
+    assert row["mentions"] == 7, "the second tag row must not double the mention count"
+    assert row["articles"] == 1
+
+
+def test_a_single_source_tag_still_reads_as_that_source():
+    """The neighbouring case must not be collateral damage of the fix."""
+    s = _sess()
+    kw = Keyword(term="Reuters", normalized_term="reuters", language="en")
+    s.add(kw)
+    s.flush()
+    s.add(KeywordTag(keyword_id=kw.id, axis="type", tag="org", source="baseline"))
+    s.commit()
+
+    row = keywords_by_tag(axis="type", tag="org", limit=50, db=s)["keywords"][0]
+    assert row["source"] == "baseline" and row["sources"] == ["baseline"]

@@ -142,7 +142,7 @@ jobs:
       # findings that are not this PR's, which is worse than a ceiling that reflects the
       # tree it guards. Lowering it is always welcome; the script prints the new floor.
       - name: Lint — style non-growth ratchet (may only be lowered)
-        run: python scripts/ruff_ratchet.py --max 450
+        run: python scripts/ruff_ratchet.py --max 448
 
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session
@@ -174,7 +174,7 @@ jobs:
       # untranslated; the count finally says so. See scripts/i18n_report.py's
       # _reader_template_html / _aux_inline_js / _aux_js docstrings for each fix.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 570
+        run: python scripts/i18n_report.py --max-untranslatable 569
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says

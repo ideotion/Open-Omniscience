@@ -3212,5 +3212,18 @@
   "Runs {start} – {end}": "С {start} по {end}",
   "since {year}": "с {year}",
   "nothing listed after {year}": "после {year} ничего не указано",
-  "Stated by the event catalog (asserted, not deduced).": "Заявлено каталогом событий (утверждение, не вывод)."
+  "Stated by the event catalog (asserted, not deduced).": "Заявлено каталогом событий (утверждение, не вывод).",
+  "Pulling from your mailbox…": "Загрузка из вашего почтового ящика…",
+  "Still pulling in the background — the task manager shows it.": "Загрузка продолжается в фоне — она видна в диспетчере задач.",
+  "Anonymisation:": "Анонимизация:",
+  "recipient echoes redacted,": "упоминаний получателя скрыто,",
+  "tracker tokens stripped,": "трекерных меток удалено,",
+  "tracker wrappers flagged.": "трекерных обёрток отмечено.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Показывает метки этого ключевого слова и позволяет добавлять или удалять свои. Метка — это ярлык, который утверждаете вы, а не оценка.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "Удалить эту метку. Обратимо — добавьте её снова в любой момент; удалённая базовая метка не применяется заново.",
+  "baseline": "базовая",
+  "you": "вы",
+  "No tags yet.": "Меток пока нет.",
+  "new tag": "новая метка",
+  "Could not load:": "Не удалось загрузить:"
 }

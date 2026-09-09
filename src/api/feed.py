@@ -196,6 +196,13 @@ def _card(a: Any, keywords: list[dict]) -> dict:
         # This article's own top keywords with their real counts (ruling 10) -- countable
         # facts a reader can check in the reader, never a relevance figure.
         "keywords": keywords,
+        # The tone already scored at ingest and stored on the row. Carried so the card
+        # can show it WITHOUT a recompute -- the columns were populated and nothing on
+        # this surface read them. Null when the article was never scored (non-English
+        # returns None by design, and a core install has no VADER at all), and the
+        # renderer draws nothing rather than a neutral-looking zero.
+        "sentiment_score": a.sentiment_score,
+        "sentiment_label": a.sentiment_label,
         "reader_url": f"/api/articles/{a.id}/view",
     }
 

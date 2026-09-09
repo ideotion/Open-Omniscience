@@ -3212,5 +3212,18 @@
   "Runs {start} – {end}": "Runs {start} – {end}",
   "since {year}": "since {year}",
   "nothing listed after {year}": "nothing listed after {year}",
-  "Stated by the event catalog (asserted, not deduced).": "Stated by the event catalog (asserted, not deduced)."
+  "Stated by the event catalog (asserted, not deduced).": "Stated by the event catalog (asserted, not deduced).",
+  "Pulling from your mailbox…": "Pulling from your mailbox…",
+  "Still pulling in the background — the task manager shows it.": "Still pulling in the background — the task manager shows it.",
+  "Anonymisation:": "Anonymisation:",
+  "recipient echoes redacted,": "recipient echoes redacted,",
+  "tracker tokens stripped,": "tracker tokens stripped,",
+  "tracker wrappers flagged.": "tracker wrappers flagged.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.",
+  "baseline": "baseline",
+  "you": "you",
+  "No tags yet.": "No tags yet.",
+  "new tag": "new tag",
+  "Could not load:": "Could not load:"
 }

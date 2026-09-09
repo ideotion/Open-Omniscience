@@ -3212,5 +3212,18 @@
   "Runs {start} – {end}": "من {start} إلى {end}",
   "since {year}": "منذ {year}",
   "nothing listed after {year}": "لا شيء مُدرَج بعد {year}",
-  "Stated by the event catalog (asserted, not deduced).": "مذكور في فهرس الأحداث (تصريح، لا استنتاج)."
+  "Stated by the event catalog (asserted, not deduced).": "مذكور في فهرس الأحداث (تصريح، لا استنتاج).",
+  "Pulling from your mailbox…": "جارٍ السحب من بريدك…",
+  "Still pulling in the background — the task manager shows it.": "السحب ما زال جاريًا في الخلفية — يعرضه مدير المهام.",
+  "Anonymisation:": "إخفاء الهوية:",
+  "recipient echoes redacted,": "أثر للمستلم تم حجبه،",
+  "tracker tokens stripped,": "رمز تتبّع تمت إزالته،",
+  "tracker wrappers flagged.": "غلاف تتبّع تم وسمه.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "اعرض وسوم هذه الكلمة المفتاحية، وأضف أو أزل وسومك. الوسم تسمية تؤكدها أنت، وليس درجة أبدًا.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "أزل هذا الوسم. الإجراء قابل للتراجع — يمكنك إعادته في أي وقت؛ والوسم المرجعي المُزال لا يُعاد تطبيقه.",
+  "baseline": "مرجعي",
+  "you": "أنت",
+  "No tags yet.": "لا وسوم بعد.",
+  "new tag": "وسم جديد",
+  "Could not load:": "تعذّر التحميل:"
 }
