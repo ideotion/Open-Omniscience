@@ -139,6 +139,42 @@ def _function_span(js: str, name: str) -> tuple[int, int, int]:
     raise AssertionError(f"unbalanced braces while slicing {name!r}")
 
 
+def arrow_const_source(js: str, name: str) -> str:
+    """One ``const name = (args) => ...`` declaration, whole, including the
+    trailing semicolon.
+
+    WHY THIS IS HERE. ``_function_span`` knows two shapes, ``function name(`` and
+    ``name = function(``, and both end in a braced body it can brace-match. An
+    EXPRESSION arrow has no braced body at all -- ``const esc = (s) => (s == null
+    ? "" : ...);`` closes on a paren, not a brace -- so a test that needed to lift
+    one out of the source to run it under node had no choice but to hand-roll
+    ``src.index("const esc = (s) => (s == null")``, which is exactly the shape
+    ``test_source_slicing_discipline`` counts, and counts because a hand-rolled
+    anchor is how three guards ended up asserting over the wrong span.
+
+    Balances parens AND braces from the ``=`` so a nested object literal (the
+    entity map inside ``esc`` is one) cannot end the slice early, and stops at the
+    first ``;`` seen at depth zero.
+    """
+    decl = f"const {name} = "
+    at = js.find(decl)
+    if at == -1:
+        raise AssertionError(f"no arrow-const declaration of {name!r} found")
+    depth = 0
+    for j in range(at + len(decl), len(js)):
+        ch = js[j]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == ";" and depth == 0:
+            out = js[at : j + 1]
+            if len(out) < len(decl) + 3:
+                raise AssertionError(f"{name!r} sliced to an empty arrow: {out!r}")
+            return out
+    raise AssertionError(f"unterminated arrow-const while slicing {name!r}")
+
+
 def function_body(js: str, name: str) -> str:
     """One function's body -- the braced block only, brace-matched from the BODY
     brace. Use this to assert about what a function DOES."""

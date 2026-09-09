@@ -78,10 +78,39 @@
       if (first) first.scrollIntoView({block:"center", behavior:"smooth"});
     }
 
+    // doc-heading-anchors (P1): the Help table of contents links to
+    // #1-install--first-run etc, but headings rendered bare <h[n]> with no id
+    // -- 103 headings, 0 anchorable, so every TOC click had nowhere to land.
+    // slugifyHeading reproduces the convention the hand-written docs already
+    // assume: strip markdown emphasis/code/link syntax to plain text, lower-
+    // case, DELETE (not replace-with-space) any character that isn't a
+    // Unicode letter/number/underscore/hyphen/space, then turn each SURVIVING
+    // space into its own hyphen -- so a deleted char's two neighbouring
+    // spaces both become hyphens and are never collapsed to one. Verified
+    // against docs/USER_MANUAL.md's own #1-install--first-run (from "1.
+    // Install & first run": the "." and "&" are deleted, the space on each
+    // side of "&" survives, giving the double hyphen) and #30a-activity--the-
+    // task-manager / #38-evidence--custody / #55a-...--the-one-real-ceiling,
+    // the same pattern for "&" and an em dash. This is the real, if uneven,
+    // GitHub-flavoured-markdown anchor behaviour; a few hand-written links
+    // elsewhere in the docs were typed assuming the OTHER (collapsing)
+    // convention and will not resolve either way -- see FIX_BRIEF verify notes.
+    function slugifyHeading(raw) {
+      let t = String(raw)
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/(^|[^*])\*([^*]+)\*/g, "$1$2")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+      t = t.toLowerCase().replace(/[^\p{L}\p{N}_\- ]/gu, "");
+      t = t.replace(/ /g, "-").replace(/^-+|-+$/g, "");
+      return t || "section";
+    }
+
     // Minimal, safe Markdown → HTML (escape first, then format). Handles
     // headings, lists, tables, code fences, blockquotes, rules and inline marks.
     function mdToHtml(md) {
       const fences = [];
+      const headingIds = new Map(); // per-document dedupe: repeat text -> slug, slug-1, slug-2...
       md = md.replace(/```([\s\S]*?)```/g, (_, code) =>
         ` F${fences.push(`<pre><code>${esc(code.replace(/^\n/, ""))}</code></pre>`) - 1} `);
       const inline = (t) => esc(t)
@@ -110,7 +139,11 @@
         if (/^\s*$/.test(ln)) { flushPara(para); para = []; i++; continue; }
         let m;
         if ((m = ln.match(/^(#{1,6})\s+(.*)$/))) { flushPara(para); para = [];
-          const lvl = m[1].length; out.push(`<h${lvl}>${inline(m[2])}</h${lvl}>`); i++; continue; }
+          const lvl = m[1].length;
+          const base = slugifyHeading(m[2]);
+          const n = headingIds.get(base) || 0; headingIds.set(base, n + 1);
+          const id = esc(n === 0 ? base : `${base}-${n}`);
+          out.push(`<h${lvl} id="${id}">${inline(m[2])}</h${lvl}>`); i++; continue; }
         if (/^\s*([-*_])\1{2,}\s*$/.test(ln)) { flushPara(para); para = []; out.push("<hr>"); i++; continue; }
         // table: header row + |---| separator
         if (ln.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {

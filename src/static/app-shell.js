@@ -20,8 +20,10 @@
 */
     const NAV = [
       {id:"home",     label:"Home",               grp:"Investigate"},
+      {id:"feed",     label:"Feed",               grp:"Investigate"},
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
+      {id:"observatory", label:"Observatory",     grp:"Investigate"},
       {id:"timemap",  label:"World map",          grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"Governments",        grp:"Investigate"},
@@ -163,8 +165,34 @@
     document.querySelectorAll(".nav-item[data-tab]").forEach(b =>
       b.addEventListener("click", () => showTab(b.dataset.tab)));
     // Back/Forward navigates the tab history (render only — the URL already moved).
-    window.addEventListener("popstate", () =>
-      showTab((location.hash || "#home").slice(1), false));
+    //
+    // hash-anchor-ejects-to-home (P1, 2026-09-08 visual audit): an in-page anchor --
+    // Help's table of contents (measured: 50 visible links against 103 headings, ZERO
+    // of which carry an `id`), an article body, a law document, any future rendered
+    // markdown -- changes location.hash without the hash ever being a tab name. A
+    // same-document fragment navigation (clicking such a link, not only a real
+    // Back/Forward) fires `popstate` too, so this handler used to run on every such
+    // click: showTab found no element "tab-<anchor>", fell back to home, and REWROTE
+    // the URL out from under the browser's own native in-page scroll -- ejecting the
+    // reader from whatever they were reading (measured: #help -> #home). Route through
+    // showTab ONLY when the hash plausibly names a real tab (a rendered `.tab-page`, or
+    // one of the legacy redirect targets showTab handles up top); otherwise no-op and
+    // let the browser perform its native anchor scroll/restore. Named (not an inline
+    // arrow) so tests/test_shell_routing_and_palette.py's node harness can drive the
+    // exact function `addEventListener` holds, not a re-implementation of it.
+    const _LEGACY_TAB_HASHES = new Set(["database", "ingest", "sources", "wiki"]);
+    function _hashIsTab(name) {
+      return _LEGACY_TAB_HASHES.has(name) || !!document.getElementById("tab-" + name);
+    }
+    function _onPopStateRoute() {
+      // The guarded call below is recomputed rather than hoisted into a local so this
+      // exact call SITE stays byte-identical to the one
+      // tests/test_back_button_nav.py already pins ("Back re-renders the tab from the
+      // URL") -- only the `_hashIsTab` GUARD around it is new.
+      if (_hashIsTab((location.hash || "#home").slice(1)))
+        showTab((location.hash || "#home").slice(1), false);
+    }
+    window.addEventListener("popstate", _onPopStateRoute);
     // imp-ghost-modal-after-back (P1): no popstate listener anywhere closed an open
     // <dialog> -- browser Back while e.g. #ux-export was open left the tab underneath
     // repainted while the dialog's native modal top-layer backdrop stayed active,
@@ -501,8 +529,31 @@
     // index-backed and discloses the true totals behind the first three.
     let _palItems = [], _palFiltered = [], _palSel = 0;
     let _omniLive = null, _omniTimer = null, _omniSeq = 0;
+    // The palette's page list must include every sidebar tab AND every tab that is
+    // reachable but deliberately kept off the sidebar (Search, Wikipedia, Collect,
+    // Sources, Custody, Source integrity, Help -- moved elsewhere per the comments on
+    // NAV above). NAV supplies the curated label/grouping for both; this then scans
+    // the LIVE sidebar (#navGroups .nav-item[data-tab]) and appends anything rendered
+    // there that NAV does not already name. That scan is the part that matters: Feed
+    // and Observatory were both added to the sidebar (rulings 13/40, 2026-07-18)
+    // without a matching NAV row and stayed unreachable from the palette for a cycle
+    // (both now have proper NAV rows too) -- this is the safety net so the NEXT
+    // sidebar tab can't repeat it silently. A future gap still shows up here, just
+    // with a DOM-derived label instead of a curated one -- visible, never invisible.
+    function _navPages() {
+      const seen = new Set(NAV.map(n => n.id));
+      const out = NAV.slice();
+      document.querySelectorAll("#navGroups .nav-item[data-tab]").forEach((b) => {
+        const id = b.dataset.tab;
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        const span = b.querySelector("span:not(.badge)");
+        out.push({id, label: (span && span.textContent) || id, grp: ""});
+      });
+      return out;
+    }
     function palCommands() {
-      const pages = NAV.map(n => ({grp:"Pages", label:n.label, sub:n.grp, run:() => showTab(n.id)}));
+      const pages = _navPages().map(n => ({grp:"Pages", label:n.label, sub:n.grp, run:() => showTab(n.id)}));
       const actions = [
         {grp:"Actions", label:"Run a search", sub:"Search", run:() => { showTab("search"); setTimeout(() => $("q").focus(), 50); }},
         {grp:"Actions", label:"Collect now (one scraper pass)", sub:"Collect", run:() => { showTab("ingest"); schedulerRunNow(); }},
@@ -511,6 +562,11 @@
         {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
         {grp:"Actions", label:"Open Settings", sub:"System", run:() => showTab("settings")},
         {grp:"Actions", label:"Customize appearance", sub:"Theme", run:() => openDrawer()},
+        // §4c: the palette knew nothing of the 5 keyboard shortcuts (only Mod+K is
+        // bound by default -- deliberate, unchanged) or where to bind the other 4.
+        // This teaches it the cheap way: point at the panel that already lists and
+        // rebinds every one of them, rather than re-describing them here.
+        {grp:"Actions", label:"Keyboard shortcuts", sub:"System", run:() => { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("general"); }},
         {grp:"Actions", label:"API reference (Swagger)", sub:"System", run:() => window.open("/docs", "_blank")},
       ];
       const docs = (_docList || []).map(d => ({grp:"Documentation", label:d.title, sub:"Doc",
