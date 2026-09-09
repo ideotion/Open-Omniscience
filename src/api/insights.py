@@ -2260,9 +2260,8 @@ def list_supergroups(
     member (the maintainer ruling: translations bind to keyword families AND groups),
     so a super-ring shows its concept in the reader's language."""
     from src.analytics.equivalence import ring_meta, ring_translation
-    from src.database.models import KeywordSuperGroup
-
     from src.analytics.supergroup_stats import cross_group_membership, member_overlaps
+    from src.database.models import KeywordSuperGroup
 
     # Type-safe against the direct-call test pattern (_tlang's docstring): an unset
     # int Query() default arrives as its FastAPI sentinel OBJECT, not an int, when a
@@ -2497,7 +2496,10 @@ def supergroup_redundant_members(db: Session = Depends(get_db)) -> dict:
     plain "ai" member beside the covering "artificial-intelligence" ring). A
     REPORT only; the maintainer reviews each row and removes it (or not) via the
     existing member-remove action — never an automated purge."""
-    from src.analytics.supergroup_stats import REDUNDANT_MEMBER_METHOD, find_redundant_family_members
+    from src.analytics.supergroup_stats import (
+        REDUNDANT_MEMBER_METHOD,
+        find_redundant_family_members,
+    )
 
     items = find_redundant_family_members(db)
     return {"items": items, "count": len(items), "method": REDUNDANT_MEMBER_METHOD}
@@ -2808,31 +2810,56 @@ def keywords_by_tag(
     ax, tg = _norm_tag(axis, tag)
 
     def _compute() -> dict:
+        # ONE ROW PER KEYWORD, and the counts measured without the tag join.
+        #
+        # This grouped by ``(Keyword.id, KeywordTag.source)``, so a keyword carrying the
+        # SAME (axis, tag) from both the baseline pass and the operator came back TWICE --
+        # a visibly duplicated row in the explorer. That state is reachable (``add_keyword_tag``
+        # only de-duplicates within ``source="user"``, so adding a tag the baseline already
+        # asserts writes a second row) and the per-keyword tag editor makes it easy to reach.
+        # Grouping by keyword alone would have been worse than the duplicate: two tag rows
+        # FAN OUT the outer join to mentions, doubling ``sum(count)``. So the matching
+        # keywords are selected as a DISTINCT id subquery and the mention aggregate is taken
+        # against that, with no tag table in the aggregating query at all.
+        matching = (
+            db.query(KeywordTag.keyword_id)
+            .filter(KeywordTag.axis == ax, KeywordTag.tag == tg)
+            .distinct()
+            .subquery()
+        )
         rows = (
             db.query(
+                Keyword.id,
                 Keyword.normalized_term,
                 Keyword.term,
                 Keyword.language,
-                KeywordTag.source,
                 func.coalesce(func.sum(KeywordMention.count), 0),
                 func.count(func.distinct(KeywordMention.article_id)),
             )
-            .join(KeywordTag, KeywordTag.keyword_id == Keyword.id)
+            .join(matching, matching.c.keyword_id == Keyword.id)
             .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-            .filter(KeywordTag.axis == ax, KeywordTag.tag == tg)
-            .group_by(Keyword.id, KeywordTag.source)
+            .group_by(Keyword.id)
             .all()
         )
+        # Who asserted it. Both can be true at once, and saying so is the honest answer:
+        # a single value would have to pick a winner and would be reporting a choice as
+        # a measurement.
+        by_kw: dict[int, set[str]] = {}
+        for kid, source in db.query(KeywordTag.keyword_id, KeywordTag.source).filter(
+            KeywordTag.axis == ax, KeywordTag.tag == tg
+        ):
+            by_kw.setdefault(int(kid), set()).add(str(source))
         items = [
             {
                 "normalized": norm,
                 "term": term,
                 "language": lang,
-                "source": source,
+                "sources": sorted(by_kw.get(int(kid), set())),
+                "source": "+".join(sorted(by_kw.get(int(kid), set()))),
                 "mentions": int(m or 0),
                 "articles": int(a or 0),
             }
-            for norm, term, lang, source, m, a in rows
+            for kid, norm, term, lang, m, a in rows
         ]
         items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
         return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}

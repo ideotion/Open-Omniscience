@@ -3218,5 +3218,12 @@
   "Anonymisation:": "Anonymisierung:",
   "recipient echoes redacted,": "Empfänger-Echos geschwärzt,",
   "tracker tokens stripped,": "Tracker-Token entfernt,",
-  "tracker wrappers flagged.": "Tracker-Wrapper markiert."
+  "tracker wrappers flagged.": "Tracker-Wrapper markiert.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Zeigt die Tags dieses Schlüsselworts und lässt dich eigene hinzufügen oder entfernen. Ein Tag ist ein Label, das du behauptest — nie eine Bewertung.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "Entfernt dieses Tag. Umkehrbar — jederzeit wieder hinzufügbar; ein entferntes Basis-Tag wird nicht erneut gesetzt.",
+  "baseline": "Basis",
+  "you": "du",
+  "No tags yet.": "Noch keine Tags.",
+  "new tag": "neues Tag",
+  "Could not load:": "Konnte nicht laden:"
 }

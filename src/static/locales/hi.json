@@ -3218,5 +3218,12 @@
   "Anonymisation:": "अनामीकरण:",
   "recipient echoes redacted,": "प्राप्तकर्ता प्रतिध्वनियाँ हटाई गईं,",
   "tracker tokens stripped,": "ट्रैकर टोकन हटाए गए,",
-  "tracker wrappers flagged.": "ट्रैकर रैपर चिह्नित किए गए।"
+  "tracker wrappers flagged.": "ट्रैकर रैपर चिह्नित किए गए।",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "इस कीवर्ड के टैग देखें, और अपने टैग जोड़ें या हटाएँ। टैग आपके द्वारा दिया गया एक लेबल है, कभी कोई स्कोर नहीं।",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "यह टैग हटाएँ। वापस किया जा सकता है — कभी भी फिर जोड़ें; हटाया गया बेसलाइन टैग दोबारा लागू नहीं होता।",
+  "baseline": "बेसलाइन",
+  "you": "आप",
+  "No tags yet.": "अभी कोई टैग नहीं।",
+  "new tag": "नया टैग",
+  "Could not load:": "लोड नहीं हो सका:"
 }

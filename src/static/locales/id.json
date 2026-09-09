@@ -3218,5 +3218,12 @@
   "Anonymisation:": "Anonimisasi:",
   "recipient echoes redacted,": "gema penerima disunting,",
   "tracker tokens stripped,": "token pelacak dihapus,",
-  "tracker wrappers flagged.": "pembungkus pelacak ditandai."
+  "tracker wrappers flagged.": "pembungkus pelacak ditandai.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Menampilkan tag kata kunci ini, dan menambah atau menghapus tag Anda. Tag adalah LABEL yang Anda nyatakan, bukan skor.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "Hapus tag ini. Dapat dibatalkan — tambahkan lagi kapan saja; tag dasar yang dihapus tidak diterapkan ulang.",
+  "baseline": "dasar",
+  "you": "Anda",
+  "No tags yet.": "Belum ada tag.",
+  "new tag": "tag baru",
+  "Could not load:": "Tidak dapat memuat:"
 }

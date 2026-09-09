@@ -3218,5 +3218,12 @@
   "Anonymisation:": "匿名化:",
   "recipient echoes redacted,": "件の受信者の痕跡を削除,",
   "tracker tokens stripped,": "件のトラッカートークンを除去,",
-  "tracker wrappers flagged.": "件のトラッカーラッパーを警告表示。"
+  "tracker wrappers flagged.": "件のトラッカーラッパーを警告表示。",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "このキーワードのタグを表示し、自分のタグを追加・削除します。タグはあなたが付けるラベルであり、スコアではありません。",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "このタグを削除します。取り消し可能で、いつでも再追加できます。削除したベースラインのタグは再適用されません。",
+  "baseline": "ベースライン",
+  "you": "あなた",
+  "No tags yet.": "タグはまだありません。",
+  "new tag": "新しいタグ",
+  "Could not load:": "読み込めませんでした:"
 }

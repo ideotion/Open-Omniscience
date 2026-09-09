@@ -3218,5 +3218,12 @@
   "Anonymisation:": "Anonimización:",
   "recipient echoes redacted,": "ecos del destinatario redactados,",
   "tracker tokens stripped,": "tokens de rastreo eliminados,",
-  "tracker wrappers flagged.": "envoltorios de rastreo señalados."
+  "tracker wrappers flagged.": "envoltorios de rastreo señalados.",
+  "Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score.": "Muestra las etiquetas de esta palabra clave y permite añadir o quitar las tuyas. Una etiqueta es una AFIRMACIÓN tuya, nunca una puntuación.",
+  "Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied.": "Quita esta etiqueta. Reversible: vuelve a añadirla cuando quieras; una etiqueta base eliminada no se vuelve a aplicar.",
+  "baseline": "base",
+  "you": "tú",
+  "No tags yet.": "Aún sin etiquetas.",
+  "new tag": "nueva etiqueta",
+  "Could not load:": "No se pudo cargar:"
 }
