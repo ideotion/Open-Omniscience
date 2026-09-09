@@ -7920,3 +7920,33 @@
   blob from one record onto another, check whether any field in it describes the RECORD
   rather than the subject — those fields do not travel, and the ones that do are usually
   the majority, which is what makes the exception easy to miss.**
+
+- **A DOCUMENT CAN CARRY BOTH SPELLINGS OF ONE ANCHOR, AND THAT IS WHY NOBODY SEES IT
+  (2026-09-09).** Three of `USER_MANUAL.md`'s dead in-page links pointed at
+  `#32-collect` while the same file, a few hundred lines later, linked the same heading
+  correctly as `#32-collect-in-settings--collect`. Anyone reading either passage sees a
+  plausible link; only comparing them reveals one is dead. A dead in-page anchor also has
+  no failure mode a reader would report — it renders as an ordinary link and does nothing
+  when clicked. **GENERAL FORM: link rot inside a document is invisible to reading and
+  silent when exercised, so it needs a mechanical check, and the check is about ten lines:
+  slugify the headings, extract the in-page targets, subtract.**
+
+- **PORTING A SHIPPED FUNCTION INTO A TEST MAKES THE PORT THE THING UNDER TEST
+  (2026-09-09).** The anchor guard needs the app's `slugifyHeading`, which lives in
+  JavaScript; the test ports it to Python. If the port drifts, every assertion still runs
+  and every one is meaningless — it validates documents against a convention the app does
+  not use, and it goes green either way. The port is therefore pinned first, against the
+  exact examples the original function's own comment cites as its verification cases.
+  **GENERAL FORM: a re-implementation inside a test is untested code in the position of
+  maximum leverage. Pin it to the original's own documented cases before using it, and
+  prefer examples the original author already wrote down over ones you invent.**
+
+- **"NO CONSISTENT RULE CAN RESOLVE THESE" IS A HYPOTHESIS, NOT A MEASUREMENT
+  (2026-09-09).** The docket explained nine dead links as unresolvable by any single
+  slugifier "alongside the reference anchors", which reads as an analysis and licensed
+  deferring them as cosmetic. Collapse-matching each dead target against the real headings
+  resolved all nine, with exactly one candidate each — and then found seven more of the
+  identical class in other documents nobody had checked. **GENERAL FORM: when a deferral
+  rests on an impossibility claim, the cheapest test is to try the obvious rule and count
+  the failures. An impossibility that has never been measured is a guess with a
+  confident tone, and the sweep it discourages is usually where the rest of the defect is.**

@@ -11183,6 +11183,23 @@ a gap. The fix writes only EMPTY fields, so an operator's hand-set value is neve
 a routine re-seed, and it drops the `via:<origin>` tag, which describes the ROW rather than
 the source.
 
+**A FIFTH ITEM: the Help surface's dead in-page links — and the entry that recorded them is
+now STALE IN TWO OF ITS THREE PARTS.** The entry listed `link-in-text-block` (n=15),
+`scrollable-region-focusable` (n=3) and 9 unresolvable `USER_MANUAL.md` anchors as "STILL
+OPEN, out of this pass's scope". The two axe items were ALREADY FIXED by the pass that
+recorded them: `app.css` carries the prose underline rule with its own 23-node measurement,
+and `mdToHtml` emits `tabindex="0"` on `<pre>`/`<table>` with its own 11-node measurement.
+Read those two as closed.
+
+The links were genuinely open, and the entry's explanation for them was wrong in a way worth
+recording: "no single consistent slugifier can resolve" them is a hypothesis, and it licensed
+deferring them as cosmetic. Collapse-matching each dead target against the real headings
+resolved **all nine, with exactly one candidate each** — they were typed against the
+collapsing GitHub convention while the renderer implements the non-collapsing one. Sweeping
+the other SERVED documents then found **seven more** of the identical class (ARCHITECTURE 1,
+DESIGN 5, SECURITY 1) that nobody had looked for. Sixteen fixed, and a guard now reads the
+Help allow-list out of the API's own `_DOCS` so a new Help document inherits the check.
+
 - **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
   superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
   awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
