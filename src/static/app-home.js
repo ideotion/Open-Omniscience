@@ -966,9 +966,21 @@
         const why = c.order_explain
           ? `<div class="ov-why" title="${esc(c.order_explain)}">${esc(c.order_explain)}</div>` : "";
         return `<div class="ov-item" style="--fam:${famHue(b.bucket)}">`
-          + `<h4 class="ov-fam"><span class="fam-dot" style="background:${famHue(b.bucket)}"></span>${esc(b.label)}`
+          // h3, not h4 (axe heading-order, 2026-09-09). Two things were wrong and
+          // one change fixes both: Home's only other visible heading is the h2
+          // "Briefing", so an h4 here SKIPS a level; and the card inside this
+          // family also renders an h4, so the family header was announced at the
+          // SAME level as the card it contains. h2 -> h3 (family) -> h4 (card)
+          // matches the actual containment.
+          //
+          // No visual change, and that is the point PRH-32 already recorded:
+          // heading level and visual size are separate concerns. `.ov-fam` sets
+          // font-size:13px with a real class selector, which outranks the
+          // zero-specificity `:where(.panel, dialog) :where(h3)` default -- measured
+          // before and after: family 13px, card title 15px, width 354px, unchanged.
+          + `<h3 class="ov-fam"><span class="fam-dot" style="background:${famHue(b.bucket)}"></span>${esc(b.label)}`
           + ` <a href="#" class="ov-more" onclick='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
-          + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h4>`
+          + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h3>`
           + `<div class="cards">${cardHtml(c)}</div>${why}</div>`;
       }).join("");
       return `<div class="brief-bucket" data-fam="__ov">`

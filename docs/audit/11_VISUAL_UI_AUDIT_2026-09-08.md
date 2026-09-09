@@ -643,3 +643,69 @@ tokens, ~7,800 tool calls, 1,697 screenshots, 26 adversarial verifiers returning
 nine headline findings re-derived by the orchestrating session with its own hands. **Chromium-verified
 (remote sandbox) · awaiting human UX pass** — never "verified". No fixes applied: report-only, per the
 commissioning instruction.
+
+---
+
+## 11. What the fix pass closed, and what it did not (2026-09-09)
+
+Written the day after, from the fix pass itself. Every line was re-derived against a running app rather
+than read off a diff, and the two entries that changed shape *under* verification are the reason this
+section exists at all.
+
+### Closed, with the before/after measured
+
+| § | Was | Is |
+|---|---|---|
+| 4.1 | `Dy → "already"`, `Nd → "indiqué"`, `Pr → "proposed"` (8 of 9 commodity symbols resolved to an unrelated word) | all resolve to nothing; `exact=True` on every display caller |
+| 4.2 | "Your library is empty" over 453 articles, no error text anywhere | an honest read-failure line, translated ×12, in the stat strip and the briefing |
+| 4.3 | a curated cluster label used as a literal full-text query | the galaxy's real ring membership through `corpus-algebra`; fails closed with a named toast on all three failure modes |
+| #1 | Help's 50 TOC links all ejected the reader to Home | 118 of 119 headings carry an id; even the 9 unresolvable links are now inert rather than ejecting |
+| #2 | `?limit=` silently ignored | honoured; the 714 KB default is deliberately unchanged (see the Open queue) |
+| #3 | a refused search rendered as an empty results table | a persistent message where the results would be, naming the clock time when the server states one |
+| #4 | 145 AA failures / 5 root causes | zero across 17 themes × 6 surfaces, re-measured with a corrected instrument |
+| #5 | two buttons overlapping on Insights | zero overlaps, 4 surfaces × 3 themes × 3 viewports |
+| a11y | no `<h1>`; accessible name "Commoditiesadv"; Home's `h2 → h4` skip | all three fixed, with the rendered sizes measured unchanged |
+
+### §4.1 had TWO more sites the audit never named, and the second is the instructive one
+
+The audit hand-verified one surface. A `grep` for `resolve_keyword` found eleven call sites and two more
+carried the same defect:
+
+- **`price_narrative`** (the Home Lead) does not merely label a chart — it runs a significance test on
+  the mis-resolved keyword and publishes the result. On the live corpus no card appeared, because the
+  price dates and those keywords' article dates did not overlap; that is **latent, not absent**, and it
+  is recorded as latent. With the overlap constructed, the pre-fix code publishes *"Dy: price moves vs
+  coverage — correlate +0.97 (p=0.00522, n=5)"* with `card.key == "already"`.
+- **`/api/links/shared`** (the corpus window's Links subtab) shows what an incomplete fix of a *class*
+  costs. After the first two fixes, one window opened on `Dy` answered `resolved: null` on Trend,
+  Context and Keywords — honestly empty — while Links returned **36 articles about "already"**. The
+  partial fix did not just leave a hole; it made the hole more convincing, because everything around it
+  had started telling the truth.
+
+### The audit's own instrument was wrong a second time — and so were two others
+
+§0.1b has the detail. The short form: three separate checkers could not see what they were checking,
+each because a fix changed how a value was *written*. The live contrast harness skipped every
+`color-mix()` colour (reported as zero failures, on exactly the themes the fix had touched); the static
+theme guard had the same blindness in Python and reported a stale hex; and the i18n scanner was flying
+with four blind spots, which surfaced only because closing them **raised** a ratchet. That last claim —
+"the increase is pre-existing strings, not new drift" — was checked rather than accepted: the widened
+scanner run against the untouched pre-fix tree reports the same 575 and 314.
+
+### Not closed, and why
+
+The Open queue carries the reasoning for each. In brief: `/api/sources`' 714 KB default needs a frontend
+change, not a backend cap; Help's `link-in-text-block` (n=15) and `scrollable-region-focusable` (n=3) are
+out of scope; the Observatory drill-through's family-variant resolution can diverge from the headline
+numbers in principle and **agrees on every galaxy on this corpus** (measured); and the orphaned
+`"Stats unavailable."` locale key is left in place deliberately.
+
+### The stamp
+
+Everything above is **Chromium-verified (remote sandbox) · awaiting human UX pass**, exactly as §0.2
+requires. One operational note for whoever verifies next, learned twice here: a running `uvicorn` serves
+the Python it imported at start, so a live measurement against `src/api/*.py` or `src/analytics/*.py` is
+only valid if the process is newer than the file. Static assets (CSS, JS, locale JSON) are read per
+request and are always current — which is why the CSS and i18n verifications above hold, and why the
+Python-level ones were run through direct imports or a fresh `TestClient` rather than a long-lived
+server.

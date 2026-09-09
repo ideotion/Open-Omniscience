@@ -2348,10 +2348,20 @@
         const a = frac(from) * 100, b = frac(to) * 100;
         sel.style.left = a + "%"; sel.style.width = (b - a) + "%";
         hFrom.style.left = a + "%"; hTo.style.left = b + "%";
+        // NUMBERS on aria-value*, the DATE on aria-valuetext (axe
+        // `aria-valid-attr-value`, 2026-09-08 audit). These three attributes are
+        // defined as decimal numbers; an ISO date string is not one, so a screen
+        // reader gets an invalid value and announces nothing useful for the
+        // slider's position. The underlying scale here IS numeric -- integer days
+        // since the epoch, the same units `frac()` and `clamp()` work in -- so the
+        // numbers are the real values, not a fabrication for the sake of the
+        // attribute. `aria-valuetext` then carries the thing a person actually
+        // wants read out, which is what it exists for: "2026-08-05", not "20671".
         [[hFrom, from], [hTo, to]].forEach(([h, v]) => {
-          h.setAttribute("aria-valuemin", minIso);
-          h.setAttribute("aria-valuemax", maxIso);
-          h.setAttribute("aria-valuenow", _tsIso(v));
+          h.setAttribute("aria-valuemin", String(min));
+          h.setAttribute("aria-valuemax", String(max));
+          h.setAttribute("aria-valuenow", String(v));
+          h.setAttribute("aria-valuetext", _tsIso(v));
         });
       }
       function fire() {

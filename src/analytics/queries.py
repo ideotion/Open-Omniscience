@@ -162,10 +162,26 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
     in this module that renders the resolved term as a chart/graph/hover LABEL now passes
     ``exact=True`` (``trend``, ``trend_range_article_ids``, ``associations``,
     ``keyword_stats``, ``context``) so a term that does not resolve exactly returns the
-    honest empty result instead of the nearest match. The default stays permissive
-    (``exact=False``) for callers OUTSIDE this module (``src/api/link_analysis.py``,
-    ``src/briefing/producers.py``) that use the fuzzy fallback as an actual human-typed,
-    forgiving search box rather than a measurement label -- unchanged by this fix.
+    honest empty result instead of the nearest match.
+
+    WHERE THE FUZZY DEFAULT SURVIVES, and why -- corrected 2026-09-09, because the
+    first version of this paragraph named ``link_analysis.py`` and ``producers.py``
+    as callers that legitimately stay fuzzy, and BOTH turned out to carry the same
+    defect. A docstring that describes another module's behaviour is a claim with a
+    shelf life, so this one now says only what was checked:
+
+    * ``src/briefing/producers.py``'s ``price_narrative`` -- FIXED to ``exact=True``.
+      It did not merely label a chart: it ran a significance test on the
+      mis-resolved keyword and published the result to Home as a Lead.
+    * ``src/api/link_analysis.py``'s ``/api/links/shared`` -- FIXED to ``exact=True``.
+      Its ``term`` is ``_corpusTerm``, a keyword the app itself chose, never typed.
+    * ``producers.py``'s five OTHER call sites resolve ``term["term"]`` straight out
+      of ``q.trending()`` -- already a stored keyword, so the exact match always hits
+      and the fallback is unreachable. Left as-is deliberately.
+
+    So the permissive default currently has no caller relying on it. Keep it for a
+    genuine human-typed, forgiving search box; reach for ``exact=True`` for anything
+    that turns the answer into a label, a count, or a statistic.
     """
     norm = _normalize(term)
     if not norm:

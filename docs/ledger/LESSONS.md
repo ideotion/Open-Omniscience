@@ -7559,3 +7559,23 @@
   broken sweep flagged (`mint`) still had to be re-measured end to end after the instrument was fixed —
   4.18:1 before, ≥4.99:1 after — because a number produced by a broken instrument is not evidence even
   when it turns out to be right.
+
+- **A DEFECT CLASS IS NOT FIXED UNTIL YOU HAVE ENUMERATED ITS CALL SITES; FIXING "THE ONE THE AUDIT
+  NAMED" LEAVES THE OTHERS, AND THEY ARE WORSE (2026-09-09, audit §4.1's fuzzy `resolve_keyword`
+  fallback):** the audit hand-verified ONE surface — `GET /api/insights/trend?term=Dy` resolving to the
+  English word "already" — and the fix routed `queries.py`'s five display callers through `exact=True`.
+  That was correct and it was not the class. A `grep` for the function turned up eleven call sites, and
+  two more of them were the same defect: `src/briefing/producers.py`'s `price_narrative`, which does not
+  merely LABEL a chart but runs a significance test on the mis-resolved keyword and publishes the result
+  to Home as a Lead ("Dy: price moves vs coverage — correlate +0.97 (p=0.00522, n=5)", card key
+  "already"); and `src/api/link_analysis.py`'s `/api/links/shared`, which feeds the corpus window's Links
+  subtab. **THE LINKS ONE IS THE INSTRUCTIVE CASE**, because it shows what an incomplete fix costs: after
+  the first fix, one corpus window seeded on `Dy` answered `resolved: null` on Trend, Context and
+  Keywords — honestly empty, exactly as intended — while Links quietly returned 36 articles about
+  "already". The partial fix did not just leave a hole; it made the hole *more* convincing, because the
+  surfaces around it had started telling the truth. Enumerate the call sites, decide each one
+  deliberately (a genuine human-typed search box may legitimately stay fuzzy), and record which ones you
+  left and why. COROLLARY, from the same pass: the fix's own docstring listed `producers.py` among the
+  callers "unchanged by this fix" — and was falsified an hour later by the follow-up fix to that very
+  file. A docstring that enumerates other modules' behaviour is a claim with a shelf life; the reviewer
+  who spots it stale is the lucky case.

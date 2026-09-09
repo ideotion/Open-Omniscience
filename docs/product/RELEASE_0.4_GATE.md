@@ -223,6 +223,27 @@ audit is the bar `0.4` ships against, recorded in §3. The third is a legitimate
 is not legitimate is carrying "awaiting human UX pass" into a second release without saying
 which of the three happened.
 
+**What the 2026-09-08/09 live visual audit + fix pass added, and what it did not close (2026-09-09).**
+Two of the three open items above moved:
+
+- **The 12-locale sweep is done.** All 12 locales were driven live, crossed with all 17 themes and 5
+  viewports, plus `prefers-reduced-motion`, `prefers-contrast`, greyscale and colour-blind simulation
+  (`docs/audit/11_VISUAL_UI_AUDIT_2026-09-08.md`, §7). The four-locale gap this row records is closed.
+- **Honesty rule 9 (adversarial screenshot reading) ran in a different form than the rule imagines.**
+  Rather than one pass re-reading its own screenshots, three independent adversarial re-verifiers
+  re-derived every fix against pre-fix code and were asked specifically for fixes that do NOT work.
+  They found one real regression (a French-locale mixed-language screen), confirmed its repair by
+  revert-reproduce-restore, and reported two residuals the fix pass had missed. That is the *function*
+  rule 9 exists for; whether it satisfies the rule as written is a maintainer call.
+
+**Neither closes the row.** The Gecko/AppVM bar is untouched, and every stamp still reads
+*"Chromium-verified (remote sandbox) · awaiting human UX pass"* — deliberately, because no human has
+used the app. The three ways this closes are unchanged. What the audit does change is the cost of the
+third option: a ruling that "Chromium-in-sandbox plus the audit is the bar" is now a ruling about a
+much larger body of evidence than it was on 2026-08-20, and §0.1b of that report is the honest
+counterweight — the instrument itself was wrong twice, and both times the error ran toward a false
+pass.
+
 ---
 
 ## 3. Amendment log
@@ -234,6 +255,7 @@ The `0.3` gate's own log is the format.
 |---|---|---|
 | 2026-09-07 | Board created from `RELEASE_0.3_GATE.md` §5. Rows A/B/C carried under their existing rulings; D/E/F proposed | session |
 | 2026-09-07 | **Row D BUILT** — `GET /api/diagnostics/soak-window` + the `soak-window.json` bundle member. It adds no sampler: it composes the durable readings that already existed and states, per block, the window it actually read. The row stays open because *built* is not *read* — it closes on one report from a run of ≥ 72 h | session |
+| 2026-09-09 | **Row F ADVANCED, not closed** — the live visual audit + fix pass closed two of its three open items (the 12-locale sweep is done; honesty rule 9 ran as three adversarial re-verifiers rather than one screenshot re-read). The Gecko/AppVM bar is untouched and every stamp still reads "awaiting human UX pass" | session |
 
 ---
 

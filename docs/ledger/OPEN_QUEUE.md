@@ -10909,3 +10909,38 @@ transversal audit 10 §1 #6 **did not reproduce** here under single-click, unche
 by two independent agents. Recorded as **DISPROVED-HERE, not confirmed-fixed**: it may have been fixed,
 may be state-dependent in a way this fixture did not reach, or may have been specific to another build.
 Before anything touches that fold, confirm which.
+
+### 2026-09-09 — from the visual-audit fix pass (deliberate omissions and one residual)
+
+- **DELIBERATE OMISSION — `/api/sources`' 714 KB default is UNCHANGED, and that is the fix, not a gap.**
+  The audit's finding had two halves: the route silently ignored `?limit`, AND it ships 714,399 bytes
+  (98.8% of boot API bytes) on every page load to populate a Settings dropdown that is not visible. Only
+  the first half is fixed. Capping the default would silently truncate both real callers'
+  (`loadSources()`, `loadMarketConfig()`) dropdowns — the same silent-wrong-answer shape the whole audit
+  is about — so the payload question needs a FRONTEND change (the callers asking for what they need, or
+  a lazy load when the dropdown opens), not a backend cap. Byte-verified unchanged at 714,399 / 3,618
+  rows before and after.
+
+- **DELIBERATE OMISSION — the orphaned `"Stats unavailable."` locale key.** Superseded by the new stat-strip
+  read-failure copy; no source reference remains (grep-verified across `src/`), but the key is still in
+  all 12 locale files. Left in place: an unused key costs nothing at runtime and is invisible to both
+  ratchets (which count SOURCE strings lacking keys, never keys lacking sources), while removing it has
+  a non-zero chance of orphaning a path the grep missed. Prune it in a pass that owns the locale files
+  for other reasons.
+
+- **MEASURED-LATENT, disclosed rather than fixed — the Observatory drill-through's term resolution.**
+  The click resolves a galaxy's membership by literal `Keyword.normalized_term` match over the member
+  terms plus their ring surface forms; the galaxy's OWN headline numbers come from
+  `supergroup_stats.resolve_member_keyword_ids`, which ADDITIONALLY matches a family member's
+  morphological variants via `canonical_key`. So the two can diverge in principle. Measured on the live
+  corpus 2026-09-09 across every super-group: **they agree on all of them, zero disagreement** — every
+  member on this corpus is a ring member, so the family branch never fires. Recorded because a corpus
+  with family members would make the ranked table and the set it opens disagree about one galaxy, and
+  that is the exact class §4.3 is about.
+
+- **STILL OPEN, out of this pass's scope — Help's other axe findings.** `link-in-text-block` (n=15) and
+  `scrollable-region-focusable` (n=3) on the Help surface, plus 9 of USER_MANUAL.md's 50 in-page links
+  that no single consistent slugifier can resolve alongside the reference anchors (the markdown
+  hand-shortens three targets and pre-dates a heading rename for the others). The 9 were re-measured
+  after the anchor fix: clicking one is now INERT (Help stays open, nothing scrolls) rather than
+  ejecting the reader to Home, so this is a cosmetic residue, not the P0.
