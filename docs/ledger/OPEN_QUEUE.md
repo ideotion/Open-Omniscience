@@ -11200,6 +11200,31 @@ the other SERVED documents then found **seven more** of the identical class (ARC
 DESIGN 5, SECURITY 1) that nobody had looked for. Sixteen fixed, and a guard now reads the
 Help allow-list out of the API's own `_DOCS` so a new Help document inherits the check.
 
+- **RULING NEEDED — search typo tolerance is blocked on a candidate INDEX, not on the edit
+  distance (measured 2026-09-09, not attempted).** The search REMAINING list carries "typo
+  tolerance with honest did-you-mean", and the display half is straightforward: the
+  `cross_language` disclosure block in `search_omni.py` is the pattern to mirror, the literal
+  results stay unmixed, and the suggestion is offered rather than substituted. **The blocker
+  is upstream of that.** `src/api/search_omni.py`'s opening docstring states the surface's
+  central promise — *"Never scan-on-type: every group is served by an index or a small bounded
+  table"* — and `Keyword` carries only a B-tree on `normalized_term` (`idx_keyword_normalized_
+  term`), which serves the existing prefix LIKE and is useless for edit distance. The live
+  corpus holds **406,723 keywords** (`shipped.csv`, the ~500k-article run), so a bounded
+  Damerau-Levenshtein pass over the table is a 400k-row scan **per keystroke** — precisely the
+  thing that docstring forbids, on the surface that promises "instant". A first-character or
+  length pre-filter does not rescue it: it still leaves tens of thousands of rows per probe,
+  and a typo in the first character is exactly the case it drops.
+  **SO THE DECISION IS WHICH INDEX, and each option costs something different:** (a) leave it
+  unbuilt and keep the surface's no-scan promise intact; (b) a precomputed deletion-
+  neighbourhood table (SymSpell-shaped) — a new table, a build job, and a freshness story tied
+  to ingest, since a keyword added after the last build is invisible to the suggester until it
+  reruns; (c) SQLite's `spellfix1` or an FTS trigram index — smallest code, but it vendors a
+  compiled extension, which lands on the no-bundling non-negotiable and the external-artifact
+  registry rather than on this feature. Recommended default: **(a)** until someone wants it
+  enough to pay for (b), which is the only option that keeps the project's own constraints
+  intact. **NOT attempted here on purpose:** the edit-distance helper is an hour and would
+  have looked finished, while quietly making the omnibar scan 400k rows on every character.
+
 - **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
   superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
   awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
