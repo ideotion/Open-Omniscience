@@ -11134,3 +11134,112 @@ they do now.
 **STILL OPEN and unchanged from the last round:** the `#corpus-win` deletion pass (its superset
 claim is audited for Sources only; the other five subtabs are not), and the eight misfiled
 lesson-shaped entries awaiting the relocation ruling.
+
+### 2026-09-09 — burn-down round three (PR #1106): three items, and what each one is not
+
+Three more closed from the same verified triage that produced rounds one and two; rows in
+[`shipped.csv`](shipped.csv), lessons in [`LESSONS.md`](LESSONS.md). What follows is only the
+part that stays open or that a later session would otherwise re-derive.
+
+**THE CONJUNCTION LENS' `vocabulary_contrast` IS DELIBERATELY STILL UNEXPOSED, and this is a
+decision rather than a remainder.** `per_article_intensity` and `conditional_trend` are now
+`expand=` views on `/api/insights/corpus-algebra`; the third helper is not, because it
+contrasts TWO corpora and the endpoint has one set. Which two sides an `intersection` of
+three terms splits into is a product question — for `difference` the natural pair is the
+difference set against the rest, but for `intersection`/`union` with more than two terms
+there is no natural split at all, and picking a plausible one would publish an invented
+semantic under a tested function's name. A named test pins the absence.
+**IF A RULING IS WANTED:** (a) leave it unexposed; (b) expose it only for `difference` and
+for two-term `intersection`/`union`, returning an honest `null` otherwise; (c) let the
+caller name the two sides explicitly, which makes the endpoint a different shape. Recommended
+default: **(a)**, and (b) is the smallest step if the view is actually wanted.
+
+**THE ooMAP CHEAP-REDRAW PATH RESTS ON A PRECONDITION THAT IS NOW TESTED, and a later
+performance pass should know why.** `lon2x`/`lat2y` are module-level constants and zoom rides
+the SVG `viewBox`, so the projection does not depend on the current view — which is what makes
+redrawing one layer in isolation sound rather than a cache that can go stale. If the map ever
+gains a projection that reads the live view (a true zoom-dependent reprojection, a per-view
+clip), the focus path must go back through the full render: the failure mode is MISPLACED
+markers, which reads as a data bug rather than a rendering one.
+**NOT DONE, and it is the honest boundary of this slice:** the drag was never measured in a
+browser, before or after. The count that motivated it (175 countries, 285 rings, 10,521
+coordinate pairs re-serialised per frame) is counted from the shipped geometry file, and a
+test keeps the figure in the comment matching it — but the frame time itself is unmeasured
+here, and a browser pass would close that.
+
+**THE LUNAR SCREEN TAKES NO PRE-REGISTRATION, ON PURPOSE.** The single-term test now requires
+a declared direction and the endpoint refuses without one; the screen refuses a declaration.
+Screening many series is exploratory by definition — that is what the Benjamini-Hochberg
+correction is for — and demanding one hypothesis for forty series would be a rubber stamp
+that made the screen *look* pre-registered while changing nothing about it. Recorded because
+the symmetric-looking change ("accept it on both paths") is the tempting one.
+
+**A FOURTH ITEM LANDED IN THE SAME PR: the NULL-only source-metadata reconcile.** A source
+already in the database used to stop learning — `seed_sources` skipped a domain it held and
+never re-read the row, so catalogue metadata that arrived later could never reach it. Worth
+recording because of HOW it was hidden: `test_seed_is_idempotent` pinned the create-only
+behaviour exactly, which reads as the question having been asked and answered rather than as
+a gap. The fix writes only EMPTY fields, so an operator's hand-set value is never reverted by
+a routine re-seed, and it drops the `via:<origin>` tag, which describes the ROW rather than
+the source.
+
+**A FIFTH ITEM: the Help surface's dead in-page links — and the entry that recorded them is
+now STALE IN TWO OF ITS THREE PARTS.** The entry listed `link-in-text-block` (n=15),
+`scrollable-region-focusable` (n=3) and 9 unresolvable `USER_MANUAL.md` anchors as "STILL
+OPEN, out of this pass's scope". The two axe items were ALREADY FIXED by the pass that
+recorded them: `app.css` carries the prose underline rule with its own 23-node measurement,
+and `mdToHtml` emits `tabindex="0"` on `<pre>`/`<table>` with its own 11-node measurement.
+Read those two as closed.
+
+The links were genuinely open, and the entry's explanation for them was wrong in a way worth
+recording: "no single consistent slugifier can resolve" them is a hypothesis, and it licensed
+deferring them as cosmetic. Collapse-matching each dead target against the real headings
+resolved **all nine, with exactly one candidate each** — they were typed against the
+collapsing GitHub convention while the renderer implements the non-collapsing one. Sweeping
+the other SERVED documents then found **seven more** of the identical class (ARCHITECTURE 1,
+DESIGN 5, SECURITY 1) that nobody had looked for. Sixteen fixed, and a guard now reads the
+Help allow-list out of the API's own `_DOCS` so a new Help document inherits the check.
+
+- **RULING NEEDED — search typo tolerance is blocked on a candidate INDEX, not on the edit
+  distance (measured 2026-09-09, not attempted).** The search REMAINING list carries "typo
+  tolerance with honest did-you-mean", and the display half is straightforward: the
+  `cross_language` disclosure block in `search_omni.py` is the pattern to mirror, the literal
+  results stay unmixed, and the suggestion is offered rather than substituted. **The blocker
+  is upstream of that.** `src/api/search_omni.py`'s opening docstring states the surface's
+  central promise — *"Never scan-on-type: every group is served by an index or a small bounded
+  table"* — and `Keyword` carries only a B-tree on `normalized_term` (`idx_keyword_normalized_
+  term`), which serves the existing prefix LIKE and is useless for edit distance. The live
+  corpus holds **406,723 keywords** (`shipped.csv`, the ~500k-article run), so a bounded
+  Damerau-Levenshtein pass over the table is a 400k-row scan **per keystroke** — precisely the
+  thing that docstring forbids, on the surface that promises "instant". A first-character or
+  length pre-filter does not rescue it: it still leaves tens of thousands of rows per probe,
+  and a typo in the first character is exactly the case it drops.
+  **SO THE DECISION IS WHICH INDEX, and each option costs something different:** (a) leave it
+  unbuilt and keep the surface's no-scan promise intact; (b) a precomputed deletion-
+  neighbourhood table (SymSpell-shaped) — a new table, a build job, and a freshness story tied
+  to ingest, since a keyword added after the last build is invisible to the suggester until it
+  reruns; (c) SQLite's `spellfix1` or an FTS trigram index — smallest code, but it vendors a
+  compiled extension, which lands on the no-bundling non-negotiable and the external-artifact
+  registry rather than on this feature. Recommended default: **(a)** until someone wants it
+  enough to pay for (b), which is the only option that keeps the project's own constraints
+  intact. **NOT attempted here on purpose:** the edit-distance helper is an hour and would
+  have looked finished, while quietly making the omnibar scan 400k rows on every character.
+
+**THE OMNIBAR'S `events`/`docs-content` GROUPS ARE CLOSED, and the pair with typo tolerance
+is the point.** The T13 REMAINING list named four things; two of them are now built and two
+are not, and the dividing line is not effort. The events catalogue (154 entries, ships with
+the app) and the Help documents (the ten the API's allow-list serves) do not grow with the
+user's corpus, so a contains-match over them is 0.3 ms and 1.4-1.8 ms respectively, measured.
+The keyword table looks like the same kind of thing and is not: 406,723 rows on a real
+corpus. So "bounded" on this surface means *not a function of the corpus*, and that is the
+test to apply to the two still open — date/period search with the calendar picker, and the
+Enter-to-corpus-window absorption gate.
+
+- **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
+  superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
+  awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
+  whose three options are still open; and, from the round-two triage's verified list, the
+  bulk-LLM run as a first-class task-manager job — a real defect (the work is tied to an open
+  browser connection and dies with the tab), NOT attempted here because converting a
+  StreamingResponse to a polled job removes the progressive stream that is currently the
+  progress mechanism, which is a UX change rather than a wiring one.

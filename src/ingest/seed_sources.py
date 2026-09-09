@@ -28,7 +28,9 @@ from src.database.models import Source
 
 #: What a seed run reports. Mostly counts, plus a short list of examples for the
 #: entries no install can ever register -- so the annotation cannot be `dict[str, int]`.
-SeedResult = dict[str, "int | list[dict[str, str | None]]"]
+# Widened 2026-09-09 for the nested "reconciled" counts: a seed now reports what it
+# FILLED on rows it did not create, alongside what it created and skipped.
+SeedResult = dict[str, "int | dict[str, int] | list[dict[str, str | None]]"]
 
 # The full curated catalog shipped with the project.
 DEFAULT_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sources.yml"
@@ -192,6 +194,74 @@ def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
     return shadowed
 
 
+def reconcile_source_metadata(session: Session, sources: list[dict]) -> dict:
+    """Fill EMPTY catalogue metadata on sources that already exist. Never overwrite.
+
+    THE GAP THIS CLOSES. ``seed_sources`` skips a domain it already holds and never
+    looks at the row again, so a source registered before the catalogue knew its
+    country -- or before the ccTLD/title fallbacks existed -- keeps an empty field
+    forever, however many times the catalogue is re-seeded. The metadata is only used
+    for description and filtering (never a score), and an absent country is the reason
+    a source falls into "unlocated" on the coverage map.
+
+    THE RULE IS NULL-ONLY, and it is the whole safety argument: a field is written only
+    when the LOCAL value is empty AND the catalogue computes a value. A non-empty local
+    value is left alone whatever put it there -- the operator may have set it by hand,
+    and a re-seed silently reverting that would be a data-loss bug wearing a maintenance
+    task's clothes. That also makes this idempotent: a second run fills nothing.
+
+    TAGS DROP THEIR PROVENANCE MARKER, deliberately. ``_to_source_kwargs`` appends a
+    ``via:<origin>`` tag recording where a row CAME FROM. Reconciling an existing row
+    did not create it, so copying that marker across would assert an origin this row
+    may not have -- a hand-registered source would come out claiming it arrived via a
+    catalogue. The descriptive tags are facts about the source and are filled; the
+    provenance tag is a fact about the row and is not.
+
+    Derivation is `_to_source_kwargs`, the same function the create path uses, so the
+    explicit-field -> title-suffix -> ccTLD ladder can never become a second, divergent
+    implementation.
+    """
+    from src.database.models import Source
+
+    by_domain: dict[str, dict] = {}
+    for s in sources:
+        domain = (s.get("domain") or "").strip().lower()
+        name = (s.get("name") or "").strip()
+        if not domain or not name:
+            continue
+        # First-entry-wins, the SAME rule seed_sources uses for shadowing, so the two
+        # can never disagree about which sibling a domain's metadata comes from.
+        by_domain.setdefault(domain, s)
+    if not by_domain:
+        return {"checked": 0, "country_filled": 0, "language_filled": 0, "tags_filled": 0}
+
+    rows = session.query(Source).filter(Source.domain.in_(list(by_domain))).all()
+    filled = {"country": 0, "language": 0, "tags": 0}
+    for row in rows:
+        entry = by_domain.get((row.domain or "").strip().lower())
+        if entry is None:
+            continue
+        computed = _to_source_kwargs(entry)
+        for field in ("country", "language", "tags"):
+            if getattr(row, field, None):
+                continue                       # already carries a value -- never touched
+            value = computed.get(field)
+            if field == "tags" and value:
+                value = ",".join(t for t in str(value).split(",") if not t.startswith("via:"))
+            if not value:
+                continue
+            setattr(row, field, value)
+            filled[field] += 1
+    if any(filled.values()):
+        session.commit()
+    return {
+        "checked": len(rows),
+        "country_filled": filled["country"],
+        "language_filled": filled["language"],
+        "tags_filled": filled["tags"],
+    }
+
+
 def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     """Create Source rows for any domain not already present. Idempotent.
 
@@ -245,8 +315,15 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     if to_add:
         session.add_all(to_add)
         session.commit()
+    # An already-registered domain used to end the story: skipped, never re-read. The
+    # catalogue keeps LEARNING (new explicit countries, new tags, and the title/ccTLD
+    # fallbacks that did not exist when older rows were made), and none of it reached a
+    # row that already existed. NULL-only, so a re-seed can add what is missing and can
+    # never revert what an operator set.
+    reconciled = reconcile_source_metadata(session, sources)
     return {
         "created": len(to_add),
+        "reconciled": reconciled,
         "skipped": skipped_existing + len(shadowed) + skipped_malformed,
         "total": len(sources),
         "skipped_existing": skipped_existing,

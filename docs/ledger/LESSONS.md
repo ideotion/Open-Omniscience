@@ -7835,3 +7835,150 @@
   under test named the missing registration. **GENERAL FORM: when mutating a working tree
   deliberately, back up by COPY and restore by COPY. Reaching for git during a mutation run
   restores someone else's idea of the file.**
+
+- **A WIRING GUARD PINNED TO AN IMPORT'S PUNCTUATION FAILS WHEN THE IMPORT GROWS
+  (2026-09-09).** `test_corpus_algebra_endpoint_is_wired` asserted the literal string
+  `"from src.analytics.conjunction import corpus_algebra"`. It broke the moment the endpoint
+  imported a sibling from the same module — a guard about *what* is wired failing over *how*
+  an import is spelled, which is a false alarm that trains the next reader to relax the
+  guard rather than look at it. **GENERAL FORM: assert the SEAM and the CALL, never the
+  punctuation of the statement that reaches it.** The repaired version checks that the module
+  is imported at all and that the function is actually *called* — which is what the original
+  was reaching for, and strictly stronger than what it had.
+
+- **WORK THAT EXISTS AND CANNOT BE REACHED IS INDISTINGUISHABLE FROM WORK THAT DOES NOT
+  EXIST (2026-09-09).** `per_article_intensity` and `conditional_trend` had shipped with the
+  Conjunction Lens, carried unit tests, and were called by nothing — the endpoint returned its
+  base dict verbatim and a repo-wide grep found neither name outside its own module. The
+  tests kept passing the whole time, so nothing anywhere was red. **GENERAL FORM: a
+  unit-tested function with no caller is a green light over a dead surface. When auditing a
+  module, grep each public name for a call site OUTSIDE its own tests — the ones with none
+  are the shipped-but-unreachable set, and they are cheap to close precisely because the hard
+  part was already done and verified.**
+
+- **A NUMBER IN A CODE COMMENT IS A CLAIM, AND A CLAIM NOBODY RE-CHECKS OUTLIVES ITS FACT
+  (2026-09-09).** The ooMap comment states "175 countries (285 rings, 10,521 coordinate
+  pairs)" as the per-frame cost being removed. That is not reasoning, it is a measurement,
+  and the file it measures ships in the repo and can be regenerated. A test now counts
+  `world_countries.json` and asserts the three figures in the comment match it. **GENERAL
+  FORM: a comment may state reasoning freely, but the moment it states a NUMBER derived from
+  something in the tree, that number wants a guard — otherwise the next person to regenerate
+  the data leaves a confident, precise, wrong figure behind for years.**
+
+- **PRE-REGISTRATION IS ONLY HONEST IF IT CANNOT REACH THE STATISTIC (2026-09-09).** Adding
+  "declare your expected direction before the test" to the lunar correlator sounds purely
+  additive, and the failure mode is that the declaration becomes an input: a branch that
+  reads `expected_direction` before computing `r` turns a p-hacking *fix* into a new
+  p-hacking *surface* wearing an honest name. The property is testable and was made the
+  first test — the same series under `None`, `"positive"` and `"negative"` must return
+  byte-identical `r`, `p`, `n` and window, with the verdict a post-hoc label off the sign.
+  **GENERAL FORM: when a change adds an operator's DECLARATION to a measurement, assert that
+  the measurement is unchanged across every declaration. The whole value of the feature is
+  that assertion; without it you have added a knob to the thing you were protecting.**
+  The same entry's second half: a CONTRADICTED expectation must render exactly as plainly as
+  a matched one, because reporting only the matches is the publication bias pre-registration
+  exists to prevent — reproducing it inside the tool that offers pre-registration would be
+  worse than not offering it.
+
+- **A PARTIAL REDRAW MUST REFUSE, NOT HALF-UPDATE (2026-09-09).** Replacing one layer of a
+  rendered view is only safe while every assumption it was drawn under still holds. The ooMap
+  focus path returns `false` — sending the caller to the full render — when there is no
+  rendered signals layer to update, and the conditions it re-derives (kind chips, year label,
+  click-resolution list, marker listeners) are each a thing that silently goes wrong if
+  skipped: a stale click list opens the WRONG event's detail, which no test of the visible
+  markers would catch. **GENERAL FORM: for a fast path beside a slow one, enumerate what the
+  slow path also did and either redo it or refuse. And write down the precondition that makes
+  the shortcut sound — here, that the projection is view-independent — as a test, because if
+  it ever stops holding the failure is misplacement, not staleness, and it will look like a
+  data bug.**
+
+- **A REGRESSION TEST CAN MAKE A GAP LOOK SETTLED (2026-09-09).** `seed_sources` skipped
+  any domain already in the database and never re-read the row, so catalogue metadata that
+  arrived later — a new explicit country, or the title-suffix and ccTLD fallbacks that did
+  not exist when older rows were created — could never reach an existing source.
+  `test_seed_is_idempotent` asserted precisely that (`created=0, skipped=2`, database
+  untouched), which is a correct test of create-only behaviour and reads, to the next
+  person, as the question having been asked and answered. **GENERAL FORM: a test that pins
+  current behaviour is evidence the behaviour is INTENTIONAL, not evidence it is right.
+  When auditing, separate "this is guarded" from "this was decided" — the guard tells you
+  someone wrote the line, not that anyone weighed the alternative.**
+
+- **"FILL WHAT IS MISSING" AND "SYNC FROM THE CATALOGUE" ARE DIFFERENT FEATURES, AND ONLY
+  ONE IS SAFE TO RUN UNASKED (2026-09-09).** Reconciling source metadata on every seed is
+  fine while it writes ONLY empty fields; the moment it overwrites, a routine re-seed
+  silently reverts anything the operator set by hand — data loss disguised as maintenance,
+  triggered by a boot-time call nobody thinks of as a write. The NULL-only rule is also
+  what makes it idempotent. **GENERAL FORM: when adding a background reconcile, write down
+  which direction wins and make the losing direction impossible, not merely unlikely; the
+  first mutant to try is the overwrite.**
+
+- **PROVENANCE IS A FACT ABOUT THE ROW, NOT ABOUT THE THING (2026-09-09).** The source
+  catalogue's tags mix two kinds: descriptive tags (`news`, `fr`) that are true of the
+  SOURCE, and a `via:<origin>` marker that records how THIS row came to exist. Copying the
+  whole tag string onto a pre-existing row would have made a hand-registered source claim
+  it arrived via a catalogue it never came from. **GENERAL FORM: before copying a metadata
+  blob from one record onto another, check whether any field in it describes the RECORD
+  rather than the subject — those fields do not travel, and the ones that do are usually
+  the majority, which is what makes the exception easy to miss.**
+
+- **A DOCUMENT CAN CARRY BOTH SPELLINGS OF ONE ANCHOR, AND THAT IS WHY NOBODY SEES IT
+  (2026-09-09).** Three of `USER_MANUAL.md`'s dead in-page links pointed at
+  `#32-collect` while the same file, a few hundred lines later, linked the same heading
+  correctly as `#32-collect-in-settings--collect`. Anyone reading either passage sees a
+  plausible link; only comparing them reveals one is dead. A dead in-page anchor also has
+  no failure mode a reader would report — it renders as an ordinary link and does nothing
+  when clicked. **GENERAL FORM: link rot inside a document is invisible to reading and
+  silent when exercised, so it needs a mechanical check, and the check is about ten lines:
+  slugify the headings, extract the in-page targets, subtract.**
+
+- **PORTING A SHIPPED FUNCTION INTO A TEST MAKES THE PORT THE THING UNDER TEST
+  (2026-09-09).** The anchor guard needs the app's `slugifyHeading`, which lives in
+  JavaScript; the test ports it to Python. If the port drifts, every assertion still runs
+  and every one is meaningless — it validates documents against a convention the app does
+  not use, and it goes green either way. The port is therefore pinned first, against the
+  exact examples the original function's own comment cites as its verification cases.
+  **GENERAL FORM: a re-implementation inside a test is untested code in the position of
+  maximum leverage. Pin it to the original's own documented cases before using it, and
+  prefer examples the original author already wrote down over ones you invent.**
+
+- **"NO CONSISTENT RULE CAN RESOLVE THESE" IS A HYPOTHESIS, NOT A MEASUREMENT
+  (2026-09-09).** The docket explained nine dead links as unresolvable by any single
+  slugifier "alongside the reference anchors", which reads as an analysis and licensed
+  deferring them as cosmetic. Collapse-matching each dead target against the real headings
+  resolved all nine, with exactly one candidate each — and then found seven more of the
+  identical class in other documents nobody had checked. **GENERAL FORM: when a deferral
+  rests on an impossibility claim, the cheapest test is to try the obvious rule and count
+  the failures. An impossibility that has never been measured is a guess with a
+  confident tone, and the sweep it discourages is usually where the rest of the defect is.**
+
+- **"BOUNDED" MEANS "DOES NOT GROW WITH THE USER'S DATA", NOT "SMALL TODAY" (2026-09-09).**
+  `search_omni.py` promises "never scan-on-type: every group is served by an index or a
+  small bounded table", and the useful test of a candidate group turned out not to be its
+  current row count but whether that count is a function of the corpus. The events
+  catalogue (154 entries) and the Help documents (~600 KB) ship WITH the app and are the
+  same size on every install, so a contains-match over them is honest at 1.4 ms. The
+  keyword table looks comparable on a fresh install and reaches 406,723 rows on a real
+  corpus, which is why the same technique there would be a 400k-row scan per keystroke.
+  **GENERAL FORM: before adding a linear pass to a hot path, ask what the population is a
+  function of. A table that grows with usage and a file that ships with the binary are
+  different kinds of thing, however similar they look on a developer's empty database.**
+
+- **MEASURING A COLD IMPORT AS IF IT WERE THE FEATURE (2026-09-09).** The first timing of
+  the new Help-content index read **3.46 seconds** — alarming, and wrong. Almost all of it
+  was `import src.api.main`, which production has already paid before any search runs; the
+  index itself is 28 ms. The second error in the same run was measuring the first query
+  before any warm-up, which charged one group 8 ms instead of 0.3. **GENERAL FORM: a
+  first-call measurement in a fresh interpreter includes the module graph and every lazy
+  cache the real process built at boot. Import what production imports, warm what
+  production warms, and only then start the clock — otherwise the number is about the
+  measurement harness, and it will be quoted as being about the code.**
+
+- **A RENDERER THAT SWITCHES ON A KIND SILENTLY DROPS THE KIND IT DOES NOT KNOW
+  (2026-09-09).** The omnibar's `_omniItems` is an `if/else-if` chain over `g.kind`; a
+  backend group with no branch produces no row, no warning and no error — the API returns
+  it, the palette renders nothing, and every test on both sides passes. That is the same
+  built-and-unreachable shape as a tested function with no caller, arriving from the other
+  direction. **GENERAL FORM: when a consumer dispatches on a type tag, adding a producer
+  case is not complete until the consumer case exists, and the guard belongs in the same
+  commit — an `else` that logs the unknown kind is the cheaper structural fix where the
+  surface can afford it.**

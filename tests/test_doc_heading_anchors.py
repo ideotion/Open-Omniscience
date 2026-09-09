@@ -149,24 +149,25 @@ def test_most_of_the_docs_own_toc_links_now_resolve():
     assert len(links) == 50, f"USER_MANUAL.md's own in-page link count changed ({len(links)}); re-verify this test's numbers"
     resolved = [link for link in links if link in ids]
     unresolved = sorted({link for link in links if link not in ids})
-    # Pinned, not rounded up: these 9 unique targets are pre-existing markdown
-    # authoring inconsistencies (shortened links, or links hand-typed assuming
-    # the opposite/collapsing convention) that no single consistent slugifier
-    # can satisfy alongside the reference anchors above -- see module docstring
-    # and this session's verifiedHow notes.
-    expected_unresolved = {
-        "32-collect", "33-sources", "37-wikipedia",              # TOC shortens the heading (drops the "*(in Settings -> X)*" part)
-        "31a-analysis-the-corpora-window",                          # hand-typed collapsing single-hyphen guess
-        "the-home-briefing-intelligence-as-honest-cards",
-        "source-integrity-anti-amplification",
-        "shared-source-annotations-signed-portable-federated-by-trust",
-        "insights-keyword-entity-analytics",
-        "world-law-change-tracking-for-statutes-gazettes-ip",
-    }
-    assert unresolved == sorted(expected_unresolved), (
-        f"unresolved anchor set changed: {unresolved}"
-    )
-    assert len(resolved) >= 40, f"only {len(resolved)}/50 links resolved"
+    # WAS A PINNED SET OF NINE (2026-09-09). This test used to assert that exactly nine
+    # targets stay unresolved, on the reasoning that they were "pre-existing markdown
+    # authoring inconsistencies ... that no single consistent slugifier can satisfy
+    # alongside the reference anchors above". That was a hypothesis, and pinning it here
+    # made it read as a measured limit -- the test went green precisely BECAUSE the links
+    # were broken, and would have gone red if someone fixed them.
+    #
+    # It did not survive being tested. Collapse-matching each dead target against the real
+    # headings resolved all nine with exactly ONE candidate each: every one was typed
+    # against the collapsing GitHub convention (where a deleted "&" or em dash yields one
+    # hyphen) while the renderer implements the non-collapsing one, or written before its
+    # heading was renamed. The markdown now carries the targets the renderer actually
+    # produces, so the honest assertion is ZERO -- strictly stronger than the old one, and
+    # it fails if any of the nine regress.
+    #
+    # tests/test_help_doc_anchors_resolve.py generalises this to every SERVED Help
+    # document; this file stays the deep check of the slugifier itself.
+    assert unresolved == [], f"in-page links that land on nothing: {unresolved}"
+    assert len(resolved) == len(links), f"only {len(resolved)}/{len(links)} links resolved"
 
 
 def test_old_bare_heading_would_have_failed_this(monkeypatch):

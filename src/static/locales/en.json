@@ -3225,5 +3225,17 @@
   "you": "you",
   "No tags yet.": "No tags yet.",
   "new tag": "new tag",
-  "Could not load:": "Could not load:"
+  "Could not load:": "Could not load:",
+  "Declare the direction you expect before running a single test.": "Declare the direction you expect before running a single test.",
+  "You declared:": "You declared:",
+  "the measured sign MATCHES your declaration.": "the measured sign MATCHES your declaration.",
+  "the measured sign CONTRADICTS your declaration.": "the measured sign CONTRADICTS your declaration.",
+  "positive": "positive",
+  "negative": "negative",
+  "Declare first: what do you expect?": "Declare first: what do you expect?",
+  "— declare before testing —": "— declare before testing —",
+  "positive (more coverage as the moon fills)": "positive (more coverage as the moon fills)",
+  "negative (less coverage as the moon fills)": "negative (less coverage as the moon fills)",
+  "Help": "Help",
+  "date moves each year — see the official source": "date moves each year — see the official source"
 }

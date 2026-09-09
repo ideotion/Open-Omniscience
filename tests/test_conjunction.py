@@ -195,4 +195,10 @@ def test_corpus_algebra_endpoint_is_wired():
 
     src = Path("src/api/insights.py").read_text(encoding="utf-8")
     assert '@router.get("/corpus-algebra")' in src
-    assert "from src.analytics.conjunction import corpus_algebra" in src
+    # Was pinned to the exact one-name import line, which broke the moment the endpoint
+    # gained its `expand` views (2026-09-09) -- a guard about WHAT is wired failing over
+    # HOW the import is punctuated. It now asserts the seam itself: the endpoint imports
+    # corpus_algebra out of the analytics module, however many siblings ride along.
+    assert "from src.analytics.conjunction import " in src
+    assert "corpus_algebra" in src
+    assert "corpus_algebra(db, term_list" in src, "the endpoint must CALL it, not just import it"

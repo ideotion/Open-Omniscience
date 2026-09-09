@@ -198,6 +198,100 @@
     }
     // Returns the SVG marker element string: confirmed = circle, scheduled =
     // triangle, deduced = diamond. `fill` is the pre-built fill/stroke attr string.
+    // THE SIGNALS LAYER, ALONE (2026-09-09). Extracted from ooMap verbatim so the focus
+    // slider can redraw it WITHOUT rebuilding the map underneath it: `focusT` feeds
+    // nothing else -- not the choropleth, not the grid, not the labels or the OSM overlay
+    // -- yet a drag frame re-projected and re-serialised all 175 countries (285 rings,
+    // 10,521 coordinate pairs) into fresh path `d` strings, replaced the whole host's
+    // innerHTML and re-attached every listener, in order to move a handful of circles.
+    //
+    // PURE, and it can be: `lon2x`/`lat2y` are module-level constants and zoom rides the
+    // SVG viewBox, so the projection does not depend on the current view. That is what
+    // makes the cheap path safe rather than a cache that can go stale.
+    function _ooSignalLayer(opts) {
+      if (!opts.signalsOn || !Array.isArray(opts.signals)) {
+        return { markup: "", kinds: [], visible: [] };
+      }
+      const focus = opts.focusT, win = opts.windowY || 0;
+      const visible = opts.signals.filter(s => s.lat != null && s.lon != null
+        && typeof s.t === "number"
+        && (!win || focus == null || Math.abs(s.t - focus) <= win));
+      const kinds = [...new Set(visible.map(s => s.kind))];
+      const markup = visible.map((s, i) => {
+          const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
+          const dist = focus == null ? 0 : Math.abs(s.t - focus);
+          const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
+          // Item 2 (field-feedback A6, ruled): a hazard's radius scales with its
+          // REAL magnitude (sqrt scale -- area, not radius, grows linearly with
+          // magnitude, so a M9 doesn't visually swallow a M5) when one is known;
+          // a GDACS non-quake alert (no magnitude) falls through to the SAME
+          // honest default every other kind already uses -- never a fabricated
+          // size for a fact the provider didn't state.
+          const r = (s.kind === "hazard" && typeof s.magnitude === "number")
+            ? Math.min(9, 2.4 + Math.sqrt(Math.max(0, s.magnitude)) * 1.2)
+            : (s.confirmed ? 3 : 2.4);
+          const col = kindColor(s.kind);
+          // SHAPE encodes the event's CERTAINTY CLASS (field test 2026-06-19,
+          // THEME-2: "deduced events as shapes"), COLOUR encodes the kind — so the
+          // map reads without relying on colour alone: a corpus-extracted (deduced,
+          // never-confirmed) event is a hollow DIAMOND, a scheduled/unconfirmed
+          // future event a hollow TRIANGLE, a confirmed event a filled CIRCLE. The
+          // shape is FIXED per event (independent of the focus slider) so sliding
+          // the time window never morphs a marker.
+          const cls = _ooSigClass(s);
+          const ring = cls === "confirmed"
+            ? `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`
+            : `fill="transparent" stroke="${col}" stroke-width="1.1"${cls === "deduced" ? ' stroke-dasharray="1.6 1.2"' : ""}`;
+          const ti = `${s.title} — ${fmtDate(s)} · ${kindLabel(s.kind)}${s.place ? " · " + s.place : ""} · ${_ooSigClassLabel(cls)}`;
+          // a larger transparent hit disc keeps the whole marker clickable (the
+          // temporal-map lesson: hollow rings were clickable only on the 1px edge).
+          const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
+          return `<g${clk} opacity="${op.toFixed(2)}">`
+            + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent"></circle>` : "")
+            + _ooSigMarker(cls, x, y, r, ring, esc(ti)) + `</g>`;
+      }).join("");
+      return { markup, kinds, visible };
+    }
+
+    // The kind chips of the legend, as their own fragment: the visible KINDS change as
+    // the focus window slides (a window with no floods should not keep claiming a flood
+    // chip), so the cheap path has to refresh them too. Same markup either way -- one
+    // renderer, so the two paths cannot drift into drawing the legend differently.
+    function _ooSigKindsHtml(kinds) {
+      return (kinds || []).map(k => `<span style="display:inline-flex;align-items:center;gap:4px">`
+        + `<span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>`
+        + `${esc(kindLabel(k))}</span>`).join("");
+    }
+
+    // THE CHEAP PATH for a focus-slider drag. Redraws ONLY what the focus moment feeds:
+    // the signal markers, the kind chips, the year label, and the click-resolution list.
+    // Returns false when it cannot be sure it is safe -- no rendered map, no signals
+    // layer in the DOM, no stashed opts -- and the caller falls back to the full render.
+    // Refusing beats guessing here: a half-updated map is worse than a slow one.
+    function _ooMapFocusRedraw(host, opts) {
+      if (!host) return false;
+      const layer = host.querySelector("[data-oomap-siglayer]");
+      if (!layer) return false;                      // signals off, or never rendered
+      const sig = _ooSignalLayer(opts);
+      layer.innerHTML = sig.markup;
+      const chips = host.querySelector("[data-oomap-sigkinds]");
+      if (chips) chips.innerHTML = _ooSigKindsHtml(sig.kinds);
+      const lbl = host.querySelector("[data-oomap-focuslabel]");
+      if (lbl) lbl.textContent = opts.focusLabel || "";
+      host._ooSigVisible = sig.visible;              // click-to-detail resolves against THIS list
+      // The markers were replaced, so their listeners went with them. Re-attached here
+      // and nowhere else -- the rest of the map's wiring is untouched, which is the
+      // whole point.
+      if (opts.onSignal) {
+        host.querySelectorAll("[data-oomap-sig]").forEach(g =>
+          g.addEventListener("click", () => {
+            const s2 = (host._ooSigVisible || [])[+g.dataset.oomapSig];
+            if (s2) opts.onSignal(s2, host._ooSigVisible || []);
+          }));
+      }
+      return true;
+    }
+
     function _ooSigMarker(cls, x, y, r, fill, titleEsc) {
       const ttl = `<title>${titleEsc}</title>`;
       if (cls === "scheduled") {
@@ -312,47 +406,9 @@
       // (/api/timemap) + helpers (kindColor / TMAP_KINDS / fmtYear / fmtDate). The
       // in-map slider moves the focus moment. Confirmed = filled, future/unconfirmed
       // = a hollow/dashed ring (the temporal map's honest convention).
-      let signalPts = "", sigKinds = [], sigVisible = [];
-      if (opts.signalsOn && Array.isArray(opts.signals)) {
-        const focus = opts.focusT, win = opts.windowY || 0;
-        sigVisible = opts.signals.filter(s => s.lat != null && s.lon != null
-          && typeof s.t === "number"
-          && (!win || focus == null || Math.abs(s.t - focus) <= win));
-        sigKinds = [...new Set(sigVisible.map(s => s.kind))];
-        signalPts = sigVisible.map((s, i) => {
-          const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
-          const dist = focus == null ? 0 : Math.abs(s.t - focus);
-          const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
-          // Item 2 (field-feedback A6, ruled): a hazard's radius scales with its
-          // REAL magnitude (sqrt scale -- area, not radius, grows linearly with
-          // magnitude, so a M9 doesn't visually swallow a M5) when one is known;
-          // a GDACS non-quake alert (no magnitude) falls through to the SAME
-          // honest default every other kind already uses -- never a fabricated
-          // size for a fact the provider didn't state.
-          const r = (s.kind === "hazard" && typeof s.magnitude === "number")
-            ? Math.min(9, 2.4 + Math.sqrt(Math.max(0, s.magnitude)) * 1.2)
-            : (s.confirmed ? 3 : 2.4);
-          const col = kindColor(s.kind);
-          // SHAPE encodes the event's CERTAINTY CLASS (field test 2026-06-19,
-          // THEME-2: "deduced events as shapes"), COLOUR encodes the kind — so the
-          // map reads without relying on colour alone: a corpus-extracted (deduced,
-          // never-confirmed) event is a hollow DIAMOND, a scheduled/unconfirmed
-          // future event a hollow TRIANGLE, a confirmed event a filled CIRCLE. The
-          // shape is FIXED per event (independent of the focus slider) so sliding
-          // the time window never morphs a marker.
-          const cls = _ooSigClass(s);
-          const ring = cls === "confirmed"
-            ? `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`
-            : `fill="transparent" stroke="${col}" stroke-width="1.1"${cls === "deduced" ? ' stroke-dasharray="1.6 1.2"' : ""}`;
-          const ti = `${s.title} — ${fmtDate(s)} · ${kindLabel(s.kind)}${s.place ? " · " + s.place : ""} · ${_ooSigClassLabel(cls)}`;
-          // a larger transparent hit disc keeps the whole marker clickable (the
-          // temporal-map lesson: hollow rings were clickable only on the 1px edge).
-          const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
-          return `<g${clk} opacity="${op.toFixed(2)}">`
-            + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent"></circle>` : "")
-            + _ooSigMarker(cls, x, y, r, ring, esc(ti)) + `</g>`;
-        }).join("");
-      }
+      const _sig = _ooSignalLayer(opts);
+      const signalPts = opts.signalsOn ? `<g data-oomap-siglayer>${_sig.markup}</g>` : "";
+      const sigKinds = _sig.kinds, sigVisible = _sig.visible;
 
       // sr-only top list + aria summary (chart a11y pattern, PR G).
       const top = Object.keys(values).map(k => [k, values[k]]).filter(r => typeof r[1] === "number")
@@ -429,7 +485,7 @@
         <div class="oomap-time" style="position:absolute;bottom:36px;left:8px;right:8px;z-index:5;display:flex;flex-direction:column;gap:1px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px">
           <div style="display:flex;align-items:center;gap:8px">
             <input type="range" data-oomap-focus min="0" max="1000" value="${opts.focusSlider != null ? opts.focusSlider : 1000}" step="1" style="flex:1" aria-label="${esc(t("Moment in focus"))}">
-            <strong style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
+            <strong data-oomap-focuslabel style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
             ${scaleBtns}
           </div>
           ${tickStrip}
@@ -481,13 +537,14 @@
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
-        ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(kindLabel(k))}</span>`).join("") : ""}
+        ${opts.signalsOn ? `<span data-oomap-sigkinds>${_ooSigKindsHtml(sigKinds)}</span>` : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}${osm.areaCount ? " · " + osm.areaCount + " " + esc(t("country boundaries")) : ""}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
       host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
+      host._ooOpts = opts;                         // the cheap focus path reuses these unchanged
       host._ooLabels = labelCands;                 // for the dynamic-label declutter (re-laid-out on zoom)
       _wireOoMap(host, opts);
       _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
@@ -876,6 +933,9 @@
           || String(s.hazard_type || "").toLowerCase() === _ooMapHazType);
       }
       let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "", focusTicks = [];
+      // Hoisted out of the block below: the focus-slider handler needs it to recompute a
+      // year WITHOUT a full re-render, and a block-scoped const is invisible from there.
+      let yearAtFn = null;
       if (sig.length) {
         const ts = sig.map(s => s.t);
         const tmin = Math.min(...ts), tmax = Math.max(...ts), spanY = tmax - tmin;
@@ -892,6 +952,7 @@
               ? spanY * (1 - frac)
               : spanY * (Math.pow(_LOGB, 1 - frac) - 1) / (_LOGB - 1));
         const yearAt = (frac) => tmax - ageAt(frac);
+        yearAtFn = yearAt;
         focusT = yearAt(focusSlider / 1000);   // 0 = oldest, 1 = most recent
         focusLabel = (typeof fmtYear === "function") ? fmtYear(focusT) : String(Math.round(focusT));
         // Honest labelled ticks: the year at 0/.25/.5/.75/1 — non-uniform in log
@@ -940,8 +1001,25 @@
           }
           _renderOoMapDim();
         },
-        // rAF-coalesce slider drags so a fast sweep is at most one re-render per frame.
-        onFocus: v => { _ooMapFocusSlider = v; if (_ooMapFocusRAF) cancelAnimationFrame(_ooMapFocusRAF); _ooMapFocusRAF = requestAnimationFrame(() => _renderOoMapDim()); },
+        // rAF-coalesce slider drags so a fast sweep is at most one redraw per frame --
+        // and make that redraw the CHEAP one. The focus moment feeds the signal markers
+        // and their year label, nothing else, so rebuilding the map under them meant
+        // re-projecting 175 countries (285 rings, 10,521 coordinate pairs) into fresh
+        // path strings, per frame, to move a handful of circles.
+        onFocus: v => {
+          _ooMapFocusSlider = v;
+          if (_ooMapFocusRAF) cancelAnimationFrame(_ooMapFocusRAF);
+          _ooMapFocusRAF = requestAnimationFrame(() => {
+            const base = host._ooOpts;
+            if (!base || !yearAtFn) { _renderOoMapDim(); return; }
+            const ft = yearAtFn(v / 1000);
+            const fl = (typeof fmtYear === "function") ? fmtYear(ft) : String(Math.round(ft));
+            // Keep the stashed opts in step, so a later full render (a dimension switch,
+            // a layer toggle) starts from the moment the reader actually left it on.
+            base.focusT = ft; base.focusLabel = fl; base.focusSlider = v;
+            if (!_ooMapFocusRedraw(host, base)) _renderOoMapDim();
+          });
+        },
         onSignal: (s, visible) => _ooMapSignalDetail(s, visible, windowY),
         // Dynamic non-overlapping country labels (THEME-2), opt-in.
         labelsOn: _ooMapLabelsOn,

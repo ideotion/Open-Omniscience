@@ -1382,7 +1382,18 @@
       <div id="lunar-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
         <div style="flex:2"><label for="lunar-term">Test one keyword</label><input id="lunar-term" placeholder="keyword to test" onkeydown="if(event.key==='Enter')lunarTestTerm()"></div>
-        <div style="flex:0 0 auto"><button class="secondary" onclick="lunarTestTerm()">Test one keyword</button></div>
+        <!-- PRE-REGISTRATION. The declaration comes BEFORE the test, and the button stays
+             disabled until it is made -- structurally, not as a label asking nicely. A
+             single test where you read whichever sign turned up is the degree of freedom
+             this closes; the backend refuses an undeclared single test too, so a caller
+             skipping this form gets the same answer. -->
+        <div style="flex:1"><label for="lunar-direction">Declare first: what do you expect?</label>
+          <select id="lunar-direction" onchange="lunarSyncDirection()">
+            <option value="" selected>— declare before testing —</option>
+            <option value="positive">positive (more coverage as the moon fills)</option>
+            <option value="negative">negative (less coverage as the moon fills)</option>
+          </select></div>
+        <div style="flex:0 0 auto"><button id="lunar-test-btn" class="secondary" onclick="lunarTestTerm()" disabled>Test one keyword</button></div>
       </div>
       <div id="lunar-single" class="hint" style="margin-top:8px"></div>
     </section>

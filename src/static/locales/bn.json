@@ -3225,5 +3225,17 @@
   "you": "আপনি",
   "No tags yet.": "এখনও কোনো ট্যাগ নেই।",
   "new tag": "নতুন ট্যাগ",
-  "Could not load:": "লোড করা যায়নি:"
+  "Could not load:": "লোড করা যায়নি:",
+  "Declare the direction you expect before running a single test.": "একটি একক পরীক্ষা চালানোর আগে আপনি যে দিক আশা করছেন তা ঘোষণা করুন।",
+  "You declared:": "আপনি ঘোষণা করেছেন:",
+  "the measured sign MATCHES your declaration.": "পরিমাপকৃত চিহ্ন আপনার ঘোষণার সঙ্গে মেলে।",
+  "the measured sign CONTRADICTS your declaration.": "পরিমাপকৃত চিহ্ন আপনার ঘোষণার বিপরীত।",
+  "positive": "ধনাত্মক",
+  "negative": "ঋণাত্মক",
+  "Declare first: what do you expect?": "প্রথমে ঘোষণা করুন: আপনি কী আশা করছেন?",
+  "— declare before testing —": "— পরীক্ষার আগে ঘোষণা করুন —",
+  "positive (more coverage as the moon fills)": "ধনাত্মক (চাঁদ পূর্ণ হওয়ার সঙ্গে বেশি কভারেজ)",
+  "negative (less coverage as the moon fills)": "ঋণাত্মক (চাঁদ পূর্ণ হওয়ার সঙ্গে কম কভারেজ)",
+  "Help": "সহায়তা",
+  "date moves each year — see the official source": "তারিখ প্রতি বছর বদলায় — সরকারি উৎস দেখুন"
 }

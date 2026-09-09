@@ -3225,5 +3225,17 @@
   "you": "вы",
   "No tags yet.": "Меток пока нет.",
   "new tag": "новая метка",
-  "Could not load:": "Не удалось загрузить:"
+  "Could not load:": "Не удалось загрузить:",
+  "Declare the direction you expect before running a single test.": "Объявите ожидаемое направление до запуска одиночного теста.",
+  "You declared:": "Вы объявили:",
+  "the measured sign MATCHES your declaration.": "измеренный знак СОВПАДАЕТ с вашим объявлением.",
+  "the measured sign CONTRADICTS your declaration.": "измеренный знак ПРОТИВОРЕЧИТ вашему объявлению.",
+  "positive": "положительная",
+  "negative": "отрицательная",
+  "Declare first: what do you expect?": "Сначала объявите: чего вы ожидаете?",
+  "— declare before testing —": "— объявите до теста —",
+  "positive (more coverage as the moon fills)": "положительная (больше освещения по мере роста луны)",
+  "negative (less coverage as the moon fills)": "отрицательная (меньше освещения по мере роста луны)",
+  "Help": "Справка",
+  "date moves each year — see the official source": "дата меняется каждый год — см. официальный источник"
 }

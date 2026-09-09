@@ -3225,5 +3225,17 @@
   "you": "vous",
   "No tags yet.": "Aucune étiquette pour l’instant.",
   "new tag": "nouvelle étiquette",
-  "Could not load:": "Chargement impossible :"
+  "Could not load:": "Chargement impossible :",
+  "Declare the direction you expect before running a single test.": "Déclarez la direction attendue avant de lancer un test unique.",
+  "You declared:": "Vous avez déclaré :",
+  "the measured sign MATCHES your declaration.": "le signe mesuré CORRESPOND à votre déclaration.",
+  "the measured sign CONTRADICTS your declaration.": "le signe mesuré CONTREDIT votre déclaration.",
+  "positive": "positive",
+  "negative": "négative",
+  "Declare first: what do you expect?": "Déclarez d’abord : à quoi vous attendez-vous ?",
+  "— declare before testing —": "— déclarez avant de tester —",
+  "positive (more coverage as the moon fills)": "positive (plus de couverture quand la lune se remplit)",
+  "negative (less coverage as the moon fills)": "négative (moins de couverture quand la lune se remplit)",
+  "Help": "Aide",
+  "date moves each year — see the official source": "la date change chaque année — voir la source officielle"
 }

@@ -685,6 +685,25 @@
           items.forEach(it => out.push({grp, label: it.title,
             sub: (it.jurisdiction || "").toUpperCase(),
             run: () => showTab("law")}));
+        } else if (g.kind === "events") {
+          // The catalogue's own two classes, carried not flattened: a fixed civic date
+          // shows the date it asserts; a movable summit has none and says "date moves"
+          // rather than borrowing a neighbour's. Inventing one here would undo the
+          // catalogue's refusal to fabricate it.
+          const grp = head(t("Agenda"), g);
+          items.forEach(it => out.push({grp, label: it.title,
+            sub: (it.confirmed && it.next_occurrence)
+              ? it.next_occurrence
+              : t("date moves each year — see the official source"),
+            run: () => showTab("agenda")}));
+        } else if (g.kind === "docs") {
+          // Opens AT the passage, not at the top of the document: the backend carries the
+          // heading the hit sits under and that heading's anchor.
+          const grp = head(t("Help"), g);
+          items.forEach(it => out.push({grp,
+            label: it.snippet,
+            sub: it.title + (it.heading ? " · " + it.heading : ""),
+            run: () => { showTab("help"); openDoc(it.slug, it.anchor); }}));
         }
       });
       return out;

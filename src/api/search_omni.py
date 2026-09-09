@@ -19,6 +19,7 @@ error condition — it falls back to a quoted-phrase match instead of a 400.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
@@ -402,6 +403,145 @@ def _law_group(db: Session, q: str) -> dict:
     }
 
 
+# ---- events + Help-document content (the omnibar's last two REMAINING groups) ---- #
+#
+# BOTH ARE BOUNDED BY CONSTRUCTION, and that is why they are allowed on a surface whose
+# opening promise is "never scan-on-type". Neither grows with the user's corpus: the
+# events catalogue is a 154-entry file that SHIPS with the app (already lru_cached and
+# resident), and the Help documents are the ten files the API's own allow-list serves
+# (~600 KB of markdown, indexed once on first use and cached). Contrast the keyword
+# table, which reaches 406,723 rows on a real corpus -- that is the population a
+# contains-match may NOT be run over per keystroke, and the reason typo tolerance is
+# parked on an index decision rather than built.
+#
+# MEASURED 2026-09-09 in this sandbox (py3.13), after the app import that production has
+# already paid: the docs index builds in 28 ms ONCE over 6,512 prose lines, then a search
+# costs 1.4-1.8 ms; the events search costs 0.3 ms over 154 entries. Stated as a dated
+# measurement rather than pinned by a test, because a wall-clock assertion is a flake on
+# someone else's machine -- what IS pinned below is the bounded-ness those numbers follow
+# from: the index is built once, and neither group touches the keyword table.
+
+
+def _events_group(db: Session, q: str) -> dict:
+    """The curated world-events agenda, matched on what the catalogue ASSERTS."""
+    from src.events.catalog import agenda
+
+    needle = q.casefold()
+    rows = agenda()  # enriched with next_occurrence, soonest-first; the tab's own order
+    matched = [
+        e for e in rows
+        if needle in str(e.get("title", "")).casefold()
+        or needle in str(e.get("category", "")).casefold()
+        or needle in str(e.get("country", "")).casefold()
+        or any(needle in str(t).casefold() for t in (e.get("tags") or []))
+    ]
+    items = [
+        {
+            "title": e.get("title"),
+            "category": e.get("category"),
+            "country": e.get("country"),
+            "next_occurrence": e.get("next_occurrence"),
+            # Carried, never inferred: a movable summit has no exact date and says so,
+            # exactly as the agenda tab renders it. An absent date is not a missing
+            # field to fill in -- it is the catalogue declining to fabricate one.
+            "confirmed": bool(e.get("confirmed")),
+        }
+        for e in matched[:_PER_GROUP]
+    ]
+    return {
+        "kind": "events",
+        "items": items,
+        "total": len(matched),
+        "note": (
+            "contains-match over the curated events catalogue (title, category, country, "
+            "tags) -- asserted by the catalogue, never deduced; a movable date stays "
+            "unconfirmed"
+        ),
+    }
+
+
+@lru_cache(maxsize=1)
+def _docs_index() -> tuple[tuple[str, str, str, str, str], ...]:
+    """(slug, title, heading, anchor, line) for every prose line of every SERVED doc.
+
+    Read from the API's own ``_DOCS`` allow-list rather than a glob or a list here, so a
+    new Help document becomes searchable on the commit that publishes it and an unserved
+    repo document never leaks into results the reader cannot open. Built once, on the
+    first search that needs it -- never at import, since most sessions never search docs.
+    """
+    import re as _re
+
+    from src.api.main import _DOCS
+    from src.paths import repo_root
+
+    out: list[tuple[str, str, str, str, str]] = []
+    for slug, meta in _DOCS.items():
+        path = repo_root() / "docs" / meta["file"]
+        try:
+            text = path.read_text("utf-8")
+        except OSError:  # a doc that is not on disk is skipped, never a blank omnibar
+            continue
+        heading, anchor = "", ""
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            head = _re.match(r"^#{1,6}\s+(.*)$", line)
+            if head:
+                heading = head.group(1).strip()
+                anchor = _slugify_heading(heading)
+                continue
+            if line.startswith(("```", "|", ">")):
+                continue  # code fences, tables and quotes are not prose
+            out.append((slug, str(meta.get("title") or slug), heading, anchor, line))
+    return tuple(out)
+
+
+def _slugify_heading(raw: str) -> str:
+    """The renderer's anchor convention (mirrors ``slugifyHeading`` in app-settings.js):
+    strip markdown marks, lowercase, DELETE anything that is not a letter/number/
+    underscore/hyphen/space, then one hyphen per SURVIVING space -- so a deleted "&"
+    leaves two. Pinned by tests/test_help_doc_anchors_resolve.py."""
+    import re as _re
+
+    t = _re.sub(r"`([^`]+)`", r"\1", raw)
+    t = _re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+    t = _re.sub(r"(^|[^*])\*([^*]+)\*", r"\1\2", t)
+    t = _re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", t)
+    t = "".join(c for c in t.lower() if c.isalnum() or c in "_- ")
+    return _re.sub(r"^-+|-+$", "", t.replace(" ", "-")) or "section"
+
+
+_DOC_SNIPPET = 160
+
+
+def _docs_group(db: Session, q: str) -> dict:
+    """Search INSIDE the Help documents, not only their titles.
+
+    The palette already offered the documents by name; a reader who remembers a phrase
+    and not which document holds it had nowhere to type it. The hit carries the heading
+    it sits under and that heading's ANCHOR, so the result opens at the passage rather
+    than at the top of a 3,000-line manual."""
+    needle = q.casefold()
+    hits = [row for row in _docs_index() if needle in row[4].casefold()]
+    items = []
+    for slug, title, heading, anchor, line in hits[:_PER_GROUP]:
+        text = line if len(line) <= _DOC_SNIPPET else line[: _DOC_SNIPPET - 1] + "\u2026"
+        items.append(
+            {"slug": slug, "title": title, "heading": heading, "anchor": anchor, "snippet": text}
+        )
+    return {
+        "kind": "docs",
+        "items": items,
+        "total": len(hits),
+        "note": (
+            "contains-match over the prose of the Help documents the app serves "
+            "(headings carried so a hit opens at its passage); code blocks, tables and "
+            "quotes are excluded"
+        ),
+    }
+
+
 @router.get("/omni")
 def omni(
     q: str = Query(min_length=2, max_length=200),
@@ -444,7 +584,8 @@ def omni(
         except Exception:  # noqa: BLE001 - the FTS layer must never blank the omnibar
             _LOG.warning("omni fts search failed for %r", q, exc_info=True)
             hits = ([], q, False)
-        for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group, _law_group):
+        for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group,
+                   _law_group, _events_group, _docs_group):
             try:
                 # Only the two FTS-backed groups take the shared hits; the catalog
                 # groups (keywords/sources/law) run their own bounded index queries.

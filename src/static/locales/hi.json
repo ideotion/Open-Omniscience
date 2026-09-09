@@ -3225,5 +3225,17 @@
   "you": "आप",
   "No tags yet.": "अभी कोई टैग नहीं।",
   "new tag": "नया टैग",
-  "Could not load:": "लोड नहीं हो सका:"
+  "Could not load:": "लोड नहीं हो सका:",
+  "Declare the direction you expect before running a single test.": "एकल परीक्षण चलाने से पहले अपेक्षित दिशा घोषित करें।",
+  "You declared:": "आपने घोषित किया:",
+  "the measured sign MATCHES your declaration.": "मापा गया चिह्न आपकी घोषणा से मेल खाता है।",
+  "the measured sign CONTRADICTS your declaration.": "मापा गया चिह्न आपकी घोषणा का खंडन करता है।",
+  "positive": "धनात्मक",
+  "negative": "ऋणात्मक",
+  "Declare first: what do you expect?": "पहले घोषित करें: आप क्या अपेक्षा करते हैं?",
+  "— declare before testing —": "— परीक्षण से पहले घोषित करें —",
+  "positive (more coverage as the moon fills)": "धनात्मक (चाँद भरने के साथ अधिक कवरेज)",
+  "negative (less coverage as the moon fills)": "ऋणात्मक (चाँद भरने के साथ कम कवरेज)",
+  "Help": "सहायता",
+  "date moves each year — see the official source": "तारीख हर साल बदलती है — आधिकारिक स्रोत देखें"
 }

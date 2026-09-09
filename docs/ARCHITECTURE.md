@@ -5,7 +5,7 @@ The technical companion to the User Manual: the database/configuration, the HTTP
 ## Contents
 - [Database Configuration for Open Omniscience](#database-configuration-for-open-omniscience)
 - [API Reference](#api-reference)
-- [Internationalisation (i18n) — making the app multilingual](#internationalisation-i18n-making-the-app-multilingual)
+- [Internationalisation (i18n) — making the app multilingual](#internationalisation-i18n--making-the-app-multilingual)
 
 
 ---

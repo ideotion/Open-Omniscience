@@ -3225,5 +3225,17 @@
   "you": "您",
   "No tags yet.": "尚无标签。",
   "new tag": "新标签",
-  "Could not load:": "无法加载："
+  "Could not load:": "无法加载：",
+  "Declare the direction you expect before running a single test.": "在运行单次检验之前，先声明您预期的方向。",
+  "You declared:": "您声明的是：",
+  "the measured sign MATCHES your declaration.": "实测符号与您的声明一致。",
+  "the measured sign CONTRADICTS your declaration.": "实测符号与您的声明相矛盾。",
+  "positive": "正相关",
+  "negative": "负相关",
+  "Declare first: what do you expect?": "先声明：您预期什么？",
+  "— declare before testing —": "— 检验前先声明 —",
+  "positive (more coverage as the moon fills)": "正相关（月亮越圆，报道越多）",
+  "negative (less coverage as the moon fills)": "负相关（月亮越圆，报道越少）",
+  "Help": "帮助",
+  "date moves each year — see the official source": "日期每年变动 — 请查看官方来源"
 }

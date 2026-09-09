@@ -1110,15 +1110,31 @@
       }
     }
 
+    // The test button is enabled only once a direction has been DECLARED. Making the
+    // requirement structural is the point: a label saying "please declare first" is a
+    // request, and a disabled button is the thing that actually happens before you look.
+    function lunarSyncDirection() {
+      const btn = $("lunar-test-btn"), sel = $("lunar-direction");
+      if (btn && sel) btn.disabled = !sel.value;
+    }
+
     async function lunarTestTerm() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("lunar-single"); if (!out) return;
       const termEl = $("lunar-term");
       const term = (termEl ? termEl.value : "").trim();
       if (!term) { out.textContent = ""; return; }
+      const dirEl = $("lunar-direction");
+      const dir = dirEl ? dirEl.value : "";
+      if (!dir) {
+        // Mirrors the backend's 400 rather than sending a request it will refuse.
+        out.innerHTML = `<div class="muted">${esc(t("Declare the direction you expect before running a single test."))}</div>`;
+        return;
+      }
       out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/insights/lunar-correlation?term=" + encodeURIComponent(term));
+        const d = await api("/api/insights/lunar-correlation?term=" + encodeURIComponent(term)
+          + "&expected_direction=" + encodeURIComponent(dir));
         const r = d.result;
         if (!r) {
           // Honest skip: too few active days to test this one keyword.
@@ -1126,9 +1142,18 @@
           return;
         }
         const stat = `<strong>${esc(r.term)}</strong> · r ${(+r.r).toFixed(3)} · ${esc(t("p-value"))} ${(+r.p_value).toFixed(4)} · n ${r.n} · ${r.active_days} ${esc(t("active days"))}`;
-        // The single-test note (keyed, VISIBLE): one test is not a screen.
-        out.innerHTML = `<div>${stat}</div>
-          <div class="card-caveat" style="margin-top:4px">${esc(t("A single test, not corrected for multiple comparisons — screen many keywords for an honest, FDR-corrected result."))}</div>`;
+        // The pre-registered outcome, stated either way. A CONTRADICTED expectation is
+        // reported exactly as plainly as a matched one -- reporting only the matches is
+        // the bias pre-registration exists to prevent, so there is no styling here that
+        // makes one look like the good result.
+        const decl = esc(t(r.expected_direction === "negative" ? "negative" : "positive"));
+        const verdict = r.matches_expectation === null || r.matches_expectation === undefined ? ""
+          : `<div style="margin-top:4px">${esc(t("You declared:"))} <strong>${decl}</strong> · `
+            + `${esc(r.matches_expectation ? t("the measured sign MATCHES your declaration.")
+                                           : t("the measured sign CONTRADICTS your declaration."))}</div>`;
+        out.innerHTML = `<div>${stat}</div>${verdict}`
+          + (d.preregistration ? `<div class="card-caveat" style="margin-top:4px">${esc(d.preregistration)}</div>` : "")
+          + `<div class="card-caveat" style="margin-top:4px">${esc(t("A single test, not corrected for multiple comparisons — screen many keywords for an honest, FDR-corrected result."))}</div>`;
       } catch (e) {
         out.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
       }

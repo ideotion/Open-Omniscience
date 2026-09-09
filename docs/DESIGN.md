@@ -3,11 +3,11 @@
 What the app is and isn't, where each original 'pillar' now lives, the GUI's design reasoning, and the content-analysis strategy. The single design reference.
 
 ## Contents
-- [Open-Omniscience — Product Synthesis (What the App Should Do)](#open-omniscience-product-synthesis-what-the-app-should-do)
-- [Pillar Intent Map — where each pillar's purpose now lives](#pillar-intent-map-where-each-pillars-purpose-now-lives)
-- [GUI Redesign — "0.05"](#gui-redesign-005)
-- [Two interfaces, one argument — "Console" vs "Desk"](#two-interfaces-one-argument-console-vs-desk)
-- [Content-analysis strategy — links, uniformity, and the original source](#content-analysis-strategy-links-uniformity-and-the-original-source)
+- [Open-Omniscience — Product Synthesis (What the App Should Do)](#open-omniscience--product-synthesis-what-the-app-should-do)
+- [Pillar Intent Map — where each pillar's purpose now lives](#pillar-intent-map--where-each-pillars-purpose-now-lives)
+- [GUI Redesign — "0.05"](#gui-redesign--005)
+- [Two interfaces, one argument — "Console" vs "Desk"](#two-interfaces-one-argument--console-vs-desk)
+- [Content-analysis strategy — links, uniformity, and the original source](#content-analysis-strategy--links-uniformity-and-the-original-source)
 
 
 ---
