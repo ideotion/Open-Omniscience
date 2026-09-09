@@ -1370,6 +1370,106 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
                 _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
 
 
+#: SQLite's VACUUM writes a COMPLETE second copy of the database and only then
+#: swaps it in, so the peak requirement is the file plus the copy. 2.0x is the
+#: floor of that, not a safety margin on top of it.
+VACUUM_HEADROOM = 2.0
+
+
+class VacuumSpaceError(RuntimeError):
+    """A VACUUM was refused because the volume it would write to is too small.
+
+    Carries the measurement, so the caller can tell the operator the actual
+    numbers rather than "not enough space".
+    """
+
+    def __init__(self, report: dict) -> None:
+        super().__init__(report.get("detail") or "insufficient free space for VACUUM")
+        self.report = report
+
+
+def vacuum_preflight(engine: Engine) -> dict:
+    """Can this store be VACUUMed without filling the disk?
+
+    DB-10 §2 carry-over. The UI already discloses an estimated DURATION and
+    confirms; nothing checked SPACE. A VACUUM needs room for a full second copy
+    of the file, and running out mid-rebuild is the worst moment to discover it.
+
+    BOTH volumes are measured, because SQLite writes its rebuild to a temporary
+    file whose location it chooses (``SQLITE_TMPDIR``/``TMPDIR``/``/var/tmp``/
+    ``/tmp`` on unix) and that need not be the database's own volume. Requiring
+    the headroom on each is conservative in the only direction that is safe.
+
+    AN UNREADABLE FIGURE IS NOT A REFUSAL. ``shutil.disk_usage`` can raise, and
+    a fabricated 0 would manufacture a refusal out of an unreadable ``statvfs``
+    -- the same distinction ``vllm_lifecycle._free_disk_bytes`` already draws.
+    When the space cannot be read, ``sufficient`` is ``None`` and the caller
+    proceeds having been TOLD it was not preflighted, rather than being blocked
+    by a measurement nobody took.
+    """
+    import shutil
+    import tempfile
+
+    if engine.url.get_backend_name() != "sqlite":
+        return {"checked": False, "sufficient": None,
+                "detail": "VACUUM preflight applies to SQLite stores only"}
+    db_path = engine.url.database
+    if not db_path or not os.path.exists(db_path):
+        return {"checked": False, "sufficient": None,
+                "detail": "no database file on disk to measure"}
+
+    db_bytes = os.path.getsize(db_path)
+    needed = int(db_bytes * VACUUM_HEADROOM)
+
+    def _free(where: str) -> int | None:
+        try:
+            return int(shutil.disk_usage(where).free)
+        except OSError:
+            return None
+
+    volumes = {
+        "database": (os.path.dirname(os.path.abspath(db_path)) or ".", None),
+        "temp": (tempfile.gettempdir(), None),
+    }
+    measured = {name: _free(path) for name, (path, _) in volumes.items()}
+    readable = {k: v for k, v in measured.items() if v is not None}
+
+    report: dict = {
+        "checked": bool(readable),
+        "db_bytes": db_bytes,
+        "needed_bytes": needed,
+        "headroom": VACUUM_HEADROOM,
+        "free_bytes": {k: measured[k] for k in measured},
+        "method": (
+            "VACUUM rebuilds the file into a full second copy before swapping it "
+            "in, so it needs about twice the current size free. Both the "
+            "database's own volume and the temporary-file volume are measured, "
+            "because SQLite may write the rebuild to either."
+        ),
+    }
+    if not readable:
+        report["sufficient"] = None
+        report["detail"] = (
+            "free space could not be read on either volume; this VACUUM was not "
+            "preflighted"
+        )
+        return report
+
+    short = sorted(k for k, v in readable.items() if v < needed)
+    report["sufficient"] = not short
+    if short:
+        worst = min(short, key=lambda k: readable[k])
+        report["short_on"] = short
+        report["detail"] = (
+            f"the {worst} volume has {readable[worst]:,} bytes free and this "
+            f"VACUUM needs about {needed:,} (twice the {db_bytes:,}-byte file). "
+            "Free space, or move the temporary directory, then retry."
+        )
+    else:
+        report["detail"] = "enough free space on every volume this VACUUM writes to"
+    return report
+
+
 def vacuum_database(engine: Engine) -> dict:
     """VACUUM the main store + refresh planner stats; report real numbers.
 
@@ -1382,6 +1482,10 @@ def vacuum_database(engine: Engine) -> dict:
     if engine.url.get_backend_name() != "sqlite":
         return {"supported": False, "detail": "VACUUM tool applies to SQLite stores only"}
     db_path = engine.url.database
+    # PREFLIGHT BEFORE THE EXCLUSIVE LOCK, so a refusal costs nobody their writer.
+    preflight = vacuum_preflight(engine)
+    if preflight.get("sufficient") is False:
+        raise VacuumSpaceError(preflight)
     size_before = os.path.getsize(db_path) if db_path and os.path.exists(db_path) else None
     t0 = time.perf_counter()
     # VACUUM is a raw-SQL write that takes an exclusive lock; route it through
@@ -1406,9 +1510,14 @@ def vacuum_database(engine: Engine) -> dict:
         "freelist_pages_before": int(freelist_before),
         "freelist_pages_after": int(freelist_after),
         "duration_ms": round((time.perf_counter() - t0) * 1000),
+        # Travels with the result so an operator can see the check happened -- and,
+        # when it could not, that it did not.
+        "preflight": preflight,
         "method": (
             "SQLite VACUUM (full file rebuild; frees unused pages) followed by "
-            "PRAGMA optimize. Real byte sizes from the filesystem."
+            "PRAGMA optimize. Real byte sizes from the filesystem. Free space is "
+            "checked first against twice the file size, on both the database's "
+            "volume and the temporary-file volume."
         ),
     }
 

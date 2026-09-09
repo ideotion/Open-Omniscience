@@ -339,13 +339,26 @@ def vacuum() -> dict:
     costs are part of the contract: the rebuild takes time proportional to the
     file and needs exclusive write access — if collection is writing, this
     returns 409 rather than queueing silently.
+
+    SPACE IS CHECKED FIRST (DB-10 §2 carry-over, 2026-09-09). The UI already
+    disclosed an estimated duration and confirmed; nothing checked whether the
+    disk could hold the rebuild. VACUUM writes a COMPLETE second copy of the
+    file before swapping it in, so it needs roughly twice the current size free
+    — and running out mid-rebuild is the worst moment to find that out. A
+    measured shortfall is refused with **507** and the real numbers, kept
+    DISTINCT from the 409 "something else is writing": collapsing two different
+    refusals into one status is how an operator comes to fix the wrong thing.
+    An unreadable free-space figure is NOT a refusal — the vacuum proceeds and
+    the response says it was not preflighted.
     """
     from sqlalchemy.exc import OperationalError
 
-    from src.database.maintenance import vacuum_database
+    from src.database.maintenance import VacuumSpaceError, vacuum_database
 
     try:
         report = vacuum_database(engine)
+    except VacuumSpaceError as exc:
+        raise HTTPException(status_code=507, detail=exc.report["detail"]) from exc
     except OperationalError as exc:
         raise HTTPException(
             status_code=409,
