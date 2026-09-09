@@ -11068,3 +11068,69 @@ call.
   use it in the tile, or **(c)** drop the tile preview entirely and let the card be numbers plus the
   click. Recommended default: **(a)** — the smallest thing that is already true, and the honesty
   argument for unification has been discharged separately.
+
+### 2026-09-09 — burn-down round two (PR #1105): what closed, and the one refusal that is now evidenced
+
+A second triage of this file (all 11,070 lines) verified thirty candidates against the tree;
+**twelve were already shipped** and are noted below so nobody re-verifies them. Five items closed,
+their rows in [`shipped.csv`](shipped.csv) and their lessons in [`LESSONS.md`](LESSONS.md). What
+follows is only what stays open, plus the measurements a later session should not have to repeat.
+
+**TWO OF THE ITEMS WERE DEFECTS FILED AS CHORES, and that is the finding worth carrying.** The
+`test_doctor_healthy_returns_zero` order-dependence was recorded here as needing "a future
+test-hygiene pass"; it is a product defect in `doctor` (a schemaless database reported as a
+critical, with a raw SQL dump, to a non-technical operator) and the test only made it visible.
+The mailbox pull was recorded as a nicety; it is a network egress the operator could not see or
+stop. A category label is what decides whether an entry gets read again.
+
+**ITEM (3) OF THE KEYWORD STOPLIST ENTRY IS NOW ANSWERED, NOT DEFERRED — and the answer is no.**
+The entry asked for a collision check before adding `publicité`/`contenu` to the French stoplist.
+The check is corpus-independent, it was run, and it FAILS: `fr:publicité`/`fr:publicités` are the
+French members of the Wikidata ring `advertising` (Q37038), and French can only reach the GLOBAL
+channel, so the edit deletes the French side of a concept English keeps. Read that item as CLOSED
+with a refusal rather than as pending work, and the refusal is a named test
+(`tests/test_ring_members_vs_global_stopwords.py`) that quotes the ring, because the entry as
+written reads as pre-authorising exactly that edit.
+
+- **NEW, and it needs a ruling this session did not have the evidence to make: 38 CONCEPTS ARE
+  ALREADY INVISIBLE IN ONE LANGUAGE BECAUSE ANOTHER LANGUAGE SPELLS THEM AS GRAMMAR.**
+  `analytics.extract.global_stopwords()` unions every per-language stoplist into one
+  language-agnostic set, and `StopwordsManager.get_stopwords` tests `language_stopwords` first
+  and holds exactly `en` and `fr` — so those two can only ever be curated GLOBALLY. Measured
+  today: `fr:dette` (the `debt` ring) is invisible because *dette* means "this" in
+  Danish/Norwegian; `pt:lei` (`statute`) falls to Italian *lei*; `pt:solo` (`soil`) to Spanish
+  *solo*; `de:All`/`fr:tout` to the `universe` ring's neighbours; and `de:Podcast`, `fr:podcast`
+  and `pt:podcast` are removed from the **`podcast` ring** by the deliberate global "podcast"
+  furniture entry — the furniture rule eating its own ring. This is in direct tension with the
+  2026-06-19 language-aware-keywords ruling ("show every keyword regardless of language WITH its
+  translation"), which is why it is recorded rather than patched. **THE OPTIONS:** (a) leave it
+  and keep the ratchet, which stops it growing and makes it visible; (b) make the language-SCOPED
+  channel reachable for `en`/`fr` (a change to `get_stopwords`'s branch order, whose docstring
+  says that order is load-bearing, and which interacts with the month-occupancy work); (c) exempt
+  ring members from `global_stopwords()`, which is the smallest change and quietly says a curated
+  ring outranks a curated stoplist. Recommended default: **(a)** until someone can measure the
+  corpus cost of (b) — the count is pinned at 38 with a zero-slack twin, so it cannot drift
+  while the decision waits.
+
+**DELIBERATELY NOT DONE, with its reason still standing: the stats-figure fetch as a job.** The
+entry's own words are "REMAINING: a visible task-manager job over a LONG fetch (*the synchronous
+endpoint suffices for bounded indicator pulls*)". That reason has not expired — the sibling
+mailbox pull was converted because it is minutes of network plus a full store pass, and this is
+not. It becomes worth doing if World Bank pagination lands and `country=all` starts returning
+whole indicators.
+
+**VERIFIED ALREADY SHIPPED (do not re-triage these):** the World Bank governments G1–G6 defects ·
+`PQC_AVAILABLE` probing the API surface · the slow airplane-mode network-toggle call · offline-map
+per-row reorder controls · opt-in login autostart · the AI-tab model-table compaction · the
+duplicate guided-wizard language step · per-article summarize/translate on the analysis Articles
+list (×2 entries, same work) · the client-side bulk-LLM queue surfaced in the task manager · the
+AI-keyword read-only lens · deduced agenda events' keyword-corpus links.
+
+**STALE IN ITS WORDING, corrected rather than closed:** the SENTIMENT AT INGEST entry says the UI
+"still reads on-demand framing". The reader and the analysis Articles list have read the stored
+columns since the Sentiment subtab shipped. Only the feed cards and the Search list did not, and
+they do now.
+
+**STILL OPEN and unchanged from the last round:** the `#corpus-win` deletion pass (its superset
+claim is audited for Sources only; the other five subtabs are not), and the eight misfiled
+lesson-shaped entries awaiting the relocation ruling.
