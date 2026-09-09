@@ -174,6 +174,10 @@
         + `<div class="feed-meta muted">${esc(a.source || "")}`
         + (when ? ` · ${esc(when)}` : "")
         + (lang ? ` · ${esc(String(lang).toUpperCase())}` : "")
+        // The tone this article ALREADY carries (scored at ingest, stored on the row).
+        // _toneChip, not _anToneChip: the language segment is right there, so the
+        // deduced-language half would repeat it.
+        + _toneChip(a)
         + (a.provenance ? ` · ${esc(t(a.provenance))}` : "")
         + `</div>`
         + (kws ? `<div class="feed-kw">${kws}</div>` : "")

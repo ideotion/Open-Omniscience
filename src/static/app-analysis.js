@@ -897,15 +897,28 @@
     // Tone chip (stored sentiment, VADER English-only — a signal, never a verdict) +
     // a "deduced" language hint (the §2.6 secondary/detected language, shown only when
     // the source left the article untagged). Null-safe: renders nothing when absent.
+    // The STORED tone, on its own. Split out of _anToneChip so a surface that already
+    // shows the language (the feed card) can render the tone without the deduced-language
+    // half repeating what is two segments to its left -- and so there stays exactly ONE
+    // implementation of how a tone is drawn and captioned, rather than a second one
+    // growing on the next surface that wants it.
+    //
+    // The caveat travels WITH the value on every surface: VADER is an English lexicon, so
+    // a score on non-English coverage is unreliable, and the hover says "a signal, not a
+    // verdict" wherever the chip appears. Absent label -> nothing drawn: an article that
+    // was never scored (a core install has no VADER, and non-English returns None by
+    // design) shows no tone rather than a neutral-looking zero.
+    function _toneChip(a) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!a || !a.sentiment_label) return "";
+      const c = a.sentiment_label === "positive" ? "var(--ok)"
+        : (a.sentiment_label === "negative" ? "var(--err)" : "var(--muted)");
+      const sc = (a.sentiment_score != null) ? " " + Number(a.sentiment_score).toFixed(2) : "";
+      return ` <span style="color:${c};font-size:.85em" title="${esc(t("Tone (VADER, English-only) — a signal, not a verdict."))}">${esc(t(a.sentiment_label))}${esc(sc)}</span>`;
+    }
     function _anToneChip(a) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      let out = "";
-      if (a && a.sentiment_label) {
-        const c = a.sentiment_label === "positive" ? "var(--ok)"
-          : (a.sentiment_label === "negative" ? "var(--err)" : "var(--muted)");
-        const sc = (a.sentiment_score != null) ? " " + Number(a.sentiment_score).toFixed(2) : "";
-        out += ` <span style="color:${c};font-size:.85em" title="${esc(t("Tone (VADER, English-only) — a signal, not a verdict."))}">${esc(t(a.sentiment_label))}${esc(sc)}</span>`;
-      }
+      let out = _toneChip(a);
       if (a && a.detected_language && !a.language) {
         out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${esc(t("deduced"))}: ${esc(String(a.detected_language).toUpperCase())}</span>`;
       }
@@ -1594,7 +1607,7 @@
           (data.results.length ? data.results.map(a =>
             `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
-             <td>${esc(a.source)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
+             <td>${esc(a.source)}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
              <td>${esc(a.language||"")}</td>
              <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
                  ${a.url ? `· ${extLink(a.url, "source ↗", "muted")}` : ""}
