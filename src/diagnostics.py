@@ -93,10 +93,26 @@ def _check_data_dir(r: _Report) -> Path | None:
     return d
 
 
+def _brief(exc: Exception, limit: int = 200) -> str:
+    """One bounded line describing an exception.
+
+    A SQLAlchemy error stringifies to the failing statement plus a docs URL: the
+    schemaless-database case below produced a fifteen-line SELECT dump with every
+    column of ``sources`` spelled out, inside a report whose whole purpose is to be
+    readable by someone who is not a programmer. The FIRST line carries the cause
+    ("(sqlite3.OperationalError) no such table: sources"); the rest is the essay.
+    Keep the cause, bound the length, and never let a probe's detail line become a
+    page.
+    """
+    first = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+    first = " ".join(first.split())
+    return first if len(first) <= limit else first[: limit - 1] + "\u2026"
+
+
 def _check_database(r: _Report) -> None:
     try:
         from src.database.models import Article, Source
-        from src.database.session import DATABASE_URL, session_scope
+        from src.database.session import DATABASE_URL, engine, session_scope
     except Exception as exc:
         r.line(FAIL, "Database", f"could not import layer: {exc}")
         return
@@ -104,13 +120,39 @@ def _check_database(r: _Report) -> None:
     if DATABASE_URL.startswith("sqlite") and not Path(where).exists():
         r.line(WARN, "Database", f"not created yet ({where}); it builds on first launch")
         return
+    # A file that EXISTS but carries no schema is the SAME situation as no file at
+    # all -- first launch has not finished building it -- and it was reported as a
+    # critical [XX] with a raw SQL dump, which is neither true nor readable. It is a
+    # reachable state for a real operator (an interrupted first launch, or a database
+    # that has been alembic-STAMPED without being upgraded) and not only a test
+    # artifact, though a test found it: importing the API app stamps the revision, so
+    # `doctor` run afterwards in the same process failed on a healthy install.
+    #
+    # Asked of the INSPECTOR rather than by matching the driver's error text: "no
+    # such table" is SQLite's wording, not SQLAlchemy's, and a string match would
+    # quietly stop working on any other backend. If inspection itself fails, say
+    # nothing here and let the query below report the real reason.
+    try:
+        from sqlalchemy import inspect as _sa_inspect
+
+        insp = _sa_inspect(engine)
+        missing = [t for t in (Source.__tablename__, Article.__tablename__) if not insp.has_table(t)]
+    except Exception:
+        missing = []
+    if missing:
+        r.line(
+            WARN,
+            "Database",
+            f"no schema yet ({where}); missing: {', '.join(missing)} -- it builds on first launch",
+        )
+        return
     try:
         with session_scope() as s:
             sources = s.query(Source).count()
             articles = s.query(Article).count()
         r.line(OK, "Database", f"{sources} sources, {articles} articles ({where})")
     except Exception as exc:
-        r.line(FAIL, "Database", f"reachable but query failed: {exc}")
+        r.line(FAIL, "Database", f"reachable but query failed: {_brief(exc)}")
 
 
 def _check_components(r: _Report) -> None:
@@ -183,8 +225,12 @@ def run_doctor() -> int:
     if r.failed:
         print(f"  {_R}{_B}Some critical checks failed.{_RST} See the [XX] lines above.\n")
         return 1
+    # NOT "optional extras you can add later": two of the warnings this report can
+    # emit are about the database not being built yet, which is neither optional nor
+    # an extra. The line now says the one thing that is true of every (!!) -- it is
+    # not a failure -- and sends the reader to the line itself for what it needs.
     print(
         f"  {_G}{_B}Core looks healthy.{_RST} "
-        f"Warnings (!!) are optional extras you can add later.\n"
+        f"Warnings (!!) are not failures -- each line says what it is missing.\n"
     )
     return 0
