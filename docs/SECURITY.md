@@ -227,7 +227,7 @@ ethical-fetch path and the evidence-verification guarantees above.
 The defensive security review of the ingest→store→process→present data path, its findings, and the hardening applied.
 
 **In this part:**
-- [Security report — Open Omniscience](#security-report-open-omniscience)
+- [Security report — Open Omniscience](#security-report--open-omniscience)
 
 
 ---

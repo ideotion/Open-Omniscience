@@ -35,11 +35,11 @@ HTTP API) and troubleshooting.
 3. [The tools, one by one](#3-the-tools-one-by-one)
    - [Home](#30-home) · [Activity & Task manager](#30a-activity--the-task-manager) ·
      [Feed](#30b-feed) ·
-     [Search](#31-search) · [Collect](#32-collect) ·
-     [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
+     [Search](#31-search) · [Collect](#32-collect-in-settings--collect) ·
+     [Sources](#33-sources-in-settings--sources) · [Library](#34-library) · [Markets](#35-markets) ·
      [Indices](#35a-indices) · [Insights](#36-insights) ·
      [World map](#36a-world-map) · [Agenda](#36b-agenda) ·
-     [Wikipedia](#37-wikipedia) ·
+     [Wikipedia](#37-wikipedia-in-settings--wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
 4. [Common workflows (how-to)](#4-common-workflows-how-to)
@@ -274,7 +274,7 @@ The sidebar is a **flat list** of the data tools (top to bottom):
   sidebar. Search is the top-bar omnibar; there is no "Search", "Analysis" or "Collect"
   tab. Analysis **spawns** from a query — press Enter in the omnibar, or click a keyword
   or a Home Lead, and a named analysis window opens (see
-  [3.1a](#31a-analysis-the-corpora-window)).
+  [3.1a](#31a-analysis--the-corpora-window)).
 
 **Content-first.** The sidebar shows the *data*; the acquisition and maintenance
 surfaces live in **Settings**: **Collect** (the scheduler + manual ingest), **Sources**
@@ -1877,12 +1877,12 @@ sweep"). None is a bug; each shapes how to read a result.
 Reference depth for each tool, consolidated from the former per-feature guides. The tour in Parts 1–6 above stays the quickest orientation; this part is the detail.
 
 **In this part:**
-- [The Home briefing — intelligence as honest "cards"](#the-home-briefing-intelligence-as-honest-cards)
-- [Source integrity & anti-amplification](#source-integrity-anti-amplification)
-- [Shared source annotations — signed, portable, federated by trust](#shared-source-annotations-signed-portable-federated-by-trust)
-- [Insights — keyword & entity analytics](#insights-keyword-entity-analytics)
+- [The Home briefing — intelligence as honest "cards"](#the-home-briefing--intelligence-as-honest-cards)
+- [Source integrity & anti-amplification](#source-integrity--anti-amplification)
+- [Shared source annotations — signed, portable, federated by trust](#shared-source-annotations--signed-portable-federated-by-trust)
+- [Insights — keyword & entity analytics](#insights--keyword--entity-analytics)
 - [Wikipedia change-tracking](#wikipedia-change-tracking)
-- [World law — change-tracking for statutes, gazettes & IP](#world-law-change-tracking-for-statutes-gazettes-ip)
+- [World law — change-tracking for statutes, gazettes & IP](#world-law--change-tracking-for-statutes-gazettes--ip)
 - [Markets: financial, stock-exchange, and commodity/rare-earth intelligence](#markets-financial-stock-exchange-and-commodityrare-earth-intelligence)
 - [Chain of Custody](#chain-of-custody)
 
