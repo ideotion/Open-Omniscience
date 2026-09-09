@@ -88,7 +88,7 @@ def test_a_cleared_on_security_entry_goes_quiet_but_never_claims_we_ship_upstrea
 
     def fetch_at_reviewed(url: str):
         if "alpinejs/alpine/releases/latest" in url:
-            return {"tag_name": "v3.16.2"}            # == reviewed_through -> quiet
+            return {"tag_name": "v3.17.2"}            # == reviewed_through -> quiet
         if "duckdb/duckdb/releases/latest" in url:
             return {"tag_name": "v1.5.5"}
         if "ip-location-db/commits" in url:
@@ -100,7 +100,7 @@ def test_a_cleared_on_security_entry_goes_quiet_but_never_claims_we_ship_upstrea
     # The negative half, and the reason this is a distinct branch rather than reusing the
     # "up to date" string: we ship v3.14.1 and the wording must not imply otherwise.
     assert "up to date" not in row["detail"]
-    assert "reviewed through v3.16.2" in row["detail"]
+    assert "reviewed through v3.17.2" in row["detail"]
 
 
 def test_a_release_past_the_review_baseline_speaks_again():
@@ -109,7 +109,7 @@ def test_a_release_past_the_review_baseline_speaks_again():
 
     def fetch_newer(url: str):
         if "alpinejs/alpine/releases/latest" in url:
-            return {"tag_name": "v3.16.3"}            # one patch past the review
+            return {"tag_name": "v3.17.3"}            # one patch past the review
         if "duckdb/duckdb/releases/latest" in url:
             return {"tag_name": "v1.5.5"}
         if "ip-location-db/commits" in url:
@@ -118,7 +118,7 @@ def test_a_release_past_the_review_baseline_speaks_again():
 
     row = {r["id"]: r for r in U.check_all(fetch=fetch_newer)}["vendored-alpine"]
     assert row["status"] == "behind"
-    assert "v3.16.3" in row["detail"] and "v3.16.2" in row["detail"]
+    assert "v3.17.3" in row["detail"] and "v3.17.2" in row["detail"]
 
 
 def test_check_all_degrades_loudly_never_crashes():
