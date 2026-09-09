@@ -46,6 +46,7 @@ from src.database.maintenance import (
     vacuum_database,
     vacuum_preflight,
 )
+from tests.js_source_helper import python_function_source
 
 
 @pytest.fixture
@@ -157,8 +158,12 @@ def test_the_endpoint_maps_the_shortfall_to_its_own_status() -> None:
     src = (Path(__file__).resolve().parents[1] / "src" / "api" / "database.py").read_text(
         encoding="utf-8"
     )
-    block = src[src.index("def vacuum()"):]
-    block = block[: block.index("served_cache.invalidate()")]
+    # Parser-bounded, not delimiter-guessed: the first draft sliced from
+    # ``def vacuum()`` to a ``served_cache.invalidate()`` that happens to sit inside
+    # it today, which is the shape ``tests/test_source_slicing_discipline.py`` exists
+    # to keep out -- pick a delimiter that moves and the "body" silently becomes the
+    # rest of the module, satisfied by any other function in the file.
+    block = python_function_source(src, "vacuum")
     assert "VacuumSpaceError" in block, "the endpoint must handle the space refusal"
     assert "status_code=507" in block, (
         "a disk shortfall needs its own status; 409 already means the store is busy"
