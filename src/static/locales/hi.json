@@ -3235,5 +3235,7 @@
   "Declare first: what do you expect?": "पहले घोषित करें: आप क्या अपेक्षा करते हैं?",
   "— declare before testing —": "— परीक्षण से पहले घोषित करें —",
   "positive (more coverage as the moon fills)": "धनात्मक (चाँद भरने के साथ अधिक कवरेज)",
-  "negative (less coverage as the moon fills)": "ऋणात्मक (चाँद भरने के साथ कम कवरेज)"
+  "negative (less coverage as the moon fills)": "ऋणात्मक (चाँद भरने के साथ कम कवरेज)",
+  "Help": "सहायता",
+  "date moves each year — see the official source": "तारीख हर साल बदलती है — आधिकारिक स्रोत देखें"
 }

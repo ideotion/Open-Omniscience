@@ -3235,5 +3235,7 @@
   "Declare first: what do you expect?": "先声明：您预期什么？",
   "— declare before testing —": "— 检验前先声明 —",
   "positive (more coverage as the moon fills)": "正相关（月亮越圆，报道越多）",
-  "negative (less coverage as the moon fills)": "负相关（月亮越圆，报道越少）"
+  "negative (less coverage as the moon fills)": "负相关（月亮越圆，报道越少）",
+  "Help": "帮助",
+  "date moves each year — see the official source": "日期每年变动 — 请查看官方来源"
 }

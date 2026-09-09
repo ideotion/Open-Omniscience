@@ -3235,5 +3235,7 @@
   "Declare first: what do you expect?": "প্রথমে ঘোষণা করুন: আপনি কী আশা করছেন?",
   "— declare before testing —": "— পরীক্ষার আগে ঘোষণা করুন —",
   "positive (more coverage as the moon fills)": "ধনাত্মক (চাঁদ পূর্ণ হওয়ার সঙ্গে বেশি কভারেজ)",
-  "negative (less coverage as the moon fills)": "ঋণাত্মক (চাঁদ পূর্ণ হওয়ার সঙ্গে কম কভারেজ)"
+  "negative (less coverage as the moon fills)": "ঋণাত্মক (চাঁদ পূর্ণ হওয়ার সঙ্গে কম কভারেজ)",
+  "Help": "সহায়তা",
+  "date moves each year — see the official source": "তারিখ প্রতি বছর বদলায় — সরকারি উৎস দেখুন"
 }

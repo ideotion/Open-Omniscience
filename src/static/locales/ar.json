@@ -3235,5 +3235,7 @@
   "Declare first: what do you expect?": "أعلن أولًا: ماذا تتوقع؟",
   "— declare before testing —": "— أعلن قبل الاختبار —",
   "positive (more coverage as the moon fills)": "موجب (تغطية أكثر كلما اكتمل القمر)",
-  "negative (less coverage as the moon fills)": "سالب (تغطية أقل كلما اكتمل القمر)"
+  "negative (less coverage as the moon fills)": "سالب (تغطية أقل كلما اكتمل القمر)",
+  "Help": "مساعدة",
+  "date moves each year — see the official source": "التاريخ يتغيّر كل عام — راجع المصدر الرسمي"
 }

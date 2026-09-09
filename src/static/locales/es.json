@@ -3235,5 +3235,7 @@
   "Declare first: what do you expect?": "Declara primero: ¿qué esperas?",
   "— declare before testing —": "— declara antes de probar —",
   "positive (more coverage as the moon fills)": "positiva (más cobertura al llenarse la luna)",
-  "negative (less coverage as the moon fills)": "negativa (menos cobertura al llenarse la luna)"
+  "negative (less coverage as the moon fills)": "negativa (menos cobertura al llenarse la luna)",
+  "Help": "Ayuda",
+  "date moves each year — see the official source": "la fecha cambia cada año: consulta la fuente oficial"
 }

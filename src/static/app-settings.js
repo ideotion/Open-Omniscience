@@ -33,7 +33,12 @@
            onclick="openDoc('${d.slug}')">${esc(d.title)}<small>${esc(d.blurb)}</small></button>`).join("");
       if (!_docSlug) openDoc((_docList.find(d => d.slug === "user-manual") || _docList[0] || {}).slug);
     }
-    async function openDoc(slug) {
+    // `anchor` (2026-09-09) is optional and additive: the omnibar's Help-content group
+    // knows which HEADING a hit sits under, and landing at the top of a 3,000-line manual
+    // wastes the one thing the search just worked out. mdToHtml emits heading ids (the
+    // doc-heading-anchors fix), so the id resolves; a stale or unknown anchor simply does
+    // not scroll -- it must never swallow the document itself.
+    async function openDoc(slug, anchor) {
       if (!slug) return;
       _docSlug = slug;
       document.querySelectorAll(".doc-link").forEach(b =>
@@ -51,7 +56,9 @@
           ? `<div class="hint" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:10px">` +
             `<span>Machine-drafted translation — the English original is authoritative. Found a better wording? Improve it on the project page.</span></div>`
           : "";
-        prose.innerHTML = banner + mdToHtml(_docRaw); prose.scrollIntoView({block:"nearest"});
+        prose.innerHTML = banner + mdToHtml(_docRaw);
+        const at = anchor ? prose.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(anchor) : anchor)) : null;
+        (at || prose).scrollIntoView({block: at ? "start" : "nearest"});
       }
       catch (e) { prose.innerHTML = '<div class="muted">Could not load this document.</div>'; }
       const f = $("doc-find"); if (f && f.value) highlightProse(f.value);

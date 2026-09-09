@@ -3235,5 +3235,7 @@
   "Declare first: what do you expect?": "Declare first: what do you expect?",
   "— declare before testing —": "— declare before testing —",
   "positive (more coverage as the moon fills)": "positive (more coverage as the moon fills)",
-  "negative (less coverage as the moon fills)": "negative (less coverage as the moon fills)"
+  "negative (less coverage as the moon fills)": "negative (less coverage as the moon fills)",
+  "Help": "Help",
+  "date moves each year — see the official source": "date moves each year — see the official source"
 }
