@@ -11134,3 +11134,51 @@ they do now.
 **STILL OPEN and unchanged from the last round:** the `#corpus-win` deletion pass (its superset
 claim is audited for Sources only; the other five subtabs are not), and the eight misfiled
 lesson-shaped entries awaiting the relocation ruling.
+
+### 2026-09-09 — burn-down round three (PR #1106): three items, and what each one is not
+
+Three more closed from the same verified triage that produced rounds one and two; rows in
+[`shipped.csv`](shipped.csv), lessons in [`LESSONS.md`](LESSONS.md). What follows is only the
+part that stays open or that a later session would otherwise re-derive.
+
+**THE CONJUNCTION LENS' `vocabulary_contrast` IS DELIBERATELY STILL UNEXPOSED, and this is a
+decision rather than a remainder.** `per_article_intensity` and `conditional_trend` are now
+`expand=` views on `/api/insights/corpus-algebra`; the third helper is not, because it
+contrasts TWO corpora and the endpoint has one set. Which two sides an `intersection` of
+three terms splits into is a product question — for `difference` the natural pair is the
+difference set against the rest, but for `intersection`/`union` with more than two terms
+there is no natural split at all, and picking a plausible one would publish an invented
+semantic under a tested function's name. A named test pins the absence.
+**IF A RULING IS WANTED:** (a) leave it unexposed; (b) expose it only for `difference` and
+for two-term `intersection`/`union`, returning an honest `null` otherwise; (c) let the
+caller name the two sides explicitly, which makes the endpoint a different shape. Recommended
+default: **(a)**, and (b) is the smallest step if the view is actually wanted.
+
+**THE ooMAP CHEAP-REDRAW PATH RESTS ON A PRECONDITION THAT IS NOW TESTED, and a later
+performance pass should know why.** `lon2x`/`lat2y` are module-level constants and zoom rides
+the SVG `viewBox`, so the projection does not depend on the current view — which is what makes
+redrawing one layer in isolation sound rather than a cache that can go stale. If the map ever
+gains a projection that reads the live view (a true zoom-dependent reprojection, a per-view
+clip), the focus path must go back through the full render: the failure mode is MISPLACED
+markers, which reads as a data bug rather than a rendering one.
+**NOT DONE, and it is the honest boundary of this slice:** the drag was never measured in a
+browser, before or after. The count that motivated it (175 countries, 285 rings, 10,521
+coordinate pairs re-serialised per frame) is counted from the shipped geometry file, and a
+test keeps the figure in the comment matching it — but the frame time itself is unmeasured
+here, and a browser pass would close that.
+
+**THE LUNAR SCREEN TAKES NO PRE-REGISTRATION, ON PURPOSE.** The single-term test now requires
+a declared direction and the endpoint refuses without one; the screen refuses a declaration.
+Screening many series is exploratory by definition — that is what the Benjamini-Hochberg
+correction is for — and demanding one hypothesis for forty series would be a rubber stamp
+that made the screen *look* pre-registered while changing nothing about it. Recorded because
+the symmetric-looking change ("accept it on both paths") is the tempting one.
+
+- **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
+  superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
+  awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
+  whose three options are still open; and, from the round-two triage's verified list, the
+  bulk-LLM run as a first-class task-manager job — a real defect (the work is tied to an open
+  browser connection and dies with the tab), NOT attempted here because converting a
+  StreamingResponse to a polled job removes the progressive stream that is currently the
+  progress mechanism, which is a UX change rather than a wiring one.

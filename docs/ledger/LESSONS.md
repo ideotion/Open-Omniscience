@@ -7835,3 +7835,59 @@
   under test named the missing registration. **GENERAL FORM: when mutating a working tree
   deliberately, back up by COPY and restore by COPY. Reaching for git during a mutation run
   restores someone else's idea of the file.**
+
+- **A WIRING GUARD PINNED TO AN IMPORT'S PUNCTUATION FAILS WHEN THE IMPORT GROWS
+  (2026-09-09).** `test_corpus_algebra_endpoint_is_wired` asserted the literal string
+  `"from src.analytics.conjunction import corpus_algebra"`. It broke the moment the endpoint
+  imported a sibling from the same module — a guard about *what* is wired failing over *how*
+  an import is spelled, which is a false alarm that trains the next reader to relax the
+  guard rather than look at it. **GENERAL FORM: assert the SEAM and the CALL, never the
+  punctuation of the statement that reaches it.** The repaired version checks that the module
+  is imported at all and that the function is actually *called* — which is what the original
+  was reaching for, and strictly stronger than what it had.
+
+- **WORK THAT EXISTS AND CANNOT BE REACHED IS INDISTINGUISHABLE FROM WORK THAT DOES NOT
+  EXIST (2026-09-09).** `per_article_intensity` and `conditional_trend` had shipped with the
+  Conjunction Lens, carried unit tests, and were called by nothing — the endpoint returned its
+  base dict verbatim and a repo-wide grep found neither name outside its own module. The
+  tests kept passing the whole time, so nothing anywhere was red. **GENERAL FORM: a
+  unit-tested function with no caller is a green light over a dead surface. When auditing a
+  module, grep each public name for a call site OUTSIDE its own tests — the ones with none
+  are the shipped-but-unreachable set, and they are cheap to close precisely because the hard
+  part was already done and verified.**
+
+- **A NUMBER IN A CODE COMMENT IS A CLAIM, AND A CLAIM NOBODY RE-CHECKS OUTLIVES ITS FACT
+  (2026-09-09).** The ooMap comment states "175 countries (285 rings, 10,521 coordinate
+  pairs)" as the per-frame cost being removed. That is not reasoning, it is a measurement,
+  and the file it measures ships in the repo and can be regenerated. A test now counts
+  `world_countries.json` and asserts the three figures in the comment match it. **GENERAL
+  FORM: a comment may state reasoning freely, but the moment it states a NUMBER derived from
+  something in the tree, that number wants a guard — otherwise the next person to regenerate
+  the data leaves a confident, precise, wrong figure behind for years.**
+
+- **PRE-REGISTRATION IS ONLY HONEST IF IT CANNOT REACH THE STATISTIC (2026-09-09).** Adding
+  "declare your expected direction before the test" to the lunar correlator sounds purely
+  additive, and the failure mode is that the declaration becomes an input: a branch that
+  reads `expected_direction` before computing `r` turns a p-hacking *fix* into a new
+  p-hacking *surface* wearing an honest name. The property is testable and was made the
+  first test — the same series under `None`, `"positive"` and `"negative"` must return
+  byte-identical `r`, `p`, `n` and window, with the verdict a post-hoc label off the sign.
+  **GENERAL FORM: when a change adds an operator's DECLARATION to a measurement, assert that
+  the measurement is unchanged across every declaration. The whole value of the feature is
+  that assertion; without it you have added a knob to the thing you were protecting.**
+  The same entry's second half: a CONTRADICTED expectation must render exactly as plainly as
+  a matched one, because reporting only the matches is the publication bias pre-registration
+  exists to prevent — reproducing it inside the tool that offers pre-registration would be
+  worse than not offering it.
+
+- **A PARTIAL REDRAW MUST REFUSE, NOT HALF-UPDATE (2026-09-09).** Replacing one layer of a
+  rendered view is only safe while every assumption it was drawn under still holds. The ooMap
+  focus path returns `false` — sending the caller to the full render — when there is no
+  rendered signals layer to update, and the conditions it re-derives (kind chips, year label,
+  click-resolution list, marker listeners) are each a thing that silently goes wrong if
+  skipped: a stale click list opens the WRONG event's detail, which no test of the visible
+  markers would catch. **GENERAL FORM: for a fast path beside a slow one, enumerate what the
+  slow path also did and either redo it or refuse. And write down the precondition that makes
+  the shortcut sound — here, that the projection is view-independent — as a test, because if
+  it ever stops holding the failure is misplacement, not staleness, and it will look like a
+  data bug.**
