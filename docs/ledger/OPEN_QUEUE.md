@@ -10850,3 +10850,97 @@ code over a judgement it made deliberately. Also in `PARKED.md`, under the DDG e
       network-free half of two verticals (the elections date model + coverage floor, the
       climate ONI parser against fixtures), each of which lands on an already-proven rail and
       none of which asserts a licence or an endpoint this session could not verify.
+
+---
+
+## 2026-09-08 — PENDING RULINGS from the live visual / UI audit (PR #1103)
+
+The audit is report-only. Nothing below was decided by the session; each needs the maintainer.
+Full context: [`docs/audit/11_VISUAL_UI_AUDIT_2026-09-08.md`](../audit/11_VISUAL_UI_AUDIT_2026-09-08.md),
+[`docs/design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md`](../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md),
+[`docs/design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md`](../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md).
+
+**Q-VIS-1 — the information architecture.** Three proposals were built and a four-lens panel scored
+them. **Rings, not gates** won 3 of 4 lenses (ethical 78, power-user 68, feasibility 64) on the principle
+that *a Ring controls what is pinned, never what is reachable*; **Works while you sleep** won the
+new-user lens (66) by removing the app's two worst navigation cliffs. A third angle (task-first /
+verb-first) was re-commissioned after its agent returned a placeholder and therefore carries **no
+scores** — it is on the table but unjudged. The synthesis recommends Rings as the spine with two grafts.
+**The spine is a product call, not a technical one, and is not taken here.**
+
+**Q-VIS-2 — the skipped-first-run default.** Rings defaults a skipped depth question to Essentials
+(Ring 0), which hides Search, Insights, Observatory and six other investigative surfaces from exactly the
+population most likely to skip an optional step. Should the skip-default be **Standard (Ring 1)**, with
+Essentials reserved for an explicit choice? Genuine tension between the ethical lens ("a quieter first
+screen") and the new-user lens ("real investigative value in ten minutes").
+
+**Q-VIS-3 — Help's body translation.** `CLAUDE.md`'s blanket "every user-facing string ships ×12"
+technically covers Help's **167,022 characters**. Translating it is ~2,000,000 characters across 12
+locales to fix a problem a one-sentence banner fixes; the feasibility panel put the ratio above
+100,000:1. **A session cannot silently create an exception to a written non-negotiable, nor silently
+commit the project to a 2M-character localisation project.** Proposal: ship the translated banner
+stating the body is English-by-design, and rule the exception explicitly here.
+
+**Q-VIS-4 — the theme catalogue vs invariant #12.** Measured across 17 themes: slate, midnight,
+aubergine and garnet (and more mildly forest) cluster tightly enough on panel/card/border/background to
+be accent presets of one base dark theme, and light/mist are near-duplicates. Invariant #12 pins the
+catalogue at ≥16 `html[data-theme]` blocks, so **this is recorded as an observation only** — culling
+needs an amendment, and the amendment needs the maintainer.
+
+**Q-VIS-5 — the two parallel backup-restore APIs.** `v2/restore/preview→commit→discard`,
+`legacy/restore` and `reindex-backlog` sit unreferenced beside the `import-queue/*` flow the UI actually
+drives, and *both* sets of docstrings claim to back "the unified Import dialog". Static + live audit
+cannot disambiguate dead code from an unmigrated newer path. **One line of maintainer triage unblocks
+either deletion or wiring.**
+
+**Q-VIS-6 — the field-validation bar for the Patterns lens.** Six manipulation-pattern detectors are
+built, honesty-compliant and never yet triggered. The plan ships them **default-OFF**. What corpus size
+and false-positive rate, measured how, would justify flipping them on? No inventory in the evidence base
+establishes one, and it should be set before the toggle is reached, not when it is being flipped.
+
+**Q-VIS-7 — `#net-coach`'s emphasis, not its mechanics.** The bubble's primary accent-filled action is
+**"Go online"**; declining is a quiet secondary "Not now". The consent gate behind it is intact
+(`toggleNetwork()` → `ensureOnline`, verified live), so this is presentation, not a consent breach — but
+in an app whose default and celebrated state is airplane mode, the visually dominant action in an
+unrequested overlay is the one that starts egress. Worth a ruling on emphasis.
+
+**CONTINGENCY NOTED, NOT RESOLVED — the qualification-scope checkbox.** The defect recorded in
+transversal audit 10 §1 #6 **did not reproduce** here under single-click, uncheck or rapid-race variants,
+by two independent agents. Recorded as **DISPROVED-HERE, not confirmed-fixed**: it may have been fixed,
+may be state-dependent in a way this fixture did not reach, or may have been specific to another build.
+Before anything touches that fold, confirm which.
+
+### 2026-09-09 — from the visual-audit fix pass (deliberate omissions and one residual)
+
+- **DELIBERATE OMISSION — `/api/sources`' 714 KB default is UNCHANGED, and that is the fix, not a gap.**
+  The audit's finding had two halves: the route silently ignored `?limit`, AND it ships 714,399 bytes
+  (98.8% of boot API bytes) on every page load to populate a Settings dropdown that is not visible. Only
+  the first half is fixed. Capping the default would silently truncate both real callers'
+  (`loadSources()`, `loadMarketConfig()`) dropdowns — the same silent-wrong-answer shape the whole audit
+  is about — so the payload question needs a FRONTEND change (the callers asking for what they need, or
+  a lazy load when the dropdown opens), not a backend cap. Byte-verified unchanged at 714,399 / 3,618
+  rows before and after.
+
+- **DELIBERATE OMISSION — the orphaned `"Stats unavailable."` locale key.** Superseded by the new stat-strip
+  read-failure copy; no source reference remains (grep-verified across `src/`), but the key is still in
+  all 12 locale files. Left in place: an unused key costs nothing at runtime and is invisible to both
+  ratchets (which count SOURCE strings lacking keys, never keys lacking sources), while removing it has
+  a non-zero chance of orphaning a path the grep missed. Prune it in a pass that owns the locale files
+  for other reasons.
+
+- **MEASURED-LATENT, disclosed rather than fixed — the Observatory drill-through's term resolution.**
+  The click resolves a galaxy's membership by literal `Keyword.normalized_term` match over the member
+  terms plus their ring surface forms; the galaxy's OWN headline numbers come from
+  `supergroup_stats.resolve_member_keyword_ids`, which ADDITIONALLY matches a family member's
+  morphological variants via `canonical_key`. So the two can diverge in principle. Measured on the live
+  corpus 2026-09-09 across every super-group: **they agree on all of them, zero disagreement** — every
+  member on this corpus is a ring member, so the family branch never fires. Recorded because a corpus
+  with family members would make the ranked table and the set it opens disagree about one galaxy, and
+  that is the exact class §4.3 is about.
+
+- **STILL OPEN, out of this pass's scope — Help's other axe findings.** `link-in-text-block` (n=15) and
+  `scrollable-region-focusable` (n=3) on the Help surface, plus 9 of USER_MANUAL.md's 50 in-page links
+  that no single consistent slugifier can resolve alongside the reference anchors (the markdown
+  hand-shortens three targets and pre-dates a heading rename for the others). The 9 were re-measured
+  after the anchor fix: clicking one is now INERT (Help stays open, nothing scrolls) rather than
+  ejecting the reader to Home, so this is a cosmetic residue, not the P0.

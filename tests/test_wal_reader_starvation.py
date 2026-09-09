@@ -106,6 +106,22 @@ _TEST_RELEASE_INTERVAL_S = 0.05
 # the compression this scan produces exactly 1 in-scan release.
 _MIN_IN_SCAN_RELEASES = 3
 
+# ...and the COMPANION floor, on the other quantity assertion (b) samples
+# (added 2026-09-09 from a Linux core-only CI failure reporting exactly ONE
+# in-window attempt). The window closes on WRITES, which makes the WAL volume
+# runner-speed-independent -- but it left the CHECKPOINT sample count entirely
+# at the mercy of thread scheduling, and assertion (b) needs several attempts
+# to mean anything: releases happen at most every _TEST_RELEASE_INTERVAL_S, so
+# a lone attempt can legitimately miss every one of them and report busy=1 on
+# FIXED code. The test's own comments had already been round this loop once,
+# cutting the checkpointer's sleep 0.05 -> 0.02 because "at 0.05s left only 2
+# attempts"; a loaded runner then produced 1. Twice the release floor, so an
+# attempt cannot miss every release window by scheduling luck alone. The window
+# now waits for this many samples the same way it waits for writes, and falls
+# short LOUDLY rather than letting (b) become the coin flip the release-floor
+# assertion above already warns about.
+_MIN_CKPT_ATTEMPTS_IN_WINDOW = 2 * _MIN_IN_SCAN_RELEASES
+
 _TARGET_WRITES = 12  # the reader's window closes once the writer has committed
 # this many times -- NOT after a fixed wall-clock duration. This is what makes
 # assertion (a) runner-speed-INDEPENDENT; see the "why the window is
@@ -223,6 +239,8 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     write_ticks = threading.Semaphore(0)
     writes_committed = 0
     window_timed_out = False
+    timeout_unmet = ""
+    timeout_detail = ""
     window_open_mono = 0.0
     window_close_mono = 0.0
 
@@ -236,14 +254,50 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         # count with a fixed sleep. See the module docstring: this is what
         # decouples how much WAL accumulates from how fast the runner is.
         nonlocal window_timed_out, window_open_mono, window_close_mono
+        nonlocal timeout_unmet, timeout_detail
         result = session.execute(text("SELECT x FROM t"))
         window_open_mono = time.monotonic()
         deadline = window_open_mono + _WINDOW_CAP_S
         seen = 0
-        while seen < _TARGET_WRITES:
+        # Attempts already recorded before the window opened do not count
+        # toward the sample floor -- only ones made while this cursor is held.
+        ckpt_at_open = len(ckpt_results)
+        while True:
             if time.monotonic() > deadline:
                 window_timed_out = True
+                # WHICH gate was still unmet, recorded here because the caller
+                # cannot reconstruct it: the window now waits on two conditions,
+                # and blaming the writer for a sample-count timeout produced a
+                # self-contradictory message ("before the writer committed 12
+                # times (only 33 landed)") the first time this was tried.
+                timeout_unmet = (
+                    ("writes" if seen < _TARGET_WRITES else "")
+                    + ("+" if seen < _TARGET_WRITES and
+                       len(ckpt_results) - ckpt_at_open < _MIN_CKPT_ATTEMPTS_IN_WINDOW
+                       else "")
+                    + ("checkpoint samples"
+                       if len(ckpt_results) - ckpt_at_open < _MIN_CKPT_ATTEMPTS_IN_WINDOW
+                       else "")
+                )
+                timeout_detail = (
+                    f"{seen}/{_TARGET_WRITES} writes observed, "
+                    f"{len(ckpt_results) - ckpt_at_open}/"
+                    f"{_MIN_CKPT_ATTEMPTS_IN_WINDOW} in-window checkpoint attempts"
+                )
                 break
+            enough_writes = seen >= _TARGET_WRITES
+            enough_samples = (
+                len(ckpt_results) - ckpt_at_open >= _MIN_CKPT_ATTEMPTS_IN_WINDOW
+            )
+            if enough_writes and enough_samples:
+                break
+            if enough_writes:
+                # WAL volume is already fixed at _TARGET_WRITES fetchmany rounds;
+                # consuming more write ticks here would re-couple it to runner
+                # speed, which is the whole thing the write gate prevents. So
+                # hold the cursor open and wait ONLY for checkpoint samples.
+                time.sleep(0.005)
+                continue
             if not write_ticks.acquire(timeout=0.25):
                 continue  # writer is slow -- keep the cursor open and wait
             seen += 1
@@ -361,11 +415,12 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
 
     assert not write_errors, f"writer thread hit unexpected errors: {write_errors}"
     assert not window_timed_out, (
-        f"the reader's window hit its {_WINDOW_CAP_S}s safety cap before the "
-        f"writer committed {_TARGET_WRITES} times (only {writes_committed} "
-        "landed) -- the runner is far slower than any measured here, or the "
-        "writer thread is wedged. Failing loudly rather than silently "
-        "measuring a shorter window."
+        f"the reader's window hit its {_WINDOW_CAP_S}s safety cap with "
+        f"{timeout_unmet} still unmet ({timeout_detail}; {writes_committed} writes "
+        "committed overall) -- the runner is far slower than any measured here, "
+        "the writer thread is wedged, or the checkpointer thread is being starved "
+        "of scheduling. Failing loudly rather than silently measuring a shorter "
+        "window."
     )
     assert len(ckpt_results) > 0, (
         "no checkpoint attempts landed during run_all()'s window -- widen "
@@ -468,6 +523,17 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         f"window ({window_close_mono - window_open_mono:.3f}s, "
         f"{len(ckpt_results)} attempts total) -- the window is too short to "
         "observe anything; raise _TARGET_WRITES."
+    )
+    assert len(in_window) >= _MIN_CKPT_ATTEMPTS_IN_WINDOW, (
+        f"only {len(in_window)} checkpoint attempt(s) landed inside the "
+        f"{window_close_mono - window_open_mono:.3f}s window, below the floor of "
+        f"{_MIN_CKPT_ATTEMPTS_IN_WINDOW}. The window is now gated on this count, "
+        "so reaching here means _WINDOW_CAP_S expired first -- the checkpointer "
+        "thread is being starved of scheduling. Assertion (b) below is NOT "
+        "meaningful at this sample size (releases happen every "
+        f"{_TEST_RELEASE_INTERVAL_S}s, so a lone attempt can miss all of them on "
+        "FIXED code), so this fails as an honest 'could not measure' rather than "
+        "reporting a starvation regression that was never observed."
     )
     assert any(rec["busy"] == 0 for rec in in_window), (
         f"every one of the {len(in_window)} checkpoint attempts made while "

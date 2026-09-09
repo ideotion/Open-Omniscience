@@ -16,9 +16,29 @@ from fastapi import APIRouter, Body, HTTPException, Query
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
+
+# i18n note (fixes a stale-key regression, not a missing translation): this whole
+# string is rendered into ONE DOM text node client-side, and OOI18N's DOM walker
+# only ever does an EXACT, whole-node match against a locale key (src/static/
+# i18n.js's `tr()`) — so every locale file needs a key that is byte-for-byte this
+# value, not a paraphrase of it. "Agenda" (not "calendar") is the term the rest of
+# the app has used since the tab's rename — the STATIC caveat hardcoded at the top
+# of the Agenda tab in index.html already reads "Agenda — major world events" two
+# lines above its own caveat, and that header's own wording confirms "calendar" is
+# the pre-rename term, not this one. So the fix here is NOT to revert the wording:
+# it is built as the same four whole-sentence pieces that index.html's own
+# already-translated caveat uses (each of "Fixed civic dates are confirmed.",
+# "Summit/meeting dates move each year — follow the official source for the exact
+# date." and "Nothing here is fabricated." is an existing, fully-translated ×12
+# locale key today) — joined with periods rather than a semicolon so the sentence
+# boundaries line up with those keys exactly. Only the first sentence's noun
+# actually changed ("calendar" -> "agenda"), which is the one fragment a locale
+# agent must newly translate; the other three are copy-paste-ready. See
+# `newStrings`/`notFixed` in this fix's report for the precise old/new strings the
+# locale agent needs to re-key.
 _CAVEAT = (
     "A forward-looking agenda of major recurring events. Fixed civic dates are "
-    "confirmed; summit/meeting dates move each year — follow the official source "
+    "confirmed. Summit/meeting dates move each year — follow the official source "
     "for the exact date. Nothing here is fabricated."
 )
 

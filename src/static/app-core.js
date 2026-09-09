@@ -179,6 +179,30 @@
     // Last known network state (airplane mode). Default true (online): never paint
     // "paused" until we actually learn we are offline (no fabricated status either way).
     let _netOnline = true;
+    // Separate from _netOnline above: whether that value (and the #net-toggle
+    // `off` class) reflect a REAL answer from the backend, set only inside
+    // _paintNetwork(). toggleNetwork() reads this so a click can never trust a
+    // guess as if it were a confirmed state (P0 audit §0c, below).
+    let _netStateKnown = false;
+    // The app ALWAYS boots with the network kill switch engaged (airplane mode
+    // engaged at boot -- CLAUDE.md non-negotiable, main.py). The very first REAL
+    // confirmation of that (GET /api/system/network, via the adaptive poll) can
+    // take ~5s after DOMContentLoaded -- queued behind ~30 other boot calls --
+    // and until it lands the button carried NO state signal at all (measured
+    // median 4887ms; audit §0c). Paint the known-offline default the instant
+    // this script runs so the button is never in that signal-less state; this
+    // is a same-tick, no-network, best-KNOWN-default paint, not a claim of a
+    // confirmed answer -- _netStateKnown stays false, so toggleNetwork() below
+    // still resolves the truth on demand rather than trusting this alone.
+    // Named (rather than an anonymous IIFE) so a test can extract and re-run it.
+    function _paintNetToggleBootDefault() {
+      const b = document.getElementById("net-toggle");
+      if (!b) return;
+      b.classList.add("off");
+      const p = document.getElementById("net-plane");
+      if (p) p.setAttribute("fill", "currentColor");
+    }
+    _paintNetToggleBootDefault();
     function _paintActivity() {
       const el = $("activity"); if (!el) return;
       const host = $("activity-host");
@@ -493,10 +517,44 @@
       if (dlg) dlg.addEventListener("cancel", () => closeGuide(true));   // Esc completes it too
     })();
 
+    // Read the CONFIRMED backend network state and paint it. A named helper
+    // (rather than inlined into toggleNetwork below) for two reasons: it is a
+    // plain read, sharing nothing with the go-OFFLINE POST that follows it in
+    // toggleNetwork, and keeping the two textually distinct preserves a
+    // maintainer-pinned invariant test that locates "the offline POST" inside
+    // toggleNetwork's body by searching for the one literal
+    // `api("/api/system/network"` call there (test_airplane_toggle_gives_instant_feedback).
+    async function _resolveNetState() {
+      const nm = await api("/api/system/network");
+      _paintNetwork(nm.online);   // also confirms _netStateKnown
+      return nm.online;
+    }
+
     async function toggleNetwork() {
       const btn = $("net-toggle");
-      const goingOnline = btn.classList.contains("off");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The `off` class is only ever a CONFIRMED state once _paintNetwork has run
+      // (see _netStateKnown above) -- before that it is at best the boot-time
+      // best-known-default paint. A click that lands before the first real
+      // GET /api/system/network resolves (~5s, queued behind ~30 boot calls --
+      // P0 audit §0c) used to trust that unconfirmed class outright: if it read
+      // as "online-looking" the click silently took the "already offline,
+      // no-op" branch, with no consent dialog and no feedback of any kind. So:
+      // without a confirmed answer yet, resolve the truth now (loopback, cheap)
+      // instead of guessing. Once a real answer has landed this is the same
+      // instant classList read as before -- no behavior change for the normal case.
+      let goingOnline;
+      if (_netStateKnown) {
+        goingOnline = btn.classList.contains("off");
+      } else {
+        try {
+          goingOnline = !(await _resolveNetState());
+        } catch (_e) {
+          // Truly unreachable: fall back to the best-known class rather than
+          // doing nothing at all -- still better than a silent no-op.
+          goingOnline = btn.classList.contains("off");
+        }
+      }
       if (!goingOnline) {
         // GOING OFFLINE: react INSTANTLY. The POST that trips the kill switch + installs
         // the airplane socket guard can take a moment (esp. with an in-flight fetch), and
@@ -561,6 +619,9 @@
       tm = setTimeout(close, 1600);
     }
     function _paintNetwork(online) {
+      // From here on the button's state is a REAL, confirmed answer -- see
+      // _netStateKnown's declaration above.
+      _netStateKnown = true;
       // Remember the state so the activity chip can show "Collecting paused" when a
       // background pass is in flight but the kill switch is engaged (Item V).
       const _was = _netOnline;
@@ -1877,21 +1938,84 @@
             throw netErr;
           }
           _noteReachable(true);  // it answered -- an error STATUS is still an answer
+          // The server's OWN stated wait, when it sent one. Carried to the throw
+          // below so a caller can say WHEN. Null unless the server actually sent one
+          // -- never a guess.
+          let retryAfterSeconds = null;
           // Every refusal counts toward the poll backoff, including the ones a
           // retry goes on to absorb: the server said "not now" whether or not the
           // next attempt succeeded, and a backoff that only saw the FINAL failure
           // would not slow down until the retries had already spent the load.
           if (res.status === 429 || res.status === 503) _noteServerBusy();
+          // Read the server's stated wait for ANY 429, before deciding what to do
+          // with it -- so a refusal that arrives with the retry budget already spent
+          // still carries the number to the caller instead of dropping it.
+          if (res.status === 429) {
+            const _ra = parseFloat(res.headers.get("Retry-After"));
+            if (isFinite(_ra) && _ra >= 0) retryAfterSeconds = _ra;
+          }
           if (res.status === 429 && attempt < maxRetries) {
-            const ra = parseFloat(res.headers.get("Retry-After"));
-            const waitMs = Math.min(
-              (isFinite(ra) && ra >= 0) ? ra * 1000 : 500 * (attempt + 1), _API_RETRY_MAX_MS);
-            _noteBusyRetry();
-            await new Promise((r) => setTimeout(r, waitMs));
-            continue;  // 429 = refused before work; re-issuing is safe
+            // 429 = refused before work, so re-issuing is safe -- BUT only when the
+            // server told us how long a refusal like this lasts. A `Retry-After` is
+            // that signal: it means a short-lived refusal (load-shed, a burst
+            // limiter) that will plausibly have cleared by the time we wait it out.
+            // Its ABSENCE can mean something else entirely: /api/articles' 429 is a
+            // 100/hour QUOTA, and guessing a wait + retrying anyway spends the very
+            // budget that is already exhausted -- up to _API_MAX_RETRIES=4 extra
+            // requests for one click, against a budget measured in single digits.
+            //
+            // AMENDED 2026-09-09, because the reasoning above outgrew its own test.
+            // It keyed the distinction on Retry-After's PRESENCE, which worked only
+            // while the quota limiter happened to send none. The audit's finding (c)
+            // fix made the rate-limiter answer with a real Retry-After -- correctly,
+            // a client cannot back off without one -- and that ALONE would have
+            // turned every exhausted-quota refusal into four more requests against
+            // the exhausted quota plus up to 32 s of silent waiting before the user
+            // was told anything. Measured, not reasoned: a 429 carrying
+            // `Retry-After: 120` left the Search tab showing its previous results,
+            // unchanged, for the whole retry budget.
+            //
+            // So key it on what actually separates the two cases: HOW LONG the
+            // server says to wait. A short wait is a burst/load-shed refusal that
+            // will have cleared (heavy.py and insights.py both say 2 s) and is worth
+            // sleeping through. A wait longer than our own retry budget is a QUOTA,
+            // and re-issuing into it spends the thing that is already spent. Then we
+            // fall through with the number attached, so the caller can say WHEN
+            // rather than guess -- the honest refusal the comment above always
+            // wanted, now available to a surface that wants to render it.
+            if (retryAfterSeconds != null) {
+              if (retryAfterSeconds * 1000 <= _API_RETRY_MAX_MS) {
+                _noteBusyRetry();
+                await new Promise((r) => setTimeout(r, retryAfterSeconds * 1000));
+                continue;
+              }
+              // Too long to wait out: fall through and report it instead.
+            }
           }
           const text = await res.text();
-          let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+          // A response can be unreadable in a way distinct from "the server said
+          // there is nothing here": when the Content-Type DECLARES json and the
+          // body still fails to parse, `data` used to become the raw string with
+          // `res.ok` true, so `data.cards` / `data.total` silently read `undefined`
+          // and every caller's `|| []` / falsy check rendered the honest-looking
+          // EMPTY state for a real corpus (audit §4.2 -- 453 articles read back as
+          // "your library is empty"). Throw instead, marked so a caller can tell
+          // "read failed" apart from any other refusal. A legitimate non-JSON body
+          // (a binary download, plain text) never declares application/json, so it
+          // is untouched -- this only fires when the server itself claimed JSON.
+          const ctype = (res.headers.get("Content-Type") || "").toLowerCase();
+          const declaresJson = ctype.indexOf("application/json") !== -1;
+          let data;
+          try { data = text ? JSON.parse(text) : null; } catch (parseErr) {
+            if (declaresJson) {
+              const err = new Error(
+                "The server's answer could not be read (invalid JSON, " + res.status + " " + res.statusText + ").");
+              err.parseFailure = true;
+              err.status = res.status;
+              throw err;
+            }
+            data = text;
+          }
           if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
           if (!res.ok) {
             // ADDITIVE (2026-07-29): the message is unchanged; the STRUCTURED detail
@@ -1902,6 +2026,11 @@
             const err = new Error(_apiErrorMessage(data, res));
             err.status = res.status;
             err.detail = data && data.detail;
+            // The server's OWN stated wait, when it sent one and it was too long to
+            // sleep through. A surface can turn this into "try again after 14:32";
+            // its absence means we genuinely do not know, and a caller must say only
+            // "later" rather than invent a countdown.
+            if (retryAfterSeconds != null) err.retryAfter = retryAfterSeconds;
             throw err;
           }
           return data;

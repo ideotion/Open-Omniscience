@@ -1,0 +1,711 @@
+# 11 — Live visual / UI audit (2026-09-08)
+
+> Commissioned as: *"a full visual audit / inspection … testing every aspect of the app's visual
+> interface, including all the UI translation, responsiveness, and so forth. We need to test the UI and
+> to suggest appealing visual additions, optimizations, tweaks, effects, and address all bugs and speed
+> issues. We also need to address the app's current UI complexity … the app should automate more stuff,
+> and it's for us to decide which stuff to automate so that it doesn't go in the way of our high ethical
+> standards … For now, we don't code or fix anything. We're just analyzing and making plans."*
+>
+> **This is the complement to [`10_TRANSVERSAL_AUDIT_2026-09-08.md`](10_TRANSVERSAL_AUDIT_2026-09-08.md),
+> which states in its own §9 that it launched no browser session and that every visual/i18n finding in it
+> is static-source-level.** This audit ran the app. Nothing below is inferred from source alone: every
+> finding was produced by, or re-derived against, a live Chromium session driving a real instance with a
+> real corpus. **Report-only, per the commissioning instruction: nothing was fixed.**
+>
+> Companion documents produced in the same session:
+> [`docs/design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md`](../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md)
+> and [`docs/design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md`](../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md).
+> Raw evidence: [`ui-visual-2026-09-08/`](ui-visual-2026-09-08/).
+
+## 0. Method, and the honest scope
+
+**The instrument.** Python 3.13 + the full `[analysis,dev]` dependency tree, Playwright 1.62 driving
+bundled Chromium 141, against **19 live loopback instances of the app** booted for this audit:
+
+| instance | state |
+|---|---|
+| ×17 | **STATE C** — a populated corpus seeded through the *real* `index_article` chokepoint (`scripts/ui_clickthrough_seed.py`): 453 articles, 3,618 sources, 2,342 keywords, 117 commodity prices, 129 mentioned dates, a 1,338-day span, 8 languages including Arabic and Chinese, a 3-article near-duplicate cluster, 4 provenance samples, 3 deduced future events |
+| ×1 | **STATE A** — virgin + encrypted: the genuine first-launch flow (language → legal → passphrase → wizard) |
+| ×1 | **STATE B** — unlocked, catalog-seeded, zero articles: every empty state |
+
+Every instance was forced into **airplane mode** before any agent touched it, and every agent worked
+under a written contract (`AGENT_BRIEF.md`) forbidding it to accept a consent popup, to click anything
+destructive, or to edit a file in the repository. No egress occurred at any point.
+
+**The fleet.** 7 orchestrated workflows, **60+ Sonnet 5 agents**, each substantive claim passed through
+an independent adversarial verifier with its own browser session, told to default to refutation and to
+re-derive the claim itself rather than reason about whether it sounded plausible. Output so far:
+**1,697 screenshots and 786 raw JSON probe files** (549 MB, kept out of the repo; the curated evidence
+subset is in `ui-visual-2026-09-08/evidence/`).
+
+**What the orchestrating session measured with its own hands** (marked **[hand-verified]** below, and
+not taken from any agent): the corrected 17-theme contrast sweep, the `#net-coach` occlusion matrix, the
+`.seg-toggle` overlap reproduction across themes/locales/viewports, the boot resource and idle-poll
+profile, the dual `/api/sources` handlers, the absence of HTTP compression, the design-token counts, and
+`pytest tests/test_repo_invariants.py -k "ui_invariants or claude_md"` (3 passed).
+
+### 0.1 A methodology defect this audit found in itself, and corrected
+
+The shared harness's first contrast implementation composited an element's text against its **ancestors'**
+backgrounds and excluded the element's **own** `background-color`. That scores a filled button's label
+against the panel *behind* the button — inventing failures for filled controls and missing real ones.
+**Two agents caught this independently** (the `custody` walk and the `first-run-journey` walk, the latter
+hand-verifying two flagged buttons at a real 6.65:1). The harness was corrected mid-run
+(`backdrop(el, includeSelf=true)`), and **every contrast number in this report comes from the corrected
+sweep, re-run by the orchestrator across all 17 themes after the fix**. Agent-reported contrast counts
+taken before the correction are not carried forward. Recording this here rather than quietly re-running
+is the point: an instrument that can be satisfied by a value the app did not choose is the recorded
+lesson this repeats.
+
+### 0.1b A SECOND defect in the same instrument, found while verifying the fixes it prompted
+
+Found 2026-09-09, during the fix pass, and it matters more than the first because it ran in the
+opposite direction: the first defect *invented* failures, this one *hid* them, and it hid exactly the
+ones the fixes had just created.
+
+The harness's colour parser matched only `rgba?(...)`. Chromium serialises any colour computed through
+`color-mix()` as `color(srgb 0.32 0.39 0.34)` — 0–1 floats, no `rgb(` anywhere — so the parser returned
+`null`, and every caller read `null` as "nothing here" and moved on. The element was **skipped, not
+scored**.
+
+Four theme fixes (`solar`, `paper`, `mist`, `dawn`) had by then re-derived `--muted` and `--accent-text`
+*through `color-mix()`*. Re-running the sweep afterwards returned zero failures for those themes — which
+was not a pass. It was the instrument declining to look at precisely the elements the fix had changed.
+A fix that made its own effect invisible to the check, verified by the check, is the "an untested path
+is not a pass" rule failing in the one place it was being appealed to.
+
+Proven rather than reasoned. A paragraph coloured `color-mix(in srgb, #ffffff 8%, #808080 92%)` on
+`#808080` — **1.15:1**, unmissable — was injected into a live page and both parsers asked:
+
+| parser | reports the 1.15:1 element |
+|---|---|
+| original (`rgba?()` only) | **no** — `total_failures: 0` |
+| corrected (`+ color(srgb …)`) | **yes** — `ratio: 1.15, need: 4.5` |
+
+Corrected in three parts: the parser reads `color(srgb r g b / a)` and space-separated `rgb()`; a colour
+it still cannot read is *counted* and returned as a `__UNPARSED_COLOURS__` record at the head of the
+results, so an unknown syntax can never again arrive as a clean sweep; and `%`-form values are refused
+loudly rather than mis-read as 0–255. All 17 themes were then re-swept with the corrected instrument
+across six surfaces — the four `color-mix` themes now measure a **genuine** zero, and `mint`, which the
+fix pass had added on the strength of the *broken* sweep's own numbers, was re-measured end to end:
+**4.18:1 before, ≥4.99:1 after**, with the pre-fix failures (`#lang-flag`, `#lang-code` at
+`rgb(95,116,102)` on `rgb(228,236,230)`) reproduced by hand before the fix was believed.
+
+The generalisable form, which is now in `docs/ledger/LESSONS.md`: **a measurement instrument that
+returns "nothing found" for an input it cannot parse reports a fix as a success on exactly the ground
+the fix changed.** An unreadable input must be a reported count, never an empty list.
+
+### 0.2 What this audit did *not* reach
+
+Named rather than silently omitted:
+
+- **No human eye.** The honest stamp on everything here is *"Chromium-verified (remote sandbox) ·
+  awaiting human UX pass"*, never "verified". Nothing here is a substitute for a person using the app.
+- **One engine, one renderer.** Chromium only. No Gecko, no WebKit, no real mobile device, no touch
+  hardware, no screen reader actually run (axe-core is a static a11y linter, not a screen reader).
+- **Host contention.** 4 CPU cores and 16 GB shared between ~14 concurrent agents, 19 app servers and up
+  to 50 Chromium processes. Load average peaked at **151**, and one app instance (port 8012) was
+  **OOM-killed by the kernel mid-audit** (`dmesg: oom-kill … task=uvicorn`), which truncated the 4×-CPU-
+  throttle latency battery. **Every absolute wall-clock number in this report is therefore inflated and
+  is reported as a ratio or alongside its conditions.** Byte counts, request counts, node counts and
+  contrast ratios are load-independent and are the numbers to trust.
+- **The corpus is synthetic.** 453 articles is a young corpus. Any rendering path that only appears at
+  scale, or only with real-world messy data, is unexercised — and where a fixture could not exercise a
+  path, the agents were required to say "unverified" rather than "passes".
+- Not a security test, not a fuzzing run, not a full `pytest` execution.
+
+---
+
+## 1. The thirteen things that matter most
+
+Ranked by consequence, not by discovery order. Every one was reproduced live. The nine marked
+**[hand-verified]** were measured by the orchestrating session itself, not taken from any agent.
+
+| # | Sev | Finding | Why it matters |
+|---|---|---|---|
+| 0 | **P0** | **The commodity Price × coverage overlay reports a measured correspondence that does not exist** — `Dy` silently resolves to the English word "already", `Nd` to the French "indiqué", `Pr` to "proposed", and the chart is labelled with the commodity. **[hand-verified]** §4.1 | A fabricated correspondence presented as measurement, on the one product whose stated reason to exist is that it does not do that. The guard against exactly this is already written, with its reasoning, elsewhere in the same repository. |
+| 0b | **P0** | **A malformed API response renders as a confident, false statement about the user's corpus**: "Your library is empty" on a database holding 453 articles and 3,618 sources, with no error text anywhere and the health pill still reading "healthy". **[hand-verified]** §4.2 | The "degrade loudly" non-negotiable inverted — the app asserts the opposite of the truth in the voice it reserves for facts. |
+| 0c | **P0** | **The airplane-mode toggle is functionally dead for the first ~5 seconds after every boot.** `#net-toggle`'s only state signal — its `off` class — is set exclusively by the first resolved `GET /api/system/network`, which is queued behind ~30 other boot calls and lands at a median **4,887 ms** after DOMContentLoaded (measured 4,820 / 4,887 / 4,907 across three runs; an agent independently measured 4,837–4,941 in two separate sessions). Clicking at ~700 ms leaves `#net-consent` closed — the click is **silently swallowed**, because `goingOnline = btn.classList.contains("off")` reads false and takes the "already offline, no-op" branch. **[hand-verified]** | The kill switch is the single most safety-critical control in a local-first privacy tool, and for five seconds after every launch it neither shows its state nor responds to a click, with no feedback that nothing happened. The failure mode is a no-op rather than an unconsented transition — so it is **not** a consent bypass — but it is the moment a user is most likely to press it. It is also the eager-boot finding (#2) arriving as a *safety* defect rather than a performance one. |
+| 0d | **P0** | **The Observatory's ranked-table drill-through answers with the wrong articles.** `openAnalysisFor(hit.name)` uses a curated cluster label as a literal full-text query: "Elections & democracy" → 0 results, "Public finance" → **19 unrelated articles presented as that galaxy's evidence** against its real 150-mention / 6-source membership. **[hand-verified]** §4.3 | The table exists to take a user from a number to its evidence. It fails open into a plausible wrong answer rather than closed into an honest refusal — and together with §4.1 and the code audit's own P0 #2 it makes **three unrelated subsystems using a text match where an identity is meant** (§4.4). |
+| 1 | **P0** | **The offline coachmark `#net-coach` covers page content on 16/16 surfaces at every viewport, and at 375 px it blocks interactive controls on 16/16 surfaces — including the top-bar buttons its own placement logic was written to protect.** On Governments at 375 px, Playwright's actionability check times out with *"#net-coach intercepts pointer events"*: the entire sub-tab strip is untappable until it is dismissed. **[hand-verified]** | A first-launch nudge makes parts of every screen unusable on a phone, for up to six launches, before the user has done anything wrong. It is also the mechanism by which a *caveat* gets hidden — on the Observatory it covers the sentence disclosing that the angle channel is meaningless. |
+| 2 | **P0** | **A single hidden dropdown costs 714 KB on every page load.** The frontend calls `GET /api/sources` (no trailing slash) — a second, legacy, unpaginated handler at `main.py:2372` that **silently ignores `?limit=`** — instead of the correct paginated `GET /api/sources/`. Measured: `?limit=5` returns 714,399 B either way on the bare route, 1,687 B on the slashed one. **91.4 % of all boot API bytes** are for surfaces Home never shows, and 98.8 % of that waste is this one call. It then trips its own 100/hour rate limit. **[hand-verified]** | This is the whole boot budget spent on data nobody sees, on a local-first app whose corpus is meant to grow. At 10× the sources it is 7 MB per page load. |
+| 3 | **P0** | **The Search surface can lock itself out for an hour.** `GET /api/articles` is rate-limited to 100/hour, and `api()` in `app-core.js` auto-retries a 429 up to 4 times — so **one user click can fire five requests**. Ordinary exploratory querying exhausts the budget, after which every search returns only a transient toast and an empty results table. The message *"Too many requests. Please try again later."* is also untranslated in all 12 locales. | The app's largest, most iterative surface (135 controls, 5 inputs, boolean syntax, five time-range presets) is designed for exactly the usage pattern that breaks it, and it fails quietly. |
+| 4 | **P1** | **The whole WCAG-AA failure set reduces to five root causes, not 145 bugs.** Corrected 17-theme × 8-surface sweep: `--muted` is below AA against its own panel in **solar, paper, mist and dawn** (one token, ~100 elements); `--accent`-as-text on `--panel2` fails on the active sub-tab in ≥5 themes; `.lead-flip-hint.back` ("⟲ Back") keeps `--muted` on an accent-filled pill and measures **1.01:1 in 17/17 themes**; the trigger chips and the tier badge use fixed, theme-independent colours (1.47:1 in dawn); `.ag-dn` measures 1.56:1 in 17/17. **[hand-verified — `ui-visual-2026-09-08/contrast-corrected.csv`]** | The chips *are* the invariant-#9 "Why am I seeing this?" label; if the label is unreadable the card fails the honesty requirement it exists to satisfy. And "⟲ Back" is the only way out of a flipped card. |
+| 5 | **P1** | **Two buttons are painted on top of each other on Insights, in every theme.** `.row > div { flex:1; min-width:140px }` plus `.seg-toggle button { flex:1 }` (basis 0) plus `overflow:visible` makes "Super-groups" render outside its own group box, 90 % covered by "Mind-map": a 60×67 px overlap at 1440 px, **2 overlaps in German, 3 at 1024 px**, also in Arabic. **[hand-verified]** | A control that cannot be read or clicked, on a flagship surface, in the default theme and locale, at the default width. |
+| 6 | **P1** | **Custody verification is unreachable from the article it exists to verify.** The Custody form demands a raw `article:<id>` string; the reader offers no "verify" action and no copyable id. | Tamper-evidence is a core honesty-by-construction claim, and in practice a user cannot exercise it on a document they are reading. |
+| 7 | **P1** | **The kill switch's own accessible name is permanently English in all 12 locales**, as is the collection-speed knob (both of its strings have no i18n key in *any* locale file), 15 of 17 theme names, 9 of 10 Help doc titles and all 10 blurbs, the Agenda's top consent caveat, and `order_explain` — the invariant-#23 visible caveat rendered under every Lead card. **Every Home briefing Lead's body text is server-generated English in all 12 locales.** Meanwhile `i18n_report.py` reports **3,151/3,151 = 100.0 % for all 12 languages**. | The maintainer-mandated "locale files stay 100 %" ritual is *true about the key files and false about the screen*. A green gate that cannot see the strings that matter most — consent, caveat, kill switch — is worse than no gate. |
+| 8 | **P1** | **33.8 % of the backend has no UI.** 224 of 662 API operations have no frontend caller. 56 are self-declared internal diagnostics (correctly unsurfaced). The rest include an entire, complete **Source Groups + batch-operations + discovery feature (24 routes)** with zero UI trace, the **whole statistics router** (t-test/ANOVA/correlation/Mann-Whitney/CI, 9 routes, 100 % unwired), 3 of 4 Conjunction-lens analytics with no endpoint at all, and **a second, parallel backup-restore API** sitting unused beside the one the UI actually drives. | The cheapest wins in the entire report are here: the engine already computes things the user is being asked to do by hand, or cannot do at all. |
+| 9 | **P1** | **A user who declines the network has no path to any content whatsoever.** There is no sample corpus, no demo mode, no bundled starter data. The first-launch flow asks for **~5,120 words of reading and four irreversible-ish decisions** before Home, and the legal gate (5,005 words) is **43× longer than the security decision it precedes**, with no scroll or read verification. | A local-first, consent-first app currently punishes the most privacy-conscious choice it offers with an empty screen. This is the single largest lever on both the complexity problem and the first-run problem. |
+
+**And one that is not a defect but frames everything else:** `pytest tests/test_repo_invariants.py -k ui_invariants` **passes green** on this tree. Every finding above is invisible to it, because it checks *structure* — that a select exists, that a class is present, that a string appears in a file — and none of these are structural. **[hand-verified]** The gap this audit fills is precisely the gap between "the markup says so" and "the screen does so".
+
+---
+
+## 2. Findings the orchestrating session verified with its own hands
+
+These are not agent claims. Each was measured directly, with the method stated, and the raw data is in
+[`ui-visual-2026-09-08/`](ui-visual-2026-09-08/).
+
+### 2.1 `#net-coach` occlusion matrix — 16 surfaces × 5 viewports
+
+Method: load each surface fresh in a first-launch profile (ink/en, port 8010), then for every
+`button/a/input/select/[role=tab]/[data-tab]` whose centre falls inside the coachmark's rect, call
+`document.elementFromPoint()` at that centre and record it as *blocked* when the topmost element is the
+coachmark. Text elements intersecting the rect are counted separately.
+Raw: [`coach-occlusion.csv`](ui-visual-2026-09-08/coach-occlusion.csv).
+
+| viewport | coach shown | surfaces with **blocked controls** | surfaces with covered text | examples of what is blocked |
+|---|---|---|---|---|
+| 375 × 812 | 16/16 | **16/16** | 16/16 (max 13 elements) | `#tm-open`, `#lang-switch`, `#app-shutdown` — the top-bar controls themselves |
+| 768 × 1024 | 16/16 | 7/16 | 16/16 (max 10) | Insights "Super-groups"/"Map"; Governments "Statistics", `#gov-load-btn`; Agenda "Decade"/"List"; Indices "South America"/"Oceania" |
+| 1024 × 800 | 16/16 | 7/16 | 16/16 (max 10) | Insights "Map"/"Convergence"; Agenda "List" |
+| 1440 × 900 | 16/16 | 2/16 | 16/16 (max 10) | Governments `#gov-load-btn`; Analyze "Sources"/"Competitive" |
+| 1920 × 1080 | 16/16 | 0/16 | 1/16 (max 2) | — |
+
+The mechanism is in `app-core.js:_placeCoach()`. It is careful, well-commented code that already fixed a
+recorded P0 (*"net-coach-blocks-topbar-buttons"*) by refusing to place the bubble above the button and
+instead putting it **below the union rect of four top-bar buttons**. That guard holds at desktop widths
+and **fails at 375 px**, where the final clamp
+(`top = max(pad, min(top, innerHeight - h - pad))`, and the same for `left`) collapses the bubble back
+over the very cluster the union rect was computed to avoid. The union rect also never considered page
+content, which is why 1440 px shows zero blocked controls and still covers text on all 16 surfaces.
+
+**Evidence:** [`evidence/01-netcoach-blocks-nav-375-governments.png`](ui-visual-2026-09-08/evidence/01-netcoach-blocks-nav-375-governments.png)
+— the Governments sub-tab strip with "Cou…" clipped and everything after "Map" gone.
+
+**Ethical dimension, not just layout.** The bubble's primary, accent-filled action is **"Go online"**;
+the decline is a quiet secondary "Not now". In an app whose default and celebrated state is airplane
+mode, the visually dominant action in an unrequested overlay is the one that starts egress. The
+consent gate behind it is intact (`toggleNetwork()` → `ensureOnline`, verified), so this is a
+presentation concern rather than a consent breach — but it is the wrong emphasis for this product.
+
+### 2.2 Composited contrast, corrected, across all 17 themes
+
+Method: 17 themes × 8 surfaces, composited colour with the element's own background included and the
+full opacity chain resolved; elements with cumulative opacity < 0.02 excluded as invisible rather than
+failing. 145 distinct (selector, text) pairs failed AA at least once.
+Raw: [`contrast-corrected.csv`](ui-visual-2026-09-08/contrast-corrected.csv).
+
+**They are five defects, not 145.** The tell is that dozens of unrelated elements share an *identical*
+ratio within one theme — which only happens when they share a token.
+
+| root cause | worst measured | themes affected | what it hits |
+|---|---|---|---|
+| `.lead-flip-hint.back` inherits `--muted` while sitting on an accent-filled pill | **1.01:1** (mint) / 1.04:1 (ink) | **17/17** | the "⟲ Back" control — the only way out of a flipped briefing card ([evidence](ui-visual-2026-09-08/evidence/03-flipback-contrast-1_04-ink.png)) |
+| `.ag-dn` adjacent-month day numbers | **1.56:1** (paper) | **17/17** | the Agenda month grid ([evidence](ui-visual-2026-09-08/evidence/05-agenda-adjacent-day-contrast-paper.png)) |
+| trigger chips use a fixed, hash-derived colour identical in every theme (`rgb(209,129,71)` etc.) | **1.47:1** (dawn, "recycled claim") | 5–12/17 depending on the chip | the invariant-#9 plain-words label on every Home Lead ([evidence](ui-visual-2026-09-08/evidence/04-trigger-chip-contrast-dawn.png)) |
+| `.tier-badge` uses a fixed `rgb(59,130,196)` | **3.20:1** (solar) | **14/17** | "Developing corpus" — the corpus-maturity caveat |
+| `--muted` below AA against its own panel; `--accent`-as-text on `--panel2` for the active sub-tab | 3.47–4.41:1 | solar, paper, mist, dawn | ~100 elements each: every sub-tab label, the whole Method/"The exact math" table, `div.k` stat labels, `p.sum` and `p.why-plain` card body text, the sidebar nav labels, `#version`, `#health`, `#lang-code` |
+
+Two consequences worth stating plainly. First, **the failures concentrate on exactly the honesty
+surfaces** — the caveat chip, the tier badge, the "Why am I seeing this?" block, the method tables, the
+`n=` significance lines. Second, the fix is small: retune `--muted` and the accent-on-panel2 pair in four
+themes, give the flip-hint an explicit on-accent colour, and derive the chip and badge colours from the
+theme the way `--caveat` already is. The `--caveat` token is the model — it was tuned to clear AA on all
+17 themes and it does.
+
+### 2.3 The `.seg-toggle` overlap
+
+Reproduced on Insights at `#mm-kit .row`. `.row > div { flex:1; min-width:140px }` gives each group a
+`flex-basis: 0` share; `.seg-toggle button { flex:1 }` does the same to the buttons inside it; with
+`overflow: visible` the buttons render *outside* their group's box and are painted over by the next
+group.
+
+| condition | overlaps | worst |
+|---|---|---|
+| ink / en / 1440 | 1 | Super-groups ↔ Mind-map, 60 × 67 px |
+| ink / fr / 1440 | 1 | Super-groupes ↔ Carte mentale, 39 × 67 px |
+| ink / de / 1440 | **2** | Obergruppen ↔ Mindmap, **102 × 43 px** |
+| ink / en / 1920 | 1 | unchanged — not a width problem alone |
+| ink / en / 1024 | **3** | Families ↔ Mind-map, Super-groups ↔ Mind-map, Super-groups ↔ Word cloud |
+| paper / ar / 1440 | 1 | mirrored, same defect |
+
+**Evidence:** [`evidence/02-insights-segtoggle-overlap.png`](ui-visual-2026-09-08/evidence/02-insights-segtoggle-overlap.png).
+
+### 2.4 Boot and idle cost
+
+Measured on port 8010, ink/en/1440×900, and cross-checked against an independent agent run.
+
+- **25 script tags, 1,664 KB of JavaScript decoded, all eager.** The Home-relevant subset
+  (`app-core`, `app-home`, `app-shell`, `app-boot`, `i18n`, `boot`, `sw-register`) is 305 KB — **18.4 %**.
+  The other **81.6 %** belongs to surfaces a Home-only session never calls a function from.
+- **No HTTP compression at all.** `curl -H 'Accept-Encoding: gzip, br'` on `app-map.js` returns
+  `content-length: 158817` with **no `content-encoding` header**. Measured `gzip -9` on the app's own
+  files: `app-map.js` −71.0 %, `app-core.js` −67.5 %, `app-home.js` −69.0 %, `index.html` −72.8 %.
+  A single compression middleware would cut roughly 1.2 MB from every cold load. **[hand-verified]**
+- **33–35 API calls in the boot window, ~792 KB**, of which Home renders 68 KB (8.6 %).
+- **`/api/sources` — the dual-handler bug.** `GET /api/sources` → 714,399 B regardless of `?limit=`;
+  `GET /api/sources/?limit=5` → 1,687 B. Two handlers: `src/api/main.py:2372` (`@app.get("/api/sources")`,
+  legacy, unpaginated) and the paginated router the frontend never reaches. **[hand-verified]**
+- **6,952 DOM nodes on Home; 759 CSS rules.** `index.html` is 268 KB and ships **all 16 tab panels in
+  the DOM at once**.
+- **Idle: 13 loopback requests per 20 s** (`scheduler/status` ×5, `system/network` ×4, plus
+  `database/stats`, `briefing`, `insights/trending-windows`, `signals/alerts`) ≈ **2,340 requests/hour
+  doing nothing**. Zero long tasks at idle — the cost is wakeups and battery, not jank.
+- **Under 4× CPU throttling** (the honest number for a journalist's laptop): DCL ×2.46, FCP ×1.96,
+  long-task count ×4.5, **long-task total duration ×8.1**.
+- **Indices fires 26 parallel API calls just to open** (one per index/commodity, `Promise.all` in
+  `app-markets.js:213`). **Help adds 3,755 DOM nodes and +3.87 MB of JS heap** for a single panel.
+
+### 2.5 Design-token inventory
+
+`app.css` is 1,718 lines / 717 selectors. `:root` defines 35 custom properties — 24 of them colour, and
+the colour system is genuinely well engineered (per-theme, `color-mix`-derived, with measured worst-case
+ratios left in the source as comments). What does not exist:
+
+- **No type scale.** 150 `font-size` declarations resolve to **24 distinct values** (9.5 … 30 px);
+  **56 of them (37 %) are below 12 px**; the two commonest are 12 px (36×) and 11 px (30×). Hierarchy is
+  being carried by 0.5–1 px steps, which is not a hierarchy.
+- **No spacing scale.** 125 `padding` declarations → **83 distinct shorthand strings**.
+- **No radius scale.** 115 declarations → 19 distinct value-strings; **106 of 115 bypass the two existing
+  tokens**; two different pill radii (99 px and 999 px) are used interchangeably.
+- **No z-index scale.** 19 declarations, 14 raw values (`0,1,30,50,55,60,140,150,151,200×3,360,400,9998,99998`).
+  `.sidebar` and `.vitals-pop` collide at 60 by coincidence; `.skip-link`, `#net-flash` and `#toast` at 200.
+- **`--line` is referenced 41 times and defined nowhere.** Every one of those declarations is invalid at
+  computed-value time. Confirmed live: `#oo-tip` (the invariant-#17 tooltip instrument) and `#net-coach`
+  render with **no border in any theme**. `app.css:305–311` documents this exact failure for `<dialog>`
+  and fixed only that one call site.
+- **Nine independently authored chip components** for one visual atom, with 4 radii and 6 paddings
+  between them.
+- **Almost no motion:** 14 `transition` declarations and 8 `@keyframes` in the entire stylesheet.
+  `prefers-reduced-motion` and `prefers-contrast: more` are both handled globally — those are positives.
+
+### 2.6 Server memory, measured on one clean instance
+
+A controlled run against a freshly booted instance (port 8038, nothing else touching it, corpus of 453
+articles / 3,618 sources), reading `VmRSS` of the `uvicorn` process directly:
+
+| moment | RSS |
+|---|---|
+| idle, straight after boot | **315 MB** |
+| after loading Home | 376 MB |
+| **after visiting all 16 surfaces once** | **922 MB** |
+| after a further 20 s idle | 922 MB (no release) |
+
+**Measured, not diagnosed.** Whether this is retained objects or allocator arenas that never return to
+the OS needs a heap profile that was not run here, and a server process is not the same thing as a
+desktop app's footprint. But the user-visible fact stands: a local-first tool aimed at a journalist's
+laptop reaches ~1 GB resident after a single tour of its own tabs on a very small corpus, and does not
+come back down. (Corroborating, from the sandbox rather than from the app: with 19 instances running,
+the kernel OOM-killer took one of them out mid-audit.)
+
+---
+
+## 3. Corrections to the existing record
+
+Every one of these was re-derived live against today's tree rather than trusted from the ledger or from
+the previous audit. Recording them matters as much as the new findings: a backlog that carries a fixed
+defect wastes the next session's time.
+
+| claim on record | verdict today | how it was re-derived |
+|---|---|---|
+| *"Settings → Source qualification's two scope checkboxes silently fail to save and then visibly revert, right after a false 'Saved.' toast"* (10-audit §1 #6) | **Did not reproduce** | Two independent agents, change → save → full page reload → re-read against both the DOM and a direct `GET`, including single-click, uncheck and rapid-race variants |
+| *"theme-select-lossy-overwrite"* — the `#set-theme` 3-way bucket destroying a full theme choice | **Fixed**, verified live | Picked a theme in the gallery, then touched `#set-theme`, then reloaded |
+| *"eleven `ooViz` primitives remain unwired"* | **7 of 19**, not eleven | Read the 19 exports out of `ooviz.js:571-591` and traced both dot-access and aliased/destructured `V.` access in `oosky.js` |
+| *"the retired temporal-map cluster is dead code interleaved with live helpers"* | **Already fully resolved** | Zero live callers and no `#tmap-*` DOM targets remain |
+| *"`prefers-contrast` is unhandled"* / *"`.sr-only` is absent"* (already corrected in the backlog on 2026-09-07) | **Confirmed present** | `@media (prefers-contrast: more)` applies live under `emulate_media(contrast="more")`; `.sr-only` at `app.css:161` |
+| *"~590 inline `on*=` handlers"* | **585 measured** (332 in `index.html`, 253 across `app-*.js`) against 135 `addEventListener` — the same order, restated with today's count | `grep -o` on both file sets |
+| **This audit's own first contrast harness** | **Wrong, corrected mid-run** | See §0.1. One agent's `LAW-6` contrast finding (a claimed 1.08:1) was subsequently **REFUTED** by its verifier running the *corrected* harness on the identical surface, which returns an empty array |
+
+One correction went the other way, and is the better story. An agent reported the Tracked-laws
+"official ↗" links as **functionally dead** — click, nothing happens, no navigation, no local preview —
+and reproduced it byte-for-byte. Its adversarial verifier reproduced the same symptom and then found the
+diagnosis was wrong: the app-wide capture-phase `_externalLinkGuard` (invariant #7) intercepts the click
+and raises a `confirm()`, which a headless browser with no dialog handler silently dismisses. The link is
+not dead; it is gated. **But the verifier then found a real defect underneath**: that guard shows a
+factually wrong *"this leaves the app"* warning on anchors whose own `onclick` already routes through the
+local `openLinkPreview` path and therefore do not leave the app. A confirmed symptom, a refuted cause,
+and a new finding — which is what the adversarial layer is for.
+
+---
+
+## 4. The two findings that outrank everything else
+
+Both were claimed by agents, and both were then **re-derived by the orchestrating session directly**
+because of what they are: this project's whole moral position is that it does not fabricate and does not
+fail silently, and these are one of each.
+
+### 4.1 P0 — the Price × coverage overlay reports a real, measured correspondence that does not exist
+
+**What the user sees.** Clicking a commodity opens the analysis window's Price subtab, which draws a
+clean chart headed **"Price × coverage — Dy"** with **"Articles: 36 · 35×"** beneath it. Every visual cue
+says: 36 articles in your corpus mention this element, and here is how that tracks its price.
+
+**What is actually happening.** **[hand-verified]** Probing the same loopback endpoint the client calls:
+
+```
+GET /api/insights/trend?bucket=week&term=Dy  -> resolved.normalized = "already"   (35 points, 36 mentions)
+GET /api/insights/trend?bucket=week&term=Nd  -> resolved.normalized = "indiqué"   (26 points, 28 mentions)
+GET /api/insights/trend?bucket=week&term=Pr  -> resolved.normalized = "proposed"  (34 points, 37 mentions)
+GET /api/insights/trend?bucket=week&term=lithium -> resolved = {}                 (0 points)
+GET /api/insights/trend?bucket=week&term=cobalt  -> resolved = {}                 (0 points)
+```
+
+`Dy` is being silently resolved to the English word **"already"** (`alrea·dy`), `Nd` to the French
+**"indiqué"** (`i·nd·iqué`), `Pr` to **"proposed"**. The chart is real data about an unrelated word,
+labelled with the commodity's name. Terms with no substring collision (`lithium`, `cobalt`) correctly
+resolve to nothing — which is why this never looks broken.
+
+**Why it is the worst finding here.** It is not a rendering defect; it is a **fabricated correspondence
+presented as measurement**, on the one product whose stated reason to exist is that it does not do that.
+It is also *silent by construction*: in the very same analysis window, seeded by the very same commodity,
+the Keywords tile honestly says "No keywords yet", When/Where/Who says "Nothing extracted yet", and
+Sources says "No sources yet". Every other lens tells the truth. Only the one with a chart lies.
+
+**The root cause, and the fix, are already written down in this repository.**
+`src/analytics/queries.py:149` `resolve_keyword()` — *"Map a user term to a stored keyword: exact
+normalized match, else best LIKE"* — falls back to `Keyword.normalized_term.like(f"%{norm}%")` ordered by
+mention count. Meanwhile `src/analytics/supply_chain_ripple.py:110` already carries the guard and the
+reasoning, in its own docstring:
+
+> `_exact_keyword_id` — *"EXACT normalized-term match only — never the fuzzy `LIKE %term%` fallback
+> `resolve_keyword` uses for other, human-driven callers. A commodity label/symbol that has no keyword
+> under its OWN exact normalized form must resolve to NOTHING, never an unrelated keyword that merely
+> CONTAINS it as a substring (the 'significant words of the label' homograph vector — a commodity 'Lead'
+> silently matching the unrelated common word/verb 'lead')."*
+
+The hazard was identified, the guard was written, the reasoning was recorded — and the commodity-seeded
+Price overlay calls the **unguarded** path. The fix is to route it through exact resolution and render
+the honest empty state its sibling lenses already render.
+
+**A pattern worth naming.** The 2026-09-08 code audit's own P0 #2 was *also* a substring-containment
+defect, in a completely different subsystem (`src/bulletin/grounding.py`, where a fabricated figure that
+is a substring of a real one verdicts as grounded). Two independent audits, two different subsystems, the
+same failure mode: **substring containment used where identity is meant.** That is now a codebase-level
+pattern, not a coincidence, and it deserves a guard test of its own rather than a third fix in a third
+place.
+
+### 4.2 P0 — a data-layer failure renders as a confident, false statement about the user's corpus
+
+**[hand-verified]** With `/api/briefing` and `/api/database/stats` intercepted to return HTTP 200 with a
+malformed body (`{not valid json!!! <<<`), against a database containing **453 articles and 3,618
+sources**, Home renders:
+
+> **Your library is empty — head to Collect to gather your first material.**
+> **No Leads yet** — that's expected on a young corpus… Leads are computed from YOUR collected material;
+> an empty feed means the signals haven't accumulated, never that the engine is gone.
+
+Measured on that page: **zero** occurrences of *failed*, *error*, *unavailable*, *could not* or *retry*;
+**zero** uncaught exceptions; **zero** console errors; and the top-bar health pill still reads
+**healthy**.
+
+The app does not merely fail quietly — it **asserts the opposite of the truth, in the reassuring voice it
+reserves for facts**, and the empty-state copy it reuses goes out of its way to promise the user that
+this state "never" means the engine is gone. That copy is well-written and correct for a genuinely empty
+corpus. Reached through a parse failure, it is the app telling the user something false about their own
+data. Against the "degrade loudly" non-negotiable this is a P0, and it is the same family as §4.1: the
+app stating a falsehood with the same confidence it states a truth.
+
+The fix is small and entirely within the project's existing grammar: distinguish *"the server answered
+and the answer was empty"* from *"the answer could not be read"*, and give the second one a loud,
+translated, method-bearing state of its own.
+
+### 4.3 P0 — the Observatory's drill-through answers with the wrong articles, and looks right doing it
+
+**[hand-verified]** The ranked table exists so a user can go from a number to its evidence. Clicking a
+row calls `openAnalysisFor(hit.name, {source:"observatory"})` (`app-observatory.js:444`), which passes
+the galaxy's **curated cluster label** into the analysis window as a **literal full-text query**. A
+cluster label is a name for a set of keywords; it is not text that appears in articles. Measured:
+
+| galaxy | `GET /api/articles?query=<label>` | what the user sees |
+|---|---|---|
+| Elections & democracy (the corpus's #1 galaxy by mentions) | **total = 0** | "No keywords yet / Nothing extracted yet / No sources yet" |
+| Ecology & biodiversity | **total = 0** | same |
+| **Public finance** | **total = 19** | **a populated, plausible, entirely wrong article set** — 19 articles that happen to contain those two words, presented as the galaxy's evidence, against its real 150-mention / 6-source membership, with nothing in the UI signalling the mismatch |
+
+The empty case is bad and visible. The **Public finance** case is worse and invisible: the drill-through
+succeeds, looks exactly like a correct answer, and is not one.
+
+### 4.4 The pattern these three share, which is the real finding
+
+§4.1, §4.3 and the 2026-09-08 code audit's own P0 #2 are **the same defect in three unrelated
+subsystems**:
+
+| where | identity that was meant | text match used instead | result |
+|---|---|---|---|
+| `resolve_keyword()` → commodity Price overlay (§4.1) | the keyword *is* this term | `normalized_term LIKE '%Dy%'` | `Dy` → "already"; a chart of an unrelated word, labelled with the commodity |
+| `openAnalysisFor(g.name)` → Observatory table (§4.3) | the articles *belong to* this cluster | full-text search for the cluster's label | "Public finance" → 19 unrelated articles presented as the cluster's evidence |
+| `src/bulletin/grounding.py` (code audit P0 #2) | the figure *appears in* the evidence | substring containment | "40" counted as grounded by a real "1,240" |
+
+Each one **fails open into a plausible answer rather than closed into an honest refusal**, which is why
+none of them looks broken and none was caught by a test. The project already knows this: it wrote
+`_exact_keyword_id` with the reasoning in the docstring, and its own chart rules forbid inventing data.
+**The durable fix is not three more exact-match helpers.** It is a rule the codebase can check — where a
+display surface resolves an identity, a text match may never stand in for it, and a failure to resolve
+must render the honest empty state rather than the nearest thing found. Two audits have now each paid
+for this lesson separately.
+
+---
+
+## 5. Cross-cutting patterns — where one fix buys many
+
+The full finding set is [`ui-visual-2026-09-08/findings.csv`](ui-visual-2026-09-08/findings.csv), with
+both the claimed and the post-verification severity on every row. Reading it defect-by-defect is the
+wrong way to use it. These are the clusters where **one root cause explains many symptoms**, which is
+where the leverage is. (Cluster sizes below come from a keyword pass over titles and impact statements —
+a rough instrument, stated as such; the *mechanisms* named in each row were each traced individually.)
+
+| pattern | scale | the one thing to fix |
+|---|---|---|
+| **The app states something false with the same confidence it states something true** | 6 findings at P0, ~53 in the family | Two mechanisms: substring resolution presented as measurement (§4.1) and parse failure rendered as a populated empty state (§4.2). Both are *honesty* defects wearing *engineering* clothes, and both are the highest-value fixes in this report. |
+| **`#net-coach` occlusion** | 19 findings across 18 surfaces/jobs — **one** root cause | Extend `_placeCoach()`'s union rect from "four top-bar buttons" to "the top-bar cluster **and** the content region", and clamp it so 375 px cannot fold it back over the chrome. **[hand-verified on 16/16 surfaces × 5 viewports]** |
+| **Composited contrast below AA** | 145 measured (selector, text) failures across 17 themes → **5** root causes | Retune `--muted` and the accent-on-`--panel2` pair in solar/paper/mist/dawn; give `.lead-flip-hint.back` an explicit on-accent colour; route the trigger chips and `.tier-badge` through the per-theme pipeline `--caveat` already uses. **[hand-verified]** |
+| **Untranslated at runtime while the gate reports 100 %** | 76 findings across 23 jobs | Not one fix but **four scanner rows** (§ the i18n audit's mechanism table): give the tool a path into `src/api/`, add the two aux HTML files' inline scripts to the JS scanner, wrap canvas `fillText` values in `t()`, and extend the extraction regex to backtick template literals. Then lower both ratchets to what they measure. |
+| **Layout overlap and truncation** | 30 findings across 23 jobs | Mostly nested-flex shrink with `overflow:visible` (§2.3) and the `max-width:1100px` choke point at `app.css:289`. Two CSS changes reach most of it. |
+| **Consent-gate coverage** | 54 findings across 32 jobs, 2 at P0 | The gate itself is well built and was verified working on three of four networked actions on one surface, and end-to-end on all three OpenTimestamps paths. The gaps are individual un-gated callers, not a broken mechanism. |
+
+**The most important structural observation in this audit** is that these clusters land
+disproportionately on the *honesty surfaces*: the invariant-#9 trigger chip, the tier badge, the
+"Why am I seeing this?" block, the method tables, the `n=` lines, the Agenda consent caveat, the reader's
+external-link consent note, the Observatory's own disclosure that its angle channel is meaningless. The
+app's ethical apparatus is genuinely well designed — and it is the part most often rendered illegible,
+covered by an overlay, clipped mid-word, or left in English.
+
+## 6. What is genuinely good (124 positive findings)
+
+Recording these is not politeness; several are load-bearing and a future session must not "fix" them.
+
+- **The consent architecture works.** Invariant #14f's three-path OpenTimestamps gate was driven
+  end-to-end and holds. Three of four networked actions on Governments correctly raise `#net-consent`
+  with action-specific naming and honest local-IP-only copy. The first-launch wizard's shortcut still
+  routes through the real gate. Every instance stayed offline for the entire audit.
+- **The honesty vocabulary is real.** "as of 07:31 PM (server busy)" appears only when the stats cache is
+  genuinely stale ≥90 s. Empty states say what is missing and why. `voices = 1 · n=1` and
+  `gap_days = 319 · n=10` appear under the cards that claim them. The sparse-series bar rule renders
+  correctly on real SVG geometry. The Observatory's two refusals fire on a real corpus.
+- **`--caveat` is the model the rest of the colour system should copy** — tuned per theme, and it clears
+  AA on all 17 in the corrected sweep while five other colours do not.
+- **Invariants verified live, not asserted:** #1 (flat `<select>` Wikipedia picker), #2 (sidebar never
+  off-canvas above 600 px), #3 (constant top-bar footprints), #11 (themed range sliders), #12 (typeface
+  picker + 17-theme catalogue), #13 (calendar directory in Advanced, not Agenda), #16 (all five chart
+  interactions genuinely work), #18 (roving tabindex + arrow keys on the shared subtab component),
+  #22 (facet drill-through really re-scopes the article subset), #30 (all eight skins present).
+- **Zero uncaught exceptions**, across every surface, every theme, every locale, every viewport, in every
+  workflow that measured it. Console noise was checked separately and is not errors.
+- **`prefers-reduced-motion` and `prefers-contrast: more` are both handled globally**, and the contrast
+  block derives its values from theme tokens via `color-mix()` rather than hand-picking — which is
+  exactly the technique that would fix the five contrast root causes.
+- **Per-tab lazy loading is real and correctly implemented** — the "run each tab loader once"
+  architecture measures out exactly as designed. The boot problem is *what is eager*, not the mechanism.
+- **The command palette's redirect auto-expands and scrolls to buried Advanced sections** — a genuine
+  rescue mechanism for a deeply nested settings tree. Its only weakness is that nothing advertises it.
+- **RTL is not an afterthought where it was built**: Indices mirrors correctly, right-aligns its popup,
+  and keeps LTR numerals inside Arabic prose.
+
+---
+
+## 7. Coverage — what was actually driven, and what was not
+
+**Controls exercised: 519 of 3,669 enumerated (14 %).** That number is not an apology; it is a finding.
+A 60-agent, three-hour, browser-driven audit reached one control in seven. The denominator is dominated
+by `Settings → Advanced` (2,492 controls once its folds are expanded, 1,317 of them in the Keywords fold
+alone) and Insights (487). **An app whose control surface cannot be exercised by an effort this size
+cannot be exercised by a user at all** — which is the complexity finding, arrived at from the other
+direction.
+
+| surface | controls exercised / enumerated | subtabs driven | walk + independent verify |
+|---|---|---|---|
+| home | 34 / 46 | 9 | yes |
+| feed | 14 / 101 | — | yes |
+| insights | 43 / 487 | 9 | yes |
+| search | 24 / 140 | 1 | yes |
+| observatory | 87 interactions / 80 controls | — | walk only |
+| timemap | 27 / 34 | 4 | walk only |
+| agenda | 10 findings / 36 controls | — | walk only |
+| markets | 15 findings / 35 controls | — | walk only |
+| law | 34 / 55 | 6 | yes |
+| indices | 11 / 36 | 7 | yes |
+| library | 34 / 52 | 6 | yes |
+| settings | 146 / 2,492 | 9 | yes |
+| analyze | 28 / 70 | 12 of 13 | yes |
+| custody | 20 / 31 | — | yes (verify JSON truncated mid-run) |
+| integrity | 13 / 32 | — | **critic spot-check only** |
+| help | 4 / 13 | — | **critic spot-check only** — and it found the batch's worst defect |
+
+**Verification, final numbers.** All seven workflows completed: **26 adversarial verifier agents
+returned 203 verdicts, every one of which matched its finding** (the join is on workflow + scope + id;
+0 unmatched):
+
+| verdict | n |
+|---|---|
+| CONFIRMED | 141 |
+| PARTIALLY_CONFIRMED | 47 |
+| UNREPRODUCIBLE | 4 |
+| **REFUTED** | **5** — removed from the finding set entirely |
+
+**The verifiers changed the severity of 17 findings, and mostly downward**: P2→P3 ×7, P1→P2 ×5,
+P1→P3 ×1, against P2→P1 ×3 and one IDEA promoted to POSITIVE. They also found **55 defects the walk
+agents missed**, including 3 at P0. That asymmetry — a layer built to refute producing a sixth of the
+finding set itself — is the single best argument for keeping it.
+
+**The finding set after verification: 527 rows — 13 P0 · 115 P1 · 113 P2 · 86 P3 · 18 IDEA ·
+127 POSITIVE.** But **191 of 345 non-positive findings (55 %) carry a verdict**; the rest are marked
+`NOT_YET_VERIFIED` in their own column, because three workflows used one batch verifier rather than one
+per agent. **Do not treat an unverified P1 in that file as established.** The thirteen headline findings
+in §1 are the exception: nine were measured by the orchestrating session directly, and the others carry
+a verifier's verdict.
+
+### Not reached, by cause
+
+- **Declined under the safety rules:** every network-consent acceptance, the catalog re-seed, uninstall
+  and panic-wipe, passphrase rotation, and any native dialog that would have navigated away.
+- **Structurally unreachable in this fixture:** the Indices Cards view (its toggle is hardcoded
+  `display:none`), Indices families/compare with real data (all 25 index and 33 commodity catalog rows
+  are `points:0`), Custody's populated verify chain (the state-C corpus contains zero custody-log
+  entries despite `auto_log_on_ingest:true`), and Analyze's Price subtab via its normal trigger paths.
+- **Never assigned:** integrity and help got no full walk. That is a gap in my orchestration, not in the
+  app — and the critic's spot-check of the surface I under-resourced returned the most serious finding
+  in its batch, which is the argument against under-resourcing it.
+- **Environment:** Chromium only; no Gecko, no WebKit, no real device, no touch hardware, no screen
+  reader actually run. Host contention peaked at load average 151 and OOM-killed one instance mid-run,
+  truncating the 4× CPU-throttle latency battery. Three Arabic-locale Custody attempts failed to launch
+  Chromium under memory pressure and are recorded as unreached rather than passed.
+
+### Two "findings" that are mine, not the app's
+
+Recorded so they are not mistaken for defects:
+
+1. **"The virgin locked instance was already unlocked."** True, and caused by me: I assigned port 8020
+   to two agents, and the first created a passphrase before the second arrived. A stateful fixture is
+   single-assignment. The first-launch flow *was* driven properly — by the agent that got there first.
+2. **"The assigned server was killed by the OOM-killer."** Also true, also mine: 19 app instances at up
+   to ~900 MB each on a 16 GB box. I added a recycler mid-run; it should have been there from the start.
+
+## 8. If only ten things get done
+
+Ordered by measured benefit per unit of effort, not by severity alone.
+
+1. **Route the commodity Price overlay through exact keyword resolution** (§4.1) and render the honest
+   empty state its sibling lenses already render. Then add the guard test over `resolve_keyword`'s
+   callers, so the third instance of this class cannot happen.
+2. **Distinguish "answered and empty" from "could not be read"** (§4.2) and give the second a loud,
+   translated state. Small, and it closes a P0.
+3. **Extend `_placeCoach()`'s union rect to the content region and fix the 375 px clamp.** One function,
+   19 findings, 16 surfaces.
+4. **Point the frontend at `GET /api/sources/` with a real `limit`** — or delete the legacy bare route.
+   714 KB off every page load.
+5. **Turn on HTTP compression.** One middleware; measured −71 % on the largest asset.
+6. **`--line: var(--border)`** — one line, 41 invalid declarations, and it restores the borders on the
+   tooltip and the coachmark in every theme.
+7. **Fix the five contrast root causes**, starting with `.lead-flip-hint.back` at 1.01:1 in 17/17.
+8. **Scope the `popstate` handler to known tab ids** — closes every Help ToC link and the whole
+   internal-anchor risk category with it.
+9. **Fix `.seg-toggle` / `.row > div` shrink** — two selectors, and it un-hides a button that is
+   currently unclickable in every theme and every locale.
+10. **Give `i18n_report.py` the four missing scanner paths**, then lower both ratchets to what they
+    actually measure. Until then the ritual reports a number nobody should trust.
+
+Items 1, 2 and 8 are correctness. Items 3–7 and 9 are each a single-selector or single-function change
+with disproportionate reach. Item 10 is the one that stops the others regressing silently.
+
+---
+
+## 9. Where the detail lives
+
+| document | what it holds |
+|---|---|
+| [`ui-visual-2026-09-08/findings.csv`](ui-visual-2026-09-08/findings.csv) | all 527 findings, with **both** the claimed and the post-verification severity, the verdict, the repro, the evidence path and what the verifier re-derived |
+| [`ui-visual-2026-09-08/contrast-corrected.csv`](ui-visual-2026-09-08/contrast-corrected.csv) | the corrected composited sweep: 17 themes × 8 surfaces, worst ratio and composited pair per element |
+| [`ui-visual-2026-09-08/coach-occlusion.csv`](ui-visual-2026-09-08/coach-occlusion.csv) | 16 surfaces × 5 viewports, blocked controls and covered text per cell |
+| [`ui-visual-2026-09-08/WALK_FLAGSHIP_SURFACES.md`](ui-visual-2026-09-08/WALK_FLAGSHIP_SURFACES.md) | Home, Feed, Insights, Search, Observatory, Timemap |
+| [`ui-visual-2026-09-08/WALK_SECONDARY_SURFACES.md`](ui-visual-2026-09-08/WALK_SECONDARY_SURFACES.md) | law, indices, library, settings, analyze, custody |
+| [`ui-visual-2026-09-08/CRITIC_SECONDARY_SURFACES.md`](ui-visual-2026-09-08/CRITIC_SECONDARY_SURFACES.md) | the completeness critic — and the Help defect it found in a surface nobody had walked |
+| [`ui-visual-2026-09-08/THEME_LOCALE_RESPONSIVE_MATRIX.md`](ui-visual-2026-09-08/THEME_LOCALE_RESPONSIVE_MATRIX.md) | 599 rendered combinations; eight root causes. **Its coverage section is corrected in its header** — a truncation in my script hid four of its own ten streams from it |
+| [`ui-visual-2026-09-08/RUNTIME_I18N_AUDIT.md`](ui-visual-2026-09-08/RUNTIME_I18N_AUDIT.md) | 12 locales, the gate's four blind mechanisms, per-language quality review |
+| [`ui-visual-2026-09-08/SPEED_MEMORY_AND_STATES.md`](ui-visual-2026-09-08/SPEED_MEMORY_AND_STATES.md) | boot, bundle, idle, memory, first launch, every empty and failure state, dialogs, ten consent gates |
+| [`../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md`](../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md) | the design-system audit and the proposal catalogue, each item ruled on by three screening panels |
+| [`../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md`](../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md) | the complexity measurement, the automation set, the decision test, the recommended architecture |
+| [`../ledger/OPEN_QUEUE.md`](../ledger/OPEN_QUEUE.md) | Q-VIS-1…7: the seven rulings this session deliberately did not take |
+
+## 10. What this audit would do differently next time
+
+Recorded because the instrument is part of the subject:
+
+1. **One stateful fixture per agent.** Two agents on port 8020 manufactured a P0 out of a passphrase the
+   first one created.
+2. **Cap the fleet by memory, not by port count.** 19 instances at up to ~900 MB is how the OOM-killer
+   got a vote in the findings.
+3. **Never `.slice()` an aggregate into a synthesis prompt** without passing a count beside it. Four of
+   ten matrix streams silently fell off the end and the synthesis reported their absence as the app's
+   coverage gap, in the honesty section.
+4. **Score contrast against the element's own background from the first line of the harness.** Two
+   agents had to find that for me.
+5. **Assign a verifier per agent, not per workflow.** The workflows that did produced 141 confirmations
+   and 5 refutations; the ones that batched left 45 % of their findings carrying a claimed severity.
+6. **Budget a walk for every surface.** The two surfaces I under-resourced — integrity and help — were
+   where a spot-check found the batch's worst defect.
+
+---
+
+**Verification stamp:** live browser audit, 7 orchestrated workflows, 107 agents, ~21.9 M subagent
+tokens, ~7,800 tool calls, 1,697 screenshots, 26 adversarial verifiers returning 203 verdicts;
+nine headline findings re-derived by the orchestrating session with its own hands. **Chromium-verified
+(remote sandbox) · awaiting human UX pass** — never "verified". No fixes applied: report-only, per the
+commissioning instruction.
+
+---
+
+## 11. What the fix pass closed, and what it did not (2026-09-09)
+
+Written the day after, from the fix pass itself. Every line was re-derived against a running app rather
+than read off a diff, and the two entries that changed shape *under* verification are the reason this
+section exists at all.
+
+### Closed, with the before/after measured
+
+| § | Was | Is |
+|---|---|---|
+| 4.1 | `Dy → "already"`, `Nd → "indiqué"`, `Pr → "proposed"` (8 of 9 commodity symbols resolved to an unrelated word) | all resolve to nothing; `exact=True` on every display caller |
+| 4.2 | "Your library is empty" over 453 articles, no error text anywhere | an honest read-failure line, translated ×12, in the stat strip and the briefing |
+| 4.3 | a curated cluster label used as a literal full-text query | the galaxy's real ring membership through `corpus-algebra`; fails closed with a named toast on all three failure modes |
+| #1 | Help's 50 TOC links all ejected the reader to Home | 118 of 119 headings carry an id; even the 9 unresolvable links are now inert rather than ejecting |
+| #2 | `?limit=` silently ignored | honoured; the 714 KB default is deliberately unchanged (see the Open queue) |
+| #3 | a refused search rendered as an empty results table | a persistent message where the results would be, naming the clock time when the server states one |
+| #4 | 145 AA failures / 5 root causes | zero across 17 themes × 6 surfaces, re-measured with a corrected instrument |
+| #5 | two buttons overlapping on Insights | zero overlaps, 4 surfaces × 3 themes × 3 viewports |
+| a11y | no `<h1>`; accessible name "Commoditiesadv"; Home's `h2 → h4` skip | all three fixed, with the rendered sizes measured unchanged |
+
+### §4.1 had TWO more sites the audit never named, and the second is the instructive one
+
+The audit hand-verified one surface. A `grep` for `resolve_keyword` found eleven call sites and two more
+carried the same defect:
+
+- **`price_narrative`** (the Home Lead) does not merely label a chart — it runs a significance test on
+  the mis-resolved keyword and publishes the result. On the live corpus no card appeared, because the
+  price dates and those keywords' article dates did not overlap; that is **latent, not absent**, and it
+  is recorded as latent. With the overlap constructed, the pre-fix code publishes *"Dy: price moves vs
+  coverage — correlate +0.97 (p=0.00522, n=5)"* with `card.key == "already"`.
+- **`/api/links/shared`** (the corpus window's Links subtab) shows what an incomplete fix of a *class*
+  costs. After the first two fixes, one window opened on `Dy` answered `resolved: null` on Trend,
+  Context and Keywords — honestly empty — while Links returned **36 articles about "already"**. The
+  partial fix did not just leave a hole; it made the hole more convincing, because everything around it
+  had started telling the truth.
+
+### The audit's own instrument was wrong a second time — and so were two others
+
+§0.1b has the detail. The short form: three separate checkers could not see what they were checking,
+each because a fix changed how a value was *written*. The live contrast harness skipped every
+`color-mix()` colour (reported as zero failures, on exactly the themes the fix had touched); the static
+theme guard had the same blindness in Python and reported a stale hex; and the i18n scanner was flying
+with four blind spots, which surfaced only because closing them **raised** a ratchet. That last claim —
+"the increase is pre-existing strings, not new drift" — was checked rather than accepted: the widened
+scanner run against the untouched pre-fix tree reports the same 575 and 314.
+
+### Not closed, and why
+
+The Open queue carries the reasoning for each. In brief: `/api/sources`' 714 KB default needs a frontend
+change, not a backend cap; Help's `link-in-text-block` (n=15) and `scrollable-region-focusable` (n=3) are
+out of scope; the Observatory drill-through's family-variant resolution can diverge from the headline
+numbers in principle and **agrees on every galaxy on this corpus** (measured); and the orphaned
+`"Stats unavailable."` locale key is left in place deliberately.
+
+### The stamp
+
+Everything above is **Chromium-verified (remote sandbox) · awaiting human UX pass**, exactly as §0.2
+requires. One operational note for whoever verifies next, learned twice here: a running `uvicorn` serves
+the Python it imported at start, so a live measurement against `src/api/*.py` or `src/analytics/*.py` is
+only valid if the process is newer than the file. Static assets (CSS, JS, locale JSON) are read per
+request and are always current — which is why the CSS and i18n verifications above hold, and why the
+Python-level ones were run through direct imports or a fresh `TestClient` rather than a long-lived
+server.

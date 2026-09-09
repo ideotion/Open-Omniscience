@@ -23,6 +23,16 @@
          white (light/paper/mint) pin their own --accent-fg below so this default
          change never regresses them; dawn (which also failed) gets its own fix too. */
       --accent:#5b9dd9; --accent-fg:#0a0f16;
+      /* --accent-text: a DEDICATED text-safe variant of --accent (mirrors the
+         --warn-fg pattern: --warn stays untouched for non-text uses, --warn-fg
+         carries the text-safe value). --accent itself is ALSO a background
+         colour (buttons, fills) so it cannot be retuned for text contrast
+         without breaking those; every place --accent is used as resting TEXT
+         (the base `a` link colour, the active sub-tab label) reads this token
+         instead. Defaults to var(--accent) — only the four themes where the
+         corrected contrast sweep measured a failure (solar/paper/mist/dawn,
+         P1 css-tokens fix) override it below. */
+      --accent-text:var(--accent);
       --ok:#4caf7d; --warn:#d9a441; --err:#d96c6c;
       /* pillwarn-severe-contrast (P1): --warn used directly as .pill.warn's TEXT
          colour measured 1.87-3.5:1 across several themes (Dawn/Paper/Solar worst).
@@ -104,6 +114,16 @@
          17 themes at all three panel levels, worst 4.02:1 (solar/--panel3). */
       --fig-gap:color-mix(in srgb, var(--muted) 75%, var(--fg) 25%);
       --border:#262d3a; --border-soft:#1d2331;
+      /* --line: referenced ~50 times across app.css/reader.css/index.html/app-*.js
+         (#oo-tip's border, .gw-dot, .gw-lang, .carousel-dot, dialog rules, …) but
+         was NEVER DEFINED — every `border:1px solid var(--line)` was invalid at
+         computed-value time, so those elements render with NO border in any
+         theme (confirmed live: the invariant-#17 tooltip + the network-consent
+         popup). Aliased to --border (already themed per-theme below) rather than
+         given its own value: every current computed border was `0px none`, so
+         this can only add a border where one was silently missing — zero
+         regression risk. */
+      --line:var(--border);
       --shadow:0 14px 38px -16px rgba(0,0,0,.62), 0 2px 6px -2px rgba(0,0,0,.4);
       --radius:12px; --radius-sm:8px;
       --sidebar-w:250px; --space:20px; --pad:16px;
@@ -119,29 +139,68 @@
     html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --accent-fg:#ffffff; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
       --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); --caveat:#8a4d0a; color-scheme:light; }
     html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --accent-fg:#ffffff; --ok:#5b7d4b; --warn:#b58224; --warn-fg:#7a4308; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
-      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); --caveat:#8a4d0a; color-scheme:light; --ff:"Source Serif 4", Georgia, serif; }
+      --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); --caveat:#8a4d0a; color-scheme:light; --ff:"Source Serif 4", Georgia, serif;
+      /* contrast-corrected sweep (2026-09-08, css-tokens P1): this theme's own
+         --muted/--accent, used as TEXT against --panel2 (and, for --accent, the
+         base link colour against every panel level), measured as low as 3.85:1
+         resp. 3.94:1 -- below the 4.5:1 AA floor. Both re-derived by mixing
+         toward this theme's OWN --fg via color-mix (the --caveat/--lvl-group
+         pattern: never a hardcoded hue) and re-verified against bg/bg2/panel/
+         panel2/panel3 -- worst case now 5.30:1 (muted) / 5.18:1 (accent-text). */
+      --muted:color-mix(in srgb, var(--fg) 35%, #7a715c 65%);
+      --accent-text:color-mix(in srgb, var(--fg) 35%, var(--accent) 65%); }
     /* New colorways (2026-06-11, maintainer: "people like tuning with themes").
        Bundled-font pairings: Arctic→Inter, Cyber→Outfit, Mint→Manrope,
        Sepia/Paper→Source Serif 4. The Typeface picker overrides any of them. */
     html[data-theme="arctic"]{ --bg:#0f1216; --bg2:#12161b; --panel:#171c22; --panel2:#1e242c; --panel3:#262e38; --fg:#e5e9f0; --fg-soft:#c8cfdb; --muted:#8a94a6; --accent:#88c0d0; --accent-fg:#0b1216; --border:#262e3a; --ff:"Inter", system-ui, sans-serif; }
-    html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:#8d9d9e; --accent:#b58900; --accent-fg:#002b36; --ok:#859900; --warn:#db5118; --err:#dc322f; --border:#0e4754; }
+    html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:color-mix(in srgb, var(--fg) 55%, #8d9d9e 45%); --accent:#b58900; --accent-fg:#002b36; --accent-text:color-mix(in srgb, var(--fg) 60%, #b58900 40%); --ok:#859900; --warn:#db5118; --err:#dc322f; --border:#0e4754; }
+    /* solar sits among this batch of "New colorways" but RENDERS DARK
+       (color-scheme:dark, near-black panel) even though paper/mist/dawn beside
+       it render light -- the sweep's --muted/--accent failure hit both
+       directions, so this is not a "light theme" bug (bucketing trap recorded
+       for anyone tuning tokens by theme name instead of by measurement). */
     html[data-theme="forest"]{ --bg:#0c120d; --bg2:#0f150f; --panel:#131a14; --panel2:#19231a; --panel3:#223024; --fg:#e3ece2; --fg-soft:#c2d2c2; --muted:#7e957f; --accent:#6fbf73; --accent-fg:#0a140b; --border:#243224; }
     html[data-theme="aubergine"]{ --bg:#120d18; --bg2:#150f1d; --panel:#1a1424; --panel2:#231b30; --panel3:#2e2440; --fg:#ece6f4; --fg-soft:#cfc5e0; --muted:#9a8cb4; --accent:#c084fc; --accent-fg:#160e20; --border:#2c2240; }
     html[data-theme="garnet"]{ --bg:#150e11; --bg2:#191014; --panel:#1f1419; --panel2:#291a20; --panel3:#35222a; --fg:#f0e6ea; --fg-soft:#d8c6cd; --muted:#a88b96; --accent:#d96c7f; --accent-fg:#1c0d12; --border:#33222a; }
     html[data-theme="cyber"]{ --bg:#070910; --bg2:#090c15; --panel:#0d1120; --panel2:#131830; --panel3:#1a2140; --fg:#dbe6ff; --fg-soft:#b6c5ec; --muted:#7787b8; --accent:#22d3ee; --accent-fg:#04121a; --border:#1c2444; --ff:"Outfit", system-ui, sans-serif; }
     html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
-      --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); --caveat:#8a4d0a; color-scheme:light; }
+      --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); --caveat:#8a4d0a; color-scheme:light;
+      /* Same contrast-corrected-sweep fix as paper/solar/dawn (2026-09-08): this
+         theme's own --muted/--accent measured 3.86-4.47:1 as TEXT against
+         --panel2 (accent also against --bg2/--panel3). Re-derived via color-mix
+         toward --fg; worst case now 5.03:1 (muted) / 5.10:1 (accent-text). */
+      --muted:color-mix(in srgb, var(--fg) 20%, #66707e 80%);
+      --accent-text:color-mix(in srgb, var(--fg) 35%, var(--accent) 65%); }
     html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#756f86; --accent:#b4637a; --accent-fg:#000000; --ok:#56949f; --warn:#c77b15; --warn-fg:#7a4308; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
-      --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); --caveat:#8a4d0a; color-scheme:light; }
+      --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); --caveat:#8a4d0a; color-scheme:light;
+      /* Same contrast-corrected-sweep fix (2026-09-08): --muted/--fg-soft/--accent,
+         used as TEXT against --panel2/--panel3, measured 3.5-4.31:1 -- dawn is
+         the one theme where --fg-soft ALSO failed (4.31 vs panel2), not just
+         --muted/--accent. All three re-derived via color-mix toward --fg; worst
+         case now 5.00:1 (muted) / 5.07:1 (fg-soft) / 5.01:1 (accent-text). */
+      --muted:color-mix(in srgb, var(--fg) 75%, #756f86 25%);
+      --fg-soft:color-mix(in srgb, var(--fg) 75%, #6e6a86 25%);
+      --accent-text:color-mix(in srgb, var(--fg) 80%, var(--accent) 20%); }
     html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --warn-fg:#7a4308; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
-      --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); --caveat:#8a4d0a; color-scheme:light; --ff:"Manrope", system-ui, sans-serif; }
+      --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); --caveat:#8a4d0a; color-scheme:light; --ff:"Manrope", system-ui, sans-serif;
+      /* NOT one of the four themes the audit table named as "worst" (solar/
+         paper/mist/dawn) -- found only by re-running the corrected sweep AFTER
+         those four were fixed: mint's own --muted/--accent were ALSO already
+         failing AA against --bg2 (4.18/4.15:1) and --panel3 (4.04/4.02:1),
+         just narrowly enough (every other panel level cleared 4.4+) that no
+         single sampled row happened to name mint as a selector's "worst"
+         theme -- the table's per-selector "worst theme" column is not the
+         same claim as "only these four themes fail this token pair". Same
+         fix, same reason: re-derived via color-mix toward --fg. */
+      --muted:color-mix(in srgb, var(--fg) 20%, #5f7466 80%);
+      --accent-text:color-mix(in srgb, var(--fg) 20%, var(--accent) 80%); }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
     * { box-sizing: border-box; }
     html { font-size: 100%; }
     body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--ff);
       font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
-    a { color:var(--accent); text-decoration:none; }
+    a { color:var(--accent-text); text-decoration:none; }
     a:hover { text-decoration:underline; }
     /* evidence-links-contrast-and-no-underline (P1): every outbound "source ↗"
        link renders through the ONE shared extLink() (invariant #6e) and used to
@@ -286,7 +345,19 @@
     .status-cluster { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
 
     main { flex:1; padding:var(--space); }
-    main > * { max-width:1100px; margin-left:auto; margin-right:auto; width:100%; }
+    /* Wide-screen choke point (P1): 1100px with no media query above 900px left
+       8 of 9 surfaces a fixed column in empty space at 1440-2560px. --content-w
+       is a custom property so a surface can opt out per-selector (Agenda
+       already does, via #tab-agenda{max-width:none} below) rather than every
+       surface needing its own override. The default itself now scales in two
+       steps rather than uncapping: these ARE mostly grids/dashboards (cards,
+       stat tiles, tables) that use extra width well, but .prose (Help, docs)
+       already self-limits to 78ch regardless of this ancestor, so widening
+       here cannot create an overlong prose measure -- >90ch was never actually
+       at stake for the content this rule governs. */
+    main > * { max-width:var(--content-w, 1100px); margin-left:auto; margin-right:auto; width:100%; }
+    @media (min-width:1440px) { main > * { --content-w:1400px; } }
+    @media (min-width:1920px) { main > * { --content-w:1600px; } }
     .tab-page { display:none; }
     .tab-page.active { display:grid; gap:var(--space); }
 
@@ -820,7 +891,18 @@
       display:flex; flex-direction:column; gap:2px; overflow:hidden; cursor:pointer;
       background:color-mix(in srgb, var(--panel) 70%, transparent); }
     .ag-cell:hover { border-color:var(--accent); }
-    .ag-cell.out { opacity:.35; cursor:default; }
+    /* Was `opacity:.35` -- the exact composite-opacity defect already recorded
+       and fixed elsewhere in this file for .ag-cal (16/17 AA failures) and
+       .gov-strat-refused: element opacity composites the WHOLE subtree,
+       including .ag-dn's text, over the page -- adjacent-month day numbers
+       measured 1.56:1 (paper), 17/17 themes. Fix: drop the opacity; de-emphasise
+       ONLY the non-text chrome (border/background), and let the day number
+       keep its normal --muted colour -- the same colour an in-month day
+       already renders at, which clears AA (this rule was the ONLY thing
+       diluting it below that). */
+    .ag-cell.out { cursor:default;
+      border-color:color-mix(in srgb, var(--border) 55%, transparent);
+      background:color-mix(in srgb, var(--panel) 40%, transparent); }
     .ag-cell.today { outline:2px solid var(--accent); outline-offset:-2px; }
     .ag-cell.sel { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 10%, transparent); }
     .ag-dn { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
@@ -910,7 +992,7 @@
     .fam-member { display:inline-flex; align-items:center; gap:3px; padding:2px 4px 2px 8px;
       border:1px solid var(--border); border-radius:999px; font-size:12px; }
     .fam-mlabel { color:var(--fg); }
-    .fam-mbtn { background:none; border:none; cursor:pointer; color:var(--accent); font-size:13px;
+    .fam-mbtn { background:none; border:none; cursor:pointer; color:var(--accent-text); font-size:13px;
       line-height:1; padding:1px 4px; border-radius:6px; }
     .fam-mbtn:hover { background:color-mix(in srgb, var(--accent) 16%, transparent); }
     .cs-row.excluded { opacity:.55; }   /* a feed folder excluded from MY agenda (reversible) */
@@ -1029,11 +1111,28 @@
     .brief-bucket .card .card-front { overflow:hidden; }
     .brief-bucket .card .card-back { transform:rotateY(180deg); overflow-y:auto; }
     .brief-bucket .card:hover .card-face { border-color:var(--fam,var(--accent)); }
-    .brief-bucket .card .chip { border-color:var(--fam,var(--border)); color:var(--fam,var(--muted)); }
+    /* --fam is a hash-derived hex, fixed per family name and IDENTICAL in every
+       theme (famHue() in app-home.js) -- a second colour system running
+       parallel to the theme tokens, so it can land anywhere from 1.47:1
+       (dawn) to 2.52:1 against a given theme's --panel2 (measured across
+       5-12/17 themes per hue). Same per-theme-safe pipeline as --lvl-group/
+       --fig-*/--chip-off above: mix the raw hue toward THIS theme's own --fg
+       rather than patching hexes one theme at a time -- the family hue still
+       comes through as a tint, but the mix guarantees a theme-legible result. */
+    .brief-bucket .card .chip { border-color:var(--fam,var(--border));
+      color:color-mix(in srgb, var(--fg) 45%, var(--fam,var(--muted)) 55%); }
     .brief-bucket .card h4 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
     .brief-bucket .card .card-front .sum { display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
     .lead-flip-hint { margin-top:auto; font-size:11px; color:var(--muted); align-self:flex-end; }
-    .lead-flip-hint.back { align-self:flex-start; }
+    /* .lead-flip-hint.back is a real <button> (it is the only way back off a
+       flipped card), so it inherited the generic `button` rule's accent FILL
+       background -- while this selector's OWN color:var(--muted) (above) kept
+       winning on specificity, leaving muted text on an accent-filled pill:
+       measured 1.01:1 on mint, 17/17 themes. It needs no fill at all -- cancel
+       the button defaults so it reads as the same plain muted hint as the
+       front face (color:var(--muted) is unchanged and, per the sweep fix
+       above, now clears AA against --panel2 on every theme). */
+    .lead-flip-hint.back { align-self:flex-start; background:transparent; border:0; padding:0; margin-top:0; font-weight:500; }
     /* The standardized, family-themed "open corpus (new window)" button on the back. */
     .lead-open { background:color-mix(in srgb, var(--fam,var(--accent)) 22%, var(--panel2));
       border:1px solid var(--fam,var(--accent)); color:var(--fg); font-weight:600; border-radius:6px;
@@ -1055,7 +1154,7 @@
     .card .sum { font-size:13.5px; color:var(--fg-soft); margin:0; }
     .card .sig { font-family:var(--mono); font-size:12px; color:var(--muted); }
     .card .evid { display:flex; flex-direction:column; gap:3px; font-size:12.5px; }
-    .card .evid a { color:var(--accent); text-decoration:none; }
+    .card .evid a { color:var(--accent-text); text-decoration:none; }
     .card .evid a:hover { text-decoration:underline; }
     /* The per-card "?" affordance (P2-2 declutter, 2026-06-19): a small round button at
        the bottom-right of .acts; opening it reveals the "why" + the exact math + the
@@ -1111,7 +1210,7 @@
       padding:7px 14px; font:inherit; cursor:pointer; font-weight:500; }
     nav.tabs button:hover { color:var(--fg); background:var(--panel2); }
     nav.tabs button.active, nav.tabs button[aria-selected="true"] {
-      color:var(--accent); background:var(--panel2);
+      color:var(--accent-text); background:var(--panel2);
       border-color:var(--border); border-bottom:2px solid var(--accent); font-weight:700; }
     nav.tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     /* THEME-3 (2026-06-19): the spawned analysis-tab strip — a multi-document workspace
@@ -1142,7 +1241,7 @@
     .an-tab.active { border-color:var(--accent); background:var(--panel); }
     .an-tab-label { background:transparent; border:0; color:var(--muted); cursor:pointer;
       font:inherit; padding:5px 8px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .an-tab.active .an-tab-label { color:var(--accent); font-weight:700; }
+    .an-tab.active .an-tab-label { color:var(--accent-text); font-weight:700; }
     .an-tab-x { background:transparent; border:0; color:var(--muted); cursor:pointer;
       padding:5px 7px; font-size:12px; }
     .an-tab-x:hover { color:var(--err); }
@@ -1183,7 +1282,7 @@
       background:none; border:0; padding:0; cursor:pointer; text-align:inherit; }
     .an-th:hover { color:var(--fg); }
     .an-th:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-    .an-th[aria-pressed="true"] { color:var(--accent); }
+    .an-th[aria-pressed="true"] { color:var(--accent-text); }
     /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
     .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
     .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -1261,8 +1360,14 @@
       border:1px solid var(--tier-ac, var(--border)); color:var(--tier-ac, var(--muted)); }
     .corpus-tier .tier-nums { font-size:11px; color:var(--muted); }
     .corpus-tier.tier-early       { --tier-ac:var(--caveat); }
-    .corpus-tier.tier-developing  { --tier-ac:#3b82c4; }
-    .corpus-tier.tier-established { --tier-ac:#2e9e6b; }
+    /* Both were a fixed hex, identical in every theme -- .tier-developing
+       measured 3.20:1 against --panel on solar (14/17 themes). Same fix as the
+       .chip hue above: mix toward this theme's own --fg rather than patch
+       hexes per theme; .tier-established gets the same treatment for
+       consistency (not independently re-rendered by the sweep, since the
+       audited corpus is at the "developing" stage). */
+    .corpus-tier.tier-developing  { --tier-ac:color-mix(in srgb, var(--fg) 45%, #3b82c4 55%); }
+    .corpus-tier.tier-established { --tier-ac:color-mix(in srgb, var(--fg) 45%, #2e9e6b 55%); }
     .corpus-tier .tier-caveat { font-size:10.5px; color:var(--caveat); }
     /* Per-card caveat — VISIBLE BY DEFAULT under the summary (informed-consent
        mandate: caveats are never hidden behind a toggle). Only the verbose
@@ -1408,10 +1513,35 @@
     .theme-card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
     .theme-card .tdot { width:14px; height:14px; border-radius:99px; border:1px solid var(--border); }
     .seg-toggle { display:flex; gap:6px; }
-    .seg-toggle button { flex:1; margin:0; }
+    /* Overlap defect (P1, hand-verified in every theme/locale, 1024/1440/1920):
+       a .seg-toggle sits inside a `.row > div` group that ALSO carries flex:1
+       (app.css .row rule) -- two flex:1 layers deep. A flex item's default
+       min-width is `auto`, which floors its shrink at its CONTENT's min-content
+       size (the longest unbreakable word, e.g. "Super-groups"), never at 0 --
+       so once the group ran out of room the buttons refused to shrink and
+       rendered OUTSIDE their own group's box (overflow:visible), painted over
+       by the next group later in DOM order ("Super-groups" 90% covered by
+       "Mind-map", 60x67px at 1440px; 2 overlaps in German at the same width;
+       3 at 1024px, also in Arabic). min-width:0 lets the flex algorithm
+       actually shrink the buttons (their own `white-space` stays the default
+       `normal`, so text wraps onto a second line rather than clipping) --
+       the group's rendered width can then never exceed the box the outer .row
+       assigned it, so a button can no longer escape its group. */
+    .seg-toggle button { flex:1; min-width:0; margin:0; }
     .seg-toggle.wrap { flex-wrap:wrap; }
     .seg-toggle.wrap button { flex:1 1 28%; white-space:nowrap; }
-    .seg-toggle button:not(.sel) { background:var(--panel2); color:var(--fg-soft); border:1px solid var(--border); font-weight:500; }
+    /* Selected-state marker mismatch: dr-density/dr-faces/dr-sidebar toggle
+       ".sel" (app-shell.js), but the mind-map level/view toggle (#mm-levels/
+       #mm-views, index.html + app-corpus.js mmLevel/mmView) toggles ".active"
+       instead -- the app's more common selected-indicator class elsewhere
+       (.nav-item.active, .tab-page.active, .an-tab.active, .doc-nav .doc-link.
+       active). Excluding only ":not(.sel)" left an ".active" button matched by
+       THIS rule too, painting it as an UNSELECTED chip (--fg-soft on --panel2,
+       measured 4.31:1 on dawn -- "Keywords"/"Mind-map" in the corrected sweep)
+       instead of the intended full accent fill from the base `button` rule.
+       Excluding ".active" as well restores the accent-filled, --accent-fg-on-
+       --accent treatment (already AA-safe by construction) for both markers. */
+    .seg-toggle button:not(.sel):not(.active) { background:var(--panel2); color:var(--fg-soft); border:1px solid var(--border); font-weight:500; }
     .modlist label { display:flex; align-items:center; gap:9px; color:var(--fg-soft); font-size:13.5px;
       text-transform:none; letter-spacing:0; margin:7px 0; cursor:pointer; }
     .modlist input { width:auto; }
@@ -1429,7 +1559,7 @@
     .prose h3 { font-size:1.12em; } .prose h1:first-child,.prose h2:first-child { margin-top:0; }
     .prose p,.prose ul,.prose ol,.prose blockquote,.prose table,.prose pre { margin:.7em 0; }
     .prose ul,.prose ol { padding-left:1.4em; } .prose li { margin:.25em 0; }
-    .prose code { font-size:.88em; } .prose a { color:var(--accent); }
+    .prose code { font-size:.88em; } .prose a { color:var(--accent-text); }
     .prose pre { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:13px; overflow-x:auto; }
     .prose pre code { background:transparent; padding:0; }
     .prose blockquote { border-left:3px solid var(--accent); padding:.2em 0 .2em 1em; color:var(--muted); }

@@ -43,7 +43,10 @@
         <!-- Version VISIBLE under the brand name (maintainer ruling 2026-07-23,
              amends invariant #4's "version not in the chrome" for this one spot;
              the top BAR still never shows it). Filled by loadHealth(). -->
-        <div class="txt"><b>Open Omniscience</b><span id="version">v—</span></div>
+        <!-- a11y: the ONE page-level heading (persistent-chrome SPA, invariant #2) lives on
+             the brand name -- role/level added to the existing `<b>` (not a literal h1) so
+             `.brand .txt b`'s CSS (untouched, out of this file's ownership) still applies. -->
+        <div class="txt"><b role="heading" aria-level="1">Open Omniscience</b><span id="version">v—</span></div>
       </div>
 
       <!-- FLAT nav (maintainer-ruled 2026-06-22, #22): the section headers
@@ -70,7 +73,13 @@
         <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01"/></svg><span>Governments</span></button>
         <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
         <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
-        <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
+        <!-- a11y fix (2026-09-09): a literal space text node between the two spans so the
+             accname computation (Chromium joins descendant text verbatim, adding no space
+             of its own) doesn't concatenate them into "Commoditiesadv" for AT users; a
+             whitespace-only text node has no effect on the .nav-item flex layout (no visible
+             gap change) since it never becomes a participating flex item. Visual badge (the
+             pill, its position, its text) is unchanged. -->
+        <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span> <span class="badge">adv</span></button>
         <button class="nav-item" data-tab="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
         <!-- Evidence & custody DISSOLVED from the sidebar (maintainer-ruled 2026-06-22, #20,
              completing the Trust-group dissolution): custody is an ACTION on content, so it
@@ -146,8 +155,16 @@
       </header>
       <!-- Facet subtabs (Insights · Settings · Markets · Agenda · Analysis …) are
            relocated into this strip at runtime by _relocateSubtabs() in app.js, so they
-           render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs. -->
-      <div id="subtab-strip" class="subtab-strip" hidden></div>
+           render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs.
+           a11y fix (2026-09-09, axe `region`, moderate, 7 surfaces: insights/settings/
+           law/agenda/indices/library/timemap): the relocated <nav class="tabs"> gets
+           role="tablist" from the shared ooSubtabs() helper (invariant #18) at runtime,
+           which — per ARIA's "explicit role wins" rule — REPLACES its implicit <nav>
+           landmark role, so once it lands here (a plain, unlandmarked div, OUTSIDE
+           <main>) its tab buttons are contained by no landmark at all. Landmarking
+           this wrapper (rather than the relocated <nav> itself, which correctly stays
+           a tablist widget) covers every subtab set that ever lands here in one place. -->
+      <div id="subtab-strip" class="subtab-strip" hidden role="navigation" aria-label="Section tabs"></div>
       <!-- AI-install egress window banner. Present whenever the operator has
            allowed the local-AI install to go online WITHOUT starting the
            collector. It sits INSIDE the sticky chrome so the operator can never
@@ -1178,9 +1195,17 @@
       <div id="ins-mindmap"></div>
       </div><!-- /#mm-kit -->
       <h2 style="margin:14px 0 6px;font-size:13px">How outlets frame this <span class="muted">(VADER tone)</span></h2>
-      <div id="ins-framing"></div>
+      <!-- a11y fix (2026-09-09): these two headings previously always rendered over an
+           empty div until exploreTerm() (app-corpus.js) populates it -- a real heading with
+           no content and no empty state (axe found this by hand, not a specific rule id).
+           The content genuinely IS absent until a term is explored, so the honest fix is an
+           empty state, not hiding the heading: exploreTerm() overwrites this innerHTML on
+           every run (including a failed/empty resolve, which restores "No context
+           snippets."), so this placeholder is exactly what a visitor who has not searched
+           yet, or who returns to Insights afresh, actually sees. -->
+      <div id="ins-framing"><div class="muted">Explore a keyword or entity above to see how outlets frame it.</div></div>
       <h2 style="margin:14px 0 6px;font-size:13px">In context</h2>
-      <div id="ins-context"></div>
+      <div id="ins-context"><div class="muted">Explore a keyword or entity above to see matching excerpts.</div></div>
     </section>
 
     <section class="panel ins-view" id="ins-trends" style="display:none">

@@ -411,7 +411,17 @@ def shared_links(
     from src.analytics import queries as q
     from src.database.models import Article, ArticleLink, KeywordMention
 
-    kw = q.resolve_keyword(db, term)
+    # EXACT resolution -- audit §4.1 (P0), THIRD site, and the one that shows what
+    # an incomplete fix costs. `term` here is never typed by a human: it is
+    # `_corpusTerm`, a keyword the app itself chose when the corpus window opened.
+    # With the fuzzy default, a window opened on the commodity `Dy` answered
+    # `resolved: null` on Trend, Context and Keywords -- honestly empty, because
+    # those callers were fixed first -- while THIS endpoint returned 36 articles
+    # about the English word "already" (measured live 2026-09-09; Nd -> "indiqué"
+    # 28, Pr -> "proposed" 37). The partial fix did not merely leave a hole, it made
+    # the hole more convincing, because every surface around it had started telling
+    # the truth.
+    kw = q.resolve_keyword(db, term, exact=True)
     if kw is None:
         return {"resolved": None, "shared": [], "members": 0}
     member_ids = [

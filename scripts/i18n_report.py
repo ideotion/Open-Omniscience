@@ -89,7 +89,8 @@ _AUX_HTML = ("taskmanager.html", "unlock.html", "investigate.html")
 
 
 def _aux_js() -> tuple[str, ...]:
-    """The JS surfaces the audit reads: every app module, plus reader.js.
+    """The JS surfaces the audit reads: every top-level static module index.html
+    loads by a plain ``<script src="/static/NAME.js">`` tag, plus reader.js.
 
     The UI engine is no longer one file -- app.js was decomposed into ordered
     modules (S-3, docs/design/APPJS_DECOMPOSITION_2026-08-20.md) -- so this list
@@ -97,14 +98,96 @@ def _aux_js() -> tuple[str, ...]:
     lesson applied to its own fix: a hand-kept list drifts from the thing it
     describes, and here the drift would silently re-blind both JS ratchets to
     ~22k lines of engine, which is exactly the failure this scope exists to end.
+
+    WIDENED (i18n consolidation pass 2026-09-09, closing a scanner blind spot
+    from the 2026-09-08 visual audit): the old regex matched only filenames
+    shaped ``app*.js``, so every OTHER top-level module loaded the same way --
+    ``oosky.js`` (the Observatory canvas, which paints its own domain-wedge
+    labels with ``ctx.fillText`` and, per a sibling fix in this same pass, now
+    routes them through ``OOI18N.t`` before painting) chief among them -- was
+    structurally invisible to both JS ratchets no matter how many t() calls it
+    carried. The class of file this must still NOT reach is ``guis/*.js``
+    (handled separately by ``_guis_js()``, including two modules injected at
+    runtime that never appear in any ``<script src>`` at all) and any vendored
+    third-party script; excluding "/" from the matched filename keeps both out
+    without an explicit denylist.
     """
     html = _UI.read_text(encoding="utf-8")
     mods = [
         m.group(1)
-        for m in re.finditer(r'<script src="/static/(app(?:-[a-z-]+)?\.js)"', html)
+        for m in re.finditer(r'<script src="/static/([A-Za-z0-9_.-]+\.js)"', html)
     ]
-    assert mods, "index.html loads no app module -- the script tags moved or were renamed"
+    assert mods, "index.html loads no static module -- the script tags moved or were renamed"
+    assert "oosky.js" in mods, (
+        "oosky.js dropped out of index.html's <script src> list -- the canvas "
+        "domain labels it paints would go dark to both JS ratchets again"
+    )
     return (*mods, "reader.js")
+
+
+# The two aux HTML shells (taskmanager.html, unlock.html) each carry ONE large
+# inline <script> block (their own external i18n.js tag is already covered by
+# scanning that file directly). Neither `_ChromeExtractor` (its SKIP set
+# excludes `script` content, correctly -- that content is JS, not chrome text)
+# nor `_aux_js()` (which only ever globs *files*, and an inline block is not
+# one) can reach it, so on this pass alone ~127 real t()/t9()/t9m() call sites
+# across the two files sat outside both JS ratchets -- not undercounted, simply
+# never visited. `[^>]*\bsrc=` in the negative lookahead is what keeps this from
+# also swallowing each file's own `<script src="/static/i18n.js">` tag as a
+# second, empty "inline" body.
+_AUX_INLINE_JS_HOSTS = ("taskmanager.html", "unlock.html")
+
+
+def _aux_inline_js() -> dict[str, str]:
+    """{"taskmanager.html#inline", ...} -> the text of that file's one inline
+    ``<script>...</script>`` block, for feeding through the same JS-literal
+    regexes used on every real ``.js`` file."""
+    out: dict[str, str] = {}
+    for name in _AUX_INLINE_JS_HOSTS:
+        path = _static_dir() / name
+        if not path.exists():
+            continue
+        html = path.read_text(encoding="utf-8")
+        blocks = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S)
+        if blocks:
+            # Exactly one inline block is the shape both files have today; if a
+            # second one is ever added, concatenating is still correct -- every
+            # regex here matches individual literals, not whole-file structure.
+            out[f"{name}#inline"] = "\n".join(blocks)
+    return out
+
+
+_MAIN_PY = Path(__file__).resolve().parent.parent / "src" / "api" / "main.py"
+
+
+def _reader_template_html() -> str:
+    """Best-effort textual approximation of the rendered HTML from
+    ``src/api/main.py``'s server-side article-reader page (its
+    ``doc = f\"\"\"...\"\"\"`` template) -- the ONE HTML-emitting code path in the
+    whole API layer, which the audit found has zero scanner coverage in any
+    mode (``src/api/`` is on no code path this tool ever opens). That reader
+    page loads ``/static/i18n.js`` itself and is translated the exact same
+    way index.html is -- an exact whole-text-node lookup against the locale
+    files -- so its chrome belongs in the same audit, not a separate one.
+
+    This is NOT an f-string evaluator: it unescapes the literal ``{{``/``}}``
+    the template uses for CSS braces, then blanks every remaining bare
+    ``{expr}`` interpolation (the article title, ids, injected sub-fragments
+    like ``{meta_rows}``) so dynamic per-article content can never be misread
+    as translatable chrome. That is sufficient here because every
+    interpolation this specific template contains is a bare name/attribute
+    expression with no nested braces -- verified by the absence of any
+    `{`/`}` character left over inside a still-non-empty extracted text node
+    once this substitution runs.
+    """
+    src = _MAIN_PY.read_text(encoding="utf-8")
+    m = re.search(r'doc = f"""(.*?)"""\n\s*return HTMLResponse\(content=doc\)', src, re.S)
+    if not m:
+        return ""
+    body = m.group(1)
+    body = body.replace("{{", "\x00OPEN\x00").replace("}}", "\x00CLOSE\x00")
+    body = re.sub(r"\{[^{}]*\}", " ", body)
+    return body.replace("\x00OPEN\x00", "{").replace("\x00CLOSE\x00", "}")
 
 
 def _guis_js() -> tuple[str, ...]:
@@ -154,6 +237,20 @@ _JS_SHAPES = (
     # `t9m` is tried before `t9` so it isn't partially matched as `t9` + literal `m`.
     re.compile(r'\bt(?:9m|9)?\(\s*"((?:[^"\\{`$]|\\.){3,200})"'),
     re.compile(r"\bt(?:9m|9)?\(\s*'((?:[^'\\{`$]|\\.){3,200})'"),
+    # Backtick-delimited counterparts of the three shapes above whose regex
+    # hardcodes its own opening quote character rather than merely searching
+    # for the substring pattern (2026-09-09 blind-spot close, visual audit
+    # table item 4): `<th>`/`<button>`/`placeholder=`/`title=`/`aria-label=`
+    # already match regardless of what quote style wraps the JS string that
+    # contains them, because they search for the literal HTML substring, not
+    # the string's own delimiter -- only these three ever hardcode `"`/`'`
+    # directly after `=`/`(`, so only these three need a backtick sibling. A
+    # backtick literal that carries a real `${...}` interpolation is
+    # correctly excluded (no `$` in the character class), same as the
+    # quote-delimited versions above.
+    re.compile(r"\.textContent\s*=\s*`([^`{$]{3,120})`"),
+    re.compile(r"\btoast\(\s*`([^`{$]{3,140})`"),
+    re.compile(r"\bt(?:9m|9)?\(\s*`((?:[^`\\{$]|\\.){3,200})`"),
 )
 
 
@@ -194,6 +291,9 @@ def _static_dir() -> Path:
 _T_CALL = (
     re.compile(r'\bt(?:9m|9)?\(\s*"((?:[^"\\{`$]|\\.){1,400})"'),
     re.compile(r"\bt(?:9m|9)?\(\s*'((?:[^'\\{`$]|\\.){1,400})'"),
+    # Backtick sibling (2026-09-09 blind-spot close, table item 4) -- see the
+    # identical addition + rationale on _JS_SHAPES above.
+    re.compile(r"\bt(?:9m|9)?\(\s*`((?:[^`\\{$]|\\.){1,400})`"),
 )
 
 
@@ -202,10 +302,14 @@ def unkeyed_t_calls() -> dict:
     en_keys = _keys(_load(_LOCALES / "en.json"))
     sites = 0
     unkeyed: set[str] = set()
-    for name in (*_aux_js(), *_guis_js()):
-        path = _static_dir() / name
-        assert path.exists(), f"{name} is listed by index.html but missing from src/static"
-        text = path.read_text(encoding="utf-8")
+    sources = {name: (_static_dir() / name).read_text(encoding="utf-8") for name in (*_aux_js(), *_guis_js())}
+    for name in sources:
+        assert (_static_dir() / name).exists(), f"{name} is listed by index.html but missing from src/static"
+    # The two aux HTML shells' one inline <script> each (2026-09-09 blind-spot
+    # close, table item 2) -- see _aux_inline_js()'s own docstring for why
+    # neither _ChromeExtractor nor the .js-file glob above could ever reach it.
+    sources.update(_aux_inline_js())
+    for text in sources.values():
         for rx in _T_CALL:
             for m in rx.finditer(text):
                 k = re.sub(r"\s+", " ", m.group(1)).strip()
@@ -238,6 +342,21 @@ def audit_chrome() -> dict:
         found = _js_chrome(path.read_text(encoding="utf-8"))
         per_file[name] = len(found)
         texts |= found
+
+    # The two blind spots a plain file/DOM scan structurally cannot reach --
+    # see each helper's own docstring. Both additive: neither can ever
+    # subtract from what the scan above already found.
+    for label, text in _aux_inline_js().items():
+        found = _js_chrome(text)
+        per_file[label] = len(found)
+        texts |= found
+
+    reader_html = _reader_template_html()
+    if reader_html:
+        rdr = _ChromeExtractor()
+        rdr.feed(reader_html)
+        per_file["src/api/main.py (reader)"] = len(rdr.texts)
+        texts |= rdr.texts
 
     en_keys = _keys(_load(_LOCALES / "en.json"))
     missing = sorted(t for t in texts if t not in en_keys)

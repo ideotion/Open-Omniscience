@@ -192,10 +192,173 @@ def test_the_card_section_runs_the_real_producers_and_groups_them_by_type(corpus
 
 def test_the_card_section_says_its_figures_are_not_the_periods(corpus):
     """Every other section is anchored to the closed period, which is what makes it
-    reproducible. Producers take no period, so this one must not borrow the label."""
+    reproducible. This one is MIXED -- five producers take the period, thirty-two
+    compute against now -- so it must never borrow the period's label for figures
+    that are not the period's.
+
+    THIS TEST USED TO DEPEND ON THE WALL CLOCK, and went red on 2026-09-09 for a
+    reason that was not a defect. It asserted a flat ``matches_period is False``,
+    which held only while at least one UNANCHORED producer happened to yield a
+    card. Unanchored producers compute against now; the fixture's article is dated
+    2026-08-05; so as real time drifted past it those thirty-two producers stopped
+    finding anything, the section came back holding one card from an ANCHORED
+    producer, and ``matches_period: True`` became the correct answer. The product
+    code was right the whole time -- ``all_anchored`` already guards the vacuous
+    empty case with ``bool(shown_cards) and ...``.
+
+    So the assertion is rewritten to pin the PROPERTY rather than one day's luck:
+    the label must be MEASURED from the cards actually shown, never inherited from
+    the section it sits in. That holds on any date, and it still fails loudly if a
+    future change reintroduces a blanket verdict.
+    """
     out = cards_by_type(corpus, resolve_period("weekly", end=date(2026, 8, 11)))
+    shown = [row for entry in out["types"] for row in entry["cards"]]
+    anchored = [row for row in shown if row["period_anchored"]]
+
+    # Anti-vacuity: the section must really be mixed at the PRODUCER level, which
+    # is stable regardless of what any producer yields today. Without this line a
+    # section that produced nothing at all would satisfy everything below.
+    assert out["unanchored_producers"], (
+        "no unanchored producers registered -- this guard would pass vacuously; "
+        f"anchored={out['anchored_producers']}"
+    )
+
+    # The label is measured, not borrowed: true only when every card SHOWN was
+    # computed against this window, and never true for an empty section.
+    assert out["window"]["matches_period"] == (bool(shown) and len(anchored) == len(shown)), (
+        f"matches_period={out['window']['matches_period']} but {len(anchored)} of "
+        f"{len(shown)} shown cards are period-anchored"
+    )
+
+    # And the CAVEAT tracks that same measurement rather than being fixed prose --
+    # which is better than this test originally assumed. When every shown card was
+    # anchored the section says so; only a mixed or unanchored section carries the
+    # observation-time warning. Pinning the correspondence is the real guard: a
+    # section that claimed the period's label while showing an unanchored card, or
+    # that shouted an observation-time warning over figures that ARE the period's,
+    # would both be caught here.
+    if out["window"]["matches_period"]:
+        assert "computed against the period above" in out["caveat"], out["caveat"]
+        assert "AS OBSERVED WHEN THIS EDITION WAS GENERATED" not in out["caveat"]
+    else:
+        assert "AS OBSERVED WHEN THIS EDITION WAS GENERATED" in out["caveat"], out["caveat"]
+
+
+@pytest.mark.parametrize(
+    ("registered", "expect_match"),
+    [
+        (("anchored", "unanchored"), False),
+        (("anchored",), True),
+        (("unanchored",), False),
+    ],
+    ids=["mixed", "all-anchored", "none-anchored"],
+)
+def test_one_unanchored_card_costs_the_section_the_periods_label(
+    corpus, monkeypatch, registered, expect_match
+):
+    """The guard above pins the label against whatever the real registry yields
+    TODAY, which is honest but weak: on a corpus where every shown card happens to
+    come from an anchored producer it can only check ``True == True``, and it
+    survives a mutant that hardcodes ``matches_period: True``. Verified by mutation
+    on 2026-09-09 -- the mutant passed all fourteen tests in this file.
+
+    So construct the mixed case instead of waiting for it. Two synthetic producers
+    are registered, distinguishable only by whether their signature declares
+    ``as_of`` -- which is exactly and only what ``period_anchorable()`` reads -- and
+    both yield a card. The three cases then fix the whole truth table by
+    construction, on any date and any corpus:
+
+      * mixed        -> False. This is the case that kills the mutant: one
+                        unanchored card among two makes the section's figures not
+                        the period's, however many anchored cards sit beside it.
+      * all-anchored -> True, so the assertion is not simply "always False" (a
+                        mutant hardcoding ``False`` has to fail something too).
+      * none-anchored-> False, with the wording that says the figures are
+                        observation-time rather than the mixed wording.
+
+    The caveat is checked in the same breath, because a section that carried the
+    right boolean under the wrong sentence would still mislead the reader -- the
+    document is the sentence, not the field.
+    """
+    from src.briefing import registry as reg
+    from src.briefing.card import Card
+
+    def _card(name):
+        return Card(
+            type=f"synthetic_{name}", title=f"{name} card", summary="s",
+            bucket="context", method="m", caveat="c", n=1,
+        )
+
+    # The ONLY difference between these two is the ``as_of`` parameter. Nothing
+    # else about a producer makes it anchorable, so nothing else is varied.
+    def anchored(session, *, as_of=None):
+        return [_card("anchored")]
+
+    def unanchored(session):
+        return [_card("unanchored")]
+
+    available = {"anchored": anchored, "unanchored": unanchored}
+    monkeypatch.setattr(
+        reg, "_REGISTRY", [(n, available[n]) for n in registered], raising=True
+    )
+    # Settings must not silently disable a synthetic producer and empty the section.
+    monkeypatch.setattr(reg, "_disabled_names", frozenset, raising=True)
+
+    out = cards_by_type(corpus, resolve_period("weekly", end=date(2026, 8, 11)))
+
+    shown = [row for entry in out["types"] for row in entry["cards"]]
+    assert len(shown) == len(registered), (
+        f"the fixture did not produce one card per producer: {shown}"
+    )
+    assert out["window"]["matches_period"] is expect_match, (
+        f"{registered} -> matches_period={out['window']['matches_period']}, "
+        f"expected {expect_match}"
+    )
+
+    if expect_match:
+        assert "computed against the period above" in out["caveat"], out["caveat"]
+        assert "AS OBSERVED WHEN THIS EDITION WAS GENERATED" not in out["caveat"]
+    else:
+        assert "AS OBSERVED WHEN THIS EDITION WAS GENERATED" in out["caveat"], out["caveat"]
+        # Mixed and none-anchored are DIFFERENT facts and must not share one
+        # sentence: "some of these figures" is a materially weaker claim than
+        # "none of them", and a reader deciding whether to trust a number needs
+        # to know which they are holding.
+        mixed = len(set(registered)) > 1
+        assert ("Some cards here are anchored" in out["caveat"]) is mixed, out["caveat"]
+
+
+def test_an_empty_card_section_does_not_claim_the_period_vacuously(corpus, monkeypatch):
+    """A section showing NO cards must not report ``matches_period: True``.
+
+    It would be vacuously true -- every one of zero cards was indeed computed
+    against the period -- and it would render as "Every card here was computed
+    against the period above", which a reader takes as a statement about the cards
+    they are looking at. Over an empty section that sentence is a reassurance about
+    nothing, which is the same shape as a fabricated pass.
+
+    Split out from the truth-table guard above because that one asserts one card per
+    producer, and this case has none. Found by mutation on 2026-09-09: dropping
+    ``bool(shown_cards) and`` from ``all_anchored`` was the one mutant the rest of
+    this file let live.
+    """
+    from src.briefing import registry as reg
+
+    def anchored_but_silent(session, *, as_of=None):
+        return []
+
+    monkeypatch.setattr(reg, "_REGISTRY", [("silent", anchored_but_silent)], raising=True)
+    monkeypatch.setattr(reg, "_disabled_names", frozenset, raising=True)
+
+    out = cards_by_type(corpus, resolve_period("weekly", end=date(2026, 8, 11)))
+
+    assert out["cards_shown_total"] == 0, "the fixture was meant to show no cards"
+    assert out["anchored_producers"] == ["silent"], (
+        "the producer DID run and IS anchorable -- so this is the vacuous-true case, "
+        "not a case where nothing was anchored"
+    )
     assert out["window"]["matches_period"] is False
-    assert "AS OBSERVED WHEN THIS EDITION WAS GENERATED" in out["caveat"]
+    assert "Every card here was computed against the period" not in out["caveat"], out["caveat"]
 
 
 def test_a_truncated_producer_run_is_reported_not_absorbed(corpus):

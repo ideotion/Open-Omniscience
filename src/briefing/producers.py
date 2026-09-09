@@ -546,7 +546,47 @@ def price_narrative(session) -> list[Card]:
             continue
         rule = session.query(MarketExtractionRule).filter_by(symbol=symbol).first()
         label = rule.label if rule and rule.label else symbol
-        kw = resolve_keyword(session, label) or resolve_keyword(session, symbol)
+        # EXACT resolution only, on BOTH attempts -- audit §4.1 (P0), second site.
+        # The audit named the trend endpoint; this producer has the identical defect
+        # and a worse consequence, because it does not merely LABEL a chart with the
+        # commodity's name, it runs a significance test against whatever keyword the
+        # fuzzy `LIKE %term%` fallback landed on and publishes the result as a Lead.
+        # Measured on the live corpus 2026-09-09, BEFORE this line changed: all three
+        # symbols carrying prices resolved to unrelated words -- Dy -> "already",
+        # Nd -> "indiqué", Pr -> "proposed" (36, 28 and 37 dated mentions
+        # respectively). What that corpus did NOT do is publish a card from them:
+        # correlate_price_with_news returned insufficient_data with n=0 for all
+        # three, because the price dates and those keywords' article dates did not
+        # overlap. So on this corpus the defect is LATENT, and saying otherwise
+        # would be inventing the very kind of number this guard exists to prevent.
+        #
+        # It is still a P0 and the guard still belongs here, at the resolution step,
+        # because the thing standing between a wrong pairing and a published Lead is
+        # a date overlap -- an accident of corpus size, not a check. "already" is one
+        # of the most common words in an English corpus; on a larger one it WILL
+        # share dates with a price series. So the overlap was CONSTRUCTED rather than
+        # waited for (tests/test_price_narrative_exact_resolution.py), and this is
+        # verbatim what the pre-fix code then published to Home:
+        #
+        #     Dy: price moves vs coverage
+        #     Daily price change and news volume for Dy correlate +0.97
+        #     (p=0.00522, n=5).
+        #     Why am I seeing this? On the days where you have both a price for this
+        #     commodity and coverage about it, the price moves and the volume of
+        #     coverage tend to rise and fall together.
+        #
+        # card.key == "already". A significance-tested correspondence, with its
+        # arithmetic shown, between dysprosium's price and an English adverb.
+        #
+        # The label attempt is still tried first and the symbol second, unchanged --
+        # a commodity's keyword is its NAME ("crude oil"), not its ticker ("CL=F").
+        # What changes is that a name with no keyword of its own now resolves to
+        # NOTHING and the commodity is skipped, which is the honest answer its
+        # sibling lenses already give ("No keywords yet").
+        kw = (
+            resolve_keyword(session, label, exact=True)
+            or resolve_keyword(session, symbol, exact=True)
+        )
         if kw is None:
             continue
         mentions = (

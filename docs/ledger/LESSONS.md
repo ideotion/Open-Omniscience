@@ -7442,3 +7442,177 @@
   "every `#N` referenced by test_ui_invariants's own comments has a matching CLAUDE.md
   paragraph" check is worth adding, or whether periodic human/audit review remains the
   intended catch for this specific failure mode.
+
+- **SUBSTRING CONTAINMENT USED WHERE IDENTITY IS MEANT IS NOW A TWICE-FOUND P0 CLASS IN THIS CODEBASE,
+  IN TWO UNRELATED SUBSYSTEMS, AND THE GUARD FOR IT WAS ALREADY WRITTEN BOTH TIMES (2026-09-08, live
+  visual audit §4.1):** the commodity Price × coverage overlay draws a clean chart headed
+  "Price × coverage — Dy · Articles: 36" in which `Dy` has been silently resolved to the English word
+  **"already"** (`alrea·dy`), `Nd` to the French **"indiqué"** (`i·nd·iqué`) and `Pr` to **"proposed"** —
+  because `resolve_keyword()` (`src/analytics/queries.py:149`) falls back from exact match to
+  `normalized_term LIKE '%term%'` ordered by mention count. Terms with no substring collision (`lithium`,
+  `cobalt`) resolve to nothing, which is exactly **why it never looks broken**: the failure is invisible
+  on every term that would have exposed it. The same window's Keywords, When/Where/Who and Sources
+  lenses all honestly report zero for the same seed — **only the lens with a chart lies**, so a
+  cross-lens consistency check inside one window is a cheap, general detector for this whole class.
+  THE PART THAT MATTERS MOST: `src/analytics/supply_chain_ripple.py:110` already carries
+  `_exact_keyword_id` whose docstring names this exact hazard, this exact fallback, and even the exact
+  worked example ("a commodity 'Lead' silently matching the unrelated common word/verb 'lead'") — the
+  hazard was identified, the guard was written, the reasoning was recorded, and the commodity path calls
+  the **unguarded** resolver anyway. Six weeks earlier the 2026-09-08 transversal audit found the same
+  shape in `src/bulletin/grounding.py`, where a fabricated figure that is a substring of a real one
+  verdicts as grounded. **A guard that lives in one caller is a comment, not an invariant.** **AND IT IS THREE, NOT TWO (same session, found later the same day):** the Observatory's ranked-table drill-through calls `openAnalysisFor(hit.name)` (`app-observatory.js:444`), passing a curated keyword-CLUSTER LABEL into the analysis window as a LITERAL FULL-TEXT QUERY — measured, `"Elections & democracy"` (the corpus's #1 galaxy) returns `total=0` while `"Public finance"` returns **19 unrelated articles presented as that galaxy's evidence**, against its real 150-mention/6-source membership, with nothing signalling the mismatch. **The shared shape across all three is not "substring" — it is FAILING OPEN INTO A PLAUSIBLE ANSWER INSTEAD OF CLOSED INTO AN HONEST REFUSAL**, which is exactly why none of them looks broken and none was caught by a test: the empty case is visible and merely unhelpful, and the coincidental-match case is invisible and wrong. The rule worth writing as a test is therefore about the DIRECTION OF FAILURE, not about `LIKE`: where a display surface resolves an identity, a text match may never stand in for it, and a failure to resolve must render the honest empty state rather than the nearest thing found. When a
+  fuzzy resolver and an exact resolver both exist for one quantity, the fuzzy one is the default every
+  new caller will reach for; the durable fix is a test that enumerates the callers of the fuzzy path and
+  asserts that none of them is a display surface, not a third exact-match helper in a third file.
+
+- **AN EMPTY STATE REACHED THROUGH A PARSE FAILURE IS THE APP STATING A FALSEHOOD IN THE VOICE IT
+  RESERVES FOR FACTS (2026-09-08, live visual audit §4.2):** with `/api/briefing` and
+  `/api/database/stats` returning HTTP 200 and a malformed body, Home rendered "**Your library is
+  empty** — head to Collect to gather your first material" and "**No Leads yet** … an empty feed means
+  the signals haven't accumulated, **never** that the engine is gone" against a database holding 453
+  articles and 3,618 sources — with zero occurrences of *failed*, *error*, *unavailable* or *retry*,
+  zero uncaught exceptions, and the health pill still reading **healthy**. The empty-state copy is
+  genuinely good writing and correct for a genuinely empty corpus; that is what makes this dangerous.
+  **"Degrade loudly" is not satisfied by a well-written empty state, because an empty state is a
+  positive claim about the user's data.** The distinction a UI must keep is not success-vs-failure but
+  *"the server answered and the answer was empty"* vs *"the answer could not be read"* — and a
+  `try/catch` that falls through to the render path collapses exactly those two. Test the malformed-body
+  case, not only the 500 case: a 500 usually has a handler, and a 200 with garbage usually does not.
+
+- **A `#`-ANCHOR ANYWHERE IN CONTENT IS A NAVIGATION HAZARD WHEN A `popstate` HANDLER TREATS THE HASH AS
+  A TAB NAME (2026-09-08, live visual audit):** Help renders 50 visible in-page table-of-contents links
+  against **103 headings, of which 0 carry an `id`** (`mdToHtml()` emits bare `<h2>/<h3>`). Clicking one
+  changes the hash, `app-shell.js:166`'s `popstate` listener calls
+  `showTab(location.hash.slice(1), false)`, `showTab` finds no `tab-1-install--first-run`, falls back to
+  home and rewrites the URL — measured: visible panel `tab-help` → `tab-home`, hash `#help` → `#home`.
+  **The defect is not in Help.** Any surface that ever renders an internal anchor — an article body, a
+  law document, any future markdown — hits the identical path, so this is a risk *category* rather than
+  a documentation bug, and the fix belongs in the `popstate` handler (check the hash against the known
+  tab-id set before calling `showTab`, else let the browser do its native in-page scroll), not in the
+  markdown renderer alone.
+
+- **A CONTRAST HARNESS THAT EXCLUDES THE ELEMENT'S OWN BACKGROUND IS WRONG IN BOTH DIRECTIONS, AND TWO
+  AGENTS CATCHING IT INDEPENDENTLY IS THE ONLY REASON IT WAS CAUGHT (2026-09-08, this audit's own
+  instrument):** the first cut composited text against the *ancestor* chain and popped the element
+  itself, so a filled button's label was scored against the panel *behind* the button — inventing
+  failures on filled controls (two were hand-verified at a real 6.65:1) and missing real ones. The
+  recorded lesson "score the composited colour, not the declared token" is necessary and **not
+  sufficient**: the composite must include every layer the text is actually painted on, the element's own
+  `background-color` first among them. Corrected mid-run and the whole 17-theme sweep re-run; one agent
+  finding was subsequently REFUTED by its own verifier using the fixed instrument. **An audit's
+  instrument is part of its subject matter** — when two independent agents report the same
+  false-positive class, that is data about the tool, not noise from the agents.
+
+- **ASSIGNING ONE APP INSTANCE TO TWO AGENTS MANUFACTURES A FINDING (2026-09-08, fleet hygiene):** port
+  8020 was handed to both a first-run-journey agent and a first-launch-state agent. The first created a
+  passphrase; the second then reported as a P0 that "the assigned virgin locked instance was already
+  unlocked-encrypted before this session began." It was a true observation and an entirely manufactured
+  defect. **A stateful fixture is single-assignment.** Where two agents genuinely need the same
+  irreversible flow, give them separate data directories, and treat any finding about the *initial state*
+  of a shared fixture as suspect until the assignment map is checked.
+
+- **A CONSOLIDATION JOIN KEYED ON A SHORT LOCAL ID SILENTLY CROSS-WIRES AGENTS (2026-09-08, the same
+  audit's own bookkeeping):** merging 466 findings with their verifiers' verdicts on the bare finding id
+  (`F1`, `LAW-1`) attached one agent's verdict to another agent's finding, because a dozen agents each
+  number their findings `F1…Fn` independently. The tell was the row count changing when it should not
+  have. Key the join on **(workflow, scope, id)** and, where a scope string is decorated
+  ("law (port 8013, ink theme…)"), match by token overlap rather than equality — and always print
+  matched-vs-unmatched counts, because a join that silently drops or mis-attaches is indistinguishable
+  from one that works.
+
+- **A SYNTHESIS FED A TRUNCATED BLOB REPORTS THE GAP AS THE APP'S, NOT THE HARNESS'S — AND IT DOES IT
+  MOST CONFIDENTLY IN THE HONESTY SECTION (2026-09-08, the visual audit's own matrix workflow):** the
+  workflow script handed its ten stream results to the synthesiser as
+  `JSON.stringify(ok).slice(0, 220000)`. The blob was larger, so four streams fell off the end, and the
+  synthesis stated in its coverage section that "none of the 8 GUI-gallery skins were tested by any
+  agent in this batch" and that "`reduced_motion`, `prefers-contrast` and any browser-zoom test were
+  never exercised" — when both skin agents had run 164 combinations and the media-prefs agent had
+  exercised all three plus greyscale, colour-blind simulation and a full axe pass. It also reported 365
+  combinations against an actual 599. **Every one of those sentences is the good behaviour — an agent
+  saying what it did not reach — pointed at the wrong subject**, which is exactly what makes it
+  dangerous: the section a reader trusts most is the section a truncated input corrupts first, and it
+  corrupts it into a *false negative about coverage*, the one error class an honesty section exists to
+  prevent. TWO RULES FOLLOW. (1) Never silently `.slice()` an aggregate into a synthesis prompt: pass a
+  count alongside it (`N streams, M findings`) so the synthesiser can notice the arithmetic does not
+  add up, or summarise per-stream first and synthesise the summaries. (2) When a synthesis claims
+  something was **not** covered, check that claim against the per-agent results before repeating it —
+  a coverage claim is the cheapest of all claims to verify and the most expensive to get wrong.
+
+- **AN INSTRUMENT THAT RETURNS "NOTHING FOUND" FOR AN INPUT IT CANNOT PARSE CERTIFIES A FIX AS A SUCCESS
+  ON EXACTLY THE GROUND THE FIX CHANGED (2026-09-09, the visual audit's contrast harness, second defect
+  in the same tool):** the scan's colour parser matched only `rgba?(...)` and returned `null` for
+  anything else; every caller read `null` as "nothing here" and skipped the element. Chromium serialises
+  any colour computed through `color-mix()` as `color(srgb 0.32 0.39 0.34)` — 0–1 floats, no `rgb(`
+  anywhere. Four theme contrast fixes had just re-derived `--muted`/`--accent-text` *through*
+  `color-mix()`. So the post-fix sweep returned zero failures for those four themes, and the zero meant
+  the instrument had stopped looking at precisely the elements the fix touched. The failure is worse
+  than the harness's earlier composited-background bug (recorded above) because that one INVENTED
+  failures — noisy, self-announcing — while this one HID them, silently, in the direction of the answer
+  everyone wanted. THREE RULES. (1) **An unparseable input is a reported count, never an empty list**:
+  the corrected scan returns a `__UNPARSED_COLOURS__` record at the head of its results with the
+  syntaxes and occurrence counts, so an unknown form arrives as a number rather than a clean sweep.
+  (2) **When a fix changes the REPRESENTATION of the thing being measured — a token becomes a function,
+  an id becomes a hash, a scalar becomes an object — re-validate the instrument before believing the
+  green.** The check to run is the one that was run here: inject a deliberately, unmissably failing
+  case IN THE NEW REPRESENTATION (a `color-mix()` at 1.15:1) and confirm the instrument reports it;
+  the old parser said `total_failures: 0` and the corrected one said `ratio: 1.15`. (3) A theme the
+  broken sweep flagged (`mint`) still had to be re-measured end to end after the instrument was fixed —
+  4.18:1 before, ≥4.99:1 after — because a number produced by a broken instrument is not evidence even
+  when it turns out to be right.
+
+- **A DEFECT CLASS IS NOT FIXED UNTIL YOU HAVE ENUMERATED ITS CALL SITES; FIXING "THE ONE THE AUDIT
+  NAMED" LEAVES THE OTHERS, AND THEY ARE WORSE (2026-09-09, audit §4.1's fuzzy `resolve_keyword`
+  fallback):** the audit hand-verified ONE surface — `GET /api/insights/trend?term=Dy` resolving to the
+  English word "already" — and the fix routed `queries.py`'s five display callers through `exact=True`.
+  That was correct and it was not the class. A `grep` for the function turned up eleven call sites, and
+  two more of them were the same defect: `src/briefing/producers.py`'s `price_narrative`, which does not
+  merely LABEL a chart but runs a significance test on the mis-resolved keyword and publishes the result
+  to Home as a Lead ("Dy: price moves vs coverage — correlate +0.97 (p=0.00522, n=5)", card key
+  "already"); and `src/api/link_analysis.py`'s `/api/links/shared`, which feeds the corpus window's Links
+  subtab. **THE LINKS ONE IS THE INSTRUCTIVE CASE**, because it shows what an incomplete fix costs: after
+  the first fix, one corpus window seeded on `Dy` answered `resolved: null` on Trend, Context and
+  Keywords — honestly empty, exactly as intended — while Links quietly returned 36 articles about
+  "already". The partial fix did not just leave a hole; it made the hole *more* convincing, because the
+  surfaces around it had started telling the truth. Enumerate the call sites, decide each one
+  deliberately (a genuine human-typed search box may legitimately stay fuzzy), and record which ones you
+  left and why. COROLLARY, from the same pass: the fix's own docstring listed `producers.py` among the
+  callers "unchanged by this fix" — and was falsified an hour later by the follow-up fix to that very
+  file. A docstring that enumerates other modules' behaviour is a claim with a shelf life; the reviewer
+  who spots it stale is the lucky case.
+
+- **THE `test` CI JOB IS NOT ONLY pytest, AND THE STEP AFTER IT IS THE ONE A LOCAL GREEN SUITE HIDES
+  (2026-09-09):** three commits in a row failed CI's `test` job on this branch while the local full
+  suite passed 9967/0 and CI's own pytest step passed 9975/0. The failure was the **mypy step that runs
+  after pytest in the same job** — one `union-attr` error, from a `Retry-After` fallback reading
+  `exc.limit.limit` where `exc.limit` is typed `Limit | None`. `CLAUDE.md`'s session rituals already say
+  "mypy ratchet ≤ baseline in CI", so this was a ritual skipped rather than a rule missing: `pytest -q`
+  green reads as "the tests pass", and the job is called `test`, and both of those make it easy to stop
+  before `python -m mypy src/`. **Run every step the job runs, not the one that shares its name** — for
+  this repo that is `pytest`, then `mypy src/`, then the ruff blocking lane, the ruff ratchet and the
+  i18n gate. The fix itself is worth a line too: the None case was handled by *checking* it rather than
+  by widening the `except`, because an `AttributeError` swallowed by a bare `except` is
+  indistinguishable from a genuine failure to read the value, and that branch's whole job is to be the
+  honest last answer.
+
+- **A TEST THAT SAMPLES TWO QUANTITIES MUST GATE ITS WINDOW ON BOTH, OR THE UNGATED ONE BECOMES A COIN
+  FLIP AT THE MERCY OF THE RUNNER (2026-09-09, `test_wal_reader_starvation.py` on the Linux core-only
+  lane):** this test had already been round the loop once. Its window was time-boxed, three CI lanes
+  failed because the WAL volume depended on how many writes a runner fit into that time, and the authors
+  made the window WRITE-GATED — recorded at length in the module docstring. What that fixed was the
+  volume; what it left alone was the *other* sampled quantity, the number of checkpoint attempts landing
+  inside the window, which stayed a pure function of thread scheduling. The comments show the authors
+  feeling this without naming it: they cut the checkpointer's sleep 0.05 → 0.02 because "at 0.05s left
+  only 2 attempts". CI then produced **1**, and with one attempt the discriminating assertion is a coin
+  flip — releases happen every `_TEST_RELEASE_INTERVAL_S`, so a lone attempt can miss all of them and
+  report busy on FIXED code. The general rule: **whatever a test measures, gate on it.** The window now
+  waits for a sample floor the same way it waits for writes, and falls short LOUDLY rather than
+  measuring something meaningless. THREE THINGS THIS COST, all worth repeating. (1) The first mutation I
+  ran to check the guard still bit targeted `_release_transaction` and the mutant SURVIVED — I was one
+  step from reporting "this guard is toothless, pre-existing", when the registry's own docstring says
+  plainly that a bare `commit()` does not free the WAL read-mark and `result.close()` does. **A
+  surviving mutant means the guard is weak OR the mutation was wrong, and those look identical.** (2)
+  Adding a second reason for the window to time out made a pre-existing failure message
+  self-contradictory — "hit its cap before the writer committed 12 times (only 33 landed)" — because it
+  had only ever had one reason to fire. Widening a condition means auditing every message that explains
+  it. (3) Both the fix and the message now have their own forced-failure probes, because a branch that
+  cannot be shown to fire is indistinguishable from dead code.

@@ -394,7 +394,7 @@
         const placed = g.radius !== undefined;
         const code = _obsTopLang(g);
         return `<tr><td>${placed ? i + 1 : "—"}</td>` +
-          `<td><button type="button" class="ghost tiny" data-obs-open="${esc(g.name)}">${esc(g.name)}</button></td>` +
+          `<td><button type="button" class="ghost tiny" data-obs-id="${esc(g.id)}" data-obs-name="${esc(g.name)}">${esc(g.name)}</button></td>` +
           `<td>${esc(g.domain || "")}</td>` +
           `<td>${placed ? esc(fmtNum(g.value)) : `<span class="muted">${esc(t("Not observed in this corpus yet"))}</span>`}</td>` +
           `<td>${esc(fmtNum(g.mentions || 0))}</td>` +
@@ -402,8 +402,74 @@
           `<td>${esc(_obsTrendText(g))}</td></tr>`;
       }).join("");
       host.innerHTML = `<table class="sky-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
-      host.querySelectorAll("[data-obs-open]").forEach((b) =>
-        b.addEventListener("click", () => openAnalysisFor(b.dataset.obsOpen, {source: "observatory"})));
+      host.querySelectorAll("[data-obs-id]").forEach((b) =>
+        b.addEventListener("click", () => _obsOpenGalaxy(b.dataset.obsId, b.dataset.obsName)));
+    }
+
+    /**
+     * Drill-through, resolved on the galaxy's REAL membership — never its curated
+     * label (audit §4.3, P0). `g.name` is a cluster label chosen by the scaffold
+     * config; it is not text that appears in articles, so passing it to
+     * `openAnalysisFor` as a literal full-text query either finds nothing (the
+     * honest miss — Elections & democracy, Ecology & biodiversity) or, worse, a
+     * plausible-looking WRONG set from an unrelated match on the label's own
+     * words (Public finance: 19 articles that are not this galaxy's evidence).
+     *
+     * The fix resolves the SAME membership the galaxy's own numbers are computed
+     * from (`/api/insights/supergroups`'s `members` — each member's own
+     * normalized term, plus every cross-language form of a ring member's
+     * `ring_members`) and hands that term set to the existing set-algebra
+     * endpoint (`/api/insights/corpus-algebra`, `op=union`) — the SAME resolver
+     * the Keywords-subtab Combine picker already uses via `openAnalysisForIds`
+     * (app-corpus.js's `anCombine`/`anOpenCombined`), never a second, divergent
+     * path. The label shown in the table and the label on the opened tab are the
+     * same string, and now the ARTICLE SET behind it is the one that string's
+     * number was actually computed from.
+     *
+     * FAILS CLOSED: a galaxy that cannot be resolved (the supergroups fetch
+     * fails, the id is no longer present, or it has zero member keywords) opens
+     * nothing and a toast names why — never the nearest match.
+     */
+    let _obsSgById = null;   // id -> supergroup row (with real members), fetched once
+    async function _obsLoadSupergroups() {
+      if (_obsSgById) return _obsSgById;
+      const data = await api("/api/insights/supergroups");
+      const byId = {};
+      for (const sg of (data && data.supergroups) || []) byId[sg.id] = sg;
+      _obsSgById = byId;
+      return byId;
+    }
+    function _obsMemberTerms(sg) {
+      const terms = [];
+      const seen = new Set();
+      const add = (term) => { if (term && !seen.has(term)) { seen.add(term); terms.push(term); } };
+      for (const m of (sg && sg.members) || []) {
+        add(m.normalized);
+        for (const rm of m.ring_members || []) {
+          const i = rm.indexOf(":");
+          add(i >= 0 ? rm.slice(i + 1) : rm);
+        }
+      }
+      return terms;
+    }
+    async function _obsOpenGalaxy(id, name) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const failClosed = () => toast(
+        t("This galaxy's membership could not be resolved to an article set here — nothing opened."),
+        "err"
+      );
+      try {
+        const byId = await _obsLoadSupergroups();
+        const sg = byId[id];
+        const terms = sg ? _obsMemberTerms(sg) : [];
+        if (!terms.length) { failClosed(); return; }
+        const d = await api(
+          "/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(",")) + "&op=union"
+        );
+        openAnalysisForIds((d && d.article_ids) || [], name, {source: "observatory"});
+      } catch (_e) {
+        failClosed();
+      }
     }
 
     /**
@@ -441,7 +507,7 @@
       if (!_obs.layout) return;
       const p = _obsPos(ev);
       const hit = window.ooSky.hitTest(_obs.layout, _obs.view, p.x, p.y);
-      if (hit) openAnalysisFor(hit.name, {source: "observatory"});
+      if (hit) _obsOpenGalaxy(hit.id, hit.name);
     }
     function _obsWheel(ev) {
       ev.preventDefault();
@@ -481,7 +547,7 @@
       else if (ev.key === "Home") next = 0;
       else if (ev.key === "End") next = list.length - 1;
       else if (ev.key === "Enter" || ev.key === " ") {
-        if (_obs.view.focus) { ev.preventDefault(); openAnalysisFor(_obs.view.focus.name, {source: "observatory"}); }
+        if (_obs.view.focus) { ev.preventDefault(); _obsOpenGalaxy(_obs.view.focus.id, _obs.view.focus.name); }
         return;
       } else return;
       ev.preventDefault();

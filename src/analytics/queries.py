@@ -146,14 +146,51 @@ def unsegmented_note(session, article_ids: list[int]) -> dict | None:
     }
 
 
-def resolve_keyword(session, term: str) -> Keyword | None:
-    """Map a user term to a stored keyword: exact normalized match, else best LIKE."""
+def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | None:
+    """Map a user term to a stored keyword: exact normalized match, else (unless
+    ``exact=True``) the best fuzzy ``LIKE %term%`` match by mention count.
+
+    ``exact=True`` disables the fuzzy fallback entirely -- audit §4.1 (P0, 2026-09-08):
+    a caller that turns the resolved keyword into a LABEL on a display surface (a chart
+    title, a "Resolved to X" line, a hover-stats line) must never let an arbitrary
+    substring match stand in for "not found" -- the same homograph vector already fixed
+    for supply-chain ripple's commodity lookup (:func:`src.analytics.supply_chain_ripple.
+    _exact_keyword_id`): a short/rare probe term (a commodity symbol like "Dy", "Nd",
+    "Pr") can be a substring of a wholly unrelated, high-mention-count keyword ("already",
+    "indiqué", "proposed"), and the fuzzy fallback confidently returns that keyword,
+    ranked by mention count, as if it were the answer to the query. Every DISPLAY caller
+    in this module that renders the resolved term as a chart/graph/hover LABEL now passes
+    ``exact=True`` (``trend``, ``trend_range_article_ids``, ``associations``,
+    ``keyword_stats``, ``context``) so a term that does not resolve exactly returns the
+    honest empty result instead of the nearest match.
+
+    WHERE THE FUZZY DEFAULT SURVIVES, and why -- corrected 2026-09-09, because the
+    first version of this paragraph named ``link_analysis.py`` and ``producers.py``
+    as callers that legitimately stay fuzzy, and BOTH turned out to carry the same
+    defect. A docstring that describes another module's behaviour is a claim with a
+    shelf life, so this one now says only what was checked:
+
+    * ``src/briefing/producers.py``'s ``price_narrative`` -- FIXED to ``exact=True``.
+      It did not merely label a chart: it ran a significance test on the
+      mis-resolved keyword and published the result to Home as a Lead.
+    * ``src/api/link_analysis.py``'s ``/api/links/shared`` -- FIXED to ``exact=True``.
+      Its ``term`` is ``_corpusTerm``, a keyword the app itself chose, never typed.
+    * ``producers.py``'s five OTHER call sites resolve ``term["term"]`` straight out
+      of ``q.trending()`` -- already a stored keyword, so the exact match always hits
+      and the fallback is unreachable. Left as-is deliberately.
+
+    So the permissive default currently has no caller relying on it. Keep it for a
+    genuine human-typed, forgiving search box; reach for ``exact=True`` for anything
+    that turns the answer into a label, a count, or a statistic.
+    """
     norm = _normalize(term)
     if not norm:
         return None
     kw = session.query(Keyword).filter_by(normalized_term=norm).first()
     if kw:
         return kw
+    if exact:
+        return None
     rows = (
         session.query(Keyword, func.coalesce(func.sum(KeywordMention.count), 0).label("m"))
         .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
@@ -270,7 +307,10 @@ def _bucket_span(d: date, bucket: str) -> tuple[date, date]:
 
 def trend(session, term: str, *, bucket: str = "week", country: str | None = None) -> dict:
     """Mention volume over time for one keyword, bucketed by day/week/month."""
-    kw = resolve_keyword(session, term)
+    # EXACT ONLY (audit §4.1, P0, 2026-09-08): this is a chart/hover LABEL surface --
+    # "resolved" is rendered as the answer, not a candidate. See resolve_keyword's
+    # exact= docstring for why the fuzzy LIKE fallback must never reach here.
+    kw = resolve_keyword(session, term, exact=True)
     if kw is None:
         return {"term": term, "resolved": None, "points": [], "total": 0, "articles": 0}
     q = session.query(KeywordMention.observed_on, func.sum(KeywordMention.count)).filter(
@@ -350,7 +390,10 @@ def trend_range_article_ids(
     in every index, so ``(quarantined)`` covers ``(id, quarantined)``). The join variant
     shows the trap explicitly as ``SEARCH articles USING INTEGER PRIMARY KEY (rowid=?)``.
     """
-    kw = resolve_keyword(session, term)
+    # EXACT ONLY (audit §4.1, P0): this brushes the SAME chart ``trend()`` draws, which
+    # is now exact-only -- a fuzzy resolution here could hand back a different
+    # keyword's articles than the bars the user just selected, silently.
+    kw = resolve_keyword(session, term, exact=True)
     if kw is None or start > end:
         return {
             "term": term,
@@ -1991,7 +2034,9 @@ def associations(
     """
     if days and not start:
         start = date.today() - timedelta(days=days)
-    kw = resolve_keyword(session, term)
+    # EXACT ONLY (audit §4.1, P0): this powers the mind-map's CENTRE-node label and
+    # its co-occurring-keyword labels -- the same homograph vector as trend().
+    kw = resolve_keyword(session, term, exact=True)
     if kw is None:
         return {"term": term, "resolved": None, "pairs": []}
     total = (
@@ -2252,7 +2297,11 @@ def keyword_stats(
         "recent": 0, "prior": 0, "recent_per_day": 0.0, "prior_per_day": 0.0,
         "expected": 0.0, "growth": 0.0, "growth_is_ratio": False,
     }
-    kw = resolve_keyword(session, term)
+    # EXACT ONLY (audit §4.1, P0): the hover-stats bubble renders ``resolved.term`` as
+    # the keyword being described. Every caller passes an already-stored keyword's own
+    # ``.term`` text (a hovered chip), so this can only ever refuse a genuine collision,
+    # never a legitimate lookup.
+    kw = resolve_keyword(session, term, exact=True)
     if kw is None:
         return {
             "term": term, "resolved": None, "mentions": 0, "articles": 0,
@@ -2357,7 +2406,11 @@ def keyword_stats(
 
 def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
     """Recent mention snippets for a keyword, sliced from the stored article text."""
-    kw = resolve_keyword(session, term)
+    # EXACT ONLY (audit §4.1, P0): the snippet list is headed by ``resolved.term`` and
+    # rendered as "this keyword's mentions" -- the same display-label surface as
+    # trend()/associations(), reached through the same exploreTerm() search box, so a
+    # fuzzy answer here would silently re-open the bug those two just closed.
+    kw = resolve_keyword(session, term, exact=True)
     if kw is None:
         return {"term": term, "resolved": None, "mentions": []}
     rows = (
