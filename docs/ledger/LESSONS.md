@@ -7593,3 +7593,26 @@
   by widening the `except`, because an `AttributeError` swallowed by a bare `except` is
   indistinguishable from a genuine failure to read the value, and that branch's whole job is to be the
   honest last answer.
+
+- **A TEST THAT SAMPLES TWO QUANTITIES MUST GATE ITS WINDOW ON BOTH, OR THE UNGATED ONE BECOMES A COIN
+  FLIP AT THE MERCY OF THE RUNNER (2026-09-09, `test_wal_reader_starvation.py` on the Linux core-only
+  lane):** this test had already been round the loop once. Its window was time-boxed, three CI lanes
+  failed because the WAL volume depended on how many writes a runner fit into that time, and the authors
+  made the window WRITE-GATED — recorded at length in the module docstring. What that fixed was the
+  volume; what it left alone was the *other* sampled quantity, the number of checkpoint attempts landing
+  inside the window, which stayed a pure function of thread scheduling. The comments show the authors
+  feeling this without naming it: they cut the checkpointer's sleep 0.05 → 0.02 because "at 0.05s left
+  only 2 attempts". CI then produced **1**, and with one attempt the discriminating assertion is a coin
+  flip — releases happen every `_TEST_RELEASE_INTERVAL_S`, so a lone attempt can miss all of them and
+  report busy on FIXED code. The general rule: **whatever a test measures, gate on it.** The window now
+  waits for a sample floor the same way it waits for writes, and falls short LOUDLY rather than
+  measuring something meaningless. THREE THINGS THIS COST, all worth repeating. (1) The first mutation I
+  ran to check the guard still bit targeted `_release_transaction` and the mutant SURVIVED — I was one
+  step from reporting "this guard is toothless, pre-existing", when the registry's own docstring says
+  plainly that a bare `commit()` does not free the WAL read-mark and `result.close()` does. **A
+  surviving mutant means the guard is weak OR the mutation was wrong, and those look identical.** (2)
+  Adding a second reason for the window to time out made a pre-existing failure message
+  self-contradictory — "hit its cap before the writer committed 12 times (only 33 landed)" — because it
+  had only ever had one reason to fire. Widening a condition means auditing every message that explains
+  it. (3) Both the fix and the message now have their own forced-failure probes, because a branch that
+  cannot be shown to fire is indistinguishable from dead code.
