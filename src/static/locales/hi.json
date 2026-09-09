@@ -794,7 +794,6 @@
   "RSS feeds": "RSS फ़ीड",
   "Recursive crawl": "पुनरावर्ती क्रॉल",
   "Source groups": "स्रोत समूह",
-  "Stats unavailable.": "आँकड़े अनुपलब्ध।",
   "The app gathers and measures; you judge.": "ऐप जुटाता और मापता है; निर्णय आप करते हैं।",
   "Wikipedia (watched pages)": "विकिपीडिया (देखे जा रहे पृष्ठ)",
   "Your library is empty — head to Collect to gather your first material.": "आपका पुस्तकालय खाली है — अपनी पहली सामग्री जुटाने हेतु संग्रह पर जाएँ।",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "ऊपर किसी कीवर्ड या इकाई को एक्सप्लोर करें ताकि मिलते-जुलते अंश देखें।",
   "Section tabs": "अनुभाग टैब",
   "Search has hit its rate limit — try again after {time}.": "खोज ने अनुरोधों की सीमा पार कर ली है — {time} के बाद पुनः प्रयास करें।",
-  "Search has hit its rate limit. Try again later.": "खोज ने अनुरोधों की सीमा पार कर ली है। बाद में पुनः प्रयास करें।"
+  "Search has hit its rate limit. Try again later.": "खोज ने अनुरोधों की सीमा पार कर ली है। बाद में पुनः प्रयास करें।",
+  "Could not load the source catalogue.": "स्रोत सूची लोड नहीं हो सकी।",
+  "No sources match these filters.": "इन फ़िल्टरों से कोई स्रोत मेल नहीं खाता।",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "मेल खाते पहले {n} स्रोत दिखाए जा रहे हैं। शेष सूची तक पहुँचने के लिए फ़िल्टर परिष्कृत करें।"
 }

@@ -794,7 +794,6 @@
   "RSS feeds": "Umpan RSS",
   "Recursive crawl": "Perayapan rekursif",
   "Source groups": "Grup sumber",
-  "Stats unavailable.": "Statistik tidak tersedia.",
   "The app gathers and measures; you judge.": "Aplikasi mengumpulkan dan mengukur; Anda menilai.",
   "Wikipedia (watched pages)": "Wikipedia (halaman yang dipantau)",
   "Your library is empty — head to Collect to gather your first material.": "Pustaka Anda kosong — buka Kumpulkan untuk mengumpulkan materi pertama Anda.",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "Jelajahi kata kunci atau entitas di atas untuk melihat kutipan yang cocok.",
   "Section tabs": "Tab bagian",
   "Search has hit its rate limit — try again after {time}.": "Pencarian telah mencapai batas jumlah permintaan — coba lagi setelah {time}.",
-  "Search has hit its rate limit. Try again later.": "Pencarian telah mencapai batas jumlah permintaan. Coba lagi nanti."
+  "Search has hit its rate limit. Try again later.": "Pencarian telah mencapai batas jumlah permintaan. Coba lagi nanti.",
+  "Could not load the source catalogue.": "Tidak dapat memuat katalog sumber.",
+  "No sources match these filters.": "Tidak ada sumber yang cocok dengan filter ini.",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Menampilkan {n} sumber pertama yang cocok. Persempit filter untuk menjangkau sisa katalog."
 }

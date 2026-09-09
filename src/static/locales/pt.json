@@ -794,7 +794,6 @@
   "RSS feeds": "Feeds RSS",
   "Recursive crawl": "Rastreamento recursivo",
   "Source groups": "Grupos de fontes",
-  "Stats unavailable.": "Estatísticas indisponíveis.",
   "The app gathers and measures; you judge.": "A aplicação recolhe e mede; você julga.",
   "Wikipedia (watched pages)": "Wikipédia (páginas vigiadas)",
   "Your library is empty — head to Collect to gather your first material.": "A sua biblioteca está vazia — vá a Recolher para reunir o seu primeiro material.",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "Explore uma palavra-chave ou entidade acima para ver excertos correspondentes.",
   "Section tabs": "Abas de secção",
   "Search has hit its rate limit — try again after {time}.": "A pesquisa atingiu o seu limite de pedidos — tente novamente após as {time}.",
-  "Search has hit its rate limit. Try again later.": "A pesquisa atingiu o seu limite de pedidos. Tente novamente mais tarde."
+  "Search has hit its rate limit. Try again later.": "A pesquisa atingiu o seu limite de pedidos. Tente novamente mais tarde.",
+  "Could not load the source catalogue.": "Não foi possível carregar o catálogo de fontes.",
+  "No sources match these filters.": "Nenhuma fonte corresponde a estes filtros.",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "A mostrar as primeiras {n} fontes correspondentes. Refine os filtros para alcançar o resto do catálogo."
 }

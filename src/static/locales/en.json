@@ -794,7 +794,6 @@
   "RSS feeds": "RSS feeds",
   "Recursive crawl": "Recursive crawl",
   "Source groups": "Source groups",
-  "Stats unavailable.": "Stats unavailable.",
   "The app gathers and measures; you judge.": "The app gathers and measures; you judge.",
   "Wikipedia (watched pages)": "Wikipedia (watched pages)",
   "Your library is empty — head to Collect to gather your first material.": "Your library is empty — head to Collect to gather your first material.",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "Explore a keyword or entity above to see matching excerpts.",
   "Section tabs": "Section tabs",
   "Search has hit its rate limit — try again after {time}.": "Search has hit its rate limit — try again after {time}.",
-  "Search has hit its rate limit. Try again later.": "Search has hit its rate limit. Try again later."
+  "Search has hit its rate limit. Try again later.": "Search has hit its rate limit. Try again later.",
+  "Could not load the source catalogue.": "Could not load the source catalogue.",
+  "No sources match these filters.": "No sources match these filters.",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue."
 }

@@ -1172,7 +1172,18 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     per source, the article VOLUME, mean VADER tone, and the TIMING span (first/last
     published) -- so different angles by volume/tone/timing are visible side by side.
     Counts + dates are exact; mean tone inherits the VADER English-only caveat. NO
-    ranking, NO verdict -- presence here is coverage, not credibility."""
+    ranking, NO verdict -- presence here is coverage, not credibility.
+
+    THE CATALOG FACTS RIDE ALONG (2026-09-09), and the reason is a correctness one
+    rather than a saving. The Sources sub-tab used to merge them in on the client
+    from ``GET /api/sources/?limit=1000`` -- a route whose ceiling IS 1000 against a
+    3,618-row catalogue on the live fixture -- so a corpus source that happened to
+    sort past the first page rendered "no catalog metadata on file", which is a
+    positive claim about the catalogue rather than an admission that only part of it
+    was read. This query ALREADY joins ``Source`` and groups by ``Source.id``, so the
+    fields cost nothing extra and cannot be truncated: every source in the result is
+    a source that was actually read. Two-class honesty is unchanged -- every field
+    here is catalog/source-ASSERTED, never text-deduced."""
     if not article_ids:
         return {"count": 0, "sources": []}
     rows = (
@@ -1182,6 +1193,7 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
             func.avg(Article.sentiment_score),
             func.min(Article.published_at),
             func.max(Article.published_at),
+            Source.country, Source.region, Source.language, Source.source_type, Source.tags,
         )
         .join(Source, Source.id == Article.source_id)
         .filter(Article.id.in_(article_ids))
@@ -1198,8 +1210,16 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
             "mean_tone": round(float(avg), 3) if avg is not None else None,
             "first": fp.isoformat() if fp else None,
             "last": lp.isoformat() if lp else None,
+            # Catalog-asserted metadata. A key is present with a null/[] value when
+            # the catalogue holds nothing for it -- "on file and empty" and "we never
+            # looked" must not print as one thing, which is the defect this replaces.
+            "country": country,
+            "region": region,
+            "language": language,
+            "source_type": stype,
+            "tags": [t.strip() for t in (tags or "").split(",") if t.strip()],
         }
-        for name, dom, n, avg, fp, lp in rows
+        for name, dom, n, avg, fp, lp, country, region, language, stype, tags in rows
     ]
     return {
         "count": len(sources),

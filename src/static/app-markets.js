@@ -1416,7 +1416,10 @@
 
     async function loadMarketConfig() {
       try {
-        const sources = await api("/api/sources");
+        // Three keys, not eight: this picker prints name + domain and posts the id
+        // (255,660 bytes instead of 714,399 on the live fixture). Every row still
+        // comes back -- a projection narrows the COLUMNS, never the rows.
+        const sources = await api("/api/sources?fields=id,name,domain");
         $("mkt-source").innerHTML = sources.map(s =>
           `<option value="${s.id}">${esc(s.name)} (${esc(s.domain)})</option>`).join("")
           || '<option value="">(no sources — add one first)</option>';

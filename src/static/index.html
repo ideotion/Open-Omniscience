@@ -2263,13 +2263,16 @@
         language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed,
         rate-limited); up to 50 per run.</p>
       <div class="row">
+        <!-- reloadBatchPicker(), not renderBatchPicker(): these filters run on the
+             SERVER now, over the whole catalogue rather than over one 1000-row page
+             (see _biQuery). The call is debounced, so typing is still one request. -->
         <div style="flex:2"><label for="bi-search">Search</label>
-          <input id="bi-search" placeholder="name or domain" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="renderBatchPicker()"></div>
+          <input id="bi-search" placeholder="name or domain" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="reloadBatchPicker()"></div>
         <div><label for="bi-enabled">Show</label>
-          <select id="bi-enabled" onchange="renderBatchPicker()">
+          <select id="bi-enabled" onchange="reloadBatchPicker()">
             <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
           </select></div>
       </div>
@@ -2278,6 +2281,8 @@
         <button class="ghost tiny" onclick="batchSelectAll(false)">Clear</button>
         <span id="bi-count" class="hint"></span>
       </div>
+      <!-- The page ceiling, said out loud only when it is actually in play. -->
+      <div id="bi-capped" class="hint" hidden></div>
       <div id="bi-list" class="bi-list"><div class="muted">Loading sources…</div></div>
       <div class="row" style="margin-top:8px;align-items:center">
         <button onclick="ingestBatch(this)">Ingest selected feeds</button>

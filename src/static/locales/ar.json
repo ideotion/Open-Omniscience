@@ -794,7 +794,6 @@
   "RSS feeds": "موجزات RSS",
   "Recursive crawl": "الزحف التكراري",
   "Source groups": "مجموعات المصادر",
-  "Stats unavailable.": "الإحصاءات غير متاحة.",
   "The app gathers and measures; you judge.": "التطبيق يجمع ويقيس؛ وأنت تحكم.",
   "Wikipedia (watched pages)": "ويكيبيديا (الصفحات المراقبة)",
   "Your library is empty — head to Collect to gather your first material.": "مكتبتك فارغة — توجّه إلى «الجمع» لتجميع موادك الأولى.",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "استكشف كلمة مفتاحية أو كيانًا أعلاه لترى المقتطفات المطابقة.",
   "Section tabs": "علامات تبويب القسم",
   "Search has hit its rate limit — try again after {time}.": "بلغ البحث الحد الأقصى لعدد الطلبات — أعد المحاولة بعد {time}.",
-  "Search has hit its rate limit. Try again later.": "بلغ البحث الحد الأقصى لعدد الطلبات. أعد المحاولة لاحقًا."
+  "Search has hit its rate limit. Try again later.": "بلغ البحث الحد الأقصى لعدد الطلبات. أعد المحاولة لاحقًا.",
+  "Could not load the source catalogue.": "تعذّر تحميل فهرس المصادر.",
+  "No sources match these filters.": "لا توجد مصادر مطابقة لهذه المرشّحات.",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "يتم عرض أول {n} مصدرًا مطابقًا. حسّن المرشّحات للوصول إلى بقية الفهرس."
 }

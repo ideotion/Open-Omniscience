@@ -794,7 +794,6 @@
   "RSS feeds": "RSS ফিড",
   "Recursive crawl": "পুনরাবৃত্ত ক্রল",
   "Source groups": "উৎস গোষ্ঠী",
-  "Stats unavailable.": "পরিসংখ্যান অনুপলব্ধ।",
   "The app gathers and measures; you judge.": "অ্যাপ সংগ্রহ ও পরিমাপ করে; বিচার আপনি করেন।",
   "Wikipedia (watched pages)": "উইকিপিডিয়া (নজরে রাখা পাতা)",
   "Your library is empty — head to Collect to gather your first material.": "আপনার লাইব্রেরি খালি — প্রথম উপাদান সংগ্রহ করতে সংগ্রহে যান।",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "উপরে একটি কীওয়ার্ড বা সত্তা অন্বেষণ করুন মিলে যাওয়া অংশ দেখতে।",
   "Section tabs": "বিভাগ ট্যাব",
   "Search has hit its rate limit — try again after {time}.": "অনুসন্ধান অনুরোধের সীমা অতিক্রম করেছে — {time} পরে আবার চেষ্টা করুন।",
-  "Search has hit its rate limit. Try again later.": "অনুসন্ধান অনুরোধের সীমা অতিক্রম করেছে। পরে আবার চেষ্টা করুন।"
+  "Search has hit its rate limit. Try again later.": "অনুসন্ধান অনুরোধের সীমা অতিক্রম করেছে। পরে আবার চেষ্টা করুন।",
+  "Could not load the source catalogue.": "উৎস ক্যাটালগ লোড করা যায়নি।",
+  "No sources match these filters.": "এই ফিল্টারগুলির সাথে কোনো উৎস মেলে না।",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "মিলে যাওয়া প্রথম {n}টি উৎস দেখানো হচ্ছে। ক্যাটালগের বাকি অংশে পৌঁছাতে ফিল্টার পরিমার্জন করুন।"
 }

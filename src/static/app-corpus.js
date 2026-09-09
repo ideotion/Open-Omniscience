@@ -159,31 +159,30 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = document.getElementById(hostId);
       if (!host) return;
-      let cs, cat;
+      let cs;
       try {
         // corpus-sources keys on the FTS query (like Sentiment's framing call),
         // so we point it at this window's term to get THIS corpus's sources.
-        [cs, cat] = await Promise.all([
-          api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`),
-          api(`/api/sources/?limit=1000`).catch(() => []),
-        ]);
+        // THE SECOND FETCH IS GONE (2026-09-09). This used to merge the catalog
+        // metadata in on the client from `/api/sources/?limit=1000`, whose ceiling
+        // IS 1000 — against 3,618 catalogue rows on the live fixture. A corpus
+        // source sorting past that page silently rendered "no catalog metadata on
+        // file", which asserts something about the catalogue rather than admitting
+        // only part of it was read. `corpus_sources()` already joins Source and
+        // groups by Source.id, so it now carries those fields itself: what is shown
+        // comes from the row that was actually read, and cannot be truncated.
+        cs = await api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`);
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       const rows = (cs && cs.sources) || [];
       if (!rows.length) {
         host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
         return;
       }
-      // Index the catalog metadata by domain (+ name fallback) for client-side merge.
-      const byDom = {}, byName = {};
-      (Array.isArray(cat) ? cat : []).forEach(s => {
-        if (s.domain) byDom[s.domain.toLowerCase()] = s;
-        if (s.name) byName[s.name] = s;
-      });
       const fmt = (n) => (n || 0).toLocaleString();
       const chips = (arr) => (arr || []).filter(Boolean)
         .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
       const cards = rows.map(r => {
-        const meta = byDom[(r.domain || "").toLowerCase()] || byName[r.name] || {};
+        const meta = r;   // the catalog facts now travel on the row itself
         const facts = [];
         if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(ooRegionName(meta.country, meta.country.toUpperCase()))}`);
         if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);

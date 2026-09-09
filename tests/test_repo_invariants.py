@@ -3289,8 +3289,18 @@ def test_collect_tab_moved_into_settings():
     )
     # The loader runs on section EXPAND, not on subtab select: folded must not mean
     # fetched. _openAdvanced opens the section, so the deep-link still loads it.
-    assert "collect:  () => { loadScheduler(); }" in html, (
-        "expanding Advanced → Collection must run the scheduler's load"
+    # Matched as a CONTAINS over the entry rather than as the exact one-call literal
+    # it used to be: the invariant is "expanding this section runs the scheduler's
+    # load", not "this section loads exactly one thing". The exact form broke on
+    # 2026-09-09 when loadSources() joined it — a correct change (that <select>
+    # lives in THIS fold and used to be filled from the boot essentials, pulling
+    # 714,399 bytes for a folded panel) that an over-tight assertion called a
+    # regression.
+    collect = re.search(r"collect:\s*\(\s*\)\s*=>\s*\{([^}]*)\}", html)
+    assert collect, "the Advanced → Collection loader is gone"
+    assert "loadScheduler()" in collect.group(1), (
+        "expanding Advanced → Collection must run the scheduler's load; the entry "
+        f"reads: {collect.group(0)}"
     )
 
 

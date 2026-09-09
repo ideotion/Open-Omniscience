@@ -794,7 +794,6 @@
   "RSS feeds": "RSS 源",
   "Recursive crawl": "递归抓取",
   "Source groups": "来源分组",
-  "Stats unavailable.": "统计数据不可用。",
   "The app gathers and measures; you judge.": "应用负责收集与测量；判断由您来做。",
   "Wikipedia (watched pages)": "维基百科（关注的页面）",
   "Your library is empty — head to Collect to gather your first material.": "您的文库为空 — 前往“采集”来收集您的第一批材料。",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "在上方探索关键词或实体，查看匹配的摘录。",
   "Section tabs": "分区标签",
   "Search has hit its rate limit — try again after {time}.": "搜索已达到请求次数上限 — 请在 {time} 后重试。",
-  "Search has hit its rate limit. Try again later.": "搜索已达到请求次数上限。请稍后重试。"
+  "Search has hit its rate limit. Try again later.": "搜索已达到请求次数上限。请稍后重试。",
+  "Could not load the source catalogue.": "无法加载来源目录。",
+  "No sources match these filters.": "没有来源符合这些筛选条件。",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "正在显示前 {n} 个匹配的来源。请细化筛选条件以查看目录的其余部分。"
 }

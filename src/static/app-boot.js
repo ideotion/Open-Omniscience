@@ -120,7 +120,11 @@
     if (_media) _media.addEventListener("change", () => {
       if (getUi().theme === "system") applyThemeAttr("system");
     });
-    loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus(); loadRateMode();
+    // loadSources() is NOT here any more (2026-09-09): it fetched the whole source
+    // catalogue -- 714,399 bytes, 98.8% of all boot API bytes on the live fixture --
+    // to populate one <select> inside a folded Settings section. It now loads with
+    // that section, via _ADV_LOADERS.collect, like every other Advanced panel.
+    loadHealth(); loadLlmHealth(); checkEmptyCorpus(); loadRateMode();
     // A window lives in the SERVER process, so it outlives a page reload. Discover
     // it at boot or the operator could have an open window with no visible sign of
     // it and no way to close it -- the exact failure mode the bar exists to prevent.

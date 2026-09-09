@@ -794,7 +794,6 @@
   "RSS feeds": "Каналы RSS",
   "Recursive crawl": "Рекурсивный обход",
   "Source groups": "Группы источников",
-  "Stats unavailable.": "Статистика недоступна.",
   "The app gathers and measures; you judge.": "Приложение собирает и измеряет; судите вы.",
   "Wikipedia (watched pages)": "Википедия (отслеживаемые страницы)",
   "Your library is empty — head to Collect to gather your first material.": "Ваша библиотека пуста — перейдите в раздел «Сбор», чтобы собрать первые материалы.",
@@ -3177,5 +3176,8 @@
   "Explore a keyword or entity above to see matching excerpts.": "Изучите ключевое слово или сущность выше, чтобы увидеть соответствующие отрывки.",
   "Section tabs": "Вкладки раздела",
   "Search has hit its rate limit — try again after {time}.": "Поиск достиг предела количества запросов — повторите попытку после {time}.",
-  "Search has hit its rate limit. Try again later.": "Поиск достиг предела количества запросов. Повторите попытку позже."
+  "Search has hit its rate limit. Try again later.": "Поиск достиг предела количества запросов. Повторите попытку позже.",
+  "Could not load the source catalogue.": "Не удалось загрузить каталог источников.",
+  "No sources match these filters.": "Ни один источник не подходит под эти фильтры.",
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Показаны первые {n} подходящих источников. Уточните фильтры, чтобы охватить остальной каталог."
 }
