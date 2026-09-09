@@ -7950,3 +7950,35 @@
   rests on an impossibility claim, the cheapest test is to try the obvious rule and count
   the failures. An impossibility that has never been measured is a guess with a
   confident tone, and the sweep it discourages is usually where the rest of the defect is.**
+
+- **"BOUNDED" MEANS "DOES NOT GROW WITH THE USER'S DATA", NOT "SMALL TODAY" (2026-09-09).**
+  `search_omni.py` promises "never scan-on-type: every group is served by an index or a
+  small bounded table", and the useful test of a candidate group turned out not to be its
+  current row count but whether that count is a function of the corpus. The events
+  catalogue (154 entries) and the Help documents (~600 KB) ship WITH the app and are the
+  same size on every install, so a contains-match over them is honest at 1.4 ms. The
+  keyword table looks comparable on a fresh install and reaches 406,723 rows on a real
+  corpus, which is why the same technique there would be a 400k-row scan per keystroke.
+  **GENERAL FORM: before adding a linear pass to a hot path, ask what the population is a
+  function of. A table that grows with usage and a file that ships with the binary are
+  different kinds of thing, however similar they look on a developer's empty database.**
+
+- **MEASURING A COLD IMPORT AS IF IT WERE THE FEATURE (2026-09-09).** The first timing of
+  the new Help-content index read **3.46 seconds** — alarming, and wrong. Almost all of it
+  was `import src.api.main`, which production has already paid before any search runs; the
+  index itself is 28 ms. The second error in the same run was measuring the first query
+  before any warm-up, which charged one group 8 ms instead of 0.3. **GENERAL FORM: a
+  first-call measurement in a fresh interpreter includes the module graph and every lazy
+  cache the real process built at boot. Import what production imports, warm what
+  production warms, and only then start the clock — otherwise the number is about the
+  measurement harness, and it will be quoted as being about the code.**
+
+- **A RENDERER THAT SWITCHES ON A KIND SILENTLY DROPS THE KIND IT DOES NOT KNOW
+  (2026-09-09).** The omnibar's `_omniItems` is an `if/else-if` chain over `g.kind`; a
+  backend group with no branch produces no row, no warning and no error — the API returns
+  it, the palette renders nothing, and every test on both sides passes. That is the same
+  built-and-unreachable shape as a tested function with no caller, arriving from the other
+  direction. **GENERAL FORM: when a consumer dispatches on a type tag, adding a producer
+  case is not complete until the consumer case exists, and the guard belongs in the same
+  commit — an `else` that logs the unknown kind is the cheaper structural fix where the
+  surface can afford it.**

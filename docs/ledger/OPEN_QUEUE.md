@@ -11225,6 +11225,16 @@ Help allow-list out of the API's own `_DOCS` so a new Help document inherits the
   intact. **NOT attempted here on purpose:** the edit-distance helper is an hour and would
   have looked finished, while quietly making the omnibar scan 400k rows on every character.
 
+**THE OMNIBAR'S `events`/`docs-content` GROUPS ARE CLOSED, and the pair with typo tolerance
+is the point.** The T13 REMAINING list named four things; two of them are now built and two
+are not, and the dividing line is not effort. The events catalogue (154 entries, ships with
+the app) and the Help documents (the ten the API's allow-list serves) do not grow with the
+user's corpus, so a contains-match over them is 0.3 ms and 1.4-1.8 ms respectively, measured.
+The keyword table looks like the same kind of thing and is not: 406,723 rows on a real
+corpus. So "bounded" on this surface means *not a function of the corpus*, and that is the
+test to apply to the two still open — date/period search with the calendar picker, and the
+Enter-to-corpus-window absorption gate.
+
 - **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
   superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
   awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
