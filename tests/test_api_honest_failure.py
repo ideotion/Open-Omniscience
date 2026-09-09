@@ -82,6 +82,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.js_source_helper import function_body, read_static, strip_comments
+
 _ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -104,18 +106,26 @@ def test_home_failure_copy_never_reuses_the_empty_corpus_sentence() -> None:
     """Static guard (runs even without node): the new honest-failure strings in
     app-home.js's loadHome()/loadBriefing() catches are present, translated via
     t(), and are never the literal empty-corpus sentences the audit found reused."""
-    home_js = (_ROOT / "src" / "static" / "app-home.js").read_text(encoding="utf-8")
+    home_js = read_static("app-home.js")
 
-    load_home_start = home_js.index("async function loadHome(")
-    load_home_end = home_js.index("async function loadHomeLatest(")
-    load_home_body = home_js[load_home_start:load_home_end]
-    assert "t(\"The corpus stats could not be read just now" in load_home_body
-    assert "Your library is empty" not in load_home_body.split("catch (e) {", 1)[1].split("}", 1)[0]
+    # Slice through the SHARED helper, never by hand. tests/js_source_helper.py
+    # brace-matches from the body brace after balancing the parameter list, which
+    # is what stops a default parameter being mistaken for the body; hand-rolling
+    # it here is what tests/test_source_slicing_discipline.py counts, and it is
+    # counted because the tree has been burned by a hand-rolled slice three times,
+    # each with a green test asserting over the wrong span.
+    #
+    # strip_comments() is load-bearing, not tidiness: the catch block this guards
+    # carries a comment that QUOTES the banned empty-corpus sentences to explain
+    # why they must not be rendered. The ledger records three "this string must be
+    # GONE" guards that failed against correct code on exactly that shape, so the
+    # assertion has to run over code with the commentary removed.
+    load_home_body = strip_comments(function_body(home_js, "loadHome"))
+    assert 't("The corpus stats could not be read just now' in load_home_body
+    assert "Your library is empty" not in load_home_body
+    assert 'role="alert"' in load_home_body
 
-    load_briefing_start = home_js.index("async function loadBriefing(")
-    load_briefing_end = home_js.index("async function refreshBriefing(")
-    load_briefing_body = home_js[load_briefing_start:load_briefing_end]
-    assert "t(\"The briefing could not be read just now" in load_briefing_body
-    catch_rendered = load_briefing_body.split("feed.innerHTML = `", 1)[1]
-    assert "No Leads yet" not in catch_rendered
-    assert 'role="alert"' in catch_rendered
+    load_briefing_body = strip_comments(function_body(home_js, "loadBriefing"))
+    assert 't("The briefing could not be read just now' in load_briefing_body
+    assert "No Leads yet" not in load_briefing_body
+    assert 'role="alert"' in load_briefing_body

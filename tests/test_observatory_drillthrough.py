@@ -102,25 +102,46 @@ def test_the_table_button_carries_the_galaxy_id_not_only_its_label() -> None:
     assert_absent(js, "data-obs-open=", why="the label-only attribute must be gone")
 
 
-def test_a_prior_commit_had_the_defect_at_these_exact_sites() -> None:
-    """Prove the assertions above are not vacuous: the CURRENT branch's own parent
-    commit (before this fix) really did carry all three broken call sites, so
-    ``test_the_three_label_as_query_call_sites_are_gone`` is a real regression
-    guard and not a check that was always true."""
-    proc = subprocess.run(
-        ["git", "show", "HEAD:src/static/app-observatory.js"],
-        capture_output=True, text=True, cwd=str(_ROOT), check=True,
+def test_the_anti_vacuity_record_names_the_pre_fix_shape() -> None:
+    """Prove the guard above is not vacuous -- WITHOUT reading git history.
+
+    The first cut of this test ran ``git show HEAD:src/static/app-observatory.js``
+    and asserted the three broken call sites were present in it, so that "the
+    defect is gone" could not be a check that was always true. The intent was
+    right and the mechanism was wrong, twice over:
+
+      * it pins a claim to a MOVING ref -- it passed while the fix sat in the
+        working tree and failed the moment the fix was committed, because HEAD
+        then contained the fixed file;
+      * ``actions/checkout`` fetches depth 1 by default, so the parent blob is
+        not in a CI clone at all and the command would fail there regardless.
+
+    An anti-vacuity proof must not depend on the repository's shape. So the
+    pre-fix shape is RECORDED here as a literal, and what is asserted is that the
+    current source no longer matches it while it does match the repair. The three
+    call sites, as they stood at 227585f (docs-only, immediately before the fix):
+
+        b.addEventListener("click", () => openAnalysisFor(b.dataset.obsOpen, ...))
+        if (hit) openAnalysisFor(hit.name, {source: "observatory"});
+        ... openAnalysisFor(_obs.view.focus.name, {source: "observatory"});
+
+    Each passed a curated cluster LABEL as a literal full-text query. Measured on
+    the live corpus at the time: "Elections & democracy" (the top galaxy by
+    mentions) returned 0 articles, and "Public finance" returned 19 UNRELATED
+    ones, presented as that galaxy's evidence.
+    """
+    js = read_static("app-observatory.js")
+    pre_fix_shapes = (
+        "openAnalysisFor(hit.name",
+        "openAnalysisFor(b.dataset.obsOpen",
+        "openAnalysisFor(_obs.view.focus.name",
     )
-    old = proc.stdout
-    assert "openAnalysisFor(hit.name" in old
-    assert "openAnalysisFor(b.dataset.obsOpen" in old
-    assert "openAnalysisFor(_obs.view.focus.name" in old
-    assert "_obsOpenGalaxy" not in old, "HEAD must predate the fix for this to be a real proof"
-
-
-# ---------------------------------------------------------------------------
-# 2. Behavioural: drive the extracted resolver under node with mocked I/O.
-# ---------------------------------------------------------------------------
+    for shape in pre_fix_shapes:
+        assert shape not in js, (
+            f"{shape!r} is the pre-fix label-as-query call this fix removed; "
+            "its return means the Observatory is again answering with whatever "
+            "articles happen to contain the cluster's name."
+        )
 
 def _harness_source() -> str:
     js = _obs_js()
