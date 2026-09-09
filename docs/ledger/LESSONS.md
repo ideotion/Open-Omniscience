@@ -7579,3 +7579,17 @@
   callers "unchanged by this fix" — and was falsified an hour later by the follow-up fix to that very
   file. A docstring that enumerates other modules' behaviour is a claim with a shelf life; the reviewer
   who spots it stale is the lucky case.
+
+- **THE `test` CI JOB IS NOT ONLY pytest, AND THE STEP AFTER IT IS THE ONE A LOCAL GREEN SUITE HIDES
+  (2026-09-09):** three commits in a row failed CI's `test` job on this branch while the local full
+  suite passed 9967/0 and CI's own pytest step passed 9975/0. The failure was the **mypy step that runs
+  after pytest in the same job** — one `union-attr` error, from a `Retry-After` fallback reading
+  `exc.limit.limit` where `exc.limit` is typed `Limit | None`. `CLAUDE.md`'s session rituals already say
+  "mypy ratchet ≤ baseline in CI", so this was a ritual skipped rather than a rule missing: `pytest -q`
+  green reads as "the tests pass", and the job is called `test`, and both of those make it easy to stop
+  before `python -m mypy src/`. **Run every step the job runs, not the one that shares its name** — for
+  this repo that is `pytest`, then `mypy src/`, then the ruff blocking lane, the ruff ratchet and the
+  i18n gate. The fix itself is worth a line too: the None case was handled by *checking* it rather than
+  by widening the `except`, because an `AttributeError` swallowed by a bare `except` is
+  indistinguishable from a genuine failure to read the value, and that branch's whole job is to be the
+  honest last answer.

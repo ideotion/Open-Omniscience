@@ -805,10 +805,20 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
         # Last-resort fallback (state unavailable for some reason): the limit's own
         # window length (e.g. "100/hour" -> 3600) is always a safe, honest, non-fabricated
         # upper bound on how long this caller must wait — never shorter than the truth.
-        try:
-            retry_after = exc.limit.limit.get_expiry()
-        except Exception:  # noqa: BLE001 - degrade to no header at all, never crash the handler
-            retry_after = None
+        #
+        # `exc.limit` is typed `Limit | None`, and the None case is real rather than
+        # theoretical: slowapi constructs RateLimitExceeded from the limit that failed,
+        # but nothing in its signature guarantees one. Checked explicitly instead of
+        # leaning on the `except` below, because a bare AttributeError swallowed there
+        # is indistinguishable from a genuine failure to read the window — and this
+        # branch's whole job is to be the honest last answer.
+        limit = getattr(exc, "limit", None)
+        item = getattr(limit, "limit", None) if limit is not None else None
+        if item is not None:
+            try:
+                retry_after = item.get_expiry()
+            except Exception:  # noqa: BLE001 - no header at all, never crash the handler
+                retry_after = None
     headers = {"Retry-After": str(retry_after)} if retry_after is not None else {}
     return JSONResponse(
         status_code=429,
