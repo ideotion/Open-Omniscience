@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "搜索已达到请求次数上限。请稍后重试。",
   "Could not load the source catalogue.": "无法加载来源目录。",
   "No sources match these filters.": "没有来源符合这些筛选条件。",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "正在显示前 {n} 个匹配的来源。请细化筛选条件以查看目录的其余部分。"
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "正在显示前 {n} 个匹配的来源。请细化筛选条件以查看目录的其余部分。",
+  "Catalog": "目录",
+  "Stated by the source catalog (asserted, not deduced from text).": "由来源目录声明（自述，而非从文本推断）。"
 }

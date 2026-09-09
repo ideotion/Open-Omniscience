@@ -36,10 +36,26 @@ paginated sibling at its hard ceiling, ``GET /api/sources/?limit=1000``, over a
     fixture: country ``tn`` (9 sources) and language ``bn`` (15) exist ONLY
     beyond the first page, so both read as absent. After the fix they return 9
     and 15.
-  * the analysis window's Sources sub-tab, which merged catalog metadata by
+  * ``app-corpus.js``'s ``renderCorpusSources``, which merged catalog metadata by
     domain and rendered "No catalog metadata on file." for any corpus source
-    past the page. LATENT on this fixture (all 8 corpus sources fall inside the
-    page) and structurally the same defect, so it is fixed the same way.
+    past the page.
+
+CORRECTION, same day. That second bullet was first written as "the analysis
+window's Sources sub-tab", and that is WRONG. ``renderCorpusSources`` is called
+only by ``corpusTab``, which is wired only to the RETIRED ``#corpus-win`` modal
+that nothing opens -- so the truncation repaired there was real in the SOURCE
+and unreachable at RUNTIME. The live surface is ``app-analysis.js``'s
+``an-sources``, which reads the same endpoint and never fetched the catalogue at
+all. Only the batch picker below is a live, measured-before-and-after fix.
+
+AND THE CORRECTION FOUND SOMETHING. ``index.html``'s retirement note says every
+subtab of the retired modal is "covered by the ONE #an window (a strict
+superset)". For Sources it was not: the modal showed each source's country /
+region / language / type / tags and the #an version showed name, volume, tone
+and span only, so a capability the consolidation promised to keep had been
+dropped. The catalogue column now rides on the fields ``corpus_sources()``
+already had to hand -- no extra request, browser-verified rendering localized
+country/language/type.
 
 The route has carried whole-catalogue filters all along -- "filtering happens in
 SQL BEFORE pagination (so a filter spans the whole catalogue, not just the first
@@ -320,3 +336,31 @@ def test_the_three_new_strings_ship_in_all_twelve_locales() -> None:
         assert "Stats unavailable." not in mapping, (
             f"{path.name} still carries the orphaned key"
         )
+
+
+# ---------------------------------------------------------------------------
+# The absorption gap the correction found
+# ---------------------------------------------------------------------------
+
+def test_the_live_sources_subtab_shows_the_catalogue_facts_the_retired_modal_did() -> None:
+    """``index.html`` claims the #an window is a STRICT SUPERSET of the retired
+    #corpus-win modal. For the Sources view it was not."""
+    js = read_static("app-analysis.js")
+    for field in ("s.country", "s.language", "s.source_type"):
+        assert_present(js, field,
+                       why="the retired modal showed this and the superset claim "
+                           "requires the live window to show it too")
+    assert_present(js, 't("Catalog")', why="the column needs a translated header")
+    # And it must not have been bought with a second fetch -- the fields ride on
+    # the row corpus_sources() already read.
+    assert_absent(js, "/api/sources/?limit=", why="no catalogue fetch belongs here")
+
+
+def test_the_retired_modal_renderer_is_marked_as_unreachable() -> None:
+    """So the next reader does not take its repair for a live fix, as this pass's
+    own commit message briefly did."""
+    js = function_source(read_static("app-corpus.js"), "renderCorpusSources")
+    assert "UNREACHABLE" in js, (
+        "renderCorpusSources belongs to the retired #corpus-win modal; the note "
+        "saying so is what stops its fix being read as a live one"
+    )

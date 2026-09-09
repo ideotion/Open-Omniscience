@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "Поиск достиг предела количества запросов. Повторите попытку позже.",
   "Could not load the source catalogue.": "Не удалось загрузить каталог источников.",
   "No sources match these filters.": "Ни один источник не подходит под эти фильтры.",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Показаны первые {n} подходящих источников. Уточните фильтры, чтобы охватить остальной каталог."
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Показаны первые {n} подходящих источников. Уточните фильтры, чтобы охватить остальной каталог.",
+  "Catalog": "Каталог",
+  "Stated by the source catalog (asserted, not deduced from text).": "Заявлено каталогом источников (утверждение, а не вывод из текста)."
 }

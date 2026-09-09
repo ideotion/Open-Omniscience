@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "Search has hit its rate limit. Try again later.",
   "Could not load the source catalogue.": "Could not load the source catalogue.",
   "No sources match these filters.": "No sources match these filters.",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue."
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.",
+  "Catalog": "Catalog",
+  "Stated by the source catalog (asserted, not deduced from text).": "Stated by the source catalog (asserted, not deduced from text)."
 }

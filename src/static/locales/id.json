@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "Pencarian telah mencapai batas jumlah permintaan. Coba lagi nanti.",
   "Could not load the source catalogue.": "Tidak dapat memuat katalog sumber.",
   "No sources match these filters.": "Tidak ada sumber yang cocok dengan filter ini.",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Menampilkan {n} sumber pertama yang cocok. Persempit filter untuk menjangkau sisa katalog."
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Menampilkan {n} sumber pertama yang cocok. Persempit filter untuk menjangkau sisa katalog.",
+  "Catalog": "Katalog",
+  "Stated by the source catalog (asserted, not deduced from text).": "Dinyatakan oleh katalog sumber (klaim, bukan simpulan dari teks)."
 }

@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "بلغ البحث الحد الأقصى لعدد الطلبات. أعد المحاولة لاحقًا.",
   "Could not load the source catalogue.": "تعذّر تحميل فهرس المصادر.",
   "No sources match these filters.": "لا توجد مصادر مطابقة لهذه المرشّحات.",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "يتم عرض أول {n} مصدرًا مطابقًا. حسّن المرشّحات للوصول إلى بقية الفهرس."
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "يتم عرض أول {n} مصدرًا مطابقًا. حسّن المرشّحات للوصول إلى بقية الفهرس.",
+  "Catalog": "الفهرس",
+  "Stated by the source catalog (asserted, not deduced from text).": "مذكور في فهرس المصادر (تصريح، لا استنتاج من النص)."
 }

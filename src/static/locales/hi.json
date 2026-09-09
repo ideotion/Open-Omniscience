@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "खोज ने अनुरोधों की सीमा पार कर ली है। बाद में पुनः प्रयास करें।",
   "Could not load the source catalogue.": "स्रोत सूची लोड नहीं हो सकी।",
   "No sources match these filters.": "इन फ़िल्टरों से कोई स्रोत मेल नहीं खाता।",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "मेल खाते पहले {n} स्रोत दिखाए जा रहे हैं। शेष सूची तक पहुँचने के लिए फ़िल्टर परिष्कृत करें।"
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "मेल खाते पहले {n} स्रोत दिखाए जा रहे हैं। शेष सूची तक पहुँचने के लिए फ़िल्टर परिष्कृत करें।",
+  "Catalog": "सूची",
+  "Stated by the source catalog (asserted, not deduced from text).": "स्रोत सूची द्वारा घोषित (कथित, पाठ से अनुमानित नहीं)।"
 }

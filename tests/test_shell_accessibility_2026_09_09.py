@@ -235,3 +235,62 @@ def test_the_task_manager_heading_reuses_an_existing_key() -> None:
         data = json.loads(path.read_text(encoding="utf-8"))
         mapping = data.get("map", data)
         assert mapping.get("Task manager"), f"{path.name} has no 'Task manager' key"
+
+
+# ---------------------------------------------------------------------------
+# 5. The icon rail -- found only because the sweep widened, not because it deepened
+# ---------------------------------------------------------------------------
+
+def test_the_icon_rail_hides_its_labels_from_the_eye_not_from_a_screen_reader() -> None:
+    """axe color-contrast's louder cousin: ``button-name`` CRITICAL x6, plus
+    ``page-has-heading-one``, and BOTH invisible at 1440x900.
+
+    Below 860px the sidebar becomes an icon rail (invariant #2: it may collapse
+    to a rail, it may never vanish), and the rail hid every label with
+    ``display:none``. That removes the text from the ACCESSIBILITY TREE as well
+    as from the page -- and it is the ONLY accessible name each nav button has
+    (no aria-label, no title). Measured live at 768x1024: six primary-navigation
+    buttons announcing as nothing at all, so the whole left nav was unusable to
+    a screen reader. The page's one level-1 heading is the brand's
+    ``<b role="heading" aria-level="1">``, which sits in ``.brand .txt`` and went
+    the same way -- one rule, two findings.
+
+    IT WAS NEVER ONLY A TABLET DEFECT. ``html[data-sidebar="collapsed"]`` applies
+    the same rule at ANY width, and collapsing the sidebar is a first-class
+    documented affordance, so a desktop reader who used it was in the same rail.
+    Re-measured after the fix at 768 (automatic rail), at 1440 expanded, and at
+    1440 with the sidebar collapsed: zero violations in all three, the sidebar
+    still 66px wide, the label box 1x1, and the button's accessible name back.
+
+    Clipped rather than aria-labelled ON PURPOSE: an aria-label would be a
+    SECOND copy of every tab name, in twelve locales, that the i18n walker does
+    not maintain. The clip keeps one source of truth.
+    """
+    css = _css()
+    for scope, label in (
+        (r'html\[data-sidebar="collapsed"\] \.brand \.txt,', "the user-collapsed rail"),
+        (r'\.brand \.txt, \.nav-group > \.gl, \.nav-item span, \.nav-item \.badge, \.sb-foot \.lbl \{',
+         "the automatic max-width:860px rail"),
+    ):
+        m = re.search(scope + r"[^}]*\}", css, re.S)
+        assert m, f"{label}'s label rule is gone"
+        rule = m.group(0)
+        assert "display:none" not in rule.replace(" ", ""), (
+            f"{label} must hide its labels visually, not from assistive technology; "
+            f"the rule reads: {rule[:220]}"
+        )
+        assert "clip:rect(0,0,0,0)" in rule.replace(" ", ""), (
+            f"{label} should use the same clip .sr-only uses; found: {rule[:220]}"
+        )
+
+
+def test_the_only_level_one_heading_lives_where_the_rail_can_reach_it() -> None:
+    """Anti-vacuity for the test above: if the brand ever stopped carrying the
+    page's h1, that guard would still pass while the finding it describes had
+    moved somewhere the rail rule does not cover."""
+    html = _index()
+    m = re.search(r'<div class="txt"><b role="heading" aria-level="1">', html)
+    assert m, (
+        "the SPA's one level-1 heading is the brand name; if it moved, re-derive "
+        "which rule can hide it before trusting the rail guard"
+    )

@@ -171,6 +171,19 @@
         // only part of it was read. `corpus_sources()` already joins Source and
         // groups by Source.id, so it now carries those fields itself: what is shown
         // comes from the row that was actually read, and cannot be truncated.
+        //
+        // CORRECTION, same day, and it matters for how this fix should be read:
+        // THIS FUNCTION IS UNREACHABLE. `renderCorpusSources` is called only by
+        // `corpusTab`, which is wired only to the RETIRED `#corpus-win` modal that
+        // nothing opens (see index.html's retirement note). The commit that made
+        // this change described it as fixing "the analysis window's Sources
+        // sub-tab" — it did not; that surface is `app-analysis.js`'s `an-sources`,
+        // which reads the same endpoint and never fetched the catalogue at all.
+        // So the truncation repaired here was real in the SOURCE and could not be
+        // reached at RUNTIME. It is kept because the code is kept, and because the
+        // pending browser-verified deletion pass should delete a correct function
+        // rather than inherit a defect. The live half of that finding is the batch
+        // picker, which is reachable and was measured before and after.
         cs = await api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`);
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       const rows = (cs && cs.sources) || [];

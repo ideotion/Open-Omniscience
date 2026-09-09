@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "Die Suche hat ihr Anfragelimit erreicht. Versuchen Sie es später erneut.",
   "Could not load the source catalogue.": "Der Quellenkatalog konnte nicht geladen werden.",
   "No sources match these filters.": "Keine Quelle passt zu diesen Filtern.",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Es werden die ersten {n} passenden Quellen angezeigt. Verfeinern Sie die Filter, um den Rest des Katalogs zu erreichen."
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Es werden die ersten {n} passenden Quellen angezeigt. Verfeinern Sie die Filter, um den Rest des Katalogs zu erreichen.",
+  "Catalog": "Katalog",
+  "Stated by the source catalog (asserted, not deduced from text).": "Vom Quellenkatalog angegeben (behauptet, nicht aus dem Text abgeleitet)."
 }

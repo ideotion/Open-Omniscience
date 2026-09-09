@@ -1397,23 +1397,46 @@
             + ` · n=${d.n_scored}/${d.n_articles} · ${esc(t("English-scored (reliable)"))}: ${d.english_scored} (${engPct}%)</div>`;
         }
       } catch (e) { $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      // Sources: how each source covers the matched set -- volume, mean tone, span.
+      // Sources: how each source covers the matched set -- volume, mean tone, span,
+      // and the catalogue facts the source ASSERTS about itself.
       // Coverage, never credibility; no ranking (ordered by volume only).
+      //
+      // THE CATALOGUE COLUMN CLOSES AN ABSORPTION GAP (2026-09-09). index.html's
+      // retirement note says every subtab of the retired #corpus-win modal is
+      // "covered by the ONE #an window (a strict superset)". For Sources it was
+      // not: the modal's version showed each source's country / region / language
+      // / type / tags, and this one showed name, volume, tone and span only. So a
+      // capability the consolidation promised to keep was quietly dropped.
+      // It costs no extra request -- corpus_sources() already joins Source and
+      // groups by Source.id, so the fields ride on the row it had already read.
+      // TWO-CLASS HONESTY, unchanged from the modal: every field here is
+      // catalog/source-ASSERTED (set from the catalogue, a ccTLD, or the
+      // operator), never deduced from the text, and a source the catalogue holds
+      // nothing for reads as an em dash rather than as an empty claim.
       try {
         const d = await api("/api/insights/corpus-sources?" + p.toString());
         const rows = (d.sources || []).map((s) => {
           const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
           const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
+          const facts = [
+            s.country ? (typeof ooRegionName === "function"
+              ? ooRegionName(s.country, s.country.toUpperCase()) : s.country) : null,
+            s.language ? (typeof ooLangName === "function"
+              ? ooLangName(s.language, s.language) : s.language) : null,
+            s.source_type || null,
+          ].filter(Boolean).join(" · ");
           return `<tr><td>${esc(s.name || s.domain || "")}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${tone}</td>`
-            + `<td class="muted">${esc(span)}</td></tr>`;
+            + `<td class="muted">${esc(span)}</td>`
+            + `<td class="muted">${facts ? esc(facts) : "—"}</td></tr>`;
         }).join("");
         $("an-sources").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
           + (rows
             ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Source"))}</th>`
               + `<th style="text-align:right">${esc(t("Articles"))}</th>`
-              + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th></tr></thead>`
+              + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th>`
+              + `<th title="${esc(t("Stated by the source catalog (asserted, not deduced from text)."))}">${esc(t("Catalog"))}</th></tr></thead>`
               + `<tbody>${rows}</tbody></table>`
             : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
       } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }

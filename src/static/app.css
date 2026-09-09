@@ -253,12 +253,27 @@
     .sb-foot button { flex:1; margin:0; }
     /* Collapsed sidebar → icon rail */
     html[data-sidebar="collapsed"] .sidebar { --sidebar-w:66px; }
+    /* a11y-rail-labels (measured 2026-09-09; axe-core CRITICAL). These labels used to
+       be `display:none`, which removes them from the ACCESSIBILITY TREE as well as
+       from the page — and they are the only accessible name each nav button has (no
+       aria-label, no title). In the rail, six primary-navigation buttons therefore
+       announced as nothing at all: the whole left nav was unusable to a screen
+       reader. The page's ONE level-1 heading lives in `.brand .txt` too, so the same
+       rule took `page-has-heading-one` with it.
+       Hidden VISUALLY instead, with the same clip `.sr-only` uses: the rail looks
+       identical and every label keeps its name. One source of truth for the text,
+       which also means the i18n walker keeps translating it (an aria-label would
+       have been a second copy of every tab name, in twelve locales).
+       KEEP IN SYNC with the max-width:860px rail block below — the two states are
+       the same rail, and test_shell_accessibility_2026_09_09 asserts both. */
     html[data-sidebar="collapsed"] .brand .txt,
     html[data-sidebar="collapsed"] .nav-group > .gl,
     html[data-sidebar="collapsed"] .nav-item span,
     html[data-sidebar="collapsed"] .nav-item .badge,
-    html[data-sidebar="collapsed"] .sb-foot .lbl { display:none; }
-    html[data-sidebar="collapsed"] .nav-item { justify-content:center; padding:10px 0; }
+    html[data-sidebar="collapsed"] .sb-foot .lbl {
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+      clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    html[data-sidebar="collapsed"] .nav-item { justify-content:center; padding:10px 0; position:relative; }
     /* Sidebar toggle: show the affordance for the CURRENT state — a discoverable
        EXPAND button (right chevron) in the collapsed rail, the Collapse button
        (left chevron) when expanded (maintainer-reported: "no discoverable expand"). */
@@ -1585,8 +1600,14 @@
        feedback: the tab list must remain visible, never vanish off-canvas. */
     @media (max-width:860px) and (min-width:601px) {
       .sidebar { --sidebar-w:66px; }
-      .brand .txt, .nav-group > .gl, .nav-item span, .nav-item .badge, .sb-foot .lbl { display:none; }
-      .nav-item { justify-content:center; padding:10px 0; }
+      /* a11y-rail-labels — the automatic half of the same rail. See the
+         html[data-sidebar="collapsed"] block above for why these are clipped rather
+         than display:none; the two must not drift, because a reader on a tablet and
+         a reader who collapsed the sidebar are in the same rail. */
+      .brand .txt, .nav-group > .gl, .nav-item span, .nav-item .badge, .sb-foot .lbl {
+        position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+        clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+      .nav-item { justify-content:center; padding:10px 0; position:relative; }
     }
     @media (max-width:600px) {
       .sidebar { position:fixed; left:0; top:0; transform:translateX(-100%); transition:transform .2s ease; }

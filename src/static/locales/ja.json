@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "検索がリクエスト回数の上限に達しました。しばらくしてから再試行してください。",
   "Could not load the source catalogue.": "ソースカタログを読み込めませんでした。",
   "No sources match these filters.": "これらの絞り込み条件に一致するソースはありません。",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "一致するソースのうち最初の {n} 件を表示しています。カタログの残りを見るには条件を絞り込んでください。"
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "一致するソースのうち最初の {n} 件を表示しています。カタログの残りを見るには条件を絞り込んでください。",
+  "Catalog": "カタログ",
+  "Stated by the source catalog (asserted, not deduced from text).": "ソースカタログによる申告（本文から推定したものではありません）。"
 }

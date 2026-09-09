@@ -3179,5 +3179,7 @@
   "Search has hit its rate limit. Try again later.": "La búsqueda ha alcanzado su límite de solicitudes. Vuelve a intentarlo más tarde.",
   "Could not load the source catalogue.": "No se pudo cargar el catálogo de fuentes.",
   "No sources match these filters.": "Ninguna fuente coincide con estos filtros.",
-  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Mostrando las primeras {n} fuentes coincidentes. Afina los filtros para alcanzar el resto del catálogo."
+  "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Mostrando las primeras {n} fuentes coincidentes. Afina los filtros para alcanzar el resto del catálogo.",
+  "Catalog": "Catálogo",
+  "Stated by the source catalog (asserted, not deduced from text).": "Declarado por el catálogo de fuentes (afirmado, no deducido del texto)."
 }
