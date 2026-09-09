@@ -397,7 +397,10 @@
       <!-- THEME-3 (2026-06-19): analysis-window-per-query — each search/Lead/keyword
            spawns a NAMED, closeable, persisted tab over this one render area (replaces
            the singleton + the retired #corpus-win modal). -->
-      <div id="an-tabstrip" class="an-tabstrip" role="tablist" style="display:none"></div>
+      <!-- role="list", not "tablist": each entry carries its own close button, and a
+           `tab` may not contain a widget (see _anRenderStrip's note — the tablist
+           form was measured raising aria-required-children). -->
+      <div id="an-tabstrip" class="an-tabstrip" role="list" style="display:none"></div>
       <!-- PERSISTENT PROVENANCE HEADER (rulings 15/16, field feedback 2026-08-07).
            When an analysis is opened FROM a Lead, the whole provenance travels with it
            -- the card, its family, the producer, the trigger, the method and the caveat
@@ -1029,6 +1032,18 @@
         <b>Not real-time.</b>
         <span>Every number comes straight from the downloaded file — nothing scraped or guessed.</span></p>
       <div class="row">
+        <!-- dead-ui-004 (2026-09-09): loadIndicesData() is complete, ensureOnline-gated
+             and degrades loudly, and had no trigger — its button was lost in a past
+             restructuring, leaving #idx-status/#idx-verdicts permanently empty. The
+             ledger's dead-code worklist lists the function as an orphan to DELETE;
+             two later audits (gui-test mkt-004, an HONESTY finding, and the
+             2026-09-08 visual audit F11) read the same fact the other way, and they
+             are right: _renderFeedVerdicts has no other entry point, so deleting
+             this would remove the app's ONLY surface for "this official feed
+             refused", which is the opposite of degrading loudly. The button is
+             restored instead. -->
+        <button class="secondary" style="align-self:center" onclick="loadIndicesData(this)"
+                title="Import the index feeds now. Each feed's outcome is reported, including any that refuse.">Refresh</button>
         <div id="idx-status" class="hint" style="align-self:center"></div>
         <div id="idx-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
@@ -1054,6 +1069,9 @@
       <div class="row">
         <div style="flex:1 1 360px"><label>Time range</label>
           <div id="mkt-timescope"></div></div>
+        <!-- dead-ui-004, the commodities half — see the note on the Indices board. -->
+        <button class="secondary" style="align-self:center" onclick="loadMarketData(this)"
+                title="Import every official feed now. Each feed's outcome is reported, including any that refuse.">Refresh</button>
         <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
         <div id="mkt-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
@@ -2260,13 +2278,16 @@
         language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed,
         rate-limited); up to 50 per run.</p>
       <div class="row">
+        <!-- reloadBatchPicker(), not renderBatchPicker(): these filters run on the
+             SERVER now, over the whole catalogue rather than over one 1000-row page
+             (see _biQuery). The call is debounced, so typing is still one request. -->
         <div style="flex:2"><label for="bi-search">Search</label>
-          <input id="bi-search" placeholder="name or domain" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="renderBatchPicker()"></div>
-        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="renderBatchPicker()"></div>
+          <input id="bi-search" placeholder="name or domain" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="reloadBatchPicker()"></div>
         <div><label for="bi-enabled">Show</label>
-          <select id="bi-enabled" onchange="renderBatchPicker()">
+          <select id="bi-enabled" onchange="reloadBatchPicker()">
             <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
           </select></div>
       </div>
@@ -2275,6 +2296,8 @@
         <button class="ghost tiny" onclick="batchSelectAll(false)">Clear</button>
         <span id="bi-count" class="hint"></span>
       </div>
+      <!-- The page ceiling, said out loud only when it is actually in play. -->
+      <div id="bi-capped" class="hint" hidden></div>
       <div id="bi-list" class="bi-list"><div class="muted">Loading sources…</div></div>
       <div class="row" style="margin-top:8px;align-items:center">
         <button onclick="ingestBatch(this)">Ingest selected feeds</button>
@@ -2896,7 +2919,12 @@
     <input id="pal-input" autocomplete="off" spellcheck="false"
            placeholder="Search your data, jump to a tool, run an action…"
            oninput="renderPalette()" onkeydown="palKey(event)">
-    <div class="pal-list" id="pal-list"></div>
+    <!-- a11y-palette-scrollable-region (measured 2026-09-09, axe-core serious, n=1):
+         the results list scrolls (`.pal-list{overflow:auto}`) and its rows are plain
+         divs, so a keyboard-only user had no way to scroll it — the input's ↑/↓ move
+         the SELECTION, which is not the same affordance. tabindex="0" makes the region
+         itself a tab stop that arrow keys scroll, which is the rule's own remedy. -->
+    <div class="pal-list" id="pal-list" tabindex="0"></div>
     <div class="pal-hint muted" style="padding:7px 16px;font-size:11.5px;border-top:1px solid var(--border)"
          title="AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.">Boolean operators work here: AND, OR, NOT, “quoted phrases”.</div>
   </div>

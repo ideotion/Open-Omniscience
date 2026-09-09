@@ -243,29 +243,38 @@ def test_an_unclosed_block_opener_no_longer_costs_a_scan_per_opener(unit):
     assert ratio < 8, f"4x the input cost {ratio:.1f}x the time -- the quadratic scan is back"
 
 
-def test_the_wiki_strip_is_linear_on_the_two_shapes_this_slice_closes():
-    """END-TO-END, and only for what was actually fixed.
+def test_the_wiki_strip_is_linear_on_EVERY_shape_that_reaches_it():
+    """END-TO-END, and now for all of them (2026-09-09).
 
-    ``plain_from_wikitext`` runs seven more patterns after these blocks, and SIX of
-    them carry the same class in a different disguise -- ``OPEN[^X]*CLOSE``, where an
-    opener with no closer makes the character class consume to end-of-document and
-    then backtrack. MEASURED on this function, 100,000 -> 400,000 chars of
-    opener-only spam: ``<[^>]+>`` 0.154s -> 2.381s (15.4x), ``<ref[^>/]*/>`` 1.052s ->
-    16.756s (15.9x), ``[[File...]]`` 1.749s -> 28.035s (16.0x), ``[[t|label]]`` 1.614s
-    -> 26.388s (16.4x), ``[[target]]`` 1.721s -> 27.398s (15.9x), ``[url label]``
-    1.420s -> 22.525s (15.9x). Only ``{{templates}}`` is linear (4.1x), because
-    ``[^{}]*`` cannot cross a brace. Those six are a MEASURED, RECORDED finding, not
-    something this slice fixed: each captures and rewrites rather than removing, so
-    the scanner needs a replacement callback and each rewrite needs its own
-    differential -- its own slice, on the ingest path, not the tail of this one.
+    This test used to claim exactly TWO shapes, because ``plain_from_wikitext``
+    ran seven more patterns after these blocks and SIX carried the same class in a
+    different disguise -- ``OPEN[^X]*CLOSE``, where an opener with no closer makes
+    the character class consume to end-of-document and then backtrack. They were
+    the expensive half, measured 100,000 -> 200,000 chars of opener-only spam at
+    up to 14.9 s -> 59.3 s through the whole strip.
 
-    So this test claims exactly the two shapes that ARE linear end-to-end. The
-    comment shape is excluded BY NAME rather than quietly: its own block strip is
-    linear (the parametrised test above proves it), and a comment-heavy pathological
-    document then meets ``<[^>]+>`` downstream, which is one of the six.
+    All six now go through ``markup_blocks.sub_anchored``, and so does the ``<ref
+    …>`` block OPENER, which was carrying the shape INSIDE the function written to
+    remove it (``strip_blocks`` calls ``.search`` with it) and kept the end-to-end
+    ref shape quadratic after the six substitutions were fixed -- found only
+    because this test was widened rather than trusted.
+
+    Measured after: 59.282 s -> 0.0137 s on the worst shape, and every one of the
+    eight below scales linearly. The comment shape is no longer excluded: its
+    downstream ``<[^>]+>`` is linear now too.
     """
-    for unit in ("Lorem ipsum dolor sit amet. <ref>a citation ",
-                 "Lorem ipsum dolor sit amet. {| class=wikitable "):
+    for unit in (
+        "Lorem ipsum dolor sit amet. <ref>a citation ",
+        "Lorem ipsum dolor sit amet. {| class=wikitable ",
+        "Lorem ipsum dolor sit amet. <!-- a comment ",
+        "Lorem ipsum dolor sit amet. <ref name=a ",
+        "Lorem ipsum dolor sit amet. <a ",
+        "Lorem ipsum dolor sit amet. [[File x ",
+        "Lorem ipsum dolor sit amet. [[a|b ",
+        "Lorem ipsum dolor sit amet. [[a ",
+        "Lorem ipsum dolor sit amet. [https://x y ",
+        "Lorem ipsum dolor sit amet. [https://x ",
+    ):
         ratio = _scaling(plain_from_wikitext, unit, small=50_000)
         assert ratio < 8, (
             f"{unit!r}: 4x the input cost {ratio:.1f}x the time through the whole strip"

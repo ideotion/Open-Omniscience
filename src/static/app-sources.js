@@ -210,9 +210,18 @@
     }
 
     // -- Sources: ingest dropdown + add + seed ------------------------------ //
+    // sources-boot-payload (audit 2026-09-08, frontend half shipped 2026-09-09):
+    // this ran in the boot essentials and pulled 714,399 bytes -- 98.8% of every
+    // boot API byte on the live fixture -- to fill a <select> inside a FOLDED
+    // Settings section nobody had opened. It is now called from _ADV_LOADERS.collect,
+    // on the same "folded must not mean fetched" rule that section already applies
+    // to the scheduler, and it asks for the THREE keys it reads instead of all eight
+    // (301,256 bytes measured, 42.1%). The row COUNT is unchanged -- a projection is
+    // not a cap, so the dropdown still lists every source that has a feed.
     async function loadSources() {
       let sources = [];
-      try { sources = await api("/api/sources"); } catch (e) { toast("Could not load sources: " + e.message, "err"); }
+      try { sources = await api("/api/sources?fields=id,name,rss_url"); }
+      catch (e) { toast("Could not load sources: " + e.message, "err"); }
       const sel = $("ing-source");
       sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
         `<option value="${s.id}">${esc(s.name)}</option>`).join("")
@@ -598,37 +607,93 @@
     }
 
     // -- Batch ingest picker ------------------------------------------------ //
-    const BI = { sources: [], selected: new Set() };
+    // THE FILTERS RUN ON THE SERVER (2026-09-09). They used to run in the browser
+    // over `GET /api/sources/?limit=1000`, whose ceiling IS 1000 — against 3,618
+    // catalogue rows on the live fixture. So 2,618 sources were unreachable through
+    // this picker, and narrowing the filters until nothing was left printed "No
+    // sources match these filters.", a claim about the CATALOGUE made from one page
+    // of it. The route has carried whole-catalogue filters all along ("filtering
+    // happens in SQL BEFORE pagination, so a filter spans the whole catalogue, not
+    // just the first page" — its own docstring); the picker simply never used them.
+    //
+    // The page is still bounded (the route's own ceiling), so the bound is now SAID:
+    // a full page discloses that more may exist and that refining reaches it,
+    // instead of the reader inferring a complete list from a silent one.
+    const _BI_PAGE = 1000;
+    const BI = { sources: [], selected: new Set(), capped: false, failed: false, types: null };
 
-    async function loadBatchPicker() {
+    // The `Type` box is a SUBSTRING match ("stock" finds stock_exchange), which the
+    // server's `types=` cannot express — it matches exactly. Rather than silently
+    // changing what that box means, the substring is resolved against the catalogue's
+    // OWN list of types (the facets endpoint the Sources section already reads) and
+    // the resolved exact values are what gets sent. A substring matching no type at
+    // all is then a true empty answer about the whole catalogue, not about one page.
+    async function _biTypes() {
+      if (BI.types) return BI.types;
       try {
-        BI.sources = await api("/api/sources/?limit=1000");
-        BI.selected = new Set();
-      } catch (e) { BI.sources = []; }
+        const f = await api("/api/sources/facets");
+        BI.types = ((f && f.types) || []).map(x => String(x.key || ""));
+      } catch (_e) { BI.types = []; }
+      return BI.types;
+    }
+
+    async function _biQuery() {
+      const p = new URLSearchParams();
+      const q = ($("bi-search").value || "").trim();
+      const lang = ($("bi-lang").value || "").trim();
+      const country = ($("bi-country").value || "").trim();
+      const type = ($("bi-type").value || "").trim().toLowerCase();
+      const en = $("bi-enabled").value;
+      if (q) p.set("q", q);
+      if (lang) p.set("languages", lang.toLowerCase());
+      if (country) p.set("countries", country.toLowerCase());
+      if (en === "1") p.set("enabled", "true");
+      if (en === "0") p.set("enabled", "false");
+      p.set("limit", String(_BI_PAGE));
+      if (type) {
+        const matched = (await _biTypes()).filter(k => k.toLowerCase().includes(type));
+        if (!matched.length) return null;      // no such type in the catalogue at all
+        p.set("types", matched.join(","));
+      }
+      return p.toString();
+    }
+
+    let _biTimer = null;
+    function reloadBatchPicker() {
+      clearTimeout(_biTimer);
+      _biTimer = setTimeout(() => loadBatchPicker(false), 250);
+    }
+
+    async function loadBatchPicker(reset) {
+      if (reset !== false) BI.selected = new Set();
+      const qs = await _biQuery();
+      if (qs === null) { BI.sources = []; BI.capped = false; BI.failed = false; renderBatchPicker(); return; }
+      try {
+        BI.sources = await api("/api/sources/?" + qs);
+        BI.failed = false;
+      } catch (e) { BI.sources = []; BI.failed = true; }
+      // A full page means the ceiling may have cut the answer short. Reported, never
+      // absorbed: an unsaid bound reads as a complete list.
+      BI.capped = !BI.failed && BI.sources.length >= _BI_PAGE;
       renderBatchPicker();
     }
 
-    function _biFiltered() {
-      const q = ($("bi-search").value || "").trim().toLowerCase();
-      const lang = ($("bi-lang").value || "").trim().toLowerCase();
-      const country = ($("bi-country").value || "").trim().toLowerCase();
-      const type = ($("bi-type").value || "").trim().toLowerCase();
-      const en = $("bi-enabled").value;
-      return BI.sources.filter(s => {
-        if (q && !((s.name||"").toLowerCase().includes(q) || (s.domain||"").toLowerCase().includes(q))) return false;
-        if (lang && (s.language||"").toLowerCase() !== lang) return false;
-        if (country && (s.country||"").toLowerCase() !== country) return false;
-        if (type && !(s.source_type||"").toLowerCase().includes(type)) return false;
-        if (en === "1" && !s.enabled) return false;
-        if (en === "0" && s.enabled) return false;
-        return true;
-      });
-    }
+    // The server has already applied every filter; this stays as the ONE accessor so
+    // renderBatchPicker/batchSelectAll keep reading the same set.
+    function _biFiltered() { return BI.sources; }
 
     function renderBatchPicker() {
       const list = $("bi-list"); if (!list) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = _biFiltered();
-      if (!rows.length) { list.innerHTML = '<div class="muted">No sources match these filters.</div>'; }
+      if (!rows.length) {
+        // A FAILED read and an EMPTY answer are different facts and must not print
+        // as one: the catch used to fall through to "No sources match these
+        // filters.", which reports the catalogue as searched when nothing was read.
+        list.innerHTML = `<div class="muted">${esc(BI.failed
+          ? t("Could not load the source catalogue.")
+          : t("No sources match these filters."))}</div>`;
+      }
       else {
         list.innerHTML = rows.map(s => {
           const feed = !!s.rss_url;
@@ -644,6 +709,17 @@
       }
       const ingestable = rows.filter(s => s.rss_url).length;
       $("bi-count").textContent = `${BI.selected.size} selected · ${ingestable} feed-bearing of ${rows.length} shown`;
+      // The bound, said out loud when it is actually in play.
+      const cap = $("bi-capped");
+      if (cap) {
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+          String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+        cap.textContent = BI.capped
+          ? tf("Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.",
+               {n: rows.length})
+          : "";
+        cap.hidden = !BI.capped;
+      }
     }
 
     function batchToggle(id, on) { on ? BI.selected.add(id) : BI.selected.delete(id); renderBatchPicker(); }

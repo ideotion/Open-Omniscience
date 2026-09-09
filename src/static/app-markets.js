@@ -298,14 +298,61 @@
 
     function _num(n) { return n == null ? "—" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2}); }
 
+    // The indices tile's own compact preview. It stays a 42px tile rather than
+    // becoming a dashChartSvg: the card's CLICK opens the full interactive ooChart
+    // detail (see idxCard), which is where invariant #16's full-resolution reading
+    // lives, and swapping a 300x120 figure into the tile is a layout decision
+    // nobody has taken. Whether the two renderers should finally become one is
+    // recorded in the queue as needing a ruling.
+    //
+    // WHAT IS NOT A DESIGN QUESTION, and is fixed here (2026-09-09): this preview
+    // independently reproduced three things the shared toolkit exists to refuse.
+    // It placed points by INDEX, so a gap in an end-of-day series rendered as an
+    // ordinary step (PRH-31's defect, on a financial board). It drew ONE path
+    // straight through any hole, which is the fabricated measurement the app's own
+    // convention names ("a gap is not a zero"). And it drew a LINE through as few
+    // as two points, which is the interpolation invariant #16 forbids (n < 10
+    // renders as bars, Item Y). All three now come from the SAME helpers the big
+    // renderer uses -- _seriesRuns and _SPARSE_BAR_MAX -- rather than a second
+    // implementation of the same rules.
     function idxSpark(pts, chg) {
       if (!pts || pts.length < 2) return '<div class="idx-spark-empty muted">no series yet</div>';
       const w = 280, h = 42, n = pts.length, vals = pts.map(p => p[1]);
       const min = Math.min(...vals), max = Math.max(...vals), rng = (max - min) || 1;
-      const x = i => (i / (n - 1)) * w, y = v => h - ((v - min) / rng) * (h - 6) - 3;
-      const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+      const y = v => h - ((v - min) / rng) * (h - 6) - 3;
       const col = chg == null ? "var(--muted)" : (chg >= 0 ? "var(--ok)" : "var(--err)");
-      return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;
+      // TRUE time position across the series' own span. An end-of-day index series
+      // skips weekends and holidays by nature, so index placement is not a rounding
+      // error here -- it is the difference between "closed on Monday" and "no gap".
+      const ms = (d) => Date.parse(String(d).length <= 7 ? String(d) + "-01T00:00:00Z"
+                                                         : String(d) + "T00:00:00Z");
+      const t0 = ms(pts[0][0]), t1 = ms(pts[n - 1][0]);
+      const timed = isFinite(t0) && isFinite(t1) && t1 > t0;
+      const X = (p, i) => {
+        if (!timed) return (i / (n - 1)) * w;
+        const m = ms(p[0]);
+        return isFinite(m) ? ((m - t0) / (t1 - t0)) * w : (i / (n - 1)) * w;
+      };
+      if (n < _SPARSE_BAR_MAX) {
+        // Sparse: honest marks at their real dates, never a curve through them.
+        const bw = Math.max(2, Math.min((w / n) * 0.5, 10));
+        const body = pts.map((p, i) => {
+          const cx = X(p, i), by = y(p[1]);
+          const x0 = Math.max(0, cx - bw / 2);
+          const bwc = Math.max(1, Math.min(w, cx + bw / 2) - x0);
+          return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc.toFixed(1)}"`
+               + ` height="${Math.max(0, h - 3 - by).toFixed(1)}" fill="${col}" opacity="0.72"/>`;
+        }).join("");
+        return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${body}</svg>`;
+      }
+      // Dense: one polyline PER RUN, so a hole in the series leaves a hole in the line.
+      const runs = _seriesRuns(pts, {timed: timed, value: (p) => p[1], time: (p) => ms(p[0])});
+      const body = runs.map(run => (run.length > 1
+        ? `<path d="${run.map((i, k) => `${k ? "L" : "M"}${X(pts[i], i).toFixed(1)},${y(pts[i][1]).toFixed(1)}`).join("")}"`
+          + ` fill="none" stroke="${col}" stroke-width="1.5"/>`
+        : `<circle cx="${X(pts[run[0]], run[0]).toFixed(1)}" cy="${y(pts[run[0]][1]).toFixed(1)}" r="1.6" fill="${col}"/>`
+      )).join("");
+      return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${body}</svg>`;
     }
 
     function idxCard(c) {
@@ -1416,7 +1463,10 @@
 
     async function loadMarketConfig() {
       try {
-        const sources = await api("/api/sources");
+        // Three keys, not eight: this picker prints name + domain and posts the id
+        // (255,660 bytes instead of 714,399 on the live fixture). Every row still
+        // comes back -- a projection narrows the COLUMNS, never the rows.
+        const sources = await api("/api/sources?fields=id,name,domain");
         $("mkt-source").innerHTML = sources.map(s =>
           `<option value="${s.id}">${esc(s.name)} (${esc(s.domain)})</option>`).join("")
           || '<option value="">(no sources — add one first)</option>';

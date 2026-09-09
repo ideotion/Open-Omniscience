@@ -415,43 +415,30 @@
      * plausible-looking WRONG set from an unrelated match on the label's own
      * words (Public finance: 19 articles that are not this galaxy's evidence).
      *
-     * The fix resolves the SAME membership the galaxy's own numbers are computed
-     * from (`/api/insights/supergroups`'s `members` — each member's own
-     * normalized term, plus every cross-language form of a ring member's
-     * `ring_members`) and hands that term set to the existing set-algebra
-     * endpoint (`/api/insights/corpus-algebra`, `op=union`) — the SAME resolver
-     * the Keywords-subtab Combine picker already uses via `openAnalysisForIds`
-     * (app-corpus.js's `anCombine`/`anOpenCombined`), never a second, divergent
-     * path. The label shown in the table and the label on the opened tab are the
-     * same string, and now the ARTICLE SET behind it is the one that string's
-     * number was actually computed from.
+     * The first fix resolved the SAME membership the galaxy's numbers come from,
+     * but resolved it HERE: it read `/api/insights/supergroups`' `members` for
+     * each member's normalized term plus a ring member's cross-language forms,
+     * and handed those STRINGS to `corpus-algebra`, which matches
+     * `Keyword.normalized_term` literally.
      *
-     * FAILS CLOSED: a galaxy that cannot be resolved (the supergroups fetch
-     * fails, the id is no longer present, or it has zero member keywords) opens
-     * nothing and a toast names why — never the nearest match.
+     * THAT WAS STILL TWO RESOLVERS, and 2026-09-09 reproduced them disagreeing.
+     * The galaxy's own numbers come from `supergroup_stats.resolve_member_
+     * keyword_ids`, which ALSO resolves a family member's canonical-key variants
+     * — something no list of surface strings can express. On a constructed corpus
+     * (family member "boeing", keyword "boeing's") the ranked table counted two
+     * articles and this click opened one. It was measured latent on the live
+     * corpus only because every member there happens to be a ring member.
+     *
+     * So the resolution moved to where the numbers are computed:
+     * `GET /api/insights/supergroup-articles` runs THAT resolver and returns the
+     * article ids. The table and the set it opens now cannot disagree, because
+     * one function answers both.
+     *
+     * FAILS CLOSED: a galaxy whose membership resolves to no keyword at all
+     * (`keyword_ids === 0`), a 404, or a failed request opens nothing and a toast
+     * names why — never the nearest match. A galaxy that resolves to keywords
+     * with no articles yet is a real, empty answer and opens normally.
      */
-    let _obsSgById = null;   // id -> supergroup row (with real members), fetched once
-    async function _obsLoadSupergroups() {
-      if (_obsSgById) return _obsSgById;
-      const data = await api("/api/insights/supergroups");
-      const byId = {};
-      for (const sg of (data && data.supergroups) || []) byId[sg.id] = sg;
-      _obsSgById = byId;
-      return byId;
-    }
-    function _obsMemberTerms(sg) {
-      const terms = [];
-      const seen = new Set();
-      const add = (term) => { if (term && !seen.has(term)) { seen.add(term); terms.push(term); } };
-      for (const m of (sg && sg.members) || []) {
-        add(m.normalized);
-        for (const rm of m.ring_members || []) {
-          const i = rm.indexOf(":");
-          add(i >= 0 ? rm.slice(i + 1) : rm);
-        }
-      }
-      return terms;
-    }
     async function _obsOpenGalaxy(id, name) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const failClosed = () => toast(
@@ -459,14 +446,9 @@
         "err"
       );
       try {
-        const byId = await _obsLoadSupergroups();
-        const sg = byId[id];
-        const terms = sg ? _obsMemberTerms(sg) : [];
-        if (!terms.length) { failClosed(); return; }
-        const d = await api(
-          "/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(",")) + "&op=union"
-        );
-        openAnalysisForIds((d && d.article_ids) || [], name, {source: "observatory"});
+        const d = await api("/api/insights/supergroup-articles?group_id=" + encodeURIComponent(id));
+        if (!d || !d.keyword_ids) { failClosed(); return; }
+        openAnalysisForIds(d.article_ids || [], name, {source: "observatory"});
       } catch (_e) {
         failClosed();
       }

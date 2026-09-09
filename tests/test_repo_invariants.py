@@ -3289,8 +3289,18 @@ def test_collect_tab_moved_into_settings():
     )
     # The loader runs on section EXPAND, not on subtab select: folded must not mean
     # fetched. _openAdvanced opens the section, so the deep-link still loads it.
-    assert "collect:  () => { loadScheduler(); }" in html, (
-        "expanding Advanced → Collection must run the scheduler's load"
+    # Matched as a CONTAINS over the entry rather than as the exact one-call literal
+    # it used to be: the invariant is "expanding this section runs the scheduler's
+    # load", not "this section loads exactly one thing". The exact form broke on
+    # 2026-09-09 when loadSources() joined it — a correct change (that <select>
+    # lives in THIS fold and used to be filled from the boot essentials, pulling
+    # 714,399 bytes for a folded panel) that an over-tight assertion called a
+    # regression.
+    collect = re.search(r"collect:\s*\(\s*\)\s*=>\s*\{([^}]*)\}", html)
+    assert collect, "the Advanced → Collection loader is gone"
+    assert "loadScheduler()" in collect.group(1), (
+        "expanding Advanced → Collection must run the scheduler's load; the entry "
+        f"reads: {collect.group(0)}"
     )
 
 
@@ -5133,7 +5143,18 @@ def test_supergroup_stats_ui():
     assert "g.dominance" in fn, "row 1: the dominance disclosure must render"
     assert "also_in" in fn, "row 2: cross-group overlap must be disclosed on a member"
     assert "zeroCount" in fn and "with no mentions yet" in fn, "row 7: zero-mention members must collapse"
-    assert "dashChartSvg(g.series" in fn, "S1.5: the sparkline must reuse the shared honest-charts primitive"
+    # Matched as two facts rather than as one adjacency: the call gained a third
+    # argument on 2026-09-09 (PRH-31's calendar axis) and wrapped, so
+    # "dashChartSvg(g.series" stopped being a substring of correct code. What the
+    # invariant means is that the group's own series goes through the shared
+    # primitive — not that the two tokens touch.
+    assert "dashChartSvg(" in fn and "g.series.map(" in fn, (
+        "S1.5: the sparkline must reuse the shared honest-charts primitive"
+    )
+    assert "g.series_window" in fn, (
+        "PRH-31: and it must be drawn on the window the server sliced that series "
+        "against — an index-placed daily series renders day 1 and day 5 adjacent"
+    )
     assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
 
 

@@ -46,10 +46,19 @@ def resolve_member_keyword_ids(
     DISTINCT keyword ids it resolves to.
 
     A FAMILY member (``ring_id`` is ``None``) matches its own normalized term AND
-    its morphological family (via ``canonical_key`` — plural/possessive variants);
-    a RING member matches every one of the ring's cross-language terms (the
-    super-ring model). Small-column queries only (id + normalized_term), never
-    ``keyword_mentions``.
+    its morphological family (via ``canonical_key``); a RING member matches every
+    one of the ring's cross-language terms (the super-ring model). Small-column
+    queries only (id + normalized_term), never ``keyword_mentions``.
+
+    ``canonical_key`` COLLAPSES A TRAILING POSSESSIVE, and nothing else. This
+    docstring said "plural/possessive variants" until 2026-09-09; the plural half
+    was never true of this function — ``families.canonical_key`` calls
+    ``_strip_possessive_token`` on the last token and returns. Plurals are handled
+    elsewhere in the family layer, not here. The claim mattered because it is what
+    a caller reads when deciding whether a term-string path can stand in for this
+    one: it cannot, and the reason is narrower and more specific than the docstring
+    admitted (see ``GET /api/insights/supergroup-articles``, which exists because
+    the Observatory's drill-through was resolving membership the other way).
     """
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
@@ -236,6 +245,29 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
             key = d.isoformat() if hasattr(d, "isoformat") else str(d)
             agg[key] = agg.get(key, 0) + int(c or 0)
     return [{"date": d, "count": c} for d, c in sorted(agg.items())]
+
+
+def series_window(days: int, today: date | None = None) -> dict[str, str]:
+    """The ``[start, end]`` a ``days``-long daily series was drawn over.
+
+    PRH-31: a series that omits its zero days is honest about the DATA and lies
+    about the AXIS as soon as a renderer places points by INDEX -- day 1 and day 5
+    render adjacent, so a reader sees a run where there was a gap. The repair the
+    backlog suggested was zero-FILLING; the renderer already carries the opposite
+    convention on the same surface ("The line breaks where nothing was recorded --
+    a gap is not a zero"), and two conventions for one quantity is how two surfaces
+    come to disagree. So the points are left exactly as they are and the WINDOW
+    travels beside them, which is what the renderer's shared-time-axis mode needs
+    to place each point at its true calendar position.
+
+    It must come from the SERVER, and from the same ``today`` the series used: a
+    client that recomputed ``now - days`` would draw a window one day out whenever
+    the two clocks straddle midnight or sit in different zones, and would silently
+    rescale the axis to the DATA whenever the last observation is older than the
+    window -- hiding exactly the quiet tail a rate chart exists to show.
+    """
+    today = today or date.today()
+    return {"start": (today - timedelta(days=days)).isoformat(), "end": today.isoformat()}
 
 
 def group_rate(

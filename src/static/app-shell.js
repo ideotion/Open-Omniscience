@@ -433,7 +433,10 @@
     // cosmetic here: the source catalog can hold ~46k rows, and loading all three eagerly
     // would make opening Advanced the most expensive click in Settings.
     const _ADV_LOADERS = {
-      collect:  () => { loadScheduler(); },
+      // loadSources() fills #ing-source, which lives in THIS section -- it used to
+      // run in the boot essentials and pull the whole catalogue for a <select>
+      // nobody had opened yet (2026-09-09).
+      collect:  () => { loadScheduler(); loadSources(); },
       // The system prompts and the operator's own extractors (maintainer 2026-08-09:
       // "move the entire Behaviour & prompts section to an AI section in the advanced
       // subtab"). They are a developer surface -- four full prompt textareas and a CRUD
@@ -450,7 +453,12 @@
         loadLlmPrompts(); loadCustomPrompts();
         syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle();
       },
-      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); },
+      // loadUnmanagedLanguages() is listed EXPLICITLY even though loadSources() also
+      // calls it: its panel (#unmanaged-lang-panel) lives in THIS section, and once
+      // loadSources moved off the boot path the only thing that ever asked for that
+      // panel was a section the reader may never expand. A panel that used to appear
+      // must not stop appearing because its data now rides on a different fold.
+      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadUnmanagedLanguages(); },
       // SAFETY, folded in from its retired subtab (rulings 26/42). Its loaders came WITH
       // it: on the subtab they ran on select, and here they run on EXPAND -- folded must
       // not mean fetched. loadAtRestState is a loopback read of the store's encryption

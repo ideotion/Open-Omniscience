@@ -143,8 +143,13 @@
       // one-point card ended up drawing an axis at all.
       const pts = (ind.series || []).filter(p => p.value != null);
       const spark = pts.length > 1
+        // PRH-31: a missing YEAR is the commonest gap in an official series, and
+        // index placement renders 2010, 2015 and 2020 evenly spaced. The series'
+        // own first and last year is the true axis.
         ? dashChartSvg(pts.map(p => ({observed_on: p.year + "-01-01", price: p.value})),
-                       ind.unit || "", {nUnit: t("years")})
+                       ind.unit || "", {nUnit: t("years"),
+                                        t0: pts[0].year + "-01-01",
+                                        t1: pts[pts.length - 1].year + "-01-01"})
         : "";
       // A definition where the number reads as an error and is not one. Rides the
       // #oo-tip hover convention (invariant #17), which marks the element for free.

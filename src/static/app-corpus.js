@@ -159,31 +159,43 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = document.getElementById(hostId);
       if (!host) return;
-      let cs, cat;
+      let cs;
       try {
         // corpus-sources keys on the FTS query (like Sentiment's framing call),
         // so we point it at this window's term to get THIS corpus's sources.
-        [cs, cat] = await Promise.all([
-          api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`),
-          api(`/api/sources/?limit=1000`).catch(() => []),
-        ]);
+        // THE SECOND FETCH IS GONE (2026-09-09). This used to merge the catalog
+        // metadata in on the client from `/api/sources/?limit=1000`, whose ceiling
+        // IS 1000 — against 3,618 catalogue rows on the live fixture. A corpus
+        // source sorting past that page silently rendered "no catalog metadata on
+        // file", which asserts something about the catalogue rather than admitting
+        // only part of it was read. `corpus_sources()` already joins Source and
+        // groups by Source.id, so it now carries those fields itself: what is shown
+        // comes from the row that was actually read, and cannot be truncated.
+        //
+        // CORRECTION, same day, and it matters for how this fix should be read:
+        // THIS FUNCTION IS UNREACHABLE. `renderCorpusSources` is called only by
+        // `corpusTab`, which is wired only to the RETIRED `#corpus-win` modal that
+        // nothing opens (see index.html's retirement note). The commit that made
+        // this change described it as fixing "the analysis window's Sources
+        // sub-tab" — it did not; that surface is `app-analysis.js`'s `an-sources`,
+        // which reads the same endpoint and never fetched the catalogue at all.
+        // So the truncation repaired here was real in the SOURCE and could not be
+        // reached at RUNTIME. It is kept because the code is kept, and because the
+        // pending browser-verified deletion pass should delete a correct function
+        // rather than inherit a defect. The live half of that finding is the batch
+        // picker, which is reachable and was measured before and after.
+        cs = await api(`/api/insights/corpus-sources?query=${encodeURIComponent(term)}&limit=200`);
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       const rows = (cs && cs.sources) || [];
       if (!rows.length) {
         host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`;
         return;
       }
-      // Index the catalog metadata by domain (+ name fallback) for client-side merge.
-      const byDom = {}, byName = {};
-      (Array.isArray(cat) ? cat : []).forEach(s => {
-        if (s.domain) byDom[s.domain.toLowerCase()] = s;
-        if (s.name) byName[s.name] = s;
-      });
       const fmt = (n) => (n || 0).toLocaleString();
       const chips = (arr) => (arr || []).filter(Boolean)
         .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
       const cards = rows.map(r => {
-        const meta = byDom[(r.domain || "").toLowerCase()] || byName[r.name] || {};
+        const meta = r;   // the catalog facts now travel on the row itself
         const facts = [];
         if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(ooRegionName(meta.country, meta.country.toUpperCase()))}`);
         if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
@@ -1127,12 +1139,16 @@
             // {date,count} -> dashChartSvg's {observed_on,price}; it handles the empty
             // + sparse cases honestly (no fabricated points).
             const pts = x.series.map(p => ({observed_on: p.date, price: p.count}));
+            // PRH-31: place each day at its TRUE position on the window the server
+            // drew, so an omitted zero day reads as the gap it is.
+            const axis = w.series_window
+              ? {t0: w.series_window.start, t1: w.series_window.end} : {};
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
               <div style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent} recent`)}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
-              </div>${dashChartSvg(pts, "")}</div>`;
+              </div>${dashChartSvg(pts, "", axis)}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
           const restList = rest.length

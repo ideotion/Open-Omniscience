@@ -894,13 +894,13 @@ def ring_country_article_ids(
 
     ring = ring_meta(ring_id)
     if ring is None:
-        return {"ring_id": ring_id, "found": False, "article_ids": [], "total": 0}
+        return {"ring_id": ring_id, "found": False, "article_ids": [], "returned_count": 0}
 
     kw_ids = resolve_group_keyword_ids(session, ring_id)
     if not kw_ids:
         return {
             "ring_id": ring_id, "found": True, "country": country,
-            "article_ids": [], "total": 0, "bounded": False,
+            "article_ids": [], "returned_count": 0, "bounded": False,
             "caveat": "No indexed keywords in this group yet for your corpus.",
         }
 
@@ -923,12 +923,21 @@ def ring_country_article_ids(
     if bounded:
         ids = ids[:limit]
     return {
+        # ``returned_count``, not ``total`` (renamed 2026-09-09). The query asks for
+        # ``limit + 1`` rows purely to LEARN whether it was bounded, then truncates —
+        # so once ``bounded`` is true the real total is a number this function never
+        # computed. Calling the truncated length "total" reported min(real, limit) as
+        # if it were the answer, which is the silent-wrong-number shape the honesty
+        # rules exist to refuse. No total is invented for the bounded case: a count
+        # nobody measured is omitted rather than guessed, the same discipline
+        # weights_pin applies when it omits a comparison nothing compared.
         "ring_id": ring_id, "found": True, "country": country,
-        "article_ids": ids, "total": len(ids), "bounded": bounded,
+        "article_ids": ids, "returned_count": len(ids), "bounded": bounded,
         "method": (
             "The exact articles behind this (group, country) cell of the country "
             "breakdown — same keyword resolution and Source-country join as the "
-            "summary table."
+            "summary table. ``returned_count`` is how many ids came back; when "
+            "``bounded`` is true that is a floor on the real number, not the total."
         ),
     }
 
@@ -1172,7 +1181,18 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     per source, the article VOLUME, mean VADER tone, and the TIMING span (first/last
     published) -- so different angles by volume/tone/timing are visible side by side.
     Counts + dates are exact; mean tone inherits the VADER English-only caveat. NO
-    ranking, NO verdict -- presence here is coverage, not credibility."""
+    ranking, NO verdict -- presence here is coverage, not credibility.
+
+    THE CATALOG FACTS RIDE ALONG (2026-09-09), and the reason is a correctness one
+    rather than a saving. The Sources sub-tab used to merge them in on the client
+    from ``GET /api/sources/?limit=1000`` -- a route whose ceiling IS 1000 against a
+    3,618-row catalogue on the live fixture -- so a corpus source that happened to
+    sort past the first page rendered "no catalog metadata on file", which is a
+    positive claim about the catalogue rather than an admission that only part of it
+    was read. This query ALREADY joins ``Source`` and groups by ``Source.id``, so the
+    fields cost nothing extra and cannot be truncated: every source in the result is
+    a source that was actually read. Two-class honesty is unchanged -- every field
+    here is catalog/source-ASSERTED, never text-deduced."""
     if not article_ids:
         return {"count": 0, "sources": []}
     rows = (
@@ -1182,6 +1202,7 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
             func.avg(Article.sentiment_score),
             func.min(Article.published_at),
             func.max(Article.published_at),
+            Source.country, Source.region, Source.language, Source.source_type, Source.tags,
         )
         .join(Source, Source.id == Article.source_id)
         .filter(Article.id.in_(article_ids))
@@ -1198,8 +1219,16 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
             "mean_tone": round(float(avg), 3) if avg is not None else None,
             "first": fp.isoformat() if fp else None,
             "last": lp.isoformat() if lp else None,
+            # Catalog-asserted metadata. A key is present with a null/[] value when
+            # the catalogue holds nothing for it -- "on file and empty" and "we never
+            # looked" must not print as one thing, which is the defect this replaces.
+            "country": country,
+            "region": region,
+            "language": language,
+            "source_type": stype,
+            "tags": [t.strip() for t in (tags or "").split(",") if t.strip()],
         }
-        for name, dom, n, avg, fp, lp in rows
+        for name, dom, n, avg, fp, lp, country, region, language, stype, tags in rows
     ]
     return {
         "count": len(sources),
@@ -1797,7 +1826,7 @@ _TREND_WINDOWS: tuple[tuple[str, int, int], ...] = (
 
 
 def _window_daily_series(
-    session, term: str, *, days: int, country: str | None = None
+    session, term: str, *, days: int, country: str | None = None, today: date | None = None
 ) -> list[dict]:
     """Daily mention-count series for ``term`` over the last ``days`` days.
 
@@ -1805,9 +1834,14 @@ def _window_daily_series(
     chart exactly, then slices its full-history points to this window's date range
     ``[today - days, today]``. Counts only, no interpolation: only days that carry
     mentions appear (zero-count days are omitted, exactly as :func:`trend` does).
+
+    ``today`` is injectable so a caller can slice the series and describe its axis
+    (``supergroup_stats.series_window``) against ONE date. Two unsynchronised calls
+    to ``date.today()`` either side of midnight describe different windows, and the
+    chart would then be drawn on an axis its own points do not belong to.
     """
     day_keys = trend(session, term, bucket="day", country=country)["points"]
-    today = date.today()
+    today = today or date.today()
     lo = (today - timedelta(days=days)).isoformat()
     hi = today.isoformat()
     # ISO date strings (YYYY-MM-DD) sort chronologically, so a string range is exact.
@@ -1875,28 +1909,44 @@ def trending_windows(
             served_basis = res["basis"]
         terms = res["terms"]
         if series_top > 0:
+            # ONE `today` for every series in this window AND for the axis they are
+            # drawn on — see _window_daily_series' note on the midnight straddle.
+            series_today = date.today()
             for t in terms[:series_top]:
                 if t.get("ring_id"):
                     # A ring's series = the sum of its members' daily series (the
                     # merged "ring:<id>" normalized doesn't resolve to a keyword).
                     t["series"] = _merge_daily_series(
-                        _window_daily_series(session, m["normalized"], days=wdays, country=country)
+                        _window_daily_series(session, m["normalized"], days=wdays,
+                                             country=country, today=series_today)
                         for m in t.get("members", [])
                     )
                 else:
                     t["series"] = _window_daily_series(
-                        session, t["normalized"], days=wdays, country=country
+                        session, t["normalized"], days=wdays, country=country,
+                        today=series_today,
                     )
-        windows.append(
-            {
-                "label": label,
-                "window_days": wdays,
-                "baseline_days": bdays,
-                "terms": terms,
-                "count": res["count"],
-                "scanned": res["scanned"],
-            }
-        )
+        window_row: dict[str, Any] = {
+            "label": label,
+            "window_days": wdays,
+            "baseline_days": bdays,
+            "terms": terms,
+            "count": res["count"],
+            "scanned": res["scanned"],
+        }
+        if series_top > 0:
+            # PRH-31: the AXIS the series above was drawn on. The points omit their
+            # zero days (honest about the data), which a renderer placing points by
+            # INDEX turns into a lie about time — day 1 and day 5 rendered adjacent.
+            # The window has to come from here rather than be recomputed in the
+            # browser: it must match the same `date.today()` `_window_daily_series`
+            # sliced with, and it must survive the case where the newest observation
+            # is older than the window, which is exactly when an axis fitted to the
+            # data hides the quiet tail.
+            from src.analytics.supergroup_stats import series_window
+
+            window_row["series_window"] = series_window(wdays, today=series_today)
+        windows.append(window_row)
     out: dict[str, Any] = {
         "windows": windows,
         "method": (

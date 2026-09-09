@@ -894,6 +894,38 @@
       }
       const variants = (e.date_variants && e.date_variants.length > 1)
         ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
+      // agenda-span-display (2026-09-09). `_span_for`, `_span_end_date`,
+      // `_in_active_range` and the origin_year/until_year fields shipped with their
+      // own test file on 2026-07-31 and REACHED NO SURFACE: app-agenda.js read
+      // neither `e.span` nor the year range, so a month-span event ("Dry January",
+      // a multi-day summit) rendered as a single START DAY and a recurrence that
+      // has ended simply stopped appearing with nothing said. The catalogue had the
+      // answer and the reader could not see it.
+      //
+      // ASSERTED, NOT DEDUCED: every value here comes from the event catalogue's
+      // own explicitly-stated fields — `_span_for` is built "only from explicitly
+      // stated start+end, never guessed" — so this is the same catalogue-asserted
+      // class the source facts carry, and the hover says so.
+      //
+      // `until_year` is worded about the LISTING rather than the world: the
+      // catalogue suppresses occurrences past that year, which is a fact about what
+      // this app will show, not a claim that the event will never happen again.
+      const tfa = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
+      const catalogNote = esc(T("Stated by the event catalog (asserted, not deduced)."));
+      let span = "";
+      if (e.span && e.span.start && e.span.end) {
+        const text = e.span.active
+          ? tfa("On now, ends {end}", {end: e.span.end})
+          : tfa("Runs {start} – {end}", {start: e.span.start, end: e.span.end});
+        span = ` <span class="pill${e.span.active ? " ok" : ""}" title="${catalogNote}">${esc(text)}</span>`;
+      }
+      const years = [
+        e.origin_year != null ? tfa("since {year}", {year: e.origin_year}) : null,
+        e.until_year != null ? tfa("nothing listed after {year}", {year: e.until_year}) : null,
+      ].filter(Boolean).join(" · ");
+      const yearNote = years
+        ? ` <span class="muted" title="${catalogNote}">· ${esc(years)}</span>` : "";
       const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
       // The event title opens the unified analysis window over this event in your
       // corpus (maintainer 2026-06-16: agenda content "highly visible and clickable").
@@ -904,7 +936,7 @@
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
       const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();${openExpr}">${esc(e.title)}</b>`;
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}${prov}</div>
+        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}</div>
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }

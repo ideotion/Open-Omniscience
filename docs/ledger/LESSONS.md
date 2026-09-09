@@ -7616,3 +7616,164 @@
   had only ever had one reason to fire. Widening a condition means auditing every message that explains
   it. (3) Both the fix and the message now have their own forced-failure probes, because a branch that
   cannot be shown to fire is indistinguishable from dead code.
+
+- **A GUARD THAT ASSERTS OVER A WHOLE OBJECT LITERAL PASSES ON THE COMMENT — AND ON THE WRONG KEY
+  (2026-09-09).** A test read `_ADV_LOADERS` whole and asserted `"loadSources()" in loaders`. Deleting
+  the call left the guard green, because the comment ABOVE the call still said the word — the exact
+  family `js_source_helper`'s own docstring records, and the reason `strip_comments` exists. But the
+  second half is worse and is not in that docstring: the whole-literal read would ALSO have passed with
+  the call moved into the WRONG ENTRY, which is precisely the failure the test existed to catch (a
+  loader in the `sources` fold does not open the `collect` fold). Both mutants survived the first
+  attempt. **Slice to the one entry you are claiming about, strip comments, and mutate the wrong-place
+  case as well as the missing case** — "present somewhere in this literal" is a much weaker claim than
+  it reads as.
+
+- **A CONSTANT THAT APPEARS ON BOTH SIDES OF AN ASSERTION IS NOT PINNED BY IT (2026-09-09).** The VACUUM
+  preflight's whole safety argument is the number 2.0 — SQLite writes a complete second copy of the
+  database before swapping it in. The test asserted `needed_bytes == db_bytes * VACUUM_HEADROOM`, which
+  holds for *any* value of the constant, **including 1.0**, the value that says the rebuild needs no room
+  of its own. Dropping it to 1.0 passed every other test in the file. The repair is behavioural and
+  comes in a PAIR: a volume with room for the file but not for the copy must be REFUSED, and ample space
+  must still be ACCEPTED — otherwise a headroom raised until nothing ever passes satisfies the first
+  test while breaking every real vacuum. **When a constant carries the argument, assert the behaviour on
+  both sides of it, never the arithmetic that contains it.**
+
+- **`display:none` HIDES FROM THE SCREEN READER TOO, AND AN ICON RAIL IS EXACTLY WHERE THAT BITES
+  (2026-09-09).** The sidebar's rail hid every nav label with `display:none`. Those labels are the ONLY
+  accessible name each nav button has — no `aria-label`, no `title` — so the app's entire primary
+  navigation announced as six unnamed buttons, `button-name` CRITICAL. The page's one level-1 heading
+  lives in the same hidden container, so one rule produced two findings. Hide a label VISUALLY (the
+  `.sr-only` clip) and it keeps its name. **Clip rather than `aria-label`**: an aria-label is a second
+  copy of every tab name, in twelve locales, that the i18n walker does not maintain, so it drifts.
+
+- **WIDENING A SWEEP FINDS WHAT DEEPENING IT CANNOT — AND A "RESPONSIVE" DEFECT IS RARELY WIDTH-ONLY
+  (2026-09-09).** Ten surfaces measured ZERO axe violations at 1440×900. The identical run at 768×1024
+  reported a CRITICAL on every one of them. Before concluding a class is clean, run the same instrument
+  at the other breakpoints — the cost is minutes and the finding was invisible otherwise. And do not
+  file it as a tablet bug: the same rail is applied by `html[data-sidebar="collapsed"]` at ANY width, and
+  collapsing the sidebar is a first-class documented affordance, so a desktop reader who used it was in
+  the same rail. **Ask what else turns the state on before scoping the fix to the viewport that revealed
+  it.**
+
+- **AN "ORPHAN TO DELETE" CAN BE AN "ORPHAN TO RE-TRIGGER" — ASK WHAT IT IS THE ONLY PATH TO
+  (2026-09-09).** The dead-code worklist listed `loadIndicesData`/`loadMarketData` as unreferenced
+  functions to remove. Two later audits, one filed under HONESTY, said restore their buttons instead.
+  The deciding fact is not which record is newer: `_renderFeedVerdicts` has **no other entry point**, so
+  deleting them would have removed the app's only surface for "this official feed refused" — the exact
+  opposite of degrading loudly. **Before deleting unreachable code, grep what it uniquely reaches.**
+  Unreachable is a statement about callers, not about value.
+
+- **A CONSENT-GATE CHECK AGAINST AN ALREADY-ONLINE FIXTURE PROVES NOTHING (2026-09-09).** The audit
+  harness boots with `OO_NO_SCHEDULER=1`, and the boot-time kill-switch activation lives inside the
+  `OO_NO_SCHEDULER != 1` block — so that instance starts ONLINE, `ensureOnline` returns true immediately,
+  and the popup never appears. A first pass read that silence as "no consent popup" and nearly filed it
+  either as a defect or as a pass. **Engage airplane mode explicitly before asserting anything about a
+  gate**, and state which state the observation was made in.
+
+- **A FIX IN UNREACHABLE CODE IS A SOURCE FIX, NOT A LIVE ONE — AND SAYING WHICH IS PART OF THE FIX
+  (2026-09-09).** A truncation defect was repaired in `renderCorpusSources` and the commit described it
+  as fixing "the analysis window's Sources sub-tab". It is not that surface: the function is reached only
+  through the retired `#corpus-win` modal that nothing opens. The repair was real in the source and
+  unreachable at runtime. **Grep the call chain to a live entry point before describing what a fix
+  changes for a user.** The correction paid for itself — checking the live surface found that the
+  window claimed to be a "strict superset" of the retired modal and had silently dropped one of its
+  columns.
+
+- **A FIXTURE THAT WRITES ROWS THE READ PATH DOES NOT READ IS AN UNFAITHFUL CORPUS (2026-09-09).** A test
+  corpus inserted `keyword_mentions` directly and the ranked table came back with **0 mentions** beside a
+  correctly-resolved pair of keywords. The table reads the DENORMALISED `Keyword.mention_count` counters
+  the app maintains at index time, not the mention rows. That surprise was useful twice: it made the
+  fixture faithful, and it narrowed an over-wide claim — the endpoint had said the table and the set it
+  opens "cannot disagree", when what is guaranteed is MEMBERSHIP; the counts are a separate store with
+  their own freshness envelope. **When a fixture's numbers come out wrong, suspect the read path before
+  the write.**
+
+- **THE ENGINE BINDS ONCE PER PROCESS, SO A FUNCTION-SCOPED FIXTURE THAT RE-POINTS `OO_DATA_DIR` GETS THE
+  FIRST STORE (2026-09-09).** Two such fixtures in one file: the second setup hit `UNIQUE constraint
+  failed: sources.domain`, and its half-flushed session then left the single-writer write gate HELD,
+  which `conftest`'s own guard reports as "would hang the next writer". Make store-building fixtures
+  **module-scoped and idempotent** (look rows up before creating them), and close the session in a
+  `finally`.
+
+- **TWO RESOLVERS FOR ONE QUANTITY DIVERGE EVEN WHEN THEY AGREE TODAY (2026-09-09).** The Observatory's
+  drill-through resolved a galaxy's membership from term STRINGS while the galaxy's own numbers came from
+  an id resolver that also matches a family member's `canonical_key` variants. On the live corpus they
+  agreed on every super-group — because every member there happens to be a ring member, so the family
+  branch never fires. That is what made the defect latent, **not what made it safe**. A two-article
+  corpus with a possessive variant reproduces it in one query. **When a "measured latent" divergence has
+  a construction that reproduces it, the honest close is to remove the second resolver, and the guard
+  must assert the two really do disagree on its fixture before asserting which one is right** — otherwise
+  it passes vacuously on every corpus where they agree.
+
+- **A CHARACTER-CLASS CAPTURE SILENTLY SKIPS THE MALFORMED VALUE IT WAS MEANT TO CATCH (2026-09-09).**
+  A guard sampled chart coordinates with `matchAll(/<rect x="([0-9.]+)"/g)` and then asserted every
+  sample was finite. `x="NaN"` does not match that class, so the bad mark **dropped out of the sample**
+  and the assertion passed over the remaining good ones. The mutation that removes a per-point date
+  fallback — turning one mark's x into `NaN`, which a browser then silently declines to draw — survived
+  **twice** on this blindness before the capture was widened to `([^"]*)`. **A guard must be able to SEE
+  the value it rejects**: capture permissively and validate explicitly, never let the pattern do the
+  validating. The same shape hides any "unparseable" case behind a "well-formed" regex.
+
+- **A SECOND RENDERER RE-DERIVES THE RULES, AND GETS THEM WRONG — SO SHARE THE RULES EVEN WHEN YOU KEEP
+  TWO RENDERERS (2026-09-09).** The indices tile's 42px `idxSpark` sat beside `dashChartSvg` and had
+  independently reproduced all three things the shared toolkit exists to refuse: index placement (on a
+  board whose end-of-day series skip weekends *by nature*, so it is the difference between "closed on
+  Monday" and "no gap"), one path drawn straight through a hole, and a line through as few as two points.
+  Whether the two renderers should become one is a LAYOUT decision — the tile is deliberately small and
+  the card's click opens the full interactive chart — but the honesty rules are not. **Invariant #16's
+  "ONE toolkit" is not about the number of functions; it is that the rules must not be re-derived per
+  surface.** Point the second renderer at the same helpers (`_seriesRuns`, `_SPARSE_BAR_MAX`) and leave
+  the layout question to the maintainer.
+
+- **A SOURCE-GREP GUARD CANNOT SEE A FALSY-BUT-STATED VALUE — DRIVE THE FUNCTION (2026-09-09).** The
+  agenda's new span/year rendering was guarded by six assertions over `agRow`'s source, and they killed
+  five of six mutants. The two they could not reach were behavioural: `origin_year != null` degraded to
+  `if (e.origin_year)` still contains every substring the grep looks for, and so does a `join(" · ")`
+  that leaves a dangling separator when one half of the range is absent. A node suite that EXTRACTS the
+  shipped function by name and EXECUTES it caught both in one line each. **The rule: guard the source for
+  what must stay present, and drive the function for what must be TRUE.** The two are different tests and
+  neither substitutes for the other — the grep survives a browser CI cannot run, and the drive survives a
+  refactor that keeps every keyword.
+
+- **SHIPPING A DISPLAY FOR DATA NOBODY HAS ENTERED IS HALF A FIX, AND THE HALF MUST BE NAMED
+  (2026-09-09).** `catalog.py` computed month-spans and `origin_year`/`until_year` for six weeks with its
+  own test file while `agRow` read none of it. Wiring the display took an hour; then
+  `grep -c "end_month\|origin_year\|until_year" configs/world_events.yml` returned **0** — no shipped
+  event exercises any of it, so the surface renders nothing today. The temptation is to add a plausible
+  entry ("Dry January runs 01-01 to 01-31, held since 2013") and call the item closed. That is inventing
+  sourced facts, which is the thing this project refuses everywhere else. **Ship the code half, then
+  record the content half as blocked on RESEARCH rather than on code, and say in the ledger row that the
+  improvement is not yet visible.** A row that reads "shipped" over an unexercised surface is how a future
+  session comes to believe a feature works.
+
+- **REASONING ALREADY DONE DOES NOT TRANSFER ITSELF TO THE NEXT LINE — THE DIFFERENTIAL IS WHAT
+  CATCHES IT (2026-09-09).** Six wikitext patterns got a linear scan whose skip rule is sound only
+  for families whose body cannot cross the skip target. The docstring for `[url label]` already
+  spelled out, with a counterexample, why `\S+` breaks that: it crosses `]` freely, so a match can
+  END past the first `]` after its opener. The line directly below it — `[url]`, the same `\S+`, the
+  same `]` — was written with the strong rule anyway. No amount of re-reading found it; a randomised
+  differential over a few thousand generated documents found it in seconds, on
+  `"[https:// [https://]] "`, where the skip lands past a real match and it is silently lost.
+  **When a change's correctness rests on a per-case argument, write the cases down AND generate
+  inputs — the argument you already made is exactly the one you will stop re-checking.**
+
+- **A FIX INSIDE THE MODULE WRITTEN TO PREVENT THAT FIX'S PROBLEM (2026-09-09).** After all six
+  quadratic substitutions in `plain_from_wikitext` were linear, the `<ref>` shape was still
+  quadratic end to end. The cause was `strip_blocks` — the linear block scanner built two days
+  earlier *specifically* to kill this shape — searching with the OPENER pattern `<ref[^>]*>`, which
+  is the shape. `re.Pattern.search` carries the same cliff as `re.Pattern.sub`, for the same reason,
+  and a scanner that takes a regex as a parameter inherits whatever cliff that regex has. It was
+  found only because the end-to-end linearity test was WIDENED from the two shapes it used to claim
+  to all ten that reach the function; the narrow test was green throughout. **A test that asserts a
+  property for the cases you fixed will not tell you about the case you did not think of — widen
+  the property to everything that reaches the code, and let it fail.**
+
+- **A CHEAPER ANCHOR CAN BE A CORRECT ANCHOR AND STILL BREAK THE SKIP (2026-09-09).** The linear
+  driver needs a cheap prefix that marks every position the real pattern could start at. `[[` marks
+  every start of `[[File…]]`, is a literal (twice as fast as a compiled regex through `str.find`),
+  and is WRONG: with `[[` the attempt fails at the WORD rather than at the closer, and the skip rule
+  is licensed by a failure at the CLOSER. `"[[x[[File a]]"` then loses a real match. **The
+  precondition is "the anchor IS the pattern's fixed prefix", which is strictly stronger than "the
+  anchor marks every start" — and the weaker reading is the one that looks obviously right while
+  someone is optimising.** Kept as a named test with the counterexample, because the next
+  performance pass will reach for exactly that change.

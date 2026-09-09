@@ -383,9 +383,15 @@
       // apply), the real unit on the axis, and an n= that says what it counts.
       const body = flat
         ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
+        // PRH-31: a recorded metric can miss days (the recorder was not running),
+        // and an index-placed chart renders those days adjacent. The series' own
+        // first and last stamps are the honest axis here — this endpoint states no
+        // window of its own, so inventing one would be worse than using the span
+        // the data actually covers.
         : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})),
                        t(LIB_METRIC_UNIT_KEYS[metric] || ""),
                        {zeroBase: true, neutral: true,
+                        t0: series[0] && series[0].t, t1: series[series.length - 1] && series[series.length - 1].t,
                         nUnit: t(LIB_METRIC_N_UNIT_KEYS[metric] || LIB_DEFAULT_N_UNIT)});
       const began = d.recording_began_at
         ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`

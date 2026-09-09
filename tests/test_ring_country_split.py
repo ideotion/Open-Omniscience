@@ -185,14 +185,22 @@ def test_ring_country_article_ids_bounded_and_disclosed(db, monkeypatch):
     for i in range(1, 6):
         _add_kw_mention(db, term="alpha", language="en", source=us, n=i)
 
+    # `returned_count`, not `total` (renamed 2026-09-09): the query asks for
+    # limit + 1 rows only to LEARN that it was bounded, so once `bounded` is true
+    # the real total is a number this function never computed. The old name
+    # reported min(real, limit) as if it were the answer.
     out = q.ring_country_article_ids(db, ring_id="testconcept", country="us", limit=3)
     assert out["bounded"] is True
-    assert out["total"] == 3
+    assert out["returned_count"] == 3
     assert len(out["article_ids"]) == 3
+    assert "total" not in out, (
+        "a bounded answer must not carry a field named `total` at all -- omitting a "
+        "count nobody measured is the point of the rename"
+    )
 
     out_full = q.ring_country_article_ids(db, ring_id="testconcept", country="us", limit=100)
     assert out_full["bounded"] is False
-    assert out_full["total"] == 5
+    assert out_full["returned_count"] == 5
 
 
 # --------------------------------------------------------------------------- #

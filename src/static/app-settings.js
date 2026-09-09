@@ -111,8 +111,17 @@
     function mdToHtml(md) {
       const fences = [];
       const headingIds = new Map(); // per-document dedupe: repeat text -> slug, slug-1, slug-2...
+      // a11y-help-scrollable-region: `.prose pre` and `.prose table` are declared
+      // `overflow-x:auto`, and neither holds a focusable child, so a keyboard-only
+      // reader could not scroll a wide code block or table at all — axe-core's
+      // scrollable-region-focusable, serious. Measured 2026-09-09 across the eight
+      // Help documents: 11 nodes (user-manual 3 · quickstart 6 · roadmap 2), every
+      // one a <pre>. `tabindex="0"` is the rule's own remedy: the region becomes a
+      // tab stop that arrow keys then scroll. Applied to <table> too — it carries
+      // the same `overflow-x:auto` and only escapes the finding today because no
+      // shipped doc has a table wide enough to overflow.
       md = md.replace(/```([\s\S]*?)```/g, (_, code) =>
-        ` F${fences.push(`<pre><code>${esc(code.replace(/^\n/, ""))}</code></pre>`) - 1} `);
+        ` F${fences.push(`<pre tabindex="0"><code>${esc(code.replace(/^\n/, ""))}</code></pre>`) - 1} `);
       const inline = (t) => esc(t)
         .replace(/`([^`]+)`/g, "<code>$1</code>")
         .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -154,7 +163,7 @@
           while (i < lines.length && lines[i].includes("|") && !/^\s*$/.test(lines[i])) {
             body += "<tr>" + cells(lines[i]).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>"; i++;
           }
-          out.push(`<table><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`);
+          out.push(`<table tabindex="0"><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`);
           continue;
         }
         if (/^\s*>\s?/.test(ln)) { flushPara(para); para = [];

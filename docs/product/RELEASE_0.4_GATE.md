@@ -256,6 +256,7 @@ The `0.3` gate's own log is the format.
 | 2026-09-07 | Board created from `RELEASE_0.3_GATE.md` §5. Rows A/B/C carried under their existing rulings; D/E/F proposed | session |
 | 2026-09-07 | **Row D BUILT** — `GET /api/diagnostics/soak-window` + the `soak-window.json` bundle member. It adds no sampler: it composes the durable readings that already existed and states, per block, the window it actually read. The row stays open because *built* is not *read* — it closes on one report from a run of ≥ 72 h | session |
 | 2026-09-09 | **Row F ADVANCED, not closed** — the live visual audit + fix pass closed two of its three open items (the 12-locale sweep is done; honesty rule 9 ran as three adversarial re-verifiers rather than one screenshot re-read). The Gecko/AppVM bar is untouched and every stamp still reads "awaiting human UX pass" | session |
+| 2026-09-09 | **Row F ADVANCED again, and the browser bar is now measured at three widths** — the open-queue burn-down swept axe-core at 1440×900, 768×1024 and 390×844 across every main surface, the palette, the analysis window, `/tasks` and all eight Help documents, and closed every finding (the 768 sweep found a CRITICAL that the 1440 sweep could not see: the icon rail hid every nav label from the accessibility tree). Still ONE engine: Chromium only. The Gecko/AppVM bar is untouched, and every stamp still reads "awaiting human UX pass" — a passing axe sweep is a conformance measurement, not a human judging whether the thing is usable | session |
 
 ---
 

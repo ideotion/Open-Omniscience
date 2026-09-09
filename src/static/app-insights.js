@@ -630,8 +630,17 @@
         ? `<div class="hint muted" style="margin-top:2px">${esc(growthFallback(g.rate, {window: true})
             || `↑${g.rate.growth}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)`)}</div>`
         : "";
+      // PRH-31: drawn on the SERVER'S window, not on the points. The series omits
+      // its zero days, so an index-placed chart renders day 1 and day 5 adjacent —
+      // a run where there was a gap. `series_window` is the axis those points were
+      // sliced against; without it a term whose newest mention is older than the
+      // window also silently rescales, hiding the quiet tail the rate beside it is
+      // reporting. dashChartSvg's shared-time mode then breaks the line at real
+      // gaps and says so ("a gap is not a zero").
       const spark = (g.series && g.series.length)
-        ? `<div style="margin-top:6px">${dashChartSvg(g.series.map(p => ({observed_on: p.date, price: p.count})), "")}</div>`
+        ? `<div style="margin-top:6px">${dashChartSvg(
+            g.series.map(p => ({observed_on: p.date, price: p.count})), "",
+            g.series_window ? {t0: g.series_window.start, t1: g.series_window.end} : {})}</div>`
         : "";
       return `<div class="sg-card" id="sg-card-${g.id}">
         <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>
@@ -1044,82 +1053,113 @@
       }
     }
 
-    // -- Watches (ruling #3): saved local conditions that fire a Lead card. English
-    // strings here (matching the keyword-explorer/stats sub-features) so i18n stays
-    // 100% with zero new keys; the engine + honesty live in the (tested) backend.
+    // -- Watches (ruling #3): saved local conditions that fire a Lead card.
+    // TRANSLATED 2026-09-09. This panel shipped English-only with its reason in
+    // this comment: "so i18n stays 100% with zero new keys". That is a COST
+    // argument against a non-negotiable ("every user-facing string ships x12"),
+    // and the strings were not free either -- they were 24 of the 575 the
+    // untranslatable ratchet counts, so the panel was already being paid for, just
+    // in a column nobody reads. 24 keys added across all twelve locales; the
+    // non-English drafts are machine-written and flagged for native review, the
+    // same standing convention the GUI-gallery strings carry.
+    const _wt = () => (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+    const _wtf = () => (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+      String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
     async function loadWatches() {
       const box = $("wt-list"); if (!box) return;
-      box.innerHTML = `<div class="muted">Loading…</div>`;
+      const t = _wt(), tf = _wtf();
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         const d = await api("/api/watches");
         const ws = d.watches || [];
-        if (!ws.length) { box.innerHTML = `<div class="muted">No watches yet — add one above. The engine runs after every collection pass.</div>`; return; }
+        if (!ws.length) {
+          box.innerHTML = `<div class="muted">${esc(t("No watches yet — add one above. The engine runs after every collection pass."))}</div>`;
+          return;
+        }
         box.innerHTML = ws.map(w => {
-          const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : "never";
+          const last = w.last_matched_at ? fmtDateTime(w.last_matched_at) : t("never");
           const hist = (w.history || []).map(h =>
-            `<li>${esc(fmtDateTime(h.matched_at))}: <b>${h.n_articles}</b> articles (${h.new_articles} new)`
-            + (h.article_ids && h.article_ids.length ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify('Watch: ' + w.name)});return false">open set ↗</a>` : "")
+            `<li>${esc(fmtDateTime(h.matched_at))}: ${esc(tf("{n} articles ({new} new)", {n: h.n_articles, new: h.new_articles}))}`
+            + (h.article_ids && h.article_ids.length
+                ? ` · <a href="#" onclick="openAnalysisForIds(${JSON.stringify(h.article_ids)}, ${JSON.stringify(tf("Watch: {name}", {name: w.name}))});return false">${esc(t("open set ↗"))}</a>`
+                : "")
             + `</li>`).join("");
           return `<div class="card" style="padding:10px;margin-bottom:8px">
             <div class="row" style="align-items:center;justify-content:space-between;gap:8px">
               <div><b>${esc(w.name)}</b> <span class="muted">— “${esc(w.query)}”</span>
-                <span class="pill ${w.enabled ? 'ok' : ''}">${w.enabled ? 'on' : 'off'}</span></div>
+                <span class="pill ${w.enabled ? 'ok' : ''}">${esc(w.enabled ? t('on') : t('off'))}</span></div>
               <div style="flex:0 0 auto">
-                <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${w.enabled ? 'Disable' : 'Enable'}</button>
-                <button class="secondary" onclick="editWatch(${w.id})">Edit</button>
-                <button class="secondary" onclick="deleteWatch(${w.id})">Delete</button>
+                <button class="secondary" onclick="toggleWatch(${w.id}, ${!w.enabled})">${esc(w.enabled ? t('Disable') : t('Enable'))}</button>
+                <button class="secondary" onclick="editWatch(${w.id})">${esc(t('Edit'))}</button>
+                <button class="secondary" onclick="deleteWatch(${w.id})">${esc(t('Delete'))}</button>
               </div>
             </div>
-            <div class="hint" style="margin-top:4px">≥ ${w.threshold} articles within ${w.window_days} day(s) · last fired: ${esc(last)}</div>
+            <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
+                {n: w.threshold, d: w.window_days, when: last}))}</div>
             ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
           </div>`;
         }).join("") + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
-      } catch (e) { box.innerHTML = `<div class="muted">Could not load watches: ${esc(e.message)}</div>`; }
+      } catch (e) {
+        box.innerHTML = `<div class="muted">${esc(tf("Could not load watches: {error}", {error: e.message}))}</div>`;
+      }
     }
     async function createWatch() {
+      const t = _wt(), tf = _wtf();
       const name = ($("wt-name").value || "").trim();
       const query = ($("wt-query").value || "").trim();
       const threshold = parseInt($("wt-threshold").value || "3", 10);
       const window_days = parseInt($("wt-window").value || "7", 10);
       const msg = $("wt-msg");
-      if (!query) { if (msg) msg.textContent = "Enter a condition (search query) first."; return; }
+      if (!query) { if (msg) msg.textContent = t("Enter a condition (search query) first."); return; }
       try {
         await api("/api/watches", { method: "POST", body: JSON.stringify({ name, query, threshold, window_days }) });
         $("wt-name").value = ""; $("wt-query").value = "";
-        if (msg) msg.textContent = "Watch added. It runs after every collection pass, or use “Check now”.";
+        if (msg) msg.textContent = t("Watch added. It runs after every collection pass, or use “Check now”.");
         loadWatches();
-      } catch (e) { if (msg) msg.innerHTML = `<span class="note err">Could not add: ${esc(e.message)}</span>`; }
+      } catch (e) {
+        if (msg) msg.innerHTML = `<span class="note err">${esc(tf("Could not add: {error}", {error: e.message}))}</span>`;
+      }
     }
     async function toggleWatch(id, enabled) {
+      const tf = _wtf();
       try { await api("/api/watches/" + id, { method: "PATCH", body: JSON.stringify({ enabled }) }); loadWatches(); }
-      catch (e) { toast("Could not update watch: " + e.message, "err"); }
+      catch (e) { toast(tf("Could not update watch: {error}", {error: e.message}), "err"); }
     }
     async function editWatch(id) {
       // Minimal inline edit via prompts (the panel is browser-unverified; keep it simple).
-      const q = prompt("New condition (search query) — leave blank to keep:");
-      const th = prompt("Min articles to fire (leave blank to keep):");
-      const wd = prompt("Window in days (leave blank to keep):");
+      const t = _wt();
+      const q = prompt(t("New condition (search query) — leave blank to keep:"));
+      const th = prompt(t("Min articles to fire (leave blank to keep):"));
+      const wd = prompt(t("Window in days (leave blank to keep):"));
       const body = {};
       if (q && q.trim()) body.query = q.trim();
       if (th && th.trim()) body.threshold = parseInt(th, 10);
       if (wd && wd.trim()) body.window_days = parseInt(wd, 10);
       if (!Object.keys(body).length) return;
       try { await api("/api/watches/" + id, { method: "PATCH", body: JSON.stringify(body) }); loadWatches(); }
-      catch (e) { toast("Could not edit watch: " + e.message, "err"); }
+      catch (e) { toast(_wtf()("Could not edit watch: {error}", {error: e.message}), "err"); }
     }
     async function deleteWatch(id) {
-      if (!confirm("Delete this watch and its history?")) return;
+      const t = _wt(), tf = _wtf();
+      if (!confirm(t("Delete this watch and its history?"))) return;
       try { await api("/api/watches/" + id, { method: "DELETE" }); loadWatches(); }
-      catch (e) { toast("Could not delete watch: " + e.message, "err"); }
+      catch (e) { toast(tf("Could not delete watch: {error}", {error: e.message}), "err"); }
     }
     async function evaluateWatches() {
+      const t = _wt(), tf = _wtf();
       const msg = $("wt-msg");
-      if (msg) msg.textContent = "Checking…";
+      if (msg) msg.textContent = t("Checking…");
       try {
         const d = await api("/api/watches/evaluate", { method: "POST" });
-        if (msg) msg.textContent = d.count ? `${d.count} watch(es) fired — see Home, or the history below.` : "No watches fired (no new matching articles).";
+        if (msg) {
+          msg.textContent = d.count
+            ? tf("{n} watch(es) fired — see Home, or the history below.", {n: d.count})
+            : t("No watches fired (no new matching articles).");
+        }
         loadWatches();
-      } catch (e) { if (msg) msg.innerHTML = `<span class="note err">Check failed: ${esc(e.message)}</span>`; }
+      } catch (e) {
+        if (msg) msg.innerHTML = `<span class="note err">${esc(tf("Check failed: {error}", {error: e.message}))}</span>`;
+      }
     }
 
     let _insStatusBuilt = false;

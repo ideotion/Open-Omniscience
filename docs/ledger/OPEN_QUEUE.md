@@ -114,6 +114,34 @@
   session starts from data. **This is also a real input to S1:** whole-edition ingest over
   millions of pages meets these on every malformed one.
 
+  **CLOSED 2026-09-09, AND THE SEVENTH WAS FOUND ONLY BY WIDENING THE TEST.** All six go
+  through a new `markup_blocks.sub_anchored`, which does NOT hand-write a scanner per
+  pattern -- the pattern, its capture groups and the replacement template stay in the regex
+  engine and only the "try again one character to the right" loop is replaced, so no rewrite
+  is re-implemented. Each family contributes a RESYNC rule: where it is provably safe to
+  resume after a failed attempt. Five take the strong rule (`stop_char_resync`: a failure
+  proves every opener before the next stop character fails identically); the two
+  external-link forms take the weak one, because `\S+` crosses `]` and a skip there lands
+  PAST a real match. Measured, 100,000 -> 200,000 chars: the worst shape went **14.769 s ->
+  59.445 s** to **0.0068 s -> 0.0136 s**. **The seventh:** after the six were fixed the ref
+  shape was STILL quadratic end-to-end -- `strip_blocks` searches with the OPENER pattern
+  `<ref[^>]*>`, so the block scanner written to remove this shape was carrying it (12.774 s
+  per 200,000 chars). `search_anchored` + a `find_opener` hook closes it. Byte-identical over
+  80,000 randomised documents end-to-end (76,011 of which the strip actually changed) plus
+  a real-wikitext sample and 25 hand shapes; 9 mutants, 9 dead.
+  **THE HONEST COST, which is bigger than the block scanner's +17%:** a Python loop
+  iteration per CONSTRUCT, seven passes per page -- **0.66 -> 1.33 ms** for a typical 20 KB
+  page, 13.67 -> 28.57 ms at 420 KB, about 2.1x on well-formed input. Stated in the module
+  docstring beside the 59 s it buys.
+  **WHAT THE RANDOMISED DIFFERENTIAL CAUGHT, and could not have been reasoned away:** the
+  strong rule applied to `\[https?://\S+\]` -- the sibling of the form whose counterexample
+  was ALREADY written down in the docstring. Two residues are recorded rather than papered
+  over: the weak rule closes the measured cliff (opener-only spam, no closer anywhere) but
+  NOT the adversarial shape of one far-away `]` behind many openers; and the anchor must be
+  the pattern's own FIXED PREFIX, not merely something that marks every start -- widening
+  `[[File|Image|Category` to `[[` still marks every start and silently loses
+  `"[[x[[File a]]"`, which is kept as a named test.
+
   **STOPPED AT THE SEAM — WHOLE-EDITION INGEST (S1), and the gate is MEASURED rather than
   cited.** The standing ruling is "do not start before the P0 scale set lands", and prompt 18
   restates it as "if the storage plan's Phase C is not in place, say so and stop". Checked
@@ -3744,6 +3772,23 @@
   the `origin_year`/`until_year`/`end_month`/`end_day` fields and floating (nth-weekday)
   recurrence all exist, pinned by `tests/test_event_recurrence.py`. What is unbuilt is the
   DISPLAY — `app-agenda.js` renders none of it. Say which half, per the working mode.
+  **(b) DISPLAY HALF CLOSED 2026-09-09 — AND THE OTHER HALF IS CONTENT, NOT CODE.** `agRow` now
+  reads `e.span` (active → "On now, ends {end}", upcoming → "Runs {start} – {end}", the two
+  painted differently because they are different facts) and the `origin_year`/`until_year` range
+  ("· since {year} · nothing listed after {year}"), both hovering "Stated by the event catalog
+  (asserted, not deduced)." — the catalogue-asserted class, since `_span_for` builds a span "only
+  from explicitly stated start+end, never guessed". `until_year` is worded about the LISTING, not
+  the world: the catalogue suppresses occurrences past that year, which is not a claim the event
+  will never happen again. +5 keys ×12. Guarded by `tests/test_agenda_span_display.py` (source
+  reads stay) + `tests/agenda_span_node_test.js` (10 checks that EXECUTE the shipped `agRow`:
+  active vs upcoming, a half-stated span, a dangling separator, `origin_year == 0`).
+  **AND IT RENDERS NOTHING TODAY — the measurement this must not overstate away.**
+  `configs/world_events.yml` uses NONE of the four fields: zero shipped events carry `end_month`,
+  `origin_year` or `until_year`. So the surface is present-and-guarded, not a visible improvement.
+  What remains is a CONTENT change needing sourced facts — which observances are month-spans,
+  since when each has been held, which listings genuinely stop — exactly the kind of thing a
+  session must not invent. **REMAINING → sourced catalogue entries, one per fact, with the source
+  named in the entry. Blocked on research, never on code.**
   **(c) VERIFIED-PRESENT** — `src/privacy/link_sanitizer.py` exists, so the .eml plan's S1
   anonymisation core shipped; `ooMap` is wired in seven `app-*.js` modules.
   **(d) THE AGENDA'S CONFIDENCE TIERS ARE UNBUILT AS A VOCABULARY.** `catalog` carries one
@@ -10944,3 +10989,82 @@ Before anything touches that fold, confirm which.
   hand-shortens three targets and pre-dates a heading rename for the others). The 9 were re-measured
   after the anchor fix: clicking one is now INERT (Help stays open, nothing scrolls) rather than
   ejecting the reader to Home, so this is a cosmetic residue, not the P0.
+
+### 2026-09-09 — the open-queue burn-down (PR #1104): what closed, what is recorded, what is deliberately left
+
+Nine docket items closed, each measured against a running instance before and after. The rows are in
+[`shipped.csv`](shipped.csv); the reusable lessons are in [`LESSONS.md`](LESSONS.md). What follows is
+only the part that stays open, plus the measurements a later session should not have to repeat.
+
+**RETIRED FROM THIS DOCKET (their work is shipped, and the entries above that describe them are now
+history rather than a to-do):** the 2026-09-09 `/api/sources` 714 KB deliberate omission (its stated
+blocker was "this needs a FRONTEND change" — that change is made, and nothing is capped); the orphaned
+`"Stats unavailable."` locale key (pruned, in a pass that owned the locale files for other reasons,
+exactly as the note asked); the measured-latent Observatory resolver divergence (reproduced on a
+constructed corpus, so closed rather than disclosed); PRH-31's compressed sparkline axis; DB-10 §2's
+missing VACUUM disk preflight; the `ring_country_article_ids` `total` misnomer; the `PR pending`
+placeholder (rule 5b, resolved to **PR #1047**).
+
+**THE DEAD-CODE WORKLIST'S `loadIndicesData`/`loadMarketData` ENTRY IS ANSWERED THE OTHER WAY, and the
+entry should be read as resolved rather than pending.** It listed them as orphans to DELETE. Two later
+audits — the 2026-07-22 GUI audit (`mkt-004`, filed under HONESTY) and the 2026-09-08 visual audit
+(F11) — say restore the trigger, and they are right for a reason neither the worklist nor this session
+assumed: `_renderFeedVerdicts` has NO other entry point, so deleting them removes the app's only surface
+for "this official feed refused". Both buttons are restored, consent-gated and browser-verified.
+
+**STILL OPEN, and NARROWED — the `#corpus-win` deletion pass.** The retired modal's markup and
+`corpusTab`/`renderCorpus*` are still in the tree, still unreachable, still gated on the
+browser-verified deletion bar. Two things are now known that were not: (a) `renderCorpusSources` was
+repaired this pass and the repair is a SOURCE fix with no runtime effect — the deletion pass should
+delete a correct function rather than inherit a defect, and the code says so in place; (b) the
+retirement note's claim that the `#an` window is a "strict superset" of the modal was FALSE for the
+Sources view (the modal showed each source's catalogue facts, the live window showed volume/tone/span
+only). That gap is closed, so the superset claim is now true for this facet — but **nobody has audited
+the other five subtabs against the same claim**, and the deletion pass should, because a superset claim
+is what licenses the deletion.
+
+**RE-MEASURED, so a later session does not re-derive it (2026-09-09, this sandbox's proxy):**
+`huggingface.co`, `ollama.com`, `dumps.wikimedia.org` all return `connect_rejected` (organisation
+policy) against `pypi.org` = 200 as the control. So the `HF_REVISION_PINS`/`OLLAMA_DIGEST_PINS` blank
+values (PROMPT_11 item 2), the AI-15 `LiquidAI` publisher lookup (item 3), and the
+`dumpstatus.json`-shape question all remain genuinely parked — **their stated reason has NOT expired.**
+
+**AXE COVERAGE, stated so the gaps are visible rather than implied.** Swept and CLEAN at 1440×900:
+home, feed, insights, observatory, timemap, agenda, markets, library, law, settings, the Export/Import
+dialogs, the command palette, the analysis window, `/tasks`, and all eight Help documents. Swept and
+clean at 768×1024 and at 390×844 (the latter through the hamburger — the sidebar is off-canvas below
+600 px, and a probe that clicks a nav item there measures its own error, not the app's). **NOT swept:**
+the eight `guis/` alternative skins, `investigate.html`, `unlock.html`, the standalone reader page (no
+article id was reachable on this fixture), and every locale other than `en` except the Watches panel
+(checked in `fr`/`ja`/`ar`).
+
+**NOT EXERCISED, and it is a real gap in this pass's evidence:** the super-group sparkline. This
+fixture's newest article is from 2026-07, so every 7-day series is empty and no chart is drawn at all.
+Its axis wiring is guarded by source and by an endpoint test; it has not been seen rendering. A corpus
+with recent mentions would close it in one click.
+
+**A NEW OBSERVATION, recorded rather than acted on — `LESSONS.md` has outgrown the size the protocol's
+own amendment assumed.** THE PROTOCOL rule (1) justifies "read it in full" by measuring the constitution
+at 573,850 bytes across `CLAUDE.md` + `LESSONS.md`. `LESSONS.md` alone is now **669 KB** (~170k tokens),
+so the pair is past the figure the amendment used to argue the rule was achievable — the same drift that
+made the rule unfollowable when `CLAUDE.md` reached 1.3 MB, arriving in the file the fix moved things
+INTO. Rule (5c) put a size ratchet on `CLAUDE.md` and on nothing else. This is not a proposal to
+compress lessons (rule 5 protects them and they are load-bearing); it is a measurement, and the choice
+between a ratchet, an index, or an explicit "consulted, not memorised" reclassification is a maintainer
+call.
+
+- **RULING NEEDED — should the indices tile become a full chart, or stay a tile? (2026-09-09.)** The
+  ledger's low-priority note asks for `idxSpark` and `dashChartSvg` to be unified. The HONESTY half was
+  done without a ruling and is shipped: the tile had independently reproduced index placement, one path
+  through a hole, and a line through two points, and all three now come from the shared `_seriesRuns` /
+  `_SPARSE_BAR_MAX` helpers rather than a second implementation of the same rules. **What is left is
+  purely a layout decision, which is why it stops here.** `idxSpark` renders 280×42 inside a compact
+  card whose CLICK already opens the full interactive `ooChart` detail — the card's own comment records
+  that as deliberate ("never the truncated spark"). `dashChartSvg` is 300×120 with axes, labels and a
+  screen-reader data table, and its geometry is hardcoded. Substituting it into the tile changes the
+  board's density for every index; parameterising its size is a change to the shared renderer that every
+  other caller inherits. Either is defensible and neither is a bug fix, so: **(a)** keep the tile and
+  accept two renderers that now share their rules, **(b)** make `dashChartSvg` size-parameterised and
+  use it in the tile, or **(c)** drop the tile preview entirely and let the card be numbers plus the
+  click. Recommended default: **(a)** — the smallest thing that is already true, and the honesty
+  argument for unification has been discharged separately.
