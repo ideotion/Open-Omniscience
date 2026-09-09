@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "الدقة على المراجع",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "قياس كل النماذج يستغرق ساعات. يشغّل الاختبار محركًا متوقفًا، ويعيد تشغيل محرك الذكاء الاصطناعي بين نموذج وآخر، ثم يعيد الجهاز إلى المحرك الذي كان يعمل من قبل. يمكن استئنافه: الإلغاء يحتفظ بالنماذج التي تم قياسها بالفعل. هل تريد البدء؟",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "هل تريد تنزيلها الآن وتقييم كل نموذج فور وصوله؟ اختر إلغاء لتقييم ما هو موجود بالفعل فقط.",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "تعذّر التحقق من النماذج الموجودة على هذا الجهاز — سيتم تقييم ما هو موجود بالفعل.",
+  "Could not check which models are on this machine — benching what is already here.": "تعذّر التحقق من النماذج الموجودة على هذا الجهاز — سيتم تقييم ما هو موجود بالفعل.",
   "Not part of this check": "خارج هذا الفحص",
   "at concurrency": "عند التزامن",
   "configured": "المُهيَّأ",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "قيم خام على محور زمني مشترك — قد تتسطح السلاسل ذات الحجم المختلف جدًا.",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "كل سلسلة مُعاد ضبطها إلى 100 عند بداية النافذة — حركات نسبية، وليست مستويات مطلقة.",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "مقياس لوغاريتمي (أساس 10) — النسب المتساوية تعني مسافات متساوية؛ يعرض التمرير القيمة الحقيقية.",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "يستخدم Alpine.js — إطار عمل صغير مُجهَّز محليًا (رخصة MIT، بلا اتصال بالشبكة)."
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "يستخدم Alpine.js — إطار عمل صغير مُجهَّز محليًا (رخصة MIT، بلا اتصال بالشبكة).",
+  "The briefing could not be read just now": "تعذّرت قراءة الموجز في الوقت الحالي",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "هذا ليس مثل المدوّنة الفارغة — إنه فشل في القراءة، وليس دليلاً على أن مكتبتك فارغة.",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "تعذّرت قراءة إحصاءات المدوّنة في الوقت الحالي — وهذا ليس مثل المدوّنة الفارغة.",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "تعذّر هنا تحويل عضوية هذه المجرّة إلى مجموعة مقالات — لم يُفتح أي شيء."
 }

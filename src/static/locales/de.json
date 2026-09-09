@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "Genauigkeit auf den Ankern",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Alle Modelle zu messen dauert Stunden. Der Test startet ein gestopptes Backend, startet Ihr KI-Backend zwischen den Modellen neu und stellt die Maschine anschließend auf das zuvor genutzte Backend zurück. Er ist fortsetzbar: Ein Abbruch behält die bereits gemessenen Modelle. Starten?",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "Jetzt herunterladen und jedes Modell bewerten, sobald es eintrifft? Wählen Sie Abbrechen, um nur das bereits Vorhandene zu bewerten.",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "Es konnte nicht geprüft werden, welche Modelle auf diesem Rechner vorhanden sind — es wird bewertet, was bereits da ist.",
+  "Could not check which models are on this machine — benching what is already here.": "Es konnte nicht geprüft werden, welche Modelle auf diesem Rechner vorhanden sind — es wird bewertet, was bereits da ist.",
   "Not part of this check": "Nicht Teil dieser Prüfung",
   "at concurrency": "bei Nebenläufigkeit",
   "configured": "konfiguriert",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Rohwerte auf einer gemeinsamen Zeitachse — Reihen sehr unterschiedlicher Größenordnung können abflachen.",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Jede Reihe auf 100 am Fensteranfang neu skaliert — relative Bewegungen, keine absoluten Werte.",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Logarithmische Skala (Basis 10) — gleiche Verhältnisse ergeben gleiche Abstände; beim Überfahren wird der reale Wert angezeigt.",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Nutzt Alpine.js — ein winziges, lokal mitgeliefertes Framework (MIT, kein Netzwerkzugriff)."
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Nutzt Alpine.js — ein winziges, lokal mitgeliefertes Framework (MIT, kein Netzwerkzugriff).",
+  "The briefing could not be read just now": "Das Briefing konnte soeben nicht gelesen werden",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "Das ist nicht dasselbe wie ein leerer Korpus — es handelt sich um einen Lesefehler, nicht um ein Zeichen dafür, dass Ihre Bibliothek leer ist.",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "Die Korpus-Statistiken konnten soeben nicht gelesen werden — das ist nicht dasselbe wie ein leerer Korpus.",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "Die Zugehörigkeit dieser Galaxie konnte hier nicht zu einer Artikelmenge aufgelöst werden — es wurde nichts geöffnet."
 }

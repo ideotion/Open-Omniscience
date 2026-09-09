@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "Exatidão sobre as âncoras",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Avaliar todos os modelos leva horas. O teste inicia um motor parado, reinicia o seu motor de IA entre modelos e devolve a máquina àquele que estava a servir antes. É retomável: cancelar mantém os modelos já medidos. Iniciar?",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "Baixá-los agora e avaliar cada um à medida que chegar? Escolha Cancelar para avaliar apenas o que já está aqui.",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "Não foi possível verificar quais modelos estão nesta máquina — avaliando o que já está aqui.",
+  "Could not check which models are on this machine — benching what is already here.": "Não foi possível verificar quais modelos estão nesta máquina — avaliando o que já está aqui.",
   "Not part of this check": "Fora desta verificação",
   "at concurrency": "com concorrência",
   "configured": "configurado",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Valores brutos em um eixo de tempo compartilhado — séries de magnitudes muito diferentes podem se achatar.",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Cada série reajustada para 100 no início da janela — movimentos relativos, não níveis absolutos.",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Escala logarítmica (base 10) — proporções iguais são distâncias iguais; passar o cursor mostra o valor real.",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Usa Alpine.js — um framework minúsculo incluído localmente (MIT, zero rede)."
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Usa Alpine.js — um framework minúsculo incluído localmente (MIT, zero rede).",
+  "The briefing could not be read just now": "Não foi possível ler o resumo neste momento",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "Isso não é o mesmo que um corpus vazio — trata-se de uma falha de leitura, não de um sinal de que a sua biblioteca está vazia.",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "Não foi possível ler as estatísticas do corpus neste momento — isso não é o mesmo que um corpus vazio.",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "Não foi possível resolver aqui a composição desta galáxia num conjunto de artigos — nada foi aberto."
 }

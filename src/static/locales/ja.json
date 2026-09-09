@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "アンカーに対する正確度",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "すべてのモデルを測定するには数時間かかります。停止中のバックエンドを起動し、モデルごとに AI バックエンドを再起動したうえで、元々使用していたバックエンドに戻します。再開可能で、中止しても測定済みのモデルは保持されます。開始しますか？",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "今すぐダウンロードし、届いたものから順に評価しますか？キャンセルを選ぶと、すでにある分だけを評価します。",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "このマシンにどのモデルがあるか確認できませんでした — すでにある分を評価します。",
+  "Could not check which models are on this machine — benching what is already here.": "このマシンにどのモデルがあるか確認できませんでした — すでにある分を評価します。",
   "Not part of this check": "このチェックの対象外",
   "at concurrency": "同時実行数",
   "configured": "設定値",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "共通の時間軸上の生の値 — 規模が大きく異なる系列は平坦に見えることがあります。",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "各系列はウィンドウ開始時点で100に再基準化 — 絶対水準ではなく相対的な動きを示します。",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "対数スケール（底10）— 比率が等しければ距離も等しくなります。ホバーすると実際の値が表示されます。",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.jsを使用 — ローカルに同梱された小さなフレームワーク（MIT、ネットワーク接続なし）。"
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.jsを使用 — ローカルに同梱された小さなフレームワーク（MIT、ネットワーク接続なし）。",
+  "The briefing could not be read just now": "現在、ブリーフィングを読み取れませんでした",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "これはコーパスが空であることとは異なります。読み取りの失敗であり、ライブラリが空であることを示すものではありません。",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "現在、コーパスの統計を読み取れませんでした。これはコーパスが空であることとは異なります。",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "この銀河の構成をここで記事の集合に解決できませんでした。何も開かれていません。"
 }

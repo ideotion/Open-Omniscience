@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "एंकर पर सटीकता",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "हर मॉडल को मापने में घंटों लगते हैं। यह बंद पड़े बैकएंड को चालू करता है, हर मॉडल के बीच आपका AI बैकएंड पुनः आरंभ करता है, और अंत में मशीन को उसी बैकएंड पर लौटा देता है जो पहले चल रहा था। इसे फिर से शुरू किया जा सकता है: रद्द करने पर पहले से मापे गए मॉडल सुरक्षित रहते हैं। शुरू करें?",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "क्या उन्हें अभी डाउनलोड करें और हर मॉडल के आते ही उसका मूल्यांकन करें? केवल पहले से मौजूद मॉडलों का मूल्यांकन करने के लिए रद्द करें चुनें।",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "यह जाँचा नहीं जा सका कि इस मशीन पर कौन-से मॉडल हैं — जो पहले से मौजूद हैं उन्हीं का मूल्यांकन किया जा रहा है।",
+  "Could not check which models are on this machine — benching what is already here.": "यह जाँचा नहीं जा सका कि इस मशीन पर कौन-से मॉडल हैं — जो पहले से मौजूद हैं उन्हीं का मूल्यांकन किया जा रहा है।",
   "Not part of this check": "इस जाँच का हिस्सा नहीं",
   "at concurrency": "समवर्तीता पर",
   "configured": "विन्यस्त",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "एक साझा समय-अक्ष पर कच्चे मान — बहुत भिन्न परिमाण की श्रृंखलाएँ चपटी दिख सकती हैं।",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "प्रत्येक श्रृंखला विंडो की शुरुआत में 100 पर पुनः आधारित — सापेक्ष गति, निरपेक्ष स्तर नहीं।",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "लॉग स्केल (आधार 10) — समान अनुपात समान दूरी के बराबर होते हैं; होवर करने पर वास्तविक मान दिखता है।",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.js का उपयोग करता है — स्थानीय रूप से शामिल एक छोटा-सा फ़्रेमवर्क (MIT, शून्य नेटवर्क)।"
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.js का उपयोग करता है — स्थानीय रूप से शामिल एक छोटा-सा फ़्रेमवर्क (MIT, शून्य नेटवर्क)।",
+  "The briefing could not be read just now": "अभी ब्रीफ़िंग पढ़ी नहीं जा सकी",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "यह खाली कोष के समान नहीं है — यह पढ़ने में विफलता है, इसका यह संकेत नहीं कि आपकी लाइब्रेरी खाली है।",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "अभी कोष के आँकड़े पढ़े नहीं जा सके — यह खाली कोष के समान नहीं है।",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "इस गैलेक्सी की सदस्यता यहाँ लेखों के समुच्चय में हल नहीं की जा सकी — कुछ भी नहीं खोला गया।"
 }

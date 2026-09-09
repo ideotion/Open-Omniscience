@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "অ্যাঙ্করে নির্ভুলতা",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "প্রতিটি মডেল পরিমাপ করতে কয়েক ঘণ্টা লাগে। এটি বন্ধ থাকা ব্যাকএন্ড চালু করে, মডেলগুলির মাঝে আপনার AI ব্যাকএন্ড পুনরায় চালু করে, এবং শেষে মেশিনটিকে আগের ব্যাকএন্ডে ফিরিয়ে দেয়। এটি পুনরায় শুরু করা যায়: বাতিল করলে ইতিমধ্যে পরিমাপ করা মডেলগুলি থেকে যায়। শুরু করবেন?",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "এখনই সেগুলি ডাউনলোড করে প্রতিটি আসার সঙ্গে সঙ্গে মূল্যায়ন করবেন? কেবল ইতিমধ্যে থাকা মডেলগুলি মূল্যায়ন করতে বাতিল বেছে নিন।",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "এই মেশিনে কোন মডেলগুলি আছে তা যাচাই করা যায়নি — যা ইতিমধ্যে আছে তারই মূল্যায়ন করা হচ্ছে।",
+  "Could not check which models are on this machine — benching what is already here.": "এই মেশিনে কোন মডেলগুলি আছে তা যাচাই করা যায়নি — যা ইতিমধ্যে আছে তারই মূল্যায়ন করা হচ্ছে।",
   "Not part of this check": "এই পরীক্ষার অংশ নয়",
   "at concurrency": "সমান্তরালতায়",
   "configured": "কনফিগার করা",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "কাঁচা মান একটি ভাগ করা সময়-অক্ষে — খুব ভিন্ন মাত্রার সিরিজগুলো চ্যাপ্টা দেখাতে পারে।",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "প্রতিটি সিরিজ উইন্ডোর শুরুতে ১০০-এ পুনর্বেসড — আপেক্ষিক পরিবর্তন, পরম স্তর নয়।",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "লগ স্কেল (বেস ১০) — সমান অনুপাত মানে সমান দূরত্ব; হোভার করলে প্রকৃত মান দেখা যায়।",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.js ব্যবহার করে — স্থানীয়ভাবে ভেন্ডর করা একটি ক্ষুদ্র ফ্রেমওয়ার্ক (MIT, নেটওয়ার্ক ছাড়াই)।"
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Alpine.js ব্যবহার করে — স্থানীয়ভাবে ভেন্ডর করা একটি ক্ষুদ্র ফ্রেমওয়ার্ক (MIT, নেটওয়ার্ক ছাড়াই)।",
+  "The briefing could not be read just now": "এই মুহূর্তে ব্রিফিং পড়া যায়নি",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "এটি খালি কর্পাসের সমান নয় — এটি পড়ার ব্যর্থতা, আপনার লাইব্রেরি খালি থাকার লক্ষণ নয়।",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "এই মুহূর্তে কর্পাসের পরিসংখ্যান পড়া যায়নি — এটি খালি কর্পাসের সমান নয়।",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "এই গ্যালাক্সির সদস্যপদ এখানে নিবন্ধের সেটে সমাধান করা যায়নি — কিছুই খোলা হয়নি।"
 }

@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "Точность по эталонам",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Проверка всех моделей займёт часы. Она запускает остановленный движок, перезапускает ваш ИИ-движок между моделями и возвращает машину к тому, который работал до этого. Её можно возобновить: отмена сохраняет уже измеренные модели. Запустить?",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "Загрузить их сейчас и оценивать каждую модель по мере поступления? Нажмите «Отмена», чтобы оценить только то, что уже есть.",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "Не удалось проверить, какие модели есть на этой машине — оцениваем то, что уже есть.",
+  "Could not check which models are on this machine — benching what is already here.": "Не удалось проверить, какие модели есть на этой машине — оцениваем то, что уже есть.",
   "Not part of this check": "Не входит в эту проверку",
   "at concurrency": "при параллелизме",
   "configured": "настроено",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "Необработанные значения на общей временной оси — ряды с очень разными масштабами могут выглядеть плоскими.",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "Каждый ряд пересчитан к 100 в начале окна — относительные изменения, а не абсолютные уровни.",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "Логарифмическая шкала (основание 10) — равные отношения соответствуют равным расстояниям; при наведении показывается реальное значение.",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Использует Alpine.js — крошечный фреймворк, поставляемый локально (MIT, без сети)."
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "Использует Alpine.js — крошечный фреймворк, поставляемый локально (MIT, без сети).",
+  "The briefing could not be read just now": "Сейчас не удалось прочитать сводку",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "Это не то же самое, что пустой корпус, — это ошибка чтения, а не признак того, что ваша библиотека пуста.",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "Сейчас не удалось прочитать статистику корпуса — это не то же самое, что пустой корпус.",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "Состав этой галактики не удалось сопоставить с набором статей — ничего не открыто."
 }

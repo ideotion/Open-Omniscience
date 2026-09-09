@@ -2740,7 +2740,7 @@
   "Anchor accuracy": "锚点准确率",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "测量所有模型需要数小时。该测试会启动已停止的后端，在各模型之间重启 AI 后端，并在结束后将机器恢复到原先使用的后端。过程可恢复：取消会保留已测量的模型。要开始吗？",
   "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "现在下载并在每个模型到达时依次评测？选择取消则仅评测本机已有的模型。",
-  "Could not check which models are on this machine \u2014 benching what is already here.": "无法确认本机已有哪些模型 — 将只评测已有的模型。",
+  "Could not check which models are on this machine — benching what is already here.": "无法确认本机已有哪些模型 — 将只评测已有的模型。",
   "Not part of this check": "不属于本次检查",
   "at concurrency": "并发为",
   "configured": "已配置",
@@ -3155,5 +3155,9 @@
   "Raw values on a shared time axis — series of very different magnitudes may flatten.": "共享时间轴上的原始值 — 量级差异很大的序列可能显得扁平。",
   "Each series rebased to 100 at the window start — relative moves, not absolute levels.": "每个序列在窗口起点重新基准为 100 — 显示相对变化,而非绝对水平。",
   "Log scale (base 10) — equal ratios are equal distances; the hover shows the real value.": "对数刻度(以 10 为底)— 相等比例对应相等距离;悬停可显示真实值。",
-  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "使用 Alpine.js — 一个本地随附的微型框架(MIT 许可,零网络)。"
+  "Uses Alpine.js — a tiny framework vendored locally (MIT, zero network).": "使用 Alpine.js — 一个本地随附的微型框架(MIT 许可,零网络)。",
+  "The briefing could not be read just now": "目前无法读取简报",
+  "That is not the same as an empty corpus — this is a read failure, not a sign your library is empty.": "这与语料库为空不同——这是读取失败，而不是您的资料库为空的迹象。",
+  "The corpus stats could not be read just now — that is not the same as an empty corpus.": "目前无法读取语料库统计数据——这与语料库为空不同。",
+  "This galaxy's membership could not be resolved to an article set here — nothing opened.": "此处无法将该星系的成员解析为一组文章——未打开任何内容。"
 }
