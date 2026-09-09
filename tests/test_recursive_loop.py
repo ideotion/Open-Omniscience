@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.monitoring.recursive_loop import LOOP_SELFTESTS, recursive_loop_report
+from tests.diagnostics_source import diagnostics_source
 
 
 def test_all_loop_gates_are_green_on_this_tree():
@@ -103,7 +104,7 @@ def test_no_score_field():
 def test_aggregator_carries_the_recursive_loop_instruments():
     # MEMBERSHIP CONTRACT (source-inspected, no app import): _all_diagnostics_members must carry
     # the recursive-loop instruments, so a future edit can never silently drop one.
-    src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     start = src.index("def _all_diagnostics_members")
     end = src.index("def _all_diagnostics_manifest", start)
     body = src[start:end]

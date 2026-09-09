@@ -11298,3 +11298,50 @@ deletion is now enforced by execution rather than asserted in a comment:
 `tests/test_corpus_win_absorption_content.py` pins the FACTS facet by facet, and
 `tests/an_source_catalog_node_test.js` runs the one cell whose source-text guard was provably
 vacuous. A future session may delete on that basis; it should not delete on the name check alone.
+
+**J1 STEP 1 IS DONE — the concatenating reader, before a single route moves (2026-09-09).**
+The J1 entry prescribed exactly this: *"the split's FIRST commit is a concatenating reader that
+returns the package's modules in a defined order, read from the package rather than hard-coded,
+before a single route moves."* `tests/diagnostics_source.py` is that reader, and every call site
+is migrated onto it.
+
+**THE ENTRY'S OWN MEASUREMENT WAS UNDERSTATED, which is the kind of correction that changes how
+the next session sizes the work.** J1 recorded "20 source-read sites across 4 test files". The
+real figure is **27 sites across 10 files**, in **five mutually incompatible path spellings** —
+`(_SRC / "api" / "diagnostics.py")`, `(_ROOT / "src" / "api" / "diagnostics.py")`, the same with a
+POSITIONAL `read_text("utf-8")`, `(_ROOT / "src/api/diagnostics.py")`, and a bare
+`Path("src/api/diagnostics.py")` relative to the CWD. (A 28th grep hit is a docstring mention in
+`test_qualification_export.py`, and two more name different modules entirely — `src/diagnostics.py`,
+the CLI doctor, and `src/briefing/card_diagnostics.py`.) All 27 now read
+`diagnostics_source()`, so the split has ONE place to teach rather than ten, and the five
+spellings are gone.
+
+**WHY THE READER IS THE FIRST COMMIT AND NOT A LATER CONVENIENCE.** Turning the module into a
+package makes the path a DIRECTORY, and `read_text()` then raises — loudly, at 27 sites, which
+sounds survivable and is not the danger. The danger is the recorded `app.js`-split lesson: a
+POSITIVE assertion fails loudly and gets fixed while a NEGATIVE one passes FOR FREE against a file
+that no longer holds what it checks. A site repointed at ONE module of the new package keeps every
+`assert X in src` honest and turns every `assert X not in src` into a tautology. Today the reader
+returns the single file's text **byte-identically** (asserted), so each migration was a verifiable
+no-op; the day the package exists, the same callers see the whole of diagnostics unchanged.
+
+**THE ORDER IS READ FROM THE PACKAGE, and an unimported module still contributes its text** — a
+forgotten import line must not silently shrink the source under a negative assertion. The two
+refusals (no diagnostics at all; a package holding no `.py`) raise rather than return `""`, and
+that is pinned by its own test so nobody softens them into a fallback while tidying.
+
+**STILL NOT ATTEMPTED, and still a whole session's work:** moving the routes. 6,291 lines and 128
+route decorators, of which 100 are GET. The completeness ratchet
+(`test_all_diagnostics_bundle_covers_every_get_diagnostic`) now reads through
+`diagnostics_source()`, so it will survive the split — that was the other half of what J1 said
+had to be true before `git mv`.
+
+**A PROCESS NOTE FROM THE MIGRATION ITSELF, worth more than the migration.** The first pass placed
+the new import with a regex for the last top-level import line, which matched the OPENING line of
+a multi-line parenthesised `from x import (` and inserted the statement INSIDE the parentheses —
+three test files left syntactically invalid. Nothing in the test suite caught it, because a file
+that will not parse is a COLLECTION error in the files it lives in and those files were not the
+ones being asserted about; `ruff` caught it, as `invalid-syntax`, only because the ratchet is run
+every time. Redone with `ast`, whose `end_lineno` covers a whole statement including its
+continuations, plus an `ast.parse()` on the result before writing. **A codemod that edits Python
+should be driven by the parser, and should refuse to write anything that does not parse.**

@@ -18,6 +18,7 @@ import json
 import pytest
 
 from src.monitoring import forensics
+from tests.diagnostics_source import diagnostics_source
 
 
 @pytest.fixture()
@@ -207,7 +208,7 @@ def test_endpoint_and_bundle_are_wired():
     # member — so the automation actually rides the exports the maintainer clicks.
     from pathlib import Path
 
-    src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     # Match the PATH, not the whole decorator line: it also carries response_model=None
     # (the handler returns a dict or a text Response), and an exact-line anchor would
     # break on any future kwarg while proving nothing more.

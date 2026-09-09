@@ -12,10 +12,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.diagnostics_source import diagnostics_source
 
 _SECTIONS = (
     "runtime", "corpus", "scheduler", "network", "imports", "calendar_imports",
@@ -27,7 +28,7 @@ _SECTIONS = (
 
 def test_debug_bundle_opens_the_db_read_only():
     # Source-pinned (the wiring lesson): the bundle must never take the write gate.
-    src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     assert "def debug_bundle(db: Session = Depends(read_only_db))" in src
 
 
@@ -141,7 +142,7 @@ def test_a_raising_db_member_is_guarded_inline_and_never_aborts(monkeypatch):
 def test_db_members_run_inline_not_on_a_worker_thread():
     """Source guard (the concurrency lesson): DB members must be threaded=False so no worker
     thread ever touches the shared read-only connection concurrently."""
-    src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     for db_member in ("corpus", "law_documents", "wiki_pages", "schema_drift",
                       "slow_queries", "corpus_integrity", "storage_composition"):
         # each DB member line carries threaded=False (verified via the _member call block)

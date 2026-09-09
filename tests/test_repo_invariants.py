@@ -22,6 +22,7 @@ from tests.js_source_helper import assert_present as _assert_js_present
 from tests.js_source_helper import function_body as _js_function_body
 from tests.js_source_helper import python_function_source as _py_function_source
 from tests.js_source_helper import strip_comments as _strip_js_comments
+from tests.diagnostics_source import diagnostics_source
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
@@ -380,7 +381,7 @@ def test_ir_eval_harness_is_wired():
         assert fn in ev, f"ir_eval must define {fn}"
     # honesty: per-language breakdown + no composite score; conflation reported separately
     assert "by_language" in ev and "recall_delta" in ev and "precision_delta" in ev
-    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    api = diagnostics_source()
     assert "/ir-eval-selftest" in api and "run_ir_eval_selftest" in api
     # the OPERATIONAL input path: a documented gold-set FILE loader + a one-call BM25F A/B,
     # so the maintainer can feed graded queries in (the harness was a mechanism without one).
@@ -429,7 +430,7 @@ def test_p0_validation_kit_is_wired():
     assert "read_volume_backup(" in mod and "run_restore(" in mod
     assert "corpus_source" not in mod, "must NOT inject a corpus_source double (ZETA (c) lesson)"
     # the endpoints trio + download, wired into the debug bundle AND the all-diagnostics zip.
-    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    api = diagnostics_source()
     for route in ('"/p0-validation"', '"/p0-validation/status"', '"/p0-validation/cancel"',
                   '"/p0-validation/download"'):
         assert route in api, f"diagnostics must register {route}"
@@ -1073,7 +1074,7 @@ def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
         and "def load_progress_state(" in source_tags_job
     )
 
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert "run_progressive_triage_job" in diag and "run_progressive_source_tags_job" in diag
     assert "restart: bool = Field" in diag, (
         "the run bodies must expose a restart flag (discard the cursor), not limit/batch_size knobs"
@@ -1176,7 +1177,7 @@ def test_perception_extraction_is_eval_gated_and_never_touches_the_trusted_table
         "without starting a sweep (the standing 'gate bites' ruling)"
     )
 
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert "class PerceptionExtractRunBody" in diag
     assert '@router.post("/perception-extract/run")' in diag
     assert '@router.get("/perception-extract/gate")' in diag
@@ -1215,7 +1216,7 @@ def test_ai_diagnostics_member_and_qualification_assist_are_wired():
     )
     assert "def run_and_persist_qualification_assist(" in qa
 
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '@router.get("/ai")' in diag
     assert '@router.post("/qualification-assist/run")' in diag
     assert '@router.get("/qualification-assist/last")' in diag
@@ -4248,7 +4249,7 @@ def test_recursive_augmentation_logs_are_wired():
     # it must use the RAW fetch for its own report so it cannot recurse on its own failure
     assert "_ooRawFetch" in app, "the reporter must use the pre-wrap fetch to avoid recursion"
 
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     for route in (
         '"/frontend-error"',
         '"/request-latency"',
@@ -6148,7 +6149,7 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     clicking each Lead induce — its EXACT corpus or a fuzzy search that loses it") +
     a single "All diagnostics" download. Also pins the live fix: the briefing cache
     version was bumped so existing installs recompute and cards gain article_ids."""
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     cd = (_SRC / "briefing" / "card_diagnostics.py").read_text(encoding="utf-8")
     svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
@@ -6199,7 +6200,7 @@ def test_http_error_responses_recorded_in_diagnostic_log():
     downloadable. The HTTP channel stays OUT of the problem/lock counts."""
     el = (_SRC / "monitoring" / "errorlog.py").read_text(encoding="utf-8")
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
 
     # The recorder exists, has its own non-problem level + a poll-storm throttle.
     assert "def note_http_error(" in el
@@ -6247,7 +6248,7 @@ def test_keyword_growth_curve_wired_and_decrypt_free():
     cumulative keywords vs cumulative words. Pin the endpoint + the frontend View/
     download wiring, and that the analytic reads keyword_mentions ONLY (never joins to
     the encrypted articles table — the standing decrypt-trap rule)."""
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '"/keyword-growth"' in diag and "keyword_growth_curve" in diag
 
     growth = (_SRC / "analytics" / "keyword_growth.py").read_text(encoding="utf-8")
@@ -6713,7 +6714,7 @@ def test_ir_gold_set_builder_writes_validated_gold_and_closes_the_loop():
     assert "def sample_queries(" in gb and "def build_and_save_gold_set(" in gb and "def coverage(" in gb
     assert "load_gold_set" in gb and "os.replace(" in gb, "validated round-trip + atomic swap"
     assert "top_terms" in gb and "search history is not stored" in gb, "real queries, never invented"
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '"/gold-builder/sample"' in diag and '"/gold-builder/save"' in diag
     app = app_js()
     assert "function goldBuilderLoad(" in app and "function goldBuilderSave(" in app
@@ -6729,7 +6730,7 @@ def test_lemma_preview_is_surfaced_in_the_diagnostics_panel():
     showing candidate groups + would-merge counts + the _MISLEMMA_DENYLIST affordance."""
     er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
     assert "def lemma_preview_report(" in er, "the focused (no full-report) preview function"
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '"/lemma-preview"' in diag
     app = app_js()
     lp = app[app.index("async function loadLemmaPreview(") : app.index("async function loadLemmaPreview(") + 2600]
@@ -6748,7 +6749,7 @@ def test_perception_eval_harness_is_wired_and_gate_first():
     assert "hallucination_rate" in pe and "de_us_centring" in pe and "place_coordinate" in pe
     assert "def rule_based_perception(" in pe, "the baseline adapter (the bar for an LLM)"
     assert "PERCEPTION_GOLD" in pe and "needs_native_review" in pe
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '"/perception-eval-selftest"' in diag
 
 
@@ -6776,7 +6777,7 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
 
     from src.api import diagnostics as _diag
 
-    src = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     gets = set(re.findall(r'@router\.get\("([^"]+)"', src))
     for _fname in _diag._DIAG_SIBLING_FILES:
         gets |= set(
@@ -8856,7 +8857,7 @@ def test_background_ai_coordinator_is_wired_end_to_end():
     prefix + decorator, never the two strings side by side."""
     import re
 
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert 'prefix="/api/diagnostics"' in diag
     backend = {
         "/api/diagnostics" + m
@@ -8912,7 +8913,7 @@ def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
     )
     assert "LFM2.5" in mb, "the candidate must still travel as a note"
 
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     backend = {
         "/api/diagnostics" + m
         for m in re.findall(r'@router\.(?:get|post)\("(/model-bench/[a-z-]+)"\)', diag)
@@ -8956,7 +8957,7 @@ def test_the_two_gate_shapes_stay_opposite_on_unmeasured_input():
     assert '"by_answer"' in ldt and '"by_language"' in ldt
 
     # The gates are reachable — a machine-readable verdict with no caller is a dead end.
-    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '@router.get("/model-bench/gates")' in diag
     src = _ui_source()
     assert re.search(r'"/api/diagnostics/model-bench/gates"', src), (
@@ -9002,7 +9003,7 @@ def test_the_ollama_context_auto_tune_exists_and_only_proposes():
     assert "recommend_num_ctx" in block and "configured_num_ctx" in block
     assert "NO RAM-derived auto-tune" not in diag, "the stale 'gap' note must be gone"
     # The corpus measurement is a full-table pass and must stay opt-in.
-    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    api = diagnostics_source()
     ai_fn = api.split("def ai_diagnostics(", 1)[1].split("\ndef ", 1)[0]
     assert "measure_corpus" in ai_fn and "Query(False)" in ai_fn
 

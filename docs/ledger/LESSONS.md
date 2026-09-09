@@ -8018,3 +8018,30 @@
   **GENERAL FORM: when a mutant survives, check whether a DEFAULT is what makes it look
   equivalent before concluding that it is. The branch is unreachable only for callers who
   take the default, and the parameter exists precisely because some caller will not.**
+
+- **A CODEMOD THAT EDITS PYTHON MUST BE DRIVEN BY THE PARSER, AND MUST REFUSE TO WRITE
+  WHAT DOES NOT PARSE (2026-09-09).** Migrating 27 call sites, the script placed its new
+  import with a regex for the last top-level import line. That regex matched the OPENING
+  line of a multi-line parenthesised `from x import (` and inserted the statement INSIDE
+  the parentheses, leaving three test files syntactically invalid. **The test suite did
+  not catch it** — an unparseable file is a collection error *in itself*, not in the files
+  it makes assertions about, so the suites those files guard reported nothing. `ruff` did,
+  as `invalid-syntax`, and only because the ratchet is run on every change. **GENERAL FORM:
+  a regex sees lines, and Python statements are not lines. `ast` knows where a statement
+  ends (`end_lineno` covers parenthesised continuations), and an `ast.parse()` on the
+  result before writing turns "I hope this is valid" into a precondition.** Corollary worth
+  keeping: a lint ratchet run every time is a syntax check the test suite structurally
+  cannot be.
+
+- **A READER THAT CAN FIND NOTHING MUST RAISE, NEVER RETURN EMPTY (2026-09-09).** The
+  shared reader for `src/api/diagnostics` — built so a future package split cannot go
+  vacuous at 27 sites — has two ways to find nothing: the path is gone, or the package
+  holds no `.py`. Both raise. Returning `""` would be the natural defensive instinct and is
+  the exact opposite of safe here: an empty string passes **every** `assert X not in
+  source` in the suite, silently, which is the failure the reader exists to prevent
+  arriving through the reader itself. **GENERAL FORM: when a helper feeds negative
+  assertions, its empty result is indistinguishable from the condition those assertions
+  are testing for. Make "found nothing" an error, and pin that with a test, because the
+  refusal reads like defensiveness to the next person tidying up.** Same shape as the
+  ordering rule beside it: the reader includes a module `__init__.py` never imports,
+  because a forgotten import line must not quietly shrink what the assertions run over.
