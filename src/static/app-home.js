@@ -286,8 +286,21 @@
 
     async function loadHome() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // AUDIT §4.2 (P0): a malformed 200 used to slip through api() as a raw,
+      // truthy string, so THIS try never threw -- renderHomeStats(undefined, ...)
+      // ran instead and printed "your library is empty" over a real 453-article
+      // corpus, with zero sign anything had gone wrong. api() now throws on an
+      // unreadable answer, so this catch is reachable for real; make it say the
+      // true, distinct fact loudly (role="alert" + the caveat colour) rather
+      // than fall back to a plain, easy-to-miss "unavailable" that a skimming
+      // reader could confuse for "there is nothing here yet".
       try { const s = await api("/api/database/stats"); renderHomeStats(s.counts, s); }
-      catch (e) { $("home-stats").innerHTML = `<div class="muted">${esc(t("Stats unavailable."))}</div>`; }
+      catch (e) {
+        $("home-stats").innerHTML = `<div class="muted" role="alert" style="color:var(--err)">`
+          + `<span aria-hidden="true">⚠</span> `
+          + esc(t("The corpus stats could not be read just now — that is not the same as an empty corpus."))
+          + `</div>`;
+      }
       try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); }
       catch (e) { renderHomeStatus(false); }
       loadBriefing();
@@ -722,12 +735,25 @@
     let _lastBriefGen = null;  // last rendered briefing generated_at (live-refresh guard)
 
     async function loadBriefing(force) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const feed = $("briefing-feed");
       try {
         const data = await api("/api/briefing" + (force ? "?force=true" : ""));
         renderBriefing(data);
       } catch (e) {
-        feed.innerHTML = '<div class="muted">Briefing unavailable right now.</div>';
+        // AUDIT §4.2 (P0): the same api() bug that hit the stat strip above hit
+        // this call too -- a malformed 200 never threw, so renderBriefing ran on
+        // a raw string, `data.buckets` read undefined, and this panel printed
+        // the "No Leads yet — that's expected on a young corpus" empty-corpus
+        // copy over a real corpus with real cards. api() now throws on an
+        // unreadable answer, so say the TRUE, distinct fact here, loudly, and
+        // never fall through to renderBriefing's empty-corpus branch.
+        feed.innerHTML = `<div class="card" role="alert" style="color:var(--err)">`
+          + `<h4><span aria-hidden="true">⚠</span> `
+          + esc(t("The briefing could not be read just now"))
+          + `</h4><p class="sum">`
+          + esc(t("That is not the same as an empty corpus — this is a read failure, not a sign your library is empty."))
+          + `</p></div>`;
       }
     }
 
