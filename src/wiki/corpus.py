@@ -39,7 +39,14 @@ from urllib.parse import quote, unquote
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source, WikiPage, WikiRevision
-from src.utils.markup_blocks import strip_one_block
+from src.utils.markup_blocks import (
+    Resync,
+    needs_char_resync,
+    search_anchored,
+    stop_char_resync,
+    strip_one_block,
+    sub_anchored,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -112,32 +119,77 @@ def wiki_page_ref(canonical_url: str) -> tuple[str, str] | None:
 #: retires a family that can no longer close: 14.16 s -> 0.0030 s, byte-identical
 #: over 20,000 randomised documents (tests/test_markup_blocks.py).
 #:
-#: **SIX OF THE PATTERNS BELOW STILL CARRY THE SAME CLASS AND ARE NOT FIXED HERE.**
-#: They wear it differently -- ``OPEN[^X]*CLOSE``, where an opener with no closer
-#: makes the character class consume to end-of-document and then backtrack
-#: position by position -- and they are the EXPENSIVE half. Measured on this
-#: function, 100,000 -> 400,000 chars of opener-only spam:
+#: **THE OTHER SIX WERE THE SAME CLASS WEARING DIFFERENT CLOTHES, AND ARE FIXED
+#: TOO (2026-09-09).** They read ``OPEN[^X]*CLOSE``: an opener with no closer makes
+#: the character class consume to end-of-document and then backtrack position by
+#: position, so K openers again cost K*N. They were the EXPENSIVE half. Measured on
+#: this function, 100,000 -> 200,000 chars of opener-only spam, BEFORE:
 #:
-#:   ``<[^>]+>``          0.154 s -> 2.381 s   (15.4x for a 4x input)
-#:   ``<ref[^>/]*/>``     1.052 s -> 16.756 s  (15.9x)
-#:   ``[[File|Image|…]]`` 1.749 s -> 28.035 s  (16.0x)
-#:   ``[[target|label]]`` 1.614 s -> 26.388 s  (16.4x)
-#:   ``[[target]]``       1.721 s -> 27.398 s  (15.9x)
-#:   ``[url label]``      1.420 s -> 22.525 s  (15.9x)
-#:   ``{{templates}}``    0.005 s -> 0.019 s   (4.1x -- LINEAR, because ``[^{}]*``
-#:                                             cannot cross a brace)
+#:   ``<[^>]+>``          1.379 s -> 5.648 s   (4.1x for a 2x input)
+#:   ``<ref[^>/]*/>``     4.237 s -> 17.100 s  (4.0x)
+#:   ``[[File|Image|…]]`` 0.465 s -> 1.850 s   (4.0x)
+#:   ``[[target|label]]`` 4.909 s -> 19.801 s  (4.0x)
+#:   ``[[target]]``       7.290 s -> 29.177 s  (4.0x)
+#:   ``[url label]``      2.290 s -> 9.067 s   (4.0x)
+#:   ``{{templates}}``    LINEAR already, because ``[^{}]*`` cannot cross a brace.
 #:
-#: They are RECORDED rather than rushed: each CAPTURES and rewrites rather than
-#: removing, so the scanner needs a replacement callback and every rewrite needs
-#: its own byte-identical differential before it goes near the ingest path. The
-#: numbers are here so the next session has them; the Open queue carries the
-#: finding. Possessive quantifiers do NOT fix these either -- the cost is a scan
-#: per start position, not backtracking depth.
+#: AFTER, on the same inputs: 0.0055 / 0.0057 / 0.0053 / 0.0055 / 0.0068 / 0.0042 s at
+#: 100,000 chars and 0.0145 / 0.0127 / 0.0114 / 0.0117 / 0.0136 / 0.0079 s at 200,000 --
+#: linear, and the worst shape went 59.445 s -> 0.0136 s. The ``<ref …>`` BLOCK OPENER
+#: was carrying the shape too (12.774 s at 200,000 chars) and is fixed with it.
+#:
+#: They CAPTURE and rewrite rather than remove, which is why they are not hand-written
+#: scanners: ``markup_blocks.sub_anchored`` keeps the pattern, its groups and the
+#: replacement template in the regex engine and replaces only the "try again one
+#: character to the right" loop. Five take the strong rule
+#: (``stop_char_resync`` -- a failed attempt proves every opener before the next stop
+#: character fails identically); ``[url label]`` takes the weak one, because ``\S+``
+#: crosses ``]`` freely and a skip there would drop a real match. See the two
+#: docstrings for the arguments and for the residue the weak rule leaves.
 _WIKI_BLOCKS: tuple[tuple[re.Pattern[str], re.Pattern[str]], ...] = (
     (re.compile(r"<!--"), re.compile(r"-->")),
     (re.compile(r"<ref[^>]*>", re.IGNORECASE), re.compile(r"</ref>", re.IGNORECASE)),
     (re.compile(r"\{\|"), re.compile(r"\|\}")),  # tables
 )
+
+
+#: The six CAPTURING/rewriting patterns, each with the cheap ANCHOR that marks every
+#: position it could start at and the resync rule that makes a failure cheap. The
+#: anchors carry no stop character of their own -- ``tests/test_markup_blocks.py``
+#: proves it rather than trusting the reading, because the strong rule's skip is only
+#: sound while that holds.
+_WIKI_SUBS: tuple[tuple[re.Pattern[str], str, re.Pattern[str] | str, Resync], ...] = (
+    (re.compile(r"<ref[^>/]*/>"), " ", "<ref", stop_char_resync(">/")),
+    (
+        re.compile(r"\[\[(?:File|Image|Category)[^\]]*\]\]", re.I),
+        " ",
+        re.compile(r"\[\[(?:File|Image|Category)", re.I),
+        stop_char_resync("]"),
+    ),
+    (re.compile(r"\[\[[^\]|]*\|([^\]]+)\]\]"), r"\1", "[[", stop_char_resync("]")),
+    (re.compile(r"\[\[([^\]]+)\]\]"), r"\1", "[[", stop_char_resync("]")),
+    (
+        re.compile(r"\[https?://\S+\s+([^\]]+)\]"),
+        r"\1",
+        re.compile(r"\[https?://"),
+        needs_char_resync("]"),
+    ),
+    (re.compile(r"\[https?://\S+\]"), " ", re.compile(r"\[https?://"), needs_char_resync("]")),
+    (re.compile(r"<[^>]+>"), " ", "<", stop_char_resync(">")),
+)
+
+
+#: The `<ref …>` block OPENER, found linearly. `_WIKI_BLOCKS[1]`'s opener carries the
+#: same `ANCHOR [^X]* CLOSER` shape as the substitutions above, and `strip_blocks`
+#: calls `.search` with it, so the block scanner inherited the cliff it exists to fix.
+_REF_OPEN_ANCHOR = re.compile(r"<ref", re.IGNORECASE)
+_REF_OPEN_RESYNC = stop_char_resync(">")
+
+
+def _ref_open_search(text: str, pos: int) -> re.Match[str] | None:
+    return search_anchored(
+        text, _WIKI_BLOCKS[1][0], pos, anchor=_REF_OPEN_ANCHOR, resync=_REF_OPEN_RESYNC
+    )
 
 
 def plain_from_wikitext(text: str, *, max_passes: int = 4) -> str:
@@ -153,9 +205,16 @@ def plain_from_wikitext(text: str, *, max_passes: int = 4) -> str:
     t = text or ""
     comment_open, comment_close = _WIKI_BLOCKS[0]
     t = strip_one_block(t, comment_open, comment_close)
-    t = re.sub(r"<ref[^>/]*/>", " ", t)  # self-closing: not a block, no closer to find
+    # self-closing <ref …/>: not a block, no closer to find -- but the same K*N
+    # shape, so it goes through the anchored driver like the rest.
+    _sc_pat, _sc_repl, _sc_anchor, _sc_resync = _WIKI_SUBS[0]
+    t = sub_anchored(t, _sc_pat, _sc_repl, anchor=_sc_anchor, resync=_sc_resync)
     ref_open, ref_close = _WIKI_BLOCKS[1]
-    t = strip_one_block(t, ref_open, ref_close)
+    # The OPENER is `<ref[^>]*>` -- the same K*N shape, inside the function written
+    # to remove it: a document with many `<ref` and no `>` costs one full scan per
+    # opener (2.5 s per 200,000 chars). Found only because the end-to-end timing
+    # stayed quadratic after the six substitutions were fixed.
+    t = strip_one_block(t, ref_open, ref_close, find_opener=_ref_open_search)
     for _ in range(max_passes):  # peel nested {{templates}} inside-out
         t2 = re.sub(r"\{\{[^{}]*\}\}", " ", t)
         if t2 == t:
@@ -163,12 +222,8 @@ def plain_from_wikitext(text: str, *, max_passes: int = 4) -> str:
         t = t2
     table_open, table_close = _WIKI_BLOCKS[2]
     t = strip_one_block(t, table_open, table_close)
-    t = re.sub(r"\[\[(?:File|Image|Category)[^\]]*\]\]", " ", t, flags=re.I)
-    t = re.sub(r"\[\[[^\]|]*\|([^\]]+)\]\]", r"\1", t)  # [[target|label]] -> label
-    t = re.sub(r"\[\[([^\]]+)\]\]", r"\1", t)  # [[target]] -> target
-    t = re.sub(r"\[https?://\S+\s+([^\]]+)\]", r"\1", t)  # [url label] -> label
-    t = re.sub(r"\[https?://\S+\]", " ", t)
-    t = re.sub(r"<[^>]+>", " ", t)  # residual html
+    for pat, repl, anchor, resync in _WIKI_SUBS[1:]:
+        t = sub_anchored(t, pat, repl, anchor=anchor, resync=resync)
     t = t.replace("'''", "").replace("''", "")
     t = re.sub(r"^=+\s*(.*?)\s*=+\s*$", r"\1", t, flags=re.M)  # ==headings==
     return re.sub(r"[ \t]+", " ", t).strip()

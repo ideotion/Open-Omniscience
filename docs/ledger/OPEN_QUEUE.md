@@ -114,6 +114,34 @@
   session starts from data. **This is also a real input to S1:** whole-edition ingest over
   millions of pages meets these on every malformed one.
 
+  **CLOSED 2026-09-09, AND THE SEVENTH WAS FOUND ONLY BY WIDENING THE TEST.** All six go
+  through a new `markup_blocks.sub_anchored`, which does NOT hand-write a scanner per
+  pattern -- the pattern, its capture groups and the replacement template stay in the regex
+  engine and only the "try again one character to the right" loop is replaced, so no rewrite
+  is re-implemented. Each family contributes a RESYNC rule: where it is provably safe to
+  resume after a failed attempt. Five take the strong rule (`stop_char_resync`: a failure
+  proves every opener before the next stop character fails identically); the two
+  external-link forms take the weak one, because `\S+` crosses `]` and a skip there lands
+  PAST a real match. Measured, 100,000 -> 200,000 chars: the worst shape went **14.769 s ->
+  59.445 s** to **0.0068 s -> 0.0136 s**. **The seventh:** after the six were fixed the ref
+  shape was STILL quadratic end-to-end -- `strip_blocks` searches with the OPENER pattern
+  `<ref[^>]*>`, so the block scanner written to remove this shape was carrying it (12.774 s
+  per 200,000 chars). `search_anchored` + a `find_opener` hook closes it. Byte-identical over
+  80,000 randomised documents end-to-end (76,011 of which the strip actually changed) plus
+  a real-wikitext sample and 25 hand shapes; 9 mutants, 9 dead.
+  **THE HONEST COST, which is bigger than the block scanner's +17%:** a Python loop
+  iteration per CONSTRUCT, seven passes per page -- **0.66 -> 1.33 ms** for a typical 20 KB
+  page, 13.67 -> 28.57 ms at 420 KB, about 2.1x on well-formed input. Stated in the module
+  docstring beside the 59 s it buys.
+  **WHAT THE RANDOMISED DIFFERENTIAL CAUGHT, and could not have been reasoned away:** the
+  strong rule applied to `\[https?://\S+\]` -- the sibling of the form whose counterexample
+  was ALREADY written down in the docstring. Two residues are recorded rather than papered
+  over: the weak rule closes the measured cliff (opener-only spam, no closer anywhere) but
+  NOT the adversarial shape of one far-away `]` behind many openers; and the anchor must be
+  the pattern's own FIXED PREFIX, not merely something that marks every start -- widening
+  `[[File|Image|Category` to `[[` still marks every start and silently loses
+  `"[[x[[File a]]"`, which is kept as a named test.
+
   **STOPPED AT THE SEAM — WHOLE-EDITION INGEST (S1), and the gate is MEASURED rather than
   cited.** The standing ruling is "do not start before the P0 scale set lands", and prompt 18
   restates it as "if the storage plan's Phase C is not in place, say so and stop". Checked

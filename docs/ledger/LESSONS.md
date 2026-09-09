@@ -7745,3 +7745,35 @@
   record the content half as blocked on RESEARCH rather than on code, and say in the ledger row that the
   improvement is not yet visible.** A row that reads "shipped" over an unexercised surface is how a future
   session comes to believe a feature works.
+
+- **REASONING ALREADY DONE DOES NOT TRANSFER ITSELF TO THE NEXT LINE — THE DIFFERENTIAL IS WHAT
+  CATCHES IT (2026-09-09).** Six wikitext patterns got a linear scan whose skip rule is sound only
+  for families whose body cannot cross the skip target. The docstring for `[url label]` already
+  spelled out, with a counterexample, why `\S+` breaks that: it crosses `]` freely, so a match can
+  END past the first `]` after its opener. The line directly below it — `[url]`, the same `\S+`, the
+  same `]` — was written with the strong rule anyway. No amount of re-reading found it; a randomised
+  differential over a few thousand generated documents found it in seconds, on
+  `"[https:// [https://]] "`, where the skip lands past a real match and it is silently lost.
+  **When a change's correctness rests on a per-case argument, write the cases down AND generate
+  inputs — the argument you already made is exactly the one you will stop re-checking.**
+
+- **A FIX INSIDE THE MODULE WRITTEN TO PREVENT THAT FIX'S PROBLEM (2026-09-09).** After all six
+  quadratic substitutions in `plain_from_wikitext` were linear, the `<ref>` shape was still
+  quadratic end to end. The cause was `strip_blocks` — the linear block scanner built two days
+  earlier *specifically* to kill this shape — searching with the OPENER pattern `<ref[^>]*>`, which
+  is the shape. `re.Pattern.search` carries the same cliff as `re.Pattern.sub`, for the same reason,
+  and a scanner that takes a regex as a parameter inherits whatever cliff that regex has. It was
+  found only because the end-to-end linearity test was WIDENED from the two shapes it used to claim
+  to all ten that reach the function; the narrow test was green throughout. **A test that asserts a
+  property for the cases you fixed will not tell you about the case you did not think of — widen
+  the property to everything that reaches the code, and let it fail.**
+
+- **A CHEAPER ANCHOR CAN BE A CORRECT ANCHOR AND STILL BREAK THE SKIP (2026-09-09).** The linear
+  driver needs a cheap prefix that marks every position the real pattern could start at. `[[` marks
+  every start of `[[File…]]`, is a literal (twice as fast as a compiled regex through `str.find`),
+  and is WRONG: with `[[` the attempt fails at the WORD rather than at the closer, and the skip rule
+  is licensed by a failure at the CLOSER. `"[[x[[File a]]"` then loses a real match. **The
+  precondition is "the anchor IS the pattern's fixed prefix", which is strictly stronger than "the
+  anchor marks every start" — and the weaker reading is the one that looks obviously right while
+  someone is optimising.** Kept as a named test with the counterexample, because the next
+  performance pass will reach for exactly that change.
