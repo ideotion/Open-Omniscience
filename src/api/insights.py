@@ -906,25 +906,60 @@ def insights_corpus_source_language_facets(
     }
 
 
+_ALGEBRA_EXPANSIONS = ("intensity", "trend")
+
+
 @router.get("/corpus-algebra")
 def insights_corpus_algebra(
     terms: str = Query(..., description="comma-separated keywords for the N-keyword set algebra"),
     op: str = Query("intersection", description="intersection | union | difference"),
     cap: int = Query(4000, ge=1, le=20000),
+    expand: str | None = Query(
+        None, description="comma-separated extra views over the SAME set: intensity | trend"
+    ),
+    bucket: str = Query("week", description="trend bucket: day | week | month"),
     db: Session = Depends(get_db),
 ) -> dict:
     """§1 Conjunction Lens: set algebra over N keywords — the combined article-id set that seeds
     the analysis window. ``intersection`` = articles mentioning ALL terms, ``union`` = ANY,
     ``difference`` = the first term minus the rest. The set expression IS the transparent corpus
     label. 400 on an unknown op. Co-occurrence in your corpus, never causation; counts only, no
-    score; per-term set bounded at ``cap`` (disclosed)."""
-    from src.analytics.conjunction import corpus_algebra
+    score; per-term set bounded at ``cap`` (disclosed).
+
+    ``expand`` adds views that were already BUILT AND TESTED in ``analytics.conjunction`` and
+    that nothing could reach: ``intensity`` (which articles pack the most of the N terms) and
+    ``trend`` (when the conjunction was discussed). Both read the SAME ``article_ids`` this call
+    already computed, so an expansion can never describe a different set than the one returned
+    beside it. OPT-IN, and the response without it is byte-identical to before — an expansion is
+    extra database work, and a caller that does not ask should not pay for it.
+
+    ``vocabulary_contrast`` is the third such helper and is deliberately NOT exposed here: it
+    contrasts TWO corpora, and which two sides an ``intersection`` of three terms should be split
+    into is a product question, not a wiring one. Answering it by picking a plausible split would
+    publish an invented semantic under a tested function's name."""
+    from src.analytics.conjunction import conditional_trend, corpus_algebra, per_article_intensity
 
     term_list = [t.strip() for t in terms.split(",") if t.strip()]
+    wanted = [w.strip().lower() for w in (expand or "").split(",") if w.strip()]
+    unknown = [w for w in wanted if w not in _ALGEBRA_EXPANSIONS]
+    if unknown:
+        # Refused BEFORE the work, and by name -- an unknown expansion silently ignored is a
+        # caller believing it asked for a view it never got (the same failure the unknown-op
+        # 400 below exists to prevent).
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown expand: {unknown} (use {list(_ALGEBRA_EXPANSIONS)})",
+        )
     try:
-        return corpus_algebra(db, term_list, op=op, cap=cap)
+        result = corpus_algebra(db, term_list, op=op, cap=cap)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ids = result["article_ids"]
+    if "intensity" in wanted:
+        result["intensity"] = per_article_intensity(db, ids, term_list)
+    if "trend" in wanted:
+        result["trend"] = conditional_trend(db, ids, bucket=bucket)
+    return result
 
 
 @router.get("/leads-view")
