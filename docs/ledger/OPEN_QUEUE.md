@@ -11007,3 +11007,19 @@ INTO. Rule (5c) put a size ratchet on `CLAUDE.md` and on nothing else. This is n
 compress lessons (rule 5 protects them and they are load-bearing); it is a measurement, and the choice
 between a ratchet, an index, or an explicit "consulted, not memorised" reclassification is a maintainer
 call.
+
+- **RULING NEEDED — should the indices tile become a full chart, or stay a tile? (2026-09-09.)** The
+  ledger's low-priority note asks for `idxSpark` and `dashChartSvg` to be unified. The HONESTY half was
+  done without a ruling and is shipped: the tile had independently reproduced index placement, one path
+  through a hole, and a line through two points, and all three now come from the shared `_seriesRuns` /
+  `_SPARSE_BAR_MAX` helpers rather than a second implementation of the same rules. **What is left is
+  purely a layout decision, which is why it stops here.** `idxSpark` renders 280×42 inside a compact
+  card whose CLICK already opens the full interactive `ooChart` detail — the card's own comment records
+  that as deliberate ("never the truncated spark"). `dashChartSvg` is 300×120 with axes, labels and a
+  screen-reader data table, and its geometry is hardcoded. Substituting it into the tile changes the
+  board's density for every index; parameterising its size is a change to the shared renderer that every
+  other caller inherits. Either is defensible and neither is a bug fix, so: **(a)** keep the tile and
+  accept two renderers that now share their rules, **(b)** make `dashChartSvg` size-parameterised and
+  use it in the tile, or **(c)** drop the tile preview entirely and let the card be numbers plus the
+  click. Recommended default: **(a)** — the smallest thing that is already true, and the honesty
+  argument for unification has been discharged separately.

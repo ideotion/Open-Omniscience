@@ -7704,3 +7704,23 @@
   a construction that reproduces it, the honest close is to remove the second resolver, and the guard
   must assert the two really do disagree on its fixture before asserting which one is right** — otherwise
   it passes vacuously on every corpus where they agree.
+
+- **A CHARACTER-CLASS CAPTURE SILENTLY SKIPS THE MALFORMED VALUE IT WAS MEANT TO CATCH (2026-09-09).**
+  A guard sampled chart coordinates with `matchAll(/<rect x="([0-9.]+)"/g)` and then asserted every
+  sample was finite. `x="NaN"` does not match that class, so the bad mark **dropped out of the sample**
+  and the assertion passed over the remaining good ones. The mutation that removes a per-point date
+  fallback — turning one mark's x into `NaN`, which a browser then silently declines to draw — survived
+  **twice** on this blindness before the capture was widened to `([^"]*)`. **A guard must be able to SEE
+  the value it rejects**: capture permissively and validate explicitly, never let the pattern do the
+  validating. The same shape hides any "unparseable" case behind a "well-formed" regex.
+
+- **A SECOND RENDERER RE-DERIVES THE RULES, AND GETS THEM WRONG — SO SHARE THE RULES EVEN WHEN YOU KEEP
+  TWO RENDERERS (2026-09-09).** The indices tile's 42px `idxSpark` sat beside `dashChartSvg` and had
+  independently reproduced all three things the shared toolkit exists to refuse: index placement (on a
+  board whose end-of-day series skip weekends *by nature*, so it is the difference between "closed on
+  Monday" and "no gap"), one path drawn straight through a hole, and a line through as few as two points.
+  Whether the two renderers should become one is a LAYOUT decision — the tile is deliberately small and
+  the card's click opens the full interactive chart — but the honesty rules are not. **Invariant #16's
+  "ONE toolkit" is not about the number of functions; it is that the rules must not be re-derived per
+  surface.** Point the second renderer at the same helpers (`_seriesRuns`, `_SPARSE_BAR_MAX`) and leave
+  the layout question to the maintainer.

@@ -295,3 +295,43 @@ def test_the_trending_windows_payload_carries_one_axis_per_window(
         )
     plain = insights_client.get("/api/insights/trending-windows?limit=2").json()
     assert all("series_window" not in w for w in plain["windows"])
+
+
+# ---------------------------------------------------------------------------
+# The SECOND renderer, which had re-derived the same three rules and got them wrong
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_the_indices_tile_sparkline_obeys_the_same_three_rules() -> None:
+    """``idxSpark`` is a bespoke 42px preview beside ``dashChartSvg`` — a second
+    renderer, which the ledger notes as a unification candidate. Unifying them is
+    a LAYOUT decision (the tile is deliberately small; the card's click opens the
+    full interactive ooChart) and is recorded as needing a ruling. What is not a
+    layout decision is that this preview had independently reproduced all three
+    defects the shared toolkit refuses: index placement, one path drawn straight
+    through a hole, and a line through as few as two points. On a financial board
+    whose series skip weekends by nature, the first of those is the difference
+    between "closed on Monday" and "no gap".
+    """
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "idx_spark_node_test.js")],
+        capture_output=True, text=True, timeout=180, check=False,
+    )
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "8 passed" in proc.stdout, proc.stdout
+
+
+def test_the_indices_sparkline_reuses_the_shared_helpers_rather_than_its_own() -> None:
+    """One implementation of the honesty rules, even while there are two
+    renderers: the point of invariant #16's ONE-toolkit rule is not the number of
+    functions, it is that the rules are not re-derived per surface — which is
+    exactly how this one came to have three of them wrong."""
+    from tests.js_source_helper import function_source
+
+    src = function_source(read_static("app-markets.js"), "idxSpark")
+    assert "_seriesRuns(" in src, "gap runs must come from the shared helper"
+    assert "_SPARSE_BAR_MAX" in src, "the sparse threshold must be the shared constant"
+    assert "(i / (n - 1)) * w" in src, (
+        "the index mapping is kept as the FALLBACK for an unreadable date; if it "
+        "became the only path again the whole finding returns"
+    )
