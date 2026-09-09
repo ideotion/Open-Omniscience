@@ -7891,3 +7891,32 @@
   the shortcut sound — here, that the projection is view-independent — as a test, because if
   it ever stops holding the failure is misplacement, not staleness, and it will look like a
   data bug.**
+
+- **A REGRESSION TEST CAN MAKE A GAP LOOK SETTLED (2026-09-09).** `seed_sources` skipped
+  any domain already in the database and never re-read the row, so catalogue metadata that
+  arrived later — a new explicit country, or the title-suffix and ccTLD fallbacks that did
+  not exist when older rows were created — could never reach an existing source.
+  `test_seed_is_idempotent` asserted precisely that (`created=0, skipped=2`, database
+  untouched), which is a correct test of create-only behaviour and reads, to the next
+  person, as the question having been asked and answered. **GENERAL FORM: a test that pins
+  current behaviour is evidence the behaviour is INTENTIONAL, not evidence it is right.
+  When auditing, separate "this is guarded" from "this was decided" — the guard tells you
+  someone wrote the line, not that anyone weighed the alternative.**
+
+- **"FILL WHAT IS MISSING" AND "SYNC FROM THE CATALOGUE" ARE DIFFERENT FEATURES, AND ONLY
+  ONE IS SAFE TO RUN UNASKED (2026-09-09).** Reconciling source metadata on every seed is
+  fine while it writes ONLY empty fields; the moment it overwrites, a routine re-seed
+  silently reverts anything the operator set by hand — data loss disguised as maintenance,
+  triggered by a boot-time call nobody thinks of as a write. The NULL-only rule is also
+  what makes it idempotent. **GENERAL FORM: when adding a background reconcile, write down
+  which direction wins and make the losing direction impossible, not merely unlikely; the
+  first mutant to try is the overwrite.**
+
+- **PROVENANCE IS A FACT ABOUT THE ROW, NOT ABOUT THE THING (2026-09-09).** The source
+  catalogue's tags mix two kinds: descriptive tags (`news`, `fr`) that are true of the
+  SOURCE, and a `via:<origin>` marker that records how THIS row came to exist. Copying the
+  whole tag string onto a pre-existing row would have made a hand-registered source claim
+  it arrived via a catalogue it never came from. **GENERAL FORM: before copying a metadata
+  blob from one record onto another, check whether any field in it describes the RECORD
+  rather than the subject — those fields do not travel, and the ones that do are usually
+  the majority, which is what makes the exception easy to miss.**

@@ -11174,6 +11174,15 @@ correction is for — and demanding one hypothesis for forty series would be a r
 that made the screen *look* pre-registered while changing nothing about it. Recorded because
 the symmetric-looking change ("accept it on both paths") is the tempting one.
 
+**A FOURTH ITEM LANDED IN THE SAME PR: the NULL-only source-metadata reconcile.** A source
+already in the database used to stop learning — `seed_sources` skipped a domain it held and
+never re-read the row, so catalogue metadata that arrived later could never reach it. Worth
+recording because of HOW it was hidden: `test_seed_is_idempotent` pinned the create-only
+behaviour exactly, which reads as the question having been asked and answered rather than as
+a gap. The fix writes only EMPTY fields, so an operator's hand-set value is never reverted by
+a routine re-seed, and it drops the `via:<origin>` tag, which describes the ROW rather than
+the source.
+
 - **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
   superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
   awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
