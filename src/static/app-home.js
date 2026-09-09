@@ -564,11 +564,16 @@
         const terms = (wk && wk.terms) || [];
         if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
         if (panel) panel.hidden = false;
+        const _hw = wk && wk.series_window;   // the axis the server sliced these against
         _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
         _homeTrendCaveat = d.caveat || "";
         const cards = terms.map((x, i) => {
+          // PRH-31: the axis is the window the server sliced the series against,
+          // never the points' own span — a series that omits its zero days would
+          // otherwise render day 1 and day 5 adjacent.
           const spark = Array.isArray(x.series)
-            ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "")
+            ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "",
+                           _hw ? {t0: _hw.start, t1: _hw.end} : {})
             : "";
           // Click-to-enlarge into the interactive ooChart (invariant #16), matching
           // the Insights Trends UX — the daily series is already in the payload.

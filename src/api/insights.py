@@ -2356,12 +2356,24 @@ def list_supergroups(
     # their headline total used (group_ids_by_sgid) — never a fresh, inconsistent
     # resolution.
     if series_top > 0:
-        from src.analytics.supergroup_stats import daily_series, group_rate
+        from datetime import date as _date
 
+        from src.analytics.supergroup_stats import daily_series, group_rate, series_window
+
+        # ONE `today` for the series, its window and the rate — a second call to
+        # date.today() a millisecond later can land on the next day, and then the
+        # axis and the points it holds describe different windows (PRH-31).
+        today = _date.today()
         for entry in out[:series_top]:
             gids = group_ids_by_sgid.get(cast(int, entry["id"]), set())
-            entry["rate"] = group_rate(db, gids, window_days=window_days, baseline_days=baseline_days)
-            entry["series"] = daily_series(db, gids, days=window_days)
+            entry["rate"] = group_rate(
+                db, gids, window_days=window_days, baseline_days=baseline_days, today=today
+            )
+            entry["series"] = daily_series(db, gids, days=window_days, today=today)
+            # The axis the sparkline is drawn on. Without it the renderer places
+            # points by INDEX and a series that omits its zero days shows day 1 and
+            # day 5 adjacent — a run where there was a gap.
+            entry["series_window"] = series_window(window_days, today=today)
 
     # Honesty envelope over the maintained counters the super-group totals read (Slice
     # 2). ADDITIVE: a new `counts` key only. Disclosed `exact` when the counters were

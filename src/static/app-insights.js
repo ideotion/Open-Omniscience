@@ -630,8 +630,17 @@
         ? `<div class="hint muted" style="margin-top:2px">${esc(growthFallback(g.rate, {window: true})
             || `↑${g.rate.growth}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)`)}</div>`
         : "";
+      // PRH-31: drawn on the SERVER'S window, not on the points. The series omits
+      // its zero days, so an index-placed chart renders day 1 and day 5 adjacent —
+      // a run where there was a gap. `series_window` is the axis those points were
+      // sliced against; without it a term whose newest mention is older than the
+      // window also silently rescales, hiding the quiet tail the rate beside it is
+      // reporting. dashChartSvg's shared-time mode then breaks the line at real
+      // gaps and says so ("a gap is not a zero").
       const spark = (g.series && g.series.length)
-        ? `<div style="margin-top:6px">${dashChartSvg(g.series.map(p => ({observed_on: p.date, price: p.count})), "")}</div>`
+        ? `<div style="margin-top:6px">${dashChartSvg(
+            g.series.map(p => ({observed_on: p.date, price: p.count})), "",
+            g.series_window ? {t0: g.series_window.start, t1: g.series_window.end} : {})}</div>`
         : "";
       return `<div class="sg-card" id="sg-card-${g.id}">
         <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>

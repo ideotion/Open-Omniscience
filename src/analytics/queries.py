@@ -1817,7 +1817,7 @@ _TREND_WINDOWS: tuple[tuple[str, int, int], ...] = (
 
 
 def _window_daily_series(
-    session, term: str, *, days: int, country: str | None = None
+    session, term: str, *, days: int, country: str | None = None, today: date | None = None
 ) -> list[dict]:
     """Daily mention-count series for ``term`` over the last ``days`` days.
 
@@ -1825,9 +1825,14 @@ def _window_daily_series(
     chart exactly, then slices its full-history points to this window's date range
     ``[today - days, today]``. Counts only, no interpolation: only days that carry
     mentions appear (zero-count days are omitted, exactly as :func:`trend` does).
+
+    ``today`` is injectable so a caller can slice the series and describe its axis
+    (``supergroup_stats.series_window``) against ONE date. Two unsynchronised calls
+    to ``date.today()`` either side of midnight describe different windows, and the
+    chart would then be drawn on an axis its own points do not belong to.
     """
     day_keys = trend(session, term, bucket="day", country=country)["points"]
-    today = date.today()
+    today = today or date.today()
     lo = (today - timedelta(days=days)).isoformat()
     hi = today.isoformat()
     # ISO date strings (YYYY-MM-DD) sort chronologically, so a string range is exact.
@@ -1895,28 +1900,44 @@ def trending_windows(
             served_basis = res["basis"]
         terms = res["terms"]
         if series_top > 0:
+            # ONE `today` for every series in this window AND for the axis they are
+            # drawn on — see _window_daily_series' note on the midnight straddle.
+            series_today = date.today()
             for t in terms[:series_top]:
                 if t.get("ring_id"):
                     # A ring's series = the sum of its members' daily series (the
                     # merged "ring:<id>" normalized doesn't resolve to a keyword).
                     t["series"] = _merge_daily_series(
-                        _window_daily_series(session, m["normalized"], days=wdays, country=country)
+                        _window_daily_series(session, m["normalized"], days=wdays,
+                                             country=country, today=series_today)
                         for m in t.get("members", [])
                     )
                 else:
                     t["series"] = _window_daily_series(
-                        session, t["normalized"], days=wdays, country=country
+                        session, t["normalized"], days=wdays, country=country,
+                        today=series_today,
                     )
-        windows.append(
-            {
-                "label": label,
-                "window_days": wdays,
-                "baseline_days": bdays,
-                "terms": terms,
-                "count": res["count"],
-                "scanned": res["scanned"],
-            }
-        )
+        window_row: dict[str, Any] = {
+            "label": label,
+            "window_days": wdays,
+            "baseline_days": bdays,
+            "terms": terms,
+            "count": res["count"],
+            "scanned": res["scanned"],
+        }
+        if series_top > 0:
+            # PRH-31: the AXIS the series above was drawn on. The points omit their
+            # zero days (honest about the data), which a renderer placing points by
+            # INDEX turns into a lie about time — day 1 and day 5 rendered adjacent.
+            # The window has to come from here rather than be recomputed in the
+            # browser: it must match the same `date.today()` `_window_daily_series`
+            # sliced with, and it must survive the case where the newest observation
+            # is older than the window, which is exactly when an axis fitted to the
+            # data hides the quiet tail.
+            from src.analytics.supergroup_stats import series_window
+
+            window_row["series_window"] = series_window(wdays, today=series_today)
+        windows.append(window_row)
     out: dict[str, Any] = {
         "windows": windows,
         "method": (

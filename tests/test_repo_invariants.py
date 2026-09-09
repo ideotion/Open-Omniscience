@@ -5143,7 +5143,18 @@ def test_supergroup_stats_ui():
     assert "g.dominance" in fn, "row 1: the dominance disclosure must render"
     assert "also_in" in fn, "row 2: cross-group overlap must be disclosed on a member"
     assert "zeroCount" in fn and "with no mentions yet" in fn, "row 7: zero-mention members must collapse"
-    assert "dashChartSvg(g.series" in fn, "S1.5: the sparkline must reuse the shared honest-charts primitive"
+    # Matched as two facts rather than as one adjacency: the call gained a third
+    # argument on 2026-09-09 (PRH-31's calendar axis) and wrapped, so
+    # "dashChartSvg(g.series" stopped being a substring of correct code. What the
+    # invariant means is that the group's own series goes through the shared
+    # primitive — not that the two tokens touch.
+    assert "dashChartSvg(" in fn and "g.series.map(" in fn, (
+        "S1.5: the sparkline must reuse the shared honest-charts primitive"
+    )
+    assert "g.series_window" in fn, (
+        "PRH-31: and it must be drawn on the window the server sliced that series "
+        "against — an index-placed daily series renders day 1 and day 5 adjacent"
+    )
     assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
 
 

@@ -38,7 +38,16 @@ def test_strip_is_fail_safe_hidden_when_nothing_trending():
 def test_each_term_deeplinks_and_shows_a_sparkline():
     assert "openAnalysisFor(" in _JS
     # the per-term daily series renders through the honest sparse->bars renderer
-    assert 'dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "")' in _JS
+    assert 'dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), ""' in _JS
+    # PRH-31 (2026-09-09): and on the window the SERVER sliced that series against.
+    # This assertion used to pin the call's closing `)` too, so it read as "the
+    # sparkline takes exactly two arguments" — a shape, where the thing it meant to
+    # guard is that the daily series reaches the honest renderer. The third argument
+    # is the calendar axis; without it a series that omits its zero days renders
+    # day 1 and day 5 adjacent. tests/test_sparkline_time_axis.py owns that claim.
+    assert "_hw ? {t0: _hw.start, t1: _hw.end} : {}" in _JS, (
+        "Home's trend sparkline must be drawn on the payload's series_window"
+    )
 
 
 def test_click_to_enlarge_added_reusing_chartEnlarge():

@@ -1126,12 +1126,16 @@
             // {date,count} -> dashChartSvg's {observed_on,price}; it handles the empty
             // + sparse cases honestly (no fabricated points).
             const pts = x.series.map(p => ({observed_on: p.date, price: p.count}));
+            // PRH-31: place each day at its TRUE position on the window the server
+            // drew, so an omitted zero day reads as the gap it is.
+            const axis = w.series_window
+              ? {t0: w.series_window.start, t1: w.series_window.end} : {};
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
               <div style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent} recent`)}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
-              </div>${dashChartSvg(pts, "")}</div>`;
+              </div>${dashChartSvg(pts, "", axis)}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
           const restList = rest.length
