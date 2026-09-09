@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "لا توجد مصادر مطابقة لهذه المرشّحات.",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "يتم عرض أول {n} مصدرًا مطابقًا. حسّن المرشّحات للوصول إلى بقية الفهرس.",
   "Catalog": "الفهرس",
-  "Stated by the source catalog (asserted, not deduced from text).": "مذكور في فهرس المصادر (تصريح، لا استنتاج من النص)."
+  "Stated by the source catalog (asserted, not deduced from text).": "مذكور في فهرس المصادر (تصريح، لا استنتاج من النص).",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "استورد تدفقات المؤشرات الآن. تُذكر نتيجة كل تدفق، بما في ذلك التدفقات التي ترفض.",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "استورد كل التدفقات الرسمية الآن. تُذكر نتيجة كل تدفق، بما في ذلك التدفقات التي ترفض."
 }

@@ -894,13 +894,13 @@ def ring_country_article_ids(
 
     ring = ring_meta(ring_id)
     if ring is None:
-        return {"ring_id": ring_id, "found": False, "article_ids": [], "total": 0}
+        return {"ring_id": ring_id, "found": False, "article_ids": [], "returned_count": 0}
 
     kw_ids = resolve_group_keyword_ids(session, ring_id)
     if not kw_ids:
         return {
             "ring_id": ring_id, "found": True, "country": country,
-            "article_ids": [], "total": 0, "bounded": False,
+            "article_ids": [], "returned_count": 0, "bounded": False,
             "caveat": "No indexed keywords in this group yet for your corpus.",
         }
 
@@ -923,12 +923,21 @@ def ring_country_article_ids(
     if bounded:
         ids = ids[:limit]
     return {
+        # ``returned_count``, not ``total`` (renamed 2026-09-09). The query asks for
+        # ``limit + 1`` rows purely to LEARN whether it was bounded, then truncates —
+        # so once ``bounded`` is true the real total is a number this function never
+        # computed. Calling the truncated length "total" reported min(real, limit) as
+        # if it were the answer, which is the silent-wrong-number shape the honesty
+        # rules exist to refuse. No total is invented for the bounded case: a count
+        # nobody measured is omitted rather than guessed, the same discipline
+        # weights_pin applies when it omits a comparison nothing compared.
         "ring_id": ring_id, "found": True, "country": country,
-        "article_ids": ids, "total": len(ids), "bounded": bounded,
+        "article_ids": ids, "returned_count": len(ids), "bounded": bounded,
         "method": (
             "The exact articles behind this (group, country) cell of the country "
             "breakdown — same keyword resolution and Source-country join as the "
-            "summary table."
+            "summary table. ``returned_count`` is how many ids came back; when "
+            "``bounded`` is true that is a floor on the real number, not the total."
         ),
     }
 

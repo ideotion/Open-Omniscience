@@ -1032,6 +1032,18 @@
         <b>Not real-time.</b>
         <span>Every number comes straight from the downloaded file — nothing scraped or guessed.</span></p>
       <div class="row">
+        <!-- dead-ui-004 (2026-09-09): loadIndicesData() is complete, ensureOnline-gated
+             and degrades loudly, and had no trigger — its button was lost in a past
+             restructuring, leaving #idx-status/#idx-verdicts permanently empty. The
+             ledger's dead-code worklist lists the function as an orphan to DELETE;
+             two later audits (gui-test mkt-004, an HONESTY finding, and the
+             2026-09-08 visual audit F11) read the same fact the other way, and they
+             are right: _renderFeedVerdicts has no other entry point, so deleting
+             this would remove the app's ONLY surface for "this official feed
+             refused", which is the opposite of degrading loudly. The button is
+             restored instead. -->
+        <button class="secondary" style="align-self:center" onclick="loadIndicesData(this)"
+                title="Import the index feeds now. Each feed's outcome is reported, including any that refuse.">Refresh</button>
         <div id="idx-status" class="hint" style="align-self:center"></div>
         <div id="idx-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>
@@ -1057,6 +1069,9 @@
       <div class="row">
         <div style="flex:1 1 360px"><label>Time range</label>
           <div id="mkt-timescope"></div></div>
+        <!-- dead-ui-004, the commodities half — see the note on the Indices board. -->
+        <button class="secondary" style="align-self:center" onclick="loadMarketData(this)"
+                title="Import every official feed now. Each feed's outcome is reported, including any that refuse.">Refresh</button>
         <div id="mkt-dash-status" class="hint" style="align-self:center"></div>
         <div id="mkt-verdicts" class="hint" style="flex-basis:100%"></div>
       </div>

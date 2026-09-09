@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "Ни один источник не подходит под эти фильтры.",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Показаны первые {n} подходящих источников. Уточните фильтры, чтобы охватить остальной каталог.",
   "Catalog": "Каталог",
-  "Stated by the source catalog (asserted, not deduced from text).": "Заявлено каталогом источников (утверждение, а не вывод из текста)."
+  "Stated by the source catalog (asserted, not deduced from text).": "Заявлено каталогом источников (утверждение, а не вывод из текста).",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "Импортировать индексные потоки сейчас. Результат каждого потока сообщается, включая отказавшие.",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "Импортировать все официальные потоки сейчас. Результат каждого потока сообщается, включая отказавшие."
 }

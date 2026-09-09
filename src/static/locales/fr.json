@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "Aucune source ne correspond à ces filtres.",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Affichage des {n} premières sources correspondantes. Affinez les filtres pour atteindre le reste du catalogue.",
   "Catalog": "Catalogue",
-  "Stated by the source catalog (asserted, not deduced from text).": "Déclaré par le catalogue des sources (affirmé, non déduit du texte)."
+  "Stated by the source catalog (asserted, not deduced from text).": "Déclaré par le catalogue des sources (affirmé, non déduit du texte).",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "Importer maintenant les flux d'indices. Le résultat de chaque flux est indiqué, y compris ceux qui refusent.",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "Importer maintenant tous les flux officiels. Le résultat de chaque flux est indiqué, y compris ceux qui refusent."
 }

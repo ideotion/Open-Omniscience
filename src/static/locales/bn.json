@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "এই ফিল্টারগুলির সাথে কোনো উৎস মেলে না।",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "মিলে যাওয়া প্রথম {n}টি উৎস দেখানো হচ্ছে। ক্যাটালগের বাকি অংশে পৌঁছাতে ফিল্টার পরিমার্জন করুন।",
   "Catalog": "ক্যাটালগ",
-  "Stated by the source catalog (asserted, not deduced from text).": "উৎস ক্যাটালগ দ্বারা ঘোষিত (দাবিকৃত, লেখা থেকে অনুমিত নয়)।"
+  "Stated by the source catalog (asserted, not deduced from text).": "উৎস ক্যাটালগ দ্বারা ঘোষিত (দাবিকৃত, লেখা থেকে অনুমিত নয়)।",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "সূচক ফিডগুলি এখনই আমদানি করুন। প্রতিটি ফিডের ফলাফল জানানো হয়, প্রত্যাখ্যানকারীগুলিও।",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "সব সরকারি ফিড এখনই আমদানি করুন। প্রতিটি ফিডের ফলাফল জানানো হয়, প্রত্যাখ্যানকারীগুলিও।"
 }

@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "इन फ़िल्टरों से कोई स्रोत मेल नहीं खाता।",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "मेल खाते पहले {n} स्रोत दिखाए जा रहे हैं। शेष सूची तक पहुँचने के लिए फ़िल्टर परिष्कृत करें।",
   "Catalog": "सूची",
-  "Stated by the source catalog (asserted, not deduced from text).": "स्रोत सूची द्वारा घोषित (कथित, पाठ से अनुमानित नहीं)।"
+  "Stated by the source catalog (asserted, not deduced from text).": "स्रोत सूची द्वारा घोषित (कथित, पाठ से अनुमानित नहीं)।",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "सूचकांक फ़ीड अभी आयात करें। प्रत्येक फ़ीड का परिणाम बताया जाता है, अस्वीकार करने वाले भी।",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "सभी आधिकारिक फ़ीड अभी आयात करें। प्रत्येक फ़ीड का परिणाम बताया जाता है, अस्वीकार करने वाले भी।"
 }

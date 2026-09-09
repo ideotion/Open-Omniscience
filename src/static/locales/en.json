@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "No sources match these filters.",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.",
   "Catalog": "Catalog",
-  "Stated by the source catalog (asserted, not deduced from text).": "Stated by the source catalog (asserted, not deduced from text)."
+  "Stated by the source catalog (asserted, not deduced from text).": "Stated by the source catalog (asserted, not deduced from text).",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "Import the index feeds now. Each feed's outcome is reported, including any that refuse.",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "Import every official feed now. Each feed's outcome is reported, including any that refuse."
 }

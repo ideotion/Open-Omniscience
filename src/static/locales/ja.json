@@ -3181,5 +3181,7 @@
   "No sources match these filters.": "これらの絞り込み条件に一致するソースはありません。",
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "一致するソースのうち最初の {n} 件を表示しています。カタログの残りを見るには条件を絞り込んでください。",
   "Catalog": "カタログ",
-  "Stated by the source catalog (asserted, not deduced from text).": "ソースカタログによる申告（本文から推定したものではありません）。"
+  "Stated by the source catalog (asserted, not deduced from text).": "ソースカタログによる申告（本文から推定したものではありません）。",
+  "Import the index feeds now. Each feed's outcome is reported, including any that refuse.": "指数フィードを今すぐ取り込みます。拒否されたものを含め、各フィードの結果を報告します。",
+  "Import every official feed now. Each feed's outcome is reported, including any that refuse.": "すべての公式フィードを今すぐ取り込みます。拒否されたものを含め、各フィードの結果を報告します。"
 }
