@@ -3225,5 +3225,15 @@
   "you": "tú",
   "No tags yet.": "Aún sin etiquetas.",
   "new tag": "nueva etiqueta",
-  "Could not load:": "No se pudo cargar:"
+  "Could not load:": "No se pudo cargar:",
+  "Declare the direction you expect before running a single test.": "Declara la dirección que esperas antes de ejecutar una prueba única.",
+  "You declared:": "Declaraste:",
+  "the measured sign MATCHES your declaration.": "el signo medido COINCIDE con tu declaración.",
+  "the measured sign CONTRADICTS your declaration.": "el signo medido CONTRADICE tu declaración.",
+  "positive": "positiva",
+  "negative": "negativa",
+  "Declare first: what do you expect?": "Declara primero: ¿qué esperas?",
+  "— declare before testing —": "— declara antes de probar —",
+  "positive (more coverage as the moon fills)": "positiva (más cobertura al llenarse la luna)",
+  "negative (less coverage as the moon fills)": "negativa (menos cobertura al llenarse la luna)"
 }

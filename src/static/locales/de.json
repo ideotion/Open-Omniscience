@@ -3225,5 +3225,15 @@
   "you": "du",
   "No tags yet.": "Noch keine Tags.",
   "new tag": "neues Tag",
-  "Could not load:": "Konnte nicht laden:"
+  "Could not load:": "Konnte nicht laden:",
+  "Declare the direction you expect before running a single test.": "Erkläre die erwartete Richtung, bevor du einen Einzeltest ausführst.",
+  "You declared:": "Du hast erklärt:",
+  "the measured sign MATCHES your declaration.": "das gemessene Vorzeichen ENTSPRICHT deiner Erklärung.",
+  "the measured sign CONTRADICTS your declaration.": "das gemessene Vorzeichen WIDERSPRICHT deiner Erklärung.",
+  "positive": "positiv",
+  "negative": "negativ",
+  "Declare first: what do you expect?": "Zuerst erklären: Was erwartest du?",
+  "— declare before testing —": "— vor dem Test erklären —",
+  "positive (more coverage as the moon fills)": "positiv (mehr Berichterstattung, je voller der Mond)",
+  "negative (less coverage as the moon fills)": "negativ (weniger Berichterstattung, je voller der Mond)"
 }

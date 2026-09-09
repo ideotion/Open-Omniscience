@@ -3225,5 +3225,15 @@
   "you": "あなた",
   "No tags yet.": "タグはまだありません。",
   "new tag": "新しいタグ",
-  "Could not load:": "読み込めませんでした:"
+  "Could not load:": "読み込めませんでした:",
+  "Declare the direction you expect before running a single test.": "単一検定を実行する前に、期待する方向を宣言してください。",
+  "You declared:": "あなたの宣言:",
+  "the measured sign MATCHES your declaration.": "測定された符号は宣言と一致します。",
+  "the measured sign CONTRADICTS your declaration.": "測定された符号は宣言と矛盾します。",
+  "positive": "正",
+  "negative": "負",
+  "Declare first: what do you expect?": "先に宣言：何を予想しますか？",
+  "— declare before testing —": "— 検定前に宣言 —",
+  "positive (more coverage as the moon fills)": "正（月が満ちるほど報道が増える）",
+  "negative (less coverage as the moon fills)": "負（月が満ちるほど報道が減る）"
 }

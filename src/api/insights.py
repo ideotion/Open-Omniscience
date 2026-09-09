@@ -1517,6 +1517,16 @@ def insights_lunar_correlation(
     ),
     limit: int = Query(40, ge=1, le=200, description="Terms to screen when no term is given"),
     fdr_q: float = Query(0.05, gt=0.0, le=1.0, description="FDR level for the screen"),
+    expected_direction: str | None = Query(
+        None,
+        pattern="^(positive|negative)$",
+        description=(
+            "PRE-REGISTRATION: the direction you expect, declared BEFORE the test. "
+            "REQUIRED with 'term' (a single test without a declared hypothesis is the "
+            "p-hacking surface this exists to close). Not accepted on the screen, which "
+            "is exploratory by design."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     """Test whether a keyword's daily coverage lines up with the moon — HONESTLY.
@@ -1527,19 +1537,49 @@ def insights_lunar_correlation(
     family with Benjamini-Hochberg FDR — so a survivor is one that beat multiple-testing,
     never a bare significant p. Correlation is NOT causation (stated on every result); the
     common, honest outcome is that nothing survives. Counts + statistics only, no score.
+
+    PRE-REGISTRATION (the docket's missing piece): a SINGLE test must declare its expected
+    direction first, and the endpoint refuses without one — 400, not a silent default. The
+    refusal lives here and not only in the UI for the same reason the OpenTimestamps consent
+    gate does (invariant #14f): a caller that never went through the form gets the same
+    honest answer. The SCREEN takes no declaration at all — screening many series is
+    exploratory by definition, which is what the FDR correction is for, and demanding one
+    hypothesis for forty series would be a rubber stamp rather than a pre-registration.
     """
     from src.analytics import lunar
 
+    if term and not expected_direction:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "expected_direction is required for a single-term test: declare whether you "
+                "expect a positive or negative correlation BEFORE running it. Testing one "
+                "series and reading whichever sign appears is the degree of freedom this "
+                "requirement removes. Omit 'term' to run the FDR-corrected screen instead."
+            ),
+        )
+    if expected_direction and not term:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "expected_direction does not apply to the screen: it tests many series at "
+                "once, so there is no single hypothesis to declare. The screen's honesty "
+                "mechanism is the Benjamini-Hochberg correction, not pre-registration."
+            ),
+        )
+
     def _compute() -> dict:
         if term:
-            corr = lunar.correlate_keyword(db, term)
+            corr = lunar.correlate_keyword(db, term, expected_direction=expected_direction)
             return {
                 "term": term,
                 "result": corr.to_dict() if corr else None,
                 "single_test": True,
+                "expected_direction": expected_direction,
                 "variable": "illuminated_fraction",
                 "method": lunar.LUNAR_METHOD,
                 "caveat": lunar.CORRELATION_CAVEAT,
+                "preregistration": lunar.PREREGISTRATION_NOTE,
                 "note": (
                     "A single test, NOT corrected for multiple comparisons — screen many series "
                     "(omit 'term') for an honest, FDR-corrected result."
@@ -1551,7 +1591,11 @@ def insights_lunar_correlation(
     # No TTL cache here (not polled); the corpus-wide lunar SCREEN is one of the heaviest
     # unprotected scans (measured 57-142 s) — the cap + deadline stop it thrashing the one
     # connection (field test 2026-07-08, Item 8).
-    key = _ckey("lunar-correlation", term=term or "", limit=limit, fdr_q=fdr_q)
+    # The declaration is part of the KEY: the payload carries matches_expectation, so a
+    # result cached under "positive" must never be served to a caller who declared
+    # "negative" -- that would hand back a verdict on a hypothesis they did not make.
+    key = _ckey("lunar-correlation", term=term or "", limit=limit, fdr_q=fdr_q,
+                expected_direction=expected_direction or "")
     return guarded_read(db, key, _compute)
 
 

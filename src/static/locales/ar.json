@@ -3225,5 +3225,15 @@
   "you": "أنت",
   "No tags yet.": "لا وسوم بعد.",
   "new tag": "وسم جديد",
-  "Could not load:": "تعذّر التحميل:"
+  "Could not load:": "تعذّر التحميل:",
+  "Declare the direction you expect before running a single test.": "أعلن الاتجاه الذي تتوقعه قبل إجراء اختبار مفرد.",
+  "You declared:": "لقد أعلنت:",
+  "the measured sign MATCHES your declaration.": "الإشارة المقاسة تطابق إعلانك.",
+  "the measured sign CONTRADICTS your declaration.": "الإشارة المقاسة تناقض إعلانك.",
+  "positive": "موجب",
+  "negative": "سالب",
+  "Declare first: what do you expect?": "أعلن أولًا: ماذا تتوقع؟",
+  "— declare before testing —": "— أعلن قبل الاختبار —",
+  "positive (more coverage as the moon fills)": "موجب (تغطية أكثر كلما اكتمل القمر)",
+  "negative (less coverage as the moon fills)": "سالب (تغطية أقل كلما اكتمل القمر)"
 }

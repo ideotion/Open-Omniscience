@@ -3225,5 +3225,15 @@
   "you": "Anda",
   "No tags yet.": "Belum ada tag.",
   "new tag": "tag baru",
-  "Could not load:": "Tidak dapat memuat:"
+  "Could not load:": "Tidak dapat memuat:",
+  "Declare the direction you expect before running a single test.": "Nyatakan arah yang Anda harapkan sebelum menjalankan satu uji.",
+  "You declared:": "Anda menyatakan:",
+  "the measured sign MATCHES your declaration.": "tanda yang terukur SESUAI dengan pernyataan Anda.",
+  "the measured sign CONTRADICTS your declaration.": "tanda yang terukur BERTENTANGAN dengan pernyataan Anda.",
+  "positive": "positif",
+  "negative": "negatif",
+  "Declare first: what do you expect?": "Nyatakan dulu: apa yang Anda harapkan?",
+  "— declare before testing —": "— nyatakan sebelum menguji —",
+  "positive (more coverage as the moon fills)": "positif (liputan lebih banyak saat bulan memenuh)",
+  "negative (less coverage as the moon fills)": "negatif (liputan lebih sedikit saat bulan memenuh)"
 }

@@ -44,6 +44,11 @@ class LunarCorrelation:
       * ``survives``        -- did it survive the FDR correction at the screen's level?
       * ``active_days``     -- days with a non-zero value (the real signal density).
       * ``window``          -- (start_iso, end_iso) of the series.
+      * ``expected_direction`` -- the direction DECLARED BEFORE the test ("positive" |
+        "negative"), or None when none was declared (the exploratory screen).
+      * ``matches_expectation`` -- whether the measured sign matched that declaration.
+        None when nothing was declared. A LABEL, computed after the fact from the sign
+        of ``r``; it never touches the statistic.
     """
 
     term: str
@@ -54,6 +59,8 @@ class LunarCorrelation:
     survives: bool | None
     active_days: int
     window: tuple[str, str]
+    expected_direction: str | None = None
+    matches_expectation: bool | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -65,7 +72,36 @@ class LunarCorrelation:
             "survives": self.survives,
             "active_days": self.active_days,
             "window": {"start": self.window[0], "end": self.window[1]},
+            "expected_direction": self.expected_direction,
+            "matches_expectation": self.matches_expectation,
         }
+
+
+DIRECTIONS = ("positive", "negative")
+
+# What pre-registration IS and, more importantly, what it is NOT. Declaring a direction
+# before looking removes ONE degree of freedom -- reading whichever sign turned up as the
+# thing you meant all along. It does not make a matched result evidence of a lunar effect,
+# it does not lower a p-value, and it does not retire the confound. Said on every result
+# so a match cannot be quoted as a confirmation.
+PREREGISTRATION_NOTE = (
+    "Declared BEFORE the test. Pre-registration removes one degree of freedom -- it stops "
+    "a result being reinterpreted to match whichever sign appeared -- and nothing more: a "
+    "match is not evidence of a lunar effect, does not change r or the p-value, and does "
+    "not rule out the ~monthly confound. A CONTRADICTED expectation is as informative as a "
+    "matched one, and both are far more often chance than signal."
+)
+
+
+def _expectation_label(r: float, expected_direction: str | None) -> bool | None:
+    """Post-hoc: did the measured sign match what was declared? PURE, and deliberately
+    downstream of the statistic -- ``r`` and ``p`` are computed before this is consulted,
+    so a declaration can never steer the number it is judged against."""
+    if expected_direction is None:
+        return None
+    if expected_direction not in DIRECTIONS:
+        raise ValueError(f"expected_direction must be one of {list(DIRECTIONS)} or None")
+    return r > 0 if expected_direction == "positive" else r < 0
 
 
 CORRELATION_CAVEAT = (
@@ -143,7 +179,8 @@ def _dense_daily(points: dict[str, float], start: date, end: date) -> list[float
 
 
 def correlate_daily_series(
-    name: str, daily: dict[str, float], *, min_active_days: int = 8, min_span_days: int = 45
+    name: str, daily: dict[str, float], *, min_active_days: int = 8, min_span_days: int = 45,
+    expected_direction: str | None = None,
 ) -> LunarCorrelation | None:
     """Correlate ANY daily series against the moon (a single, uncorrected test).
 
@@ -152,6 +189,10 @@ def correlate_daily_series(
     a fabricated correlation) when there are too few active days, the span is too short, or a
     series is constant. ``q_value``/``survives`` are None (a single test is not a screen).
     """
+    if expected_direction is not None and expected_direction not in DIRECTIONS:
+        # Loud, and BEFORE the honest-skip returns below: a typo'd declaration must not be
+        # swallowed by an untestable series and silently become "nothing was declared".
+        raise ValueError(f"expected_direction must be one of {list(DIRECTIONS)} or None")
     active = sorted(d for d, v in daily.items() if float(v) != 0.0)
     if len(active) < min_active_days:
         return None
@@ -167,9 +208,13 @@ def correlate_daily_series(
     if res is None:
         return None
     r, p = res
+    # The declaration is consulted only HERE, after r and p exist. Validated even when the
+    # series turns out untestable would be nicer still, so it is validated up front too.
     return LunarCorrelation(
         term=name, r=r, n=n, p_value=p, q_value=None, survives=None,
         active_days=len(active), window=(start.isoformat(), end.isoformat()),
+        expected_direction=expected_direction,
+        matches_expectation=_expectation_label(r, expected_direction),
     )
 
 
@@ -182,13 +227,19 @@ def _keyword_daily(session, term: str) -> dict[str, float]:
 
 
 def correlate_keyword(
-    session, term: str, *, min_active_days: int = 8, min_span_days: int = 45
+    session, term: str, *, min_active_days: int = 8, min_span_days: int = 45,
+    expected_direction: str | None = None,
 ) -> LunarCorrelation | None:
     """Correlate ONE keyword's daily mention series against the moon (a single, uncorrected
-    test). The public single-term entry point; returns None on an untestable series."""
+    test). The public single-term entry point; returns None on an untestable series.
+
+    ``expected_direction`` is the PRE-REGISTERED hypothesis -- what the operator declared
+    before looking. It is carried onto the result and labelled there; it never reaches the
+    statistic."""
     return correlate_daily_series(
         term, _keyword_daily(session, term),
         min_active_days=min_active_days, min_span_days=min_span_days,
+        expected_direction=expected_direction,
     )
 
 
