@@ -2386,6 +2386,98 @@ def list_supergroups(
     }
 
 
+@router.get("/supergroup-articles")
+def insights_supergroup_articles(
+    group_id: int = Query(..., description="a super-group id from /api/insights/supergroups"),
+    cap: int = Query(4000, ge=1, le=20000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The article set BEHIND a super-group's own headline numbers — ONE resolver.
+
+    THE DEFECT THIS CLOSES (recorded 2026-09-09 as measured-latent, reproduced and
+    fixed here). The Observatory's drill-through resolved a galaxy's membership in
+    the BROWSER: it read each member's ``normalized`` term plus a ring member's
+    cross-language surface forms and handed those STRINGS to ``corpus-algebra``,
+    which matches ``Keyword.normalized_term`` literally. The galaxy's own numbers
+    come from :func:`resolve_member_keyword_ids`, which additionally resolves a
+    FAMILY member's ``canonical_key`` variants. So the ranked table and the set its
+    click opened were computed by two different resolvers, and they can disagree.
+
+    Constructed on a two-article corpus: a family member ``boeing`` beside a keyword
+    ``boeing's``. The resolver returns both keyword ids and the galaxy's headline
+    counts 8 mentions across both articles; the term path returned one article. The
+    table said two, the click opened one — exactly the class audit §4.3 is about,
+    which is why it is fixed rather than left disclosed.
+
+    Measured on the live corpus 2026-09-09 the two AGREED on every super-group,
+    because every member there is a ring member and the family branch never fires.
+    That is what made it latent, not what made it safe: a corpus with family members
+    is an ordinary corpus.
+
+    Bounded, and the bound is REPORTED: at ``cap`` distinct articles the answer is a
+    true SUBSET (it may be missing members) and never a set with a fabricated one --
+    the same convention ``corpus_algebra`` states. A group whose membership resolves
+    to no keyword at all returns ``keyword_ids: 0``, which the caller reads as
+    "cannot be resolved" rather than as an empty corpus.
+    """
+    from src.analytics.supergroup_stats import (
+        _chunks,
+        distinct_ids,
+        resolve_member_keyword_ids,
+    )
+    from src.database.models import KeywordMention, KeywordSuperGroup
+
+    sg = db.query(KeywordSuperGroup).filter(KeywordSuperGroup.id == group_id).one_or_none()
+    if sg is None:
+        raise HTTPException(status_code=404, detail=f"no super-group with id {group_id}")
+
+    member_rows = [(m.normalized_term, m.ring_id) for m in sg.members]
+    keyword_ids = distinct_ids(resolve_member_keyword_ids(db, member_rows))
+
+    found: set[int] = set()
+    for chunk in _chunks(sorted(keyword_ids)):
+        for (aid,) in (
+            db.query(KeywordMention.article_id)
+            .filter(KeywordMention.keyword_id.in_(chunk))
+            .distinct()
+            .all()
+        ):
+            found.add(int(aid))
+    # Capped AFTER the whole set is known, so the bound takes a deterministic prefix
+    # rather than whichever chunk happened to fill it first.
+    ordered = sorted(found)
+    bounded = len(ordered) > int(cap)
+    article_ids = ordered[: int(cap)]
+
+    return {
+        "group_id": sg.id,
+        "name": sg.name,
+        "members": len(member_rows),
+        "keyword_ids": len(keyword_ids),
+        "article_ids": article_ids,
+        "n_articles": len(article_ids),
+        "total_articles": len(ordered),
+        "bounded": bounded,
+        "method": (
+            "The group's members resolved to their DEDUPED keyword-id set by the same "
+            "resolver the group's own totals use (a ring member matches every one of "
+            "the ring's cross-language terms; a family member also matches its "
+            "canonical-key variants), then the distinct articles those keywords are "
+            "mentioned in."
+        ),
+        "caveat": (
+            "Counts only, never a score. MEMBERSHIP here is resolved by the same "
+            "function the group's own totals use, so the ranked table and this set "
+            "cannot disagree about WHICH keywords the group holds. The table's "
+            "mention and article COUNTS are a separate matter: they read the "
+            "denormalised keyword counters maintained at index time, and their "
+            "freshness travels with that payload's own envelope. A bounded result "
+            "is a true subset — it may be missing members, never carrying an "
+            "invented one."
+        ),
+    }
+
+
 @router.get("/supergroups/redundant-members")
 def supergroup_redundant_members(db: Session = Depends(get_db)) -> dict:
     """S4.1: plain family members that are fully redundant with a ring already in

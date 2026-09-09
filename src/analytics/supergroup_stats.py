@@ -46,10 +46,19 @@ def resolve_member_keyword_ids(
     DISTINCT keyword ids it resolves to.
 
     A FAMILY member (``ring_id`` is ``None``) matches its own normalized term AND
-    its morphological family (via ``canonical_key`` — plural/possessive variants);
-    a RING member matches every one of the ring's cross-language terms (the
-    super-ring model). Small-column queries only (id + normalized_term), never
-    ``keyword_mentions``.
+    its morphological family (via ``canonical_key``); a RING member matches every
+    one of the ring's cross-language terms (the super-ring model). Small-column
+    queries only (id + normalized_term), never ``keyword_mentions``.
+
+    ``canonical_key`` COLLAPSES A TRAILING POSSESSIVE, and nothing else. This
+    docstring said "plural/possessive variants" until 2026-09-09; the plural half
+    was never true of this function — ``families.canonical_key`` calls
+    ``_strip_possessive_token`` on the last token and returns. Plurals are handled
+    elsewhere in the family layer, not here. The claim mattered because it is what
+    a caller reads when deciding whether a term-string path can stand in for this
+    one: it cannot, and the reason is narrower and more specific than the docstring
+    admitted (see ``GET /api/insights/supergroup-articles``, which exists because
+    the Observatory's drill-through was resolving membership the other way).
     """
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
