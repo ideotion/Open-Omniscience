@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "Pemeriksaan gagal: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "≥ {n} artikel dalam {d} hari · terakhir terpicu: {when}",
   "{n} articles ({new} new)": "{n} artikel ({new} baru)",
-  "Watch: {name}": "Pemantauan: {name}"
+  "Watch: {name}": "Pemantauan: {name}",
+  "On now, ends {end}": "Sedang berlangsung, berakhir {end}",
+  "Runs {start} – {end}": "Dari {start} sampai {end}",
+  "since {year}": "sejak {year}",
+  "nothing listed after {year}": "tidak ada yang terdaftar setelah {year}",
+  "Stated by the event catalog (asserted, not deduced).": "Dinyatakan oleh katalog acara (klaim, bukan simpulan)."
 }

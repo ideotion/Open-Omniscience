@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "Проверка не удалась: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "≥ {n} статей за {d} дн. · последнее срабатывание: {when}",
   "{n} articles ({new} new)": "{n} статей ({new} новых)",
-  "Watch: {name}": "Наблюдение: {name}"
+  "Watch: {name}": "Наблюдение: {name}",
+  "On now, ends {end}": "Идёт сейчас, заканчивается {end}",
+  "Runs {start} – {end}": "С {start} по {end}",
+  "since {year}": "с {year}",
+  "nothing listed after {year}": "после {year} ничего не указано",
+  "Stated by the event catalog (asserted, not deduced).": "Заявлено каталогом событий (утверждение, не вывод)."
 }

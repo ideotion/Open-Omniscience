@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "检查失败：{error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "≥ {n} 篇文章，{d} 天内 · 上次触发：{when}",
   "{n} articles ({new} new)": "{n} 篇文章（{new} 篇新增）",
-  "Watch: {name}": "监视项：{name}"
+  "Watch: {name}": "监视项：{name}",
+  "On now, ends {end}": "正在进行，{end} 结束",
+  "Runs {start} – {end}": "{start} 至 {end}",
+  "since {year}": "自 {year} 起",
+  "nothing listed after {year}": "{year} 之后没有列出任何内容",
+  "Stated by the event catalog (asserted, not deduced).": "由事件目录声明（自述，而非推断）。"
 }

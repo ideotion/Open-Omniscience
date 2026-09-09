@@ -7724,3 +7724,24 @@
   "ONE toolkit" is not about the number of functions; it is that the rules must not be re-derived per
   surface.** Point the second renderer at the same helpers (`_seriesRuns`, `_SPARSE_BAR_MAX`) and leave
   the layout question to the maintainer.
+
+- **A SOURCE-GREP GUARD CANNOT SEE A FALSY-BUT-STATED VALUE — DRIVE THE FUNCTION (2026-09-09).** The
+  agenda's new span/year rendering was guarded by six assertions over `agRow`'s source, and they killed
+  five of six mutants. The two they could not reach were behavioural: `origin_year != null` degraded to
+  `if (e.origin_year)` still contains every substring the grep looks for, and so does a `join(" · ")`
+  that leaves a dangling separator when one half of the range is absent. A node suite that EXTRACTS the
+  shipped function by name and EXECUTES it caught both in one line each. **The rule: guard the source for
+  what must stay present, and drive the function for what must be TRUE.** The two are different tests and
+  neither substitutes for the other — the grep survives a browser CI cannot run, and the drive survives a
+  refactor that keeps every keyword.
+
+- **SHIPPING A DISPLAY FOR DATA NOBODY HAS ENTERED IS HALF A FIX, AND THE HALF MUST BE NAMED
+  (2026-09-09).** `catalog.py` computed month-spans and `origin_year`/`until_year` for six weeks with its
+  own test file while `agRow` read none of it. Wiring the display took an hour; then
+  `grep -c "end_month\|origin_year\|until_year" configs/world_events.yml` returned **0** — no shipped
+  event exercises any of it, so the surface renders nothing today. The temptation is to add a plausible
+  entry ("Dry January runs 01-01 to 01-31, held since 2013") and call the item closed. That is inventing
+  sourced facts, which is the thing this project refuses everywhere else. **Ship the code half, then
+  record the content half as blocked on RESEARCH rather than on code, and say in the ledger row that the
+  improvement is not yet visible.** A row that reads "shipped" over an unexercised surface is how a future
+  session comes to believe a feature works.

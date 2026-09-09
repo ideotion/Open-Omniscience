@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "Check failed: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "≥ {n} articles within {d} day(s) · last fired: {when}",
   "{n} articles ({new} new)": "{n} articles ({new} new)",
-  "Watch: {name}": "Watch: {name}"
+  "Watch: {name}": "Watch: {name}",
+  "On now, ends {end}": "On now, ends {end}",
+  "Runs {start} – {end}": "Runs {start} – {end}",
+  "since {year}": "since {year}",
+  "nothing listed after {year}": "nothing listed after {year}",
+  "Stated by the event catalog (asserted, not deduced).": "Stated by the event catalog (asserted, not deduced)."
 }

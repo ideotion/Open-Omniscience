@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "確認に失敗しました: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "{d} 日以内に {n} 件以上の記事 · 最終発火: {when}",
   "{n} articles ({new} new)": "{n} 件の記事（新規 {new} 件）",
-  "Watch: {name}": "ウォッチ: {name}"
+  "Watch: {name}": "ウォッチ: {name}",
+  "On now, ends {end}": "開催中、{end} まで",
+  "Runs {start} – {end}": "{start} 〜 {end}",
+  "since {year}": "{year} 年から",
+  "nothing listed after {year}": "{year} 年以降は掲載なし",
+  "Stated by the event catalog (asserted, not deduced).": "イベントカタログによる申告（推定ではありません）。"
 }

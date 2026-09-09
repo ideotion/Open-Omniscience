@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "जाँच विफल: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "{d} दिन में ≥ {n} लेख · अंतिम बार सक्रिय: {when}",
   "{n} articles ({new} new)": "{n} लेख ({new} नए)",
-  "Watch: {name}": "निगरानी: {name}"
+  "Watch: {name}": "निगरानी: {name}",
+  "On now, ends {end}": "अभी चल रहा है, {end} को समाप्त",
+  "Runs {start} – {end}": "{start} से {end} तक",
+  "since {year}": "{year} से",
+  "nothing listed after {year}": "{year} के बाद कुछ भी सूचीबद्ध नहीं",
+  "Stated by the event catalog (asserted, not deduced).": "घटना सूची द्वारा घोषित (कथित, अनुमानित नहीं)।"
 }

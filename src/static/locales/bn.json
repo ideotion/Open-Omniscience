@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "পরীক্ষা ব্যর্থ: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "{d} দিনে ≥ {n}টি নিবন্ধ · সর্বশেষ সক্রিয়: {when}",
   "{n} articles ({new} new)": "{n}টি নিবন্ধ ({new}টি নতুন)",
-  "Watch: {name}": "নজরদারি: {name}"
+  "Watch: {name}": "নজরদারি: {name}",
+  "On now, ends {end}": "এখন চলছে, {end}-এ শেষ",
+  "Runs {start} – {end}": "{start} থেকে {end}",
+  "since {year}": "{year} সাল থেকে",
+  "nothing listed after {year}": "{year}-এর পরে কিছুই তালিকাভুক্ত নেই",
+  "Stated by the event catalog (asserted, not deduced).": "ইভেন্ট ক্যাটালগ দ্বারা ঘোষিত (দাবিকৃত, অনুমিত নয়)।"
 }

@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "Falha na verificação: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "≥ {n} artigos em {d} dia(s) · último disparo: {when}",
   "{n} articles ({new} new)": "{n} artigos ({new} novos)",
-  "Watch: {name}": "Vigilância: {name}"
+  "Watch: {name}": "Vigilância: {name}",
+  "On now, ends {end}": "A decorrer, termina a {end}",
+  "Runs {start} – {end}": "De {start} a {end}",
+  "since {year}": "desde {year}",
+  "nothing listed after {year}": "nada listado depois de {year}",
+  "Stated by the event catalog (asserted, not deduced).": "Declarado pelo catálogo de eventos (afirmado, não deduzido)."
 }

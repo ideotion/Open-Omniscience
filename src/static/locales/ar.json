@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "فشل التحقّق: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "‏≥ {n} مقالات خلال {d} يوم · آخر تفعيل: {when}",
   "{n} articles ({new} new)": "{n} مقالات ({new} جديدة)",
-  "Watch: {name}": "مراقبة: {name}"
+  "Watch: {name}": "مراقبة: {name}",
+  "On now, ends {end}": "جارٍ الآن، ينتهي في {end}",
+  "Runs {start} – {end}": "من {start} إلى {end}",
+  "since {year}": "منذ {year}",
+  "nothing listed after {year}": "لا شيء مُدرَج بعد {year}",
+  "Stated by the event catalog (asserted, not deduced).": "مذكور في فهرس الأحداث (تصريح، لا استنتاج)."
 }

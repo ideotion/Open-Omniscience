@@ -3744,6 +3744,23 @@
   the `origin_year`/`until_year`/`end_month`/`end_day` fields and floating (nth-weekday)
   recurrence all exist, pinned by `tests/test_event_recurrence.py`. What is unbuilt is the
   DISPLAY — `app-agenda.js` renders none of it. Say which half, per the working mode.
+  **(b) DISPLAY HALF CLOSED 2026-09-09 — AND THE OTHER HALF IS CONTENT, NOT CODE.** `agRow` now
+  reads `e.span` (active → "On now, ends {end}", upcoming → "Runs {start} – {end}", the two
+  painted differently because they are different facts) and the `origin_year`/`until_year` range
+  ("· since {year} · nothing listed after {year}"), both hovering "Stated by the event catalog
+  (asserted, not deduced)." — the catalogue-asserted class, since `_span_for` builds a span "only
+  from explicitly stated start+end, never guessed". `until_year` is worded about the LISTING, not
+  the world: the catalogue suppresses occurrences past that year, which is not a claim the event
+  will never happen again. +5 keys ×12. Guarded by `tests/test_agenda_span_display.py` (source
+  reads stay) + `tests/agenda_span_node_test.js` (10 checks that EXECUTE the shipped `agRow`:
+  active vs upcoming, a half-stated span, a dangling separator, `origin_year == 0`).
+  **AND IT RENDERS NOTHING TODAY — the measurement this must not overstate away.**
+  `configs/world_events.yml` uses NONE of the four fields: zero shipped events carry `end_month`,
+  `origin_year` or `until_year`. So the surface is present-and-guarded, not a visible improvement.
+  What remains is a CONTENT change needing sourced facts — which observances are month-spans,
+  since when each has been held, which listings genuinely stop — exactly the kind of thing a
+  session must not invent. **REMAINING → sourced catalogue entries, one per fact, with the source
+  named in the entry. Blocked on research, never on code.**
   **(c) VERIFIED-PRESENT** — `src/privacy/link_sanitizer.py` exists, so the .eml plan's S1
   anonymisation core shipped; `ooMap` is wired in seven `app-*.js` modules.
   **(d) THE AGENDA'S CONFIDENCE TIERS ARE UNBUILT AS A VOCABULARY.** `catalog` carries one

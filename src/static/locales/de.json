@@ -3207,5 +3207,10 @@
   "Check failed: {error}": "Prüfung fehlgeschlagen: {error}",
   "≥ {n} articles within {d} day(s) · last fired: {when}": "≥ {n} Artikel innerhalb von {d} Tag(en) · zuletzt ausgelöst: {when}",
   "{n} articles ({new} new)": "{n} Artikel ({new} neu)",
-  "Watch: {name}": "Beobachtung: {name}"
+  "Watch: {name}": "Beobachtung: {name}",
+  "On now, ends {end}": "Läuft jetzt, endet am {end}",
+  "Runs {start} – {end}": "Läuft vom {start} bis {end}",
+  "since {year}": "seit {year}",
+  "nothing listed after {year}": "nach {year} ist nichts gelistet",
+  "Stated by the event catalog (asserted, not deduced).": "Vom Ereigniskatalog angegeben (behauptet, nicht abgeleitet)."
 }
