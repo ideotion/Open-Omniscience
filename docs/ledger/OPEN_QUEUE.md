@@ -10944,3 +10944,66 @@ Before anything touches that fold, confirm which.
   hand-shortens three targets and pre-dates a heading rename for the others). The 9 were re-measured
   after the anchor fix: clicking one is now INERT (Help stays open, nothing scrolls) rather than
   ejecting the reader to Home, so this is a cosmetic residue, not the P0.
+
+### 2026-09-09 — the open-queue burn-down (PR #1104): what closed, what is recorded, what is deliberately left
+
+Nine docket items closed, each measured against a running instance before and after. The rows are in
+[`shipped.csv`](shipped.csv); the reusable lessons are in [`LESSONS.md`](LESSONS.md). What follows is
+only the part that stays open, plus the measurements a later session should not have to repeat.
+
+**RETIRED FROM THIS DOCKET (their work is shipped, and the entries above that describe them are now
+history rather than a to-do):** the 2026-09-09 `/api/sources` 714 KB deliberate omission (its stated
+blocker was "this needs a FRONTEND change" — that change is made, and nothing is capped); the orphaned
+`"Stats unavailable."` locale key (pruned, in a pass that owned the locale files for other reasons,
+exactly as the note asked); the measured-latent Observatory resolver divergence (reproduced on a
+constructed corpus, so closed rather than disclosed); PRH-31's compressed sparkline axis; DB-10 §2's
+missing VACUUM disk preflight; the `ring_country_article_ids` `total` misnomer; the `PR pending`
+placeholder (rule 5b, resolved to **PR #1047**).
+
+**THE DEAD-CODE WORKLIST'S `loadIndicesData`/`loadMarketData` ENTRY IS ANSWERED THE OTHER WAY, and the
+entry should be read as resolved rather than pending.** It listed them as orphans to DELETE. Two later
+audits — the 2026-07-22 GUI audit (`mkt-004`, filed under HONESTY) and the 2026-09-08 visual audit
+(F11) — say restore the trigger, and they are right for a reason neither the worklist nor this session
+assumed: `_renderFeedVerdicts` has NO other entry point, so deleting them removes the app's only surface
+for "this official feed refused". Both buttons are restored, consent-gated and browser-verified.
+
+**STILL OPEN, and NARROWED — the `#corpus-win` deletion pass.** The retired modal's markup and
+`corpusTab`/`renderCorpus*` are still in the tree, still unreachable, still gated on the
+browser-verified deletion bar. Two things are now known that were not: (a) `renderCorpusSources` was
+repaired this pass and the repair is a SOURCE fix with no runtime effect — the deletion pass should
+delete a correct function rather than inherit a defect, and the code says so in place; (b) the
+retirement note's claim that the `#an` window is a "strict superset" of the modal was FALSE for the
+Sources view (the modal showed each source's catalogue facts, the live window showed volume/tone/span
+only). That gap is closed, so the superset claim is now true for this facet — but **nobody has audited
+the other five subtabs against the same claim**, and the deletion pass should, because a superset claim
+is what licenses the deletion.
+
+**RE-MEASURED, so a later session does not re-derive it (2026-09-09, this sandbox's proxy):**
+`huggingface.co`, `ollama.com`, `dumps.wikimedia.org` all return `connect_rejected` (organisation
+policy) against `pypi.org` = 200 as the control. So the `HF_REVISION_PINS`/`OLLAMA_DIGEST_PINS` blank
+values (PROMPT_11 item 2), the AI-15 `LiquidAI` publisher lookup (item 3), and the
+`dumpstatus.json`-shape question all remain genuinely parked — **their stated reason has NOT expired.**
+
+**AXE COVERAGE, stated so the gaps are visible rather than implied.** Swept and CLEAN at 1440×900:
+home, feed, insights, observatory, timemap, agenda, markets, library, law, settings, the Export/Import
+dialogs, the command palette, the analysis window, `/tasks`, and all eight Help documents. Swept and
+clean at 768×1024 and at 390×844 (the latter through the hamburger — the sidebar is off-canvas below
+600 px, and a probe that clicks a nav item there measures its own error, not the app's). **NOT swept:**
+the eight `guis/` alternative skins, `investigate.html`, `unlock.html`, the standalone reader page (no
+article id was reachable on this fixture), and every locale other than `en` except the Watches panel
+(checked in `fr`/`ja`/`ar`).
+
+**NOT EXERCISED, and it is a real gap in this pass's evidence:** the super-group sparkline. This
+fixture's newest article is from 2026-07, so every 7-day series is empty and no chart is drawn at all.
+Its axis wiring is guarded by source and by an endpoint test; it has not been seen rendering. A corpus
+with recent mentions would close it in one click.
+
+**A NEW OBSERVATION, recorded rather than acted on — `LESSONS.md` has outgrown the size the protocol's
+own amendment assumed.** THE PROTOCOL rule (1) justifies "read it in full" by measuring the constitution
+at 573,850 bytes across `CLAUDE.md` + `LESSONS.md`. `LESSONS.md` alone is now **669 KB** (~170k tokens),
+so the pair is past the figure the amendment used to argue the rule was achievable — the same drift that
+made the rule unfollowable when `CLAUDE.md` reached 1.3 MB, arriving in the file the fix moved things
+INTO. Rule (5c) put a size ratchet on `CLAUDE.md` and on nothing else. This is not a proposal to
+compress lessons (rule 5 protects them and they are load-bearing); it is a measurement, and the choice
+between a ratchet, an index, or an explicit "consulted, not memorised" reclassification is a maintainer
+call.

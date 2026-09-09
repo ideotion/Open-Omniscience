@@ -7616,3 +7616,91 @@
   had only ever had one reason to fire. Widening a condition means auditing every message that explains
   it. (3) Both the fix and the message now have their own forced-failure probes, because a branch that
   cannot be shown to fire is indistinguishable from dead code.
+
+- **A GUARD THAT ASSERTS OVER A WHOLE OBJECT LITERAL PASSES ON THE COMMENT — AND ON THE WRONG KEY
+  (2026-09-09).** A test read `_ADV_LOADERS` whole and asserted `"loadSources()" in loaders`. Deleting
+  the call left the guard green, because the comment ABOVE the call still said the word — the exact
+  family `js_source_helper`'s own docstring records, and the reason `strip_comments` exists. But the
+  second half is worse and is not in that docstring: the whole-literal read would ALSO have passed with
+  the call moved into the WRONG ENTRY, which is precisely the failure the test existed to catch (a
+  loader in the `sources` fold does not open the `collect` fold). Both mutants survived the first
+  attempt. **Slice to the one entry you are claiming about, strip comments, and mutate the wrong-place
+  case as well as the missing case** — "present somewhere in this literal" is a much weaker claim than
+  it reads as.
+
+- **A CONSTANT THAT APPEARS ON BOTH SIDES OF AN ASSERTION IS NOT PINNED BY IT (2026-09-09).** The VACUUM
+  preflight's whole safety argument is the number 2.0 — SQLite writes a complete second copy of the
+  database before swapping it in. The test asserted `needed_bytes == db_bytes * VACUUM_HEADROOM`, which
+  holds for *any* value of the constant, **including 1.0**, the value that says the rebuild needs no room
+  of its own. Dropping it to 1.0 passed every other test in the file. The repair is behavioural and
+  comes in a PAIR: a volume with room for the file but not for the copy must be REFUSED, and ample space
+  must still be ACCEPTED — otherwise a headroom raised until nothing ever passes satisfies the first
+  test while breaking every real vacuum. **When a constant carries the argument, assert the behaviour on
+  both sides of it, never the arithmetic that contains it.**
+
+- **`display:none` HIDES FROM THE SCREEN READER TOO, AND AN ICON RAIL IS EXACTLY WHERE THAT BITES
+  (2026-09-09).** The sidebar's rail hid every nav label with `display:none`. Those labels are the ONLY
+  accessible name each nav button has — no `aria-label`, no `title` — so the app's entire primary
+  navigation announced as six unnamed buttons, `button-name` CRITICAL. The page's one level-1 heading
+  lives in the same hidden container, so one rule produced two findings. Hide a label VISUALLY (the
+  `.sr-only` clip) and it keeps its name. **Clip rather than `aria-label`**: an aria-label is a second
+  copy of every tab name, in twelve locales, that the i18n walker does not maintain, so it drifts.
+
+- **WIDENING A SWEEP FINDS WHAT DEEPENING IT CANNOT — AND A "RESPONSIVE" DEFECT IS RARELY WIDTH-ONLY
+  (2026-09-09).** Ten surfaces measured ZERO axe violations at 1440×900. The identical run at 768×1024
+  reported a CRITICAL on every one of them. Before concluding a class is clean, run the same instrument
+  at the other breakpoints — the cost is minutes and the finding was invisible otherwise. And do not
+  file it as a tablet bug: the same rail is applied by `html[data-sidebar="collapsed"]` at ANY width, and
+  collapsing the sidebar is a first-class documented affordance, so a desktop reader who used it was in
+  the same rail. **Ask what else turns the state on before scoping the fix to the viewport that revealed
+  it.**
+
+- **AN "ORPHAN TO DELETE" CAN BE AN "ORPHAN TO RE-TRIGGER" — ASK WHAT IT IS THE ONLY PATH TO
+  (2026-09-09).** The dead-code worklist listed `loadIndicesData`/`loadMarketData` as unreferenced
+  functions to remove. Two later audits, one filed under HONESTY, said restore their buttons instead.
+  The deciding fact is not which record is newer: `_renderFeedVerdicts` has **no other entry point**, so
+  deleting them would have removed the app's only surface for "this official feed refused" — the exact
+  opposite of degrading loudly. **Before deleting unreachable code, grep what it uniquely reaches.**
+  Unreachable is a statement about callers, not about value.
+
+- **A CONSENT-GATE CHECK AGAINST AN ALREADY-ONLINE FIXTURE PROVES NOTHING (2026-09-09).** The audit
+  harness boots with `OO_NO_SCHEDULER=1`, and the boot-time kill-switch activation lives inside the
+  `OO_NO_SCHEDULER != 1` block — so that instance starts ONLINE, `ensureOnline` returns true immediately,
+  and the popup never appears. A first pass read that silence as "no consent popup" and nearly filed it
+  either as a defect or as a pass. **Engage airplane mode explicitly before asserting anything about a
+  gate**, and state which state the observation was made in.
+
+- **A FIX IN UNREACHABLE CODE IS A SOURCE FIX, NOT A LIVE ONE — AND SAYING WHICH IS PART OF THE FIX
+  (2026-09-09).** A truncation defect was repaired in `renderCorpusSources` and the commit described it
+  as fixing "the analysis window's Sources sub-tab". It is not that surface: the function is reached only
+  through the retired `#corpus-win` modal that nothing opens. The repair was real in the source and
+  unreachable at runtime. **Grep the call chain to a live entry point before describing what a fix
+  changes for a user.** The correction paid for itself — checking the live surface found that the
+  window claimed to be a "strict superset" of the retired modal and had silently dropped one of its
+  columns.
+
+- **A FIXTURE THAT WRITES ROWS THE READ PATH DOES NOT READ IS AN UNFAITHFUL CORPUS (2026-09-09).** A test
+  corpus inserted `keyword_mentions` directly and the ranked table came back with **0 mentions** beside a
+  correctly-resolved pair of keywords. The table reads the DENORMALISED `Keyword.mention_count` counters
+  the app maintains at index time, not the mention rows. That surprise was useful twice: it made the
+  fixture faithful, and it narrowed an over-wide claim — the endpoint had said the table and the set it
+  opens "cannot disagree", when what is guaranteed is MEMBERSHIP; the counts are a separate store with
+  their own freshness envelope. **When a fixture's numbers come out wrong, suspect the read path before
+  the write.**
+
+- **THE ENGINE BINDS ONCE PER PROCESS, SO A FUNCTION-SCOPED FIXTURE THAT RE-POINTS `OO_DATA_DIR` GETS THE
+  FIRST STORE (2026-09-09).** Two such fixtures in one file: the second setup hit `UNIQUE constraint
+  failed: sources.domain`, and its half-flushed session then left the single-writer write gate HELD,
+  which `conftest`'s own guard reports as "would hang the next writer". Make store-building fixtures
+  **module-scoped and idempotent** (look rows up before creating them), and close the session in a
+  `finally`.
+
+- **TWO RESOLVERS FOR ONE QUANTITY DIVERGE EVEN WHEN THEY AGREE TODAY (2026-09-09).** The Observatory's
+  drill-through resolved a galaxy's membership from term STRINGS while the galaxy's own numbers came from
+  an id resolver that also matches a family member's `canonical_key` variants. On the live corpus they
+  agreed on every super-group — because every member there happens to be a ring member, so the family
+  branch never fires. That is what made the defect latent, **not what made it safe**. A two-article
+  corpus with a possessive variant reproduces it in one query. **When a "measured latent" divergence has
+  a construction that reproduces it, the honest close is to remove the second resolver, and the guard
+  must assert the two really do disagree on its fixture before asserting which one is right** — otherwise
+  it passes vacuously on every corpus where they agree.
