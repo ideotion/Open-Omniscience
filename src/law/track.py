@@ -80,7 +80,28 @@ def _document_text(result) -> tuple[str | None, str]:
     A PDF body (detected by the ``%PDF`` magic bytes or the content-type) is
     routed to the optional PDF extractor, which returns ``(None, reason)`` for a
     scanned / encrypted / mis-decoded file — degrade LOUDLY, never a fabricated
-    body. Everything else is treated as HTML/text and reduced by ``page_text``.
+    body.
+
+    A CLML body (legislation.gov.uk's structured XML, served at ``.../data.xml``)
+    is READ rather than reconstructed. ``src/law/adapters/clml.py`` was written
+    for exactly this — adapter #1 of the law brief's S6, ruled adapter-first —
+    and until 2026-09-09 it had no caller at all: ``track.py`` sent every
+    non-PDF body through the HTML boilerplate strip, so a document available as
+    marked-up law was reduced by guessing which parts of a web page were chrome.
+
+    THE ADAPTER IS ITS OWN GATE, which is why this branch can be attempted on
+    any XML-ish body. ``parse_clml`` refuses a root element it does not know
+    ("an HTML error page, a search result, a redirect notice — all parse as
+    'some XML'"), refuses malformed or unsafe XML, and refuses when recovered
+    text falls below ``TEXT_RECOVERY_FLOOR`` — so a refusal is cheap, happens at
+    the root check, and simply falls back to the HTML path. Nothing is decided
+    from the URL: a host allow-list would send the site's own HTML pages into an
+    XML parser and would miss the same markup served from anywhere else.
+
+    The status is ``"clml"``, deliberately NOT ``"ok"``. The caller uses
+    ``reason == "ok"`` to decide whether it holds HTML worth re-checking for an
+    extractor change; XML has no chrome to strip, so claiming "ok" here would
+    put a structured document through a comparison written for web pages.
     """
     raw = getattr(result, "raw_content", None)
     content_type = getattr(result, "content_type", "") or ""
@@ -90,7 +111,38 @@ def _document_text(result) -> tuple[str | None, str]:
         from src.ingest.pdf import extract_pdf_text
 
         return extract_pdf_text(raw)
-    return page_text(result.content), "ok"
+
+    body = result.content
+    if _looks_like_xml(body, content_type=content_type):
+        from src.law.adapters import AdapterRefusal
+        from src.law.adapters.clml import parse_clml
+
+        try:
+            parsed = parse_clml(body)
+        except AdapterRefusal:
+            pass  # not CLML (or not enough of it) — the HTML path below is correct
+        except Exception:  # noqa: BLE001 - an adapter must never break tracking
+            _LOG.warning("law: CLML adapter raised; falling back to HTML", exc_info=True)
+        else:
+            return parsed.text, "clml"
+
+    return page_text(body), "ok"
+
+
+def _looks_like_xml(body, *, content_type: str) -> bool:
+    """Cheap pre-check so an ordinary HTML page is never handed to an XML parser.
+
+    Deliberately permissive on the content type (a server may send
+    ``text/plain`` for a ``.xml``) and deliberately strict on the body: it must
+    actually START with a declaration or a tag. ``parse_clml`` does the real
+    deciding; this only avoids paying for a parse on every web page.
+    """
+    if not isinstance(body, str) or not body:
+        return False
+    head = body.lstrip()[:200].lower()
+    if not head.startswith(("<?xml", "<legislation", "<clml")):
+        return False
+    return "html" not in (content_type or "").lower() or "xml" in (content_type or "").lower()
 
 
 def _ingest_to_corpus(session, doc: LawDocument, extractor) -> None:
