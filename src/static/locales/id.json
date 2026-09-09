@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "Dari {start} sampai {end}",
   "since {year}": "sejak {year}",
   "nothing listed after {year}": "tidak ada yang terdaftar setelah {year}",
-  "Stated by the event catalog (asserted, not deduced).": "Dinyatakan oleh katalog acara (klaim, bukan simpulan)."
+  "Stated by the event catalog (asserted, not deduced).": "Dinyatakan oleh katalog acara (klaim, bukan simpulan).",
+  "Pulling from your mailbox…": "Menarik dari kotak surat Anda…",
+  "Still pulling in the background — the task manager shows it.": "Masih menarik di latar belakang — pengelola tugas menampilkannya.",
+  "Anonymisation:": "Anonimisasi:",
+  "recipient echoes redacted,": "gema penerima disunting,",
+  "tracker tokens stripped,": "token pelacak dihapus,",
+  "tracker wrappers flagged.": "pembungkus pelacak ditandai."
 }

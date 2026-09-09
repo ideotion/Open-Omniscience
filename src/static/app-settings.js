@@ -1523,18 +1523,39 @@
         limit: parseInt($("mbox-limit").value || "50", 10),
       };
       if (btn) btn.disabled = true;
-      if (out) out.textContent = "Pulling…";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (out) out.textContent = t("Pulling from your mailbox…");
       try {
+        // The pull is a BACKGROUND JOB now (it is a network fetch plus a full
+        // anonymise-and-store pass -- minutes of work that used to run inside the
+        // request and freeze the app). The POST only STARTS it; the tally arrives
+        // from the status endpoint, so read it from there and never off the start
+        // response, whose result is still null.
         const d = await api("/api/newsletters/mailbox", { method: "POST", body: JSON.stringify(body) });
-        const tl = d.tally || {}, n = (x) => (x || 0).toLocaleString();
         $("mbox-pass").value = "";  // never keep the password in the field
-        if (out) out.innerHTML = `<b>${n(tl.stored)}</b> imported · ${n(tl.duplicate)} duplicates skipped`
-          + `<div class="muted" style="margin-top:5px">Anonymisation: ${n(tl.recipient_redactions)} recipient echoes redacted, `
-          + `${n(tl.tracker_params_stripped)} tracker tokens stripped, ${n(tl.trackers_flagged)} tracker wrappers flagged.</div>`
-          + (d.disclosure ? `<div class="muted" style="margin-top:4px">${esc(d.disclosure)}</div>` : "");
+        const st = await pollJobStatus("/api/newsletters/mailbox/status", {
+          onProgress: (s) => { if (out && s && s.detail) out.textContent = esc(s.detail); },
+        });
+        if (st && st.state === "error") {
+          if (out) out.innerHTML = `<span class="note err">${esc(t("Pull failed:"))} ${esc(st.error || "")}</span>`;
+          return;
+        }
+        if (_jobStillRunning(st)) {
+          // Stopped WATCHING, not finished. Reading st.result here would report the
+          // not-yet-final tallies as zeros -- the honest answer is where to look.
+          if (out) out.textContent = t("Still pulling in the background — the task manager shows it.");
+          return;
+        }
+        const res = (st && st.result) || {};
+        const tl = res.tally || {}, n = (x) => (x || 0).toLocaleString();
+        if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
+          + `<div class="muted" style="margin-top:5px">${esc(t("Anonymisation:"))} ${n(tl.recipient_redactions)} ${esc(t("recipient echoes redacted,"))} `
+          + `${n(tl.tracker_params_stripped)} ${esc(t("tracker tokens stripped,"))} ${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged."))}</div>`
+          + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "");
       } catch (e) {
-        // 409 = airplane refusal, 502 = transport/auth failure.
-        if (out) out.innerHTML = `<span class="note err">Pull failed: ${esc(e.message)}</span>`;
+        // 409 = airplane refusal (named as the kill switch), 422 = a network-free
+        // validation refusal. Both still answer synchronously, before any socket.
+        if (out) out.innerHTML = `<span class="note err">${esc(t("Pull failed:"))} ${esc(e.message)}</span>`;
       } finally { if (btn) btn.disabled = false; }
     }
 

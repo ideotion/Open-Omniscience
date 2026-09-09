@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "Du {start} au {end}",
   "since {year}": "depuis {year}",
   "nothing listed after {year}": "rien de listé après {year}",
-  "Stated by the event catalog (asserted, not deduced).": "Déclaré par le catalogue d'événements (affirmé, non déduit)."
+  "Stated by the event catalog (asserted, not deduced).": "Déclaré par le catalogue d'événements (affirmé, non déduit).",
+  "Pulling from your mailbox…": "Récupération depuis votre boîte mail…",
+  "Still pulling in the background — the task manager shows it.": "Récupération toujours en cours en arrière-plan — le gestionnaire de tâches l’affiche.",
+  "Anonymisation:": "Anonymisation :",
+  "recipient echoes redacted,": "échos du destinataire caviardés,",
+  "tracker tokens stripped,": "jetons de pistage supprimés,",
+  "tracker wrappers flagged.": "encapsulages de pistage signalés."
 }

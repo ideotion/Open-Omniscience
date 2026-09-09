@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "{start} से {end} तक",
   "since {year}": "{year} से",
   "nothing listed after {year}": "{year} के बाद कुछ भी सूचीबद्ध नहीं",
-  "Stated by the event catalog (asserted, not deduced).": "घटना सूची द्वारा घोषित (कथित, अनुमानित नहीं)।"
+  "Stated by the event catalog (asserted, not deduced).": "घटना सूची द्वारा घोषित (कथित, अनुमानित नहीं)।",
+  "Pulling from your mailbox…": "आपके मेलबॉक्स से लाया जा रहा है…",
+  "Still pulling in the background — the task manager shows it.": "पृष्ठभूमि में अभी भी जारी है — कार्य प्रबंधक में दिखता है।",
+  "Anonymisation:": "अनामीकरण:",
+  "recipient echoes redacted,": "प्राप्तकर्ता प्रतिध्वनियाँ हटाई गईं,",
+  "tracker tokens stripped,": "ट्रैकर टोकन हटाए गए,",
+  "tracker wrappers flagged.": "ट्रैकर रैपर चिह्नित किए गए।"
 }

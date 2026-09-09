@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "من {start} إلى {end}",
   "since {year}": "منذ {year}",
   "nothing listed after {year}": "لا شيء مُدرَج بعد {year}",
-  "Stated by the event catalog (asserted, not deduced).": "مذكور في فهرس الأحداث (تصريح، لا استنتاج)."
+  "Stated by the event catalog (asserted, not deduced).": "مذكور في فهرس الأحداث (تصريح، لا استنتاج).",
+  "Pulling from your mailbox…": "جارٍ السحب من بريدك…",
+  "Still pulling in the background — the task manager shows it.": "السحب ما زال جاريًا في الخلفية — يعرضه مدير المهام.",
+  "Anonymisation:": "إخفاء الهوية:",
+  "recipient echoes redacted,": "أثر للمستلم تم حجبه،",
+  "tracker tokens stripped,": "رمز تتبّع تمت إزالته،",
+  "tracker wrappers flagged.": "غلاف تتبّع تم وسمه."
 }

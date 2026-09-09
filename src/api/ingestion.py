@@ -28,6 +28,7 @@ from src.ingest.email import (
 )
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
+from src.jobs.background import BackgroundJob, register_job
 from src.safety.fetcher import make_fetcher
 
 router = APIRouter(prefix="/api", tags=["ingestion"])
@@ -507,8 +508,86 @@ class MailboxFetchRequest(BaseModel):
     use_ssl: bool = True
 
 
+_MAILBOX_DISCLOSURE = (
+    "Pulled live from your mailbox over TLS and anonymised at ingest: the "
+    "recipient is never stored, no raw message is retained, tracking links are "
+    "de-toxed and never followed. Your IP is visible to the mail provider (not "
+    "via Tor). Stored under a disabled, filterable 'mailbox' source."
+)
+
+
+def _scrub(text: str, secret: str) -> str:
+    """Never let the password reach a job status.
+
+    ``BackgroundJob.status()`` does not expose the worker's kwargs, so the credential
+    itself stays on the thread — but it DOES expose ``error``, and a mail library's
+    exception is the server's own protocol chatter, which is one server bug away from
+    echoing the line it was sent. ``/api/jobs`` is unauthenticated (loopback-only, and
+    that is the boundary, not an excuse), so the message is scrubbed at the point it is
+    captured rather than trusted not to contain it.
+    """
+    return text.replace(secret, "***") if secret else text
+
+
+def _mailbox_pull_worker(
+    ctx,
+    *,
+    protocol: str,
+    host: str,
+    user: str,
+    password: str,
+    port: int,
+    folder: str,
+    limit: int,
+    use_ssl: bool,
+) -> dict:
+    """Fetch + anonymise-at-ingest, off the request thread. Opens its OWN session."""
+    from src.database.session import session_scope
+
+    kwargs: dict = {"limit": limit, "use_ssl": use_ssl}
+    if port:
+        kwargs["port"] = port
+    if protocol == "imap":
+        kwargs["folder"] = folder
+    ctx.set_progress(detail=f"connecting to {host} over {protocol.upper()}")
+    try:
+        raws = fetch_mailbox(protocol, host, user, password, **kwargs)
+    except Exception as exc:
+        raise RuntimeError(_scrub(f"mailbox fetch failed: {exc}", password)) from None
+    ctx.set_progress(done=0, total=len(raws), detail=f"anonymising {len(raws)} message(s)")
+    with session_scope() as db:
+        source = _get_mailbox_source(db)
+        tally = ingest_emails(db, source, raws)
+        out = {
+            "source": source.name,
+            "source_id": source.id,
+            "protocol": protocol,
+            "fetched": len(raws),
+            "tally": tally,
+            "disclosure": _MAILBOX_DISCLOSURE,
+        }
+    ctx.set_progress(done=len(raws), total=len(raws), detail="done")
+    return out
+
+
+# A live mailbox pull is a NETWORK fetch of up to `limit` messages followed by a full
+# anonymise-and-store pass -- minutes of work that ran synchronously in the request
+# handler, so it froze the app and was invisible to /api/jobs: the operator could not
+# see it, and the task manager's Stop could not reach it. It is a DB writer, so it
+# joins the writer-arbitration set.
+#
+# cancellable=False is the HONEST setting, not a shortcut: `fetch_mailbox` is one
+# opaque imaplib/poplib call and `ingest_emails` loops internally without a ctx, so
+# nothing here checks ctx.stopping. Advertising a Cancel button that cannot stop the
+# work is the theater this module's own docstring rules out.
+_MAILBOX_JOB = register_job(
+    BackgroundJob("mailbox-pull", "Pulling newsletters from your mailbox", _mailbox_pull_worker,
+                  is_writer=True)
+)
+
+
 @router.post("/newsletters/mailbox")
-def import_mailbox(req: MailboxFetchRequest, db: Session = Depends(get_db)) -> dict:
+def import_mailbox(req: MailboxFetchRequest) -> dict:
     """Pull newsletters LIVE from a mailbox (IMAP/POP3), ANONYMISED at ingest (ruling #11).
 
     The maintainer reversed the local-.eml-only stance: this fetches messages directly so
@@ -519,39 +598,53 @@ def import_mailbox(req: MailboxFetchRequest, db: Session = Depends(get_db)) -> d
     NOT stored.
 
     NETWORK + HONESTY: this is a consented network action — it is REFUSED under airplane
-    mode (409, no socket). The connection egresses to your mail provider directly over TLS
-    (like any email client), revealing your IP to that provider; it is NOT routed through
-    Tor (IMAP/POP3 is not the HTTP guarded path). The returned tally reports exactly what
-    anonymisation stripped, so you see it honestly.
+    mode (409, no socket), named as the kill switch rather than reported as a mailbox
+    problem. The connection egresses to your mail provider directly over TLS (like any
+    email client), revealing your IP to that provider; it is NOT routed through Tor
+    (IMAP/POP3 is not the HTTP guarded path). The tally reports exactly what anonymisation
+    stripped, so you see it honestly.
+
+    RUNS AS A BACKGROUND JOB. The network-free checks (protocol, host/user) still answer
+    synchronously with a 422, and the airplane refusal still with a 409 before any socket;
+    everything after that is polled from ``/newsletters/mailbox/status`` or watched in the
+    task manager. A transport or auth failure is therefore a job ``error`` rather than the
+    old inline 502 — the same trade the other background jobs already accepted, and the
+    reason the pull no longer holds a threadpool token (and the single-writer gate) for
+    its whole run.
     """
-    kwargs: dict = {"limit": req.limit, "use_ssl": req.use_ssl}
-    if req.port:
-        kwargs["port"] = req.port
-    if (req.protocol or "").lower() == "imap":
-        kwargs["folder"] = req.folder
-    try:
-        raws = fetch_mailbox(req.protocol, req.host, req.user, req.password, **kwargs)
-    except RuntimeError as exc:  # airplane-mode refusal (kill switch)
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:  # unknown protocol / missing host
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:  # transport / auth failure -> degrade loudly
-        raise HTTPException(status_code=502, detail=f"mailbox fetch failed: {exc}") from exc
-    source = _get_mailbox_source(db)
-    tally = ingest_emails(db, source, raws)
-    return {
-        "source": source.name,
-        "source_id": source.id,
-        "protocol": (req.protocol or "imap").lower(),
-        "fetched": len(raws),
-        "tally": tally,
-        "disclosure": (
-            "Pulled live from your mailbox over TLS and anonymised at ingest: the "
-            "recipient is never stored, no raw message is retained, tracking links are "
-            "de-toxed and never followed. Your IP is visible to the mail provider (not "
-            "via Tor). Stored under a disabled, filterable 'mailbox' source."
-        ),
+    from src.ingest import kill_switch_active
+
+    proto = (req.protocol or "").strip().lower()
+    if proto not in ("imap", "pop3"):
+        raise HTTPException(
+            status_code=422, detail=f"unknown mailbox protocol: {req.protocol!r} (use 'imap' or 'pop3')"
+        )
+    if not (req.host or "").strip() or not (req.user or "").strip():
+        raise HTTPException(status_code=422, detail="host and user are required")
+    if kill_switch_active():
+        raise HTTPException(
+            status_code=409, detail="network refused: airplane mode is engaged (kill switch)"
+        )
+    started = {
+        "protocol": proto,
+        "host": req.host.strip(),
+        "user": req.user.strip(),
+        "password": req.password,
+        "port": req.port,
+        "folder": req.folder,
+        "limit": req.limit,
+        "use_ssl": req.use_ssl,
     }
+    try:
+        return {"started": True, "job": _MAILBOX_JOB.start(**started), "disclosure": _MAILBOX_DISCLOSURE}
+    except RuntimeError:
+        return {"started": False, "job": _MAILBOX_JOB.status(), "disclosure": _MAILBOX_DISCLOSURE}
+
+
+@router.get("/newsletters/mailbox/status")
+def import_mailbox_status() -> dict:
+    """Live status of the background mailbox pull (never carries the credential)."""
+    return _MAILBOX_JOB.status()
 
 
 @router.post("/ingest")

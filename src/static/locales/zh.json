@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "{start} 至 {end}",
   "since {year}": "自 {year} 起",
   "nothing listed after {year}": "{year} 之后没有列出任何内容",
-  "Stated by the event catalog (asserted, not deduced).": "由事件目录声明（自述，而非推断）。"
+  "Stated by the event catalog (asserted, not deduced).": "由事件目录声明（自述，而非推断）。",
+  "Pulling from your mailbox…": "正在从您的邮箱拉取…",
+  "Still pulling in the background — the task manager shows it.": "仍在后台拉取 — 任务管理器中可以看到。",
+  "Anonymisation:": "匿名化：",
+  "recipient echoes redacted,": "处收件人痕迹已隐去，",
+  "tracker tokens stripped,": "个跟踪令牌已剥离，",
+  "tracker wrappers flagged.": "个跟踪包装已标记。"
 }

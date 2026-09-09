@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "С {start} по {end}",
   "since {year}": "с {year}",
   "nothing listed after {year}": "после {year} ничего не указано",
-  "Stated by the event catalog (asserted, not deduced).": "Заявлено каталогом событий (утверждение, не вывод)."
+  "Stated by the event catalog (asserted, not deduced).": "Заявлено каталогом событий (утверждение, не вывод).",
+  "Pulling from your mailbox…": "Загрузка из вашего почтового ящика…",
+  "Still pulling in the background — the task manager shows it.": "Загрузка продолжается в фоне — она видна в диспетчере задач.",
+  "Anonymisation:": "Анонимизация:",
+  "recipient echoes redacted,": "упоминаний получателя скрыто,",
+  "tracker tokens stripped,": "трекерных меток удалено,",
+  "tracker wrappers flagged.": "трекерных обёрток отмечено."
 }

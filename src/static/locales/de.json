@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "Läuft vom {start} bis {end}",
   "since {year}": "seit {year}",
   "nothing listed after {year}": "nach {year} ist nichts gelistet",
-  "Stated by the event catalog (asserted, not deduced).": "Vom Ereigniskatalog angegeben (behauptet, nicht abgeleitet)."
+  "Stated by the event catalog (asserted, not deduced).": "Vom Ereigniskatalog angegeben (behauptet, nicht abgeleitet).",
+  "Pulling from your mailbox…": "Rufe aus deinem Postfach ab…",
+  "Still pulling in the background — the task manager shows it.": "Läuft weiter im Hintergrund — der Task-Manager zeigt es an.",
+  "Anonymisation:": "Anonymisierung:",
+  "recipient echoes redacted,": "Empfänger-Echos geschwärzt,",
+  "tracker tokens stripped,": "Tracker-Token entfernt,",
+  "tracker wrappers flagged.": "Tracker-Wrapper markiert."
 }

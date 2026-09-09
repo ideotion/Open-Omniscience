@@ -3212,5 +3212,11 @@
   "Runs {start} – {end}": "Del {start} al {end}",
   "since {year}": "desde {year}",
   "nothing listed after {year}": "nada listado después de {year}",
-  "Stated by the event catalog (asserted, not deduced).": "Declarado por el catálogo de eventos (afirmado, no deducido)."
+  "Stated by the event catalog (asserted, not deduced).": "Declarado por el catálogo de eventos (afirmado, no deducido).",
+  "Pulling from your mailbox…": "Descargando de tu buzón…",
+  "Still pulling in the background — the task manager shows it.": "Sigue descargando en segundo plano: el gestor de tareas lo muestra.",
+  "Anonymisation:": "Anonimización:",
+  "recipient echoes redacted,": "ecos del destinatario redactados,",
+  "tracker tokens stripped,": "tokens de rastreo eliminados,",
+  "tracker wrappers flagged.": "envoltorios de rastreo señalados."
 }
