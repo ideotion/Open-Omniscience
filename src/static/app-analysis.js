@@ -1257,7 +1257,13 @@
           + pager;
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
         _anRenderArtFacetChips();   // redraw from already-fetched facet data (sync, no network)
-      } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) {
+        // Same honest, rate-limit-aware message as the Search tab (search-lockout
+        // fix) -- this subtab hits the SAME /api/articles endpoint, including from a
+        // boot-time deep link (?corpus=/?analyze=, app-boot.js._hydrateCardCorpus),
+        // so a refusal here deserves the same disclosure, not a bare exception string.
+        arts.innerHTML = `<div class="note err">${esc(_articleFailureMessage(e))}</div>`;
+      }
     }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1482,6 +1488,56 @@
       _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
     }
 
+    // === Search-lockout fix (audit P0 finding 3) ============================= //
+    // GET /api/articles is rate-limited to 100/hour and this is the app's densest,
+    // most iterative surface (135 controls, 5 inputs, boolean query grammar, five
+    // time-range presets) -- built for exactly the refinement pattern that burns the
+    // budget. Before this fix a refusal here rendered as an EMPTY search: the results
+    // table and the "N result(s)" line were left untouched (blank, on a first search,
+    // or simply stale) and the only signal was a toast that auto-dismisses in a few
+    // seconds -- leaving a state indistinguishable from a real zero-result query, and
+    // one that stays indistinguishable forever if the tab is left open or reloaded
+    // after the toast is gone. Fail closed, never open: a failed search must say so,
+    // and keep saying so, exactly where a real result would have appeared. Shared by
+    // every /api/articles-driven surface in this file (the Search tab here, and the
+    // analysis window's Articles subtab below) so the message is the same wherever
+    // this exact backend call can be refused.
+    function _searchRetryAfterSeconds(e) {
+      // An optional Retry-After hint, IF a caller has attached one to the thrown
+      // error. This file does not own app-core.js's api() (a sibling fix does) and
+      // cannot pin its exact contract, so every plausible shape is tried and absence
+      // is honest silence -- never a fabricated wait (CLAUDE.md: never invent a
+      // countdown you do not have; if you only know "later", say only that).
+      if (!e) return null;
+      const detail = e.detail;
+      const cands = [e.retryAfter, e.retry_after, e.retryAfterSeconds,
+        (detail && typeof detail === "object") ? detail.retry_after : null,
+        (detail && typeof detail === "object") ? detail.retryAfter : null];
+      for (const c of cands) {
+        const n = Number(c);
+        if (isFinite(n) && n >= 0) return n;
+      }
+      return null;
+    }
+    function _isRateLimited(e) { return !!(e && e.status === 429); }
+    // ONE translatable message for a failed article search, wherever it renders. An
+    // EXACT known wait (a real server Retry-After) is stated as a clock time, computed
+    // once at render time -- never a live-ticking countdown, and never a guess when no
+    // Retry-After is present (then the message says only "later").
+    function _articleFailureMessage(e) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      if (_isRateLimited(e)) {
+        const secs = _searchRetryAfterSeconds(e);
+        if (secs != null && secs > 0) {
+          const when = new Date(Date.now() + secs * 1000);
+          return tf(t("Search has hit its rate limit — try again after {time}."), { time: when.toLocaleTimeString() });
+        }
+        return t("Search has hit its rate limit. Try again later.");
+      }
+      return tf(t("Search failed: {error}"), { error: (e && e.message) || String(e) });
+    }
     async function doSearch() {
       // Through _articleQuery like every other /api/articles caller. The Search tab never
       // carries an id-seeded corpus, so this is a no-op here -- but making the rule
@@ -1508,7 +1564,18 @@
                  <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
         annotateArticleDups(p, t);   // inline "1 voice" near-dup badges (non-blocking, reuses the helper)
-      } catch (e) { toast(_failMsg("Search failed: {error}", e), "err"); }
+      } catch (e) {
+        // PERSISTENT, honest failure state -- rendered into the exact two spots a
+        // successful search fills, so it survives exactly as long as a real result
+        // would (unlike the toast below, which is a transient echo of the same fact,
+        // kept for the reader who is looking at the toast tray when it happens).
+        const msg = _articleFailureMessage(e);
+        const meta = $("search-meta"); if (meta) meta.textContent = msg;
+        const t = $("results");
+        if (t) t.innerHTML = "<tr><th>Title</th><th>Source</th><th>Published</th><th>Lang</th><th></th></tr>"
+          + `<tr><td colspan="5" class="note err">${esc(msg)}</td></tr>`;
+        toast(_failMsg("Search failed: {error}", e), "err");
+      }
     }
 
     function exportResults(fmt, p) {

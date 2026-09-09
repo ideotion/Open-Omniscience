@@ -58,6 +58,44 @@ taken before the correction are not carried forward. Recording this here rather 
 is the point: an instrument that can be satisfied by a value the app did not choose is the recorded
 lesson this repeats.
 
+### 0.1b A SECOND defect in the same instrument, found while verifying the fixes it prompted
+
+Found 2026-09-09, during the fix pass, and it matters more than the first because it ran in the
+opposite direction: the first defect *invented* failures, this one *hid* them, and it hid exactly the
+ones the fixes had just created.
+
+The harness's colour parser matched only `rgba?(...)`. Chromium serialises any colour computed through
+`color-mix()` as `color(srgb 0.32 0.39 0.34)` — 0–1 floats, no `rgb(` anywhere — so the parser returned
+`null`, and every caller read `null` as "nothing here" and moved on. The element was **skipped, not
+scored**.
+
+Four theme fixes (`solar`, `paper`, `mist`, `dawn`) had by then re-derived `--muted` and `--accent-text`
+*through `color-mix()`*. Re-running the sweep afterwards returned zero failures for those themes — which
+was not a pass. It was the instrument declining to look at precisely the elements the fix had changed.
+A fix that made its own effect invisible to the check, verified by the check, is the "an untested path
+is not a pass" rule failing in the one place it was being appealed to.
+
+Proven rather than reasoned. A paragraph coloured `color-mix(in srgb, #ffffff 8%, #808080 92%)` on
+`#808080` — **1.15:1**, unmissable — was injected into a live page and both parsers asked:
+
+| parser | reports the 1.15:1 element |
+|---|---|
+| original (`rgba?()` only) | **no** — `total_failures: 0` |
+| corrected (`+ color(srgb …)`) | **yes** — `ratio: 1.15, need: 4.5` |
+
+Corrected in three parts: the parser reads `color(srgb r g b / a)` and space-separated `rgb()`; a colour
+it still cannot read is *counted* and returned as a `__UNPARSED_COLOURS__` record at the head of the
+results, so an unknown syntax can never again arrive as a clean sweep; and `%`-form values are refused
+loudly rather than mis-read as 0–255. All 17 themes were then re-swept with the corrected instrument
+across six surfaces — the four `color-mix` themes now measure a **genuine** zero, and `mint`, which the
+fix pass had added on the strength of the *broken* sweep's own numbers, was re-measured end to end:
+**4.18:1 before, ≥4.99:1 after**, with the pre-fix failures (`#lang-flag`, `#lang-code` at
+`rgb(95,116,102)` on `rgb(228,236,230)`) reproduced by hand before the fix was believed.
+
+The generalisable form, which is now in `docs/ledger/LESSONS.md`: **a measurement instrument that
+returns "nothing found" for an input it cannot parse reports a fix as a success on exactly the ground
+the fix changed.** An unreadable input must be a reported count, never an empty list.
+
 ### 0.2 What this audit did *not* reach
 
 Named rather than silently omitted:

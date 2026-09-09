@@ -486,13 +486,23 @@
     ctx.fillStyle = theme.muted;
     ctx.textBaseline = "middle";
     var lr = layout.rOuter * z * R_DOMAIN_LABEL;
+    // The label text is translated HERE, at paint time, and nowhere upstream:
+    // `layout.domains[].domain` stays the raw backend taxonomy string (it is
+    // also used as a lookup key elsewhere in this module), so translation must
+    // not rewrite it in place. `root.OOI18N` (never a bare `window` reference —
+    // this module runs in Node under tests/oosky_node_test.js too, where no such
+    // global exists) is the SAME translation function every other surface uses,
+    // so a label re-renders correctly the moment the caller re-invokes drawSky
+    // after an oo:langchange event; this function itself never listens for one,
+    // which is what keeps the sky static when idle (#31).
+    var _t = (root.OOI18N && root.OOI18N.t) ? root.OOI18N.t : function (s) { return s; };
     for (var dl = 0; dl < layout.domains.length; dl++) {
       var da = layout.domains[dl];
       var lx = g1x + Math.cos(da.mid) * lr;
       var ly = g1y + Math.sin(da.mid) * lr;
       var cosm = Math.cos(da.mid);
       ctx.textAlign = cosm > 0.25 ? "left" : cosm < -0.25 ? "right" : "center";
-      ctx.fillText(da.domain, lx, ly);
+      ctx.fillText(_t(da.domain), lx, ly);
     }
     ctx.textAlign = "center";
     // Orbit gridlines. Every one is LABELLED with the value it stands for —

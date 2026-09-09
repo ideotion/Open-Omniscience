@@ -182,7 +182,18 @@
       --fg-soft:color-mix(in srgb, var(--fg) 75%, #6e6a86 25%);
       --accent-text:color-mix(in srgb, var(--fg) 80%, var(--accent) 20%); }
     html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --warn-fg:#7a4308; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
-      --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); --caveat:#8a4d0a; color-scheme:light; --ff:"Manrope", system-ui, sans-serif; }
+      --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); --caveat:#8a4d0a; color-scheme:light; --ff:"Manrope", system-ui, sans-serif;
+      /* NOT one of the four themes the audit table named as "worst" (solar/
+         paper/mist/dawn) -- found only by re-running the corrected sweep AFTER
+         those four were fixed: mint's own --muted/--accent were ALSO already
+         failing AA against --bg2 (4.18/4.15:1) and --panel3 (4.04/4.02:1),
+         just narrowly enough (every other panel level cleared 4.4+) that no
+         single sampled row happened to name mint as a selector's "worst"
+         theme -- the table's per-selector "worst theme" column is not the
+         same claim as "only these four themes fail this token pair". Same
+         fix, same reason: re-derived via color-mix toward --fg. */
+      --muted:color-mix(in srgb, var(--fg) 20%, #5f7466 80%);
+      --accent-text:color-mix(in srgb, var(--fg) 20%, var(--accent) 80%); }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
     * { box-sizing: border-box; }

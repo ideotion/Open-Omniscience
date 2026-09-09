@@ -233,10 +233,23 @@ def test_dawn_also_overrides_fg_soft():
     assert "--fg-soft:color-mix(in srgb, var(--fg)" in block
 
 
-def test_other_thirteen_themes_do_not_override_muted():
-    # Negative-space check: only the four themes the sweep actually flagged get
-    # the override -- a theme that already passed must not be touched (the
-    # --caveat/--chip-off lesson: change only where measurement says to).
+def test_mint_also_overrides_muted_and_accent_text():
+    # mint was NOT one of the four themes the audit table named as "worst"
+    # (that column is a per-selector single worst-theme sample, not an
+    # exhaustive failing-themes list) -- re-running the corrected sweep after
+    # fixing solar/paper/mist/dawn surfaced mint's OWN --muted/--accent failing
+    # AA against --bg2 (4.18/4.15:1) and --panel3 (4.04/4.02:1), narrowly
+    # enough that no single sampled row happened to pick mint as its worst.
+    block = _theme_block(_css(), "mint")
+    assert "--muted:color-mix(in srgb, var(--fg)" in block
+    assert "--accent-text:color-mix(in srgb, var(--fg)" in block
+
+
+def test_other_twelve_themes_do_not_override_muted():
+    # Negative-space check: only the five themes actually measured failing (via
+    # the audit table or the follow-up sweep) get the override -- a theme that
+    # already passed must not be touched (the --caveat/--chip-off lesson:
+    # change only where measurement says to).
     css = _css()
     untouched = (
         "slate",
@@ -250,7 +263,6 @@ def test_other_thirteen_themes_do_not_override_muted():
         "terminal",
         "contrast",
         "light",
-        "mint",
     )
     for theme in untouched:
         block = _theme_block(css, theme)

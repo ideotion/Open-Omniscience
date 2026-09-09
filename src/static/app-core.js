@@ -1938,11 +1938,22 @@
             throw netErr;
           }
           _noteReachable(true);  // it answered -- an error STATUS is still an answer
+          // The server's OWN stated wait, when it sent one. Carried to the throw
+          // below so a caller can say WHEN. Null unless the server actually sent one
+          // -- never a guess.
+          let retryAfterSeconds = null;
           // Every refusal counts toward the poll backoff, including the ones a
           // retry goes on to absorb: the server said "not now" whether or not the
           // next attempt succeeded, and a backoff that only saw the FINAL failure
           // would not slow down until the retries had already spent the load.
           if (res.status === 429 || res.status === 503) _noteServerBusy();
+          // Read the server's stated wait for ANY 429, before deciding what to do
+          // with it -- so a refusal that arrives with the retry budget already spent
+          // still carries the number to the caller instead of dropping it.
+          if (res.status === 429) {
+            const _ra = parseFloat(res.headers.get("Retry-After"));
+            if (isFinite(_ra) && _ra >= 0) retryAfterSeconds = _ra;
+          }
           if (res.status === 429 && attempt < maxRetries) {
             // 429 = refused before work, so re-issuing is safe -- BUT only when the
             // server told us how long a refusal like this lasts. A `Retry-After` is
@@ -1952,15 +1963,33 @@
             // 100/hour QUOTA, and guessing a wait + retrying anyway spends the very
             // budget that is already exhausted -- up to _API_MAX_RETRIES=4 extra
             // requests for one click, against a budget measured in single digits.
-            // So: honour a present Retry-After; without one, don't guess -- fall
-            // through and let the caller see the honest refusal.
-            const raHeader = res.headers.get("Retry-After");
-            const ra = parseFloat(raHeader);
-            if (raHeader != null && isFinite(ra) && ra >= 0) {
-              const waitMs = Math.min(ra * 1000, _API_RETRY_MAX_MS);
-              _noteBusyRetry();
-              await new Promise((r) => setTimeout(r, waitMs));
-              continue;
+            //
+            // AMENDED 2026-09-09, because the reasoning above outgrew its own test.
+            // It keyed the distinction on Retry-After's PRESENCE, which worked only
+            // while the quota limiter happened to send none. The audit's finding (c)
+            // fix made the rate-limiter answer with a real Retry-After -- correctly,
+            // a client cannot back off without one -- and that ALONE would have
+            // turned every exhausted-quota refusal into four more requests against
+            // the exhausted quota plus up to 32 s of silent waiting before the user
+            // was told anything. Measured, not reasoned: a 429 carrying
+            // `Retry-After: 120` left the Search tab showing its previous results,
+            // unchanged, for the whole retry budget.
+            //
+            // So key it on what actually separates the two cases: HOW LONG the
+            // server says to wait. A short wait is a burst/load-shed refusal that
+            // will have cleared (heavy.py and insights.py both say 2 s) and is worth
+            // sleeping through. A wait longer than our own retry budget is a QUOTA,
+            // and re-issuing into it spends the thing that is already spent. Then we
+            // fall through with the number attached, so the caller can say WHEN
+            // rather than guess -- the honest refusal the comment above always
+            // wanted, now available to a surface that wants to render it.
+            if (retryAfterSeconds != null) {
+              if (retryAfterSeconds * 1000 <= _API_RETRY_MAX_MS) {
+                _noteBusyRetry();
+                await new Promise((r) => setTimeout(r, retryAfterSeconds * 1000));
+                continue;
+              }
+              // Too long to wait out: fall through and report it instead.
             }
           }
           const text = await res.text();
@@ -1997,6 +2026,11 @@
             const err = new Error(_apiErrorMessage(data, res));
             err.status = res.status;
             err.detail = data && data.detail;
+            // The server's OWN stated wait, when it sent one and it was too long to
+            // sleep through. A surface can turn this into "try again after 14:32";
+            // its absence means we genuinely do not know, and a caller must say only
+            // "later" rather than invent a countdown.
+            if (retryAfterSeconds != null) err.retryAfter = retryAfterSeconds;
             throw err;
           }
           return data;

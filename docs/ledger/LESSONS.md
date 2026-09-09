@@ -7537,3 +7537,25 @@
   add up, or summarise per-stream first and synthesise the summaries. (2) When a synthesis claims
   something was **not** covered, check that claim against the per-agent results before repeating it —
   a coverage claim is the cheapest of all claims to verify and the most expensive to get wrong.
+
+- **AN INSTRUMENT THAT RETURNS "NOTHING FOUND" FOR AN INPUT IT CANNOT PARSE CERTIFIES A FIX AS A SUCCESS
+  ON EXACTLY THE GROUND THE FIX CHANGED (2026-09-09, the visual audit's contrast harness, second defect
+  in the same tool):** the scan's colour parser matched only `rgba?(...)` and returned `null` for
+  anything else; every caller read `null` as "nothing here" and skipped the element. Chromium serialises
+  any colour computed through `color-mix()` as `color(srgb 0.32 0.39 0.34)` — 0–1 floats, no `rgb(`
+  anywhere. Four theme contrast fixes had just re-derived `--muted`/`--accent-text` *through*
+  `color-mix()`. So the post-fix sweep returned zero failures for those four themes, and the zero meant
+  the instrument had stopped looking at precisely the elements the fix touched. The failure is worse
+  than the harness's earlier composited-background bug (recorded above) because that one INVENTED
+  failures — noisy, self-announcing — while this one HID them, silently, in the direction of the answer
+  everyone wanted. THREE RULES. (1) **An unparseable input is a reported count, never an empty list**:
+  the corrected scan returns a `__UNPARSED_COLOURS__` record at the head of its results with the
+  syntaxes and occurrence counts, so an unknown form arrives as a number rather than a clean sweep.
+  (2) **When a fix changes the REPRESENTATION of the thing being measured — a token becomes a function,
+  an id becomes a hash, a scalar becomes an object — re-validate the instrument before believing the
+  green.** The check to run is the one that was run here: inject a deliberately, unmissably failing
+  case IN THE NEW REPRESENTATION (a `color-mix()` at 1.15:1) and confirm the instrument reports it;
+  the old parser said `total_failures: 0` and the corrected one said `ratio: 1.15`. (3) A theme the
+  broken sweep flagged (`mint`) still had to be re-measured end to end after the instrument was fixed —
+  4.18:1 before, ≥4.99:1 after — because a number produced by a broken instrument is not evidence even
+  when it turns out to be right.

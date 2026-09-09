@@ -147,6 +147,88 @@ async function run() {
       " fetch call(s) (old behaviour would retry up to 5 total for a quota it cannot out-wait)");
     assert(threw, "a 429 with no Retry-After must still surface as a thrown refusal to the caller");
   });
+
+  // ----------------------------------------------------------------------- //
+  //  (c2) The retry split, added 2026-09-09 after the (c) fix above outgrew   //
+  //  its own premise. It keyed "quota vs burst" on Retry-After's PRESENCE,    //
+  //  which held only while the quota limiter sent none. The audit's finding   //
+  //  (c) fix then made src/api/main.py's rate-limit handler answer with a     //
+  //  real Retry-After -- correctly, a client cannot back off without one --   //
+  //  and that alone would have turned every exhausted-quota refusal back into //
+  //  four more requests against the exhausted quota. Measured in Chromium     //
+  //  before the fix: a 429 carrying `Retry-After: 120` left the Search tab    //
+  //  showing its previous results, unchanged, for the whole retry budget.     //
+  //  The distinction is now HOW LONG, not WHETHER.                            //
+  // ----------------------------------------------------------------------- //
+
+  await test("(c2) a LONG Retry-After (a quota) is reported, never waited out", async () => {
+    let calls = 0;
+    const sandbox = makeApiSandbox(async () => {
+      calls += 1;
+      // 120 s -- fifteen times _API_RETRY_MAX_MS. Sleeping through it is not a
+      // retry, it is a hang; and re-issuing spends a budget already spent.
+      return fakeRes({status: 429, headers: {"Retry-After": "120"}, body: ""});
+    });
+    let threw = null;
+    try { await sandbox.api("/api/articles"); } catch (e) { threw = e; }
+    assert(calls === 1,
+      "a quota-length Retry-After must be issued exactly ONCE -- saw " + calls + " fetch call(s)");
+    assert(threw, "it must surface as a thrown refusal, not a silent wait");
+    assert(threw.retryAfter === 120,
+      "the server's own stated wait must ride on the error so a surface can say WHEN, got " +
+      JSON.stringify(threw.retryAfter));
+  });
+
+  await test("(c2) a SHORT Retry-After (a burst) is still waited out and retried", async () => {
+    // heavy.py and insights.py both answer their busy-retry 429 with
+    // `Retry-After: 2`. That case must keep working exactly as before -- the
+    // split must not turn a load-shed refusal into a user-visible failure.
+    let calls = 0;
+    const sandbox = makeApiSandbox(async () => {
+      calls += 1;
+      if (calls === 1) return fakeRes({status: 429, headers: {"Retry-After": "0"}, body: ""});
+      return fakeRes({status: 200, headers: {"Content-Type": "application/json"}, body: "{}"});
+    });
+    const data = await sandbox.api("/api/insights/corpus-keywords");
+    assert(calls === 2, "a short Retry-After must still be retried, saw " + calls + " fetch call(s)");
+    assert(data && typeof data === "object", "and the retry must be able to succeed");
+  });
+
+  await test("(c2) the boundary is the retry budget itself, not a magic number", async () => {
+    // _API_RETRY_MAX_MS is 8000. A wait AT the budget is retried; one PAST it is
+    // reported. Pinning both sides means a future change to the budget moves the
+    // boundary coherently instead of leaving a hardcoded threshold behind.
+    for (const [seconds, expectRetry] of [[8, true], [9, false]]) {
+      let calls = 0;
+      const sandbox = makeApiSandbox(async () => {
+        calls += 1;
+        if (calls === 1) return fakeRes({status: 429, headers: {"Retry-After": String(seconds)}, body: ""});
+        return fakeRes({status: 200, headers: {"Content-Type": "application/json"}, body: "{}"});
+      });
+      let threw = null;
+      try { await sandbox.api("/api/articles"); } catch (e) { threw = e; }
+      if (expectRetry) {
+        assert(calls === 2 && !threw,
+          "Retry-After=" + seconds + "s is within the 8000 ms budget and must be retried, saw " +
+          calls + " call(s), threw=" + !!threw);
+      } else {
+        assert(calls === 1 && threw && threw.retryAfter === seconds,
+          "Retry-After=" + seconds + "s exceeds the 8000 ms budget and must be reported, saw " +
+          calls + " call(s), retryAfter=" + (threw && threw.retryAfter));
+      }
+    }
+  });
+
+  await test("(c2) with no Retry-After the error carries NO wait -- never a guess", async () => {
+    // The absence of a number must reach the surface as an absence, so it says
+    // "later" rather than inventing a clock time (CLAUDE.md: degrade loudly,
+    // never fabricate).
+    const sandbox = makeApiSandbox(async () => fakeRes({status: 429, headers: {}, body: ""}));
+    let threw = null;
+    try { await sandbox.api("/api/articles"); } catch (e) { threw = e; }
+    assert(threw && threw.retryAfter === undefined,
+      "an unstated wait must stay unstated on the error, got " + JSON.stringify(threw && threw.retryAfter));
+  });
 }
 
 // ========================================================================= //

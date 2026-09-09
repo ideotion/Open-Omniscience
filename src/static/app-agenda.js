@@ -1327,7 +1327,18 @@
                 : (e.country || "—");
         (groups[k] = groups[k] || []).push(e);
       }
-      box.innerHTML = `<p class="hint">${esc(AG.caveat)} · showing ${rows.length} of ${AG.events.length}</p>` +
+      // TWO NODES, deliberately. i18n.js's DOM walker matches a WHOLE text node
+      // against a locale key (src/static/i18n.js `tr()`), so concatenating the
+      // served caveat with a count produced one node that matched nothing: in
+      // every non-English locale this line rendered the caveat in English AND
+      // the bare English "showing 153 of 153" beside it (measured in Chromium at
+      // fr and ja, 2026-09-09). The caveat gets its own node so the walker can
+      // reach it -- the same paragraph the month view already translates -- and
+      // the count is translated here, at render time, through the same
+      // template-is-the-key rule the rest of this file uses (`_bulTf`), so the
+      // numbers never pass through a translation table.
+      box.innerHTML = `<p class="hint"><span>${esc(AG.caveat)}</span> · <span>${
+        esc(_bulTf("showing {shown} of {total}", {shown: rows.length, total: AG.events.length}))}</span></p>` +
         Object.entries(groups).map(([k, list]) =>
           `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
     }
