@@ -26,7 +26,7 @@ claim lives · owning prompt.
 | REL-07 | 0.4 row 7b ≥72 h soak — instrumentation exists (`collect_perf`, stall forensics), the run is the operator's | OPERATOR-GATED | gate §5; `UNATTENDED_RUN_RUNBOOK.md` | gate doc | P01 |
 | REL-08 | `docs/CHANGES.md` 0.3.0 section is current up to 2026-09-05; the tag-day amendment of "Not yet tagged" | UNBUILT (at tag) | `docs/CHANGES.md` | — | P01 |
 | REL-09 | Ledger restructure (Open queue → `docs/ledger/OPEN_QUEUE.md`, rule (1) amendment, retire shipped entries, size ratchet) | RULING-GATED (A3) | `docs/design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md` §7; CLAUDE.md 1,339,174 B / 161 bullets | proposal | P03 |
-| REL-10 | Freshness issue #998: vendored Alpine upstream v3.17.0 vs `reviewed_through` v3.16.2 (on-security policy) | OPERATOR-GATED (review) | GitHub issue #998; `configs/external_artifacts.yml` `vendored-alpine` | issue | P14 |
+| REL-10 | Freshness issue #998: vendored Alpine + ip-geo-country both flagged behind upstream | SHIPPED (PR #1102) — Alpine `reviewed_through` extended v3.16.2 -> v3.17.2 (on-security policy, not re-vendored, full-diff security review); ip-geo-country refreshed to the 2026-09 DB-IP release | GitHub issue #998; `configs/external_artifacts.yml` `vendored-alpine` + `ip-geo-country`; `docs/ledger/shipped.csv` | issue | P14 |
 
 ## DOC — documentation hygiene
 | ID | Item | Verdict | Evidence | Claim lives in | Prompt |
