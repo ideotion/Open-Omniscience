@@ -118,6 +118,22 @@
   }
   function current() { return localStorage.getItem(KEY) || "en"; }
 
+  // BOOT READINESS, added 2026-09-09 from a measured defect. `setLang()` dispatches
+  // `oo:langchange`, and several render-once surfaces rely on that event to re-derive
+  // text the DOM walker cannot reach. `init()` dispatches NOTHING -- so a surface that
+  // renders during boot, before `await load(c)` below has resolved, freezes in English
+  // with no event to repair it. That is a RACE, which is worse than a plain bug: it
+  // reproduces only when the surface's own fetch beats the locale fetch. Measured at
+  // fr: Home's stats read-failure line rendered English, and a forced `OOI18N.apply()`
+  // could not fix it because it sits inside a `[data-i18n-dyn]` subtree the walker is
+  // required to skip.
+  //
+  // A promise rather than another event, deliberately: a late subscriber to an event
+  // that already fired hears nothing, which is the same race one layer up. `ready`
+  // resolves for whoever asks, whenever they ask.
+  let _markReady;
+  const ready = new Promise((res) => { _markReady = res; });
+
   async function init() {
     const c = current();
     document.documentElement.lang = c;
@@ -126,6 +142,7 @@
     if (sel) { sel.value = c; sel.addEventListener("change", () => setLang(sel.value)); }
     if ("MutationObserver" in window) observer = new MutationObserver(schedule);
     apply();  // also connects the observer
+    _markReady(c);   // the locale map is loaded and applied; render-once surfaces may repaint
   }
 
   // t(): string-level lookup for JS-built text (confirm dialogs, toasts) that
@@ -152,7 +169,7 @@
     return out;
   }
 
-  window.OOI18N = { setLang, apply, current, init, t, tf, get meta() { return meta; } };
+  window.OOI18N = { setLang, apply, current, init, t, tf, ready, get meta() { return meta; } };
   if (document.readyState !== "loading") init();
   else document.addEventListener("DOMContentLoaded", init);
 })();

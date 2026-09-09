@@ -90,11 +90,32 @@ def test_anLoadArticles_failure_uses_the_shared_honest_message() -> None:
     )
 
 
-def test_helpers_are_defined_before_their_first_use() -> None:
+def test_the_helpers_are_hoisted_declarations_not_arrow_consts() -> None:
+    """This replaces a "defined before first use" ordering check (2026-09-09).
+
+    That check asserted textual position, which for a ``function`` declaration is
+    not a correctness property at all -- declarations hoist to the top of their
+    scope, so `doSearch()` may call `_articleFailureMessage` from above its
+    definition and always will work. The check could only ever fail on a harmless
+    reordering, and it cost six hand-rolled source slices (the budget in
+    tests/test_source_slicing_discipline.py counts each one, because each is a
+    chance to reintroduce the over-run bug that module documents).
+
+    The property that IS load-bearing is the one the ordering check was standing
+    in for: these must be ``function`` DECLARATIONS. Rewrite any of them as
+    ``const _x = () => …`` and hoisting no longer applies -- the binding sits in
+    its temporal dead zone until its own line runs, and every earlier caller
+    throws a ReferenceError at the exact moment it is trying to report a failure
+    honestly. That is a real regression, it is invisible to a reading of the diff,
+    and this catches it without slicing anything.
+    """
     src = _analysis()
-    assert src.index("function _articleFailureMessage(") < src.index("async function doSearch()")
-    assert src.index("function _searchRetryAfterSeconds(") < src.index("function _articleFailureMessage(")
-    assert src.index("function _isRateLimited(") < src.index("function _articleFailureMessage(")
+    for name in ("_articleFailureMessage", "_searchRetryAfterSeconds", "_isRateLimited"):
+        assert f"function {name}(" in src, (
+            f"{name} must be a hoisted `function` declaration; a `const` arrow would "
+            "throw a ReferenceError for any caller above its own line"
+        )
+        assert f"const {name} " not in src and f"const {name}=" not in src
 
 
 # --------------------------------------------------------------------------- #

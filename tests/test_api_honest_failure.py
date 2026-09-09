@@ -120,10 +120,23 @@ def test_home_failure_copy_never_reuses_the_empty_corpus_sentence() -> None:
     # why they must not be rendered. The ledger records three "this string must be
     # GONE" guards that failed against correct code on exactly that shape, so the
     # assertion has to run over code with the commentary removed.
+    # The stats copy moved OUT of loadHome() on 2026-09-09, into
+    # renderHomeStatsFailure(), so a language switch and the boot-locale race can
+    # re-derive it (#home-stats sits inside a [data-i18n-dyn] subtree the DOM walker
+    # is required to skip -- see tests/test_i18n_boot_readiness.py). Follow it there
+    # rather than relaxing the assertion: the guard is that the SHIPPED copy is
+    # translated and never the empty-corpus sentence, and that is still checkable
+    # exactly, just one function along.
+    stats_failure_body = strip_comments(function_body(home_js, "renderHomeStatsFailure"))
+    assert 't("The corpus stats could not be read just now' in stats_failure_body
+    assert "Your library is empty" not in stats_failure_body
+    assert 'role="alert"' in stats_failure_body
+
+    # And loadHome() must still ROUTE its failure there -- otherwise the copy above
+    # is correct and unreachable, which reads identically to a passing test.
     load_home_body = strip_comments(function_body(home_js, "loadHome"))
-    assert 't("The corpus stats could not be read just now' in load_home_body
+    assert "renderHomeStatsFailure()" in load_home_body
     assert "Your library is empty" not in load_home_body
-    assert 'role="alert"' in load_home_body
 
     load_briefing_body = strip_comments(function_body(home_js, "loadBriefing"))
     assert 't("The briefing could not be read just now' in load_briefing_body

@@ -391,6 +391,12 @@ async function runToggleTests() {
 function makeHomeSandbox(fetchImpl) {
   const apiSrc = extract("api", "async function api(");
   const loadHomeSrc = extract("loadHome", "async function loadHome(", HOME);
+  // Extracted, not stubbed. The stats read-failure copy moved out of loadHome() into
+  // its own function (2026-09-09) so a language switch and the boot-locale race can
+  // re-derive it -- see tests/test_i18n_boot_readiness.py. Stubbing it here would
+  // make this end-to-end test assert against a stub's output instead of the shipped
+  // copy, which is the whole thing the sibling-test convention exists to prevent.
+  const renderStatsFailureSrc = extract("renderHomeStatsFailure", "function renderHomeStatsFailure(", HOME);
   const loadBriefingSrc = extract("loadBriefing", "async function loadBriefing(", HOME);
   const src = `
     const document = this.document, window = {};
@@ -421,6 +427,12 @@ function makeHomeSandbox(fetchImpl) {
     function _syncHomeSubtabs() {}
     function refreshDraftCount() {}
     function renderBriefing() { throw new Error("renderBriefing must not run on a read failure"); }
+    // The module-level flags renderHomeStatsFailure()/loadHome() share. Declared here
+    // because the extraction is per-function; their real declarations sit beside the
+    // functions in app-home.js.
+    let _homeStatsFailed = false;
+    let _homeStatsAwaitingI18n = false;
+    ${renderStatsFailureSrc}
     ${loadBriefingSrc}
     ${loadHomeSrc}
     this.loadHome = loadHome;

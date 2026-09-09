@@ -284,6 +284,52 @@
       }
     }
 
+    // The stats strip's honest read-failure line, rendered from ONE place so a
+    // language switch can re-derive it -- measured defect, 2026-09-09, fr locale.
+    //
+    // `#home-stats` lives inside a `[data-i18n-dyn]` subtree, which the i18n DOM
+    // walker deliberately never touches (it would cache an already-translated
+    // string as "the original English" and freeze the node forever). That opt-out
+    // is correct, and it means anything rendered in here must translate ITSELF, at
+    // render time, and must re-render when the locale changes. This line did the
+    // first and not the second, so it froze in whichever locale was loaded at the
+    // moment of failure -- and at boot that is English, because loadHome() races
+    // the locale fetch and can win. Verified in Chromium at fr: the briefing's own
+    // failure line, which sits OUTSIDE a dyn subtree and so is reachable by the
+    // walker, translated correctly while this one stayed English, and a forced
+    // `OOI18N.apply()` could not repair it.
+    //
+    // Registered with the `oo:langchange` handler in app-boot.js, beside the map,
+    // the sources table and the briefing -- the same convention, for the same
+    // reason. The flag is what keeps the re-render honest: it repaints ONLY a
+    // strip that is actually showing the failure, never over real stats.
+    let _homeStatsFailed = false;
+    let _homeStatsAwaitingI18n = false;
+    function renderHomeStatsFailure() {
+      const host = $("home-stats");
+      if (!host) return;
+      const paint = () => {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        host.innerHTML = `<div class="muted" role="alert" style="color:var(--err)">`
+          + `<span aria-hidden="true">⚠</span> `
+          + esc(t("The corpus stats could not be read just now — that is not the same as an empty corpus."))
+          + `</div>`;
+      };
+      paint();
+      // THE BOOT RACE. A language SWITCH is covered by the oo:langchange handler in
+      // app-boot.js, but boot itself dispatches no event -- OOI18N.init() loads the
+      // locale asynchronously, and if this failure renders first it renders in
+      // English with nothing left to repair it. `OOI18N.ready` is the readiness
+      // signal for exactly that (a promise, so a late asker still gets an answer).
+      // Repaint once when it resolves, and only if this strip is still the thing on
+      // screen -- never over real stats that arrived in the meantime.
+      if (!_homeStatsAwaitingI18n && window.OOI18N && OOI18N.ready && OOI18N.ready.then) {
+        _homeStatsAwaitingI18n = true;
+        OOI18N.ready.then(() => { if (_homeStatsFailed) paint(); }).catch(() => {});
+      }
+    }
+    function homeStatsIsShowingFailure() { return _homeStatsFailed; }
+
     async function loadHome() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // AUDIT §4.2 (P0): a malformed 200 used to slip through api() as a raw,
@@ -294,13 +340,8 @@
       // true, distinct fact loudly (role="alert" + the caveat colour) rather
       // than fall back to a plain, easy-to-miss "unavailable" that a skimming
       // reader could confuse for "there is nothing here yet".
-      try { const s = await api("/api/database/stats"); renderHomeStats(s.counts, s); }
-      catch (e) {
-        $("home-stats").innerHTML = `<div class="muted" role="alert" style="color:var(--err)">`
-          + `<span aria-hidden="true">⚠</span> `
-          + esc(t("The corpus stats could not be read just now — that is not the same as an empty corpus."))
-          + `</div>`;
-      }
+      try { const s = await api("/api/database/stats"); _homeStatsFailed = false; renderHomeStats(s.counts, s); }
+      catch (e) { _homeStatsFailed = true; renderHomeStatsFailure(); }
       try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); }
       catch (e) { renderHomeStatus(false); }
       loadBriefing();

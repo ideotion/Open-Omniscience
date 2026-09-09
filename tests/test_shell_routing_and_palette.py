@@ -215,7 +215,7 @@ def test_every_sidebar_tab_is_reachable_from_the_palette() -> None:
     nav_src = m.group(0)
 
     sidebar = _sidebar_items()
-    sidebar_json = json.dumps([{"id": i, "label": l} for i, l in sidebar])
+    sidebar_json = json.dumps([{"id": tab_id, "label": label} for tab_id, label in sidebar])
 
     script = f"""
 "use strict";
@@ -293,7 +293,9 @@ def test_palette_offers_a_route_to_the_shortcuts_panel() -> None:
     assert '{grp:"Actions", label:"Keyboard shortcuts"' in src
     assert 'select("general")' in src
 
-    locale = json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text())
+    locale = json.loads(
+        (_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8")
+    )
     assert "Keyboard shortcuts" in locale, "reused string must already be a translated key"
     assert "System" in locale, "reused string must already be a translated key"
 

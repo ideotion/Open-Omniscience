@@ -58,6 +58,14 @@
       // runs); the endpoint is server-cached (~30s) and dismissal is server-tracked,
       // so re-fetching never resurrects a dismissed card.
       try { if (_lastBriefGen !== null && typeof loadBriefing === "function") loadBriefing(); } catch (_e) {}
+      // The stat strip's read-failure line lives inside a [data-i18n-dyn] subtree,
+      // so the DOM walker will never revisit it -- see renderHomeStatsFailure() in
+      // app-home.js. Re-derive it here, and ONLY when it is actually the thing on
+      // screen, so a language switch never repaints over real stats.
+      try {
+        if (typeof homeStatsIsShowingFailure === "function" && homeStatsIsShowingFailure()
+            && typeof renderHomeStatsFailure === "function") renderHomeStatsFailure();
+      } catch (_e) {}
       // The Composition figures are the same frozen-locale bug class as the Lead
       // titles above, and for the same reason: a Library view renders ONCE
       // (_libViewLoaded is a Set) and its labels are built at render time with t()

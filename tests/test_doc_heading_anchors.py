@@ -47,6 +47,7 @@ from pathlib import Path
 import pytest
 
 from tests.js_source_helper import arrow_const_source, function_source, read_static
+
 _ROOT = Path(__file__).resolve().parents[1]
 _APP_SETTINGS = _ROOT / "src" / "static" / "app-settings.js"
 _APP_CORE = _ROOT / "src" / "static" / "app-core.js"
@@ -146,8 +147,8 @@ def test_most_of_the_docs_own_toc_links_now_resolve():
     ids = set(result["ids"])
     links = result["links"]
     assert len(links) == 50, f"USER_MANUAL.md's own in-page link count changed ({len(links)}); re-verify this test's numbers"
-    resolved = [l for l in links if l in ids]
-    unresolved = sorted(set(l for l in links if l not in ids))
+    resolved = [link for link in links if link in ids]
+    unresolved = sorted({link for link in links if link not in ids})
     # Pinned, not rounded up: these 9 unique targets are pre-existing markdown
     # authoring inconsistencies (shortened links, or links hand-typed assuming
     # the opposite/collapsing convention) that no single consistent slugifier

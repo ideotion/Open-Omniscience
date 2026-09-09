@@ -161,8 +161,20 @@ jobs:
       #
       # A RATCHET, not a target: it may only be lowered. Lower it in the same PR
       # that adds the keys -- the script prints the new floor when it can drop.
+      #
+      # RE-BASELINED 2026-09-09 (i18n consolidation pass, 2026-09-08 visual audit):
+      # 554 -> 575 is NOT a regression -- it is the scanner closing four blind
+      # spots it was previously flying with (src/api/main.py's server-rendered
+      # article-reader page had zero code-path coverage in any mode; the two aux
+      # HTML shells' inline <script> blocks fell between the HTML- and JS-scanners
+      # entirely; oosky.js's canvas module was excluded by a file-glob that only
+      # matched `app*.js`; and the JS-literal regex family required a `"`/`'`
+      # delimiter, missing backtick-quoted literals). None of these 21 net-new
+      # strings were introduced by this pass -- they were always there and always
+      # untranslated; the count finally says so. See scripts/i18n_report.py's
+      # _reader_template_html / _aux_inline_js / _aux_js docstrings for each fix.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 554
+        run: python scripts/i18n_report.py --max-untranslatable 575
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says
@@ -170,8 +182,17 @@ jobs:
       # verbatim English in all 11 other locales with no ambiguity. Kept separate so
       # the certain class can be driven to zero on its own schedule instead of
       # hiding inside a blended number. Also a ratchet: it may only be lowered.
+      #
+      # RE-BASELINED 2026-09-09 (same pass as above): 295 -> 314. All 20 net-new
+      # sites are t()-wrapped strings inside taskmanager.html's inline <script>
+      # (System-tab CPU/memory/disk/network readouts, the "Could not load
+      # history." failure state, and the network-toggle hover copy) that were
+      # always present and always t()-wrapped, but sat in a file the scanner
+      # never opened for JS literals until this pass. Same honest-increase shape
+      # as the ratchet above -- the number went up because the instrument can now
+      # see the strings, not because new untranslated ones were written.
       - name: i18n unkeyed t() call sites
-        run: python scripts/i18n_report.py --max-unkeyed-t-calls 295
+        run: python scripts/i18n_report.py --max-unkeyed-t-calls 314
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
