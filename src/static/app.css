@@ -1559,7 +1559,20 @@
     .prose h3 { font-size:1.12em; } .prose h1:first-child,.prose h2:first-child { margin-top:0; }
     .prose p,.prose ul,.prose ol,.prose blockquote,.prose table,.prose pre { margin:.7em 0; }
     .prose ul,.prose ol { padding-left:1.4em; } .prose li { margin:.25em 0; }
-    .prose code { font-size:.88em; } .prose a { color:var(--accent-text); }
+    .prose code { font-size:.88em; }
+    /* a11y-help-link-in-text-block: the global `a { text-decoration:none }` leaves a
+       link inside a paragraph of documentation distinguished by COLOUR ALONE, which
+       axe-core's link-in-text-block reports as serious and WCAG 1.4.1 forbids.
+       Measured 2026-09-09 on the live app across the eight Help documents: 23 nodes
+       (user-manual 6 · quickstart 6 · ethics 4 · roadmap 3 · governance/security/
+       design/architecture 1 each), stable across the ink/light/contrast/solar themes.
+       Every OTHER surface swept the same day (home, feed, insights, observatory,
+       timemap, agenda, markets, library, law, settings) reported ZERO axe violations,
+       so this is scoped to the documentation prose rather than lifted app-wide: a
+       blanket underline would restyle surfaces that have no finding to fix.
+       `#tab-help a` carries the panel's own intro link (the /docs Swagger anchor),
+       which sits in a `.muted` paragraph outside `.prose`. */
+    .prose a, #tab-help a { color:var(--accent-text); text-decoration:underline; text-underline-offset:2px; }
     .prose pre { background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:13px; overflow-x:auto; }
     .prose pre code { background:transparent; padding:0; }
     .prose blockquote { border-left:3px solid var(--accent); padding:.2em 0 .2em 1em; color:var(--muted); }

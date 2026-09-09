@@ -96,7 +96,14 @@
   .tbtn { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
           border: 1px solid var(--line, #2a2f3a); background: var(--panel2, #1b1f27); color: var(--fg, #e7e9ee); }
   .tbtn.danger { border-color: var(--err, #a33); color: var(--err, #d66); }
-  .muted { opacity: .6; } .err-line { color: var(--err, #d66); }
+  /* a11y-tm-muted-by-opacity (measured 2026-09-09 on the live page, axe-core
+     serious, n=2 — #tm-conn and #jobs-body > .muted): this page dimmed secondary
+     text with OPACITY rather than a colour, so the composited foreground landed at
+     rgb(90,97,109) on rgb(15,18,24) = 2.99:1 against the 4.5:1 AA floor. The SPA's
+     own app.css has always used a real colour for `.muted`; this page diverged.
+     `var(--muted)` composites to 6.09:1 on this page's panel and, unlike an opacity
+     chain, cannot be dimmed a second time by an ancestor. */
+  .muted { color: var(--muted, #8c95a6); } .err-line { color: var(--err, #d66); }
   /* Performance cards: a metric + a live sparkline (built from a rolling buffer). */
   .perf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .perf-card { border: 1px solid var(--line, #232733); border-radius: 10px; padding: 10px 12px;
@@ -147,6 +154,18 @@
        here too rather than only in the app's chrome. Same .egress-bar rule in the
        shared app.css; populated by paintEgress() below. -->
   <div id="egress-window-bar" class="egress-bar" hidden role="status" aria-live="polite"></div>
+  <!-- a11y-tm-landmarks (measured 2026-09-09 on the live page): axe-core reported
+       landmark-one-main (1), page-has-heading-one (1) and region (4 — #tm-summary,
+       #tm-tabs, #p-processes, #tm-foot), all moderate. Everything below the header
+       sat in no landmark at all, so a screen-reader user had no way to jump to the
+       page's content and no heading to orient by. #tm-tabs was flagged despite being
+       a <nav> because its explicit role="tablist" REPLACES the implicit navigation
+       role, so it stopped being a landmark the moment it became a tablist.
+       The <h1> is .sr-only (app.css:161) because the visible identity is the title
+       bar + the browser tab; it reuses the EXISTING "Task manager" key, present in
+       all 12 locales, so no string is added and the i18n gate is untouched. -->
+  <main>
+  <h1 class="sr-only" data-i18n>Task manager</h1>
   <!-- Always-visible resource summary (state + CPU/RAM/↓/jobs) -->
   <div class="tm-summary" id="tm-summary"></div>
   <nav class="tm-tabs" id="tm-tabs" role="tablist">
@@ -163,7 +182,8 @@
     <div class="tm-panel" id="p-schedule" hidden><div id="sched-body"></div></div>
     <div class="tm-panel" id="p-history" hidden><div id="hist-body"></div></div>
   </div>
-  <div id="tm-foot" data-i18n>This window updates on its own. Collection runs continuously while online; airplane mode stops it.</div>
+  </main>
+  <footer id="tm-foot" data-i18n>This window updates on its own. Collection runs continuously while online; airplane mode stops it.</footer>
 
 <script>
 (function () {

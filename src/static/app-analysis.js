@@ -131,8 +131,26 @@
       strip.innerHTML = _anTabs.map(tb => {
         const on = tb.id === _anActiveId;
         const lbl = (tb.label || tb.query || "set").slice(0, 28);
-        return `<span class="an-tab${on ? " active" : ""}" role="tab" aria-selected="${on ? "true" : "false"}">`
-          + `<button class="an-tab-label" onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
+        // a11y-analysis-nested-interactive (measured 2026-09-09, axe-core serious,
+        // n=1): the wrapper <span> carried role="tab" AND held two <button>s, so an
+        // interactive widget contained two more — the tab's accessible name was
+        // assembled from both buttons' text and neither control was coherently
+        // reachable.
+        // The ARIA tabs pattern cannot express a CLOSABLE tab: `tablist` requires
+        // its children to be `tab`, `tab` is a widget role, and the close control
+        // has to live inside the tab visually. Moving role="tab" onto the label
+        // button and marking the wrapper role="presentation" was tried FIRST and
+        // MEASURED: it removed nested-interactive and immediately raised
+        // aria-required-children (1) instead, because axe does not promote a
+        // presentational wrapper's descendants into the tablist's owned set. So the
+        // strip is described as what it actually is — a LIST of open analyses, each
+        // with an open control and a close control — which is valid, carries the
+        // same structure to a screen reader, and leaves no widget nested in a
+        // widget. `aria-current` marks the active entry in place of aria-selected.
+        // (This is NOT one of invariant #18's ooSubtabs surfaces: the window's own
+        // subtabs are #an-subtabs and keep the tablist grammar unchanged.)
+        return `<span class="an-tab${on ? " active" : ""}" role="listitem">`
+          + `<button class="an-tab-label"${on ? ' aria-current="true"' : ""} onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
           + `<button class="an-tab-x" onclick="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
       }).join("");
     }

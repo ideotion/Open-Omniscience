@@ -397,7 +397,10 @@
       <!-- THEME-3 (2026-06-19): analysis-window-per-query — each search/Lead/keyword
            spawns a NAMED, closeable, persisted tab over this one render area (replaces
            the singleton + the retired #corpus-win modal). -->
-      <div id="an-tabstrip" class="an-tabstrip" role="tablist" style="display:none"></div>
+      <!-- role="list", not "tablist": each entry carries its own close button, and a
+           `tab` may not contain a widget (see _anRenderStrip's note — the tablist
+           form was measured raising aria-required-children). -->
+      <div id="an-tabstrip" class="an-tabstrip" role="list" style="display:none"></div>
       <!-- PERSISTENT PROVENANCE HEADER (rulings 15/16, field feedback 2026-08-07).
            When an analysis is opened FROM a Lead, the whole provenance travels with it
            -- the card, its family, the producer, the trigger, the method and the caveat
@@ -2896,7 +2899,12 @@
     <input id="pal-input" autocomplete="off" spellcheck="false"
            placeholder="Search your data, jump to a tool, run an action…"
            oninput="renderPalette()" onkeydown="palKey(event)">
-    <div class="pal-list" id="pal-list"></div>
+    <!-- a11y-palette-scrollable-region (measured 2026-09-09, axe-core serious, n=1):
+         the results list scrolls (`.pal-list{overflow:auto}`) and its rows are plain
+         divs, so a keyboard-only user had no way to scroll it — the input's ↑/↓ move
+         the SELECTION, which is not the same affordance. tabindex="0" makes the region
+         itself a tab stop that arrow keys scroll, which is the rule's own remedy. -->
+    <div class="pal-list" id="pal-list" tabindex="0"></div>
     <div class="pal-hint muted" style="padding:7px 16px;font-size:11.5px;border-top:1px solid var(--border)"
          title="AND, OR, NOT, “quoted phrases” and (parentheses) refine the article search. Everything is searched on this machine only — typing here never touches the network.">Boolean operators work here: AND, OR, NOT, “quoted phrases”.</div>
   </div>
