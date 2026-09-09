@@ -39,6 +39,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -591,6 +592,20 @@ async def csrf_and_security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     if not request.url.path.startswith(_CSP_EXEMPT_PREFIXES):
         response.headers.setdefault("Content-Security-Policy", _CSP)
+    if request.url.path.startswith("/static/"):
+        # Audit 2026-09-08 finding (b): StaticFiles already sends Last-Modified + a
+        # strong ETag, but with NO Cache-Control at all a browser is free to fall
+        # back to HEURISTIC freshness (RFC 7234 §4.2.2 — e.g. serving straight from
+        # cache with no revalidation request at all for a while), which can mean an
+        # UPGRADED file being served stale with no check whatsoever. `no-cache` (which,
+        # despite the name, still permits caching the bytes) forces revalidation on
+        # every request instead: the browser must send `If-None-Match`, so a rebuilt
+        # asset's new ETag is caught on the very next load (a fast 304 when it hasn't
+        # changed). This is strictly safer than today's unspecified default, never
+        # riskier — it cannot cause a post-upgrade stale-serve, only save the repeat
+        # full download when nothing changed — so it is added app-wide for /static/
+        # rather than left to browser heuristics.
+        response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -741,15 +756,59 @@ async def monitor_requests(request: Request, call_next):
     return response
 
 
+# --- Response compression (audit 2026-09-08 finding b) ---------------------- #
+# No middleware compressed anything before this: `curl -H 'Accept-Encoding: gzip'`
+# against a static JS bundle came back with no `Content-Encoding` at all, so every
+# cold load shipped the full uncompressed bytes (measured: app-map.js -71.0%,
+# app-core.js -67.5%, index.html -72.8% under plain `gzip -9`). Starlette's own
+# GZipMiddleware, added LAST here (it must be registered after every other
+# `app.add_middleware`/`@app.middleware("http")` call above so it ends up the
+# OUTERMOST layer — Starlette wraps the stack such that the most-recently-added
+# middleware is closest to the client — so it compresses the final response body,
+# including the CORS/security/rate-limit headers those inner layers already added,
+# rather than something an inner layer might re-serialize). `minimum_size=500`
+# (Starlette's own default, named here for clarity) skips compressing tiny JSON
+# replies where gzip's own framing overhead would net negative; it still transparently
+# no-ops when the client sent no `Accept-Encoding: gzip` (curl without it, or any
+# client that doesn't want it) and for responses already declaring another encoding.
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
 # Rate limit exceeded handler
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     logger.warning(f"Rate limit exceeded for {get_remote_address(request)}: {request.url}")
     REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path, http_status=429).inc()
-    # slowapi's RateLimitExceeded does not expose a public `retry_after`; only
-    # emit the header when an explicit value is present (avoids an AttributeError
-    # inside the very handler meant to degrade gracefully).
+    # slowapi's RateLimitExceeded does not expose a public `retry_after`, AND
+    # slowapi's own auto-header-injection (`Limiter._inject_headers`, which would
+    # otherwise add this) never runs on this path: SlowAPIMiddleware.dispatch returns
+    # the exception handler's response DIRECTLY when a limit fails, skipping the
+    # `_inject_headers` call it makes on the success path (see
+    # slowapi/middleware.py::SlowAPIMiddleware.dispatch) — so a client got a 429 with
+    # nothing to back off against (audit 2026-09-08 finding c; heavy.py's own 429 already
+    # sets Retry-After for its unrelated busy-retry case). Rather than fabricate a
+    # number, read the SAME state slowapi's internals already recorded for exactly this
+    # purpose: `Limiter.__evaluate_limits` stamps `request.state.view_rate_limit` to
+    # `(the failed RateLimitItem, its identifier args)` immediately before raising, and
+    # `limiter.limiter.get_window_stats(*that)` (the exact call `_inject_headers` itself
+    # would have made) returns the real expiry of THIS caller's THIS window — never a
+    # policy change, just exposing the limiter's own already-computed answer.
     retry_after = getattr(exc, "retry_after", None)
+    view_limit = getattr(request.state, "view_rate_limit", None)
+    if retry_after is None and view_limit:
+        try:
+            reset_at, _remaining = limiter.limiter.get_window_stats(view_limit[0], *view_limit[1])
+            retry_after = max(1, int(reset_at - time.time()) + 1)
+        except Exception:  # noqa: BLE001 - fall through to the coarser fallback below
+            retry_after = None
+    if retry_after is None:
+        # Last-resort fallback (state unavailable for some reason): the limit's own
+        # window length (e.g. "100/hour" -> 3600) is always a safe, honest, non-fabricated
+        # upper bound on how long this caller must wait — never shorter than the truth.
+        try:
+            retry_after = exc.limit.limit.get_expiry()
+        except Exception:  # noqa: BLE001 - degrade to no header at all, never crash the handler
+            retry_after = None
     headers = {"Retry-After": str(retry_after)} if retry_after is not None else {}
     return JSONResponse(
         status_code=429,
@@ -2371,10 +2430,38 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
 @app.get("/api/sources", response_model=list)
 @limiter.limit("100/hour")
-def list_sources(request: Request, db: Session = Depends(get_db)):
-    """List all available news sources with optional filters."""
-    logger.info("List sources request")
-    sources = db.query(Source).all()
+def list_sources(
+    request: Request,
+    limit: int | None = Query(None, ge=1, le=10000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """List all available news sources with optional filters.
+
+    LEGACY BARE ROUTE — kept, not removed, because both existing frontend
+    callers (``app-sources.js``'s ``loadSources()`` and ``app-markets.js``'s
+    ``loadMarketConfig()``) request this exact no-trailing-slash path expecting
+    the FULL list back as a bare JSON array, to populate their source-picker
+    dropdowns; neither passes ``limit``/``offset`` today. The actively
+    maintained, richer, paginated sibling lives at ``/api/sources/`` (this
+    router's own trailing-slash route never collided with it — a request for
+    the bare path is an exact match here and is never redirected there).
+
+    The defect this fixes: ``limit``/``offset`` were accepted by no parameter
+    at all here, so a caller that DID pass ``?limit=5`` silently got every one
+    of the 3,618 rows back anyway (audit 2026-09-08). They are now honoured
+    when given. The default (no params) is UNCHANGED — every row, exactly as
+    before — so neither existing caller regresses: capping the default here
+    would silently truncate their dropdowns, the same silent-wrong-answer
+    failure mode this app refuses to ship elsewhere.
+    """
+    logger.info("List sources request (limit=%s offset=%s)", limit, offset)
+    query = db.query(Source).order_by(Source.id.asc())
+    if offset:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    sources = query.all()
     return [
         {
             "id": s.id,
