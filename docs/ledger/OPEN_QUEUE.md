@@ -11733,3 +11733,45 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   judgement call and the six-hour job cap would need chunking through artifacts; not recommended
   first; (c) triage on the app's local Ollama — a second model path for the same answers, not
   worth building while Haiku batches cost ~10k tokens each.
+
+- **QUESTION 2026-09-10 (maintainer, from the first live Stage A run) — PENDING RULING: WHAT TO DO
+  WITH SOURCES WHOSE robots.txt IS UNREACHABLE OR UNAVAILABLE; "should we only ban those sources
+  which explicitly ban robots? What's the most ethical approach?"** FACTS FIRST. (1) What the ONE
+  fetcher does today (`EthicalFetcher._get_robots`): 200 → the file's rules; 404/410 → no rules,
+  allowed; **401/403 → the whole host is off-limits**; 5xx or anything else → fail closed;
+  network error, timeout, a redirect to a blocked target → fail closed. Every fail-closed outcome
+  is cached ONE HOUR (`_ROBOTS_TTL = 3600`) and re-read after that, and the refusal's message says
+  only "could not be determined", so the pipeline's `robots_unavailable` cannot tell a 403 from a
+  timeout. (2) What the app does with such a source: NOTHING permanent — qualification never
+  reads robots; a refused host simply yields no articles, so it stays `unqualified` (never
+  `disqualified`) and is retried on the scheduler's own clock, which is the "defer" behaviour
+  already; the KIT run is the only place the outcome is written as a REJECTION. (3) What the
+  standard says (RFC 9309 §2.3.1): a 4xx answer means the file is "unavailable" and a crawler
+  MAY access anything; a 5xx or a network error means it is "unreachable" and the crawler MUST
+  assume complete disallow, re-trying later, and MAY treat a file that stays unreachable for a
+  long period (the example is 30 days) as unavailable; a cached copy SHOULD NOT serve longer than
+  24 hours unless the file is unreachable. So the app is exactly the standard on 5xx/network and
+  on 404, and STRICTER than the standard on 401/403 — a choice, not an accident. RECOMMENDED
+  DEFAULT, in three parts, none of which relaxes the fail-closed non-negotiable: (a) an EXPLICIT
+  disallow is respected, and re-read periodically because policies change both ways — unchanged;
+  (b) UNREACHABLE (5xx, timeout, DNS, a blocked redirect) is not a verdict about the publisher
+  at all: never a ban, never an allowance, a RETRY — the app already does this hourly; the kit
+  should stop writing it as a rejection and re-judge those rows in a second pass at the end of
+  the run (a `--retry` over `robots_unavailable` and `homepage_unreachable`, last verdict per
+  domain winning), and a host that stays unreachable across passes is recorded as DEAD, not
+  banned; (c) REFUSED (401/403 to the honest bot's request for robots.txt) is the ambiguous case
+  and the ethical answer is "who is refusing": a publisher's edge that will not even show its
+  policy to a declared crawler has answered, and that answer is respected exactly like an
+  explicit Disallow — never retried under another identity, never routed around; but the
+  measurement must come from a plain clearnet path first, because the same host answers a Tor
+  exit or a datacenter range with 403 for reasons that are about the path, not the bot (the
+  standing "a host's Tor block is the host's choice, surfaced honestly with transport-aware
+  verdicts" rule). So the answer to "only ban the explicit ones?" is NO: explicit and refused
+  are both respected; unreachable is deferred; nothing is ever evaded. TO MAKE (b) AND (c)
+  MEASURABLE the fetcher should carry the cause on `RobotsUnavailable` (status or error class) so
+  the pipeline splits `robots_unavailable` into `robots_refused` and `robots_unreachable` — an
+  additive change, no behaviour change, and the numbers the ruling needs. NOT RECOMMENDED: the
+  RFC's "MAY access after 4xx" — permitted by the standard, but a research crawler that reads a
+  refusal as a permission has stopped being one; and the RFC's "30 days unreachable → treat as
+  unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
+  "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
