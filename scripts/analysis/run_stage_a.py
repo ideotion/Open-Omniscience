@@ -12,13 +12,17 @@ repository-connected Claude session on that zip.
 
 Standard library only, so it runs before the venv exists. Every step is re-runnable: run the
 same command again after a stop and it continues. Ctrl-C (once) stops cleanly: the in-flight
-hosts finish, everything judged so far is kept, the zip is written.
+hosts finish, everything judged so far is kept, the zip is written. No host can hold the run:
+a host's declared robots Crawl-delay bounds its own feed probes, and when nothing finishes for
+twenty minutes the hosts still in flight are written as host_timeout (not judged) and the
+worklist moves on -- `--retry host_timeout,crawl_delay_too_long` re-judges them later.
 
 USAGE, from the kit's folder (Python 3.12 or newer):
     python3 run_stage_a.py                      # everything: venv, deps, self-check, worklist 1 then 2, zip
     python3 run_stage_a.py --only shortlist     # worklist 1 only (the 3,588-row review shortlist)
     python3 run_stage_a.py --limit 300          # a first taste: 300 rows per worklist, then the zip
     python3 run_stage_a.py --workers 8          # gentler on a small machine (12 is the default and the cap)
+    python3 run_stage_a.py --retry host_timeout # re-judge the rows a previous run could not finish
     python3 run_stage_a.py --status             # WHILE IT RUNS, from a second terminal: progress, the
                                                 # reasons so far, this session's rate, and a snapshot zip
 On Windows use `py -3.13 run_stage_a.py`. The result is stage_a_results_<date>.zip beside this
@@ -225,6 +229,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--workers", type=int, default=MAX_WORKERS, help=f"parallel hosts, at most {MAX_WORKERS}")
     ap.add_argument("--limit", type=int, default=None, help="rows to judge per worklist THIS run (resumable)")
     ap.add_argument("--timeout", type=float, default=20.0, help="seconds per request")
+    ap.add_argument("--retry", default=None,
+                    help="re-judge rows whose last verdict has one of these reasons (comma-separated), "
+                         "e.g. host_timeout,crawl_delay_too_long")
     ap.add_argument("--skip-selfcheck", action="store_true")
     ap.add_argument("--no-zip", action="store_true")
     ap.add_argument("--status", action="store_true",
@@ -270,14 +277,24 @@ def probe() -> dict[str, str]:
     return out
 
 
+def kit_id(root: Path = ROOT) -> str:
+    try:
+        return str(json.loads((root / "KIT_MANIFEST.json").read_text(encoding="utf-8")).get("id") or "")
+    except Exception:  # noqa: BLE001 - no readable manifest: keyed on nothing, so the check runs
+        return ""
+
+
 def selfcheck(py: Path, root: Path = ROOT, env: dict | None = None) -> None:
+    # The marker holds the id of the kit it passed for, so an updated kit extracted over this
+    # folder (new code, same runs/ and .venv) proves itself once more before it fetches.
     marker = root / "runs" / ".selfcheck_ok"
-    if marker.exists():
+    want = kit_id(root)
+    if marker.exists() and marker.read_text(encoding="utf-8").strip() == want:
         return
     _say("self-check (offline; proves the kit works here before anything is fetched)")
     subprocess.run([str(py), str(root / "selfcheck.py")], check=True, env=env, cwd=root)
     marker.parent.mkdir(exist_ok=True)
-    marker.write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
+    marker.write_text(want, encoding="utf-8")
 
 
 def stage_a(py: Path, key: str, args: argparse.Namespace, root: Path = ROOT, env: dict | None = None) -> int:
@@ -290,6 +307,8 @@ def stage_a(py: Path, key: str, args: argparse.Namespace, root: Path = ROOT, env
            "--workers", str(args.workers), "--timeout", str(args.timeout)]
     if args.limit:
         cmd += ["--limit", str(args.limit)]
+    if args.retry:
+        cmd += ["--retry", args.retry]
     # Popen + wait, not subprocess.run: run() would SIGKILL the child a quarter-second after a
     # Ctrl-C, before it could finish the in-flight hosts and write its outputs. The child gets the
     # same Ctrl-C from the terminal and handles it itself; here we only wait for it.

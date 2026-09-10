@@ -8211,3 +8211,26 @@
   them.** The same self-check found the second fact: the repository's locked `numpy` needs
   Python 3.12+, so a "3.11 or newer" floor written from the syntax the scripts use was wrong.
   A floor is measured by installing the pins, never inferred.
+- **A POLITENESS SLEEP HONOURED BEFORE EVERY REQUEST MULTIPLIES BY THE REQUEST COUNT, AND A POOL
+  ENDS WHEN ITS SLOWEST MEMBER DOES (2026-09-10, the candidate kit's first live run):** the
+  maintainer reported the run "frozen" at 3587 of 3588 shortlist rows for over an hour. The snapshot
+  explained it offline: the slowest judged hosts took exactly six times their robots `Crawl-delay`
+  (5409 s, 3621 s, 1829 s -- six probes each), because `EthicalFetcher` sleeps the declared delay
+  before every request and the stage makes up to six feed probes per host; the unjudged row was the
+  same pattern with a longer delay, and `run()` waited on the pool's last future before the worklist
+  could end. Nothing was wrong in the sense of a bug: every sleep was one the host asked for. What was
+  wrong was the ARITHMETIC nobody had done -- per-request politeness x requests per host = the cost
+  of one host, uncapped -- and the SHAPE of the wait: `as_completed` over every future makes the
+  worklist's completion the slowest host's completion. **GENERAL FORM: whenever a per-request wait is
+  honoured, bound the requests a host may cost by the host's OWN declaration (read the delay, divide
+  the budget by it, plan that many requests, record the rest as not judged); and never let a batch
+  wait unbounded on stragglers -- wait with a stall window, record what is still in flight as not
+  judged, and exit without joining threads that are asleep inside a fetch.** The measurement that
+  made the fix safe came from the run's own per-row `elapsed_s`: p99 138 s, p95 35 s, median 16 s, so
+  a 600 s budget clips only the tail the Crawl-delay explains. The same review found the fetcher's
+  body read had no wall-clock bound at all (the socket timeout bounds each recv, not the read):
+  a tarpit that trickles a body holds a worker indefinitely -- now a deadline, checked between
+  16 KiB chunks. STILL OPEN, recorded in the queue: the collector itself sleeps a worker for the full
+  declared delay with no cap, and its per-pass fetcher forgets `_last_request`, so "refuse and retry
+  next pass" would fetch a Crawl-delay-3600 host every pass -- the honest fix needs a persisted
+  next-allowed-at per host, a ruling-shaped change.

@@ -118,3 +118,29 @@ def test_the_results_note_and_the_package_carry_the_runs_with_complete_lines_onl
 
 def test_the_kit_carries_the_runner_at_its_root():
     assert (_ROOT / bck.RUNNER).read_bytes() == (_ROOT / "scripts" / "analysis" / "run_stage_a.py").read_bytes()
+
+
+def test_the_retry_flag_passes_through_and_the_selfcheck_marker_is_keyed_by_the_kit(tmp_path: Path, monkeypatch):
+    assert rsa.parse_args(["--retry", "host_timeout,crawl_delay_too_long"]).retry == "host_timeout,crawl_delay_too_long"
+    assert rsa.parse_args([]).retry is None
+
+    root = _fake_kit(tmp_path)
+    (root / "selfcheck.py").write_text("", encoding="utf-8")
+    runs: list[list[str]] = []
+    monkeypatch.setattr(rsa.subprocess, "run", lambda cmd, **kw: runs.append([str(c) for c in cmd]))
+    marker = root / "runs" / ".selfcheck_ok"
+
+    rsa.selfcheck(Path("py"), root)  # no marker: runs, and records the kit it passed for
+    assert len(runs) == 1 and runs[0][-1].endswith("selfcheck.py")
+    assert marker.read_text(encoding="utf-8") == "oo-candidate-kit-x" == rsa.kit_id(root)
+
+    rsa.selfcheck(Path("py"), root)  # same kit: skipped
+    assert len(runs) == 1
+
+    (root / "KIT_MANIFEST.json").write_text(json.dumps({"id": "oo-candidate-kit-y"}), encoding="utf-8")
+    rsa.selfcheck(Path("py"), root)  # an updated kit extracted over the folder: proves itself again
+    assert len(runs) == 2 and marker.read_text(encoding="utf-8") == "oo-candidate-kit-y"
+
+    marker.write_text("2026-09-10T10:00:00+00:00", encoding="utf-8")  # the pre-keyed marker shape
+    rsa.selfcheck(Path("py"), root)
+    assert len(runs) == 3

@@ -30,6 +30,16 @@ WHAT IT DOES, per candidate row (name, domain, and whatever the export carries):
    pass or drop"): the feed parses as RSS/Atom; it has at least ``MIN_ENTRIES`` entries with a
    title AND a link; at least one entry is dated within ``FRESH_DAYS``. An undated feed is
    ``feed_undated`` -- reported as its own reason, never guessed live.
+4b. BOUNDED IN TIME (2026-09-10, the kit's first live run): the fetcher honours a host's
+   robots ``Crawl-delay`` before EVERY request, so six probes at Crawl-delay 900 held one
+   worker for ninety minutes, and one host with a longer delay held the whole shortlist for
+   hours -- the pool waited for its last member. So the host's OWN declared delay now bounds
+   its probes: ``min(MAX_FEED_PROBES, PROBE_TIME_BUDGET_S // delay)``, declared feed links
+   first; a delay the budget cannot afford even once is ``crawl_delay_too_long`` (status
+   ``error`` = not judged, the delay recorded). And the run never waits forever on a silent
+   host: when nothing finishes for ``STALL_S``, the hosts still in flight are written as
+   ``host_timeout`` (not judged) and the process exits without waiting for their threads.
+   Both are re-judged on demand with ``--retry crawl_delay_too_long,host_timeout``.
 5. LANGUAGE of the CONTENT, detected over the entry titles with the repo's own guarded
    detector (``src.analytics.langdetect``: below its floors it answers None, never guesses);
    the export's language is kept as the fallback and the BASIS is recorded either way.
@@ -43,7 +53,9 @@ a language, a country or a region; touch ``configs/sources.yml`` (the merge is a
 reviewed step: ``scripts/merge_source_batch.py``); rank anything.
 
 RESUMABLE: ``--resume`` re-reads ``verified.jsonl`` and skips domains already judged, so a 22k
-run can be split across sessions (``--limit``) and a crash costs nothing already written.
+run can be split across sessions (``--limit``) and a crash costs nothing already written. A
+domain's LAST line is its verdict, so ``--retry REASON[,REASON]`` re-judges the rows whose last
+verdict carries one of those reasons by simply appending a newer line.
 
 RUN (inside a clearnet session, after building the venv -- in the repository or in the kit):
   .venv/bin/python scripts/analysis/verify_candidate_feeds.py \
@@ -55,12 +67,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import sys
 import threading
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -82,6 +95,8 @@ MIN_ENTRIES = 3
 FRESH_DAYS = 120
 MAX_LINK_FEEDS = 3          # <link rel=alternate> candidates tried, in page order
 MAX_FEED_PROBES = 6         # feed fetches per host, links + conventional paths together
+PROBE_TIME_BUDGET_S = 600.0  # what a host's declared Crawl-delay may cost across its probes
+STALL_S = 1200.0             # nothing finishing for this long: the in-flight hosts are host_timeout
 CONVENTIONAL_PATHS = ("/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml", "/?feed=rss2")
 FEED_TYPES = frozenset({
     "application/rss+xml", "application/atom+xml", "application/rdf+xml",
@@ -132,6 +147,7 @@ class Verdict:
     language_detected: str = ""
     language_basis: str = ""          # detected | export | unknown
     robots: str = ""                  # allowed | disallowed | unavailable | ""
+    crawl_delay_s: float = 0.0        # the host's declared Crawl-delay, when it declares one
     tags: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
     checked_at: str = ""
@@ -141,6 +157,9 @@ REASONS = (
     "duplicate_of_catalogue", "duplicate_in_run", "robots_disallowed", "robots_unavailable",
     "homepage_unreachable", "no_feed_found", "feed_unparseable", "feed_too_few_entries",
     "feed_stale", "feed_undated", "verified", "error",
+    # status ``error`` = NOT judged, re-judged on demand with --retry:
+    "crawl_delay_too_long",   # the host's declared Crawl-delay exceeds the probe budget
+    "host_timeout",           # still in flight when nothing had finished for STALL_S
 )
 
 
@@ -287,10 +306,14 @@ FetchFn = Callable[..., object]
 
 def verify_candidate(
     row: dict, *, fetch: FetchFn, now: datetime, catalogue: set[str], seen: set[str],
+    crawl_delay: Callable[[str], float | None] | None = None,
+    probe_budget_s: float = PROBE_TIME_BUDGET_S,
 ) -> Verdict:
     """The whole check for ONE candidate. ``fetch(url, require_html=...)`` is the fetcher's
     ``fetch`` (a seam so tests inject a fake); it returns an object with ``content`` and
-    ``final_url`` and raises ``FetchError`` subclasses on refusal."""
+    ``final_url`` and raises ``FetchError`` subclasses on refusal. ``crawl_delay(url)`` is the
+    fetcher's ``crawl_delay_for`` (the host's declared Crawl-delay once its robots.txt has been
+    read, else None): it bounds the probes to what ``probe_budget_s`` can afford."""
     started = time.monotonic()
     raw = str(row.get("domain") or "").strip()
     dom = registrable_domain(raw) or normalize_domain(raw)
@@ -343,6 +366,25 @@ def verify_candidate(
     v.homepage_url = base
     v.site_title, v.description = extract_site_meta(html)
 
+    # --- the host's own pacing bounds its probes: the fetcher sleeps the declared Crawl-delay
+    # before every request, so the probes cost delay x probes of one worker's time. Declared
+    # feed links come first in the candidate order, so a small budget still tries the
+    # outlet's own declaration before any conventional path.
+    max_probes = MAX_FEED_PROBES
+    delay = None
+    if crawl_delay is not None:
+        try:
+            delay = crawl_delay(base)
+        except Exception:  # noqa: BLE001 - an unreadable delay plans as no delay
+            delay = None
+    if delay:
+        v.crawl_delay_s = float(delay)
+        max_probes = min(MAX_FEED_PROBES, int(probe_budget_s // float(delay)))
+        if max_probes <= 0:
+            v.status, v.reason = "error", "crawl_delay_too_long"
+            v.elapsed_s = round(time.monotonic() - started, 2)
+            return v
+
     # --- feed candidates: declared first, then conventional; bounded
     candidates = discover_feed_links(html, base)
     kinds = {u: "link" for u in candidates}
@@ -354,7 +396,7 @@ def verify_candidate(
     reason = "no_feed_found"
     facts: dict = {}
     for url in candidates:
-        if v.feed_probes >= MAX_FEED_PROBES:
+        if v.feed_probes >= max_probes:
             break
         v.feed_probes += 1
         try:
@@ -501,30 +543,42 @@ def load_candidates(path: Path) -> list[dict]:
 
 
 def load_resume(path: Path) -> tuple[list[Verdict], set[str]]:
-    verdicts: list[Verdict] = []
+    """Every domain's LAST verdict in the cursor, in first-seen order, and the set of domains
+    it holds. A re-judged row (``--retry``) appends a newer line; the newest one is the truth."""
+    last: dict[str, Verdict] = {}
     if not path.exists():
-        return verdicts, set()
+        return [], set()
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         try:
             d = json.loads(line)
-            verdicts.append(Verdict(**{k: d[k] for k in d if k in Verdict.__dataclass_fields__}))
+            v = Verdict(**{k: d[k] for k in d if k in Verdict.__dataclass_fields__})
         except Exception:  # noqa: BLE001 - a torn last line is skipped, never fatal
             continue
-    return verdicts, {v.domain for v in verdicts}
+        last[v.domain] = v
+    return list(last.values()), set(last)
 
 
 def run(
     rows: list[dict], *, fetch: FetchFn, out_dir: Path, workers: int = 8, now: datetime | None = None,
     catalogue: set[str] | None = None, resume: bool = True, limit: int | None = None,
     progress: Callable[[int, int, Verdict], None] | None = None,
+    retry_reasons: set[str] | frozenset[str] = frozenset(),
+    crawl_delay: Callable[[str], float | None] | None = None,
+    probe_budget_s: float = PROBE_TIME_BUDGET_S, stall_s: float = STALL_S,
 ) -> dict:
     now = now or datetime.now(UTC)
     catalogue = set(catalogue or ())
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl = out_dir / "verified.jsonl"
     prior, done = load_resume(jsonl) if resume else ([], set())
+    if retry_reasons:
+        # Re-judge the rows whose LAST verdict carries one of these reasons: they leave the
+        # done-set, their old lines stay in the cursor, and the new line outranks them.
+        redo = {v.domain for v in prior if v.reason in retry_reasons}
+        prior = [v for v in prior if v.domain not in redo]
+        done = done - redo
     todo = [r for r in rows if (registrable_domain(str(r.get("domain") or "")) or "") not in done]
     if limit is not None:
         todo = todo[:limit]
@@ -533,9 +587,26 @@ def run(
     verdicts: list[Verdict] = list(prior)
     n = 0
     interrupted = False
+    stragglers: list[str] = []
     futures: dict = {}
     pool = ThreadPoolExecutor(max_workers=max(1, workers))
+
+    def _domain_of(r: dict) -> str:
+        raw = str(r.get("domain") or "").strip()
+        return registrable_domain(raw) or normalize_domain(raw) or raw
+
     with jsonl.open("a", encoding="utf-8") as fh:
+
+        def _record(v: Verdict) -> None:
+            nonlocal n
+            with lock:
+                verdicts.append(v)
+                fh.write(json.dumps(asdict(v), ensure_ascii=False) + "\n")
+                fh.flush()
+                n += 1
+            if progress:
+                progress(n, len(futures), v)
+
         try:
             for r in todo:
                 dom = registrable_domain(str(r.get("domain") or "")) or ""
@@ -544,16 +615,32 @@ def run(
                         continue
                     seen.add(dom)
                 futures[pool.submit(verify_candidate, r, fetch=fetch, now=now, catalogue=catalogue,
-                                    seen=set())] = r
-            for fut in as_completed(futures):
-                v = fut.result()
-                with lock:
-                    verdicts.append(v)
-                    fh.write(json.dumps(asdict(v), ensure_ascii=False) + "\n")
-                    fh.flush()
-                    n += 1
-                if progress:
-                    progress(n, len(futures), v)
+                                    seen=set(), crawl_delay=crawl_delay,
+                                    probe_budget_s=probe_budget_s)] = r
+            pending = set(futures)
+            while pending:
+                finished, pending = wait(pending, timeout=stall_s, return_when=FIRST_COMPLETED)
+                if not finished:
+                    # Nothing finished for a whole stall window. Whatever is still in flight is
+                    # recorded as NOT judged, so one silent host can never hold a worklist
+                    # (2026-09-10: one did, for hours, while 3,587 others were done). Their
+                    # threads are left to end on their own; main() exits without waiting.
+                    for fut in pending:
+                        r = futures[fut]
+                        v = Verdict(
+                            domain=_domain_of(r), name=str(r.get("name") or "").strip(),
+                            source_type=str(r.get("source_type") or "").strip(),
+                            country=str(r.get("country") or "").strip().lower(),
+                            language_export=str(r.get("language") or "").strip().lower(),
+                            status="error", reason="host_timeout", elapsed_s=float(stall_s),
+                            checked_at=now.isoformat(timespec="seconds"),
+                        )
+                        stragglers.append(v.domain)
+                        _record(v)
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
+                for fut in finished:
+                    _record(fut.result())
         except KeyboardInterrupt:
             # Ctrl-C on a laptop run: take no new host, let the in-flight ones finish unrecorded
             # (the next run re-judges them -- cheap and correct), keep every row already written.
@@ -561,11 +648,13 @@ def run(
             interrupted = True
             pool.shutdown(wait=False, cancel_futures=True)
         else:
-            pool.shutdown(wait=True)
+            if not stragglers:
+                pool.shutdown(wait=True)
     summary = write_outputs(verdicts, out_dir, today=now.date().isoformat())
     summary["interrupted"] = interrupted
     summary["judged_this_run"] = n
     summary["remaining"] = max(0, len(futures) - n)
+    summary["stragglers"] = stragglers
     return summary
 
 
@@ -580,7 +669,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-resume", action="store_true")
     ap.add_argument("--catalogue", type=Path, action="append", default=None,
                     help="extra catalogue YAML(s) to dedupe against (the repo's are always included)")
+    ap.add_argument("--retry", default="",
+                    help="re-judge rows whose LAST verdict has one of these reasons (comma-separated), "
+                         "e.g. host_timeout,crawl_delay_too_long")
+    ap.add_argument("--probe-budget", type=float, default=PROBE_TIME_BUDGET_S,
+                    help="seconds a host's declared Crawl-delay may cost across its feed probes")
+    ap.add_argument("--stall", type=float, default=STALL_S,
+                    help="seconds without any host finishing before the in-flight ones are host_timeout")
     args = ap.parse_args(argv)
+    retry = {s.strip() for s in args.retry.split(",") if s.strip()}
+    unknown = sorted(retry - set(REASONS))
+    if unknown:
+        ap.error(f"--retry: unknown reason(s) {unknown}; known: {', '.join(REASONS)}")
 
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -599,13 +699,26 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{i}/{total}  {v.domain}: {v.reason}", flush=True)
 
     summary = run(rows, fetch=fetcher.fetch, out_dir=args.out_dir, workers=args.workers,
-                  catalogue=cat, resume=not args.no_resume, limit=args.limit, progress=_progress)
+                  catalogue=cat, resume=not args.no_resume, limit=args.limit, progress=_progress,
+                  retry_reasons=retry, crawl_delay=getattr(fetcher, "crawl_delay_for", None),
+                  probe_budget_s=args.probe_budget, stall_s=args.stall)
     print(json.dumps(summary, indent=1))
+    code = 0
     if summary.get("interrupted"):
         print(f"interrupted: {summary['judged_this_run']} judged this run, {summary['remaining']} remaining "
               "-- run the same command again to continue (it resumes from verified.jsonl)", flush=True)
-        return 130
-    return 0
+        code = 130
+    if summary.get("stragglers"):
+        print(f"{len(summary['stragglers'])} host(s) still in flight after {args.stall:.0f}s with nothing "
+              f"finishing ({', '.join(summary['stragglers'][:5])}): recorded as host_timeout, NOT judged "
+              "-- re-judge them later with --retry host_timeout. Exiting without waiting for them.",
+              flush=True)
+        # Their threads are blocked inside a fetch (a sleep the host asked for, a tarpit): a
+        # normal exit would wait for them, which is the hang this guards against.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    return code
 
 
 if __name__ == "__main__":

@@ -11832,3 +11832,25 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   fail-closed non-negotiable and "a host's Tor block is the host's choice, surfaced honestly with
   transport-aware verdicts" are exactly what (B)–(D) implement; only the fetcher docstring's
   "restricted 401/403 → off-limits" line would change wording. No code changed pending the ruling.
+
+- **QUESTION 2026-09-10 (found while explaining the kit's stall) — PENDING RULING: THE COLLECTOR
+  SLEEPS A WORKER FOR THE FULL DECLARED `Crawl-delay`, WITH NO CAP, AND ITS PER-PASS FETCHER
+  FORGETS WHEN IT LAST ASKED.** FACTS. `EthicalFetcher._respect_rate_limit` sleeps
+  `max(min_interval, Crawl-delay) - elapsed` inline, under the host lock, before every request; a
+  host declaring `Crawl-delay: 3600` parks a collector worker for an hour between two of its
+  articles, `86400` for a day (the kit's first live run hit exactly this shape: six probes at
+  Crawl-delay 900 cost one worker ninety minutes, and a longer delay held the worklist; SHIPPED
+  same day for the PIPELINE by bounding its probes with the host's own declaration -- the collector
+  is untouched). The obvious fix -- refuse to wait inline beyond a cap and retry next pass -- has a
+  POLITENESS TRAP: `make_fetcher()` builds a fresh `EthicalFetcher` per collection pass, whose
+  `_last_request` is empty, so the first request of every pass to that host pays no wait at all;
+  with passes minutes apart, "refuse and retry next pass" would fetch a Crawl-delay-3600 host every
+  few minutes, which is worse than sleeping. RECOMMENDED DEFAULT: (a) persist a per-host
+  next-allowed-at beside the persisted robots cache (`robots_cache.json` already survives the
+  per-pass rebuild for exactly this reason); (b) then refuse an inline wait beyond a cap (a few
+  minutes) with a NAMED `FetchError` ("Crawl-delay N s: not before T") that the collector counts
+  as its own bucket and the scheduler treats as a deferral, never a failure of the source; (c) the
+  ride-along qualification and the trial fetch inherit both. Not recommended: any cap without (a),
+  and any fetch before the declared delay has elapsed. Not urgent for the app -- such hosts are
+  rare (the shortlist's p99 elapsed was 138 s) -- but a worker asleep for a day is the Windows-lane
+  hang in another coat, and it should be a ruling, not a surprise.

@@ -7320,3 +7320,20 @@ show it because the store is imported lazily inside a function body. An import c
 lower bound: grep the closure's modules for `from src.` inside function bodies before believing
 a package runs standalone, and prove it with a self-check that CALLS the entry points in a fresh
 interpreter. A Python floor is measured by installing the pins, never inferred from syntax.
+
+## 2026-09-10 — Stage A bounded in time: the first live run's stall, explained from its own snapshot
+
+The maintainer's first live Stage A run (a Whonix-routed disposable VM, 12 workers) reported the
+kit "frozen": 3587 of 3588 shortlist rows judged, nothing changing for over an hour. The snapshot
+zip explained it without a network. The slowest judged hosts took exactly six times their robots
+`Crawl-delay` (ufal.mff.cuni.cz 5409 s, h21.hani.co.kr 3621 s, gazetatelegraf.com 1829 s, six
+probes each, robots allowed): `EthicalFetcher` sleeps the declared delay before every request and
+Stage A makes up to six feed probes per host. The one unjudged row (inyarwanda.com) is the same
+pattern with a longer delay, and `run()` waited on the pool's last member before the worklist
+could end. Shipped: the host's own declared delay bounds its probes (`crawl_delay_for`, read-only,
+divided into a 600 s budget; a delay the budget cannot afford once is `crawl_delay_too_long`, the
+delay recorded, the host not judged); a stall window of twenty minutes after which the in-flight
+hosts are `host_timeout` and the process exits without joining their threads; `--retry` by reason
+with a last-line-wins cursor; the kit's self-check re-runs for an updated kit; and, in the fetcher,
+a wall-clock deadline on one body read (a tarpit refusal, bucket `slow_body`). Lesson copied to
+LESSONS.md; the collector's own uncapped inline sleep is recorded in the open queue for a ruling.

@@ -275,3 +275,81 @@ def test_an_interrupt_keeps_every_row_written_and_the_same_command_resumes(tmp_p
     assert second["interrupted"] is False and second["judged_this_run"] == 2 and second["remaining"] == 0
     lines = [ln for ln in (tmp_path / "verified.jsonl").read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) == 3 and second["candidates"] == 3 and second["verified"] == 3
+
+
+# ------------------------------------------------------------------ bounded in time (2026-09-10)
+
+def test_a_declared_crawl_delay_bounds_the_probes_to_what_the_budget_affords():
+    """The fetcher sleeps the declared Crawl-delay before EVERY request, so probes cost
+    delay x probes of one worker: the budget divided by the delay is the probe count."""
+    # the feed sits at the THIRD conventional path (/rss.xml); no declared links
+    table = {"https://ex.example/": HOME_PLAIN, "https://ex.example/rss.xml": _rss(4)}
+    delays = {"https://ex.example/": 250.0}
+    fetch = FakeFetch(table)
+    v = vcf.verify_candidate(_row(), fetch=fetch, now=NOW, catalogue=set(), seen=set(),
+                             crawl_delay=delays.get, probe_budget_s=600.0)
+    assert v.crawl_delay_s == 250.0 and v.feed_probes == 2  # 600 // 250 = 2 probes: /feed, /rss
+    assert v.reason == "no_feed_found" and v.status == "rejected"
+
+    v2 = vcf.verify_candidate(_row(), fetch=FakeFetch(table), now=NOW, catalogue=set(), seen=set(),
+                              crawl_delay=delays.get, probe_budget_s=900.0)
+    assert v2.feed_probes == 3 and v2.status == "verified"  # 900 // 250 = 3: the third probe finds it
+
+    v3 = vcf.verify_candidate(_row(), fetch=FakeFetch(table), now=NOW, catalogue=set(), seen=set(),
+                              crawl_delay=lambda _u: None)
+    assert v3.feed_probes == 3 and v3.status == "verified" and v3.crawl_delay_s == 0.0  # no delay: unbounded
+
+
+def test_a_crawl_delay_the_budget_cannot_afford_once_is_not_judged_and_records_the_delay():
+    table = {"https://ex.example/": HOME_WITH_LINK, "https://ex.example/feed.xml": _rss(4)}
+    fetch = FakeFetch(table)
+    v = vcf.verify_candidate(_row(), fetch=fetch, now=NOW, catalogue=set(), seen=set(),
+                             crawl_delay=lambda _u: 3600.0, probe_budget_s=600.0)
+    assert (v.status, v.reason) == ("error", "crawl_delay_too_long")
+    assert v.crawl_delay_s == 3600.0 and v.feed_probes == 0
+    assert fetch.calls == ["https://ex.example/"]  # the homepage only: not one probe was paid for
+    assert v.homepage_url == "https://ex.example/" and v.site_title == "The Example Gazette"
+    assert "crawl_delay_too_long" in vcf.REASONS and "host_timeout" in vcf.REASONS
+
+
+def test_a_host_that_never_returns_is_host_timeout_and_the_run_moves_on_then_retries_it(tmp_path):
+    import threading
+
+    gate = threading.Event()
+    table = {"https://a.example/": HOME_WITH_LINK, "https://a.example/feed.xml": _rss(4),
+             "https://b.example/": HOME_WITH_LINK, "https://b.example/feed.xml": _rss(4)}
+
+    class Blocking(FakeFetch):
+        def __call__(self, url, *, require_html=True, **kw):
+            if url.startswith("https://b.example/"):
+                gate.wait(timeout=30)  # the host that never answers (a Crawl-delay sleep, a tarpit)
+            return super().__call__(url, require_html=require_html, **kw)
+
+    rows = [_row("a.example"), _row("b.example")]
+    try:
+        s = vcf.run(rows, fetch=Blocking(table), out_dir=tmp_path, workers=2, now=NOW, catalogue=set(),
+                    stall_s=0.3)
+    finally:
+        gate.set()  # release the thread so the test process can exit
+    assert s["stragglers"] == ["b.example"] and s["judged_this_run"] == 2 and s["remaining"] == 0
+    assert s["by_reason"] == {"verified": 1, "host_timeout": 1}
+    lines = [ln for ln in (tmp_path / "verified.jsonl").read_text(encoding="utf-8").splitlines() if ln]
+    assert [__import__("json").loads(ln)["reason"] for ln in lines] == ["verified", "host_timeout"]
+
+    # the same command resumes past it (a verdict is a verdict) ...
+    again = vcf.run(rows, fetch=FakeFetch(table), out_dir=tmp_path, workers=2, now=NOW, catalogue=set())
+    assert again["judged_this_run"] == 0 and again["stragglers"] == []
+    # ... and --retry host_timeout re-judges exactly that row; its NEW line is the truth
+    retried = vcf.run(rows, fetch=FakeFetch(table), out_dir=tmp_path, workers=2, now=NOW, catalogue=set(),
+                      retry_reasons={"host_timeout"})
+    assert retried["judged_this_run"] == 1 and retried["by_reason"] == {"verified": 2}
+    prior, done = vcf.load_resume(tmp_path / "verified.jsonl")
+    assert done == {"a.example", "b.example"} and len(prior) == 2
+    assert {v.domain: v.reason for v in prior} == {"a.example": "verified", "b.example": "verified"}
+    assert len((tmp_path / "verified.jsonl").read_text(encoding="utf-8").splitlines()) == 3  # appended, never rewritten
+
+
+def test_the_cli_refuses_an_unknown_retry_reason(capsys):
+    with pytest.raises(SystemExit) as exc:
+        vcf.main(["--candidates", "x.csv", "--out-dir", "y", "--retry", "host_timeout,bogus"])
+    assert exc.value.code == 2 and "bogus" in capsys.readouterr().err

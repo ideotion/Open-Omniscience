@@ -247,6 +247,17 @@ repository. So:
    the reasons so far, this session's measured rate and the remaining time at that rate) and
    writes `stage_a_snapshot_<date>T<time>.zip` without touching the run — attach that snapshot to
    a repository session to have Stage B and C run on what exists so far.
+   **No host can hold the run** (learned on the first live run, 2026-09-10: the fetcher honours
+   a host's robots `Crawl-delay` before every request, so six probes at Crawl-delay 900 cost one
+   worker ninety minutes, and one host with a longer delay held the finished shortlist for hours
+   while the pool waited for its last member). A host's own declared delay now bounds its probes
+   — `600 s ÷ delay`, the outlet's declared feed links first — and a delay the budget cannot
+   afford even once is `crawl_delay_too_long`, the delay recorded, the host not judged. When
+   nothing finishes for twenty minutes, the hosts still in flight are written as `host_timeout`
+   (not judged) and the worklist moves on. Both are re-judged on demand:
+   `python3 run_stage_a.py --retry host_timeout,crawl_delay_too_long`. **An updated kit zip
+   extracts over the same folder**: `runs/` and `.venv` are kept, the self-check runs once more
+   for the new kit, and the same command resumes.
 2. **Attach that zip to a repository-connected Claude session** and ask for Stage B and C. The
    triage runs there on Haiku from the zip's `verified.jsonl` (no publisher access needed), the
    merge re-validates every answer in code, the splice appends the accepted rows to
