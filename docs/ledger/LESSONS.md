@@ -8096,3 +8096,27 @@
   sources, the hint has to be computed from the assembled order or it will drift the moment
   a second source matches.** Same family as a control that renders unconditionally and
   refuses on click: the surface describing a capability it does not have here and now.
+
+- **A SOURCE-LEVEL ASSERTION ABOUT A TRANSFORM CANNOT SEE THE TRANSFORM (2026-09-10).**
+  Adding a "readable" rendition to the dump reader, the first test round asserted that the
+  endpoint IMPORTS the shared reducer and that the UI labels the pane honestly. A mutant
+  replacing `res["plain"] = plain_from_wikitext(raw)` with `res["plain"] = raw` **survived
+  both** — an endpoint serving raw wikitext under the word "Readable", which is exactly the
+  lie the careful naming existed to prevent. **GENERAL FORM: checking that the right
+  function is imported, called, or named proves the WIRING; only calling the thing proves
+  the OUTPUT. When a change's whole value is that some text differs from some other text,
+  the test has to compare the two.** Stubbing the expensive dependency (here `find_page`,
+  so no dump file is needed) is usually cheaper than the source-level guard it replaces,
+  and strictly stronger.
+
+- **WHEN A DOCKET ASKS FOR A CAPABILITY THE CODEBASE CAN ONLY APPROXIMATE, SHIP THE
+  APPROXIMATION UNDER ITS OWN NAME (2026-09-10).** The dump reader's open work said
+  "wikitext rendering". What exists is `plain_from_wikitext`, whose docstring targets
+  "keyword/WWW-quality text, not rendering fidelity" — it PEELS templates and DROPS tables.
+  Measured on a page whose population figure lived only in its infobox, the figure is
+  **gone** after the strip, not laid out differently. Labelling that "Rendered" would tell a
+  reader the page never had an infobox. **GENERAL FORM: the gap between what was asked for
+  and what the tools can do is not closed by the label. Name the thing you actually built,
+  state what it drops, keep the complete version one click away, and leave the original ask
+  open in the docket — a renamed approximation silently retires a requirement nobody
+  decided to drop.**

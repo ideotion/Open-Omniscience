@@ -11429,3 +11429,40 @@ maintainer uses.
 capabilities are absorbed (as re-measured above) and the entrance exists. What is genuinely
 untested is whether the Enter→analysis path is a good enough replacement in practice to
 retire `#tab-search` — a browser-verification question and a maintainer call, not a build.
+
+**THE DUMP READER GAINS A READABLE VIEW, and it is named a STRIP because that is what it
+is (2026-09-10).** The dump-reader entry's REMAINING list names "wikitext rendering". What
+this codebase can honestly offer is `plain_from_wikitext` — the corpus pipeline's own
+reducer, already tested against a real-wikitext sample and 25 hand shapes — and its own
+docstring states the target: *"keyword/WWW-quality text, not rendering fidelity"*. It PEELS
+templates and DROPS refs, comments, tables and file links.
+
+**So shipping it labelled "Rendered" would have been the exact defect this round has spent
+four items fixing.** Measured on a sample page whose population figure lives only in the
+infobox: after the strip the figure is not laid out differently, it is *gone*. A reader who
+believed this was a rendering would conclude the page never carried it. The view is
+therefore labelled **"Readable text"**, carries a caveat naming what was removed ("anything
+a template would have produced is absent rather than rendered"), and keeps **"Raw
+wikitext"** one click away as the thing that is actually complete. `plain_method` states
+the same on the payload, so an API caller gets the caveat without depending on whichever UI
+draws it.
+
+**Two refusals worth keeping:** a page that reduces to nothing (all templates and tables)
+falls back to Raw with a stated reason, because an empty pane labelled "Readable text"
+reads as an empty PAGE; and the toggle re-renders from the stashed payload rather than
+re-fetching, since an index scan is seconds of local I/O and re-paying it to change a VIEW
+taxes the reader for looking.
+
+**STILL OPEN on this surface, unchanged:** TRUE rendering (templates evaluated, tables laid
+out) — which is a real dependency, not a slice of this; and the corpus ingestion path (the
+living-source design). Full-text SEARCH over dumps, which the same REMAINING list names, is
+**already built** (`/api/wiki/dumps/fts-search` + the index build/cancel/clear controls and
+`#dumpfts-index` in the UI) — that line is stale and a future session should not re-scope
+it.
+
+**A MUTANT CAUGHT THE ASSERTION THAT MATTERED, and it is worth recording which one.** The
+first test round asserted that the endpoint IMPORTS the shared reducer and that the UI
+labels the pane honestly. Both pass against `res["plain"] = raw` — an endpoint serving the
+raw wikitext under the word "Readable", which is precisely the lie the naming exists to
+prevent. Source-level assertions about a transform cannot see the transform; the fix was to
+CALL the endpoint with `find_page` stubbed, so the assertion is about the output.
