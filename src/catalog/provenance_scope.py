@@ -40,6 +40,24 @@ APP_PROVIDED_TAGS: frozenset[str] = frozenset(
     f"via:{p}" for p in APP_PROVIDED_PROVENANCES
 )
 
+# THE CURATED CATALOGUE (maintainer ruling 2026-09-10: "make the curated catalogue qualified,
+# and as with any other qualified sources, they should go through the same periodic
+# re-qualification process"). A deliberately NARROWER set than the app-provided one: the
+# catalogues a human assembled and vetted, whose entries the ruling admits without waiting
+# for a trial. ``wikidata`` is app-provided but GENERATED -- a Wikidata query, never a
+# person's judgement -- so it is not curated and keeps waiting its turn; ``legal-generated``
+# is generated FROM the hand-vetted law catalogue (``configs/legal.yml``, the vetting
+# board), which is why it is in. Exact tags, never a prefix, for the reason above.
+CURATED_PROVENANCES: frozenset[str] = frozenset({
+    "curated",          # configs/sources.yml
+    "spectrum",         # configs/sources_spectrum.yml
+    "markets",          # configs/markets_sources.yml
+    "legal",            # configs/legal_sources.yml
+    "legal-generated",  # configs/legal_sources_generated.yml, built from the vetted law catalogue
+})
+
+CURATED_TAGS: frozenset[str] = frozenset(f"via:{p}" for p in CURATED_PROVENANCES)
+
 
 def _tags(raw: str | None) -> list[str]:
     return [t.strip() for t in (raw or "").split(",") if t.strip()]
@@ -54,6 +72,19 @@ def is_app_provided(source) -> bool:
     return any(t in APP_PROVIDED_TAGS for t in _tags(getattr(source, "tags", None)))
 
 
+def is_curated(source) -> bool:
+    """True when this source came from one of the hand-vetted catalogues (see
+    ``CURATED_PROVENANCES``) -- the set the 2026-09-10 ruling stamps qualified at seed."""
+    return any(t in CURATED_TAGS for t in _tags(getattr(source, "tags", None)))
+
+
+def _tag_filter(column, tags: frozenset[str]):
+    from sqlalchemy import literal, or_
+
+    delimited = literal(",") + column + literal(",")
+    return or_(*[delimited.like(f"%,{tag},%") for tag in sorted(tags)])
+
+
 def app_provided_filter(column):
     """A SQLAlchemy predicate for the same definition, for use in a query.
 
@@ -62,7 +93,9 @@ def app_provided_filter(column):
     delimiters and matching ``%,via:wikidata,%`` makes the comparison token-exact, which is
     the same rule ``is_app_provided`` applies in Python.
     """
-    from sqlalchemy import literal, or_
+    return _tag_filter(column, APP_PROVIDED_TAGS)
 
-    delimited = literal(",") + column + literal(",")
-    return or_(*[delimited.like(f"%,{tag},%") for tag in sorted(APP_PROVIDED_TAGS)])
+
+def curated_filter(column):
+    """The SQL twin of :func:`is_curated`, token-exact for the same reason."""
+    return _tag_filter(column, CURATED_TAGS)

@@ -11622,3 +11622,32 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   session can say which of F1–F5 dominates on THIS instance and calibrate R3/R4 — "not measurable
   here" is the honest verdict until then. NOT DONE HERE, on purpose: no setting flipped, no
   threshold moved, no verdict written; the plan is the deliverable.
+
+- **RULED 2026-09-10 (maintainer, answering R1 of the source-qualification throughput plan): THE
+  CURATED CATALOGUE IS QUALIFIED, AND RE-VERIFIED LIKE ANY OTHER QUALIFIED SOURCE.** Verbatim:
+  "let's make the curated catalogue qualified, and as with any other qualified sources, they should
+  go through the same periodic re-qualification process as any other source." This AMENDS the
+  2026-07-20 sub-decision ("ALL sources are qualified BY DEFINITION — the curated catalog INCLUDED;
+  NO pre-qualified-by-curation stamp") and the "no grandfathering" clause restated in 0.4 gate Row
+  A: an app-provided catalogue row is stamped `qualified` at seed instead of waiting its turn behind
+  the discovery backlog, and the 2026-09-04 six-month re-verification clock is what keeps the stamp
+  honest — a catalogue source that fails its re-check is disqualified exactly like any other, and
+  stays a catalogue-review signal. HOW THE SESSION READS IT (design, not a second ruling): the
+  stamp's BASIS is recorded, never blurred into a measured verdict — a distinct attempt-log verdict
+  (`curated`, beside `inherited` and `no_evidence`; never a `Source.status` value), the clock
+  starting at adoption exactly as `inherited` does, a criteria-version marker that names the
+  catalogue rather than a judging criteria version, the qualification export reporting basis
+  `curated` and EXCLUDING such rows from the shipped overlay (a curated stamp must not come back
+  as an "earned" one after one round trip), and "a local verdict always wins": a row this instance
+  already judged — `qualified` or `disqualified` — is never re-stamped, so nothing is laundered.
+  Scope = the app-provided provenance set (`catalog.provenance_scope`), applied at seed for fresh
+  installs and as a NULL-only reconcile for existing ones (rows still `unqualified` with no judging
+  attempt). The 0.4 gate Row A's "no grandfathering" wording needs the same amendment when that
+  board is next touched. R2–R7 of the plan stay open.
+- **QUESTION RAISED 2026-09-10 (maintainer, the plan's R6 made concrete): THE ~80K DISCOVERED
+  CANDIDATES ARE "A TREASURE WE SHOULD NOT DISMISS" — how to handle them, and how to extract from
+  them the sources that COMPLEMENT the ~3,600 shipped ones.** The maintainer attached the
+  instance's full sources export (85,690 rows). Answered by measurement in the plan document's new
+  section (composition, feed presence, catalogue overlap, the gaps against `catalog_targets.yml`
+  the candidates can fill) and the handling pipeline it proposes; rulings it needs are listed
+  there, none taken.

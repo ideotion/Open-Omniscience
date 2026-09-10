@@ -3250,5 +3250,8 @@
   "Readable text": "読みやすいテキスト",
   "Raw wikitext": "生のウィキテキスト",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "除去後に読める内容が残りません — このページはテンプレートと表だけです。生のウィキテキストを表示します。",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "レンダリングではなく字句的な除去です — テンプレートとインフォボックスは剥がされ、脚注・コメント・表・ファイルリンクは削除され、リンクのラベルは残ります。テンプレートが生成したはずのものは描画されるのではなく、存在しません。"
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "レンダリングではなく字句的な除去です — テンプレートとインフォボックスは剥がされ、脚注・コメント・表・ファイルリンクは削除され、リンクのラベルは残ります。テンプレートが生成したはずのものは描画されるのではなく、存在しません。",
+  "by catalogue": "カタログにより",
+  "Qualified because it ships in the curated catalogue (maintainer ruling 2026-09-10). It is re-checked on the same six-month clock as every qualified source, and a failed re-check disqualifies it like any other.": "アプリに同梱された厳選カタログに含まれているため適格とされています（2026-09-10 のメンテナ裁定）。他の適格ソースと同じ 6 か月周期で再確認され、再確認に失敗すれば他と同様に不適格になります。",
+  "Verdict adopted from a backup or the shipped overlay, not measured on this instance. It is re-checked on the six-month clock.": "この判定はバックアップまたは同梱リストから引き継いだもので、このインスタンスで計測したものではありません。6 か月周期で再確認されます。"
 }

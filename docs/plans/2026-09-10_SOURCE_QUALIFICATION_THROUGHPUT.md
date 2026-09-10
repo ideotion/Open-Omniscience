@@ -345,8 +345,11 @@ re-derived from the Phase-0 measurements):
 Each is recorded as a question in `docs/ledger/OPEN_QUEUE.md` (this session, rule (2)); none is
 assumed below. Recommended defaults are marked.
 
-**R1 — Revise "the curated catalog starts unqualified"?** The 2026-07-20 no-grandfathering
-ruling protects against a verdict asserted by curation. Options:
+**R1 — Revise "the curated catalog starts unqualified"?** **RULED 2026-09-10 (maintainer):**
+*"let's make the curated catalogue qualified, and as with any other qualified sources, they
+should go through the same periodic re-qualification process as any other source."* Shipped
+in this PR as the curated stamp (S7 below, §10 for the shape). The options as they were put:
+The 2026-07-20 no-grandfathering ruling protects against a verdict asserted by curation. Options:
 
 - (a) keep it, and make verdicts travel: the maintainer generates `configs/source_qualification.yml`
   from the live instance (B5, zero code) so every install inherits the ~1,000 verdicts earned so
@@ -499,12 +502,24 @@ depend on it for their thresholds.**
 
 ### Phase 2 — ruling-gated slices
 
-- **S7 · Provisional admission of the app-provided list (R1).** Defaults flip for app-provided
-  rows; the Sources row pill reads "collecting · not yet verified" (×12 locales, invariant #17
-  hover); `select_sources`' docstring and `USER_MANUAL.md` §"Source qualification" amended; the
-  2026-07-20 ruling amendment recorded. Tests: an untouched install with the ruling off is
-  byte-identical; a `disqualified` app-provided source is still excluded; a discovered row is never
-  admitted by this path. ⚠
+- **S7 · The curated catalogue is qualified by ruling (R1, RULED 2026-09-10) — SHIPPED in this
+  PR.** Not the provisional-admission shape first proposed: the maintainer ruled the stamp itself.
+  `stamp_curated_catalog` runs at both boot seeding sites AFTER the overlay (so a shipped, measured
+  verdict — a `disqualified` above all — lands first and wins) and stamps every row of the
+  hand-vetted provenances (`provenance_scope.CURATED_PROVENANCES`: curated, spectrum, markets,
+  legal, legal-generated; NOT the generated `wikidata` catalogue, NOT discovery) that still reads
+  `unqualified` and was never judged. The basis is recorded, never blurred: an attempt-log verdict
+  `curated` (beside `inherited`/`no_evidence`, never a `Source.status`), a criteria-version marker
+  `oo-curated-catalog-1` on the row, the provenance panel's pill reading "qualified · by
+  catalogue" with the long form on hover (×12 locales), the export counting basis `curated` and
+  never shipping it as an earned verdict, the overlay treating a curation stamp as adoptable (a
+  measured verdict outranks it in either direction) while a local judgement still wins, the
+  disqualified ladder ignoring it, and the six-month clock starting at the stamp exactly as it does
+  for an adopted verdict. A `disqualified` catalogue row is never re-stamped. 18 tests
+  (`tests/test_curated_catalog_stamp.py`); seven mutations reddened by name (the anomaly guard, the
+  overlay's curation branch, the export's exclusion, the ladder skip, the second boot site, the
+  scope, the status filter). `USER_MANUAL.md` and 0.4 gate Row A amended. Browser-unverified: the
+  pill text is one template string, keyed ×12. ⚠
 - **S8 · The promotion frontier (R2).** `qualified` ⇒ `enabled` for discovered rows, capped per
   pass, diversity-weighted (language/country round-robin over the due set), audit view (every
   auto-enabled source with its trial evidence, channel, first citing article where known) and undo
@@ -601,6 +616,124 @@ the per-source pathology distribution), the expedition log if the unattended but
 scheduler pass journal, and `GET /api/sources/qualification/config` (the live counts and the
 current toggles). Plus, if easy: the Settings → Diagnostics memory line and the power profile in
 use. That is enough to decide which of F1–F5 dominates and to calibrate R3/R4.
+
+## 10. The ~80k discovered candidates: what the export says, and how to work them
+
+The maintainer attached the instance's full sources export on 2026-09-10 (85,690 rows) with
+the question: this is a treasure, how do we handle it, and how do we extract from it the
+sources that complement the ~3,600 shipped ones? Measured offline with
+`scripts/analysis/complement_candidates.py`; the full tables and the review shortlist are in
+`docs/research/sources/discovered_candidates_2026-09-10/` (`REPORT.md`, `shortlist.csv`).
+
+### 10.1 What is in it
+
+| Set | Rows | With a feed |
+|---|---|---|
+| Catalogue (enabled: the shipped lists plus the operator's additions) | 3,605 | 2,766 |
+| Discovered (`via:wikidata-discovery`), all disabled | 81,968 | **0** |
+| Other (promoted candidates, cited, hand-added) | 117 | — |
+
+The discovered set by type: **institution 37,079 · religious 22,844 · news 22,045**. So the
+"80k" is three different things, and only the smallest is what the trial can judge:
+
+- **22,045 news rows** — the treasure. Every one is a Wikidata claim that a newspaper,
+  magazine, agency, broadcaster or station exists and has a website. None has a feed; 6,014
+  carry no language (all generic-TLD domains; the seeder's ccTLD fill already ran); 398 are
+  subdomains of a catalogue domain (a regional or language edition — kept, flagged); 20 are
+  internationalised domain names. **Zero duplicate the catalogue**, because discovery dedupes
+  against every registered domain at insert time.
+- **37,079 institutions** (legislatures, ministries, agencies) — Czechia alone contributes
+  5,737, Japan 2,256, Spain 1,252. Not journalism; the trial would admit a ministry's press
+  page as readily as a newspaper. They are **registry** entries: the seed of the
+  official-sources vertical (primary-source channels, gazettes, statistics), discoverable,
+  searchable and hand-promotable — and they must not consume trial fetches (R5).
+- **22,844 religious organisations** — the Wikidata spec deliberately samples them as one more
+  source *family* for the coordination and tone-by-family cards. Registry entries too.
+
+### 10.2 What complements the catalogue (measured, not ranked)
+
+The catalogue is 65 % English and its country field is empty on 1,463 of 3,605 rows, so every
+per-country denominator below *understates* coverage; the numbers are still stark:
+
+| Country | Catalogue | Discovered news | Discovered institutions |
+|---|---|---|---|
+| Canada | 42 | 1,845 | 851 |
+| Brazil | 30 | 1,690 | 681 |
+| Spain | 40 | 1,117 | 1,252 |
+| Poland | 20 | 1,113 | 334 |
+| Russia | 36 | 957 | 399 |
+| Italy | 31 | 792 | 455 |
+| India | 83 | 742 | 738 |
+| Australia | 31 | 667 | 727 |
+| Mexico | 28 | 598 | 216 |
+| Japan | 22 | 587 | 2,256 |
+| Norway | 9 | 476 | 306 |
+| Ukraine | 24 | 438 | 620 |
+| Romania | 15 | 430 | 156 |
+| Sweden | 13 | 406 | 397 |
+| Czechia | 11 | 355 | 5,737 |
+
+Each news row was classed by the **gap it fills** — a class, never a score:
+
+| Class | Meaning | Rows |
+|---|---|---|
+| T1 | the catalogue has no source in the row's country | 30 (12 countries: ai, aw, bq, cw, fk, gi, gl, ky, mo, nu, vg, ye) |
+| T2 | the catalogue has 1–4 sources in the country | 1,258 |
+| T3 | the row's language has fewer than 20 catalogue sources | 5,121 |
+| T4 | none of the above | 15,636 |
+
+`shortlist.csv` holds T1 + T2 + T3 in class → country → name order, capped at 100 rows per
+country so it stays reviewable: **3,588 rows**, with 19 countries truncated and their totals
+stated (Poland 780, Norway 427, Japan 413, Sweden 341, Ukraine 277, Finland 271, Czechia 269,
+Romania 258, India 210 …). A T4 row can be the best newspaper in its country and a T1 row a
+defunct site — nothing offline can tell, which is why the classes order the work and never
+decide it.
+
+### 10.3 How to handle it — the pipeline, and what each stage needs
+
+The candidates are already sitting in the right place (disabled `Source` rows the app found for
+itself). What is missing is a path from "claimed to exist" to "collecting", and it has four
+stages. Stages 1–2 need no ruling and reuse this plan's Phase-1 slices; stages 3–4 are the
+rulings the plan already lists.
+
+1. **Split by kind, offline (R5, but the split itself is free).** Institutions and religious
+   organisations leave the trial queue and become registry entries — visible in Sources under
+   their own kind, promotable by hand, and available to the official-sources vertical. Only
+   the 22,045 news rows are trial-eligible. Cost: one query; effect: the queue shrinks 73 %.
+2. **Order the news queue complement-first (S2's second queue).** T1 → T2 → T3 → T4 within the
+   discovery queue, with the language-equilibrium lever weighting the same way. Ordering, never
+   exclusion: T4 is reached, later. The shortlist is that order, written down for review.
+3. **Find the channel, in-app and consented (S6 — feed autodiscovery).** A news row with no
+   feed cannot be trialled today unless it publishes a sitemap. One guarded homepage fetch per
+   row, `<link rel="alternate">` parsed, `rss_url` written NULL-only; else the sitemap probe;
+   else `no_channel`, which costs no further fetch until the retry ladder says so. At 22,045
+   rows this is ~22k fetches once — about 12 hours serial at the 2 s politeness floor, under two
+   hours with the collector's bounded fan-out (S4), as a budgeted ride-along that never
+   competes with live collection. Feed yield is **unmeasured** here (the sandbox cannot reach a
+   publisher); the funnel diagnostic (S1) is what measures it, and the first thousand rows will
+   say whether the rest is worth the fetches.
+4. **Trial → verdict → promotion (R2).** A row whose feed or sitemap yields real articles is
+   judged exactly as today and, under R2 (b), a `qualified` verdict enables it — capped per
+   pass, diversity-weighted by country and language so one Wikidata dump cannot flood
+   collection, with the audit view and undo. Under R2 (a) the same rows wait for a manual
+   enable, which at this scale is the same as never.
+
+**Extracting the complement for every install (the second half of the question).** A row that
+passes on the maintainer's instance is evidence the next install should not have to re-earn.
+The designed carrier already exists: `configs/world_news_sources.yml` (`via:wikidata`
+provenance, seeded automatically once committed) plus the qualification overlay for its
+verdicts — `via:wikidata` is app-provided, so the export covers it. The extraction is therefore:
+run stages 1–4 on the live instance → export the discovered news rows that **qualified with a
+feed or sitemap** (a new `--discovered` scope on the qualification export, one small slice) →
+commit them as the generated catalogue with their verdicts → every fresh install gets the
+complement, verified. The shortlist is the review worklist for anyone who wants to start by
+hand — a clearnet session can feed-check its 3,588 rows in the diversification brief's shape —
+but the app's own pipeline is the path that scales to 22k and keeps scaling as discovery runs.
+
+**Not done here, and why:** no fetch (the sandbox's egress allowlist refuses publisher hosts, so
+no feed was discovered and no row was verified); no row was enabled or promoted (review-before-
+enable stands until R2 is ruled); the export's `--discovered` scope is a slice for the next
+session, not this PR.
 
 ## Appendix A — anchors
 

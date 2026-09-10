@@ -53,9 +53,15 @@ depends on the earlier one having actually run:
 1. **A committed merge at scale.** Every P0 restore so far ran `committed=false` — a
    self-restore in which every row reads as a duplicate. The committed write path at ~1M
    articles has never been exercised in the field.
-2. **The qualification admission gate over every source**, the curated catalog included — no
-   grandfathering (ruled 2026-07-20). A catalog source that fails is a **catalog-review**
-   signal, not a source to exempt.
+2. **The qualification admission gate over every source that is not the curated catalogue,
+   and the six-month re-check over the catalogue itself.** *Amended 2026-09-10:* the
+   maintainer ruled the curated catalogue **qualified at seed** ("make the curated catalogue
+   qualified, and as with any other qualified sources, they should go through the same
+   periodic re-qualification process"), which supersedes the 2026-07-20 no-grandfathering
+   clause this item carried. What the row now demonstrates is that the stamp's basis
+   survives the import as `curated` (never laundered into a measured verdict), that the
+   catalogue's re-checks actually run, and that a catalogue source whose re-check fails is
+   disqualified like any other — still a **catalog-review** signal, not a source to exempt.
 3. **The qualification stamp surviving a restore.** This is the load-bearing one. On
    2026-07-24 `_merge_sources`' column allowlist dropped the three stamp columns and
    `source_qualification_attempts` had no handler, so a merged-in source arrived
