@@ -243,3 +243,79 @@ def test_samples_and_summary_land_in_the_log(tmp_path, monkeypatch):
     rows = recent_samples(50)
     assert any(r.get("kind") == "summary" for r in rows)
     assert any(r.get("download_rate_kbps") == 300.0 for r in rows)
+
+
+# --------------------------------------------------------------------------- #
+#  P4 (2026-09-10): the CPU back-off asks WHOSE load it is.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_collector_that_saturates_the_cpu_alone_is_not_contention():
+    """The defect this fixes, stated as the case that used to be wrong.
+
+    The collector is CPU-bound in pure Python, so a healthy pass on a small box drives
+    system CPU to ~100% BY ITSELF. Under the old ``cpu_sys >= 92`` rule the governor
+    read that as contention and cut a permit every 1.5 s tick — measured, 50 permits to
+    1 in 73 seconds — which reduces throughput and frees nothing, because the CPU it
+    gave back was the collector's own.
+
+    ``psutil.cpu_percent()`` is normalised 0-100 across the machine while
+    ``Process.cpu_percent()`` SUMS across cores, so 380% of 4 cores is 95% of the box.
+    """
+    contended, others = collect_perf.cpu_contention(98.0, 380.0, 4)
+    assert contended is False
+    assert others == 3.0
+
+
+def test_another_process_saturating_the_cpu_still_backs_off():
+    """The mirror, and the reason this is a narrowing rather than a removal.
+
+    This app runs on the operator's own machine beside their browser, their editor and
+    a local model. When one of those needs the CPU the collector should still yield —
+    that is the case the back-off exists for, and it is untouched.
+    """
+    contended, others = collect_perf.cpu_contention(98.0, 40.0, 4)
+    assert contended is True
+    assert others == 88.0
+
+
+def test_a_machine_that_is_not_saturated_is_never_contention():
+    assert collect_perf.cpu_contention(12.0, 20.0, 4) == (False, None)
+    assert collect_perf.cpu_contention(91.9, 0.0, 4) == (False, None)
+
+
+def test_an_unattributable_saturated_machine_keeps_the_old_rule():
+    """Without a process reading we cannot say whose load it is, and the safe direction
+    for a POLITENESS control is to keep yielding. ``others_pct`` is None rather than 0:
+    "we could not attribute this" and "there was no other load" are opposite facts and
+    the perf log must not blur them."""
+    assert collect_perf.cpu_contention(98.0, None, 4) == (True, None)
+    assert collect_perf.cpu_contention(98.0, 380.0, 0) == (True, None)
+
+
+def test_an_unreadable_system_cpu_never_fabricates_contention():
+    assert collect_perf.cpu_contention(None, 380.0, 4) == (False, None)
+
+
+def test_the_tick_decides_on_the_attribution_not_on_the_system_total(tmp_path, monkeypatch):
+    """The wiring, DRIVEN rather than read off the source: a tick whose vitals say the
+    machine is full and that WE are the load must not hand the governor a cpu-saturated
+    back-off, and must record the attribution it used."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(collect_perf, "_cpu_count", lambda: 4)
+    g = BandwidthGovernor(mode="maximum", w_max=50, min_adjust_interval_s=0.0)
+    ours = {**_HEALTHY_VITALS, "cpu_sys_pct": 99.0, "cpu_proc_pct": 390.0}
+    mon = _monitor(governor=g, rate=200.0, vitals=ours, writer=_IDLE_WRITER)
+    mon._tick()
+    sample = recent_samples(limit=1)[-1]
+    assert sample["adjust_reason"] != "cpu-saturated"
+    assert sample["cpu_others_pct"] == 1.5  # 99 - 390/4, stated rather than implied
+    assert g.permits == 50, "the governor cut a permit for the collector's own CPU"
+
+    # The mirror on the same wiring: the same saturated machine, someone else's load.
+    theirs = {**_HEALTHY_VITALS, "cpu_sys_pct": 99.0, "cpu_proc_pct": 40.0}
+    g2 = BandwidthGovernor(mode="maximum", w_max=50, min_adjust_interval_s=0.0)
+    mon2 = _monitor(governor=g2, rate=200.0, vitals=theirs, writer=_IDLE_WRITER)
+    mon2._tick()
+    assert recent_samples(limit=1)[-1]["adjust_reason"] == "cpu-saturated"
+    assert g2.permits == 49

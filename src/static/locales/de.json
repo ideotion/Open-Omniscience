@@ -3250,5 +3250,21 @@
   "Readable text": "Lesbarer Text",
   "Raw wikitext": "Roher Wikitext",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "Nach dem Entfernen bleibt nichts Lesbares übrig — diese Seite besteht aus Vorlagen und Tabellen. Es wird der rohe Wikitext gezeigt.",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Lexikalisches Entfernen, keine Darstellung — Vorlagen und Infoboxen werden abgeschält; Referenzen, Kommentare, Tabellen und Dateilinks entfernt; Linktexte bleiben erhalten. Was eine Vorlage erzeugt hätte, fehlt, statt dargestellt zu werden."
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Lexikalisches Entfernen, keine Darstellung — Vorlagen und Infoboxen werden abgeschält; Referenzen, Kommentare, Tabellen und Dateilinks entfernt; Linktexte bleiben erhalten. Was eine Vorlage erzeugt hätte, fehlt, statt dargestellt zu werden.",
+  "Workers": "Arbeiter",
+  "Fetching now": "Aktuell abrufend",
+  "Limit this pass": "Grenze dieses Durchlaufs",
+  "Configured maximum": "Konfiguriertes Maximum",
+  "Why the limit": "Grund der Grenze",
+  "the concurrency limits could not be read": "die Parallelitätsgrenzen konnten nicht gelesen werden",
+  "both a measured memory back-off and the machine floor": "sowohl ein gemessener Speicher-Rückzug als auch die Maschinenuntergrenze",
+  "this machine backed off under memory pressure, so the ramp is capped": "diese Maschine hat sich unter Speicherdruck zurückgezogen, daher ist der Hochlauf gedeckelt",
+  "this machine is below the memory floor, so the fan-out is capped": "diese Maschine liegt unter der Speicheruntergrenze, daher ist die Parallelität gedeckelt",
+  "nothing is holding it back — the full configured maximum is available": "nichts bremst sie — das volle konfigurierte Maximum steht zur Verfügung",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "Die Anzahl der Freigaben, die der Bandbreitenregler gerade fährt. Zwischen Durchläufen nicht vorhanden — es gibt nichts zu zählen.",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "Worauf dieser Durchlauf hochlaufen darf: der kleinere Wert aus gemessener Obergrenze und Maschinenuntergrenzen-Deckel.",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "Ihre Einstellung für die Sammel-Parallelität. Sie wird nie überschrieben — die Grenzen oben begrenzen nur, was ein Durchlauf verbraucht.",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "Die gemessene Obergrenze lockert sich nach Durchläufen ohne Druck und verschwindet, sobald sie Ihr konfiguriertes Maximum erreicht. Sie ist der Zwischenspeicher einer Messung, nie eine Einstellung — das Löschen von data/collect_capacity.json vergisst sie sofort.",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Diese Maschine hat ihre Arbeiterzahl unter Speicherdruck selbst verringert. Der Sammler startet im nächsten Durchlauf dort, statt denselben Abstieg erneut zu gehen.",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Eine Maschine unter der Speicheruntergrenze wird auf geringere Parallelität gehalten, bis Sie sie wieder einschalten."
 }

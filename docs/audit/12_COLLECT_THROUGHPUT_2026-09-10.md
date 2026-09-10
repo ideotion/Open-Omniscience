@@ -250,12 +250,10 @@ Active/Schedule subtabs never mention that the pass is running 1 worker of a con
 | P1 | narrow the month alternation to names present in the text | `extract_dates` 140 → ~20 ms; ~1.8× collector throughput | recall-bearing; needs the 55 non-letter-run names handled and the 152 date tests green | **SHIPPED — see §10** |
 | P2 | hoist `OO_CODE_TOKEN_FILTER` out of the per-token path; memoise the shape predicate | ~8 % of ingest CPU | none — pure | **SHIPPED — see §10** |
 | P3 | bound `htmldate`'s `dateparser` fallback in `extract_article` | up to 434 ms on pages with awkward date metadata | changes published-date recall on those pages | open |
-| P4 | stop treating the collector's own CPU as contention, or measure *process* CPU headroom rather than system-wide | prevents a self-inflicted 50 → 1 walk-down | needs a ruling: the flag is also a real signal when another process is the load | open |
-| P5 | surface `learned_ceiling` / `machine_floor` in the task manager beside the permit count | none — honesty | UI + i18n ×12 | open |
+| P4 | stop treating the collector's own CPU as contention; make the persisted memory ceiling escapable | prevents a self-inflicted 50 → 1 walk-down and a 4.2× pin that survives restarts | behaviour change to a self-tuning control | **SHIPPED — see §11** |
+| P5 | surface `learned_ceiling` / `machine_floor` in the task manager beside the permit count | none — honesty | UI + i18n ×12 | **SHIPPED — see §11** |
 
-P4 and P5 are now the pair that matters: they turn "the app got slow" into a number the
-operator can read, and they are the only remaining mechanism that can produce a *sudden,
-persistent* slowdown of the kind the original report described.
+P3 is the only proposal still open.
 
 ## 10. What shipped (P1 + P2)
 
@@ -338,3 +336,136 @@ tree.
   inter-pass tail is the next thing to instrument.
 * Any claim about the operator's specific machine. The ratios travel; the absolute
   numbers are this 4-core sandbox's.
+
+## 11. What shipped (P4 + P5)
+
+Neither is a speed change. P4 stops two self-inflicted throttles; P5 makes the remaining
+one legible. Together they are what turns "the app got slow" into a number the operator
+can read.
+
+### P4a — the CPU back-off asks *whose* load it is
+
+`cpu_saturated` was `cpu_sys >= 92` alone. The collector is CPU-bound in pure Python
+(§2), so a healthy pass on a small box produces that reading **by itself** — and the
+governor then cut a permit every 1.5 s tick, measured at **50 → 1 in 73 seconds**,
+reducing throughput and freeing nothing, because the CPU it "gave back" was the
+collector's own. `bandwidth.py`'s own comment already said CPU saturation "costs
+throughput, not the machine"; the response to it still cost throughput.
+
+The reading that separates the cases was **already sampled, already logged, and consulted
+by no decision**: `cpu_proc_pct`. `collect_perf.cpu_contention()` now compares them, with
+the scale difference stated rather than assumed — `psutil.cpu_percent()` is normalised
+0–100 across the machine, `Process.cpu_percent()` sums across cores — so our share is
+`cpu_proc_pct / cpu_count` and "most of the load is not us" is `others > ours`, a ratio
+rather than a second magic number.
+
+| the machine is full because… | old | new |
+|---|---|---|
+| the collector itself (99 % sys, 390 % of 4 cores) | back off | **no back-off** |
+| another process (99 % sys, 40 % of 4 cores) | back off | back off |
+| attribution unavailable (no `cpu_proc_pct`, no core count) | back off | back off |
+
+The back-off this app owes the operator's own browser, editor and local model is
+**untouched** — this only narrows it to the cases with evidence. Unmeasurable falls back
+to the old rule deliberately, and `cpu_others_pct` is logged as `None` there, never 0:
+"we could not attribute this" and "there was no other load" are opposite facts.
+
+**THE TRADE-OFF THIS INTRODUCES, stated rather than glossed.** The API server lives in the
+same process, so collector threads and the event loop compete for one GIL. The old
+blanket back-off therefore had a side effect nobody designed: cutting permits freed GIL
+time for the server, so the local UI stayed more responsive during a heavy pass. Not
+cutting them can make the UI feel slower while collecting on a small box. That is a real
+cost and it is accepted here for two reasons — the throughput it was buying was
+*negative* (the CPU was handed back to the same process that wanted it), and the app
+already has a purpose-built surface for the actual concern: S3.4's `server_load` block and
+the client backoff it drives, fed by `latency.py`'s loop-block watchdog.
+
+**The better signal exists and is not wired**, recorded as a follow-up rather than built
+here: event-loop lag is a *direct* measurement of "we are starving our own server", where
+CPU saturation is a proxy that cannot tell starving the server from doing the work. A
+governor that backed off on measured loop lag would protect responsiveness without
+throttling throughput for its own sake. That wants its own measurement pass.
+
+### P4b — the persisted memory ceiling is escapable again
+
+`mem_low` is a reading about the **whole machine** (available memory under a fixed
+512 MB), which a box also running a local model can sit under no matter what the
+collector does. Under the old rule that was a trap with no exit: every pass counted as
+sustained, the floor walked to 1, `min(current, floor)` re-pinned 1, and the relax branch
+needed a quiet pass that could never arrive. Over a 1.5 s/fetch transport that is
+**1.91 → 0.45 articles/s with no code change, no visible cause, and it survives restarts**
+because `collect_capacity.json` does.
+
+A pass that **already ran at a ceiling of 1** and still saw sustained pressure has
+demonstrated that concurrency is not the lever, so it now takes the relax branch — one
+geometric step, not a jump to the top.
+
+The guarantee is deliberately narrow and checkable: **a stored ceiling of 1 cannot still
+be 1 after the next pass.** It does *not* claim the machine climbs back to `w_max` while
+external pressure lasts — the record oscillates 1↔2, which is the honest outcome, because
+nothing has shown more workers are safe. A machine whose pressure really *is* its own
+fan-out reaches a floor above 1, the descent worked, and that measurement still pins
+exactly as before.
+
+**This does not weaken the protection**, and the separation is why it is safe: the
+ceiling is a *concurrency tuning* hint, while what protects the machine is
+`scheduler.memguard` — a different mechanism, with its own thresholds (RSS ≥ 85 % of
+total, or available ≤ 256 MB, three consecutive samples), which **pauses collection
+outright** and is not a permit count at all. It is untouched and in force at every worker
+count.
+
+The stored `reason` also stopped lying: the relax branch wrote "a pass with no memory
+pressure", which for this case is false in the very file an operator opens to find out
+why their collector is slow.
+
+### P5 — the caps reach the window where collection is watched
+
+Every input already existed and none of it arrived anywhere useful: `state_report` was
+rendered only inside the diagnostics report payload (`src/api/diagnostics.py`), and the
+machine-floor worker cap only into a log line. `capacity.concurrency_report()` composes
+them, rides the `status()` payload the task manager **already polls** (no new endpoint,
+no new poll), and the Schedule subtab grows a **Workers** section: what is fetching now,
+the limit this pass, the configured maximum, and one plain sentence saying why.
+
+The two causes are kept **apart** because the remedies differ — a learned ceiling is a
+measurement that heals itself (and the note says it is a cache, deletable), a machine
+floor is a policy with a documented override, and the panel offers `OO_ALLOW_BIG_SCANS=1`
+where it applies. A healthy machine gets a plain "nothing is holding it back", so the
+section is not only a bad-news panel; an unreadable block says so rather than rendering
+as healthy.
+
+The refusal that needed a behavioural test: **no pass in flight draws no permit count at
+all**, because 0 workers and no pass are different facts — while a *measured* 0 must still
+draw. Those are one character apart in the source (`pg.permits != null`) and opposite on
+screen, which no source-level assertion can tell apart.
+
+### Tests
+
+`tests/test_collect_concurrency_panel.py` (10), `tests/concurrency_panel_node_test.js`
+(runs the shipped `_concurrencyHtml`; **6 mutants, 6 dead**), plus new cases in
+`test_collect_capacity.py` and `test_collect_perf_monitor.py`. 14 strings keyed ×12
+locales, spliced in place; all three i18n gates green at CI's own thresholds
+(`--min 100`, `--max-untranslatable 569`, `--max-unkeyed-t-calls 312`).
+
+`test_memory_budget.py::test_without_a_denominator_the_old_strict_behaviour_is_kept`
+asserted the semantics P4b makes untrue **on purpose**, so it was updated deliberately
+with the reason in the test — its actual intent (no denominator is ever invented, and
+pressure still pins) is now checked at a ceiling where it still applies.
+
+### Browser-VERIFIED, and it earned the click-through
+
+Not owed this time — driven in Chromium against the running app, with
+`data/collect_capacity.json` seeded to the exact state P5 exists to explain (a ceiling
+of 1 against a configured 50). The page loads, the first-run wizard dismisses, the real
+`ooSubtabs` component opens the Schedule subtab, and the section renders with **no
+console errors**. The `#oo-tip` bubble (invariant #17) shows the translated method on
+hover, and switching to French through `OOI18N.setLang('fr')` renders every string
+translated — so the ×12 claim is *verified*, not asserted.
+
+**It also found a defect no node test could.** `.vitals-pop .vr b` clamps a row's value
+to 160px with an ellipsis — correct for a figure, and it truncated the reason to
+*"this machine backed o…"* running off the panel edge, destroying the one thing this
+section exists to let an operator read. The reason is now a wrapping line rather than a
+`.vr` value. The HTML was correct throughout; only the rendered page showed it, which is
+precisely the argument for the click-through rather than an argument against the node
+harness.

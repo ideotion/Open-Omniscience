@@ -3250,5 +3250,21 @@
   "Readable text": "Читаемый текст",
   "Raw wikitext": "Исходный вики-текст",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "После очистки не остаётся ничего читаемого — эта страница состоит из шаблонов и таблиц. Показан исходный вики-текст.",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Лексическая очистка, а не отображение — шаблоны и карточки удаляются; сноски, комментарии, таблицы и ссылки на файлы убираются; подписи ссылок сохраняются. То, что создал бы шаблон, отсутствует, а не отображается."
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Лексическая очистка, а не отображение — шаблоны и карточки удаляются; сноски, комментарии, таблицы и ссылки на файлы убираются; подписи ссылок сохраняются. То, что создал бы шаблон, отсутствует, а не отображается.",
+  "Workers": "Рабочие потоки",
+  "Fetching now": "Загружается сейчас",
+  "Limit this pass": "Предел этого прохода",
+  "Configured maximum": "Настроенный максимум",
+  "Why the limit": "Причина предела",
+  "the concurrency limits could not be read": "не удалось прочитать пределы параллелизма",
+  "both a measured memory back-off and the machine floor": "и измеренное отступление по памяти, и нижний порог машины",
+  "this machine backed off under memory pressure, so the ramp is capped": "эта машина отступила под давлением памяти, поэтому разгон ограничен",
+  "this machine is below the memory floor, so the fan-out is capped": "эта машина ниже порога памяти, поэтому параллелизм ограничен",
+  "nothing is holding it back — the full configured maximum is available": "ничто не сдерживает — доступен весь настроенный максимум",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "Число разрешений, с которым сейчас работает регулятор полосы. Между проходами отсутствует — считать нечего.",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "До чего может разогнаться этот проход: меньшее из измеренного потолка и ограничения по нижнему порогу машины.",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "Ваша настройка параллелизма сбора. Она никогда не перезаписывается — пределы выше ограничивают лишь то, что тратит один проход.",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "Измеренный потолок ослабевает после проходов без давления и снимается, как только достигает вашего настроенного максимума. Это кэш измерения, а не настройка — удаление data/collect_capacity.json забывает его немедленно.",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Эта машина сама уменьшила число рабочих потоков под давлением памяти. Сборщик начнёт следующий проход оттуда, а не пойдёт тем же спуском заново.",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Машина ниже порога памяти удерживается на меньшем параллелизме, пока вы не включите его снова."
 }

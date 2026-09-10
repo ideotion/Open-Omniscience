@@ -8305,3 +8305,98 @@
   begin with a large literal set, the fix is to shrink that set to what the input can
   actually contain — measured here at ~10x, with matches identical by construction because
   a literal absent from the text could never have matched.**
+
+- **A CONTROL LOOP THAT READS A MACHINE-WIDE SIGNAL WILL THROTTLE ITSELF WHEN IT IS THE
+  LOAD (2026-09-10, P4).** The bandwidth governor cut a fetch permit every 1.5 s tick
+  whenever system CPU was ≥ 92% — and the collector is CPU-bound in pure Python, so a
+  perfectly healthy pass on a small box produces exactly that reading BY ITSELF. Measured:
+  50 permits to 1 in 73 seconds, for doing its job well, freeing nothing, because the CPU
+  it "gave back" was its own. The module's own comment already said CPU saturation "costs
+  throughput, not the machine"; nobody noticed the response to it still cost throughput.
+  **GENERAL FORM: when a self-protective control reads a whole-machine gauge, ask what
+  that gauge reads while the thing it governs is working normally. If the answer is
+  "saturated", the control is wired to fight itself.** The reading that separated the
+  cases — `cpu_proc_pct` — was already sampled, already written to the perf log, and
+  consulted by no decision at all: the fix was a comparison, not an instrument. Watch the
+  scale when making it: `psutil.cpu_percent()` is normalised 0-100 across the machine
+  while `Process.cpu_percent()` SUMS across cores, so 380% of 4 cores is 95% of the box,
+  and conflating them inverts the answer.
+
+- **A SELF-TUNING MECHANISM THAT PERSISTS ITS WORST OBSERVATION NEEDS A RECOVERY PATH IT
+  CAN ACTUALLY REACH (2026-09-10, P4b).** `capacity.py` records the worker floor a machine
+  reached under memory pressure and uses it as the next pass's seed AND ramp ceiling,
+  across restarts. Its relax branch needed a pass below a pressure share — but `mem_low`
+  is a WHOLE-MACHINE reading (available memory under a fixed 512 MB), so on a box also
+  running a local model every pass qualified as pressured, the floor walked to 1,
+  `min(current, floor)` re-pinned it, and the quiet pass could never arrive. Result:
+  1.91 → 0.45 articles/s, no code change, no visible cause, surviving restarts.
+  **GENERAL FORM: the recovery half of a learned limit is the load-bearing half, and it
+  must be driven by something the mechanism itself can influence. A limit learned from a
+  condition the subject cannot change is not a measurement of the subject — it is a
+  permanent sentence.** The fix that worked was narrow and checkable ("a ceiling of 1
+  cannot survive two passes") rather than a claim of full recovery, because nothing had
+  shown more workers were safe. And it was only safe because a DIFFERENT mechanism
+  (`memguard`, which pauses collection outright) is what actually protects the machine —
+  worth confirming before relaxing anything, since the tempting alternative is to raise
+  the threshold, which is regressing a safety number the measurement says works.
+
+- **WRITING THE RELAXED CASE THROUGH THE EXISTING BRANCH ALSO INHERITS ITS LABEL
+  (2026-09-10).** Routing the new "pressure the worker count did not cause" case into the
+  existing relax branch was right for the arithmetic and wrong for the record: that branch
+  stamps `reason: "a pass with no memory pressure"`, which is a false statement in the very
+  file an operator opens to find out why their collector is slow. **GENERAL FORM: when you
+  reuse a branch for a second cause, check what it WRITES as well as what it computes.
+  Shared code paths quietly share their explanations, and a stored reason is read long
+  after the arithmetic stops mattering.**
+
+- **A PAYLOAD NOBODY DRAWS IS THE SAME DEAD END AS A FEATURE NOBODY CAN REACH
+  (2026-09-10, P5).** Both concurrency caps were correct, measured, and exposed —
+  `state_report` inside the diagnostics report payload, the machine-floor cap into a log
+  line. Neither reached the task manager, which is where an operator watches collection.
+  So a pass running one worker of a configured fifty was, from the only window anyone
+  looks at, indistinguishable from "the app got slow". **GENERAL FORM: "the number is
+  available" and "the number is where the question is asked" are different claims. When
+  shipping a diagnostic, name the surface the question actually gets asked on — a
+  diagnostics export is where you look once you already suspect something.**
+
+- **"ABSENT" AND "MEASURED ZERO" ARE ONE CHARACTER APART IN SOURCE AND OPPOSITE ON SCREEN
+  (2026-09-10, P5).** The permit count must not draw when no pass is in flight (0 workers
+  and no pass are different facts, and a "0" there is a number where there is no
+  measurement) but MUST draw when a running pass really is at zero. The whole distinction
+  lives in `pg.permits != null` versus a truthiness test, and no source-level assertion
+  can tell the two apart — both are "the function mentions permits". **GENERAL FORM: any
+  honesty rule of the shape "absent means absent" needs a test that EXECUTES the renderer
+  with both inputs; grep-level guards pass on the mutant.** Six mutants, six dead, and the
+  measured-zero case is the one that would otherwise have been fixed into a bug.
+
+- **A NODE HARNESS PROVES THE HTML AND CANNOT SEE THE PAGE (2026-09-10, P5).** The
+  Workers panel passed 7 mutation-killed behavioural checks on its rendered HTML, and the
+  first real click-through showed the reason truncated to *"this machine backed o…"*
+  running off the panel edge — because `.vitals-pop .vr b` clamps a row's VALUE to 160px
+  with an ellipsis. That is correct for a figure and destroys a sentence, and it silently
+  destroyed the one thing the whole section exists to let an operator read. The HTML the
+  tests asserted on was right the entire time. **GENERAL FORM: a DOM-level test verifies
+  what you built; only a rendered page verifies what is legible. When a slice's value is
+  that someone can READ something, the click-through is part of the slice, not a follow-up
+  — and "browser-unverified, a click-through is owed" is a debt that hides exactly this
+  class of defect.** The corollary is the cheerful one: the click-through also let the
+  ×12 claim be verified by switching the locale live, instead of asserted from the fact
+  that the keys exist.
+
+- **PUTTING PROSE WHERE A FIGURE GOES INHERITS THE FIGURE'S TRUNCATION (2026-09-10).**
+  The row helper was built for `label → number`, so its value slot is `max-width:160px;
+  white-space:nowrap; text-overflow:ellipsis`. Reusing it for a sentence looked natural in
+  source and was wrong on screen. **GENERAL FORM: before reusing a layout helper, read its
+  CSS, not just its signature — a helper named `row` encodes assumptions about what its
+  value IS, and prose and figures want opposite treatments.**
+
+- **THE BACKEND'S OWN `method`/`reason` STRINGS ARE ENGLISH, AND A HOVER IS A CAVEAT
+  SURFACE (2026-09-10).** The first cut piped `capacity.state_report()`'s `method` and the
+  machine floor's `reason` straight into `title=`, which renders untranslated English to
+  every non-English operator — and this project's informed-consent non-negotiable puts
+  every caveat in 12 locales. `renderMachineFloor` had already set the right precedent for
+  the very same payload: translate the prose, keep only the measured NUMBERS and literal
+  tokens (an env var to type) from the backend. **GENERAL FORM: a payload field named
+  `method`, `reason` or `caveat` is documentation for a reader, so it is prose, so it is
+  subject to i18n. Passing it through to the UI is the easy path and the wrong one; the
+  mutant that puts it back belongs in the matrix.**

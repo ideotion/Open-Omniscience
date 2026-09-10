@@ -3250,5 +3250,21 @@
   "Readable text": "পাঠযোগ্য লেখা",
   "Raw wikitext": "কাঁচা উইকিটেক্সট",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "ছাঁটাইয়ের পরে পাঠযোগ্য কিছুই থাকে না — এই পৃষ্ঠাটি কেবল টেমপ্লেট ও সারণি। কাঁচা উইকিটেক্সট দেখানো হচ্ছে।",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "আভিধানিক ছাঁটাই, রেন্ডার নয় — টেমপ্লেট ও ইনফোবক্স সরানো হয়; তথ্যসূত্র, মন্তব্য, সারণি ও ফাইল লিঙ্ক বাদ যায়; লিঙ্কের লেবেল রাখা হয়। একটি টেমপ্লেট যা তৈরি করত তা রেন্ডার নয়, অনুপস্থিত।"
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "আভিধানিক ছাঁটাই, রেন্ডার নয় — টেমপ্লেট ও ইনফোবক্স সরানো হয়; তথ্যসূত্র, মন্তব্য, সারণি ও ফাইল লিঙ্ক বাদ যায়; লিঙ্কের লেবেল রাখা হয়। একটি টেমপ্লেট যা তৈরি করত তা রেন্ডার নয়, অনুপস্থিত।",
+  "Workers": "কর্মী",
+  "Fetching now": "এখন আনা হচ্ছে",
+  "Limit this pass": "এই চক্রের সীমা",
+  "Configured maximum": "নির্ধারিত সর্বোচ্চ",
+  "Why the limit": "সীমার কারণ",
+  "the concurrency limits could not be read": "সমান্তরালতার সীমা পড়া যায়নি",
+  "both a measured memory back-off and the machine floor": "মাপা মেমরি-হ্রাস এবং যন্ত্রের ন্যূনতম সীমা, দুটোই",
+  "this machine backed off under memory pressure, so the ramp is capped": "এই যন্ত্র মেমরির চাপে পিছিয়ে এসেছে, তাই বৃদ্ধি সীমিত",
+  "this machine is below the memory floor, so the fan-out is capped": "এই যন্ত্র মেমরির ন্যূনতম সীমার নিচে, তাই সমান্তরালতা সীমিত",
+  "nothing is holding it back — the full configured maximum is available": "কিছুই আটকাচ্ছে না — নির্ধারিত সর্বোচ্চ পুরোটাই ব্যবহারযোগ্য",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "ব্যান্ডউইথ নিয়ন্ত্রক এই মুহূর্তে যত অনুমতি চালাচ্ছে। চক্রের মাঝে দেখা যায় না — গোনার কিছু থাকে না।",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "এই চক্র যতদূর উঠতে পারে: মাপা সর্বোচ্চ সীমা ও যন্ত্রের ন্যূনতম সীমাজনিত বাধার মধ্যে ছোটটি।",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "আপনার সংগ্রহ-সমান্তরালতার সেটিং। এটি কখনও বদলে দেওয়া হয় না — উপরের সীমাগুলি কেবল একটি চক্রের ব্যয় বাঁধে।",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "চাপবিহীন চক্রের পর মাপা সীমা শিথিল হয় এবং আপনার নির্ধারিত সর্বোচ্চে পৌঁছালে সরে যায়। এটি একটি মাপের ক্যাশ, সেটিং নয় — data/collect_capacity.json মুছলেই সঙ্গে সঙ্গে ভুলে যায়।",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "এই যন্ত্র মেমরির চাপে নিজেই কর্মীসংখ্যা কমিয়েছে। সংগ্রাহক পরের চক্র সেখান থেকেই শুরু করে, একই নামা আবার হাঁটে না।",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "মেমরির ন্যূনতম সীমার নিচের যন্ত্রকে কম সমান্তরালতায় রাখা হয়, যতক্ষণ না আপনি তা আবার চালু করেন।"
 }

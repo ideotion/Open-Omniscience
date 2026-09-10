@@ -1446,11 +1446,82 @@
         sect(t("Collection")) +
         `<div class="vr"><span>${esc(t("State"))}</span><b>${stateHtml}</b></div>` +
         nowHtml +
+        _concurrencyHtml(a.concurrency, pg, t, row, sect) +
         sect(t("Schedule")) +
         `<div class="vr"><span>${esc(t("Cadence"))}</span><b>${cadence}</b></div>` +
         nextHtml + lastHtml + modeHtml +
         _housekeepingHtml(a.housekeeping, t, row, sect) +
         `<div class="vnote">${esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method."))}</div>`;
+    }
+    // P5 (2026-09-10): why a pass may be running fewer workers than configured.
+    // Both caps existed in the payload's own subsystems and NEITHER reached this
+    // window: the learned ceiling was rendered only inside the diagnostics report,
+    // and the machine-floor worker cap only into a log line. So a pass running one
+    // worker of a configured fifty — measured at 1.91 -> 0.45 articles/s over a slow
+    // transport, and persisting across restarts — was indistinguishable here from
+    // "the app got slow".
+    //
+    // Numbers are drawn ONLY where they were measured (invariant #20's rule for the
+    // per-job rate, applied to the same kind of question): the live permit count is
+    // absent between passes rather than shown as 0, because 0 workers and no pass in
+    // flight are different facts. Each figure is a bare number beside a complete
+    // translatable phrase — the i18n engine does not interpolate.
+    function _concurrencyHtml(c, pg, t, row, sect) {
+      if (!c || typeof c !== "object") return "";
+      if (c.read === false) {
+        return sect(t("Workers")) + row(t("Why the limit"),
+          `<span class="pill warn" title="${esc(String(c.reason || ""))}">` +
+          `${esc(t("the concurrency limits could not be read"))}</span>`);
+      }
+      const rows = [];
+      // Live permits: only while a pass is actually in flight.
+      if (pg && pg.permits != null) {
+        rows.push(row(
+          `<span title="${esc(t("The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count."))}">${esc(t("Fetching now"))}</span>`,
+          `${esc(String(pg.permits))}`));
+      }
+      if (c.effective_max != null) {
+        rows.push(row(
+          `<span title="${esc(t("What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap."))}">${esc(t("Limit this pass"))}</span>`,
+          `${esc(String(c.effective_max))}`));
+      }
+      if (c.configured != null) {
+        rows.push(row(
+          `<span title="${esc(t("Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends."))}">${esc(t("Configured maximum"))}</span>`,
+          `${esc(String(c.configured))}`));
+      }
+      // Why — the one thing a reader wants first, and the two causes kept APART
+      // because they have different remedies.
+      const learned = c.learned_ceiling != null, floored = c.floor_cap != null;
+      // The hovers are TRANSLATED, never the backend's own English `method`/`reason`.
+      // renderMachineFloor set that precedent for the same payload: a bubble is a
+      // caveat surface, and the informed-consent rule puts every caveat in 12 locales.
+      // The env-var token is appended raw because it is a literal to type, not prose.
+      const learnedWhy = t("This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.");
+      const floorWhy = t("A machine below the memory floor is held to a smaller fan-out until you turn it back on.");
+      let why;
+      if (learned && floored) {
+        why = `<span class="pill warn" title="${esc(learnedWhy)} ${esc(floorWhy)}">` +
+          `${esc(t("both a measured memory back-off and the machine floor"))}</span>`;
+      } else if (learned) {
+        why = `<span class="pill warn" title="${esc(learnedWhy)}">` +
+          `${esc(t("this machine backed off under memory pressure, so the ramp is capped"))}</span>`;
+      } else if (floored) {
+        const hint = c.override_env ? ` (${c.override_env}=1)` : "";
+        why = `<span class="pill warn" title="${esc(floorWhy)}${esc(hint)}">` +
+          `${esc(t("this machine is below the memory floor, so the fan-out is capped"))}</span>`;
+      } else {
+        why = `<span class="muted">${esc(t("nothing is holding it back — the full configured maximum is available"))}</span>`;
+      }
+      // NOT a `.vr` row: its value is clamped to 160px with an ellipsis, which is right
+      // for a figure and destroys a sentence -- the browser click-through showed
+      // "this machine backed o…" running off the panel, i.e. the one thing this whole
+      // section exists to let an operator READ. A wrapping line instead.
+      rows.push(`<div class="vnote"><span>${esc(t("Why the limit"))}</span> ${why}</div>`);
+      if (learned) {
+        rows.push(`<div class="vnote">${esc(t("The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately."))}</div>`);
+      }
+      return sect(t("Workers")) + rows.join("");
     }
     // The last housekeeping lane's own tallies, rendered from what it ACTUALLY
     // reported — the calendar-feed verification rides the collect pass now

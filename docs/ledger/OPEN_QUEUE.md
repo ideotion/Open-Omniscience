@@ -11565,7 +11565,7 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
 
 ---
 
-## PENDING (2026-09-10) — collector throughput: P1 and P2 SHIPPED, P3-P5 open
+## PENDING (2026-09-10) — collector throughput: P1, P2, P4, P5 SHIPPED; only P3 open
 
 Recorded from the measured investigation in
 [`docs/audit/12_COLLECT_THROUGHPUT_2026-09-10.md`](../audit/12_COLLECT_THROUGHPUT_2026-09-10.md),
@@ -11597,31 +11597,47 @@ times. That is a tail every awkwardly-dated page pays on the hot path. Bounding 
 published-date recall on those pages, so it is a ruling, not a cleanup. (Related and
 cheaper: `extract_article` parses the same HTML twice — `extract` then `extract_metadata`.)
 
-**P4 — stop treating the collector's own CPU as contention.** `bandwidth.observe` cuts a
-permit per tick at `cpu_saturated`, defined as **system-wide** CPU ≥ 92 % — which a
-healthy CPU-bound collector produces by itself. Measured: 50 → 1 in 73 s with that flag
-alone. Its own comment says CPU saturation "costs throughput, not the machine", and the
-response to it still costs throughput. But the flag is ALSO a real signal when another
-process is the load, so the fix is not "delete it": it needs a ruling on whether the
-governor should read *process* CPU headroom, or exempt the case where the collector is
-itself the CPU. **The far worse sibling is `mem_low`**, which is multiplicative (50 → 1 in
-five ticks) and whose floor is PERSISTED to `data/collect_capacity.json` as both the seed
-and the `ramp_ceiling` of every later pass — across restarts. Over Tor that is 1.91 →
-0.45 art/s, a **4.2× slowdown with no code change**. Recovery is ×2 per clean pass but
-only fires if the pass stops tripping a threshold that is about the whole MACHINE
-(a fixed 512 MB of system-wide available memory), which a box also running a local model
-can sit under indefinitely. **If an operator reports a sudden, persistent slowdown, check
-that file first — it is a cache of a measurement, never operator state, and deleting it
-restores the configured fan-out on the next pass.**
+**P4 — the two self-inflicted throttles. SHIPPED 2026-09-10 (same session).**
+(a) `cpu_saturated` fired at 92% SYSTEM-WIDE CPU, which a healthy CPU-bound collector
+produces by itself — measured 50 permits to 1 in 73 s for doing its job well. It now
+compares `cpu_proc_pct` (already sampled, already logged, consulted by nothing) against
+the system total, with the scale difference stated: `Process.cpu_percent` sums across
+cores, `psutil.cpu_percent` does not. The back-off owed to the operator's OTHER processes
+is untouched; unmeasurable falls back to the old rule. (b) `mem_low` is a whole-machine
+reading, so a box running a local model pinned the persisted ceiling at 1 forever, across
+restarts — 1.91 -> 0.45 art/s with no code change and no visible cause. A pass that
+already ran at a ceiling of 1 and still saw sustained pressure now relaxes instead of
+re-pinning; the guarantee is narrow and checkable (a ceiling of 1 cannot survive two
+passes) and does NOT claim recovery to w_max while external pressure lasts. `memguard`,
+which is what actually protects the machine, is untouched. Details in the audit report §11.
 
-**P5 — surface the learned ceiling where the operator watches collection.**
-`capacity.state_report` is rendered ONLY inside the diagnostics report payload
-(`src/api/diagnostics.py:2421`, `collection.learned_concurrency`). The task manager's
-Active and Schedule subtabs never say that the pass is running 1 worker of a configured
-50, or why — so a pinned ceiling is indistinguishable from "the app got slow". Honesty
-work of exactly the kind invariant #20 already does for the per-job rate (draw a measured
-number with its method on hover, draw nothing when it is unmeasured — never a 0).
-Needs the strings ×12.
+**P6 (NEW, 2026-09-10) — back the collector off on measured EVENT-LOOP LAG, not on CPU
+saturation.** P4a's honest cost: the API server shares this process, so collector threads
+and the event loop compete for one GIL, and the old blanket CPU back-off had an undesigned
+side effect -- cutting permits freed GIL time and kept the local UI responsive during a
+heavy pass. Not cutting them can make the UI feel slower while collecting on a small box.
+Accepted for now because the throughput that back-off bought was NEGATIVE (the CPU went
+back to the same process that wanted it) and because S3.4 already built the right surface
+for the real concern: `server_load` plus the client backoff it drives, fed by
+`latency.py`'s loop-block watchdog, which since S3.4 keeps every sample in a bounded window
+and publishes `latest` and `peak` separately. THE SIGNAL THEREFORE EXISTS AND IS NOT WIRED
+TO THE GOVERNOR. Loop lag is a DIRECT measurement of "we are starving our own server";
+CPU saturation is a proxy that cannot tell starving the server from doing the work. Wants
+its own measurement pass -- a threshold picked from real readings, not guessed -- and a
+test that the two cases are distinguishable.
+
+**P5 — surface the caps where collection is watched. SHIPPED 2026-09-10.**
+`capacity.concurrency_report()` composes the learned ceiling and the machine-floor cap
+and rides the `status()` payload the task manager already polls; the Schedule subtab
+grows a Workers section. The two causes are kept apart (different remedies), a healthy
+machine gets a plain "nothing is holding it back", an unreadable block says so, and no
+permit count is drawn when no pass is in flight — while a measured 0 still draws.
+16 strings x12 locales. BROWSER-VERIFIED in Chromium against the running app with the
+capacity file seeded to a ceiling of 1: no console errors, the #oo-tip bubble shows the
+translated method, and French renders every string. The click-through earned itself --
+it caught a defect the node harness structurally cannot see, `.vitals-pop .vr b` clamping
+the reason to 160px so it read "this machine backed o..." off the panel edge; the reason
+is now a wrapping line.
 
 **NOT MEASURED, and the next thing to instrument if the complaint is specifically
 "fewer articles per hour" rather than "each article takes longer":** the pass TAIL and the
