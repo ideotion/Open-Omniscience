@@ -11045,6 +11045,19 @@ Before anything touches that fold, confirm which.
   hand-shortens three targets and pre-dates a heading rename for the others). The 9 were re-measured
   after the anchor fix: clicking one is now INERT (Help stays open, nothing scrolls) rather than
   ejecting the reader to Home, so this is a cosmetic residue, not the P0.
+  **SUPERSEDED 2026-09-10 — READ THIS BEFORE ACTING ON THE ENTRY ABOVE.** Both axe items are
+  CLOSED, by `f37e043f` (2026-09-09), and the two figures here were never remainders: that
+  sweep read ONE document, and the commit measured the eight the reader can open --
+  `link-in-text-block` **23** nodes (not 15) and `scrollable-region-focusable` **11** (not 3),
+  both re-measured at ZERO afterwards, stable across the ink/light/contrast/solar themes.
+  The 9 `USER_MANUAL.md` anchors are closed too (sixteen, once the sweep reached the other
+  served documents), and this entry's stated CAUSE for them was wrong: "no single consistent
+  slugifier can resolve" was a hypothesis that licensed deferring them, and collapse-matching
+  each dead target against the real headings resolved all nine with exactly one candidate each.
+  **NOTHING IN THIS ENTRY IS STILL OPEN.**
+  Annotated here rather than only elsewhere because that is the whole failure it caused: the
+  correction WAS recorded, in its own new entry further down, and two later sessions read THIS
+  entry instead and never reached it. One of them rebuilt a shipped fix and had to revert it.
 
 ### 2026-09-09 — the open-queue burn-down (PR #1104): what closed, what is recorded, what is deliberately left
 
@@ -11612,12 +11625,24 @@ one-of-two-render-paths shape this round has met repeatedly: a fix applied only 
 `openDoc` is silently undone the first time a reader types in the find box. A mutant
 removing the `filterDoc` call is in the matrix and dies.
 
-**STILL OPEN from that same entry, unchanged:** `link-in-text-block` (n=15) — note that
+~~**STILL OPEN from that same entry, unchanged:** `link-in-text-block` (n=15) — note that
 `.prose` itself already carries a fix for it (`app.css`, the a11y-help-link-in-text-block
 rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` and a
 future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
 single slugifier can resolve, which after the anchor fix are INERT rather than
-ejecting the reader — cosmetic residue, explicitly not the P0.
+ejecting the reader — cosmetic residue, explicitly not the P0.~~
+**STRUCK 2026-09-10 — WRONG, AND IT POINTED SOMEWHERE THERE IS NOTHING TO FIND.** There is no
+"residual 15". 15 and 23 are not a remainder and a whole: they are the SAME finding set counted
+twice, once over one document and once over the eight the reader can open. `f37e043f`'s own
+message says so ("The Help numbers are larger than the ledger recorded (15 and 3) because that
+sweep read one document"), and it measured all of them at zero. The selector is
+`.prose a, #tab-help a` — the second half was added precisely FOR the links outside `.prose`
+(the panel's `/docs` intro link in a `.muted` paragraph), and every other surface swept that day
+reported zero, so "start by finding where" would have sent someone hunting a population that
+does not exist. **Subtracting two counts of the same thing, taken at different scopes, invents a
+remainder** — and a remainder reads as an actionable to-do, which is worse than a wrong number.
+Before writing "the residual N", check that the two figures were measured over the SAME
+population.
 
 ### 2026-09-10 — A CORRECTION: I RE-IMPLEMENTED A FIX THAT ALREADY EXISTED, AND IT IS REVERTED
 
@@ -11690,3 +11715,41 @@ all. So what follows are only figures whose METHOD is stated and reproducible:
 needs markup changes (splitting a sentence around an `<a>` or `<b>` is what created the
 fragment), and markup surgery across seventeen `app-*.js` modules is its own reviewed slice
 rather than a tail-end of a keying pass.
+
+---
+
+**`test_unlock_sequence_covers_every_init_db_self_heal` CANNOT TELL RUNNING A SELF-HEAL FROM
+NAMING ONE (measured 2026-09-10, PR #1109, while fixing the failure it correctly raised).** The
+guard composes two `inspect.getsource()` reads with the regex `\bensure_[a-z_]+\b` — `init_db`'s
+names minus `_run_init_sequence`'s — and asserts the difference is empty. Its docstring states the
+property it is for: *"the bench must run it too, or the cold-unlock measurement understates the
+real unlock cost."* That is not what it tests. `_run_init_sequence`'s imports are function-local,
+so the name appears in its source whether the bench CALLS the self-heal or merely imports it.
+
+Measured, three mutants, not reasoned:
+
+| mutant | the guard | ruff `F,B` (blocking) |
+| --- | --- | --- |
+| call removed, import kept | **passes** | catches it — unused import |
+| import removed, call kept | **passes** | — |
+| neither present | **catches it** | — |
+
+So it caught this PR's real omission only because the name appeared NOWHERE. Once a name is
+present in any form the guard stops discriminating, and the one case it misses outright — imported
+but never called — is caught by an unrelated lint that knows nothing about unlock cost. The guard
+is doing a weaker job than the file believes, and the belief is written down in its own docstring,
+which is the part that makes it worth an entry rather than a shrug.
+
+**THE FIX IS ABOUT TEN LINES and is NOT done here, deliberately:** parse `_run_init_sequence` with
+`ast` and collect `ast.Call` callee names instead of regex-matching the source text, so
+"imported but never called" reddens on the guard that claims to own it. Not shipped in this PR
+because the PR is a schema column plus its CI fix, and a change to a shared test guard is its own
+reviewed line — the same reasoning the `--min 100` entry above records, which is also why that one
+was eventually closed on a line of its own rather than folded into a neighbour.
+
+**AND THE REASON THE OMISSION HAPPENED, which no guard covers:** the column's shape was copied from
+`4ed0052a` (the version anchor), and that commit's own file list — visible in `git show --stat`,
+`src/testing/scale_bench.py | 2 +` among twelve entries — names every place a new `articles` column
+has to be registered. I read the code I understood and not the list. **When you build from a
+precedent commit, its FILE LIST is the checklist; the diff hunks are only the parts you already
+knew to look for.**

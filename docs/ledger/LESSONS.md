@@ -6233,6 +6233,29 @@
     (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
     (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
     run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **A CORRECTION FILED AS A NEW ENTRY DOES NOT NEUTRALISE THE ENTRY IT CORRECTS — ANNOTATE
+    THE STALE ONE IN PLACE, WHERE THE NEXT READER ACTUALLY LANDS (2026-09-10, after it cost a
+    build and a revert):** the docket said `link-in-text-block (n=15)` and
+    `scrollable-region-focusable (n=3)` were STILL OPEN. Both were closed the next day, and the
+    closure WAS recorded — as a new entry further down, ending "Read those two as closed." Two
+    later sessions read the ORIGINAL entry, never reached the correction, and one of them rebuilt
+    a shipped, browser-measured fix and had to revert it. The correction was not missing; it was
+    merely somewhere else, in a file nobody reads front-to-back by design (rule (1) makes the
+    queue consulted, not memorised). A ledger appended in strict chronological order has this
+    failure built in: the OLDEST statement about a topic is the one a search hits first, and it
+    is the one most likely to be wrong. RULE: when you close or correct a docket item, edit the
+    entry that ASSERTS the stale thing — a `SUPERSEDED`/`STRUCK` line right under it, pointing
+    forward — as well as recording the new finding. Two lines in the old place beat two pages in
+    the new one.
+    **AND THE ARITHMETIC TRAP IT PRODUCED, which is reusable on its own:** the re-assertion
+    reasoned "the fix measured 23 nodes, the ledger says 15 are open, so 15 are OUTSIDE the fixed
+    selector — a future pass should start by finding where." 15 and 23 were never a remainder and
+    a whole; they are the SAME finding set counted over one document and over eight. SUBTRACTING
+    TWO COUNTS OF THE SAME THING TAKEN AT DIFFERENT SCOPES INVENTS A REMAINDER, and a remainder
+    reads as an actionable to-do, so the invention survives as work. Before writing "the residual
+    N", confirm both figures were measured over the same population — here the closing commit's
+    own message said outright that they were not.
+
   - **A PARSER THAT REFUSES A BARE VALUE BECOMES A SILENT NO-OP THE MOMENT YOU STORE ITS OUTPUT
     AND FEED IT BACK IN (2026-09-10, caught while drafting, before a line shipped):**
     `parse_list_id` extracts `weekly.substack.com` from `List-Id: "Weekly" <weekly.substack.com>`
