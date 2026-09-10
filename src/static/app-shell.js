@@ -736,8 +736,20 @@
         // Boolean Search tab is still one item away (nothing lost).
         live.unshift({grp: t("Search"), label: `${t("Run the full Boolean search for")} “${raw}”`,
           sub: "", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
+        // THE ↵ BADGE ONLY WHEN ↵ ACTUALLY RUNS THIS ROW. `_palFiltered` is
+        // [...statics, ...live] and `_palSel` starts at 0, so Enter runs the first
+        // STATIC match whenever the typed text matches a page or command -- "collect",
+        // "open", "data" and "search" itself all do. The badge was unconditional, so on
+        // exactly those queries it advertised a key that would run a different row.
+        // A row that says ↵ and does not answer to it is the palette misdescribing
+        // itself; the arrow ↗ (opens in a new browser tab) is true either way.
+        // WHICH ROW ENTER *SHOULD* RUN IS A PRODUCT QUESTION, recorded in the docket
+        // rather than answered here: the ruling says Enter defaults to the analysis
+        // window, but hoisting it above a matching command would mean typing "Settings"
+        // and getting an analysis OF the word Settings. This change makes the surface
+        // honest about today's behaviour without deciding that.
         live.unshift({grp: t("Search"), label: `${t("Analysis")}: “${raw}”`,
-          sub: "↵ ↗", run: () => openAnalysisInNewTab(raw)});
+          sub: statics.length ? "↗" : "↵ ↗", run: () => openAnalysisInNewTab(raw)});
       }
       _palFiltered = [...statics, ...live];
       _palSel = 0;

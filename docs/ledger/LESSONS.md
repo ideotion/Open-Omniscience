@@ -8072,3 +8072,27 @@
   reason or to make it work — and a refusal message written for one entry point will
   be actively misleading at another.** Look hardest at the paths a feature was NOT
   originally built for: they inherit the control and not the plumbing.
+
+- **READING THE HANDLER IS NOT READING THE BEHAVIOUR — FIND WHAT IT ACTS ON (2026-09-10).**
+  Asked whether the omnibar's Enter opens the analysis window, I read `palKey`, saw
+  `Enter → palRun(_palSel)`, and reported that no entrance existed. The entrance was in
+  `renderPalette`, which unshifts the Analysis row and marks it `↵`. The handler answers
+  "what does the key do"; the question was "what will it do to". **GENERAL FORM: for a
+  keyboard or click handler that operates on a SELECTION, the behaviour lives where the
+  selection is built and ordered, not where the key is bound. Read the ordering before
+  concluding anything about what the key reaches** — and the same applies to a dispatcher
+  keyed on a variable, a router matching a path, or a reducer switching on an action.
+  The failure is asymmetric and worth fearing: it produces a confident negative ("this is
+  not built") about work that exists, which is the kind of claim a ledger carries forward.
+
+- **A KEYBOARD BADGE IS A PROMISE, AND SELECTION ORDER DECIDES WHETHER IT IS KEPT
+  (2026-09-10).** The Analysis row said `↵ ↗` unconditionally, while `_palFiltered =
+  [...statics, ...live]` with the selection at index 0 means Enter runs the first STATIC
+  match whenever the typed text matches a command. Measured against the shipped command
+  labels the collision is ordinary — `search`, `collect`, `open`, `data`, `help`,
+  `settings` — so the badge was wrong on exactly the queries most likely to be typed by
+  someone learning the palette. **GENERAL FORM: a shortcut hint rendered per-row is a claim
+  about the CURRENT list, not about the row; when the list is assembled from several
+  sources, the hint has to be computed from the assembled order or it will drift the moment
+  a second source matches.** Same family as a control that renders unconditionally and
+  refuses on click: the surface describing a capability it does not have here and now.

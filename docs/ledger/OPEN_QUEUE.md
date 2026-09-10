@@ -11396,3 +11396,36 @@ comparison reported the Search tab as MISSING `exportMethods`, `synthesizeResult
 `bulkLlm`, and I nearly recorded that the `#an` window was already a superset. A
 line-anchored pattern over HTML answers a question about formatting, not about markup;
 the parse-the-attribute version gave the opposite answer.
+
+**CORRECTION TO THE ENTRY ABOVE, made the same night: THE ENTER→CORPUS-WINDOW ENTRANCE
+EXISTS.** The Search-tab gate note I wrote hours earlier said "nothing yet opens the `#an`
+window from a typed omnibar query, so the replacement has no entrance." That is wrong, and
+the mistake was reading `palKey` (Enter runs the selected item) without reading
+`renderPalette`, which unshifts an `Analysis: "<query>"` row calling
+`openAnalysisInNewTab(raw)` and marks it `↵ ↗`. The routing was built, under the recorded
+ruling *"Enter → the corpus/analysis window (default), now opening in a NEW BROWSER TAB
+(field remark 9)"*. What is true is narrower and worse:
+
+**THE ↵ BADGE IS A CLAIM THE PALETTE DOES NOT KEEP.** `_palFiltered = [...statics, ...live]`
+and `_palSel` starts at 0, so Enter runs the first STATIC match whenever the typed text
+matches a page or command — and the collision is ordinary, not exotic: measured against the
+nine shipped command labels plus the nav pages, `search`, `collect`, `open`, `data`, `help`
+and `settings` all match at least one. On exactly those queries the Analysis row advertised
+a key that would run a different row. Fixed here by making the badge conditional
+(`statics.length ? "↗" : "↵ ↗"`); the `↗` is true either way, since it describes where the
+row opens rather than which key reaches it.
+
+**THE PRODUCT QUESTION IS LEFT OPEN, deliberately.** Should the Analysis row be HOISTED
+above matching statics, so Enter always means "analyse what I typed" as the ruling's word
+"default" suggests? It would make the badge unconditionally true — and it would mean typing
+`Settings` and pressing Enter gives an analysis OF the word "Settings" rather than opening
+Settings, which is the interaction a command palette exists to provide. **Recommended
+default: leave the ordering as it is.** A palette that runs the command you named is worth
+more than a uniform Enter, and the honest badge already removes the misdirection that made
+the current ordering feel like a bug. Not taken unilaterally: it changes an interaction the
+maintainer uses.
+
+**SO THE SEARCH-TAB GATE'S REMAINING BLOCKER IS SMALLER STILL THAN THIS ENTRY SAID.** The
+capabilities are absorbed (as re-measured above) and the entrance exists. What is genuinely
+untested is whether the Enter→analysis path is a good enough replacement in practice to
+retire `#tab-search` — a browser-verification question and a maintainer call, not a build.
