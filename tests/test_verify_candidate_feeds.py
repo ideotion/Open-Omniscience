@@ -353,3 +353,22 @@ def test_the_cli_refuses_an_unknown_retry_reason(capsys):
     with pytest.raises(SystemExit) as exc:
         vcf.main(["--candidates", "x.csv", "--out-dir", "y", "--retry", "host_timeout,bogus"])
     assert exc.value.code == 2 and "bogus" in capsys.readouterr().err
+
+
+def test_a_crash_inside_one_host_is_an_error_row_and_the_run_goes_on(tmp_path, monkeypatch):
+    table = {"https://a.example/": HOME_WITH_LINK, "https://a.example/feed.xml": _rss(4),
+             "https://b.example/": HOME_WITH_LINK, "https://b.example/feed.xml": "BOOM"}
+    real = vcf.parse_feed
+
+    def boom(content):
+        if content == "BOOM":
+            raise RuntimeError("a parser bug")
+        return real(content)
+
+    monkeypatch.setattr(vcf, "parse_feed", boom)
+    s = vcf.run([_row("a.example"), _row("b.example")], fetch=FakeFetch(table), out_dir=tmp_path,
+                workers=2, now=NOW, catalogue=set())
+    assert s["by_reason"] == {"verified": 1, "error": 1} and s["stragglers"] == []
+    prior, _ = vcf.load_resume(tmp_path / "verified.jsonl")
+    err = next(v for v in prior if v.domain == "b.example")
+    assert (err.status, err.reason, err.note) == ("rejected", "error", "RuntimeError: a parser bug")

@@ -151,6 +151,7 @@ class Verdict:
     tags: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
     checked_at: str = ""
+    note: str = ""                    # what an error or host_timeout row can say about itself
 
 
 REASONS = (
@@ -618,6 +619,7 @@ def run(
                                     seen=set(), crawl_delay=crawl_delay,
                                     probe_budget_s=probe_budget_s)] = r
             pending = set(futures)
+            order = {fut: i for i, fut in enumerate(futures)}
             while pending:
                 finished, pending = wait(pending, timeout=stall_s, return_when=FIRST_COMPLETED)
                 if not finished:
@@ -625,7 +627,7 @@ def run(
                     # recorded as NOT judged, so one silent host can never hold a worklist
                     # (2026-09-10: one did, for hours, while 3,587 others were done). Their
                     # threads are left to end on their own; main() exits without waiting.
-                    for fut in pending:
+                    for fut in sorted(pending, key=order.__getitem__):
                         r = futures[fut]
                         v = Verdict(
                             domain=_domain_of(r), name=str(r.get("name") or "").strip(),
@@ -634,13 +636,31 @@ def run(
                             language_export=str(r.get("language") or "").strip().lower(),
                             status="error", reason="host_timeout", elapsed_s=float(stall_s),
                             checked_at=now.isoformat(timespec="seconds"),
+                            note=f"still in flight after {stall_s:.0f}s with nothing finishing",
                         )
                         stragglers.append(v.domain)
                         _record(v)
                     pool.shutdown(wait=False, cancel_futures=True)
                     break
-                for fut in finished:
-                    _record(fut.result())
+                # Submission order, never set order: several futures can be done by the time
+                # the wait returns, and a KeyboardInterrupt surfacing from one host's future
+                # must not hide a row that finished before it (CI caught exactly that race).
+                for fut in sorted(finished, key=order.__getitem__):
+                    try:
+                        v = fut.result()
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - one host's crash never ends the run
+                        r = futures[fut]
+                        v = Verdict(
+                            domain=_domain_of(r), name=str(r.get("name") or "").strip(),
+                            country=str(r.get("country") or "").strip().lower(),
+                            language_export=str(r.get("language") or "").strip().lower(),
+                            status="rejected", reason="error",
+                            checked_at=now.isoformat(timespec="seconds"),
+                            note=f"{type(exc).__name__}: {exc}"[:200],
+                        )
+                    _record(v)
         except KeyboardInterrupt:
             # Ctrl-C on a laptop run: take no new host, let the in-flight ones finish unrecorded
             # (the next run re-judges them -- cheap and correct), keep every row already written.
