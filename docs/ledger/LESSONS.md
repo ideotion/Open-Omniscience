@@ -6233,6 +6233,31 @@
     (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
     (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
     run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **A GUARD THAT NEEDS A VALUE FROM ANOTHER FILE MUST READ IT FROM THAT FILE — A MIRRORED COPY
+    FAILS IN THE SAFE-LOOKING DIRECTION, AND THE COMMENT SAYING "MIRRORED DELIBERATELY" IS THE
+    SENTENCE TO DISTRUST (2026-09-10, hit twice in one session, the second time one commit after
+    fixing the first):** the reader's consent caveats are server-rendered, and `i18n.js` translates
+    a text node only when its DIRECT parent is outside the engine's skip list — so a key proves the
+    translation EXISTS while only the parent tag decides whether it is APPLIED. The guard I wrote
+    mirrored that skip list as a hardcoded constant, with a comment stating that mirroring meant
+    "if the engine ever widens it, this guard must FAIL and be re-read, not silently follow." A
+    mutant adding `FOOTER` to `i18n.js` passed. **A hardcoded mirror does the exact opposite of
+    that claim**: widening the engine leaves the copy narrow, so the check keeps passing while the
+    string stops being translated — it fails toward "everything is fine", which is the only
+    direction that never gets investigated. The same defect, in the same session, had just been
+    fixed in `test_unlock_sequence_covers_every_init_db_self_heal` (a regex over source that could
+    not tell a CALL from an IMPORT): both are a check reading a COPY of the thing rather than the
+    thing. RULE: read the value from its source of truth, and separately PIN it against the value
+    you reviewed, so a change reddens instead of drifting. Two assertions, not one — the pin catches
+    the change, the read keeps the check honest in the meantime. And when the source of truth is
+    refactored into a shape your parser cannot read, FAIL LOUDLY and say to re-derive it; falling
+    back to the last known value is the mirror bug with extra steps.
+    **THE TELL, and it is a comment rather than code:** "mirrored deliberately", "kept in sync
+    manually", "duplicated on purpose" all describe a DECISION someone made, and read as though the
+    hazard was considered and handled. None of them is a property anything tests. Treat that phrasing
+    as an unproven claim and write the mutant that checks it — here the mutant took two minutes and
+    the comment had been wrong the moment it was written.
+
   - **A CORRECTION FILED AS A NEW ENTRY DOES NOT NEUTRALISE THE ENTRY IT CORRECTS — ANNOTATE
     THE STALE ONE IN PLACE, WHERE THE NEXT READER ACTUALLY LANDS (2026-09-10, after it cost a
     build and a revert):** the docket said `link-in-text-block (n=15)` and

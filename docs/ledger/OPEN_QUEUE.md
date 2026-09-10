@@ -11808,3 +11808,42 @@ the network. An operator reading just that title could reasonably believe a non-
 still goes out. NOT changed here, because rewording a user-facing consent string is a product
 decision and not a session's to take; noting that the cost of taking it is one string re-translated
 ×12, which is as cheap as such decisions get.
+
+---
+
+**THE i18n LONG TAIL, SLICE 3 — the 18 non-`t()` sentences, split by where they live
+(2026-09-10, PR #1109).** The remainder slice 2 left. Measured before starting, they are three
+classes, not one: **10** are text nodes/titles in `index.html`, **2** are server-rendered in
+`src/api/main.py` (the reader footer), and **6** are bare JS literals. The first twelve need only
+KEYS — `i18n.js` walks text nodes and translates any whose key exists, and `main.py:2262` already
+records that precedent ("caption is a keyed string so i18n.js translates it"). Shipped: all twelve
+keyed ×12 (locales 3328 → 3340), `--max-untranslatable` **488 → 476**, at zero slack. The **6 JS
+literals need `t()` wrappers and are left for their own slice** — a wrapper in the wrong place
+changes what renders, where a key cannot.
+
+**TWO OF THE TWELVE ARE READER CONSENT SURFACES, which is why this slice was worth taking now:**
+*"This is the copy captured at ingest — it does not change if the source is later edited or
+removed"* (provenance) and *"Opening the source makes a live request from your machine; the site
+may see your visit. You'll be asked to confirm"* (outbound exposure, invariants #6/#7). Both sat
+English-only in eleven locales, beside the provenance labels a 2026-07-28 finding had already
+fixed — missed by that same sweep because they live in the FOOTER rather than the label block.
+
+**AND THE GUARD I WROTE FOR THEM CARRIED THE EXACT DEFECT I HAD FIXED TWO COMMITS EARLIER.**
+`test_the_i18n_walker_can_actually_REACH_each_footer_caveat` checks that a caveat's direct parent
+is not in `i18n.js`'s skip list — because a key proves the translation EXISTS while only the parent
+tag decides whether the engine APPLIES it. I mirrored the skip list as a hardcoded constant and
+wrote, in the comment above it, that mirroring meant "if the engine ever widens it, this guard must
+FAIL and be re-read, not silently follow." **A mutant that added `FOOTER` to `i18n.js` passed.** A
+hardcoded mirror does the opposite of what that comment claims: widening the engine leaves the copy
+narrow, so the reach check keeps passing while the caveat stops being translated. This is the
+scale-bench drift guard's defect — a check that reads a *copy* of the thing instead of the thing —
+reproduced by me, one commit after fixing it, inside the sentence asserting it could not happen.
+Fixed by READING the list out of `i18n.js` and pinning it against the reviewed value, so a widen
+reddens and a narrow reddens. Seven mutants now, seven dead, including an engine refactor into a
+shape the regex cannot parse — that one fails loudly telling the reader to re-derive the set,
+rather than quietly assuming the old one still holds.
+
+**THE GENERAL FORM, since this is now twice in one session:** when a guard needs a value that lives
+in another file, READ IT FROM THAT FILE. A copy is only safe if something compares the two, and the
+comment saying "mirrored deliberately" is not that something — it is the specific sentence to
+distrust, because it reads as a decision that was made rather than a property that was tested.
