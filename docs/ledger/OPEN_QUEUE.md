@@ -11651,3 +11651,33 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   section (composition, feed presence, catalogue overlap, the gaps against `catalog_targets.yml`
   the candidates can fill) and the handling pipeline it proposes; rulings it needs are listed
   there, none taken.
+
+- **QUESTION 2026-09-10 (maintainer), ANSWERED WITH TOOLING — CAN AN INTERNET-CONNECTED SESSION
+  RUN A WORKFLOW OF AGENTS OVER THE CANDIDATE SOURCES AND GROW THE 3,600?** Verbatim: "can we use
+  an internet connected session with an attachment (like the one I just provided or a zip with
+  multiple files) to create a workflow of agents to check candidate sources and increase the
+  current list of 3600 sources ? I'd really want this initial list to be significantly increased.
+  In case of a workflow, think of token usage and maximize model choice and prompt quality to
+  avoid using most of my credit." ANSWER: yes — `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-10_
+  CANDIDATE_FEED_VERIFICATION.md`, with the tooling built and fake-fetcher-tested in the same PR
+  (this sandbox answers `000` for every publisher host, so nothing ran against the network). THE
+  DESIGN PRINCIPLE: checking a feed is not a judgement, so a zero-token script does the whole
+  mechanical half (robots fail-closed via the ONE guarded fetcher, homepage, declared-then-
+  conventional feed discovery bounded at six probes per host, the diversification brief's three
+  rules, headline language, resumable across sessions) and the model is handed only the residue
+  that needs a reader — is this journalism, which topics — in 40-row batches on Haiku with two
+  hand-known canaries per batch, files in and files out, every answer re-validated in plain code
+  (echo-back, enums, the catalogue's own topic vocabulary, canaries) before it can reach the
+  catalogue; a text splice then appends reviewed rows to `configs/sources.yml` and refuses what it
+  cannot vouch for. The arithmetic: ~5M tokens, four fifths on Haiku, for all 22k news rows —
+  against ~450M for one agent per candidate. Under the same-day curated-catalogue ruling the
+  appended rows are qualified at seed, which is what "increase the initial list" means here.
+  **DECISIONS FOR THE MAINTAINER, recorded with the brief's recommended defaults (§5):** D1 the
+  rows land in `configs/sources.yml` via the splice after PR review (recommended; the alternative
+  is a separate generated file with its own provenance and a seeder entry); D2 the acceptance bar
+  = journalism AND confidence high/medium, `low` rows listed for a human pass, never merged unread;
+  D3 the shortlist (3,588 rows) first, then the T4 remainder in ~4,000-row chunks — the yield of
+  the first chunk replaces the brief's estimate (≈6,000 new sources if 40 % have a live feed and
+  70 % read as journalism); D4 institutions and religious organisations stay out of this pipeline
+  by type. OPERATOR PREREQUISITE, a hard stop in the brief: an environment whose network policy
+  allows the candidate hosts, verified by the four-host probe before anything runs.

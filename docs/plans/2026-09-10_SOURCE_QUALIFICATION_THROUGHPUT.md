@@ -735,6 +735,23 @@ no feed was discovered and no row was verified); no row was enabled or promoted 
 enable stands until R2 is ruled); the export's `--discovered` scope is a slice for the next
 session, not this PR.
 
+### 10.4 The internet-connected run — tooling built, brief written (same day)
+
+The maintainer's follow-up — *"can we use an internet connected session with an attachment … to
+create a workflow of agents to check candidate sources and increase the current list of 3600
+sources? … think of token usage"* — is answered by
+`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-10_CANDIDATE_FEED_VERIFICATION.md` and the tooling
+it runs, all built and tested here with a fake fetcher (this sandbox answers `000` for every
+publisher host): `scripts/analysis/verify_candidate_feeds.py` (Stage A, **zero tokens**: robots
+fail-closed through `make_fetcher`, homepage, declared-then-conventional feed discovery bounded at
+six probes per host, the diversification brief's three rules, headline language, resumable),
+`scripts/analysis/triage_batches.py` + `triage_verified_feeds.workflow.js` (Stage B, the only
+model stage: 40-row batches on Haiku with two canaries each, files in and files out so nothing
+large crosses the orchestrator, re-validated in plain code), and `scripts/merge_source_batch.py`
+(Stage C, a text splice onto `configs/sources.yml` that refuses what it cannot vouch for). The
+design principle, and the credit arithmetic — ~5M tokens mostly on Haiku for all 22k news rows
+against ~450M for one agent per candidate — are in the brief's §0 and §2.
+
 ## Appendix A — anchors
 
 | Fact | Where |
