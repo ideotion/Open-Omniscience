@@ -11775,3 +11775,60 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   refusal as a permission has stopped being one; and the RFC's "30 days unreachable → treat as
   unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
   "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
+
+- **ADDENDUM 2026-09-10 (maintainer, same day) — THE DEFAULT DEPLOYMENT IS A WHONIX/TOR PATH THROUGH A
+  DEBIAN VM, SO THE "MEASURE FROM CLEARNET FIRST" HALF OF THE RECOMMENDATION ABOVE IS WITHDRAWN.** The
+  maintainer's question: "if you take into consideration that the default usage of the app would be to
+  use a Whonix/tor proxy through a debian VM, what would you do with the problem of the origin /
+  pathway discrimination problem?" FACTS. (1) For a Whonix operator there is NO clearnet path: the
+  workstation cannot reach the internet except through the gateway's Tor, so a "clearnet
+  measurement" is not merely unavailable, asking for it is asking the operator to deanonymise, which
+  the no-silent-downgrade non-negotiable already forbids even as a consented retry. (2) THREE places
+  collapse a 403 on robots.txt into a POLICY verdict: `EthicalFetcher._get_robots` (401/403 → the host
+  off-limits for one hour, persisted as `disallow_all`); `src/monitoring/preflight.py` (401/403 →
+  `robots = "blocked"` → verdict `robots_denied` → `robots_allowed = False` WRITTEN onto the source's
+  scraper settings, a stored policy fact derived from a path refusal); and the kit's Stage A
+  (`robots_unavailable` → a rejection row). (3) Over Tor a 403 is a statement about the PATH, not
+  about the crawler: in PROTECTED mode the request carries the generic Firefox UA, so there is no
+  declared bot for the host to refuse — the 403 is the exit's reputation, Tor as a class, the TLS
+  fingerprint (python-requests behind a Firefox UA; the "blend in" is partial and that is a fact,
+  not a proposal to change the ruled mode), or geography; in TRANSPARENT mode (the kit's mode) it is
+  any of those OR the bot, and nothing in the answer tells which. (4) The app cannot tell it is on
+  Tor unless the proxy is configured IN-APP: under Whonix's transparent torification with the app in
+  transparent mode, `proxied` is False, `_capture_server_ip` records a server IP as if clearnet, the
+  per-host isolation tokens do nothing (no SOCKS), and every "transport-aware" verdict is labelled
+  clearnet. (5) The precedent already drawn (markets, ruled 2026-06-12): a TCP-level refusal over Tor
+  is "often one exit's refusal", retried ONCE; an HTTP 403 and a robots refusal are NEVER retried.
+  (6) Tor rebuilds circuits on its own clock (MaxCircuitDirtiness default 10 min), so the fetcher's
+  hourly robots re-read already lands on a different circuit: the politeness clock IS Tor Browser's
+  "New Tor circuit for this site", at a crawler's cadence, not an IP-rotation loop.
+  REVISED RECOMMENDED DEFAULT (replaces part (c) above; (a) and (b) stand): (A) MAKE THE PATH A
+  FIRST-CLASS FACT — document the Whonix setup as protected mode pointed at the gateway's SOCKS port
+  (`socks5h://<gateway>:9050`) rather than the gateway's transparent proxying, so the app knows it is
+  on Tor and per-host isolation applies; add a consented Tor self-detection probe to the network
+  preflight (one fixed host, the Tor Project's own check endpoint, informational, the same shape as
+  the kit's four-host probe) so verdicts carry `transport: tor | proxy | clearnet` and the UI can say
+  "this instance reaches the web over Tor". (B) RE-LABEL THE 401/403 ROBOTS READ in all three places
+  from "off-limits" to "refused on this path": a REACH verdict with the same one-hour TTL, never
+  written as `robots_allowed = False`, never a kit rejection; the message names the transport ("the
+  host refused robots.txt to this Tor exit"); `RobotsUnavailable` carries the cause so the split
+  `robots_refused` / `robots_unreachable` becomes measurable (unchanged from above). Fail-closed is
+  untouched: a refusal still means nothing is fetched. (C) THE RETRY POLICY IS THE POLITENESS CLOCK
+  AND NOTHING ELSE — no exit-rotation loop, no new-circuit-on-403 action, no transport change; a host
+  that refuses every exit is refusing Tor and that stands; a host that refuses some exits gets through
+  on its own clock; in the kit, the `--retry` pass at the end of the run (a different circuit by
+  then), and a row still refused is `unreachable_over_tor`, KEPT as a candidate, never rejected. The
+  boundary in one line: we are willing to be refused; we are not willing to shop for an exit. (D)
+  SHIP REACH AS A MEASURED, DATED FACT instead of letting every Tor user rediscover it — the
+  maintainer's own Whonix instance measures per-source reach over Tor; the existing qualification
+  overlay carries a `tor_reach` (ok | refused, as-of date, n attempts) per source; a fresh Tor
+  install shows "Tor-hostile as of <date>" on the source, orders those sources LAST (ordering ≠
+  exclusion), and the qualification counts them as "unreachable over Tor" rather than "no evidence"
+  forever; the per-country count of Tor-hostile sources becomes visible, which is the honest picture
+  of what a Tor user can see (the anti-capping rule). NOT RECOMMENDED: a clearnet measurement of any
+  kind; TLS/browser impersonation to defeat fingerprint blocks (evasion); the RFC's MAY-access after a
+  4xx; reading a refusing publisher through an archive or mirror as a workaround (a separate question
+  that needs its own ruling; not this one). No CLAUDE.md amendment is needed by this default: the
+  fail-closed non-negotiable and "a host's Tor block is the host's choice, surfaced honestly with
+  transport-aware verdicts" are exactly what (B)–(D) implement; only the fetcher docstring's
+  "restricted 401/403 → off-limits" line would change wording. No code changed pending the ruling.
