@@ -8251,3 +8251,57 @@
   nothing about why. The neighbouring case is worse in kind: `cpu_saturated` fires at
   92 % system-wide CPU, which a healthy CPU-bound collector produces BY ITSELF, so the
   governor throttles the collector for doing its job well.
+
+- **A DIFFERENTIAL THAT GENERATES ITS OWN INPUTS MUST GENERATE THEM DETERMINISTICALLY —
+  `str.hash` IS RANDOMISED PER PROCESS (2026-09-10, the month-narrowing proof).** The
+  harness picked each test case's letter-casing with `hash(name + shape) % 4`, ran the two
+  trees in two interpreters, and reported **4,372 differences**. Every one was the harness:
+  `PYTHONHASHSEED` randomises `str.__hash__`, so the two sides were comparing *different
+  texts*. The failure is nasty because it looks exactly like a real regression — the dates
+  matched and only the provenance snippets differed, which reads as a subtle casing bug in
+  the code under test. **GENERAL FORM: in a cross-process differential, every input must be
+  a pure function of a declared seed. `random.Random(n)` is safe, `zlib.crc32` is safe,
+  `hash()` and set/dict iteration order are not.** The tell is a diff that is enormous and
+  uniform rather than sparse and specific.
+
+- **A GUARD THAT SURVIVES EVERY MUTATION IS NOT PROVEN CAUTIOUS, IT IS UNPROVEN — AND MAY
+  BE DOING HARM (2026-09-10, same work).** The month-presence scan shipped with two extra
+  safety nets: an "always keep the case-unsafe names" set and a second scan over
+  `casefold()`. Both survived the whole mutation matrix. The tempting reading is "cheap
+  insurance, keep them"; the correct one was to go find the REAL argument, which turned out
+  to be stronger — the scan lowers the same token with the same method as `_month_of`, the
+  one function every month loop resolves through and which skips on a miss, so a token the
+  scan cannot key is a token the old path refused too (verified exhaustively: 555 names × 5
+  casings × every language hint, zero violations). And the keep-set was **actively
+  harmful**: its predicate `n.casefold() != n` matched all ~26 Greek month names, silently
+  pinning 30 extra branches into the alternation of every article in every language —
+  eroding the very win it was guarding. **GENERAL FORM: when a mutation cannot kill a
+  guard, that is a question, not a reassurance. Either find the input that makes it
+  load-bearing, or find the invariant that makes it unnecessary and pin THAT as the test.
+  Do not keep it "just in case" — an unfalsifiable guard is one nobody can safely change
+  later, and this one was quietly paying its own cost.**
+
+- **`rx is SOME_MODULE_PATTERN` BREAKS THE MOMENT PATTERNS ARE BUILT PER DOCUMENT
+  (2026-09-10, same work).** The year-less date loop iterated
+  `((_DM_NOYEAR_RE, …), (_MD_NOYEAR_RE, …))` and re-derived which member it was on with
+  `if rx is _MD_NOYEAR_RE`, to apply the homograph guard that stops `"Marta 30 godina"`
+  becoming 30 March. Narrowing rebuilds those patterns per document, so `rx` is never the
+  module-level object again: the guard would have stopped firing **silently**, and the
+  extractor would have resumed a fabrication it had a verifier finding for. Caught by
+  reading the loop before editing it, and the mutation that puts the identity test back is
+  in the matrix. **GENERAL FORM: identity comparison against a module global is a hidden
+  coupling to "this object is a singleton". Any change that makes an object per-request,
+  per-document or per-tenant breaks every such test at once, and breaks them by silently
+  taking the other branch rather than by raising. Carry the discriminating FACT in the
+  loop's own tuple instead of re-deriving it from identity.**
+
+- **PUT THE CHEAP DISCRIMINATING TOKEN FIRST, OR THE ENGINE SCANS EVERY POSITION
+  (2026-09-10).** Two patterns in the same module, matching the same dates, over the same
+  22 KB: `_DMY_RE` ("11 September 2001") **1.24 ms**, `_MDY_RE` ("September 11, 2001")
+  **43.73 ms**. The only difference is which end the 555-name alternation sits on —
+  `_DMY_RE` opens `\b(\d{1,2})` so CPython fast-skips to digit positions, `_MDY_RE` opens
+  on the alternation so the engine tries branches at every word boundary. **GENERAL FORM:
+  a regex's cost is set by what its FIRST element lets the engine skip. When a pattern must
+  begin with a large literal set, the fix is to shrink that set to what the input can
+  actually contain — measured here at ~10x, with matches identical by construction because
+  a literal absent from the text could never have matched.**

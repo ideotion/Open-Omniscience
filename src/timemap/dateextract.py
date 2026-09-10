@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
+from functools import lru_cache
 
 _MONTHS = {
     "january": 1,
@@ -377,6 +378,133 @@ _MONTH_ALT = "|".join(  # longest first so 'sept' beats 'sep'
     sorted(set(_MONTHS) | set(_MONTH_LANG_OVERRIDES), key=len, reverse=True)
 )
 
+# --------------------------------------------------------------------------- #
+# P1 (2026-09-10): scan for the months this TEXT contains, not for all 555
+# --------------------------------------------------------------------------- #
+# WHY. ``_MONTH_ALT`` is 555 multilingual month names / 4,159 characters, and it is
+# embedded in the ten patterns below, each scanned with ``re.I`` over the whole
+# ``_MAX_SCAN`` window. CPython's ``re`` has no trie/Aho-Corasick optimisation for a
+# large alternation, and ``re.IGNORECASE`` disables the literal-prefix scan that would
+# otherwise let the engine skip, so the engine tries up to 555 branches at essentially
+# every word boundary. Measured on 22 KB of news prose, two patterns that match the SAME
+# dates: ``_DMY_RE`` ("11 September 2001") 1.24 ms, because it opens on ``\b(\d{1,2})``
+# and the engine fast-skips to digits; ``_MDY_RE`` ("September 11, 2001") 43.73 ms,
+# because it opens on the alternation. Ten such patterns are 81% of all date-regex time
+# and, through them, ~53% of the whole per-article extraction cost.
+#
+# WHAT THIS CHANGES, precisely: nothing about WHICH dates are found. A month name that
+# does not occur in the text cannot match a pattern that requires it, so rebuilding the
+# alternation from only the names actually present yields identical matches. The
+# longest-first ordering is preserved among the retained names (so 'sept' still beats
+# 'sep'), the names are still interpolated UNESCAPED exactly as before, and the
+# language-aware resolution in ``_month_of`` -- which is what actually decides a
+# homograph -- runs afterwards, untouched.
+#
+# THE ONLY WAY THIS COULD LOSE A DATE is a FALSE NEGATIVE in the presence scan, so the
+# two things that could produce one are handled explicitly:
+#
+#   * 51 of the 555 names are not a single word-run under ``_TOKEN_RE`` (Devanagari,
+#     Bengali, Telugu and Malayalam forms carry combining marks the class excludes) and
+#     4 more are two-word Arabic names ("كانون الثاني"). A tokenised pass cannot see any
+#     of them, so they take a SUBSTRING pass instead -- which is exactly the recall the
+#     multilingual tables were added for, and exactly what a naive ``\w+`` pre-scan would
+#     have silently dropped. Load-bearing and PROVEN: deleting the substring pass loses
+#     986 of 11,973 candidates in the differential.
+#   * CASE. ``re.I`` is more permissive than ``str.lower()`` -- it matches "MAYIS"
+#     against the table's Turkish "mayıs" (verified both directions on the installed
+#     interpreter) while "MAYIS".lower() is "mayis", which never equals it. That looks
+#     like a false negative and is NOT one, because the scan is exactly as case-strict
+#     as ``_month_of``, which is the ONE function every month-carrying loop resolves its
+#     match through and which skips on a miss (see its own docstring -- it names this
+#     same dotless-ı case). Both lower the SAME text with the SAME method, so a token
+#     this scan cannot key is a token ``_month_of`` refuses: the base tree produces no
+#     candidate from it either. Verified exhaustively over 555 names x 5 casings x every
+#     language hint: zero cases where the old path yields a date the narrowed one cannot
+#     (tests/test_dateextract_month_narrowing.py).
+#
+# WHAT WAS TRIED AND REMOVED, because a guard that cannot be shown to do anything is a
+# guard nobody can maintain: an "always keep the case-unsafe names" set and a second
+# scan over ``casefold()``. Both survived every mutation -- the symmetry above already
+# covers them -- and the keep-set was actively HARMFUL: its predicate matched all ~26
+# Greek names (whose casefold differs from their lower), so it silently pinned 30 extra
+# branches into the alternation of every article in every language.
+_MONTH_SLOT = "\x00MONTHS\x00"
+"""Placeholder for the alternation inside a pattern TEMPLATE. NUL can never occur in
+one of these sources, so the substitution cannot collide with real pattern text."""
+
+#: Every month name, lowercased once.
+_MONTH_NAMES: frozenset[str] = frozenset(
+    n.lower() for n in set(_MONTHS) | set(_MONTH_LANG_OVERRIDES)
+)
+#: A single run of word characters, excluding digits and underscore -- the shape a
+#: tokenised pass can find. Deliberately the same class the presence test is built on,
+#: so "which names are token-findable" is decided by the tokeniser itself rather than
+#: by a hand-maintained list that could drift from it.
+_TOKEN_RE = re.compile(r"[^\W\d_]+")
+#: Names a token pass CAN see (one word-run), and the rest, which need a substring scan.
+_TOKEN_MONTHS: frozenset[str] = frozenset(
+    n for n in _MONTH_NAMES if _TOKEN_RE.fullmatch(n)
+)
+_SCAN_MONTHS: tuple[str, ...] = tuple(sorted(_MONTH_NAMES - _TOKEN_MONTHS))
+
+#: ``compiled full pattern -> (template, flags)``, filled by ``_month_re`` at import.
+#: Keyed by the pattern OBJECT so a narrowed rebuild is asked for by handing over the
+#: pattern itself; a name-keyed registry would let a renamed global drift out of it.
+_MONTH_TEMPLATES: dict[re.Pattern, tuple[str, int]] = {}
+
+
+def _month_re(template: str, flags: int = re.I) -> re.Pattern:
+    """Compile ``template`` with the FULL alternation and register its shape.
+
+    The returned pattern is byte-identical to the plain ``re.compile`` it replaces --
+    it is what every caller outside ``_extract`` still uses, and what a narrowing that
+    finds every month falls back to.
+    """
+    rx = re.compile(template.replace(_MONTH_SLOT, _MONTH_ALT), flags)
+    _MONTH_TEMPLATES[rx] = (template, flags)
+    return rx
+
+
+def months_present(text: str) -> frozenset[str]:
+    """The month names ``text`` can yield a date from. See the block comment above for
+    why ``lower()`` is the right and sufficient normalisation here.
+
+    One lowered copy, one tokenised pass for the names a token pass can see, and one
+    substring pass for the 55 it cannot. Public because the guarantee it carries is
+    worth testing directly rather than only through ``extract_dates``.
+    """
+    lowered = text.lower()
+    present = {m.group(0) for m in _TOKEN_RE.finditer(lowered)} & _TOKEN_MONTHS
+    present.update(name for name in _SCAN_MONTHS if name in lowered)
+    return frozenset(present)
+
+
+@lru_cache(maxsize=256)
+def _narrowed(rx: re.Pattern, months: frozenset[str]) -> re.Pattern | None:
+    """``rx`` rebuilt over ``months`` only, or ``None`` when it cannot match at all.
+
+    ``None`` rather than a never-matching pattern: a pattern that cannot match still
+    costs a scan of the whole window, and "no month name occurs in this text" is
+    knowable, so the loop is skipped outright.
+
+    Bounded at 256 distinct month-sets. A miss costs one ``re.compile`` of a now-small
+    pattern, which is why the bound can be modest; an unbounded cache keyed on a set
+    drawn from corpus text is a slow leak on the collector's own hot path.
+    """
+    if not months:
+        return None
+    entry = _MONTH_TEMPLATES.get(rx)
+    if entry is None:  # not a month-carrying pattern: hand it back unchanged
+        return rx
+    template, flags = entry
+    alt = "|".join(sorted(months, key=len, reverse=True))  # longest first, as before
+    return re.compile(template.replace(_MONTH_SLOT, alt), flags)
+
+
+def _finditer(rx: re.Pattern | None, text: str):
+    """``rx.finditer(text)``, or nothing when the narrowing retired this pattern."""
+    return rx.finditer(text) if rx is not None else ()
+
 # Numeric dates (dd/mm/yyyy · dd.mm.yyyy · dd-mm-yyyy · yyyy/mm/dd). When both
 # fields are ≤12 the order is ambiguous: the ARTICLE LANGUAGE decides (en→MDY,
 # everything else→DMY); with no hint, an ambiguous numeric date is SKIPPED —
@@ -435,12 +563,12 @@ _D_CONN_RANGE = r"(?:(?:de|ng)\s+)"  # ranges: bare cardinals by nature — neve
 # patterns accept (connectors, the dual slash-joined month, day ranges): when an
 # explicit year follows in ANY accepted shape, the no-year path must never fire —
 # suppress rather than anchor-guess, even for forms we do not extract.
-_DM_NOYEAR_RE = re.compile(
-    rf"\b{_DAY_PART}({_MONTH_ALT})\.?\b"
-    rf"(?!(?:\.?(?:\s*/\s*(?:{_MONTH_ALT})\.?)?\s+{_Y_CONN}?\d{{4}}"
+_DM_NOYEAR_RE = _month_re(
+    rf"\b{_DAY_PART}({_MONTH_SLOT})\.?\b"
+    rf"(?!(?:\.?(?:\s*/\s*(?:{_MONTH_SLOT})\.?)?\s+{_Y_CONN}?\d{{4}}"
     # cross-month range continuation ("11 May – 13 June 2026"): the explicit
     # year governs the whole expression — suppress the first endpoint.
-    rf"|\s*[-–—]\s*\d{{1,2}}(?:st|nd|rd|th|er|\.)?\s+(?:{_MONTH_ALT})\.?\s+{_Y_CONN}?\d{{4}}))",
+    rf"|\s*[-–—]\s*\d{{1,2}}(?:st|nd|rd|th|er|\.)?\s+(?:{_MONTH_SLOT})\.?\s+{_Y_CONN}?\d{{4}}))",
     re.I,
 )
 # Every explicit-year continuation after "Month DD" that must SUPPRESS the
@@ -451,16 +579,16 @@ _DM_NOYEAR_RE = re.compile(
 #   2. a dash/slash/worded second endpoint — optionally month-repeated, in
 #      either digit-month or month-digit order — then the year;
 #   3. the plain year (the original mirror, connectors included).
-_MD_YEAR_AHEAD = (
+_MD_YEAR_AHEAD = (  # a TEMPLATE fragment: it still carries the slot for _MD_NOYEAR_RE
     rf"(?:\s*[-–—/]\s*\d{{4}}\b"
-    rf"|\s*(?:[-–—/]\s*|,?\s+(?:to|and|or)\s+)(?:(?:{_MONTH_ALT})\.?\s+)?"
+    rf"|\s*(?:[-–—/]\s*|,?\s+(?:to|and|or)\s+)(?:(?:{_MONTH_SLOT})\.?\s+)?"
     rf"\d{{1,2}}(?:st|nd|rd|th)?\s*,?\s*{_Y_CONN}?\d{{4}}\b"
     rf"|\s*(?:[-–—/]\s*|,?\s+(?:to|and|or)\s+)\d{{1,2}}(?:st|nd|rd|th|er|\.)?\s+"
-    rf"(?:{_MONTH_ALT})\.?\s+{_Y_CONN}?\d{{4}}\b"
+    rf"(?:{_MONTH_SLOT})\.?\s+{_Y_CONN}?\d{{4}}\b"
     rf"|\.?\s*,?\s*{_Y_CONN}?\d{{4}}\b)"
 )
-_MD_NOYEAR_RE = re.compile(
-    rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?!{_MD_YEAR_AHEAD})",
+_MD_NOYEAR_RE = _month_re(
+    rf"\b({_MONTH_SLOT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?!{_MD_YEAR_AHEAD})",
     re.I,
 )
 # Relative day words. UNGATED tokens are single-meaning in every language that
@@ -737,36 +865,36 @@ _ISO_RE = re.compile(  # digit-safe boundaries: see _NUM_DMY_RE (glued CJK prose
 # DUAL-NAMED month ("سبتمبر/أيلول" — pan-Arab media slash-join the international
 # and Levantine names). The two names must resolve to the SAME month or the whole
 # match is skipped (never a guess); the no-year lookahead mirrors the slash form.
-_DMY_RE = re.compile(
-    rf"\b{_DAY_PART}({_MONTH_ALT})\.?"
-    rf"(?:\s*/\s*({_MONTH_ALT})\.?)?\s+{_Y_CONN}?(\d{{4}})\b",
+_DMY_RE = _month_re(
+    rf"\b{_DAY_PART}({_MONTH_SLOT})\.?"
+    rf"(?:\s*/\s*({_MONTH_SLOT})\.?)?\s+{_Y_CONN}?(\d{{4}})\b",
     re.I,
 )
-_MDY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b", re.I)
+_MDY_RE = _month_re(rf"\b({_MONTH_SLOT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b", re.I)
 # Explicit date RANGES — both endpoints are IN the text, so both are extracted
 # and the span is claimed, which stops the anchored no-year path from grabbing
 # the first endpoint and resolving it near the publication year (measured:
 # "June 11-13, 2026" with a 2027 anchor stored 2027-06-11, overriding the
 # explicit in-text year). d1 < d2 is required (range semantics); otherwise the
 # match is skipped and nothing is invented.
-_RANGE_MDY_RE = re.compile(
-    rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\s*[-–—]\s*"
+_RANGE_MDY_RE = _month_re(
+    rf"\b({_MONTH_SLOT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\s*[-–—]\s*"
     rf"(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b",
     re.I,
 )
-_RANGE_DMY_RE = re.compile(  # day suffixes CAPTURED: the loop requires symmetry
+_RANGE_DMY_RE = _month_re(  # day suffixes CAPTURED: the loop requires symmetry
     rf"\b(\d{{1,2}})((?:st|nd|rd|th|er|\.)?)\s*[-–—]\s*(\d{{1,2}})((?:st|nd|rd|th|er|\.)?)\s+"
-    rf"{_D_CONN_RANGE}?({_MONTH_ALT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
+    rf"{_D_CONN_RANGE}?({_MONTH_SLOT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
     re.I,
 )
-_RANGE_ENUM_RE = re.compile(  # "between 11 and 13 June 2026" (en connector for now)
-    rf"\b(\d{{1,2}})\s+and\s+(\d{{1,2}})\s+{_D_CONN_RANGE}?({_MONTH_ALT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
+_RANGE_ENUM_RE = _month_re(  # "between 11 and 13 June 2026" (en connector for now)
+    rf"\b(\d{{1,2}})\s+and\s+(\d{{1,2}})\s+{_D_CONN_RANGE}?({_MONTH_SLOT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
     re.I,
 )
 # Year-first with a NAMED month ("2024. május 5." Hungarian / "2024 m. gegužės"
 # patterns): unambiguous (full year + month name + day all present), so it is a
 # day match like ISO. Covers locales that write Y M D in prose with words.
-_YMD_NAME_RE = re.compile(rf"\b(\d{{4}})\.?\s+({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b", re.I)
+_YMD_NAME_RE = _month_re(rf"\b(\d{{4}})\.?\s+({_MONTH_SLOT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b", re.I)
 # Year-first NAMED month with NO day ("2024. június" -> June 2024, month
 # precision). LANGUAGE-GATED (hu) because year-first-month-only is the Hungarian
 # convention: its MANDATORY trailing period after the YEAR is what separates the
@@ -774,11 +902,11 @@ _YMD_NAME_RE = re.compile(rf"\b(\d{{4}})\.?\s+({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:
 # cold", but only under the hu hint is that read applied, so a stray "2024.
 # March" in another language never fabricates a month. The lookahead ``(?!\s+\d)``
 # yields the day form to _YMD_NAME_RE (day precision).
-_YM_NAME_RE = re.compile(rf"\b(\d{{4}})\.\s+({_MONTH_ALT})\.?(?!\s+\d)", re.I)
+_YM_NAME_RE = _month_re(rf"\b(\d{{4}})\.\s+({_MONTH_SLOT})\.?(?!\s+\d)", re.I)
 # Month-year with the optional connector CAPTURED: the English homograph months
 # (march/may/august are verbs/nouns too) skip the "of" form — "the march of 2024
 # protesters" must never become March 2024 (miss over invent).
-_MY_RE = re.compile(rf"\b({_MONTH_ALT})\.?\s+({_Y_CONN}?)(\d{{4}})\b", re.I)
+_MY_RE = _month_re(rf"\b({_MONTH_SLOT})\.?\s+({_Y_CONN}?)(\d{{4}})\b", re.I)
 _MY_OF_HOMOGRAPHS = frozenset({"march", "may", "august"})
 
 # CJK calendar dates (Chinese / Japanese): the 年 (year) 月 (month) 日 (day)
@@ -1104,6 +1232,24 @@ def _extract(
         text = text[:_MAX_SCAN]
     today = today or date.today()
     base = (language or "")[:2].lower()
+    # P1: the month-carrying patterns, rebuilt over the months THIS text contains.
+    # AFTER the truncation above, deliberately — the scan must see exactly the text the
+    # patterns will see, or a name occurring only past _MAX_SCAN would widen the
+    # alternation for a window that can never match it. Each is None when no month at
+    # all occurs, and the loops below skip outright. Everything downstream — the claim
+    # ordering, _month_of's language-aware resolution, the homograph rules — is
+    # unchanged: this narrows WHICH BRANCHES the engine tries, never what counts.
+    _months = months_present(text)
+    dm_noyear = _narrowed(_DM_NOYEAR_RE, _months)
+    md_noyear = _narrowed(_MD_NOYEAR_RE, _months)
+    dmy = _narrowed(_DMY_RE, _months)
+    mdy = _narrowed(_MDY_RE, _months)
+    range_mdy = _narrowed(_RANGE_MDY_RE, _months)
+    range_dmy = _narrowed(_RANGE_DMY_RE, _months)
+    range_enum = _narrowed(_RANGE_ENUM_RE, _months)
+    ymd_name = _narrowed(_YMD_NAME_RE, _months)
+    ym_name = _narrowed(_YM_NAME_RE, _months)
+    my = _narrowed(_MY_RE, _months)
     consumed: list[tuple[int, int]] = []  # spans claimed by more specific matches
     found: dict[tuple[str, str], dict] = {}
 
@@ -1188,7 +1334,7 @@ def _extract(
     # Explicit ranges claim BEFORE the single-date patterns: both endpoints are in
     # the text (nothing inferred), and the claimed span stops the anchored no-year
     # path from resolving an endpoint near the publication year.
-    for m in _RANGE_MDY_RE.finditer(text):
+    for m in _finditer(range_mdy, text):
         if m.group(1).lower() in _MONTH_LANG_OVERRIDES:  # month-first order (see _MDY_RE)
             continue
         mon = _month_of(m.group(1), language)
@@ -1199,7 +1345,7 @@ def _extract(
             if d1 and d2 and claim(*m.span()):
                 add(d1, "day", m)
                 add(d2, "day", m)
-    for m in _RANGE_DMY_RE.finditer(text):
+    for m in _finditer(range_dmy, text):
         mon = _month_of(m.group(5), language)
         d1n, d2n = int(m.group(1)), int(m.group(3))
         # "aged 5-7. June 2026": a dot on the SECOND day only is a sentence
@@ -1218,7 +1364,7 @@ def _extract(
             if d1 and d2 and claim(*m.span()):
                 add(d1, "day", m)
                 add(d2, "day", m)
-    for m in _RANGE_ENUM_RE.finditer(text):  # "between 11 and 13 June 2026"
+    for m in _finditer(range_enum, text):  # "between 11 and 13 June 2026"
         mon = _month_of(m.group(3), language)
         d1n, d2n = int(m.group(1)), int(m.group(2))
         if mon and d1n < d2n:
@@ -1227,7 +1373,7 @@ def _extract(
             if d1 and d2 and claim(*m.span()):
                 add(d1, "day", m)
                 add(d2, "day", m)
-    for m in _DMY_RE.finditer(text):
+    for m in _finditer(dmy, text):
         mon = _month_of(m.group(3), language)
         if mon is None:
             continue
@@ -1239,7 +1385,7 @@ def _extract(
         d = _valid(int(m.group(5)), mon, int(day), today)
         if d and claim(*m.span()):
             add(d, "day", m)
-    for m in _MDY_RE.finditer(text):
+    for m in _finditer(mdy, text):
         # Homograph-month tokens never take the MONTH-FIRST order: they are all
         # genitive forms of day-first languages ("30. marta"), so "Marta 30,
         # 2024" is a name + number, not a date (verifier-measured fabrication).
@@ -1249,7 +1395,7 @@ def _extract(
         d = _valid(int(m.group(3)), mon, int(m.group(2)), today) if mon else None
         if d and claim(*m.span()):
             add(d, "day", m)
-    for m in _YMD_NAME_RE.finditer(text):  # "2024. május 5." (year-first, named month)
+    for m in _finditer(ymd_name, text):  # "2024. május 5." (year-first, named month)
         mon = _month_of(m.group(2), language)
         d = _valid(int(m.group(1)), mon, int(m.group(3)), today) if mon else None
         if d and claim(*m.span()):
@@ -1295,7 +1441,7 @@ def _extract(
         if d and claim(*m.span()):
             add(d, "day", m)
 
-    for m in _MY_RE.finditer(text):  # month precision — only where no day match claimed it
+    for m in _finditer(my, text):  # month precision — only where no day match claimed it
         mon = _month_of(m.group(1), language)
         if mon is None:
             continue
@@ -1308,7 +1454,7 @@ def _extract(
         if d and claim(*m.span()):
             add(d, "month", m)
     if base == "hu":  # "2024. június" (year-first named month, no day) -> month precision
-        for m in _YM_NAME_RE.finditer(text):
+        for m in _finditer(ym_name, text):
             mon = _month_of(m.group(2), language)
             d = _valid(int(m.group(1)), mon, 1, today) if mon else None
             if d and claim(*m.span()):
@@ -1346,11 +1492,18 @@ def _extract(
 
         # _DM_NOYEAR has TWO possible day groups (the ordinal-of branch vs the
         # standard branch of _DAY_PART); _MD_NOYEAR has one.
-        for rx, gis_d, gi_m in ((_DM_NOYEAR_RE, (1, 2), 3), (_MD_NOYEAR_RE, (2,), 1)):
-            for m in rx.finditer(text):
+        # `month_first` is passed rather than inferred from `rx is _MD_NOYEAR_RE`:
+        # under P1 these are patterns rebuilt for this document, so they are never the
+        # module-level objects and an identity test would silently stop guarding --
+        # which would let "Marta 30 godina" fabricate a date again.
+        for rx, gis_d, gi_m, month_first in (
+            (dm_noyear, (1, 2), 3, False),
+            (md_noyear, (2,), 1, True),
+        ):
+            for m in _finditer(rx, text):
                 # Homograph months never take the month-first order ("Marta 30
                 # godina" is a name + number — verifier-measured fabrication).
-                if rx is _MD_NOYEAR_RE and m.group(gi_m).lower() in _MONTH_LANG_OVERRIDES:
+                if month_first and m.group(gi_m).lower() in _MONTH_LANG_OVERRIDES:
                     continue
                 mon = _month_of(m.group(gi_m), language)
                 if not mon:

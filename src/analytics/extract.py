@@ -341,6 +341,42 @@ def _alnum_transitions(word: str) -> int:
     return n
 
 
+def code_token_filter_enabled() -> bool:
+    """Is the code-token rule on? Read LIVE, never cached (``OO_CODE_TOKEN_FILTER=0``).
+
+    Split out (P2, 2026-09-10) so the hot loop can read the flag ONCE per document
+    instead of once per token: ``_terms`` asks ~6x per token — once for the unigram
+    and once for each token of every bigram and trigram window — which measured
+    ~8,150 ``os.getenv`` calls per article, 130,497 over a 16-article profile, and
+    ``os.getenv`` is not free (``os.environ.__getitem__`` -> ``encodekey``).
+    Reversibility is UNCHANGED and that is the point of reading it here rather than
+    caching it: an operator or a test that flips the variable is honoured on the next
+    document, and ``_is_code_token`` below still consults it on every call.
+    """
+    return os.getenv("OO_CODE_TOKEN_FILTER", "1") != "0"
+
+
+@lru_cache(maxsize=4096)
+def _is_code_token_shape(word: str) -> bool:
+    """The code-token predicate MINUS the flag — everything about the WORD, and pure.
+
+    Separate from :func:`_is_code_token` so it can be memoised: the flag is process
+    state and must stay live, the shape is a function of the token alone. The cache
+    earns its keep on the 6x-per-token call pattern described in
+    ``code_token_filter_enabled``, plus ordinary word repetition within a document.
+
+    BOUNDED deliberately. A typical article yields ~2,000 distinct tokens, so 4,096
+    holds a whole document's working set while capping the structure at a few hundred
+    kilobytes — this runs inside the collector, on machines the memory guard already
+    watches, and an unbounded cache on tokenised corpus text is a slow leak.
+    """
+    if word.casefold() in _CODE_TOKEN_KEEP:
+        return False
+    if "_" in word:
+        return True
+    return _alnum_transitions(word) >= 2
+
+
 def _is_code_token(word: str) -> bool:
     """True for a CODE / identifier token that should never be a natural-language keyword.
 
@@ -353,14 +389,13 @@ def _is_code_token(word: str) -> bool:
     A pure word (no underscore, no digits) is never a code token; a real one-transition
     designation (a-10, covid-19, g7, mp3) is kept; the handful of real multi-transition /
     underscore terms (H1N1, A1C, x86_64) are allowlisted in ``_CODE_TOKEN_KEEP``.
+
+    Signature and behaviour UNCHANGED by P2 — the external callers
+    (``analytics.store``, ``analytics.engine_report``) and the existing tests keep the
+    one-argument predicate that reads the flag itself. Only ``_terms``, which asks
+    thousands of times per document, hoists the flag and calls the shape directly.
     """
-    if os.getenv("OO_CODE_TOKEN_FILTER", "1") == "0":
-        return False
-    if word.casefold() in _CODE_TOKEN_KEEP:
-        return False
-    if "_" in word:
-        return True
-    return _alnum_transitions(word) >= 2
+    return code_token_filter_enabled() and _is_code_token_shape(word)
 
 
 # Curated extra stoplist: very common function words / fillers that the per-language
@@ -578,13 +613,19 @@ class BaselineExtractor:
             counts[term] += 1
             first_at.setdefault(term, offset)
 
+        # P2 (2026-09-10): the flag ONCE per document, not once per token. Below it is
+        # asked ~6x per token (unigram + every bigram and trigram window it falls in),
+        # and reading the environment there measured ~8,150 os.getenv calls per article.
+        # A local bool also lets the loops short-circuit without a call at all when the
+        # rule is off, which is what `OO_CODE_TOKEN_FILTER=0` should cost: nothing.
+        code_filter = code_token_filter_enabled()
         # Unigrams (content words only). Drop digit-heavy CODE tokens (A-10C, a1b2 —
         # see _is_code_token) and glued <digits><token> fragments (1h15 -> h15), which
         # leaked ~35k junk keywords; real designations (a-10, covid-19, b52, mp3) stay.
         for word, off in toks:
             if len(word) < _term_floor(word, segmented) or word in stop or word.isdigit():
                 continue
-            if _is_code_token(word):
+            if code_filter and _is_code_token_shape(word):
                 continue
             if off > 0 and text[off - 1].isdigit() and any(c.isdigit() for c in word):
                 continue  # tokenizer split of a glued code/timecode (1h15 -> h15)
@@ -598,7 +639,10 @@ class BaselineExtractor:
                 # Drop a phrase if ANY token is a stopword, too short/numeric, or a
                 # code token, so fillers/codes don't leak inside n-grams.
                 if any(
-                    w in stop or len(w) < _term_floor(w, segmented) or w.isdigit() or _is_code_token(w)
+                    w in stop
+                    or len(w) < _term_floor(w, segmented)
+                    or w.isdigit()
+                    or (code_filter and _is_code_token_shape(w))
                     for w in words
                 ):
                     continue

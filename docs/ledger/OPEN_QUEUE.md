@@ -11565,7 +11565,7 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
 
 ---
 
-## PENDING (2026-09-10) — collector throughput: five proposals, none applied
+## PENDING (2026-09-10) — collector throughput: P1 and P2 SHIPPED, P3-P5 open
 
 Recorded from the measured investigation in
 [`docs/audit/12_COLLECT_THROUGHPUT_2026-09-10.md`](../audit/12_COLLECT_THROUGHPUT_2026-09-10.md),
@@ -11575,27 +11575,19 @@ collector is CPU-bound, not download-bound** — throughput is flat at ~2.3 arti
 1 worker to 50 on a 4-core box — and that **nothing regressed in the last few days**
 (per-article cost has been flat since 2026-07-15; it doubled between 06-15 and 07-15).
 
-**P1 — narrow the 555-name month alternation to the names present in the text.**
-`dateextract._MONTH_ALT` is 4,159 characters in ten `re.I` patterns over a 60,000-char
-window and is NOT narrowed by the article's language (the hint is consulted only after a
-match, in `_month_of`). It is 81 % of all date-regex time. A prototype that pre-scans for
-the months actually present and rebuilds the alternation from those measured **182 →
-5.6 ms (33×)** on typical news prose, which would take `extract_dates` from ~140 ms to
-~20 ms and roughly **1.8× the whole collector**. Matches are identical by construction — a
-literal absent from the text could never have matched — but this is **recall-bearing work
-in the highest-stakes extraction module**, so it wants a decision rather than a commit:
-*is a ~1.8× collector worth touching the date extractor?* Two things a fix must carry:
-**55 of the 555 names are not a single `\w+` run** (the four Arabic two-word forms plus
-Devanagari/Bengali), so a naive tokenised pre-scan silently loses recall in exactly the
-languages the multilingual tables were added for; and the 152 tests in
-`tests/test_dateextract*.py` + `tests/test_wave8_dates_fa_hu.py` are the green baseline.
+**P1 — narrow the 555-name month alternation. SHIPPED 2026-09-10 (same session).**
+`extract_dates` 78-81 ms -> 7.7-8.3 ms per article (~10x); per-article extraction 159-163
+-> 68-77 ms (~2.2x); end-to-end collection 3.45 -> 5.61 art/s on a fast link and 2.62 ->
+3.63 over a 1.5 s/fetch transport. Identical SHA-256 over a 10,629-case / 11,973-candidate
+differential covering every one of the 555 names in four casings, both sides of `_MAX_SCAN`,
+32 language hints. Details and the mutation matrix in the audit report's §10; the reusable
+lessons (a differential whose harness used the randomised `str.hash`; two guards that
+survived every mutation and one of which was silently pinning 30 Greek names into every
+article; the identity check a per-document rebuild breaks) are in `LESSONS.md`.
 
-**P2 — take `OO_CODE_TOKEN_FILTER` out of the per-token path.** `extract._is_code_token`
-reads it via `os.getenv` on every unigram and on every token of every bigram/trigram
-window: ~8,150 calls per article. With memoising `_alnum_transitions` (which recomputes
-the same token up to six times) this is **~8 % of ingest CPU** and is **pure** — no
-behaviour change, no ruling needed. The only reason it is not in this PR is that the
-investigation was asked for, not a fix.
+**P2 — take `OO_CODE_TOKEN_FILTER` out of the per-token path. SHIPPED 2026-09-10.**
+Keyword extraction 24-25 ms -> 11-12 ms per article. Byte-identical output with the flag
+on AND off, and the two hashes differ from each other so the check discriminates.
 
 **P3 — bound `htmldate`'s `dateparser` fallback in `extract_article`.** With a parseable
 `article:published_time` the whole extractor costs 6.9 ms. Without one,

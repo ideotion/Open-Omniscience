@@ -245,16 +245,86 @@ Active/Schedule subtabs never mention that the pass is running 1 worker of a con
 
 ## 8. Proposals, none applied here
 
-| # | change | measured value | risk |
-|---|---|---|---|
-| P1 | narrow the month alternation to names present in the text | `extract_dates` 140 → ~20 ms; ~1.8× collector throughput | recall-bearing; needs the 55 non-letter-run names handled and the 152 date tests green |
-| P2 | hoist `OO_CODE_TOKEN_FILTER` out of the per-token path; memoise `_alnum_transitions` | ~8 % of ingest CPU | none — pure |
-| P3 | bound `htmldate`'s `dateparser` fallback in `extract_article` | up to 434 ms on pages with awkward date metadata | changes published-date recall on those pages |
-| P4 | stop treating the collector's own CPU as contention, or measure *process* CPU headroom rather than system-wide | prevents a self-inflicted 50 → 1 walk-down | needs a ruling: the flag is also a real signal when another process is the load |
-| P5 | surface `learned_ceiling` / `machine_floor` in the task manager beside the permit count | none — honesty | UI + i18n ×12 |
+| # | change | measured value | risk | status |
+|---|---|---|---|---|
+| P1 | narrow the month alternation to names present in the text | `extract_dates` 140 → ~20 ms; ~1.8× collector throughput | recall-bearing; needs the 55 non-letter-run names handled and the 152 date tests green | **SHIPPED — see §10** |
+| P2 | hoist `OO_CODE_TOKEN_FILTER` out of the per-token path; memoise the shape predicate | ~8 % of ingest CPU | none — pure | **SHIPPED — see §10** |
+| P3 | bound `htmldate`'s `dateparser` fallback in `extract_article` | up to 434 ms on pages with awkward date metadata | changes published-date recall on those pages | open |
+| P4 | stop treating the collector's own CPU as contention, or measure *process* CPU headroom rather than system-wide | prevents a self-inflicted 50 → 1 walk-down | needs a ruling: the flag is also a real signal when another process is the load | open |
+| P5 | surface `learned_ceiling` / `machine_floor` in the task manager beside the permit count | none — honesty | UI + i18n ×12 | open |
 
-P1 is the one that matters. P2 is free. P4 and P5 are the pair that turn "the app got
-slow" into a number the operator can read.
+P4 and P5 are now the pair that matters: they turn "the app got slow" into a number the
+operator can read, and they are the only remaining mechanism that can produce a *sudden,
+persistent* slowdown of the kind the original report described.
+
+## 10. What shipped (P1 + P2)
+
+Measured by running the two trees **interleaved**, three rounds, so the box's own load
+cannot masquerade as a result. (Absolute figures here are lower than §1's for exactly
+that reason — the sandbox was busier then. The ratios are what travel, per §9.)
+
+Per-article extraction CPU, 12 articles × 22 KB:
+
+| | base (`a513f898`) | P1 + P2 | |
+|---|---:|---:|---:|
+| `extract_dates` | 77.6 / 80.8 / 80.2 ms | 7.7 / 7.8 / 8.3 ms | **≈10×** |
+| keyword extraction | 23.8 / 24.4 / 25.1 ms | 10.8 / 11.2 / 12.2 ms | **≈2.1×** |
+| **total** | **159.4 / 159.9 / 163.0 ms** | **73.8 / 76.7 / 68.0 ms** | **≈2.2×** |
+
+End-to-end collection pass, 96 articles through the real pool, governor and write gate:
+
+| transport | base | P1 + P2 | |
+|---|---:|---:|---:|
+| 20 ms/fetch, 8 workers | 3.45 art/s | **5.61 art/s** | 1.63× |
+| 1.5 s/fetch, 16 workers | 2.62 art/s | **3.63 art/s** | 1.39× |
+
+**P1 — the narrowing.** The ten month-carrying patterns are now compiled from templates
+(`_month_re`, a `_MONTH_SLOT` placeholder and a registry), and `_extract` rebuilds them
+over `months_present(text)` — after the `_MAX_SCAN` truncation, so the scan sees exactly
+the text the patterns will.
+
+*Proof, not assertion.* A differential over **10,629 cases / 11,973 candidates** — every
+one of the 555 names in four casings across 19 date shapes, both sides of the `_MAX_SCAN`
+boundary, 32 language hints, three anchors — produces an **identical SHA-256** for the
+candidates *and* the claimed spans. That differential also earned its keep twice: it
+first reported 4,372 differences that were **the harness**, because `str.hash` is
+randomised per process and my casing selector used it, so the two sides were reading
+different texts; and once fixed it killed six mutations, among them deleting the
+substring pass (−986 candidates) and restoring the identity check described below.
+
+*What the review changed.* The first cut carried two extra guards — an "always keep the
+case-unsafe names" set and a second scan over `casefold()`. Both **survived every
+mutation**, and the honest reading of that was not "keep them anyway": the real
+correctness argument is that the scan is *exactly as case-strict as `_month_of`*, the one
+function every month loop resolves through, because both lower the same token with the
+same method. Verified exhaustively — 555 names × 5 casings × every language hint, zero
+cases where the old path yields a date the narrowed one cannot. The keep-set was also
+**actively harmful**: its predicate matched all ~26 Greek names (whose `casefold` differs
+from their `lower`), silently pinning 30 extra branches into every article's alternation
+in every language. Both were removed and replaced by the property, pinned as a test.
+
+*The one real trap.* The no-year loop discriminated its two patterns with
+`rx is _MD_NOYEAR_RE`. Under P1 those are patterns rebuilt per document, so they are
+never the module-level object — the homograph guard would have stopped firing silently
+and `"Marta 30 godina"` would have fabricated 30 March. The loop now carries
+`month_first` explicitly; restoring the identity test is mutation M4 and is killed.
+
+**P2 — the flag out of the token loop.** `code_token_filter_enabled()` is read once per
+document instead of ~8,150 times, and the pure half of the predicate
+(`_is_code_token_shape`) is memoised behind a bounded `lru_cache(4096)`.
+`_is_code_token` keeps its exact signature for its three external callers.
+A differential over 3,840 terms in 8 languages with an adversarial vocabulary is
+byte-identical with the flag **on and off** — and the two hashes differ from each other,
+so the check discriminates rather than passing vacuously.
+
+**Tests.** `tests/test_dateextract_month_narrowing.py` (14 tests: the in-process
+differential, its own anti-vacuity twin, the partition of the two scan passes, the
+case-symmetry property, the pattern-registration guard, longest-first ordering asserted
+on behaviour rather than on pattern source, and the truncation boundary). 172 existing
+date tests and 21 code-token tests stay green; a 1,599-test sweep across date, keyword,
+extraction, analytics, ingest and collect suites is green apart from two
+`sqlcipher3 driver unavailable` failures that reproduce identically on the unmodified
+tree.
 
 ## 9. What this investigation did not measure
 
