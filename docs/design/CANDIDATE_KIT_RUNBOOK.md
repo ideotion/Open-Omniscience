@@ -242,7 +242,11 @@ repository. So:
    host), and writes `stage_a_results_<date>.zip` beside itself. **Ctrl-C stops cleanly and the
    same command resumes** — every row already judged is kept. Options: `--only shortlist` for
    worklist 1 alone (about two hours), `--limit 300` for a first taste, `--workers 8` on a small
-   machine. Zero model tokens throughout.
+   machine. Zero model tokens throughout. **While it runs**, from a second terminal,
+   `python3 run_stage_a.py --status` reports progress from the run's own cursor (rows judged,
+   the reasons so far, this session's measured rate and the remaining time at that rate) and
+   writes `stage_a_snapshot_<date>T<time>.zip` without touching the run — attach that snapshot to
+   a repository session to have Stage B and C run on what exists so far.
 2. **Attach that zip to a repository-connected Claude session** and ask for Stage B and C. The
    triage runs there on Haiku from the zip's `verified.jsonl` (no publisher access needed), the
    merge re-validates every answer in code, the splice appends the accepted rows to

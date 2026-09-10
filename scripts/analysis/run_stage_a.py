@@ -11,21 +11,26 @@ splice into the catalogue, the tests, the pull request) need no publisher access
 repository-connected Claude session on that zip.
 
 Standard library only, so it runs before the venv exists. Every step is re-runnable: run the
-same command again after a stop and it continues. Ctrl-C stops cleanly (the in-flight hosts
-finish, everything judged so far is kept).
+same command again after a stop and it continues. Ctrl-C (once) stops cleanly: the in-flight
+hosts finish, everything judged so far is kept, the zip is written.
 
 USAGE, from the kit's folder (Python 3.12 or newer):
     python3 run_stage_a.py                      # everything: venv, deps, self-check, worklist 1 then 2, zip
     python3 run_stage_a.py --only shortlist     # worklist 1 only (the 3,588-row review shortlist)
-    python3 run_stage_a.py --limit 300          # a first taste: 300 rows, then the zip
+    python3 run_stage_a.py --limit 300          # a first taste: 300 rows per worklist, then the zip
     python3 run_stage_a.py --workers 8          # gentler on a small machine (12 is the default and the cap)
+    python3 run_stage_a.py --status             # WHILE IT RUNS, from a second terminal: progress, the
+                                                # reasons so far, this session's rate, and a snapshot zip
 On Windows use `py -3.13 run_stage_a.py`. The result is stage_a_results_<date>.zip beside this
-file: attach it to a repository-connected Claude session and say "run Stage B and C on this".
+file (a --status snapshot is stage_a_snapshot_<date>T<time>.zip): attach it to a
+repository-connected Claude session and say "run Stage B and C on this".
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import csv
 import hashlib
 import json
 import os
@@ -33,13 +38,14 @@ import subprocess
 import sys
 import urllib.request
 import zipfile
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PYTHON_FLOOR = (3, 12)
 PROBE_HOSTS = ("pypi.org", "feeds.bbci.co.uk", "www.lemonde.fr", "theanguillian.com")
-WORKLISTS = {
+WORKLISTS = {  # insertion order is the RUN order: the review shortlist first, then the remainder
     "shortlist": ("worklists/worklist_1_shortlist.csv", "w1"),
     "remainder": ("worklists/worklist_2_remainder.csv", "w2"),
 }
@@ -62,32 +68,110 @@ def requirements_stamp(root: Path = ROOT) -> str:
     return hashlib.sha256((root / "requirements.txt").read_bytes()).hexdigest()[:16]
 
 
-def results_md(root: Path = ROOT, *, now: datetime | None = None) -> str:
-    """A short human summary from the scripts' own summary.json files -- counts, never claims."""
+def _worklist_rows(root: Path, csv_rel: str) -> int:
+    p = root / csv_rel
+    if not p.exists():
+        return 0
+    with p.open(encoding="utf-8", newline="") as fh:
+        return sum(1 for _ in csv.DictReader(fh))
+
+
+def tally(root: Path = ROOT, key: str = "shortlist", *, now: datetime | None = None) -> dict | None:
+    """Progress of one worklist from ``runs/<dir>/verified.jsonl`` ITSELF -- the resume cursor,
+    flushed one complete line per judged host -- so it is exact while the run is still writing.
+    A torn last line (the row being written this instant) is skipped and counted as ``torn``.
+    The rate is THIS session's: the rows stamped with the latest ``checked_at`` (one stamp per
+    invocation) over the time since that stamp -- measured, never a projection."""
     now = now or datetime.now(UTC)
-    lines = [f"# Stage A results -- {now.date().isoformat()}", ""]
-    manifest = root / "KIT_MANIFEST.json"
-    if manifest.exists():
+    csv_rel, run_dir = WORKLISTS[key]
+    path = root / "runs" / run_dir / "verified.jsonl"
+    if not path.exists():
+        return None
+    by_reason: Counter = Counter()
+    by_session: Counter = Counter()
+    n = torn = 0
+    with path.open("rb") as fh:
+        for raw in fh:
+            if not raw.endswith(b"\n"):
+                torn += 1
+                continue
+            try:
+                d = json.loads(raw)
+            except ValueError:
+                torn += 1
+                continue
+            n += 1
+            by_reason[str(d.get("reason") or "?")] += 1
+            by_session[str(d.get("checked_at") or "")] += 1
+    out: dict = {
+        "judged": n, "total": _worklist_rows(root, csv_rel), "verified": by_reason.get("verified", 0),
+        "by_reason": dict(by_reason.most_common()), "torn": torn,
+        "session_rows": 0, "session_started": "", "rate_per_hour": None, "eta_hours": None,
+    }
+    latest = max((k for k in by_session if k), default="")
+    if latest:
         try:
-            lines.append(f"Kit: `{json.loads(manifest.read_text(encoding='utf-8')).get('id', '?')}`")
+            started = datetime.fromisoformat(latest)
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=UTC)
+            hours = max((now - started).total_seconds(), 1.0) / 3600.0
+            rate = by_session[latest] / hours
+            out["session_rows"] = by_session[latest]
+            out["session_started"] = latest
+            out["rate_per_hour"] = round(rate, 1)
+            remaining = max(0, out["total"] - n)
+            out["eta_hours"] = round(remaining / rate, 2) if rate > 0 else None
         except ValueError:
             pass
+    return out
+
+
+def status_lines(root: Path = ROOT, *, now: datetime | None = None) -> list[str]:
+    lines = []
+    for key, (csv_rel, _run_dir) in WORKLISTS.items():
+        t = tally(root, key, now=now)
+        if t is None:
+            lines.append(f"{key:<10} not started ({csv_rel})")
+            continue
+        reasons = ", ".join(f"{k} {v}" for k, v in t["by_reason"].items())
+        line = f"{key:<10} {t['judged']}/{t['total']} judged, {t['verified']} feeds verified -- {reasons or 'nothing yet'}"
+        if t["rate_per_hour"]:
+            line += (f"\n{'':<10} this session: {t['session_rows']} rows since {t['session_started']} = "
+                     f"{t['rate_per_hour']:.0f} hosts/hour")
+            if t["eta_hours"] is not None:
+                line += f"; at that rate the rest of this worklist takes ~{t['eta_hours']:.1f} h"
+        if t["torn"]:
+            line += f"\n{'':<10} ({t['torn']} line still being written -- a snapshot skips it; the run keeps it)"
+        lines.append(line)
+    return lines
+
+
+def results_md(root: Path = ROOT, *, now: datetime | None = None) -> str:
+    """A short human summary from the JSONL cursors -- counts, never claims."""
+    now = now or datetime.now(UTC)
+    lines = [f"# Stage A results -- {now.strftime('%Y-%m-%d %H:%M UTC')}", ""]
+    manifest = root / "KIT_MANIFEST.json"
+    if manifest.exists():
+        with contextlib.suppress(ValueError):
+            lines.append(f"Kit: `{json.loads(manifest.read_text(encoding='utf-8')).get('id', '?')}`")
     lines += [f"Python: {sys.version.split()[0]} on {sys.platform}", ""]
     for key, (csv_rel, run_dir) in WORKLISTS.items():
-        s = root / "runs" / run_dir / "summary.json"
-        if not s.exists():
+        t = tally(root, key, now=now)
+        if t is None:
             lines.append(f"- **{key}** (`{csv_rel}`): not run")
             continue
-        try:
-            d = json.loads(s.read_text(encoding="utf-8"))
-        except ValueError:
-            lines.append(f"- **{key}**: summary.json unreadable")
-            continue
-        reasons = ", ".join(f"{k} {v}" for k, v in sorted(d.get("by_reason", {}).items(), key=lambda kv: -kv[1]))
+        reasons = ", ".join(f"{k} {v}" for k, v in t["by_reason"].items())
+        note = ""
+        s = root / "runs" / run_dir / "summary.json"
+        if s.exists():
+            with contextlib.suppress(ValueError):
+                if json.loads(s.read_text(encoding="utf-8")).get("interrupted"):
+                    note = " -- INTERRUPTED, re-run to continue"
+        if t["judged"] < t["total"]:
+            note += f" -- IN PROGRESS, {t['total'] - t['judged']} rows not yet judged"
         lines.append(
-            f"- **{key}** (`{csv_rel}`): {d.get('candidates', 0)} candidates judged, "
-            f"{d.get('verified', 0)} feeds verified; by reason: {reasons or 'none'}"
-            + (" -- INTERRUPTED, re-run to continue" if d.get("interrupted") else "")
+            f"- **{key}** (`{csv_rel}`): {t['judged']} of {t['total']} candidates judged, "
+            f"{t['verified']} feeds verified; by reason: {reasons or 'none'}{note}"
         )
     lines += ["", "verified means: the feed was fetched and parsed in this run, had at least 3 entries "
               "with a title and a link, and its newest dated entry was within 120 days. Nothing here "
@@ -95,17 +179,41 @@ def results_md(root: Path = ROOT, *, now: datetime | None = None) -> str:
     return "\n".join(lines)
 
 
-def package(root: Path = ROOT, *, now: datetime | None = None) -> Path:
-    """``stage_a_results_<date>.zip`` beside the kit: everything under runs/, the manifest, RESULTS.md."""
+def _complete_lines(path: Path) -> bytes:
+    """The JSONL with only its COMPLETE lines -- a snapshot taken mid-run must not carry the row
+    being written, which a reader would otherwise choke on."""
+    out = bytearray()
+    with path.open("rb") as fh:
+        for raw in fh:
+            if raw.endswith(b"\n"):
+                try:
+                    json.loads(raw)
+                except ValueError:
+                    continue
+                out += raw
+    return bytes(out)
+
+
+def package(root: Path = ROOT, *, now: datetime | None = None, snapshot: bool = False) -> Path:
+    """``stage_a_results_<date>.zip`` (or ``stage_a_snapshot_<date>T<HHMM>.zip`` while a run is
+    still going) beside the kit: everything under runs/, the manifest, RESULTS.md. Every
+    ``verified.jsonl`` goes in with complete lines only, so the zip is readable whenever it is
+    taken; the running process is never touched."""
     now = now or datetime.now(UTC)
     runs = root / "runs"
     runs.mkdir(exist_ok=True)
     (runs / "RESULTS.md").write_text(results_md(root, now=now), encoding="utf-8")
-    out = root / f"stage_a_results_{now.date().isoformat()}.zip"
+    stamp = now.strftime("%Y-%m-%dT%H%M") if snapshot else now.date().isoformat()
+    out = root / (f"stage_a_snapshot_{stamp}.zip" if snapshot else f"stage_a_results_{stamp}.zip")
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for p in sorted(runs.rglob("*")):
-            if p.is_file():
-                zf.write(p, p.relative_to(root).as_posix())
+            if not p.is_file():
+                continue
+            arc = p.relative_to(root).as_posix()
+            if p.name == "verified.jsonl":
+                zf.writestr(arc, _complete_lines(p))
+            else:
+                zf.write(p, arc)
         if (root / "KIT_MANIFEST.json").exists():
             zf.write(root / "KIT_MANIFEST.json", "KIT_MANIFEST.json")
     return out
@@ -113,12 +221,15 @@ def package(root: Path = ROOT, *, now: datetime | None = None) -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--only", choices=sorted(WORKLISTS), default=None, help="one worklist instead of both")
+    ap.add_argument("--only", choices=list(WORKLISTS), default=None, help="one worklist instead of both")
     ap.add_argument("--workers", type=int, default=MAX_WORKERS, help=f"parallel hosts, at most {MAX_WORKERS}")
     ap.add_argument("--limit", type=int, default=None, help="rows to judge per worklist THIS run (resumable)")
     ap.add_argument("--timeout", type=float, default=20.0, help="seconds per request")
     ap.add_argument("--skip-selfcheck", action="store_true")
     ap.add_argument("--no-zip", action="store_true")
+    ap.add_argument("--status", action="store_true",
+                    help="from a second terminal while a run is going: progress, reasons, this session's "
+                         "rate, and a snapshot zip; touches nothing")
     args = ap.parse_args(argv)
     args.workers = max(1, min(MAX_WORKERS, args.workers))
     return args
@@ -150,7 +261,8 @@ def probe() -> dict[str, str]:
     out: dict[str, str] = {}
     for h in PROBE_HOSTS:
         try:
-            with urllib.request.urlopen(f"https://{h}/", timeout=12) as r:  # nosec B310 - fixed https:// hosts, an informational probe
+            # fixed https:// hosts, an informational probe
+            with urllib.request.urlopen(f"https://{h}/", timeout=12) as r:  # nosec B310
                 out[h] = str(r.status)
         except Exception as exc:  # noqa: BLE001 - the answer IS the report
             out[h] = f"{type(exc).__name__}: {str(exc)[:60]}"
@@ -172,21 +284,33 @@ def stage_a(py: Path, key: str, args: argparse.Namespace, root: Path = ROOT, env
     csv_rel, run_dir = WORKLISTS[key]
     out = root / "runs" / run_dir
     out.mkdir(parents=True, exist_ok=True)
-    _say(f"Stage A on {key} ({csv_rel}) -> runs/{run_dir}  [workers {args.workers}; Ctrl-C stops cleanly; re-run resumes]")
+    _say(f"Stage A on {key} ({csv_rel}) -> runs/{run_dir}  [workers {args.workers}; Ctrl-C once stops cleanly; re-run resumes]")
     cmd = [str(py), str(root / "scripts" / "analysis" / "verify_candidate_feeds.py"),
            "--candidates", str(root / csv_rel), "--out-dir", str(out),
            "--workers", str(args.workers), "--timeout", str(args.timeout)]
     if args.limit:
         cmd += ["--limit", str(args.limit)]
-    return subprocess.run(cmd, env=env, cwd=root).returncode
+    # Popen + wait, not subprocess.run: run() would SIGKILL the child a quarter-second after a
+    # Ctrl-C, before it could finish the in-flight hosts and write its outputs. The child gets the
+    # same Ctrl-C from the terminal and handles it itself; here we only wait for it.
+    proc = subprocess.Popen(cmd, env=env, cwd=root)
+    try:
+        return proc.wait()
+    except KeyboardInterrupt:
+        print("\n== stopping: letting the in-flight hosts finish and the outputs be written (up to a few "
+              "minutes; everything judged so far is already on disk) ...", flush=True)
+        try:
+            proc.wait(timeout=300)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            proc.wait(timeout=30)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
-        try:
+        with contextlib.suppress(AttributeError, ValueError):
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
-        except (AttributeError, ValueError):
-            pass
     args = parse_args(argv)
     if not python_ok():
         print(f"Python {PYTHON_FLOOR[0]}.{PYTHON_FLOOR[1]} or newer is needed (this is {sys.version.split()[0]}). "
@@ -194,6 +318,16 @@ def main(argv: list[str] | None = None) -> int:
               "and run this file with it.")
         return 2
     os.chdir(ROOT)
+    if args.status:
+        now = datetime.now(UTC)
+        print(f"== Stage A status at {now.strftime('%Y-%m-%d %H:%M UTC')} (reads the run's own files; the run is not touched)")
+        for line in status_lines(now=now):
+            print(line)
+        if not args.no_zip and (ROOT / "runs").exists():
+            z = package(now=now, snapshot=True)
+            print(f"\n== snapshot: {z}  ({z.stat().st_size / 1e6:.1f} MB) -- attach it to a repository-connected "
+                  "Claude session to have Stage B and C run on what exists so far", flush=True)
+        return 0
     env = dict(os.environ)
     env.setdefault("OO_DATA_DIR", str(ROOT / "data"))
     env.pop("PYTHONPATH", None)
@@ -203,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         probe()
         if not args.skip_selfcheck:
             selfcheck(py, env=env)
-        for key in (sorted(WORKLISTS) if args.only is None else [args.only]):
+        for key in (list(WORKLISTS) if args.only is None else [args.only]):  # the shortlist first
             rc = stage_a(py, key, args, env=env)
             if rc != 0:
                 code = rc

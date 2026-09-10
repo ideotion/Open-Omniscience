@@ -107,10 +107,14 @@ def _vocabulary() -> list[str]:
 def _load_verified(path: Path) -> list[dict]:
     rows = []
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+        if not line.strip():
+            continue
+        try:
             d = json.loads(line)
-            if d.get("status") == "verified":
-                rows.append(d)
+        except ValueError:
+            continue  # a torn last line (a snapshot taken while Stage A was still writing): not a verdict
+        if d.get("status") == "verified":
+            rows.append(d)
     return rows
 
 

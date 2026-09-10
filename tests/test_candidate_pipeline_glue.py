@@ -203,3 +203,12 @@ def test_a_second_apply_of_the_same_batch_appends_nothing(tmp_path):
     existing_after = {"old.example", "new.example"}
     accepted2, refused2 = msb.plan([_entry()], existing=existing_after)
     assert accepted2 == [] and refused2 == [("new.example", "already in a shipped catalogue")]
+
+
+def test_a_torn_last_line_from_a_mid_run_snapshot_is_skipped_not_fatal(tmp_path):
+    src = tmp_path / "verified.jsonl"
+    _verified_jsonl(src, 2)
+    with src.open("a", encoding="utf-8") as fh:
+        fh.write('{"domain": "half.example", "status": "verif')  # the row Stage A was writing
+    m = tb.prepare(src, tmp_path / "triage", batch_size=40)
+    assert m["rows"] == 2
