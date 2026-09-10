@@ -7276,3 +7276,21 @@ caught. The branch now contributes zero: 450 with it, 450 without.
 entry:** read the gate out of `ci.yml`, never out of prose — and when a ratchet lands at zero slack,
 **measure the BASE BRANCH before concluding the red is yours**, because the delta is the only number
 that says whose finding it is.
+
+### 2026-09-10 — the union-merge duplicate on a rebased placeholder sweep
+
+The source-qualification planning PR (#1108) added one `shipped.csv` row reading `PR pending`,
+then swept it to `PR #1108` in a second commit once the number existed, per rule (5b). `main`
+moved before the PR was opened, so the branch was rebased onto the fresh tip. `git rebase`
+replayed the sweep commit as a three-way merge, and `shipped.csv`'s `merge=union` driver kept
+BOTH the placeholder line and the swept line — the ledger gained two rows for one plan, the
+numstat read `+2/0`, and nothing in the rebase output said so. The duplicate-key scan against
+`origin/main` (the check the 2026-09-07 entries prescribe) caught it; the placeholder copy was
+removed in its own commit.
+
+**LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** on a `merge=union` file,
+replaying a commit that edits a line you added earlier keeps both versions — a union-merged file
+cannot express an EDIT, only additions — so a commit that changes a line already added on the
+same branch must be squashed into the commit that added it before any rebase or merge, or the
+duplicate-key scan must run after every replay. The rule (5b) placeholder sweep is the common
+case: sweep it in the same commit, or expect two rows.

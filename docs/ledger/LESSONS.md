@@ -8178,3 +8178,18 @@
   refresh one that was added later and is exercised less in manual testing.** Cheap to
   check, invisible when wrong, and a mutant that deletes the second call is worth having
   in the matrix.
+
+- **ON A `merge=union` FILE, REPLAYING A COMMIT THAT EDITS A LINE YOU ADDED EARLIER KEEPS BOTH
+  VERSIONS — a rebase turns the sweep of a placeholder into a duplicate row (2026-09-10, the
+  planning row in `shipped.csv`).** The recorded 2026-09-07 twin is about two BRANCHES each
+  carrying a legitimate copy of one row. This is the same driver one level down, on ONE branch:
+  commit A appended a row reading `PR pending`, commit B rewrote that line to `PR #1108`, and
+  rebasing both onto a moved `main` replayed B as a three-way merge in which the union driver saw
+  "one side deleted a line, the other kept it" and kept both — so the ledger came out with the
+  placeholder AND the swept row, and the numstat read `+2/0` on a branch that added one row.
+  Nothing in `git rebase` said so; the duplicate-key scan against the base branch did, exactly
+  the check the 2026-09-07 entry prescribes. **GENERAL FORM: a union-merged file cannot express
+  an EDIT, only additions — so any commit that changes a line already added on the same branch
+  must be squashed into the commit that added it BEFORE the branch is rebased or merged, or the
+  duplicate-key scan must run after every replay.** The rule (5b) placeholder sweep is the
+  common case: sweep it in the same commit, or expect two rows.
