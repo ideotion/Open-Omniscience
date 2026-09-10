@@ -158,7 +158,9 @@ def test_the_panel_is_driven_for_real_in_node() -> None:
     ``_concurrencyHtml``, so "no pass in flight draws no permit count" is checked as
     behaviour rather than as the presence of a substring -- and a measured 0, which
     MUST still draw, is checked beside it, because those two are one character apart in
-    the source and opposite facts on the screen. Six mutants, six dead.
+    the source and opposite facts on the screen. Seven mutants, seven dead -- the
+    seventh being a hover that carries the backend's English `method` instead of a
+    translated string, added after the browser run caught exactly that.
     """
     proc = subprocess.run(
         ["node", str(_ROOT / "tests" / "concurrency_panel_node_test.js")],

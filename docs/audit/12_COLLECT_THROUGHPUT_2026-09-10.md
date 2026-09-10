@@ -442,7 +442,7 @@ screen, which no source-level assertion can tell apart.
 ### Tests
 
 `tests/test_collect_concurrency_panel.py` (10), `tests/concurrency_panel_node_test.js`
-(runs the shipped `_concurrencyHtml`; **6 mutants, 6 dead**), plus new cases in
+(runs the shipped `_concurrencyHtml`; **7 mutants, 7 dead**), plus new cases in
 `test_collect_capacity.py` and `test_collect_perf_monitor.py`. 14 strings keyed ×12
 locales, spliced in place; all three i18n gates green at CI's own thresholds
 (`--min 100`, `--max-untranslatable 569`, `--max-unkeyed-t-calls 312`).
