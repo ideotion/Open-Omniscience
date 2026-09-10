@@ -397,7 +397,15 @@ def build_report() -> dict:
         # value is a deliberate translation, not a gap. We surface those separately as a hint.
         covered = len(have)
         identical = sorted(k for k in have if str(data.get(k, "")).strip() and data[k] == k)
-        pct = round(100 * covered / n, 1) if n else 100.0
+        # The DISPLAY percentage is rounded; the GATE must not be. `round(pct, 1)` turns
+        # 3264-of-3265 into a flat "100.0", so a locale missing a single key passed
+        # `--min 100` while the table told the reader it was complete -- on a project whose
+        # non-negotiable is that every consent/caveat string ships x12. Found by a mutant
+        # that deleted one key from fr.json and was not caught. `percent_exact` keeps the
+        # unrounded value for the comparison; `percent` stays rounded for the table, so the
+        # human-readable column is unchanged.
+        pct_exact = (100 * covered / n) if n else 100.0
+        pct = round(pct_exact, 1)
         locales.append(
             {
                 "code": code,
@@ -407,6 +415,7 @@ def build_report() -> dict:
                 "translated": covered,
                 "total": n,
                 "percent": pct,
+                "percent_exact": pct_exact,
                 "missing": missing,
                 "identical_to_english": identical,
             }
@@ -549,10 +558,15 @@ def main(argv: list[str] | None = None) -> int:
         regressed = [
             loc
             for loc in report["locales"]
-            if loc["declared_status"] == "complete" and loc["percent"] < args.min
+            if loc["declared_status"] == "complete" and loc["percent_exact"] < args.min
         ]
         if regressed:
-            names = ", ".join(f"{loc['code']} ({loc['percent']}%)" for loc in regressed)
+            # Name the MISSING COUNT beside the percentage: at 3265 keys a single gap reads
+            # as "100.0%", so the percentage alone cannot tell an operator what to fix.
+            names = ", ".join(
+                f"{loc['code']} ({loc['percent']}%, {len(loc['missing'])} missing)"
+                for loc in regressed
+            )
             print(
                 f"\nFAIL: locales declared 'complete' below {args.min}%: {names}", file=sys.stderr
             )

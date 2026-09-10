@@ -6217,6 +6217,41 @@
     it changes a shared blocking gate and belongs to its own reviewed change — but measure the
     cost of tightening before deferring it, because all 11 non-English locales are currently at the
     full count, so today it would redden nothing.
+    **FIXED 2026-09-10, and the second finding is the part worth keeping.** The fix is the general
+    form above, applied: compute the ratio ONCE, keep `round(..., 1)` for the human table and add
+    an unrounded `percent_exact` for the COMPARISON — the display resolution and the decision
+    threshold are two different requirements, and a single variable serving both is what created
+    the slack. The failure line now names the missing COUNT beside the percentage, because at
+    n = 3265 the percentage alone prints "100.0%" for the very locale it is failing, which tells an
+    operator nothing about what to fix. What earned the change over a third deferral was hitting
+    the same defect from the OPPOSITE direction on the same day: restoring a deliberately-mutated
+    `fr.json` with `git checkout` discarded 19 uncommitted keys (the recorded restore-by-copy
+    hazard, hit again), and the gate whose whole job is "every consent/caveat string ships ×12"
+    reported `fr … complete … 100.0%`. GENERAL: a rounded gate does not only fail to catch a
+    regression you introduce on purpose — it fails to catch the one you introduce by accident,
+    which is the case it was actually built for. And when a deferral's stated reasons are
+    (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
+    (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
+    run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **`Path.read_text()` APPLIES UNIVERSAL NEWLINES, SO ROUND-TRIPPING A LEDGER FILE THROUGH IT
+    SILENTLY REWRITES EVERY CRLF LINE — and the result is precisely the diff signature the
+    union-merge lesson teaches you to fear (2026-09-10, caught by that rule, twice in one edit):**
+    appending one row to `shipped.csv` produced a numstat of **54 added / 53 deleted** on an edit
+    that adds one line. First attempt: I had rebuilt the file through the `csv` module, which
+    re-quotes every field — obvious in hindsight, reverted, redone as a surgical line edit.
+    Second attempt still showed **13 / 12**, and the eleven "changed" lines were byte-identical in
+    every visible column. `od -c` on one of them gave the answer: those rows end `\r\n`, and
+    `read_text()` (newline=None) translates `\r\n` and lone `\r` to `\n` on READ, so writing the
+    string back normalises them. Fixed with `read_bytes()` / `write_bytes()` and byte-literal
+    splitting: 2 / 1, which is one row swept plus one row appended. WHY THIS MATTERS MORE THAN THE
+    keystrokes: `shipped.csv` is `merge=union`, so it never conflicts — eleven silently-rewritten
+    rows would have been kept ALONGSIDE main's originals as eleven duplicate entries in the
+    project's permanent shipped record, invisible to a marker grep and to a clean `git merge`.
+    RULES: (a) edit a ledger file with byte-level I/O, never `read_text`/`write_text`, and never by
+    round-tripping it through a parser that reformats; (b) `git diff --numstat` after EVERY ledger
+    edit and treat any deletion on an additive edit as a defect until explained — it fired twice
+    here and was right twice; (c) when `-` and `+` lines look identical, the difference is a byte
+    you cannot see, so go to `od -c` immediately instead of re-reading the text.
   - **`grep --include` IS A WHOLE-INVOCATION FILTER, NOT A POSITIONAL ONE — naming files of another
     type beside it searches NONE of them, and reports a confident nothing (2026-09-07):**
     `grep -rn "<needle>" src/static/*.js src/static/*.html src/ --include=*.py` looks like "search

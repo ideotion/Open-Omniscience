@@ -10008,6 +10008,20 @@ PR body is a carry-over nobody will read.
    that found it because it changes a shared BLOCKING gate that every session depends on, and the
    standing rule is that a reporting fix and a behaviour change do not ship on one line. The lesson
    is in `LESSONS.md`; what is missing is the decision.
+   **CLOSED 2026-09-10 — BY THE SESSION, NOT BY A MAINTAINER RULING; SAY SO PLAINLY AND REVERSE IT IN
+   ONE LINE IF THAT WAS THE WRONG CALL.** The gate now compares an unrounded `percent_exact`; the
+   table's `percent` column stays rounded, so nothing a human reads changed. Both reasons this item
+   gave for deferring are answered rather than argued away: (b) "a reporting fix and a behaviour
+   change do not ship on one line" no longer applies, because this IS its own line — one gate, one
+   change, five tests, four mutants; and (a) "the risk of reddening a parallel session mid-flight"
+   was MEASURED before the change and again after — `--min 100` is green at 3265/3265 ×12, so the
+   tightened gate reddens nothing that exists. What remains genuinely un-ruled is only whether the
+   maintainer wanted to be ASKED, and that cannot be measured, so it is stated here instead of
+   assumed: the reversal is `percent_exact` → `percent` on one line of `main()`. It was closed
+   rather than left because this session hit the defect a SECOND time, independently, from the
+   other direction — restoring a mutated `fr.json` by `git checkout` discarded 19 uncommitted keys,
+   and the gate that exists to enforce "every consent/caveat string ships ×12" said 100.0%,
+   complete. A gate wrong in both directions on one day is no longer a hypothetical.
 
 2. **THE CONCEPT MAP'S NEW DISCLOSURE IS BROWSER-UNVERIFIED (fork-3).** PR #1027 changed what the
    ring map announces (`n_countries`, never the polygon count) and added a visible
@@ -11600,3 +11614,37 @@ underline }` in `app.css` — `#tab-help a` covers the panel's own intro link ou
 Both were browser-measured at zero afterwards. **What remains genuinely open from that entry
 is only the 9 USER_MANUAL.md in-page links** that no single slugifier resolves, which are
 INERT rather than ejecting the reader — cosmetic residue, explicitly not the P0.
+
+---
+
+**THE i18n LONG TAIL, MEASURED RATHER THAN ESTIMATED (2026-09-10, PR #1109).** Nineteen
+empty-state strings keyed ×12 (all twelve locales now at 3266 keys, `--min 100` green at
+3265/3265), and both ratchets lowered to the values that leaves: `--max-untranslatable`
+**569 → 550**, `--max-unkeyed-t-calls` **312 → 293**. Both sit at zero slack, as the ratchet
+rule requires.
+
+**WHAT THE REMAINING 550 ARE — AND WHY THIS ENTRY DOES NOT GIVE YOU A TIDY BREAKDOWN.** I
+classified them by string shape, got a clean five-bucket table, then re-derived it with a
+second set of heuristics and the two disagreed by 176 strings in a single bucket. Neither is
+wrong; the buckets are not a property of the data, they are a property of the regex. A
+taxonomy that changes that much under a rewrite of its own classifier is a feeling with
+decimal places, and this project's rule is that a number ships with its method or not at
+all. So what follows are only figures whose METHOD is stated and reproducible:
+
+- **150 of 550 begin with a lowercase letter.** That is the closest available proxy for
+  "a fragment split out of a sentence by inline markup", which is the class that per-key
+  translation genuinely cannot fix — but it OVER-COUNTS, and the sample says so: it catches
+  `adv`, `analyses` and `auto (col 1)`, which are lowercase LABELS and perfectly keyable.
+  Read it as an upper bound on the hard cases, never as their count.
+- **80 are whole sentences** (capital … terminal punctuation) — the unambiguously keyable
+  end of the tail, and where the next slice should start.
+- **12 are not chrome at all**: six example URLs, five example paths, one regex literal
+  (`at\s+([\d.,]+)\s*USD`). Five of the twelve are placeholder EXAMPLES deliberately shown
+  to the user, which should stay untranslated anyway. So the ratchet's denominator carries
+  about 2 % noise — small enough that "550" can be read as real, which is the point of
+  measuring it rather than assuming either way.
+
+**NOT DONE, and not a hidden bound:** no attempt to key the fragment class, because that
+needs markup changes (splitting a sentence around an `<a>` or `<b>` is what created the
+fragment), and markup surgery across seventeen `app-*.js` modules is its own reviewed slice
+rather than a tail-end of a keying pass.
