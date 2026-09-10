@@ -8154,3 +8154,27 @@
   passing, and nothing forces an update. When landing the fix that flips such a test, flip
   its docstring in the same commit — the words are part of the test's output, and they are
   read hardest at the worst moment.**
+
+- **AN ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
+  (2026-09-10).** `scrollable-region-focusable` is satisfied by putting `tabindex="0"`
+  on the scrollable element, and the tempting fix is to mark every `<pre>`. But a tab
+  stop on a block that does not scroll is a keystroke that does nothing, and a Help
+  document full of short code samples becomes a corridor of dead stops — worse for the
+  keyboard user the rule exists to protect. The honest test is the element's REAL
+  measured geometry (`scrollWidth > clientWidth`), and the mark has to be REMOVED again
+  when a re-render makes a block fit. **GENERAL FORM: an axe rule names a condition,
+  not a remedy. Satisfying it everywhere the selector matches will pass the audit and
+  can still degrade the experience — fix the elements that actually have the problem,
+  and be willing to unfix them when they stop having it.** The neighbouring temptation
+  is the same shape: adding `role="region"` alongside would trade this rule for the
+  accessible-name rule, and inventing "code sample 3" per block is screen-reader noise.
+
+- **WHEN TWO FUNCTIONS WRITE THE SAME CONTAINER, A FIX IN ONE IS UNDONE BY THE OTHER
+  (2026-09-10).** `#doc-prose` is written by `openDoc` (loads a document) and by
+  `filterDoc` (re-renders it from the find box). A post-render pass added only to
+  `openDoc` survives until the reader types one character. **GENERAL FORM: before adding
+  a post-render step, grep for every writer of that container's `innerHTML` — the count
+  is usually more than one, and the second path is typically the incremental/filter/
+  refresh one that was added later and is exercised less in manual testing.** Cheap to
+  check, invisible when wrong, and a mutant that deletes the second call is worth having
+  in the matrix.

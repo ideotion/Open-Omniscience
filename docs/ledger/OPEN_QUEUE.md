@@ -11531,3 +11531,34 @@ carefully-reasoned WAL-starvation guard, by someone holding the reasoning that p
 side quest inside a PR about absorption gates and a dump reader. But it is real work, not noise: a
 signal that can return either verdict for one commit is one that will eventually be disbelieved,
 and each red instance costs another session the investigation this one cost.
+
+**HELP'S `scrollable-region-focusable` (n=3) IS CLOSED (2026-09-10).** It sat under "STILL
+OPEN, out of this pass's scope — Help's other axe findings". `.prose pre` carries
+`overflow-x:auto`, so a wide code sample in a Help document scrolls sideways with a mouse
+and, with no `tabindex`, **not at all with a keyboard** — the reader never sees the
+right-hand side of the line. WCAG 2.1.1.
+
+**The interesting half is what is deliberately NOT marked.** Only blocks whose measured
+geometry actually overflows (`scrollWidth > clientWidth`) become focusable. Marking every
+`<pre>` would trade one defect for another: a tab stop on a block that does not scroll is
+a keystroke that does nothing, and a document of short samples would become a corridor of
+dead stops. The mark is also REMOVED when a block stops overflowing, because the Help find
+box re-renders the prose with narrower content and a tab stop left behind there is the
+same dead keystroke arriving by a different route. An author's own `tabindex` is never
+clobbered — only the `"0"` this pass sets is removed.
+
+**No `role="region"`, on purpose:** it would demand an accessible name, and inventing one
+per code block ("code sample 3") is screen-reader noise. `tabindex="0"` alone satisfies
+the rule.
+
+**It runs on BOTH writers into `#doc-prose`** — `openDoc` and `filterDoc` — which is the
+one-of-two-render-paths shape this round has met repeatedly: a fix applied only in
+`openDoc` is silently undone the first time a reader types in the find box. A mutant
+removing the `filterDoc` call is in the matrix and dies.
+
+**STILL OPEN from that same entry, unchanged:** `link-in-text-block` (n=15) — note that
+`.prose` itself already carries a fix for it (`app.css`, the a11y-help-link-in-text-block
+rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` and a
+future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
+single slugifier can resolve, which after the anchor fix are INERT rather than
+ejecting the reader — cosmetic residue, explicitly not the P0.
