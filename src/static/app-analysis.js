@@ -1296,6 +1296,39 @@
         arts.innerHTML = `<div class="note err">${esc(_articleFailureMessage(e))}</div>`;
       }
     }
+    // The catalogue cell of the analysis window's Sources table, as a PURE function of
+    // one row -- extracted so it can be executed in a test rather than only grepped.
+    //
+    // REGION AND TAGS COMPLETE THE COLUMN (2026-09-09, second pass). The first pass at
+    // this gap named "country / region / language / type / tags" as what the retired
+    // #corpus-win modal showed, and then shipped three of the five. Both missing fields
+    // were already on the row -- corpus_sources selects Source.region and Source.tags
+    // beside the rest -- so the loss was in the renderer alone. A half-closed gap is the
+    // harder kind to notice the second time, which is why this is now executable: a
+    // source-text guard for "tags are rendered" passes against code that reads s.tags
+    // and discards it.
+    //
+    // TWO-CLASS HONESTY: every field here is catalogue/source-ASSERTED (set from the
+    // catalogue, a ccTLD, or the operator), never deduced from the article text. A
+    // source the catalogue holds nothing for reads as an em dash, never as an empty
+    // claim.
+    function _anSourceCatalogHtml(s) {
+      s = s || {};
+      const facts = [
+        s.country ? (typeof ooRegionName === "function"
+          ? ooRegionName(s.country, s.country.toUpperCase()) : s.country) : null,
+        s.region || null,
+        s.language ? (typeof ooLangName === "function"
+          ? ooLangName(s.language, s.language) : s.language) : null,
+        s.source_type || null,
+      ].filter(Boolean).join(" \u00b7 ");
+      const tags = (s.tags && s.tags.length)
+        ? s.tags.map((x) => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ")
+        : "";
+      if (!facts && !tags) return "\u2014";
+      return (facts ? esc(facts) : "")
+        + (tags ? `<div style="margin-top:3px">${tags}</div>` : "");
+    }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
@@ -1377,13 +1410,27 @@
       // structure; convergence is corroboration only when paths are independent).
       try {
         const d = await api("/api/links/corpus?" + p.toString());
+        // THE INDEPENDENCE READOUT, per row. The retired #corpus-win modal showed a
+        // distinct-SOURCE count beside the distinct-ARTICLE count and said, for each
+        // link, which of the two situations it was in; this view showed the article
+        // count alone under one blanket caveat, which reads the same for five articles
+        // from one outlet as for five from five. That is the difference between echo
+        // and corroboration, so it is stated per link, in the reader's language, from
+        // the endpoint's machine-readable verdict rather than from server prose.
+        const indep = (it) => it.independence === "distinct_sources"
+          ? `<span class="pill" title="${esc(t("Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see."))}">${esc(t("distinct outlets"))}</span>`
+          : `<span class="pill warn" title="${esc(t("The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation."))}">${esc(t("one path"))}</span>`;
         const rows = (d.items || []).map((it) =>
           `<tr><td>${extLink(it.sample_url || it.normalized_url, esc(it.domain || it.link_text || it.normalized_url), "", "")}</td>`
-          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citations}</td></tr>`).join("");
+          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citations}</td>`
+          + `<td style="text-align:right;font-variant-numeric:tabular-nums">${it.citing_sources}</td>`
+          + `<td>${indep(it)}</td></tr>`).join("");
         $("an-links").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
           + (rows
             ? `<table class="data" style="margin-top:8px"><thead><tr><th>${esc(t("Link"))}</th>`
-              + `<th style="text-align:right">${esc(t("Cited by"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+              + `<th style="text-align:right" title="${esc(t("How many distinct matched articles cite this link — an exact count, never a score."))}">${esc(t("Cited by"))}</th>`
+              + `<th style="text-align:right" title="${esc(t("How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent."))}">${esc(t("Citing sources"))}</th>`
+              + `<th title="${esc(t("Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement."))}">${esc(t("Independence"))}</th></tr></thead><tbody>${rows}</tbody></table>`
             : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`);
       } catch (e) { $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sentiment: distribution of the STORED per-article VADER tone over the set,
@@ -1431,18 +1478,11 @@
         const rows = (d.sources || []).map((s) => {
           const span = (s.first && s.last) ? `${String(s.first).slice(0, 10)} – ${String(s.last).slice(0, 10)}` : "—";
           const tone = (s.mean_tone === null || s.mean_tone === undefined) ? "—" : s.mean_tone;
-          const facts = [
-            s.country ? (typeof ooRegionName === "function"
-              ? ooRegionName(s.country, s.country.toUpperCase()) : s.country) : null,
-            s.language ? (typeof ooLangName === "function"
-              ? ooLangName(s.language, s.language) : s.language) : null,
-            s.source_type || null,
-          ].filter(Boolean).join(" · ");
           return `<tr><td>${esc(s.name || s.domain || "")}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${s.articles}</td>`
             + `<td style="text-align:right;font-variant-numeric:tabular-nums">${tone}</td>`
             + `<td class="muted">${esc(span)}</td>`
-            + `<td class="muted">${facts ? esc(facts) : "—"}</td></tr>`;
+            + `<td class="muted">${_anSourceCatalogHtml(s)}</td></tr>`;
         }).join("");
         $("an-sources").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
           + (rows

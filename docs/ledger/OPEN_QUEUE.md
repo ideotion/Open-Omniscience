@@ -11243,3 +11243,322 @@ Enter-to-corpus-window absorption gate.
   browser connection and dies with the tab), NOT attempted here because converting a
   StreamingResponse to a polled job removes the progressive stream that is currently the
   progress mechanism, which is a UX change rather than a wiring one.
+
+**THE `#corpus-win` SUPERSET CLAIM IS NOW AUDITED FACET BY FACET (2026-09-09), and the audit
+found the GUARD, not just the gaps.** The retirement note in `index.html` says every subtab of
+the retired modal is "covered by the ONE #an window (a strict superset)", and that claim is what
+licenses the deletion. The test that was supposed to enforce it —
+`test_ui_corpus_win_retired.py::test_an_window_absorbs_every_modal_subtab` — asserts only that the
+`#an` nav carries a `data-tab` with each facet's NAME. **A name is not a capability, and that test
+was green for the entire time three facets were strict SUBSETS.** So the round-two note ("nobody
+has audited the other five subtabs") understated it: the audit that was missing was not five
+subtabs' worth of reading, it was the difference between checking a tab exists and checking what
+is behind it.
+
+**THREE GAPS FOUND AND CLOSED.**
+1. **LINKS — the independence pair.** The modal showed the distinct-SOURCE count beside the
+   distinct-ARTICLE count and rendered a per-link verdict discriminating "one path" from "cited
+   across distinct sources". `#an` showed the article count alone under ONE blanket caveat applied
+   to every row. Those are not the same fact: three articles from one outlet and three from three
+   outlets produce the same number and mean opposite things, and this is the one view in the app
+   whose entire purpose is to make that difference visible. `/api/links/corpus` now returns
+   `citing_sources` and a machine-readable `independence`, rendered as its own column and a
+   translated per-row pill (the modal's note was server-side English prose; this is ×12).
+   **The non-obvious half is the rule:** more articles than sources reads as `single_origin` even
+   when several outlets are involved, because one outlet citing twice makes the article count
+   overstate the number of independent paths.
+2. **SOURCES — the half-closed gap.** The 2026-09-09 first pass named
+   "country / region / language / type / tags" as what the modal showed, and shipped three of the
+   five. `region` and `tags` were already on the `corpus_sources` row, so the loss was in the
+   renderer alone, both times.
+3. **KEYWORDS — numbers fetched and thrown away.** `/api/insights/keyword-stats` returns each
+   co-occurrence with its shared-article count AND its PMI; the `#oo-tip` hover mapped straight to
+   `c.term` and dropped both. PMI is the only association STRENGTH anywhere in the `#an` window and
+   it was already on the wire.
+
+**TWO GAPS LEFT OPEN, because closing them is a product call and not a wiring one.**
+- **The modal's Keywords was a different INSTRUMENT, not a different layout.** It ranked a sortable
+  table on `cooccur` / `n_b` / PMI **relative to the corpus term**. What `#an` now has is PMI of a
+  hovered keyword against *its own* co-occurrences — a real measure, and a different one.
+  Reconstituting the modal's table needs `/api/insights/corpus-keywords` to carry `pmi` and `n_b`
+  against the corpus term (it returns `term`/`normalized`/`kind`/`mentions`/`articles` today).
+  Whether the chip cloud should GAIN a table view, or whether the hover is now enough, is a
+  maintainer decision — recommended default: **leave it**, since the chips carry the corpus-scoped
+  counts and the table's own value was the sort, which nobody has asked for since the modal died.
+- **The mind-map LEVELS control.** The modal relocated the whole `#mm-kit` (levels / cloud / period
+  / text-size / enlarge). `#an` has cloud, text-size and enlarge; PERIOD is inherited from the
+  window's own scope, which is the better design; LEVELS is hardcoded to `level=keyword`, with
+  super-group navigation offered through the `⊕` chips instead. Partial by design, recorded so the
+  deletion pass is not asked to re-derive it.
+
+**THE DELETION BAR IS UNCHANGED and this does not clear it.** The markup and `corpusTab` /
+`renderCorpus*` are still unreachable in the tree, still gated on the browser-verified deletion
+pass (the Desk-lesson "made unreachable" bar). What has changed is that the claim licensing that
+deletion is now enforced by execution rather than asserted in a comment:
+`tests/test_corpus_win_absorption_content.py` pins the FACTS facet by facet, and
+`tests/an_source_catalog_node_test.js` runs the one cell whose source-text guard was provably
+vacuous. A future session may delete on that basis; it should not delete on the name check alone.
+
+**J1 STEP 1 IS DONE — the concatenating reader, before a single route moves (2026-09-09).**
+The J1 entry prescribed exactly this: *"the split's FIRST commit is a concatenating reader that
+returns the package's modules in a defined order, read from the package rather than hard-coded,
+before a single route moves."* `tests/diagnostics_source.py` is that reader, and every call site
+is migrated onto it.
+
+**THE ENTRY'S OWN MEASUREMENT WAS UNDERSTATED, which is the kind of correction that changes how
+the next session sizes the work.** J1 recorded "20 source-read sites across 4 test files". The
+real figure is **27 sites across 10 files**, in **five mutually incompatible path spellings** —
+`(_SRC / "api" / "diagnostics.py")`, `(_ROOT / "src" / "api" / "diagnostics.py")`, the same with a
+POSITIONAL `read_text("utf-8")`, `(_ROOT / "src/api/diagnostics.py")`, and a bare
+`Path("src/api/diagnostics.py")` relative to the CWD. (A 28th grep hit is a docstring mention in
+`test_qualification_export.py`, and two more name different modules entirely — `src/diagnostics.py`,
+the CLI doctor, and `src/briefing/card_diagnostics.py`.) All 27 now read
+`diagnostics_source()`, so the split has ONE place to teach rather than ten, and the five
+spellings are gone.
+
+**WHY THE READER IS THE FIRST COMMIT AND NOT A LATER CONVENIENCE.** Turning the module into a
+package makes the path a DIRECTORY, and `read_text()` then raises — loudly, at 27 sites, which
+sounds survivable and is not the danger. The danger is the recorded `app.js`-split lesson: a
+POSITIVE assertion fails loudly and gets fixed while a NEGATIVE one passes FOR FREE against a file
+that no longer holds what it checks. A site repointed at ONE module of the new package keeps every
+`assert X in src` honest and turns every `assert X not in src` into a tautology. Today the reader
+returns the single file's text **byte-identically** (asserted), so each migration was a verifiable
+no-op; the day the package exists, the same callers see the whole of diagnostics unchanged.
+
+**THE ORDER IS READ FROM THE PACKAGE, and an unimported module still contributes its text** — a
+forgotten import line must not silently shrink the source under a negative assertion. The two
+refusals (no diagnostics at all; a package holding no `.py`) raise rather than return `""`, and
+that is pinned by its own test so nobody softens them into a fallback while tidying.
+
+**STILL NOT ATTEMPTED, and still a whole session's work:** moving the routes. 6,291 lines and 128
+route decorators, of which 100 are GET. The completeness ratchet
+(`test_all_diagnostics_bundle_covers_every_get_diagnostic`) now reads through
+`diagnostics_source()`, so it will survive the split — that was the other half of what J1 said
+had to be true before `git mv`.
+
+**A PROCESS NOTE FROM THE MIGRATION ITSELF, worth more than the migration.** The first pass placed
+the new import with a regex for the last top-level import line, which matched the OPENING line of
+a multi-line parenthesised `from x import (` and inserted the statement INSIDE the parentheses —
+three test files left syntactically invalid. Nothing in the test suite caught it, because a file
+that will not parse is a COLLECTION error in the files it lives in and those files were not the
+ones being asserted about; `ruff` caught it, as `invalid-syntax`, only because the ratchet is run
+every time. Redone with `ast`, whose `end_lineno` covers a whole statement including its
+continuations, plus an `ast.parse()` on the result before writing. **A codemod that edits Python
+should be driven by the parser, and should refuse to write anything that does not parse.**
+
+**THE SEARCH-TAB ABSORPTION GATE, RE-MEASURED (2026-09-10) — the capability half is
+satisfied, and the blocker is now a different thing than the entry says.** The maintainer
+asked TWICE for one search entry ("two search entries, I prefer only the top one … there
+should not be a search button in the tabs"), and the removal has been gated since June on
+the `#an` window absorbing every Search-tab tool: *"Boolean query, source/lang/date
+filters, Export CSV/JSON, Methods appendix, Synthesize results, and Export SIGNED
+EVIDENCE; the Enter→window must ABSORB all of these first (never silently lose a tool)."*
+Nobody has re-measured that list since it was written, and the window has grown a great
+deal in the meantime.
+
+**Every named capability is present in `#an` today**, corpus-scoped, and two the list did
+not even name ride along: `exportResults('csv'|'json', anParams())`,
+`exportMethods(anParams())`, `exportEvidence(anParams())`,
+`synthesizeResults(this, anParams())`, `bulkLlm('summarize'|'translate','an')`,
+`aiRunPrompt('an')`, plus the Boolean query and the source / language / from / to / sort
+controls as `an-adv-*`. They are the SAME shared functions the Search tab calls, so this
+is one implementation reached from two places, not a reimplementation that could drift.
+
+**BUT THE LIST WAS SATISFIED ONLY FOR QUERY-DEFINED CORPORA, which is the finding.** Both
+report exports took a query STRING (`anQuery()`), and `_anApplySeed` sets `an-adv-query`
+to `tb.query || ""` — empty for every id-seeded corpus: a Lead's exact set, a
+When/Where/Who facet drill, a card corpus, anything opened through `openAnalysisForIds`.
+So the two buttons rendered unconditionally and refused on click, with advice that was
+false in that context ("Run a search first" to a reader already looking at a Lead's
+articles). The signed EVIDENCE bundle is the one that stings: the chain-of-custody export,
+unavailable for the most evidentiary corpus the window can hold. **`/api/reports/methods`
+and `/api/reports/evidence` have ALWAYS accepted `article_ids | query`** — one
+`_select_articles` serves both, and `tests/test_reporting_api.py` already proved the id
+path end to end. The capability existed the whole way down and the client threw away the
+one field it needed. Fixed here: one `_reportScope()` resolves an exact set or a query,
+and the id set travels.
+
+**SO THE REMAINING BLOCKER IS NOT A CAPABILITY, IT IS THE ROUTING.** Enter in the omnibar
+runs the SELECTED palette item (`palKey` → `palRun(_palSel)`), and "Run the full Boolean
+search" still leads to `#tab-search` prefilled. Nothing yet opens the `#an` window from a
+typed omnibar query, so the tab cannot be removed — not because a tool would be lost, but
+because the replacement has no entrance. That is a much smaller, nameable piece of work
+than the June entry's "the FULL Enter→corpus window with the analysis sub-tabs", which has
+since been built. **NOT DONE HERE, deliberately:** removing a whole sidebar tab is a
+maintainer-facing UI change, and the honest sequence is to build the Enter routing first,
+let it be used, and remove the tab after — not to do both in the turn that discovered the
+gate had moved.
+
+**A MEASUREMENT ERROR OF MY OWN, recorded because it briefly produced a confident wrong
+answer.** Comparing the two surfaces, I grepped `<button[^>]*onclick="cap"` — a regex that
+requires the whole opening tag on ONE line. Several of these buttons wrap, so the first
+comparison reported the Search tab as MISSING `exportMethods`, `synthesizeResults` and
+`bulkLlm`, and I nearly recorded that the `#an` window was already a superset. A
+line-anchored pattern over HTML answers a question about formatting, not about markup;
+the parse-the-attribute version gave the opposite answer.
+
+**CORRECTION TO THE ENTRY ABOVE, made the same night: THE ENTER→CORPUS-WINDOW ENTRANCE
+EXISTS.** The Search-tab gate note I wrote hours earlier said "nothing yet opens the `#an`
+window from a typed omnibar query, so the replacement has no entrance." That is wrong, and
+the mistake was reading `palKey` (Enter runs the selected item) without reading
+`renderPalette`, which unshifts an `Analysis: "<query>"` row calling
+`openAnalysisInNewTab(raw)` and marks it `↵ ↗`. The routing was built, under the recorded
+ruling *"Enter → the corpus/analysis window (default), now opening in a NEW BROWSER TAB
+(field remark 9)"*. What is true is narrower and worse:
+
+**THE ↵ BADGE IS A CLAIM THE PALETTE DOES NOT KEEP.** `_palFiltered = [...statics, ...live]`
+and `_palSel` starts at 0, so Enter runs the first STATIC match whenever the typed text
+matches a page or command — and the collision is ordinary, not exotic: measured against the
+nine shipped command labels plus the nav pages, `search`, `collect`, `open`, `data`, `help`
+and `settings` all match at least one. On exactly those queries the Analysis row advertised
+a key that would run a different row. Fixed here by making the badge conditional
+(`statics.length ? "↗" : "↵ ↗"`); the `↗` is true either way, since it describes where the
+row opens rather than which key reaches it.
+
+**THE PRODUCT QUESTION IS LEFT OPEN, deliberately.** Should the Analysis row be HOISTED
+above matching statics, so Enter always means "analyse what I typed" as the ruling's word
+"default" suggests? It would make the badge unconditionally true — and it would mean typing
+`Settings` and pressing Enter gives an analysis OF the word "Settings" rather than opening
+Settings, which is the interaction a command palette exists to provide. **Recommended
+default: leave the ordering as it is.** A palette that runs the command you named is worth
+more than a uniform Enter, and the honest badge already removes the misdirection that made
+the current ordering feel like a bug. Not taken unilaterally: it changes an interaction the
+maintainer uses.
+
+**SO THE SEARCH-TAB GATE'S REMAINING BLOCKER IS SMALLER STILL THAN THIS ENTRY SAID.** The
+capabilities are absorbed (as re-measured above) and the entrance exists. What is genuinely
+untested is whether the Enter→analysis path is a good enough replacement in practice to
+retire `#tab-search` — a browser-verification question and a maintainer call, not a build.
+
+**THE DUMP READER GAINS A READABLE VIEW, and it is named a STRIP because that is what it
+is (2026-09-10).** The dump-reader entry's REMAINING list names "wikitext rendering". What
+this codebase can honestly offer is `plain_from_wikitext` — the corpus pipeline's own
+reducer, already tested against a real-wikitext sample and 25 hand shapes — and its own
+docstring states the target: *"keyword/WWW-quality text, not rendering fidelity"*. It PEELS
+templates and DROPS refs, comments, tables and file links.
+
+**So shipping it labelled "Rendered" would have been the exact defect this round has spent
+four items fixing.** Measured on a sample page whose population figure lives only in the
+infobox: after the strip the figure is not laid out differently, it is *gone*. A reader who
+believed this was a rendering would conclude the page never carried it. The view is
+therefore labelled **"Readable text"**, carries a caveat naming what was removed ("anything
+a template would have produced is absent rather than rendered"), and keeps **"Raw
+wikitext"** one click away as the thing that is actually complete. `plain_method` states
+the same on the payload, so an API caller gets the caveat without depending on whichever UI
+draws it.
+
+**Two refusals worth keeping:** a page that reduces to nothing (all templates and tables)
+falls back to Raw with a stated reason, because an empty pane labelled "Readable text"
+reads as an empty PAGE; and the toggle re-renders from the stashed payload rather than
+re-fetching, since an index scan is seconds of local I/O and re-paying it to change a VIEW
+taxes the reader for looking.
+
+**STILL OPEN on this surface, unchanged:** TRUE rendering (templates evaluated, tables laid
+out) — which is a real dependency, not a slice of this; and the corpus ingestion path (the
+living-source design). Full-text SEARCH over dumps, which the same REMAINING list names, is
+**already built** (`/api/wiki/dumps/fts-search` + the index build/cancel/clear controls and
+`#dumpfts-index` in the UI) — that line is stale and a future session should not re-scope
+it.
+
+**A MUTANT CAUGHT THE ASSERTION THAT MATTERED, and it is worth recording which one.** The
+first test round asserted that the endpoint IMPORTS the shared reducer and that the UI
+labels the pane honestly. Both pass against `res["plain"] = raw` — an endpoint serving the
+raw wikitext under the word "Readable", which is precisely the lie the naming exists to
+prevent. Source-level assertions about a transform cannot see the transform; the fix was to
+CALL the endpoint with `find_page` stubbed, so the assertion is about the output.
+
+**"EMBED ooMap ON When/Where + Insights" — SCOPED, NOT BUILT, because the obvious design is
+blocked and the alternative is a product choice (2026-09-10).** Three facts a future session
+should not have to re-derive:
+
+1. **THE COORDINATES ARE ALREADY ON THE WIRE, and the client drops them.** `corpus_where`
+   selects `ArticleMentionedPlace.lat`/`.lon` and `/api/insights/corpus-www` returns them per
+   place. `loadAnalysis`'s facet mapping keeps only `name`, `country` and `articles`:
+   `where: (…places).map((pl) => ({facet:"place", value: pl.name, label: pl.name, sub: pl.country…, n: pl.articles}))`.
+   So this is the SAME shape as three of the items closed in this round — data fetched and
+   discarded in the renderer — and not a geocoding project.
+2. **BUT ooMap's MARKER LAYER CANNOT DRAW THEM AS-IS.** `_ooSignalLayer` filters on
+   `s.lat != null && s.lon != null && typeof s.t === "number"`, and then fades each mark by
+   its distance from `focusT` within `windowY`. It is a TIME-filtered hazard layer. A corpus
+   place has no time coordinate, and inventing one to get marks on screen would make the
+   slider's fade meaningless while looking exactly like it worked — a fabricated quantity
+   driving a visible channel, which is the thing this codebase refuses everywhere else.
+3. **SO THE CHOICE IS A DESIGN ONE.** Either (a) give ooMap a TIMELESS mark kind — a real
+   change to a shared component that four surfaces already draw through, and one that has to
+   answer what the slider means when a layer does not participate in it; or (b) aggregate the
+   places to COUNTRY (which every row carries) and use ooMap's choropleth as built, answering
+   the coarser question "which countries do this corpus's mentioned places sit in".
+   **Recommended default: (b)**, because it uses the component as designed, needs no new mark
+   semantics, and the coarser question is the one a corpus-level map is usually asked. (a) is
+   worth doing if and when a second surface wants timeless marks — one caller is not enough
+   to justify new semantics in a shared renderer.
+
+**WHICHEVER IS CHOSEN, THE ANTI-CAPPING LINE IS NOT OPTIONAL.** `corpus_where`'s own docstring
+says "lat/lon when the gazetteer knows the place", so some places have neither; under (b) some
+will have no country either. A map that silently plots the located subset tells the reader the
+corpus mentions fewer places than it does — invariant #31(d)'s rule, which exists for exactly
+this: name every population the picture omits ("N plotted · M not locatable").
+
+**NOT BUILT HERE on purpose.** The blocked-obvious-design half is a finding; the unblocked half
+is a product decision about a shared component, and this round has routed four of those to the
+maintainer rather than guessing.
+
+**A CI SIGNAL THAT RETURNS EITHER VERDICT FOR ONE COMMIT — measured, not fixed (2026-09-10).**
+`tests/test_wal_reader_starvation.py::test_run_all_starves_every_checkpoint_for_its_whole_duration`
+failed the `Core-only install (no [analysis] extra)` lane on head `9c5903ad`. The evidence that it
+is non-deterministic is unusually clean, because this repo builds each head under TWO parallel
+workflow runs and **the same commit produced opposite results on the same check**: run
+`34436678531` FAILED it, run `34436681421` PASSED it. Locally it passed 14/14 — eight sequential,
+then six more under six busy CPU workers.
+
+**Two things worth keeping.**
+1. **THE TEST'S DOCSTRING IS STALE IN A WAY THAT MISLEADS EXACTLY THE PERSON DEBUGGING IT.** It
+   still reads *"MUST FAIL on unpatched main … That is false today and will flip true once PR-D's
+   fix lands."* PR-D **has** landed: `run_all()` commits between producers through a dedicated
+   helper (`src/briefing/registry.py:154`) whose own docstring carries the PR-D / W1 rationale, the
+   read-only-producer safety argument and the disclosed snapshot tradeoff. So the test now asserts
+   the FIXED guarantee and normally passes — but a reader who hits the red check and reads the
+   docstring will conclude the fix is missing and go looking for it. The prose should be updated
+   when someone next touches that file.
+2. **THE FAILURE IS NOT THE PR'S, AND THE PROOF SHAPE IS REUSABLE.** The delta between the last
+   GREEN run of that check and the red one was three ledger files and one line of `CLAUDE.md` —
+   zero code, with every code change in the PR already present in the green run. When a check goes
+   red, diffing the last-green head against the red head is a faster and more conclusive first
+   move than reading the failure.
+
+**NOT FIXED HERE, deliberately.** Making that test deterministic is a change to a
+carefully-reasoned WAL-starvation guard, by someone holding the reasoning that produced it — not a
+side quest inside a PR about absorption gates and a dump reader. But it is real work, not noise: a
+signal that can return either verdict for one commit is one that will eventually be disbelieved,
+and each red instance costs another session the investigation this one cost.
+
+**HELP'S `scrollable-region-focusable` (n=3) IS CLOSED (2026-09-10).** It sat under "STILL
+OPEN, out of this pass's scope — Help's other axe findings". `.prose pre` carries
+`overflow-x:auto`, so a wide code sample in a Help document scrolls sideways with a mouse
+and, with no `tabindex`, **not at all with a keyboard** — the reader never sees the
+right-hand side of the line. WCAG 2.1.1.
+
+**The interesting half is what is deliberately NOT marked.** Only blocks whose measured
+geometry actually overflows (`scrollWidth > clientWidth`) become focusable. Marking every
+`<pre>` would trade one defect for another: a tab stop on a block that does not scroll is
+a keystroke that does nothing, and a document of short samples would become a corridor of
+dead stops. The mark is also REMOVED when a block stops overflowing, because the Help find
+box re-renders the prose with narrower content and a tab stop left behind there is the
+same dead keystroke arriving by a different route. An author's own `tabindex` is never
+clobbered — only the `"0"` this pass sets is removed.
+
+**No `role="region"`, on purpose:** it would demand an accessible name, and inventing one
+per code block ("code sample 3") is screen-reader noise. `tabindex="0"` alone satisfies
+the rule.
+
+**It runs on BOTH writers into `#doc-prose`** — `openDoc` and `filterDoc` — which is the
+one-of-two-render-paths shape this round has met repeatedly: a fix applied only in
+`openDoc` is silently undone the first time a reader types in the find box. A mutant
+removing the `filterDoc` call is in the matrix and dies.
+
+**STILL OPEN from that same entry, unchanged:** `link-in-text-block` (n=15) — note that
+`.prose` itself already carries a fix for it (`app.css`, the a11y-help-link-in-text-block
+rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` and a
+future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
+single slugifier can resolve, which after the anchor fix are INERT rather than
+ejecting the reader — cosmetic residue, explicitly not the P0.

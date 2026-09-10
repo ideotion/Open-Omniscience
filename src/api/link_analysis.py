@@ -157,13 +157,22 @@ def corpus_links(
     items: list[dict] = []
     if ids:
         cit = func.count(func.distinct(ArticleLink.article_id))
+        # DISTINCT CITING SOURCES, alongside distinct citing ARTICLES. The two counts
+        # are what separate echo from corroboration, and only the pair can say which:
+        # five articles from one outlet citing a page is one voice; five articles from
+        # five outlets is five paths that merely happen to share this origin. The join
+        # is many-to-one (a link row belongs to exactly one article), so it adds no
+        # fan-out to the article count grouped beside it.
+        srcs = func.count(func.distinct(Article.source_id))
         rows = (
             db.query(
                 ArticleLink.normalized_url.label("nu"),
                 cit.label("citations"),
+                srcs.label("sources"),
                 func.max(ArticleLink.url).label("sample_url"),
                 func.max(ArticleLink.link_text).label("sample_text"),
             )
+            .join(Article, Article.id == ArticleLink.article_id)
             .filter(ArticleLink.article_id.in_(ids))
             .group_by(ArticleLink.normalized_url)
             .having(cit >= min_citations)
@@ -178,6 +187,17 @@ def corpus_links(
                 "link_text": r.sample_text,
                 "domain": registrable_domain(r.nu),
                 "citations": int(r.citations),
+                "citing_sources": int(r.sources),
+                # A MACHINE-READABLE verdict, never prose: the caller renders it in the
+                # reader's own language. "distinct_sources" holds ONLY when every citing
+                # article comes from a different outlet -- one outlet citing a page twice
+                # makes the count of articles overstate the count of independent paths,
+                # so that case reads as single_origin, exactly like a lone outlet does.
+                "independence": (
+                    "distinct_sources"
+                    if int(r.sources) > 1 and int(r.citations) == int(r.sources)
+                    else "single_origin"
+                ),
             }
             for r in rows
         ]
@@ -188,12 +208,15 @@ def corpus_links(
         "min_citations": min_citations,
         "items": items,
         "method": (
-            "Outbound URLs cited by at least min_citations of the matched articles "
-            "(distinct-article counts)."
+            "Outbound URLs cited by at least min_citations of the matched articles, "
+            "with the distinct-article and distinct-source counts side by side."
         ),
         "caveat": (
             "Shared-origin structure, counts only. Several articles citing the SAME "
-            "link are not independent confirmation -- one origin, several echoes."
+            "link are not independent confirmation -- one origin, several echoes. "
+            "Citing sources is the count that bounds how many independent paths there "
+            "could be; even distinct outlets may still share an upstream origin this "
+            "view cannot see."
         ),
     }
 

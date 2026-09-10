@@ -2113,18 +2113,53 @@
           out.innerHTML = `<div class="note err">${msg}</div>`;
           return;
         }
-        const meta = [
-          d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
-          d.rev_timestamp ? `${t("dump revision of")} ${esc(d.rev_timestamp.slice(0,10))}` : "",
-          `${d.index_lines_scanned} ${t("index lines scanned")} · ${d.scan_seconds}s`
-        ].filter(Boolean).join(" · ");
-        out.innerHTML = `<div class="card">
-          <h4>${esc(d.title)} <span class="muted" style="font-weight:normal">(${esc(d.wiki)})</span></h4>
-          <div class="muted small" title="${esc(d.method || "")}">${meta}</div>
-          <div class="muted small">${esc(t("Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call."))}</div>
-          <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(d.wikitext)}</pre>
-        </div>`;
+        _dumpPage = d;
+        _renderDumpPage();
       } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // The last page read, so the view toggle re-renders without a second index scan
+    // (a scan is seconds of local I/O -- re-paying it to change a view would be the
+    // reader punishing the reader for looking).
+    let _dumpPage = null, _dumpPageView = "plain";
+    function dumpReadView(mode) { _dumpPageView = mode; _renderDumpPage(); }
+    // READABLE IS A STRIP, AND IS NAMED AS ONE. The docket asks for "wikitext
+    // rendering"; what the codebase can honestly offer is `plain_from_wikitext`, the
+    // corpus pipeline's own reducer, whose docstring says it targets
+    // "keyword/WWW-quality text, not rendering fidelity" -- it PEELS templates and
+    // DROPS refs, tables and file links. So an infobox does not become a table here,
+    // it disappears; a reader told "rendered" would conclude the page never had one.
+    // Hence the label "Readable text", the caveat beside it, and the Raw view kept one
+    // click away as the thing that is actually complete. True rendering stays open.
+    function _renderDumpPage() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const out = $("dumpread-out"); const d = _dumpPage;
+      if (!out || !d) return;
+      const meta = [
+        d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
+        d.rev_timestamp ? `${t("dump revision of")} ${esc(d.rev_timestamp.slice(0,10))}` : "",
+        `${d.index_lines_scanned} ${t("index lines scanned")} · ${d.scan_seconds}s`
+      ].filter(Boolean).join(" · ");
+      // The readable view is offered only when the strip actually produced text: a page
+      // that is nothing but templates and tables reduces to almost nothing, and an empty
+      // pane labelled "Readable text" would read as an empty PAGE.
+      const plain = (d.plain || "").trim();
+      const canPlain = plain.length > 0;
+      const view = canPlain ? _dumpPageView : "raw";
+      const seg = (m, lbl) => `<button class="ghost tiny${view === m ? " on" : ""}" `
+        + `onclick="dumpReadView('${m}')">${esc(lbl)}</button>`;
+      const toggle = canPlain
+        ? `<div class="row" style="gap:6px;margin-top:6px">${seg("plain", t("Readable text"))}${seg("raw", t("Raw wikitext"))}</div>`
+        : `<div class="muted small" style="margin-top:6px">${esc(t("Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext."))}</div>`;
+      const note = view === "plain"
+        ? t("Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.")
+        : t("Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.");
+      out.innerHTML = `<div class="card">
+        <h4>${esc(d.title)} <span class="muted" style="font-weight:normal">(${esc(d.wiki)})</span></h4>
+        <div class="muted small" title="${esc(d.method || "")}">${meta}</div>
+        ${toggle}
+        <div class="card-caveat" style="margin-top:4px">${esc(note)}</div>
+        <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(view === "plain" ? plain : d.wikitext)}</pre>
+      </div>`;
     }
 
     // -- Full-text search over downloaded dump BODIES (local, zero network) --- //

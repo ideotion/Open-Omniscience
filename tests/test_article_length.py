@@ -24,6 +24,7 @@ from src.analytics.article_length import (
     _WORD_BUCKETS,
     summarize,
 )
+from tests.diagnostics_source import diagnostics_source
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -159,7 +160,7 @@ def test_report_carries_no_score_fields(corpus):
 # ----------------------------- wiring (no fastapi) ----------------------------- #
 
 def test_endpoint_and_button_are_wired():
-    diag = (_ROOT / "src" / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     assert '@router.get("/article-length")' in diag
     assert "from src.analytics.article_length import article_length_report" in diag
     # DIAGNOSE-THE-DIAGNOSTICS ruling #7 (2026-07-20): the standalone download button was

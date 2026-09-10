@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from src.ai_layer import coordinator as C
+from tests.diagnostics_source import diagnostics_source
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 
@@ -221,7 +222,7 @@ def test_every_background_ai_entry_point_checks_the_hold() -> None:
 def test_a_manual_sweep_run_takes_the_hold_for_its_whole_duration() -> None:
     """Ruling 13 names a manual sweep run as a user batch. Wrapping the WORKER (not
     the endpoint) is what makes the hold last the whole run rather than its start."""
-    src = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     for worker in ("_keyword_triage_worker", "_source_tags_worker", "_perception_extract_worker"):
         body = src.split(f"def {worker}(", 1)[1].split("\ndef ", 1)[0]
         assert "user_batch_hold" in body, f"{worker} must hold while it runs"

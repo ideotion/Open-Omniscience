@@ -250,13 +250,50 @@
       loadQualifyBulk();
     }
 
-    async function exportMethods(qArg) {
-      // RM-07: the *how* behind the current search, as a downloadable document.
-      const q = (qArg != null ? qArg : $("q").value.trim());
-      if (!q) { toast("Run a search first — the appendix records the query.", "err"); return; }
+    // WHAT SCOPES A REPORT: an exact article set, or a Boolean query -- and the
+    // client used to be able to say only the second one.
+    //
+    // /api/reports/methods and /api/reports/evidence have ALWAYS accepted
+    // `article_ids | query` (src/api/reporting.py, one _select_articles for both).
+    // These two buttons sent `{query: q}` and nothing else, so on an id-seeded #an
+    // corpus -- the exact set behind a Lead, a When/Where/Who facet drill, a card
+    // corpus, anything opened through openAnalysisForIds -- `anQuery()` is empty and
+    // both refused. The buttons render unconditionally, so the surface CLAIMED the
+    // capability and declined it on click, and declined it with advice that was false
+    // in that context: "Run a search first" to a reader looking at a 40-article Lead
+    // corpus they had just opened. The signed EVIDENCE bundle is the one that stings,
+    // being the chain-of-custody export, unavailable for the most evidentiary corpus
+    // the window can hold.
+    //
+    // So the scope travels as the same URLSearchParams every other #an action passes
+    // (anParams()), and the id set reaches the endpoint that was already waiting for
+    // it. A bare string or no argument keeps the Search tab's behaviour exactly.
+    // Returns null when nothing scopes the report, and the CALLER says so -- this
+    // helper never toasts, so the two messages stay each button's own.
+    function _reportScope(arg) {
+      if (arg && typeof arg.get === "function") {          // URLSearchParams
+        const ids = (arg.get("article_ids") || "")
+          .split(",").map((x) => parseInt(x, 10)).filter((n) => !isNaN(n));
+        if (ids.length) {
+          // An id set has no query to name it, so the corpus's own visible label is
+          // the honest case name -- never a fabricated one, and never the id list.
+          const lab = ($("an-query") ? $("an-query").textContent : "").replace(/[“”"]/g, "").trim();
+          return {article_ids: ids, case_name: lab || null};
+        }
+        const q = (arg.get("query") || "").trim();
+        return q ? {query: q, case_name: q} : null;
+      }
+      const q = (arg != null ? String(arg) : ($("q") ? $("q").value : "")).trim();
+      return q ? {query: q, case_name: q} : null;
+    }
+
+    async function exportMethods(scope) {
+      // RM-07: the *how* behind the current analysis, as a downloadable document.
+      const sel = _reportScope(scope);
+      if (!sel) { toast("Run a search first — the appendix records the query.", "err"); return; }
       try {
         const r = await api("/api/reports/methods",
-          {method: "POST", body: JSON.stringify({query: q})});
+          {method: "POST", body: JSON.stringify(sel)});
         const blob = new Blob([r.markdown], {type: "text/markdown"});
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
@@ -1619,12 +1656,12 @@
       }
     }
 
-    async function exportEvidence(qArg) {
-      const q = (qArg != null ? qArg : $("q").value.trim());
-      if (!q) { toast("Enter a search query to scope the evidence bundle.", "err"); return; }
+    async function exportEvidence(scope) {
+      const sel = _reportScope(scope);
+      if (!sel) { toast("Enter a search query to scope the evidence bundle.", "err"); return; }
       try {
         const bundle = await api("/api/reports/evidence",
-          {method: "POST", body: JSON.stringify({query: q, case_name: q})});
+          {method: "POST", body: JSON.stringify(sel)});
         const blob = new Blob([JSON.stringify(bundle, null, 2)], {type: "application/json"});
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);

@@ -481,12 +481,35 @@ def dumps_page(wiki: str, title: str) -> dict:
     The result is always honest about what happened: found (with raw
     wikitext + match kind + scan stats), not in the index, or not readable
     because only a legacy single-stream file exists (re-download hint).
+
+    A READABLE rendition rides alongside the raw wikitext, and it is a STRIP
+    rather than a render -- the distinction is the whole reason it is named this
+    way. ``plain_from_wikitext`` is the corpus pipeline's own reducer, reused
+    here rather than reimplemented, and its docstring says what it is for:
+    "keyword/WWW-quality text, not rendering fidelity". It PEELS templates,
+    DROPS refs, comments, tables and file links, and keeps link labels. So an
+    infobox does not become a table -- it disappears, and a reader who was told
+    "rendered" would believe the page never had one. ``plain_method`` states
+    that in the payload, so the caveat travels with the text rather than living
+    only in whichever UI happens to draw it. True rendering (templates
+    evaluated, tables laid out) remains open in the docket.
     """
+    from src.wiki.corpus import plain_from_wikitext
     from src.wiki.dumpread import find_page
 
     if not title.strip():
         raise HTTPException(status_code=400, detail="wiki and title are required.")
-    return find_page(_validated_wiki(wiki), title.strip())
+    res = find_page(_validated_wiki(wiki), title.strip())
+    raw = res.get("wikitext") if isinstance(res, dict) else None
+    if raw:
+        res["plain"] = plain_from_wikitext(raw)
+        res["plain_method"] = (
+            "Lexical strip, not a render: templates and infoboxes are peeled away, "
+            "references, comments, tables and file links are removed, and link "
+            "labels are kept. Anything a template would have produced is absent "
+            "rather than rendered."
+        )
+    return res
 
 
 @router.get("/dumps/search")

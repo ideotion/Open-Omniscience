@@ -12,8 +12,6 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from src.monitoring.search_timing import (
     _RES_CAP,
     SCHEMA,
@@ -26,6 +24,7 @@ from src.monitoring.search_timing import (
     run_search_timing_selftest,
     search_timing_report,
 )
+from tests.diagnostics_source import diagnostics_source
 
 
 def _record(ticks: list[float], names: list[str]) -> dict:
@@ -115,7 +114,7 @@ def test_no_score_field_anywhere():
 def test_aggregator_carries_the_search_timing_report():
     # MEMBERSHIP CONTRACT (source-inspected, no app import): _all_diagnostics_members must carry
     # the §4 report so a future edit can never silently drop it from the bundle.
-    src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     start = src.index("def _all_diagnostics_members")
     end = src.index("def _all_diagnostics_manifest", start)
     assert '"search-timing.json"' in src[start:end], "search-timing.json dropped from the bundle"

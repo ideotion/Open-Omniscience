@@ -34,6 +34,7 @@ from src.analytics.source_audit import (
     should_auto_demote,
 )
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests.diagnostics_source import diagnostics_source
 
 _BANNED = ("score", "ranking", "rating", "grade")
 
@@ -341,7 +342,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_source_audit_endpoint_wired_to_the_settings_button():
-    diag = (_ROOT / "src/api/diagnostics.py").read_text(encoding="utf-8")
+    diag = diagnostics_source()
     html = (_ROOT / "src/static/index.html").read_text(encoding="utf-8")
     prefix = re.search(r'APIRouter\(prefix="([^"]+)"', diag).group(1)
     assert prefix == "/api/diagnostics"

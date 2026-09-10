@@ -7982,3 +7982,199 @@
   case is not complete until the consumer case exists, and the guard belongs in the same
   commit — an `else` that logs the unknown kind is the cheaper structural fix where the
   surface can afford it.**
+
+- **A GUARD THAT CHECKS A CAPABILITY'S NAME IS NOT CHECKING THE CAPABILITY (2026-09-09).**
+  `index.html` claims the `#an` window is "a strict superset" of the retired `#corpus-win`
+  modal, and that claim is what licenses deleting the modal. The test enforcing it asserted
+  that the `#an` nav carries a `data-tab` with each retired facet's NAME — and passed for
+  months while three facets were strict SUBSETS: Sources dropped every catalogue fact,
+  Links dropped the distinct-source count that separates echo from corroboration, Keywords
+  dropped PMI. **GENERAL FORM: when a test exists to license a DELETION, the thing it must
+  compare is what the survivor DISPLAYS against what the deleted thing displayed. A tab
+  called "Sources" existing is compatible with every fact behind it having been lost, and
+  the check that a name is present is the cheapest possible assertion to write and the
+  easiest to mistake for the expensive one.** Same family as the `app.js`-split lesson (a
+  negative assertion passing for free against a file that no longer contains what it
+  checks); this is its positive-space twin.
+
+- **A SOURCE-TEXT ASSERTION FOR "X IS RENDERED" SURVIVES CODE THAT READS X AND THROWS IT
+  AWAY (2026-09-09, found by a mutant against my own new test).** The guard was
+  `assert_present(renderer_source, "s.tags")`. The mutant `const tags = (false &&
+  s.tags.length)` — read the field, discard it — kept the substring and the test stayed
+  green. **GENERAL FORM: a substring proves a field is MENTIONED, never that it reaches the
+  output. Where the fact matters, extract the fragment into a pure named function and
+  EXECUTE it; where it does not, keep the grep but write down that it is a smoke check, so
+  the next reader does not bank on it.** The extraction is cheap and pays twice: the cell
+  became testable, and the ten assertions it now carries (tags-only rows, empty arrays, a
+  null row, escaping) are cases no grep could have expressed.
+
+- **A DEFAULT PARAMETER VALUE HIDES A BRANCH FROM EVERY TEST THAT USES THE DEFAULT
+  (2026-09-09).** A per-link independence verdict guarded on `sources > 1 and citations ==
+  sources`. Dropping the `sources > 1` half killed nothing: the fixture's floor was
+  `min_citations=2`, so `citations == sources == 1` never occurred. But `min_citations` is a
+  caller-settable `Query(ge=1)`, so the case is one query-string away — and there the mutant
+  labels a link cited by ONE article from ONE outlet as coming from distinct outlets, the
+  most misleading verdict the field can carry on the least corroborated row there is.
+  **GENERAL FORM: when a mutant survives, check whether a DEFAULT is what makes it look
+  equivalent before concluding that it is. The branch is unreachable only for callers who
+  take the default, and the parameter exists precisely because some caller will not.**
+
+- **A CODEMOD THAT EDITS PYTHON MUST BE DRIVEN BY THE PARSER, AND MUST REFUSE TO WRITE
+  WHAT DOES NOT PARSE (2026-09-09).** Migrating 27 call sites, the script placed its new
+  import with a regex for the last top-level import line. That regex matched the OPENING
+  line of a multi-line parenthesised `from x import (` and inserted the statement INSIDE
+  the parentheses, leaving three test files syntactically invalid. **The test suite did
+  not catch it** — an unparseable file is a collection error *in itself*, not in the files
+  it makes assertions about, so the suites those files guard reported nothing. `ruff` did,
+  as `invalid-syntax`, and only because the ratchet is run on every change. **GENERAL FORM:
+  a regex sees lines, and Python statements are not lines. `ast` knows where a statement
+  ends (`end_lineno` covers parenthesised continuations), and an `ast.parse()` on the
+  result before writing turns "I hope this is valid" into a precondition.** Corollary worth
+  keeping: a lint ratchet run every time is a syntax check the test suite structurally
+  cannot be.
+
+- **A READER THAT CAN FIND NOTHING MUST RAISE, NEVER RETURN EMPTY (2026-09-09).** The
+  shared reader for `src/api/diagnostics` — built so a future package split cannot go
+  vacuous at 27 sites — has two ways to find nothing: the path is gone, or the package
+  holds no `.py`. Both raise. Returning `""` would be the natural defensive instinct and is
+  the exact opposite of safe here: an empty string passes **every** `assert X not in
+  source` in the suite, silently, which is the failure the reader exists to prevent
+  arriving through the reader itself. **GENERAL FORM: when a helper feeds negative
+  assertions, its empty result is indistinguishable from the condition those assertions
+  are testing for. Make "found nothing" an error, and pin that with a test, because the
+  refusal reads like defensiveness to the next person tidying up.** Same shape as the
+  ordering rule beside it: the reader includes a module `__init__.py` never imports,
+  because a forgotten import line must not quietly shrink what the assertions run over.
+
+- **A LINE-ANCHORED REGEX OVER HTML ANSWERS A QUESTION ABOUT FORMATTING, NOT ABOUT
+  MARKUP (2026-09-10).** Comparing two UI surfaces for which capabilities each
+  offered, I grepped `<button[^>]*onclick="cap"` — which requires the whole opening
+  tag on ONE line. Several of the buttons wrap across lines, so the comparison
+  reported one surface as MISSING three capabilities it plainly has, and I nearly
+  recorded that conclusion in the ledger. Parsing the attribute instead
+  (`onclick="cap\(([^"]*)\)"` over the whole section, or a real parser) gave the
+  opposite answer. **GENERAL FORM: whenever a grep's result would change a decision,
+  ask what the pattern assumes about LAYOUT — line breaks inside a tag, attribute
+  order, single vs double quotes, whitespace around `=`. HTML and code are not
+  line-oriented, and a pattern that silently matches nothing looks exactly like a
+  feature that is absent.** The tell here was the finding being too convenient: it
+  said the surface I was arguing for was already ahead.
+
+- **A BUTTON THAT RENDERS UNCONDITIONALLY CLAIMS ITS CAPABILITY; REFUSING ON CLICK IS
+  THE SURFACE LYING TWICE (2026-09-10).** The Methods appendix and signed-evidence
+  exports took a query string, so on an id-seeded corpus — a Lead's exact article set,
+  a facet drill, anything from `openAnalysisForIds` — they refused. The second lie was
+  the refusal's own text: "Run a search first", said to a reader who had just opened a
+  forty-article Lead corpus. The capability existed end to end (the endpoint had always
+  accepted `article_ids | query`, with tests proving it); only the client threw the
+  field away. **GENERAL FORM: a control whose availability is not conditional is a
+  promise. When a path cannot serve it, the honest options are to disable it with a
+  reason or to make it work — and a refusal message written for one entry point will
+  be actively misleading at another.** Look hardest at the paths a feature was NOT
+  originally built for: they inherit the control and not the plumbing.
+
+- **READING THE HANDLER IS NOT READING THE BEHAVIOUR — FIND WHAT IT ACTS ON (2026-09-10).**
+  Asked whether the omnibar's Enter opens the analysis window, I read `palKey`, saw
+  `Enter → palRun(_palSel)`, and reported that no entrance existed. The entrance was in
+  `renderPalette`, which unshifts the Analysis row and marks it `↵`. The handler answers
+  "what does the key do"; the question was "what will it do to". **GENERAL FORM: for a
+  keyboard or click handler that operates on a SELECTION, the behaviour lives where the
+  selection is built and ordered, not where the key is bound. Read the ordering before
+  concluding anything about what the key reaches** — and the same applies to a dispatcher
+  keyed on a variable, a router matching a path, or a reducer switching on an action.
+  The failure is asymmetric and worth fearing: it produces a confident negative ("this is
+  not built") about work that exists, which is the kind of claim a ledger carries forward.
+
+- **A KEYBOARD BADGE IS A PROMISE, AND SELECTION ORDER DECIDES WHETHER IT IS KEPT
+  (2026-09-10).** The Analysis row said `↵ ↗` unconditionally, while `_palFiltered =
+  [...statics, ...live]` with the selection at index 0 means Enter runs the first STATIC
+  match whenever the typed text matches a command. Measured against the shipped command
+  labels the collision is ordinary — `search`, `collect`, `open`, `data`, `help`,
+  `settings` — so the badge was wrong on exactly the queries most likely to be typed by
+  someone learning the palette. **GENERAL FORM: a shortcut hint rendered per-row is a claim
+  about the CURRENT list, not about the row; when the list is assembled from several
+  sources, the hint has to be computed from the assembled order or it will drift the moment
+  a second source matches.** Same family as a control that renders unconditionally and
+  refuses on click: the surface describing a capability it does not have here and now.
+
+- **A SOURCE-LEVEL ASSERTION ABOUT A TRANSFORM CANNOT SEE THE TRANSFORM (2026-09-10).**
+  Adding a "readable" rendition to the dump reader, the first test round asserted that the
+  endpoint IMPORTS the shared reducer and that the UI labels the pane honestly. A mutant
+  replacing `res["plain"] = plain_from_wikitext(raw)` with `res["plain"] = raw` **survived
+  both** — an endpoint serving raw wikitext under the word "Readable", which is exactly the
+  lie the careful naming existed to prevent. **GENERAL FORM: checking that the right
+  function is imported, called, or named proves the WIRING; only calling the thing proves
+  the OUTPUT. When a change's whole value is that some text differs from some other text,
+  the test has to compare the two.** Stubbing the expensive dependency (here `find_page`,
+  so no dump file is needed) is usually cheaper than the source-level guard it replaces,
+  and strictly stronger.
+
+- **WHEN A DOCKET ASKS FOR A CAPABILITY THE CODEBASE CAN ONLY APPROXIMATE, SHIP THE
+  APPROXIMATION UNDER ITS OWN NAME (2026-09-10).** The dump reader's open work said
+  "wikitext rendering". What exists is `plain_from_wikitext`, whose docstring targets
+  "keyword/WWW-quality text, not rendering fidelity" — it PEELS templates and DROPS tables.
+  Measured on a page whose population figure lived only in its infobox, the figure is
+  **gone** after the strip, not laid out differently. Labelling that "Rendered" would tell a
+  reader the page never had an infobox. **GENERAL FORM: the gap between what was asked for
+  and what the tools can do is not closed by the label. Name the thing you actually built,
+  state what it drops, keep the complete version one click away, and leave the original ask
+  open in the docket — a renamed approximation silently retires a requirement nobody
+  decided to drop.**
+
+- **WHEN A CHECK GOES RED, DIFF THE LAST-GREEN HEAD AGAINST IT BEFORE READING THE FAILURE
+  (2026-09-10).** A `Core-only install` lane failed on a WAL-starvation concurrency test.
+  The fastest conclusive move was not the log: it was
+  `git diff --stat <last-green-head> <red-head>`, which showed three ledger files and one
+  line of `CLAUDE.md` — **zero code**, with every code change in the PR already present in
+  the green run. That settles authorship in one command, before any theory about the
+  failure exists. **GENERAL FORM: a red check raises two separate questions — what broke,
+  and whether this change could possibly have broken it. The second is often answerable in
+  seconds and, when the answer is no, it reframes the first from "debug my change" to
+  "characterise someone else's flake", which is a different and much shorter investigation.**
+
+- **THE STRONGEST EVIDENCE OF NON-DETERMINISM IS THE SAME COMMIT DISAGREEING WITH ITSELF
+  (2026-09-10).** Local reproduction attempts are weak evidence about CI: different
+  hardware, different load, different everything. This repo happens to build each head
+  under TWO parallel workflow runs, and on one commit the same check FAILED in one and
+  PASSED in the other. That single fact is worth more than the 14 local passes gathered
+  first (8 sequential, 6 under artificial CPU load), because it holds the code exactly
+  constant and varies only the run. **GENERAL FORM: before spending a re-run to prove a
+  flake, check whether the evidence already exists — a sibling run, a matrix leg, a
+  scheduled build on the same SHA. And when reporting a flake, prefer same-commit
+  disagreement over "it passes on my machine", which an experienced reviewer will
+  discount.**
+
+- **A STALE DOCSTRING ON A NOW-PASSING TEST MISLEADS PRECISELY THE PERSON DEBUGGING IT
+  (2026-09-10).** The starvation test's docstring still read *"MUST FAIL on unpatched main
+  … that is false today"*, written when it was a red-first regression test. The fix landed;
+  the test now asserts the fixed guarantee and normally passes. But anyone arriving via a
+  red check reads that prose and concludes the fix was never applied — sending them to
+  re-implement something that exists a few lines away in the same subsystem. **GENERAL
+  FORM: a test written to FAIL first carries prose that expires the moment it starts
+  passing, and nothing forces an update. When landing the fix that flips such a test, flip
+  its docstring in the same commit — the words are part of the test's output, and they are
+  read hardest at the worst moment.**
+
+- **AN ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
+  (2026-09-10).** `scrollable-region-focusable` is satisfied by putting `tabindex="0"`
+  on the scrollable element, and the tempting fix is to mark every `<pre>`. But a tab
+  stop on a block that does not scroll is a keystroke that does nothing, and a Help
+  document full of short code samples becomes a corridor of dead stops — worse for the
+  keyboard user the rule exists to protect. The honest test is the element's REAL
+  measured geometry (`scrollWidth > clientWidth`), and the mark has to be REMOVED again
+  when a re-render makes a block fit. **GENERAL FORM: an axe rule names a condition,
+  not a remedy. Satisfying it everywhere the selector matches will pass the audit and
+  can still degrade the experience — fix the elements that actually have the problem,
+  and be willing to unfix them when they stop having it.** The neighbouring temptation
+  is the same shape: adding `role="region"` alongside would trade this rule for the
+  accessible-name rule, and inventing "code sample 3" per block is screen-reader noise.
+
+- **WHEN TWO FUNCTIONS WRITE THE SAME CONTAINER, A FIX IN ONE IS UNDONE BY THE OTHER
+  (2026-09-10).** `#doc-prose` is written by `openDoc` (loads a document) and by
+  `filterDoc` (re-renders it from the find box). A post-render pass added only to
+  `openDoc` survives until the reader types one character. **GENERAL FORM: before adding
+  a post-render step, grep for every writer of that container's `innerHTML` — the count
+  is usually more than one, and the second path is typically the incremental/filter/
+  refresh one that was added later and is exercised less in manual testing.** Cheap to
+  check, invisible when wrong, and a mutant that deletes the second call is worth having
+  in the matrix.

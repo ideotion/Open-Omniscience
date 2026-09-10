@@ -3237,5 +3237,18 @@
   "positive (more coverage as the moon fills)": "正（月が満ちるほど報道が増える）",
   "negative (less coverage as the moon fills)": "負（月が満ちるほど報道が減る）",
   "Help": "ヘルプ",
-  "date moves each year — see the official source": "日付は毎年変わります — 公式情報を参照"
+  "date moves each year — see the official source": "日付は毎年変わります — 公式情報を参照",
+  "Citing sources": "引用元",
+  "Independence": "独立性",
+  "distinct outlets": "異なる媒体",
+  "one path": "単一の経路",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "一致した記事のうち何件がこのリンクを引用しているか — 正確な件数であり、スコアではありません。",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "それらの引用記事が何件の異なる情報源から来ているか。引用が表しうる独立した経路数の上限です。",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "引用が、引用件数と同じ数の媒体から来ているかどうか。構造のみであり、信頼性の判断ではありません。",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "引用している記事はいずれも異なる媒体からのものなので、引用は見かけどおりの数の経路を表します。それでも、この画面からは見えない上流の出所を共有している可能性はあります。",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "引用記事は引用件数と同じ数の媒体から来ていません — 同じ媒体がこのページを複数回引用しているか、引用元が一つだけです。その一致は単一の経路であり、独立した裏付けではありません。",
+  "Readable text": "読みやすいテキスト",
+  "Raw wikitext": "生のウィキテキスト",
+  "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "除去後に読める内容が残りません — このページはテンプレートと表だけです。生のウィキテキストを表示します。",
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "レンダリングではなく字句的な除去です — テンプレートとインフォボックスは剥がされ、脚注・コメント・表・ファイルリンクは削除され、リンクのラベルは残ります。テンプレートが生成したはずのものは描画されるのではなく、存在しません。"
 }

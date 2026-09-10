@@ -12,9 +12,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from src.monitoring.kpi import kpi_snapshot, run_kpi_selftest
+from tests.diagnostics_source import diagnostics_source
 
 
 def _walk_no_score(o) -> None:
@@ -158,7 +157,7 @@ def test_selftest_passes_and_is_registered():
 
 
 def test_endpoint_and_bundle_membership_are_wired():
-    src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
+    src = diagnostics_source()
     assert '@router.get("/kpi")' in src and "def kpi(" in src
     start = src.index("def _all_diagnostics_members")
     end = src.index("def _all_diagnostics_manifest", start)

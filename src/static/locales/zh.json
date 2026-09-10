@@ -3237,5 +3237,18 @@
   "positive (more coverage as the moon fills)": "正相关（月亮越圆，报道越多）",
   "negative (less coverage as the moon fills)": "负相关（月亮越圆，报道越少）",
   "Help": "帮助",
-  "date moves each year — see the official source": "日期每年变动 — 请查看官方来源"
+  "date moves each year — see the official source": "日期每年变动 — 请查看官方来源",
+  "Citing sources": "引用来源",
+  "Independence": "独立性",
+  "distinct outlets": "不同媒体",
+  "one path": "单一路径",
+  "How many distinct matched articles cite this link — an exact count, never a score.": "匹配文章中有多少篇不同的文章引用了此链接——精确计数，绝非评分。",
+  "How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent.": "这些引用文章来自多少个不同的来源。这是这些引用可能代表的独立路径数量的上限。",
+  "Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement.": "这些引用是否来自与引用数量相同的媒体。仅为结构——绝非可信度判断。",
+  "Every citing article comes from a different outlet, so the citations are as many paths as they appear to be. They may still share an upstream origin this view cannot see.": "每篇引用文章都来自不同媒体，因此这些引用确实代表看上去那么多条路径。它们仍可能共享此视图看不到的上游源头。",
+  "The citing articles do not come from as many outlets as there are citations — one outlet cites this page more than once, or only one outlet does. Their agreement is one path, not independent confirmation.": "引用文章并非来自与引用数量相同的媒体——某家媒体多次引用此页面，或只有一家引用。它们的一致只是单一路径，而非独立佐证。",
+  "Readable text": "可读文本",
+  "Raw wikitext": "原始 wikitext",
+  "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "清理后没有可读内容留下——此页面只有模板和表格。显示原始 wikitext。",
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "词法清理，并非渲染——模板和信息框被剥离；参考文献、注释、表格和文件链接被移除；链接文字保留。模板本会生成的内容是缺失的，而非被渲染。"
 }
