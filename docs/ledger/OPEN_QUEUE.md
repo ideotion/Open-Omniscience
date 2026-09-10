@@ -11847,3 +11847,43 @@ rather than quietly assuming the old one still holds.
 in another file, READ IT FROM THAT FILE. A copy is only safe if something compares the two, and the
 comment saying "mirrored deliberately" is not that something — it is the specific sentence to
 distrust, because it reads as a decision that was made rather than a property that was tested.
+
+---
+
+**THE i18n WHOLE-SENTENCE CLASS IS CLOSED — 80 of 80 (2026-09-10, PR #1109, slice 4).** The last 6
+were bare JS literals needing `t()` wrappers as well as keys. `--max-untranslatable` **476 → 470**;
+`--max-unkeyed-t-calls` held at **231** while `t()` call sites went 2191 → 2196, which is the
+verification: five new wrappers, none of them unkeyed, so every one matched its key byte-for-byte.
+**Whole sentences remaining in the untranslatable set: zero.**
+
+**THE WRAPPER IS NOT THE FIX, AND THE LEDGER ALREADY SAID SO — I nearly re-derived it wrong.** The
+2026-07-28 audit entry records: *"a string not wrapped in `t()` is NOT thereby untranslated … the gap
+is a missing KEY, not a missing wrapper"*, because the MutationObserver translates any dynamically
+inserted text node or `title`/`placeholder`/`aria-label` whose value matches a key. A bare keyed
+`toast()` is a ~120 ms **English flash**, not an untranslated string. So the key is the correctness
+fix and the wrapper only removes the flash. Applied accordingly: all six keyed; the five JS strings
+also wrapped (a toast is on screen for seconds, so the flash is visible); the sixth — a `title`
+attribute inside injected markup — **left key-only on purpose**, because a tooltip cannot be hovered
+within 120 ms, so the wrapper would buy nothing while touching rendering markup.
+
+**TWO SCOPE TRAPS, both caught before they shipped, one by reading and one by `node --check`:**
+(a) `t` is bound per-function in these files, not globally, and the nearest binding above a call site
+is often in a DIFFERENT function — at `app-diagnostics.js:1400` the visible `const t` belonged to
+`runIrEval()` while the site sits in `goldBuilderSave()`. Four functions needed their own binding.
+(b) Scanning only ABOVE the use site is not enough: `pullMailbox()` already bound `t` seventeen lines
+BELOW, so adding one at the top produced a duplicate `const` — and had I instead used the existing
+one, the earlier call would have been a **temporal-dead-zone `ReferenceError`**, which is worse than
+an absent binding because it looks correct. `node --check` caught the duplicate; nothing but reading
+would have caught the TDZ. When adding a binding to a function, scan the WHOLE function body.
+
+**AND A GUARD THAT PINNED THE CALL SPELLING RATHER THAN THE WORD IT GUARDS.**
+`test_naming_sweep_ring_disappears_from_the_user_visible_ui` required the literal
+`toast("Group added.")`, so wrapping that call in `t()` failed a naming test that has nothing to do
+with wrappers. Its own comment, one line above, already prescribed the remedy for the sibling entry:
+*"Anchored on the quoted STRING, not on `toast("...` — pinning the wrapper made this guard trip on a
+rename that never touched the word it guards."* The same defect sat directly beneath that note, in
+both halves. Now both are anchored on the quoted string. This strictly strengthens the FORBIDDEN
+half, and the reason is a substring fact rather than a judgement: `toast("Ring added.")` is **not** a
+substring of `toast(t("Ring added."))`, so a reverted word inside a wrapper would have slipped past
+it. Three mutants — reverted word through the wrapper, reverted word bare, string deleted — three
+dead.

@@ -3343,5 +3343,11 @@
   "This is the copy captured at ingest — it does not change if the source is later edited or removed.": "これは取り込み時に保存された複製です — 後でソースが編集または削除されても変化しません。",
   "Toggle the progressive keyword-triage sweep on/off. ON starts (or resumes from the saved cursor) a run across ALL head-scope keywords using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.": "キーワード仕分けの逐次スイープをオン/オフします。オンにすると、アクティブなモデルを使ってすべての主要スコープのキーワードに対する実行を開始します（保存済みカーソルからの再開を含む）。オフにすると、バッチの区切りにある次の安全な地点で一時停止します — 途中までのログとカーソルは保持されるため、再びオンにすると続きから進みます。",
   "Toggle the progressive source-tag sweep on/off. ON starts (or resumes from the saved cursor) a run across every source with sufficient evidence using the active model; OFF pauses it at the next safe point between pages -- the partial log and cursor are kept, so toggling ON again continues.": "ソースタグ付けの逐次スイープをオン/オフします。オンにすると、アクティブなモデルを使って十分な根拠のあるすべてのソースに対する実行を開始します（保存済みカーソルからの再開を含む）。オフにすると、ページの区切りにある次の安全な地点で一時停止します — 途中までのログとカーソルは保持されるため、再びオンにすると続きから進みます。",
-  "Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.": "誰が・どこで・いつ の抽出の逐次スイープをオン/オフします。オンにすると、アクティブなモデルを使って、言語が知覚評価ハーネスを通過したすべての記事に対する実行を開始します（保存済みカーソルからの再開を含む）。オフにすると、バッチの区切りにある次の安全な地点で一時停止します — 途中までのログとカーソルは保持されるため、再びオンにすると続きから進みます。"
+  "Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.": "誰が・どこで・いつ の抽出の逐次スイープをオン/オフします。オンにすると、アクティブなモデルを使って、言語が知覚評価ハーネスを通過したすべての記事に対する実行を開始します（保存済みカーソルからの再開を含む）。オフにすると、バッチの区切りにある次の安全な地点で一時停止します — 途中までのログとカーソルは保持されるため、再びオンにすると続きから進みます。",
+  "Enter a save path first.": "先に保存先のパスを入力してください。",
+  "Load + grade queries first.": "先にクエリを読み込んで採点してください。",
+  "Grade at least one anchor first.": "先にアンカーを少なくとも 1 つ採点してください。",
+  "Enter at least a host and user.": "少なくともホストとユーザーを入力してください。",
+  "Group added.": "グループを追加しました。",
+  "These signals are merely close in place and time within your current window.": "これらのシグナルは、現在のウィンドウ内で場所と時間が近いというだけです。"
 }

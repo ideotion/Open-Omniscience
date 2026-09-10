@@ -1516,11 +1516,12 @@
     // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only; the anonymise +
     // kill-switch guarantees live in the (tested) backend.
     async function pullMailbox() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("mbox-result"), btn = $("mbox-btn");
       const host = ($("mbox-host").value || "").trim();
       const user = ($("mbox-user").value || "").trim();
       const password = $("mbox-pass").value || "";
-      if (!host || !user) { if (out) out.textContent = "Enter at least a host and user."; return; }
+      if (!host || !user) { if (out) out.textContent = t("Enter at least a host and user."); return; }
       // A network action -> the ONE consent popup (invariant #14).
       if (typeof ensureOnline === "function" && !await ensureOnline("Pull newsletters from your mailbox")) return;
       const body = {
@@ -1530,7 +1531,6 @@
         limit: parseInt($("mbox-limit").value || "50", 10),
       };
       if (btn) btn.disabled = true;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       if (out) out.textContent = t("Pulling from your mailbox…");
       try {
         // The pull is a BACKGROUND JOB now (it is a network fetch plus a full

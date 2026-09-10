@@ -3343,5 +3343,11 @@
   "This is the copy captured at ingest — it does not change if the source is later edited or removed.": "这是采集入库时保存的副本——即使来源之后被编辑或删除，它也不会改变。",
   "Toggle the progressive keyword-triage sweep on/off. ON starts (or resumes from the saved cursor) a run across ALL head-scope keywords using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.": "开启/关闭关键词分拣的渐进式扫描。开启会使用当前模型对全部主范围关键词启动运行（或从已保存的游标处继续）；关闭会在两批之间的下一个安全点暂停——部分日志和游标都会保留，因此再次开启即可接着运行。",
   "Toggle the progressive source-tag sweep on/off. ON starts (or resumes from the saved cursor) a run across every source with sufficient evidence using the active model; OFF pauses it at the next safe point between pages -- the partial log and cursor are kept, so toggling ON again continues.": "开启/关闭来源标注的渐进式扫描。开启会使用当前模型对每个证据充分的来源启动运行（或从已保存的游标处继续）；关闭会在两页之间的下一个安全点暂停——部分日志和游标都会保留，因此再次开启即可接着运行。",
-  "Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.": "开启/关闭“谁／何地／何时”抽取的渐进式扫描。开启会使用当前模型对语言已通过感知评测基准的每篇文章启动运行（或从已保存的游标处继续）；关闭会在两批之间的下一个安全点暂停——部分日志和游标都会保留，因此再次开启即可接着运行。"
+  "Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.": "开启/关闭“谁／何地／何时”抽取的渐进式扫描。开启会使用当前模型对语言已通过感知评测基准的每篇文章启动运行（或从已保存的游标处继续）；关闭会在两批之间的下一个安全点暂停——部分日志和游标都会保留，因此再次开启即可接着运行。",
+  "Enter a save path first.": "请先输入保存路径。",
+  "Load + grade queries first.": "请先加载并评分查询。",
+  "Grade at least one anchor first.": "请先至少为一个锚点评分。",
+  "Enter at least a host and user.": "请至少输入主机和用户名。",
+  "Group added.": "已添加组。",
+  "These signals are merely close in place and time within your current window.": "这些信号只是在您当前的时间窗口内于地点和时间上相近而已。"
 }

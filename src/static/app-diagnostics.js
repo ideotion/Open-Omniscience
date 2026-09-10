@@ -1396,9 +1396,10 @@
       el.textContent = `Coverage: ${graded}/${(_gbQueries || []).length} queries graded · ${total} judgements${langStr}`;
     }
     async function goldBuilderSave(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const path = (($("gold-builder-path") && $("gold-builder-path").value) || "").trim();
-      if (!path) { if (typeof toast === "function") toast("Enter a save path first.", "err"); return; }
-      if (!_gbQueries || !_gbQueries.length) { if (typeof toast === "function") toast("Load + grade queries first.", "err"); return; }
+      if (!path) { if (typeof toast === "function") toast(t("Enter a save path first."), "err"); return; }
+      if (!_gbQueries || !_gbQueries.length) { if (typeof toast === "function") toast(t("Load + grade queries first."), "err"); return; }
       const queries = _gbQueries.map((q) => ({ id: q.id, query: q.query, language: q.language, axis: q.axis, relevances: q.relevances }));
       if (btn) btn.disabled = true;
       try {
@@ -1501,9 +1502,10 @@
     }
 
     async function mbAnchorsSave(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (_mbAnchors || []).filter((a) => a.verdict)
         .map((a) => (a.kind ? { term: a.term, verdict: a.verdict, kind: a.kind } : { term: a.term, verdict: a.verdict }));
-      if (!rows.length) { if (typeof toast === "function") toast("Grade at least one anchor first.", "err"); return; }
+      if (!rows.length) { if (typeof toast === "function") toast(t("Grade at least one anchor first."), "err"); return; }
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/diagnostics/model-bench/anchors", { method: "POST", body: JSON.stringify({ anchors: rows }) });

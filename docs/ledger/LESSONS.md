@@ -6233,6 +6233,40 @@
     (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
     (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
     run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **A GUARD THAT PINS A CALL SPELLING IS NOT GUARDING THE THING IT NAMES (2026-09-10):**
+    `test_naming_sweep_ring_disappears_from_the_user_visible_ui` exists to prove a user-visible
+    "ring" became "group". It did that by requiring the literal `toast("Group added.")` and
+    forbidding `toast("Ring added.")` — so wrapping that call in `t()`, a change that touches no
+    user-visible word, failed a naming test. Worse in the other direction: `toast("Ring added.")`
+    is **not a substring of** `toast(t("Ring added."))`, so the FORBIDDEN half was blind to the
+    exact regression it exists for, as soon as anyone wrapped the call. Anchor on the quoted
+    STRING, never on the call around it. The file's own comment already said this for a sibling
+    entry — *"pinning the wrapper made this guard trip on a rename that never touched the word it
+    guards"* — and the same defect sat directly beneath that note in both halves, which is the
+    ordinary way a lesson fails to spread: it gets written where it was learned rather than
+    applied to its neighbours.
+  - **`t()` IS BOUND PER-FUNCTION IN THE UI MODULES, AND A `const` LATER IN THE SAME FUNCTION IS
+    WORSE THAN NO BINDING AT ALL (2026-09-10):** the nearest `const t = (window.OOI18N && …)`
+    ABOVE a call site is frequently in a DIFFERENT function — at `app-diagnostics.js:1400` the
+    visible one belonged to `runIrEval()` while the site sat in `goldBuilderSave()`. So a scope
+    scan that walks upward to the first binding it sees will happily conclude "in scope" and ship
+    a `ReferenceError`. And scanning only ABOVE is itself insufficient: `pullMailbox()` bound `t`
+    seventeen lines BELOW the site, where a `const` in the same block puts every earlier use in
+    the **temporal dead zone** — which fails at runtime while reading as perfectly correct, and
+    which `node --check` cannot see (it caught only the duplicate declaration I introduced).
+    RULE: resolve the binding against the WHOLE enclosing function body, both directions, and
+    treat "there is a `const t` somewhere above" as no evidence at all.
+  - **THE MISSING KEY IS THE BUG; THE MISSING `t()` WRAPPER IS A ~120 ms FLASH (recorded
+    2026-07-28, re-derived and nearly got wrong 2026-09-10 — read it before any i18n sweep):**
+    `i18n.js`'s MutationObserver translates dynamically-inserted text nodes and
+    `title`/`placeholder`/`aria-label` attributes whose value matches a locale key, so a bare
+    `toast("Preferences saved.")` whose key exists renders English for one frame and then
+    switches. Filing such sites as "never translated" is a fabricated finding. The practical
+    consequence when fixing them: KEY everything, and add the wrapper only where the flash is
+    observable. A toast lives on screen for seconds, so wrap it; a `title` attribute cannot be
+    hovered within 120 ms, so keying it is the whole fix and a wrapper there is churn in
+    rendering markup for no user-visible gain.
+
   - **A GUARD THAT NEEDS A VALUE FROM ANOTHER FILE MUST READ IT FROM THAT FILE — A MIRRORED COPY
     FAILS IN THE SAFE-LOOKING DIRECTION, AND THE COMMENT SAYING "MIRRORED DELIBERATELY" IS THE
     SENTENCE TO DISTRUST (2026-09-10, hit twice in one session, the second time one commit after
