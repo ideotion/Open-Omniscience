@@ -11562,3 +11562,41 @@ rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` 
 future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
 single slugifier can resolve, which after the anchor fix are INERT rather than
 ejecting the reader — cosmetic residue, explicitly not the P0.
+
+### 2026-09-10 — A CORRECTION: I RE-IMPLEMENTED A FIX THAT ALREADY EXISTED, AND IT IS REVERTED
+
+**What happened.** The entry above ("HELP'S `scrollable-region-focusable` (n=3) IS CLOSED"),
+shipped in PR #1107, is **wrong and has been reverted**. That finding was already closed on
+2026-09-09 by `f37e043f` ("fix(a11y): close every axe finding on Help, the palette, the
+analysis strip and /tasks"), which made the markdown renderer emit `<pre tabindex="0">` and
+`<table tabindex="0">` directly (`app-settings.js:172`/`:214`), carrying a comment with the
+same reasoning I later wrote from scratch. It was measured in Chromium with axe-core across
+the eight served documents and re-measured at zero.
+
+**My change was not merely redundant — it partially UNDID a browser-verified fix.**
+`markScrollableProse` ran after that render and REMOVED `tabindex` from any `<pre>` whose
+measured geometry did not currently overflow. The earlier fix gave every `<pre>` one
+deliberately. Worse, `#doc-prose` sits inside `#tab-help`, which is `display:none` when the
+tab is inactive: a render in that state reports `scrollWidth == clientWidth == 0`, so the
+removal branch would strip the tab stop from **every** code block at once. My own test even
+codified that zero-geometry elements go unmarked. Reverted in full — helper, both call
+sites, and both test files.
+
+**HOW I GOT HERE, because the mechanism matters more than the mistake.** I read
+`link-in-text-block (n=15)` and `scrollable-region-focusable (n=3)` in the STILL-OPEN entry
+and treated the docket as current. It was not, and the correction was already written down
+in the very commit that closed it: *"The Help numbers are larger than the ledger recorded
+(15 and 3) because that sweep read one document; these are the eight the reader can open."*
+One `git log -S` over the CSS or the renderer would have surfaced it. **The docket says what
+was true when someone wrote it; the code says what is true now, and where they disagree the
+code wins.** This session had already recorded that exact lesson twice — for the dump-reader
+REMAINING line and for the starvation test's docstring — and then walked into it.
+
+**SO THE ORIGINAL ENTRY'S TWO ITEMS ARE BOTH RESOLVED, and the STILL-OPEN line above them is
+retired:** `scrollable-region-focusable` was closed by `f37e043f` (11 nodes across eight
+documents, not the 3 the ledger recorded from a one-document sweep), and
+`link-in-text-block` by the same commit (23 nodes, via `.prose a, #tab-help a { text-decoration:
+underline }` in `app.css` — `#tab-help a` covers the panel's own intro link outside `.prose`).
+Both were browser-measured at zero afterwards. **What remains genuinely open from that entry
+is only the 9 USER_MANUAL.md in-page links** that no single slugifier resolves, which are
+INERT rather than ejecting the reader — cosmetic residue, explicitly not the P0.

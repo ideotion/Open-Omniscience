@@ -8155,7 +8155,8 @@
   its docstring in the same commit — the words are part of the test's output, and they are
   read hardest at the worst moment.**
 
-- **AN ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
+- **[WITHDRAWN 2026-09-10, and the withdrawal is the lesson — see the entry below.] AN
+  ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
   (2026-09-10).** `scrollable-region-focusable` is satisfied by putting `tabindex="0"`
   on the scrollable element, and the tempting fix is to mark every `<pre>`. But a tab
   stop on a block that does not scroll is a keystroke that does nothing, and a Help
@@ -8178,3 +8179,29 @@
   refresh one that was added later and is exercised less in manual testing.** Cheap to
   check, invisible when wrong, and a mutant that deletes the second call is worth having
   in the matrix.
+
+  **WITHDRAWN.** The reasoning above is not wrong in general, but I applied it to a fix
+  that was already shipped, deliberate and browser-verified: `f37e043f` gives every Help
+  `<pre>` and `<table>` a `tabindex` in the markdown renderer, having measured 11 nodes
+  with axe across the eight served documents. Second-guessing that from source, without a
+  browser, produced a change that REMOVED tab stops the verified fix had added — and would
+  have removed all of them at once whenever the Help tab rendered while hidden
+  (`display:none` → zero geometry). **The narrower, load-bearing form: an existing fix that
+  looks over-broad may be over-broad ON PURPOSE, by someone who measured. Before refining
+  it, find out whether it was measured, and if it was, refine it with the same instrument
+  or not at all.**
+
+- **A DOCKET SAYS WHAT WAS TRUE WHEN SOMEONE WROTE IT; THE CODE SAYS WHAT IS TRUE NOW
+  (2026-09-10).** I picked up an item because the queue listed it under STILL OPEN, built
+  it, tested it, mutated it, shipped it — and it had been closed the previous day. The
+  correction was not hidden: the closing commit's own message said *"The Help numbers are
+  larger than the ledger recorded (15 and 3) because that sweep read one document"*. One
+  `git log -S` over the relevant CSS or renderer would have surfaced it before any code was
+  written. **GENERAL FORM: for any docket item, the first action is to check whether the
+  thing is still true, in the code, not in the entry — `git log -S` on a distinctive string
+  from the area costs seconds and is the only check that can catch a CLOSED item still
+  listed as open.** The sharpest part is that this session had already recorded this exact
+  lesson twice, for a stale REMAINING line and a stale test docstring, and then was caught
+  by a third instance: recognising a failure mode in other people's work does not
+  immunise you against it, and the moment of greatest risk is when the stale entry tells
+  you something you are pleased to hear — that there is a small, well-defined job available.
