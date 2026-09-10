@@ -97,7 +97,9 @@ def load_export(path: Path) -> list[dict]:
 def analyse(rows: list[dict], *, per_country_cap: int = DEFAULT_PER_COUNTRY_CAP) -> dict:
     catalogue = [r for r in rows if (r.get("enabled") or "").strip().lower() == "true"]
     discovered = [r for r in rows if DISCOVERY_TAG in _tags(r.get("tags"))]
-    other = [r for r in rows if r not in catalogue and r not in discovered]
+    # By identity, not `r not in list`: a list scan per row is O(n^2) -- four minutes on 85k rows.
+    placed = {id(r) for r in catalogue} | {id(r) for r in discovered}
+    other = [r for r in rows if id(r) not in placed]
 
     by_type = Counter(r.get("source_type") or "" for r in discovered)
     news = [r for r in discovered if (r.get("source_type") or "") == "news"]

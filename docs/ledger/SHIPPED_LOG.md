@@ -7294,3 +7294,29 @@ cannot express an EDIT, only additions — so a commit that changes a line alrea
 same branch must be squashed into the commit that added it before any rebase or merge, or the
 duplicate-key scan must run after every replay. The rule (5b) placeholder sweep is the common
 case: sweep it in the same commit, or expect two rows.
+
+## 2026-09-10 — The candidate kit: the pipeline packaged for an internet session with no repository
+
+The maintainer ruled, the same day the pipeline shipped, that the internet-connected session
+running it has no GitHub access, must be autonomous, and gets its prompt by hand. The pipeline
+now travels as a KIT built by `scripts/analysis/build_candidate_kit.py`: the scripts at their
+repository paths, `src/` minus the UI and the IP table, `configs/`, the two worklists derived
+from the export at build time (the 3,588-row shortlist, byte-equal to the research shortlist,
+and the 18,457-row ordered remainder), the export as provenance, a self-check and the runbook
+(`docs/design/CANDIDATE_KIT_RUNBOOK.md` → `RUN.md`). Verified here by building the real kit from
+the maintainer's export and running the self-check from the EXTRACTED ZIP on fresh Python 3.13
+and 3.12 venvs installed from the kit's pinned requirements: the kit's own `src` imports, the
+detector answers, the 25 fake-fetcher tests pass, the real fetcher refuses an `.invalid` host with
+a named error, prepare → merge → splice plan run end to end. Python 3.11 cannot install the pins
+(numpy 2.5 needs 3.12+), so the floor is 3.12 — measured, then written. Not run against any
+publisher host (the sandbox cannot). The analysis script's "other rows" step was a quadratic
+list scan — four minutes on 85k rows — replaced by an identity set; the regenerated report and
+shortlist are byte-identical to the committed ones.
+
+**LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** a script that must run without
+the app cannot call the app's fetcher factory — `make_fetcher` reads the operator's settings from
+the encrypted key-value store, which is the database stack — and the import closure did not
+show it because the store is imported lazily inside a function body. An import closure is a
+lower bound: grep the closure's modules for `from src.` inside function bodies before believing
+a package runs standalone, and prove it with a self-check that CALLS the entry points in a fresh
+interpreter. A Python floor is measured by installing the pins, never inferred from syntax.

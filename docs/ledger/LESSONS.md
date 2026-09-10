@@ -8193,3 +8193,21 @@
   must be squashed into the commit that added it BEFORE the branch is rebased or merged, or the
   duplicate-key scan must run after every replay.** The rule (5b) placeholder sweep is the
   common case: sweep it in the same commit, or expect two rows.
+
+- **A SCRIPT THAT MUST RUN WITHOUT THE APP CANNOT CALL THE APP'S FETCHER FACTORY — `make_fetcher`
+  READS THE OPERATOR'S SETTINGS FROM THE ENCRYPTED KEY-VALUE STORE, WHICH IS THE DATABASE STACK
+  (2026-09-10, the candidate kit).** The candidate pipeline was written to fetch "through the ONE
+  guarded factory", which is right inside the repository, where the settings store exists.
+  Packaged for a session with no clone, its first `make_fetcher()` would have imported
+  `src.config.kv_store` and reached for the app database — in the one place nothing can be
+  fixed. The import closure measured at build time hid this: `src.safety.settings` imports the
+  store LAZILY, inside `_read_raw()`, so `import src.safety.fetcher` succeeds and the failure
+  waits for the first call. The fix that keeps the invariant is to build the SAME
+  `EthicalFetcher` directly, in transparent mode with the honest bot UA, only where a marker says
+  there are no operator settings (`KIT_MANIFEST.json`), and to have the run log say which mode
+  built it. **GENERAL FORM: an import closure is a lower bound — grep the closure's modules for
+  `from src.` INSIDE function bodies before believing a package runs standalone, and prove it
+  with a self-check that CALLS the entry points in a fresh interpreter, not one that imports
+  them.** The same self-check found the second fact: the repository's locked `numpy` needs
+  Python 3.12+, so a "3.11 or newer" floor written from the syntax the scripts use was wrong.
+  A floor is measured by installing the pins, never inferred.

@@ -11681,3 +11681,32 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   70 % read as journalism); D4 institutions and religious organisations stay out of this pipeline
   by type. OPERATOR PREREQUISITE, a hard stop in the brief: an environment whose network policy
   allows the candidate hosts, verified by the four-host probe before anything runs.
+
+- **RULED 2026-09-10 (maintainer, on how the candidate pipeline's run session works): NO GITHUB IN
+  THE INTERNET SESSION; EVERYTHING AUTONOMOUS; THE PROMPT TRAVELS BY HAND, NEVER THROUGH THE PR.**
+  Verbatim: "note that the internet session won't have access to github. Make everything
+  autonomous. Don't push the prompt to the PR, I'll copy and paste it manually. If you want me to
+  attach the existing (and previously sent) zip, be clear about this. Make the prompt easy to copy
+  and paste and detached from any github interaction unless necessary." DONE THE SAME TURN: the
+  pipeline travels as a self-contained KIT — `scripts/analysis/build_candidate_kit.py` builds ONE
+  zip holding the scripts at their repository paths, `src/` minus the UI and the IP table (the
+  import closure has lazy imports, so the whole tree goes rather than a hand list that fails in
+  the one place it cannot be fixed), `configs/` (dedupe + the topic vocabulary), the two worklists
+  derived from the export at build time (the 3,588-row shortlist, byte-equal to the research
+  shortlist, and the 18,457-row ordered remainder), the export itself as provenance, a
+  self-check (`candidate_kit_selfcheck.py` → `selfcheck.py`: the kit's OWN `src` is what imports,
+  the detector works, the fake-fetcher tests pass, the real fetcher refuses an `.invalid` host with
+  a named error, prepare → merge → splice plan run end to end — all before a token is spent) and
+  the runbook `docs/design/CANDIDATE_KIT_RUNBOOK.md` as `RUN.md`. STAGE A BUILDS THE ONE
+  `EthicalFetcher` DIRECTLY IN A KIT (`build_fetcher`, marked by `KIT_MANIFEST.json`) because the
+  app's factory reads the operator's safety settings from the encrypted key-value store, a
+  database stack the kit must not need; transparent mode, the honest bot UA, robots fail-closed
+  and the per-host politeness are unchanged, and the run log names the mode. THE DELIVERABLE is a
+  zip of `runs/` handed back as a file at each milestone and on any hard stop; STAGE C (the splice
+  into `configs/sources.yml`, the catalogue tests, the PR) STAYS IN A REPOSITORY-CONNECTED SESSION
+  — the only GitHub interaction, and it is the maintainer's review. Without a repository the
+  subagents get no `CLAUDE.md` injected, so a 40-row batch costs ~10k Haiku tokens, not ~23k. The
+  prompt was given in chat only (never in the PR, never in the tree), the kit was sent as a file,
+  and the maintainer was told plainly that the earlier export zip need NOT be re-attached — it is
+  inside the kit. STANDING: a run brief for a detached session is written for the kit, never for
+  a clone; an internet session is assumed to have PyPI and the publisher hosts and nothing else.

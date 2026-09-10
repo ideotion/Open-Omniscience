@@ -16,10 +16,12 @@ WHAT IT DOES, per candidate row (name, domain, and whatever the export carries):
 1. DEDUPE against the shipped catalogues -- registrable domain plus the known aliases
    (`DOMAIN_ALIASES`) -- and within the run. A duplicate is recorded, never re-verified.
 2. HOMEPAGE: one guarded fetch of ``https://<domain>/`` (``http://`` as the fallback), through
-   the app's own ``EthicalFetcher`` via the ONE guarded factory (``make_fetcher``): robots.txt
-   fail-closed, honest bot UA, per-host politeness, size cap, the operator's proxy if the
-   install runs protected mode. A robots refusal is a verdict (``robots_disallowed``), never
-   worked around.
+   the app's own ``EthicalFetcher``: robots.txt fail-closed, honest bot UA, per-host politeness,
+   size cap. In the repository it comes from the ONE guarded factory (``make_fetcher``: the
+   operator's proxy if the install runs protected mode); in the KIT built by
+   ``build_candidate_kit.py`` (no settings store, marked by ``KIT_MANIFEST.json``) the SAME class
+   is built directly in transparent mode, and the run log says which (``build_fetcher``). A
+   robots refusal is a verdict (``robots_disallowed``), never worked around.
 3. FEED DISCOVERY: ``<link rel="alternate" type="application/rss+xml|atom+xml">`` in the
    homepage first (the outlet's own declaration), then a SHORT list of conventional paths,
    stopping at the first feed that passes. Bounded: at most ``MAX_FEED_PROBES`` feed fetches
@@ -43,7 +45,7 @@ reviewed step: ``scripts/merge_source_batch.py``); rank anything.
 RESUMABLE: ``--resume`` re-reads ``verified.jsonl`` and skips domains already judged, so a 22k
 run can be split across sessions (``--limit``) and a crash costs nothing already written.
 
-RUN (inside a clearnet session, after building the venv):
+RUN (inside a clearnet session, after building the venv -- in the repository or in the kit):
   .venv/bin/python scripts/analysis/verify_candidate_feeds.py \
       --candidates path/to/shortlist.csv --out-dir data/candidate_feeds --workers 8 --resume
 """
@@ -394,6 +396,31 @@ def verify_candidate(
     return v
 
 
+# --------------------------------------------------------------------------- the fetcher
+
+KIT_MARKER = "KIT_MANIFEST.json"   # written at the root of a kit by build_candidate_kit.py
+
+
+def build_fetcher(*, min_interval_s: float, timeout: float, max_bytes: int, root: Path | None = None):
+    """The ONE ethical fetcher, built two ways and never a third. Returns ``(fetcher, mode)``.
+
+    In the repository or an install, the app's own factory (``make_fetcher``) builds it from
+    the operator's safety settings -- protected mode, proxy, generic UA -- exactly as every
+    ingest path does. In the KIT (a folder built by ``build_candidate_kit.py`` for a session
+    without the repository, marked by ``KIT_MANIFEST.json`` at its root) there is no settings
+    store to read, so the SAME ``EthicalFetcher`` is built directly in transparent mode with the
+    honest bot user agent. ``mode`` names which, for the run log. Nothing else ever fetches."""
+    from src.ingest import DEFAULT_USER_AGENT, EthicalFetcher
+
+    params = {"min_interval_s": min_interval_s, "timeout": timeout, "max_bytes": max_bytes}
+    if ((root or _ROOT) / KIT_MARKER).exists():
+        fetcher = EthicalFetcher(user_agent=DEFAULT_USER_AGENT, **params)
+        return fetcher, "kit -- transparent mode, honest bot user agent, no operator settings"
+    from src.safety.fetcher import make_fetcher
+
+    return make_fetcher(**params), "app safety settings (make_fetcher)"
+
+
 # --------------------------------------------------------------------------- outputs
 
 def to_catalogue_entry(v: Verdict, *, today: str) -> dict:
@@ -540,10 +567,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="extra catalogue YAML(s) to dedupe against (the repo's are always included)")
     args = ap.parse_args(argv)
 
-    from src.safety.fetcher import make_fetcher
-
-    fetcher = make_fetcher(min_interval_s=args.min_interval, timeout=args.timeout,
-                           max_bytes=FEED_MAX_BYTES)
+    fetcher, mode = build_fetcher(min_interval_s=args.min_interval, timeout=args.timeout,
+                                  max_bytes=FEED_MAX_BYTES)
+    print(f"fetcher: {mode}", flush=True)
     paths = [_ROOT / p for p in CATALOGUE_FILES] + list(args.catalogue or [])
     cat = catalogue_domains(paths)
     rows = load_candidates(args.candidates)

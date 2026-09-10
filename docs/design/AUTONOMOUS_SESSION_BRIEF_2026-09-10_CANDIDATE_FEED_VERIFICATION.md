@@ -5,6 +5,17 @@ network yet: this sandbox reaches `pypi.org` (HTTP 200) and answers `000` for ev
 host probed (`feeds.bbci.co.uk`, `www.lemonde.fr`, `theanguillian.com`), so the fetch stage was
 built and tested with a fake fetcher only. **The first thing the executing session does is the
 probe in §1; if it fails, it stops and says so.**
+**AMENDED 2026-09-10, later the same day (maintainer ruling — recorded in `docs/ledger/OPEN_QUEUE.md`):
+the run session has NO GitHub access and no clone, runs autonomously, and gets the prompt by hand.**
+So §1's prerequisites 2–4 (unzip under `data/candidates/`, the repository venv, the shortlist
+regenerated in place) and §2's closing PR step no longer describe the run: everything travels in
+a self-contained KIT built by `scripts/analysis/build_candidate_kit.py` (the scripts, `src/`, the
+catalogues, the worklists, a self-check, the runbook), the session follows the kit's `RUN.md` —
+[`CANDIDATE_KIT_RUNBOOK.md`](CANDIDATE_KIT_RUNBOOK.md) — and hands back a zip of its `runs/`
+folder; Stage C (the splice, the catalogue tests, the PR) happens afterwards in a repository
+session. The design, the credit arithmetic and the honesty rules below are unchanged, with one
+number improved: without a repository no `CLAUDE.md` is injected into the batch agents, so a
+40-row batch costs about 10k Haiku tokens rather than 23k.
 **Anchor:** the source-qualification plan (`docs/plans/2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md`,
 §10) and the maintainer's questions of 2026-09-10: *"can we use an internet connected session with
 an attachment … to create a workflow of agents to check candidate sources and increase the current
