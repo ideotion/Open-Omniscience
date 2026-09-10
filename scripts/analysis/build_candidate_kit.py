@@ -9,7 +9,10 @@ attachment. So everything the run needs travels in one zip: the three pipeline s
 repository modules they import (the ONE ethical fetcher, domain normalisation, the country
 tables, the tag taxonomy, the guarded language detector), the shipped catalogues they dedupe
 against, the worklists derived from the maintainer's export, a self-check that proves the kit
-works BEFORE any credit is spent, and the runbook the session follows.
+works BEFORE any credit is spent, the runbook the session follows, and ``run_stage_a.py`` -- the
+one command that runs the fetch stage on the maintainer's OWN machine when the cloud session's
+connection is limited (ruled later the same day), producing the zip a repository session then
+triages and splices.
 
 WHAT IS COPIED, AND WHAT IS NOT. ``src/`` travels whole, minus ``static/`` (the UI), the IP
 geolocation table and bytecode -- the closure the scripts import is a couple of dozen modules
@@ -55,6 +58,7 @@ KIT_MARKER = "KIT_MANIFEST.json"
 PYTHON_FLOOR = "3.12"   # the locked numpy 2.5 needs 3.12+; measured: 3.11 cannot install the pins
 RUNBOOK = "docs/design/CANDIDATE_KIT_RUNBOOK.md"
 SELFCHECK = "scripts/analysis/candidate_kit_selfcheck.py"
+RUNNER = "scripts/analysis/run_stage_a.py"       # the one-command local Stage A (kit root)
 SCRIPT_FILES = (
     "scripts/analysis/verify_candidate_feeds.py",
     "scripts/analysis/triage_batches.py",
@@ -283,6 +287,7 @@ def build_kit(*, export: Path, out_dir: Path, root: Path = _ROOT, date_str: str 
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / rel, dst)
     shutil.copy2(root / SELFCHECK, kit / "selfcheck.py")
+    shutil.copy2(root / RUNNER, kit / "run_stage_a.py")
     shutil.copy2(root / RUNBOOK, kit / "RUN.md")
     shutil.copy2(root / "LICENSE", kit / "LICENSE")
     (kit / "tests" / "conftest.py").write_text(_CONFTEST, encoding="utf-8")

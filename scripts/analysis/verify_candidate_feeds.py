@@ -532,26 +532,41 @@ def run(
     lock = threading.Lock()
     verdicts: list[Verdict] = list(prior)
     n = 0
-    with jsonl.open("a", encoding="utf-8") as fh, ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        futures = {}
-        for r in todo:
-            dom = registrable_domain(str(r.get("domain") or "")) or ""
-            with lock:
-                if dom and dom in seen:
-                    continue
-                seen.add(dom)
-            futures[pool.submit(verify_candidate, r, fetch=fetch, now=now, catalogue=catalogue,
-                                seen=set())] = r
-        for fut in as_completed(futures):
-            v = fut.result()
-            with lock:
-                verdicts.append(v)
-                fh.write(json.dumps(asdict(v), ensure_ascii=False) + "\n")
-                fh.flush()
-                n += 1
-            if progress:
-                progress(n, len(futures), v)
-    return write_outputs(verdicts, out_dir, today=now.date().isoformat())
+    interrupted = False
+    futures: dict = {}
+    pool = ThreadPoolExecutor(max_workers=max(1, workers))
+    with jsonl.open("a", encoding="utf-8") as fh:
+        try:
+            for r in todo:
+                dom = registrable_domain(str(r.get("domain") or "")) or ""
+                with lock:
+                    if dom and dom in seen:
+                        continue
+                    seen.add(dom)
+                futures[pool.submit(verify_candidate, r, fetch=fetch, now=now, catalogue=catalogue,
+                                    seen=set())] = r
+            for fut in as_completed(futures):
+                v = fut.result()
+                with lock:
+                    verdicts.append(v)
+                    fh.write(json.dumps(asdict(v), ensure_ascii=False) + "\n")
+                    fh.flush()
+                    n += 1
+                if progress:
+                    progress(n, len(futures), v)
+        except KeyboardInterrupt:
+            # Ctrl-C on a laptop run: take no new host, let the in-flight ones finish unrecorded
+            # (the next run re-judges them -- cheap and correct), keep every row already written.
+            # The JSONL cursor is exactly what --resume reads, so the same command continues.
+            interrupted = True
+            pool.shutdown(wait=False, cancel_futures=True)
+        else:
+            pool.shutdown(wait=True)
+    summary = write_outputs(verdicts, out_dir, today=now.date().isoformat())
+    summary["interrupted"] = interrupted
+    summary["judged_this_run"] = n
+    summary["remaining"] = max(0, len(futures) - n)
+    return summary
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -567,6 +582,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="extra catalogue YAML(s) to dedupe against (the repo's are always included)")
     args = ap.parse_args(argv)
 
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # IDN domains on a cp1252 console
+        except (AttributeError, ValueError):
+            pass
     fetcher, mode = build_fetcher(min_interval_s=args.min_interval, timeout=args.timeout,
                                   max_bytes=FEED_MAX_BYTES)
     print(f"fetcher: {mode}", flush=True)
@@ -581,6 +601,10 @@ def main(argv: list[str] | None = None) -> int:
     summary = run(rows, fetch=fetcher.fetch, out_dir=args.out_dir, workers=args.workers,
                   catalogue=cat, resume=not args.no_resume, limit=args.limit, progress=_progress)
     print(json.dumps(summary, indent=1))
+    if summary.get("interrupted"):
+        print(f"interrupted: {summary['judged_this_run']} judged this run, {summary['remaining']} remaining "
+              "-- run the same command again to continue (it resumes from verified.jsonl)", flush=True)
+        return 130
     return 0
 
 

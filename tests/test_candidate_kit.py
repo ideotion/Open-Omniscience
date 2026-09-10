@@ -82,6 +82,7 @@ def test_the_kit_carries_the_pipeline_at_its_repository_paths_and_nothing_of_the
         assert (kit / rel).read_bytes() == (_ROOT / rel).read_bytes(), rel
     assert (kit / "RUN.md").read_bytes() == (_ROOT / bck.RUNBOOK).read_bytes()
     assert (kit / "selfcheck.py").read_bytes() == (_ROOT / bck.SELFCHECK).read_bytes()
+    assert (kit / "run_stage_a.py").read_bytes() == (_ROOT / bck.RUNNER).read_bytes()
     for rel in ("LICENSE", "requirements.txt", "tests/conftest.py", "KIT_MANIFEST.json",
                 "src/ingest/__init__.py", "src/safety/fetcher.py", "src/catalog/data/public_suffix_list.dat",
                 "src/analytics/langdetect.py", "configs/sources.yml", "configs/sources_spectrum.yml",

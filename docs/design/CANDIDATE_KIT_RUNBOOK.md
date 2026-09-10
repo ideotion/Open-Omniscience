@@ -22,6 +22,8 @@ RUN.md                       this file
 KIT_MANIFEST.json            commit, date, counts, sha256 of every file
 requirements.txt             the exact third-party packages the scripts import
 selfcheck.py                 offline proof the kit works here (imports, tests, a dry run)
+run_stage_a.py               Stage A on your OWN machine, one command (§8) -- when the cloud
+                             session's connection is limited
 worklists/worklist_1_shortlist.csv    3,588 rows: the T1–T3 gap classes, capped 100 per country
 worklists/worklist_2_remainder.csv    every other discovered news row, T3 overflow first, then T4
 worklists/WORKLISTS.md                how both were derived from the export
@@ -221,3 +223,30 @@ The deliverable is attached to a repository-connected session, which reviews
 `verified_triaged.yml`, runs `scripts/merge_source_batch.py --apply` against the real
 `configs/sources.yml`, runs the catalogue tests, and opens the pull request. Under the
 2026-09-10 ruling the appended rows are qualified at seed on every install.
+
+## 8. The other way: Stage A on your own machine, Stage B and C in a repository session
+
+When the cloud session's connection is limited (the maintainer's case on 2026-09-10: "its real
+connection is extremely limited"), split the work by what each stage NEEDS. Stage A needs the
+publishers' hosts and no model. Stage B needs a model and no publisher. Stage C needs the
+repository. So:
+
+1. **On any machine with a real connection and Python 3.12 or newer**, from the unzipped kit
+   folder:
+   ```
+   python3 run_stage_a.py                 # Windows: py -3.13 run_stage_a.py
+   ```
+   It creates `.venv`, installs the pins once, probes the four hosts, runs `selfcheck.py`, then
+   runs Stage A on worklist 1 and worklist 2 with the same script and the same rules as §3
+   (robots fail-closed, one polite request per host every 2 s, at most six feed probes per
+   host), and writes `stage_a_results_<date>.zip` beside itself. **Ctrl-C stops cleanly and the
+   same command resumes** — every row already judged is kept. Options: `--only shortlist` for
+   worklist 1 alone (about two hours), `--limit 300` for a first taste, `--workers 8` on a small
+   machine. Zero model tokens throughout.
+2. **Attach that zip to a repository-connected Claude session** and ask for Stage B and C. The
+   triage runs there on Haiku from the zip's `verified.jsonl` (no publisher access needed), the
+   merge re-validates every answer in code, the splice appends the accepted rows to
+   `configs/sources.yml`, the catalogue tests run, and the pull request is opened for review.
+
+The cloud-session path (§2–§6) stays valid for an environment whose network policy allows the
+publishers; this one needs no such environment.

@@ -11710,3 +11710,26 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   and the maintainer was told plainly that the earlier export zip need NOT be re-attached — it is
   inside the kit. STANDING: a run brief for a detached session is written for the kit, never for
   a clone; an internet session is assumed to have PyPI and the publisher hosts and nothing else.
+
+- **RULED 2026-09-10 (maintainer, after starting the internet session with the kit): "ITS REAL
+  CONNECTION IS EXTREMELY LIMITED" — STAGE A RUNS ON THE MAINTAINER'S OWN MACHINE, STAGES B AND C
+  IN A REPOSITORY SESSION.** Verbatim: "Started the internet session with the kit, but it's real
+  connexion is extremely limited. Can you create a small program that I can execute that would
+  create a curated list I could send back over to you to implement into the repo ? Or anything
+  else we can use to bypass this ?" ANSWER, same turn: the split follows what each stage NEEDS —
+  Stage A needs the publishers and no model; Stage B needs a model and no publisher; Stage C needs
+  the repository. `run_stage_a.py` (kit root; standard library only; Python 3.12+; Windows, macOS,
+  Linux) does the whole local half in one command — venv, pins, four-host probe, self-check, Stage
+  A on both worklists, `stage_a_results_<date>.zip` — resumable and Ctrl-C-safe:
+  `verify_candidate_feeds.run` now stops taking hosts on an interrupt, lets the in-flight ones
+  finish unrecorded (re-judged next run), keeps every row written, and reports `interrupted` /
+  `judged_this_run` / `remaining` (exit 130 with the resume instruction); the console is forced to
+  UTF-8 so an IDN domain cannot crash a Windows run. The zip comes back as an attachment to a
+  repository session, which runs Stage B on Haiku from `verified.jsonl` and Stage C to a PR. The
+  cloud-session prompt is superseded FOR THIS RUN; the runbook keeps both paths (§8). OPTIONS NOT
+  TAKEN, stated so they are not re-derived: (a) an environment with an unrestricted network policy
+  — the maintainer's to choose; the same kit and prompt then work unchanged; (b) a GitHub Actions
+  `workflow_dispatch` runner — open egress, but a crawl on hosted runners is a usage-policy
+  judgement call and the six-hour job cap would need chunking through artifacts; not recommended
+  first; (c) triage on the app's local Ollama — a second model path for the same answers, not
+  worth building while Haiku batches cost ~10k tokens each.

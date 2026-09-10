@@ -247,3 +247,31 @@ def test_a_duplicate_within_the_run_is_judged_once(tmp_path):
     fetch = FakeFetch({"https://a.example/": HOME_PLAIN, "https://a.example/feed": _rss(4)})
     summary = vcf.run(rows, fetch=fetch, out_dir=tmp_path, workers=1, now=NOW)
     assert summary["candidates"] == 1 and summary["verified"] == 1
+
+def test_an_interrupt_keeps_every_row_written_and_the_same_command_resumes(tmp_path):
+    """Ctrl-C on a laptop run (the maintainer's own-machine path): rows judged so far stay in
+    verified.jsonl, the summary says interrupted and how much remains, and the next run continues
+    from the cursor without re-judging what was written."""
+    table = {
+        "https://a.example/": HOME_PLAIN, "https://a.example/rss": _rss(3),
+        "https://b.example/": HOME_PLAIN, "https://b.example/rss": _rss(3),
+        "https://c.example/": HOME_PLAIN, "https://c.example/rss": _rss(3),
+    }
+    rows = [_row(domain=d) for d in ("a.example", "b.example", "c.example")]
+
+    class Interrupting(FakeFetch):
+        def __call__(self, url, *, require_html=True, **_):
+            if url.startswith("https://b.example/"):
+                raise KeyboardInterrupt  # the operator's Ctrl-C lands while host b is in flight
+            return super().__call__(url, require_html=require_html)
+
+    first = vcf.run(rows, fetch=Interrupting(table), out_dir=tmp_path, workers=1, now=NOW, catalogue=set())
+    assert first["interrupted"] is True and first["judged_this_run"] == 1 and first["remaining"] == 2
+    assert first["candidates"] == 1 and (tmp_path / "summary.json").exists()  # partial outputs still written
+    lines = [ln for ln in (tmp_path / "verified.jsonl").read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 1 and '"a.example"' in lines[0]
+
+    second = vcf.run(rows, fetch=FakeFetch(table), out_dir=tmp_path, workers=1, now=NOW, catalogue=set())
+    assert second["interrupted"] is False and second["judged_this_run"] == 2 and second["remaining"] == 0
+    lines = [ln for ln in (tmp_path / "verified.jsonl").read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 3 and second["candidates"] == 3 and second["verified"] == 3
