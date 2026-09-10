@@ -1142,6 +1142,43 @@ def ensure_article_source_revision_column(engine: Engine) -> list[str]:
     return added
 
 
+# THE NEWSLETTER List-Id on `articles` (ingest provenance for the publisher ladder).
+# Additive + NULLABLE with NO backfill, on the source_revision pattern: a message
+# imported before this column existed reads NULL, which means "carried no List-Id, or
+# predates the column" and is deliberately NOT "no List-Id". Nothing can recover it --
+# the header lives in a file the app does not keep -- so only a re-import of the user's
+# own .eml fills it, and no reader may treat the NULL as a measured absence.
+_ARTICLE_NEWSLETTER_LIST_ID_COLUMN: dict[str, str] = {
+    "newsletter_list_id": "ALTER TABLE articles ADD COLUMN newsletter_list_id VARCHAR(255)",
+}
+
+
+def ensure_article_newsletter_list_id_column(engine: Engine) -> list[str]:
+    """Self-heal ``articles.newsletter_list_id`` (idempotent, additive, no backfill).
+
+    Not every install runs alembic and ``create_all`` never ALTERs an existing table,
+    so a store predating this column would raise "no such column" on the first .eml
+    import. No-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_NEWSLETTER_LIST_ID_COLUMN.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles newsletter-provenance column(s): {', '.join(added)}")
+    return added
+
+
 # The complete map of live-DB self-healed columns, table -> column names. This is the
 # machine-readable contract the migration-drift guard test checks every add_column in
 # migrations/versions/ against (tests/test_migration_self_heal_drift.py), so a future
@@ -1164,6 +1201,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_TOP_KEYWORD_COLUMNS)
         | frozenset(_ARTICLE_KEYWORD_INDEXED_COLUMN)
         | frozenset(_ARTICLE_SOURCE_REVISION_COLUMN)
+        | frozenset(_ARTICLE_NEWSLETTER_LIST_ID_COLUMN)
     ),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL, column + its index).

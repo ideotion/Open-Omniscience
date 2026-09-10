@@ -6233,6 +6233,26 @@
     (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
     (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
     run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **A PARSER THAT REFUSES A BARE VALUE BECOMES A SILENT NO-OP THE MOMENT YOU STORE ITS OUTPUT
+    AND FEED IT BACK IN (2026-09-10, caught while drafting, before a line shipped):**
+    `parse_list_id` extracts `weekly.substack.com` from `List-Id: "Weekly" <weekly.substack.com>`
+    and deliberately REFUSES a bare unbracketed value — the phrase before the brackets is free
+    text, so reading it as an identifier would invent one. Correct, and it is the safety property.
+    But `publisher_key(from_addr, list_id)` calls that parser on its argument, and the new column
+    stores the already-PARSED bare identifier. Passing the stored value back through the same
+    parameter parses it a SECOND time, gets `None`, and drops to the refusal branch — the whole
+    feature doing nothing, while every assertion that the column exists, is written, is read, and
+    is handed to the resolver still passes green. The tell was reading the parser's docstring
+    rather than trusting the parameter's name; the empirical check that settles it in one line is
+    `assert parse(store(x)) is None`. THE RULE: when you begin persisting a parser's OUTPUT,
+    check every existing consumer of that field for whether it re-parses, because the field's
+    name does not change and nothing else will tell you. THE FIX SHAPE: give the caller a
+    SECOND, explicitly-named door (`list_id_parsed=`) rather than widening the parser to accept
+    both forms — widening restores exactly the ambiguity the refusal exists to prevent, and it
+    does so at the one place that was written to be strict. Pin it with a test that asserts BOTH
+    doors' outcomes on the SAME value, so the two paths cannot silently converge later.
+    Same family as the recorded "checking the wiring never proves the output": here the wiring
+    was flawless end to end and the output was still the refusal it had always been.
   - **`Path.read_text()` APPLIES UNIVERSAL NEWLINES, SO ROUND-TRIPPING A LEDGER FILE THROUGH IT
     SILENTLY REWRITES EVERY CRLF LINE — and the result is precisely the diff signature the
     union-merge lesson teaches you to fear (2026-09-10, caught by that rule, twice in one edit):**

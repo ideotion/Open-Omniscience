@@ -3809,6 +3809,48 @@
   the provenance columns (an additive migration), then the attach behind them, then the import
   UI + undo. The preview exists so that decision can be reviewed against this corpus's real
   senders rather than against a description.
+  **FIRST STEP SHIPPED 2026-09-10, and "the provenance columns" turned out to be ONE column, not
+  three — measured against the tree before building, per the staleness rule.** (i) The SEND DOMAIN
+  needs no column: `_email_article` already stores the raw From header as `Article.author`, and
+  `sender_domain(author)` is precisely what `resolution_preview` already calls. Storing it again
+  would be denormalisation wearing the word "provenance". So this entry's "nothing persists the
+  send domain" is half stale — nothing persists it under that NAME; the fact was never lost.
+  (ii) The ATTACHED SOURCE ID cannot be recorded before an attach exists, and inventing its shape
+  now is the half-built schema this ledger parks on purpose elsewhere. It belongs to the attach
+  slice, which is still where this entry puts it. (iii) The LIST-ID is the one fact genuinely lost
+  at ingest and unrecoverable after — it lives in a header of a file the app deliberately does not
+  keep — so `Article.newsletter_list_id` ships (additive, nullable, no backfill, self-healed at
+  boot, adoptable through the restore-merge).
+  **IT WAS NOT COSMETIC PREPARATION: it fixed a live defect in the preview.** `publisher_key`
+  falls back to the List-Id when a platform host carries no publication label (the
+  `platform-list-id` basis), and the preview reconstructs each sender as `f"x@{dom}"` with no
+  List-Id to pass — so for EVERY Substack/beehiiv/Mailchimp sender whose host names no
+  publication it could only ever return `refused`, however plainly the message named one. The one
+  non-test caller of the resolver was systematically under-reporting it, for the commonest
+  newsletter shape there is. The preview's own caveat already disclosed this; it now states the
+  narrower residue instead (messages imported BEFORE the column carry none, and that NULL means
+  "carried none, or predates the column" — never "this list has no identifier").
+  **THE TRAP, recorded because a wiring-only test would have sailed past it.** `publisher_key`'s
+  `list_id` parameter is a RAW header value and it calls `parse_list_id`, which by design REFUSES
+  a bare unbracketed value ("the phrase before the brackets is free text and reading it as an
+  identifier would invent one"). What we store is the already-PARSED bare identifier. Feeding the
+  stored value through `list_id` therefore parses it a second time, gets `None`, and drops
+  silently to the refusal branch — the fix doing nothing while every assertion that the column
+  exists, is written and is read still passes. Closed with an explicit keyword-only
+  `list_id_parsed` door rather than by widening the parser, which would reintroduce exactly the
+  invented-identifier risk that refusal exists for. Pinned by a test that asserts BOTH doors'
+  outcomes on the same value.
+  **GROUPING CHANGED, and the reason is the refusal's own reason.** The preview grouped by sending
+  domain. With a List-Id in hand, one platform domain hosts many publications, so a single row for
+  `substack.com` would assert the very merge the refusal branch exists to prevent. The key is now
+  exactly the inputs that can change the ladder's answer — `(domain, list_id if the host is a
+  platform else None)` — which collapses to the domain for every ordinary sender, so the report
+  reads unchanged for them. `senders` still counts distinct sending DOMAINS (silently redefining it
+  as row count would inflate it); `publications` is the new figure. A platform message with no
+  stored List-Id stays its OWN refused row and never inherits a sibling's publication — attributing
+  an article to a publisher on no evidence is worse than the gap.
+  **STILL OPEN, unchanged:** the write-path auto-attach, then the import UI + undo, in that order.
+  Eight mutants, eight dead.
   **(b2) MORE VERIFIED-PRESENT, and two of these matter because the prompt reads as though
   they are pending.** The **lunar-effects framework is BUILT AND FULLY WIRED** —
   `src/analytics/lunar.py` correlates any stored daily series against the moon's illuminated
