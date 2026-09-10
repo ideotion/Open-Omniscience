@@ -11466,3 +11466,39 @@ labels the pane honestly. Both pass against `res["plain"] = raw` — an endpoint
 raw wikitext under the word "Readable", which is precisely the lie the naming exists to
 prevent. Source-level assertions about a transform cannot see the transform; the fix was to
 CALL the endpoint with `find_page` stubbed, so the assertion is about the output.
+
+**"EMBED ooMap ON When/Where + Insights" — SCOPED, NOT BUILT, because the obvious design is
+blocked and the alternative is a product choice (2026-09-10).** Three facts a future session
+should not have to re-derive:
+
+1. **THE COORDINATES ARE ALREADY ON THE WIRE, and the client drops them.** `corpus_where`
+   selects `ArticleMentionedPlace.lat`/`.lon` and `/api/insights/corpus-www` returns them per
+   place. `loadAnalysis`'s facet mapping keeps only `name`, `country` and `articles`:
+   `where: (…places).map((pl) => ({facet:"place", value: pl.name, label: pl.name, sub: pl.country…, n: pl.articles}))`.
+   So this is the SAME shape as three of the items closed in this round — data fetched and
+   discarded in the renderer — and not a geocoding project.
+2. **BUT ooMap's MARKER LAYER CANNOT DRAW THEM AS-IS.** `_ooSignalLayer` filters on
+   `s.lat != null && s.lon != null && typeof s.t === "number"`, and then fades each mark by
+   its distance from `focusT` within `windowY`. It is a TIME-filtered hazard layer. A corpus
+   place has no time coordinate, and inventing one to get marks on screen would make the
+   slider's fade meaningless while looking exactly like it worked — a fabricated quantity
+   driving a visible channel, which is the thing this codebase refuses everywhere else.
+3. **SO THE CHOICE IS A DESIGN ONE.** Either (a) give ooMap a TIMELESS mark kind — a real
+   change to a shared component that four surfaces already draw through, and one that has to
+   answer what the slider means when a layer does not participate in it; or (b) aggregate the
+   places to COUNTRY (which every row carries) and use ooMap's choropleth as built, answering
+   the coarser question "which countries do this corpus's mentioned places sit in".
+   **Recommended default: (b)**, because it uses the component as designed, needs no new mark
+   semantics, and the coarser question is the one a corpus-level map is usually asked. (a) is
+   worth doing if and when a second surface wants timeless marks — one caller is not enough
+   to justify new semantics in a shared renderer.
+
+**WHICHEVER IS CHOSEN, THE ANTI-CAPPING LINE IS NOT OPTIONAL.** `corpus_where`'s own docstring
+says "lat/lon when the gazetteer knows the place", so some places have neither; under (b) some
+will have no country either. A map that silently plots the located subset tells the reader the
+corpus mentions fewer places than it does — invariant #31(d)'s rule, which exists for exactly
+this: name every population the picture omits ("N plotted · M not locatable").
+
+**NOT BUILT HERE on purpose.** The blocked-obvious-design half is a finding; the unblocked half
+is a product decision about a shared component, and this round has routed four of those to the
+maintainer rather than guessing.
