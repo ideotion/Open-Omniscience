@@ -11854,3 +11854,45 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   and any fetch before the declared delay has elapsed. Not urgent for the app -- such hosts are
   rare (the shortlist's p99 elapsed was 138 s) -- but a worker asleep for a day is the Windows-lane
   hang in another coat, and it should be a ruling, not a surprise.
+
+- **QUESTION 2026-09-10 (maintainer, from running several blank instances) — PENDING RULING: THE
+  COLLECTION SHUFFLE IS TRULY RANDOM, BUT THE HEAD OF EVERY PASS IS STRUCTURALLY THE SAME
+  SOURCES.** The maintainer: "Is the scraping engine really shuffling randomly ... I notice that
+  when I run multiple instances of the same blank app, the initial sources seem to look alike."
+  MEASURED (offline, on the 3,429 rows of `configs/sources.yml`; eight independent shuffles).
+  (1) The randomness is REAL: `stratified_interleave` uses the unseeded `random` module, reshuffles
+  on every call, and nothing anywhere in `src/` seeds it -- so two processes draw different
+  streams and no fixed rotation exists. (2) But the order is not a random SAMPLE, it is a
+  stratified ROUND-ROBIN -- one source per LANGUAGE per round, and inside a language one per TAG
+  (ruled 2026-06-17, superseding the per-country round-robin). The catalogue has 74 languages and
+  266 (language, tag) strata; stratum sizes run from 1 to 498, median 2; **21 languages hold
+  exactly one source and 112 of the 266 strata hold exactly one.** A singleton stratum can only
+  ever be represented by its one source, so that source is in round 1 of every pass on every
+  instance. (3) The consequence, measured: two independent instances share 12 % of their first
+  20 sources and 33 % of their first 100, where uniform random sampling would share 0.6 % and
+  2.9 %; twelve sources sit in the first 100 of all eight runs (berria.eus/eu, rtl.lu/lb,
+  remate.ph/tl, rfa.org/yue, nashaniva.com/be, delfi.lv/lv, vistinomer.mk/mk, meydan.tv/az ...).
+  A source's chance of being in the first 100 fetched is **100 % if it is the only source in its
+  language, 46 % at 2-5, 10 % at 6-50, 1.3 % at 51-500, and 0.1 % for one of the 2,358 English
+  rows** -- against 2.9 % if the head were a uniform sample. So the head of a pass is not a
+  sample of the catalogue at all: it is the rare-language tail, in a near-fixed set.
+  (4) THIS IS NOT A BUG IN THE SHUFFLE, IT IS THE ARITHMETIC OF THE FAIRNESS RULE: "equal turns
+  per language in any prefix" plus "this language has one source" forces that source into the
+  first round. Any ordering with prefix-fair strata does this. (5) WHEN IT MATTERS: with
+  `max_sources_per_run = 0` (the default, unbounded) a COMPLETED pass fetches every source exactly
+  once, so the order is invisible; the head is the whole story only where a pass does not complete
+  -- a stopped pass, a memory/CPU wind-down (deferred ids do run first next pass), and above all
+  the first minutes of a blank app, which over the ruled Tor default is a long time. That is
+  exactly the maintainer's observation. RECOMMENDED DEFAULT: **(a) keep the ordering and make it
+  VISIBLE rather than surprising** -- the head is rare-language-first BY DESIGN, so say so where
+  the operator watches a first pass, since the current surprise is that a "random" engine looks
+  identical twice. **(b) If instance-to-instance variety at the head is wanted, the only lever
+  that does not re-introduce the volume bias is to rotate the ROUND SCHEDULE by a random offset
+  per pass** (a singleton language then lands at a random round instead of round 1): prefix
+  fairness is then satisfied across passes rather than within one pass -- a real trade, and the
+  maintainer's to make. NOT RECOMMENDED: dropping the stratification for a uniform shuffle (69 %
+  of the catalogue is English, so the head would become English and the 2026-06-17 ruling is
+  undone), and seeding the RNG per instance (it is already unseeded; the sameness is structural,
+  not a seed problem). Scope caveat: measured on `configs/sources.yml` alone; the other seeded
+  catalogues add mostly large-stratum rows, which would sharpen the effect, not soften it. No
+  code changed.
