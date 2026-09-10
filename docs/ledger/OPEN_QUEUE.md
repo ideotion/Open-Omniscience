@@ -11887,3 +11887,39 @@ half, and the reason is a substring fact rather than a judgement: `toast("Ring a
 substring of `toast(t("Ring added."))`, so a reverted word inside a wrapper would have slipped past
 it. Three mutants — reverted word through the wrapper, reverted word bare, string deleted — three
 dead.
+
+---
+
+**THE SOCKET-IMPORTER RATCHET WIDENED FROM 2 LIBRARIES TO 16 — the #14f gap closed by the future
+session it asked for (2026-09-10, PR #1109).** Invariant #14f recorded, when the OpenTimestamps
+consent gates shipped, that `test_network_consent.py`'s ratchet "matches only `requests`/`httpx`, so
+it was and remains blind to `opentimestamps.calendar`'s import shape — a future session widening that
+regex should know this gap predates it." It was equally blind to `imaplib`, `poplib`, `http.client`
+and bare `socket`. **MEASURED, not asserted:** a new module doing `import imaplib` passes the old
+ratchet and fails the new one.
+
+**NINE MODULES IMPORT A SOCKET-CAPABLE LIBRARY; FOUR WERE LISTED.** The five that were not are all
+pre-existing and all legitimate, and each was READ before being written into the allowlist — an
+allowlist filled in from a failing run rather than from the code is the ratchet rubber-stamping
+itself. Two of the five are REAL EGRESS the narrow ratchet never saw: `src/ingest/email.py`
+(`imaplib`/`poplib`, the live mailbox pull to a user-named host, gated by `_refuse_if_offline()`) and
+`src/custody/timestamp.py` (three public Bitcoin calendars, gated per #14f). Two are not egress at
+all: `src/api/system.py` uses `socket.AF_INET`/`AF_INET6` as CONSTANTS to filter
+`psutil.net_if_addrs()` when listing local interface IPs for the consent popup — no socket is
+constructed — and `src/ingest/airplane.py` IS the guard, so importing `socket` there is the mechanism
+rather than a bypass. The fifth, `src/llm/vllm_lifecycle.py`, does a `connect_ex` port probe against
+the CONFIGURED vLLM URL defaulting to `127.0.0.1`; a remote URL WOULD egress there, which the
+airplane guard refuses while offline — listed so that is a known property rather than a surprise.
+
+**WHY IT MATTERS EVEN THOUGH AIRPLANE MODE ALREADY CATCHES THESE.** The socket guard would refuse any
+of them while offline, so nothing here is a live leak. The ratchet protects a different property, and
+the non-negotiable states it: the kill switch "can only be airtight if every outbound path is KNOWN".
+A module reaching the network through an unlisted library is still refused — by the net beneath,
+rather than by anyone having thought about it. This ratchet is the thinking, and it now fails the
+build for a new `imaplib` import the way it always did for a new `requests` one.
+
+Two supporting guards ship with it, because a hand-maintained allowlist decays in two specific ways:
+every entry must state a reason (a bare path is a rubber stamp — the next reader's only defence
+against a silent exemption is that adding one requires writing a sentence they can disagree with),
+and the narrow HTTP allowlist must be a SUBSET of the wide one, or the two drift and the wider guard
+can be weakened by editing the wrong list.

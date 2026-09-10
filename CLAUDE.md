@@ -315,11 +315,13 @@ never the way to make room for something rules (5)/(5a) would have sent to
    and the per-ingest path) also gained an early, NAMED kill-switch refusal before
    any calendar is even constructed, closing the #14e corollary for this path too.
    Enforced in test_ui_invariants (#14f) + tests/test_custody_consent_gates.py +
-   tests/test_custody_api.py + tests/test_custody_settings.py. NOTED, not
-   fixed here (separate, tooling-level, out of scope): `test_network_consent.py`'s
-   socket-importer ratchet regex matches only `requests`/`httpx` imports, so it
-   was and remains blind to `opentimestamps.calendar`'s import shape — a future
-   session widening that regex should know this gap predates it.
+   tests/test_custody_api.py + tests/test_custody_settings.py. **THE TOOLING GAP THIS
+   ENTRY NOTED IS CLOSED (2026-09-10), by the future session it asked for:** the
+   `test_network_consent.py` socket-importer ratchet matched only `requests`/`httpx`
+   imports, so it was blind to `opentimestamps.calendar` — and equally to imaplib,
+   poplib, http.client and bare `socket`. It now covers 16 socket-capable libraries,
+   every allowlisted module carrying a written reason. Measured, not assumed: a new
+   `import imaplib` PASSES the old ratchet and FAILS the new one.
    **REFINED #14c (UI_SHELL §3, SHIPPED #133):** the transition flash is now
    DIRECTION-AWARE — go-on = live accent, go-off = calm/grounded (never the old
    single red wash that conflated both meanings); consent/semantics unchanged.
@@ -700,6 +702,6 @@ rather than reading all of it (rule (1)). New rulings are recorded THERE, in the
 are given (rule (2)).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
-Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 924 entries as of 2026-09-10. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (read those — mandatory every session, per rule (1)).
+Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 925 entries as of 2026-09-10. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md) (read those — mandatory every session, per rule (1)).
 
 **APPEND-RULE (replaces the old inline log):** record newly-shipped work as a `shipped.csv` ROW, not a CLAUDE.md bullet. Add a verbatim entry to `SHIPPED_LOG.md` only when it carries a reusable lesson/empirical fact, and copy that lesson into [`docs/ledger/LESSONS.md`](docs/ledger/LESSONS.md). Pending rulings, contingencies, and deliberate-omissions still go in [`docs/ledger/OPEN_QUEUE.md`](docs/ledger/OPEN_QUEUE.md) as prose (never compressed away).

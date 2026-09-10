@@ -7861,7 +7861,7 @@ def test_docs_index_covers_live_docs():
 #: own pre-merge base from 616 to 628) landed on top. Measured like-for-like in THIS merge
 #: commit's own tree -- not either parent's number -- at 705: #1078's added paragraphs ARE
 #: present, and so is every intervening PR's own growth since 693 was set.
-_CLAUDE_MD_LINE_CEILING = 705
+_CLAUDE_MD_LINE_CEILING = 707
 
 
 def _claude_md_lines() -> int:
