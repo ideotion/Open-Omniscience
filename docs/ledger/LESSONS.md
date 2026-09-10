@@ -8178,3 +8178,76 @@
   refresh one that was added later and is exercised less in manual testing.** Cheap to
   check, invisible when wrong, and a mutant that deletes the second call is worth having
   in the matrix.
+
+- **A "SLOW DOWNLOAD" COMPLAINT IS NOT NECESSARILY ABOUT THE DOWNLOAD (2026-09-10, the
+  collect-throughput investigation).** The field report was "the rate of article download
+  is now abnormally slow", and every instrument the app owns for that question — the
+  bandwidth governor, `collect_target_kbps`, the per-job rate sampler — measures bytes
+  over the wire. Measured with a harness that served every fetch from memory, throughput
+  was **flat at ~2.3 articles/s from 1 worker to 50**: the transport was never the
+  constraint, ~400 ms of pure-Python CPU per article was, and N worker threads simply took
+  turns under the GIL. **GENERAL FORM: before tuning the thing the complaint names,
+  measure the pipeline with that thing removed. If the number does not move, the name in
+  the complaint is a symptom.** The corollary is uncomfortable and worth stating: a
+  control loop that varies concurrency to hit a byte-rate target is inert on a CPU-bound
+  pipeline, and it will still produce confident-looking permit adjustments the whole time.
+
+- **A LARGE `re` ALTERNATION IS O(alternatives) AT EVERY POSITION, AND `re.I` REMOVES THE
+  ESCAPE HATCH (2026-09-10, `dateextract._MONTH_ALT`).** 555 multilingual month names,
+  4,159 characters, embedded in ten patterns scanned over a 60,000-character window.
+  Measured cost of two patterns that match the SAME dates: `_DMY_RE` (`11 September
+  2001`) **1.24 ms**, `_MDY_RE` (`September 11, 2001`) **43.73 ms** — a 35× spread whose
+  only cause is which end the alternation sits on. `_DMY_RE` begins `\b(\d{1,2})`, so
+  CPython fast-skips to positions that can match; `_MDY_RE` begins with the alternation,
+  so the engine tries up to 555 branches at every word boundary. CPython's `re` has no
+  trie/Aho–Corasick optimisation for alternations (the `regex` module and Rust's engine
+  do), and `re.IGNORECASE` disables the literal-prefix scan that would otherwise help.
+  **GENERAL FORM: when a hand-built alternation grows past a few dozen literals, its cost
+  stops being "a bigger pattern" and becomes a linear scan per input position. Put the
+  cheap discriminating token FIRST where the grammar allows, and otherwise pre-scan for
+  the literals actually present and rebuild the alternation from those — measured here at
+  33× on typical news prose, with identical matches by construction, since a literal
+  absent from the text could never have matched.** The trap in that fix, found before it
+  was written: 55 of the 555 names are not a single `\w+` run (four Arabic two-word names,
+  plus Devanagari and Bengali forms), so a naive tokenised pre-scan silently loses recall
+  in exactly the languages the multilingual tables were added for.
+
+- **A COST THAT GREW 10× OVER A MONTH LOOKS LIKE A SUDDEN REGRESSION TO THE PERSON
+  LIVING WITH IT (2026-09-10).** `extract_dates` went 14 ms → 62 ms → 142 ms per article
+  across 2026-06-15 / 07-01 / 07-15 and has been flat ever since. The report arrived on
+  09-10 and named "the past few days". Bisecting the last few days would have found
+  nothing and concluded there was no problem. **GENERAL FORM: when a complaint says
+  "recently" and the recent window is clean, widen the window before declaring the report
+  wrong — a plateau that everyone has stopped noticing is still the ceiling, and the
+  operator's sense of "recent" is calibrated to when it started hurting, not to when it
+  changed.** Measuring seven trees cost one afternoon and turned "no regression" from a
+  dismissal into a date.
+
+- **AN ENVIRONMENT-VARIABLE FEATURE FLAG READ INSIDE A PER-TOKEN LOOP IS A REAL COST
+  (2026-09-10, `extract._is_code_token`).** The flag read is the first line of a predicate
+  called once per unigram and once per token of every bigram and trigram window — ~8,150
+  `os.getenv` calls per article, 130,497 over a 16-article profile, and `os.getenv` is not
+  free (`os.environ.__getitem__` → `encodekey`). **GENERAL FORM: a reversibility flag is
+  cheap at a function boundary and expensive inside the loop that function is part of.
+  Read it once per call site that can afford it, and cache it.** Same profile, same
+  function: `_alnum_transitions` recomputes the identical answer for the identical token
+  up to six times, because the unigram pass and the two n-gram passes each ask
+  independently.
+
+- **A LEARNED CEILING THAT PERSISTS TO DISK IS A PERFORMANCE BUG WITH A LONG HALF-LIFE
+  (2026-09-10, `scheduler/capacity.py` + `bandwidth.py`).** `mem_low` (system-wide
+  available memory under a fixed 512 MB) triggers a MULTIPLICATIVE permit cut — measured
+  50 → 1 in five 1.5 s ticks — and that floor is then written to
+  `data/collect_capacity.json` and used as both the seed and the `ramp_ceiling` of every
+  later pass, across restarts. Over a slow transport that is 1.91 → 0.45 articles/s, a
+  4.2× slowdown with no code change and no visible cause. Recovery is ×2 per clean pass,
+  but only fires if the pass stops tripping a threshold that is about the whole MACHINE,
+  not about the collector — so a box also running a local model can sit under it forever.
+  **GENERAL FORM: when a self-tuning mechanism persists its worst observation, the
+  recovery path is the load-bearing half, and it must be driven by something the
+  mechanism itself can influence. And it must be VISIBLE where the operator watches the
+  work** — here `capacity.state_report` is rendered only inside the diagnostics report
+  payload, so the task manager shows a pass running 1 worker of a configured 50 and says
+  nothing about why. The neighbouring case is worse in kind: `cpu_saturated` fires at
+  92 % system-wide CPU, which a healthy CPU-bound collector produces BY ITSELF, so the
+  governor throttles the collector for doing its job well.

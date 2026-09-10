@@ -11562,3 +11562,78 @@ rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` 
 future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
 single slugifier can resolve, which after the anchor fix are INERT rather than
 ejecting the reader — cosmetic residue, explicitly not the P0.
+
+---
+
+## PENDING (2026-09-10) — collector throughput: five proposals, none applied
+
+Recorded from the measured investigation in
+[`docs/audit/12_COLLECT_THROUGHPUT_2026-09-10.md`](../audit/12_COLLECT_THROUGHPUT_2026-09-10.md),
+reproducible with `scripts/analysis/collect_throughput_bench.py`. The field report was
+*"the rate of article download is now abnormally slow"*; the finding is that **the
+collector is CPU-bound, not download-bound** — throughput is flat at ~2.3 articles/s from
+1 worker to 50 on a 4-core box — and that **nothing regressed in the last few days**
+(per-article cost has been flat since 2026-07-15; it doubled between 06-15 and 07-15).
+
+**P1 — narrow the 555-name month alternation to the names present in the text.**
+`dateextract._MONTH_ALT` is 4,159 characters in ten `re.I` patterns over a 60,000-char
+window and is NOT narrowed by the article's language (the hint is consulted only after a
+match, in `_month_of`). It is 81 % of all date-regex time. A prototype that pre-scans for
+the months actually present and rebuilds the alternation from those measured **182 →
+5.6 ms (33×)** on typical news prose, which would take `extract_dates` from ~140 ms to
+~20 ms and roughly **1.8× the whole collector**. Matches are identical by construction — a
+literal absent from the text could never have matched — but this is **recall-bearing work
+in the highest-stakes extraction module**, so it wants a decision rather than a commit:
+*is a ~1.8× collector worth touching the date extractor?* Two things a fix must carry:
+**55 of the 555 names are not a single `\w+` run** (the four Arabic two-word forms plus
+Devanagari/Bengali), so a naive tokenised pre-scan silently loses recall in exactly the
+languages the multilingual tables were added for; and the 152 tests in
+`tests/test_dateextract*.py` + `tests/test_wave8_dates_fa_hu.py` are the green baseline.
+
+**P2 — take `OO_CODE_TOKEN_FILTER` out of the per-token path.** `extract._is_code_token`
+reads it via `os.getenv` on every unigram and on every token of every bigram/trigram
+window: ~8,150 calls per article. With memoising `_alnum_transitions` (which recomputes
+the same token up to six times) this is **~8 % of ingest CPU** and is **pure** — no
+behaviour change, no ruling needed. The only reason it is not in this PR is that the
+investigation was asked for, not a fix.
+
+**P3 — bound `htmldate`'s `dateparser` fallback in `extract_article`.** With a parseable
+`article:published_time` the whole extractor costs 6.9 ms. Without one,
+`trafilatura.extract_metadata` → `htmldate.find_date` → `dateparser` runs a full locale
+search: **measured 434 ms per article**, 44 % of a profile, `regex.compile` called 954
+times. That is a tail every awkwardly-dated page pays on the hot path. Bounding it changes
+published-date recall on those pages, so it is a ruling, not a cleanup. (Related and
+cheaper: `extract_article` parses the same HTML twice — `extract` then `extract_metadata`.)
+
+**P4 — stop treating the collector's own CPU as contention.** `bandwidth.observe` cuts a
+permit per tick at `cpu_saturated`, defined as **system-wide** CPU ≥ 92 % — which a
+healthy CPU-bound collector produces by itself. Measured: 50 → 1 in 73 s with that flag
+alone. Its own comment says CPU saturation "costs throughput, not the machine", and the
+response to it still costs throughput. But the flag is ALSO a real signal when another
+process is the load, so the fix is not "delete it": it needs a ruling on whether the
+governor should read *process* CPU headroom, or exempt the case where the collector is
+itself the CPU. **The far worse sibling is `mem_low`**, which is multiplicative (50 → 1 in
+five ticks) and whose floor is PERSISTED to `data/collect_capacity.json` as both the seed
+and the `ramp_ceiling` of every later pass — across restarts. Over Tor that is 1.91 →
+0.45 art/s, a **4.2× slowdown with no code change**. Recovery is ×2 per clean pass but
+only fires if the pass stops tripping a threshold that is about the whole MACHINE
+(a fixed 512 MB of system-wide available memory), which a box also running a local model
+can sit under indefinitely. **If an operator reports a sudden, persistent slowdown, check
+that file first — it is a cache of a measurement, never operator state, and deleting it
+restores the configured fan-out on the next pass.**
+
+**P5 — surface the learned ceiling where the operator watches collection.**
+`capacity.state_report` is rendered ONLY inside the diagnostics report payload
+(`src/api/diagnostics.py:2421`, `collection.learned_concurrency`). The task manager's
+Active and Schedule subtabs never say that the pass is running 1 worker of a configured
+50, or why — so a pinned ceiling is indistinguishable from "the app got slow". Honesty
+work of exactly the kind invariant #20 already does for the per-job rate (draw a measured
+number with its method on hover, draw nothing when it is unmeasured — never a 0).
+Needs the strings ×12.
+
+**NOT MEASURED, and the next thing to instrument if the complaint is specifically
+"fewer articles per hour" rather than "each article takes longer":** the pass TAIL and the
+housekeeping lane (discovery, source enrichment, the briefing refresh, the WAL
+checkpoint). They run *around* `run_scrape_once` on threads that compete for the same GIL
+and are outside every number in the report. Also unmeasured: SQLCipher (every DB figure in
+the report is a plaintext floor) and real Tor.
