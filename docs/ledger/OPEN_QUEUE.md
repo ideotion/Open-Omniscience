@@ -11562,3 +11562,63 @@ rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` 
 future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
 single slugifier can resolve, which after the anchor fix are INERT rather than
 ejecting the reader — cosmetic residue, explicitly not the P0.
+- **SOURCE QUALIFICATION THROUGHPUT — SEVEN RULINGS NEEDED, ONE PLAN OF RECORD, NOTHING CODED
+  (maintainer observations 2026-09-10; analysis `docs/plans/2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md`).**
+  The maintainer reported, on a live instance: the ~3,600 curated sources start `unqualified` by
+  deliberate decision ("maybe we will revise this decision"); after nearly three weeks of collection
+  only ~1,000 are qualified while discovery produced ~80,000 candidates — "the qualification engine
+  is far too slow and should be revisited"; and articles that should never have entered the corpus
+  are still being stored with the engine on. Ask: "seriously improve qualification performance and
+  efficiency", and grow the initial source list "significantly". Read-only analysis against `main`
+  @ `f85899a`; the plan lists the findings with their provenance. THE FIVE FINDINGS THAT CARRY IT:
+  (F1) ~1,000 in ~21 days is inside what `qualification_per_pass=5` × one lane kick per pass
+  permits — a design envelope, not a malfunction; (F2) `select_unqualified`'s least-recently-
+  attempted order (the 2026-07-23 livelock fix, correct then) now PARKS every catalog source whose
+  first trial produced no evidence BEHIND the ~73k never-attempted disabled candidates — at 5/pass
+  that is ~14,600 passes, i.e. never; (F3) the ride-along freezes the whole-corpus cohort ONCE PER
+  PASS to judge ≤7 sources (S5.1 hoisted it per RUN for the bulk job only; the ride-along has no
+  run) — ~1 GB and minutes at 1M articles, and the reason the machine floor can decline it
+  outright; (F4) the verdict is nearly liveness: with fewer than five pathological articles the
+  only disqualifier is "≥50 % of the trial's stored articles look like keyword furniture", the
+  floor fired on 0 of 457 field sources, and the 2026-08-11 export saw keyword coverage of 2.89 %
+  — so junk articles are the ARTICLE gate's measured hole (8–11 % of a 1M corpus is listing pages
+  above the 100-word guard; Tier A quarantine agreed 2026-08-23 and still unrun), never a
+  qualification bug; (F5) the bulk drain stops after 200 consecutive no-evidence candidates and
+  never restarts itself, and 62 % of the discovered rows are `institution`/`religious`, feedless.
+  **RULINGS NEEDED (each with the plan's recommended default; none assumed):** **R1** revise
+  "the curated catalog starts unqualified"? (a) keep + ship the overlay from the live instance
+  (B5); (b) PROVISIONAL ADMISSION for app-provided rows — collect from day one, verify in the
+  background, a `disqualified` verdict still removes (the `scrape_unqualified` +
+  `scrape_app_provided_only` semantics made the default for `via:*` rows; the row pill reads
+  "collecting · not yet verified", never "qualified"; the Feed/Home not-yet-qualified exclusions
+  then show progress instead of silence); (c) stamp by curation — stays rejected; (d) a+b.
+  Recommended (d), optionally narrowed to the 405 `verified: true` catalog entries whose flag the
+  seeder currently drops. **R2** B1: recommended (b) — a `qualified` verdict enables a discovered
+  row, capped per pass, diversity-weighted, with an audit view and undo (Q3a already asked for
+  trial auto-enable behind a setting). **R3** B6: recommended (c) extended — two absolute,
+  cohort-free extraction-failure criteria, `listing_url_rate` (already exported per source) and
+  `high_link_density`, thresholds calibrated from the maintainer's export and published beside
+  the constant; `pathology_abs_floor` stays 0.5. **R4** article gate: drop Tier-1 listing shapes
+  at ingest regardless of body length (a real article is structurally impossible there); run Tier
+  A; MEASURE Tier B before proposing it; a per-source listing share in the row. **R5** discovery
+  intake: publisher types only enter the trial queue by default; institutions/religious
+  organisations stay registry entries; unmanaged-language rows deferred; feedless rows trialled
+  only after a one-fetch feed autodiscovery or a sitemap. **R6** which operator runs to schedule
+  (world catalog generator, diversification brief, overlay B5, B11). **R7** baseline staleness
+  for a cached cohort (session default: newer of 24 h or the change token moving ≥1 %).
+  **THE PLAN'S NO-RULING SLICES (Phase 1, each a draft PR):** S1 attempt REASONS + trial tally on
+  `source_qualification_attempts` and a funnel diagnostic (today a `no_evidence` row cannot say
+  feed-403 from no-sitemap — every diagnosis here was inferred from counters); S2 TWO QUEUES with
+  their own budgets (app-provided/enabled first, discovered second) and a short retry ladder for
+  no-evidence inside each — ordering, never exclusion, the livelock reproducer re-run; S3 a
+  cohort CACHE for the ride-along keyed by the serve-gate change token (the seam S5.1 built),
+  `with_furniture=False` for trial verdicts as its own verdict-neutral commit; S4 bounded PARALLEL
+  trial fetches through the collector's worker pool, per-host politeness untouched; S5 a drain
+  that resumes itself (no-progress judged per queue); S6 pre-trial screening (unmanaged language
+  deferred; one guarded homepage fetch for feed autodiscovery, NULL-only `rss_url`; `no_channel`
+  costs no further fetches until due). Phase 2 = R1–R5's slices; Phase 3 = the operator supply
+  runs. **PHASE 0 FIRST:** the maintainer sends the all-diagnostics bundle (source-qualification
+  export, qualification-integrity, source-quality export, expedition log, pass journal) so the
+  session can say which of F1–F5 dominates on THIS instance and calibrate R3/R4 — "not measurable
+  here" is the honest verdict until then. NOT DONE HERE, on purpose: no setting flipped, no
+  threshold moved, no verdict written; the plan is the deliverable.
