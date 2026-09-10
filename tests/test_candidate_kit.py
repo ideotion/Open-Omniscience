@@ -139,6 +139,13 @@ def test_the_remainder_starts_with_the_capped_out_overflow(tmp_path: Path):
 
 
 def test_the_kit_self_check_passes_from_the_kit_alone(kit: Path, tmp_path: Path):
+    # The self-check DEMANDS the language detector: a kit installs it from the pins, and its
+    # silent absence would degrade every Stage A row for hours (basis "export" throughout) --
+    # exactly what a self-check exists to catch before the fetching starts. The CI core-only
+    # lane installs no [analysis] extra, so the interpreter running this test cannot meet that
+    # demand there: skip, per the repository's convention for the extra. The other kit tests
+    # (layout, manifest, pins, worklists, zip, the fetcher seam) still run in that lane.
+    pytest.importorskip("py3langid")
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "OO_REPO_ROOT", "VCF_MODULE", "TB_MODULE", "MSB_MODULE")}
     env["OO_DATA_DIR"] = str(tmp_path / "data")
     proc = subprocess.run([sys.executable, "selfcheck.py"], cwd=kit, env=env, capture_output=True, text=True, timeout=900)
