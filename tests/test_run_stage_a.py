@@ -36,7 +36,7 @@ bck = _load("BCK_MODULE", _ROOT / "scripts" / "analysis" / "build_candidate_kit.
 
 
 def test_the_python_floor_is_the_kit_floor():
-    assert rsa.PYTHON_FLOOR == tuple(int(x) for x in bck.PYTHON_FLOOR.split("."))
+    assert tuple(int(x) for x in bck.PYTHON_FLOOR.split(".")) == rsa.PYTHON_FLOOR
     assert rsa.python_ok((3, 12)) and rsa.python_ok((3, 13)) and rsa.python_ok((4, 0))
     assert not rsa.python_ok((3, 11)) and not rsa.python_ok((3, 9))
 
