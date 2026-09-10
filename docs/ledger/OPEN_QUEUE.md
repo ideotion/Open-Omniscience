@@ -11923,3 +11923,27 @@ every entry must state a reason (a bare path is a rubber stamp — the next read
 against a silent exemption is that adding one requires writing a sentence they can disagree with),
 and the narrow HTTP allowlist must be a SUBSET of the wide one, or the two drift and the wider guard
 can be weakened by editing the wrong list.
+
+---
+
+**WHERE THE MAINTAINER-BLOCKED DECISIONS LIVE, so a session does not have to rediscover the path
+(2026-09-10).** [`docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md`](../plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md)
+is the register of every decision waiting on a person: sections A–L from the 2026-09-06 analysis, and
+**section M** for everything raised since. It now carries a STATUS BANNER saying plainly that it was
+not maintained between 2026-09-06 and 2026-09-10, that **A3 is shipped and must not be re-asked**, and
+that every other question in A–L is carried forward UNVERIFIED — stated rather than implied, because
+a register that quietly lists closed items as open is the same failure as a stale docket line, and
+this session hit that four times.
+
+**The rule for a session that opens it:** consult the entries relevant to your work, and before
+acting on any of them, verify IN THE CODE that the item is still open. `git log -S` on a distinctive
+string, and reading the closing commit's own message, are the checks that catch a stale claim.
+
+**Section M currently holds:** M1 two items this session closed on its own that had asked for a
+ruling, each with its one-line reversal (ratify or reverse); M2 ⛔ the airplane toggle's two
+surfaces stating the same guarantee differently, where the task-manager wording understates a
+socket-level refusal as "stops all collection"; M3 the ooMap embed's timeless-mark-kind vs
+country-choropleth choice, which stays open precisely because the two answer different questions and
+no measurement settles it; M4 the newsletter attach sequencing, unblocked by the List-Id column but
+moving data between sources; M5 whether the ~150 markup-split i18n fragments are worth markup
+surgery or whether 470 is the floor; M6 the operator steps no session can take.
