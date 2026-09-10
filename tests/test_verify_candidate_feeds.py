@@ -178,8 +178,15 @@ def test_language_is_detected_from_the_headlines_or_falls_back_to_the_export_wit
     fetch = FakeFetch({"https://ex.example/": HOME_WITH_LINK, "https://ex.example/feed.xml": _rss(8)})
     v = vcf.verify_candidate(_row(language="fr"), fetch=fetch, now=NOW, catalogue=set(), seen=set())
     assert v.status == "verified"
-    # eight English headlines clear the detector's floors -> detected, and it overrides the export
-    assert (v.language_detected, v.language_basis) == ("en", "detected")
+    from src.analytics.langdetect import detector_available
+
+    if detector_available():
+        # eight English headlines clear the detector's floors -> detected, and it overrides the export
+        assert (v.language_detected, v.language_basis) == ("en", "detected")
+    else:
+        # a core install (no [analysis] extra -- the CI core-only lane): the detector honestly
+        # answers nothing, so the export's value stands and the basis SAYS so. Never a guess.
+        assert (v.language_detected, v.language_basis) == ("fr", "export")
     short = FakeFetch({"https://ex.example/": HOME_PLAIN, "https://ex.example/rss": _rss(3)})
     v2 = vcf.verify_candidate(_row(language="fr"), fetch=short, now=NOW, catalogue=set(), seen=set())
     assert v2.status == "verified" and (v2.language_detected, v2.language_basis) == ("fr", "export")
