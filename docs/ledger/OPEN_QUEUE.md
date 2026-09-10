@@ -11770,3 +11770,41 @@ passes for both versions of it.
 has to be registered. I read the code I understood and not the list. **When you build from a
 precedent commit, its FILE LIST is the checklist; the diff hunks are only the parts you already
 knew to look for.**
+
+---
+
+**THE i18n LONG TAIL, SLICE 2 — 62 WHOLE SENTENCES KEYED ×12 (2026-09-10, PR #1109).** The slice
+the previous entry named as "where the next slice starts", scoped by a measurement rather than by
+the estimate: of the 80 whole sentences, **62 are already wrapped in `t("…")`**, so the code is
+correct and only the keys were missing. Zero code change, and both ratchets drop by exactly the
+number keyed — `--max-untranslatable` **550 → 488**, `--max-unkeyed-t-calls` **293 → 231**, each at
+zero slack. All twelve locales now carry 3328 keys.
+
+**THE DROP OF EXACTLY 62 IS THE VERIFICATION, not a coincidence to note in passing.** The unkeyed
+count is computed by extracting `t("literal")` call sites from source and diffing against
+`en.json`'s keys, so a byte mismatch in any one key — a straight apostrophe for a typographic one,
+a hyphen for an em dash — would have left that string unkeyed and the drop at 61. Keying strings by
+their literal has no other check: a near-miss key is a live, silent no-op that reads as done. When
+keying `t()` literals, take the count drop as the assertion.
+
+**THE REMAINING 18 of the 80 are NOT `t()` calls** and need code edits to wrap them, which is a
+different risk profile (a wrapper in the wrong place changes what renders, where a key cannot).
+Left for its own slice.
+
+**A FINDING ON A CONSENT SURFACE, RECORDED RATHER THAN FIXED — the airplane toggle says two
+different things on two surfaces.** Two of the 62 are the task-manager window's network-toggle
+titles; the main UI (`app-core.js`) has its own, already-keyed, DIFFERENTLY WORDED pair for the
+same button state:
+
+- main UI: *"Online — click to go offline (airplane mode); every new network request will be refused."*
+- task manager: *"Online — click to go offline (airplane mode); stops all collection."*
+
+Until this commit only the main UI's pair was translated, so a French operator read a translated
+title in the app and an English one in the task manager for the one toggle. That half is now
+closed. What is NOT closed is that **the task-manager wording is the weaker claim**: the
+non-negotiable is that airplane mode is a SOCKET-LEVEL hard guarantee — every non-loopback target
+is refused before the real socket call — and "stops all collection" describes only one consumer of
+the network. An operator reading just that title could reasonably believe a non-collection request
+still goes out. NOT changed here, because rewording a user-facing consent string is a product
+decision and not a session's to take; noting that the cost of taking it is one string re-translated
+×12, which is as cheap as such decisions get.

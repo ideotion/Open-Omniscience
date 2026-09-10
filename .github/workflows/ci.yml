@@ -174,7 +174,7 @@ jobs:
       # untranslated; the count finally says so. See scripts/i18n_report.py's
       # _reader_template_html / _aux_inline_js / _aux_js docstrings for each fix.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 550
+        run: python scripts/i18n_report.py --max-untranslatable 488
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says
@@ -192,7 +192,7 @@ jobs:
       # as the ratchet above -- the number went up because the instrument can now
       # see the strings, not because new untranslated ones were written.
       - name: i18n unkeyed t() call sites
-        run: python scripts/i18n_report.py --max-unkeyed-t-calls 293
+        run: python scripts/i18n_report.py --max-unkeyed-t-calls 231
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
