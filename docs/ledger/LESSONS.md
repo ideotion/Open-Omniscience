@@ -8120,3 +8120,37 @@
   state what it drops, keep the complete version one click away, and leave the original ask
   open in the docket — a renamed approximation silently retires a requirement nobody
   decided to drop.**
+
+- **WHEN A CHECK GOES RED, DIFF THE LAST-GREEN HEAD AGAINST IT BEFORE READING THE FAILURE
+  (2026-09-10).** A `Core-only install` lane failed on a WAL-starvation concurrency test.
+  The fastest conclusive move was not the log: it was
+  `git diff --stat <last-green-head> <red-head>`, which showed three ledger files and one
+  line of `CLAUDE.md` — **zero code**, with every code change in the PR already present in
+  the green run. That settles authorship in one command, before any theory about the
+  failure exists. **GENERAL FORM: a red check raises two separate questions — what broke,
+  and whether this change could possibly have broken it. The second is often answerable in
+  seconds and, when the answer is no, it reframes the first from "debug my change" to
+  "characterise someone else's flake", which is a different and much shorter investigation.**
+
+- **THE STRONGEST EVIDENCE OF NON-DETERMINISM IS THE SAME COMMIT DISAGREEING WITH ITSELF
+  (2026-09-10).** Local reproduction attempts are weak evidence about CI: different
+  hardware, different load, different everything. This repo happens to build each head
+  under TWO parallel workflow runs, and on one commit the same check FAILED in one and
+  PASSED in the other. That single fact is worth more than the 14 local passes gathered
+  first (8 sequential, 6 under artificial CPU load), because it holds the code exactly
+  constant and varies only the run. **GENERAL FORM: before spending a re-run to prove a
+  flake, check whether the evidence already exists — a sibling run, a matrix leg, a
+  scheduled build on the same SHA. And when reporting a flake, prefer same-commit
+  disagreement over "it passes on my machine", which an experienced reviewer will
+  discount.**
+
+- **A STALE DOCSTRING ON A NOW-PASSING TEST MISLEADS PRECISELY THE PERSON DEBUGGING IT
+  (2026-09-10).** The starvation test's docstring still read *"MUST FAIL on unpatched main
+  … that is false today"*, written when it was a red-first regression test. The fix landed;
+  the test now asserts the fixed guarantee and normally passes. But anyone arriving via a
+  red check reads that prose and concludes the fix was never applied — sending them to
+  re-implement something that exists a few lines away in the same subsystem. **GENERAL
+  FORM: a test written to FAIL first carries prose that expires the moment it starts
+  passing, and nothing forces an update. When landing the fix that flips such a test, flip
+  its docstring in the same commit — the words are part of the test's output, and they are
+  read hardest at the worst moment.**

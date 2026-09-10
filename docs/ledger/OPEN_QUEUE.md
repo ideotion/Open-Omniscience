@@ -11502,3 +11502,32 @@ this: name every population the picture omits ("N plotted · M not locatable").
 **NOT BUILT HERE on purpose.** The blocked-obvious-design half is a finding; the unblocked half
 is a product decision about a shared component, and this round has routed four of those to the
 maintainer rather than guessing.
+
+**A CI SIGNAL THAT RETURNS EITHER VERDICT FOR ONE COMMIT — measured, not fixed (2026-09-10).**
+`tests/test_wal_reader_starvation.py::test_run_all_starves_every_checkpoint_for_its_whole_duration`
+failed the `Core-only install (no [analysis] extra)` lane on head `9c5903ad`. The evidence that it
+is non-deterministic is unusually clean, because this repo builds each head under TWO parallel
+workflow runs and **the same commit produced opposite results on the same check**: run
+`34436678531` FAILED it, run `34436681421` PASSED it. Locally it passed 14/14 — eight sequential,
+then six more under six busy CPU workers.
+
+**Two things worth keeping.**
+1. **THE TEST'S DOCSTRING IS STALE IN A WAY THAT MISLEADS EXACTLY THE PERSON DEBUGGING IT.** It
+   still reads *"MUST FAIL on unpatched main … That is false today and will flip true once PR-D's
+   fix lands."* PR-D **has** landed: `run_all()` commits between producers through a dedicated
+   helper (`src/briefing/registry.py:154`) whose own docstring carries the PR-D / W1 rationale, the
+   read-only-producer safety argument and the disclosed snapshot tradeoff. So the test now asserts
+   the FIXED guarantee and normally passes — but a reader who hits the red check and reads the
+   docstring will conclude the fix is missing and go looking for it. The prose should be updated
+   when someone next touches that file.
+2. **THE FAILURE IS NOT THE PR'S, AND THE PROOF SHAPE IS REUSABLE.** The delta between the last
+   GREEN run of that check and the red one was three ledger files and one line of `CLAUDE.md` —
+   zero code, with every code change in the PR already present in the green run. When a check goes
+   red, diffing the last-green head against the red head is a faster and more conclusive first
+   move than reading the failure.
+
+**NOT FIXED HERE, deliberately.** Making that test deterministic is a change to a
+carefully-reasoned WAL-starvation guard, by someone holding the reasoning that produced it — not a
+side quest inside a PR about absorption gates and a dump reader. But it is real work, not noise: a
+signal that can return either verdict for one commit is one that will eventually be disbelieved,
+and each red instance costs another session the investigation this one cost.
