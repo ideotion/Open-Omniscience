@@ -11740,12 +11740,29 @@ but never called — is caught by an unrelated lint that knows nothing about unl
 is doing a weaker job than the file believes, and the belief is written down in its own docstring,
 which is the part that makes it worth an entry rather than a shrug.
 
-**THE FIX IS ABOUT TEN LINES and is NOT done here, deliberately:** parse `_run_init_sequence` with
+~~**THE FIX IS ABOUT TEN LINES and is NOT done here, deliberately:** parse `_run_init_sequence` with
 `ast` and collect `ast.Call` callee names instead of regex-matching the source text, so
 "imported but never called" reddens on the guard that claims to own it. Not shipped in this PR
 because the PR is a schema column plus its CI fix, and a change to a shared test guard is its own
 reviewed line — the same reasoning the `--min 100` entry above records, which is also why that one
-was eventually closed on a line of its own rather than folded into a neighbour.
+was eventually closed on a line of its own rather than folded into a neighbour.~~
+**SHIPPED 2026-09-10, later the same session — and struck IN PLACE rather than only announced
+below, because the entry directly above this one is the lesson that says to.** The deferral's
+stated reason was "a change to a shared test guard is its own reviewed line", and that expires the
+moment it gets one, exactly as the `--min 100` entry's did. `_called_ensure_names(fn)` walks the
+function with `ast` and collects `ast.Call` callee names (bare and attribute forms), applied to
+BOTH sides so the comparison stays symmetric — the question is "does the bench RUN every self-heal
+`init_db` runs", so an import on either side is noise rather than evidence.
+**THE COVERAGE IS NOW SEPARATED RATHER THAN OVERLAPPING, measured:** call removed + import kept
+**reddens the guard** (it survived before); neither present **reddens the guard**; import removed
++ call kept **passes the guard and reddens ruff F821** — correctly, because a missing import is a
+name-resolution fault and not unlock-cost drift, and the guard should not pretend to own it. The
+old arrangement covered neither case properly and leaned on ruff's unused-import rule for the one
+that mattered, which is a check that knows nothing about what it was accidentally protecting.
+Its own regression is pinned by `test_the_drift_guard_sees_a_CALL_and_not_merely_an_IMPORT`, which
+runs the real helper against a module-level fixture that imports two self-heals and calls one —
+NOT against a restatement of the helper's logic, since a test that re-implements what it checks
+passes for both versions of it.
 
 **AND THE REASON THE OMISSION HAPPENED, which no guard covers:** the column's shape was copied from
 `4ed0052a` (the version anchor), and that commit's own file list — visible in `git show --stat`,
