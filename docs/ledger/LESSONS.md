@@ -8045,3 +8045,30 @@
   refusal reads like defensiveness to the next person tidying up.** Same shape as the
   ordering rule beside it: the reader includes a module `__init__.py` never imports,
   because a forgotten import line must not quietly shrink what the assertions run over.
+
+- **A LINE-ANCHORED REGEX OVER HTML ANSWERS A QUESTION ABOUT FORMATTING, NOT ABOUT
+  MARKUP (2026-09-10).** Comparing two UI surfaces for which capabilities each
+  offered, I grepped `<button[^>]*onclick="cap"` — which requires the whole opening
+  tag on ONE line. Several of the buttons wrap across lines, so the comparison
+  reported one surface as MISSING three capabilities it plainly has, and I nearly
+  recorded that conclusion in the ledger. Parsing the attribute instead
+  (`onclick="cap\(([^"]*)\)"` over the whole section, or a real parser) gave the
+  opposite answer. **GENERAL FORM: whenever a grep's result would change a decision,
+  ask what the pattern assumes about LAYOUT — line breaks inside a tag, attribute
+  order, single vs double quotes, whitespace around `=`. HTML and code are not
+  line-oriented, and a pattern that silently matches nothing looks exactly like a
+  feature that is absent.** The tell here was the finding being too convenient: it
+  said the surface I was arguing for was already ahead.
+
+- **A BUTTON THAT RENDERS UNCONDITIONALLY CLAIMS ITS CAPABILITY; REFUSING ON CLICK IS
+  THE SURFACE LYING TWICE (2026-09-10).** The Methods appendix and signed-evidence
+  exports took a query string, so on an id-seeded corpus — a Lead's exact article set,
+  a facet drill, anything from `openAnalysisForIds` — they refused. The second lie was
+  the refusal's own text: "Run a search first", said to a reader who had just opened a
+  forty-article Lead corpus. The capability existed end to end (the endpoint had always
+  accepted `article_ids | query`, with tests proving it); only the client threw the
+  field away. **GENERAL FORM: a control whose availability is not conditional is a
+  promise. When a path cannot serve it, the honest options are to disable it with a
+  reason or to make it work — and a refusal message written for one entry point will
+  be actively misleading at another.** Look hardest at the paths a feature was NOT
+  originally built for: they inherit the control and not the plumbing.

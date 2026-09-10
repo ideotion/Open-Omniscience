@@ -3660,14 +3660,23 @@ def test_analysis_window_absorbs_exports():
     set — CSV/JSON/methods appendix/signed evidence — built from its Advanced inputs,
     not the Search tab's. The Search-tab call sites stay back-compatible (optional
     args), so nothing is lost while capability migrates off the Search tab.
+
+    AMENDED 2026-09-10: this pinned ``exportMethods(anQuery())`` /
+    ``exportEvidence(anQuery())`` while its own first sentence says the window exports
+    its OWN analysed set — and ``anQuery()`` cannot express one. ``_anApplySeed`` sets
+    ``an-adv-query`` to ``tb.query || ""``, so for every id-seeded corpus (a Lead's
+    exact set, a facet drill, a card corpus) it is empty and both exports refused. The
+    two now pass ``anParams()``, like ``exportResults`` and ``synthesizeResults``
+    beside them, and the id set reaches endpoints that always accepted it. Behaviour is
+    in ``tests/test_report_scope_wiring.py`` + ``report_scope_node_test.js``.
     """
     html = _ui_source()
     assert "function anParams" in html and "function anQuery" in html, "analysis-scoped params required"
     assert "exportResults('csv', anParams())" in html and "exportResults('json', anParams())" in html
-    assert "exportMethods(anQuery())" in html and "exportEvidence(anQuery())" in html
-    # functions made param-aware (back-compatible defaults)
+    assert "exportMethods(anParams())" in html and "exportEvidence(anParams())" in html
+    # functions made scope-aware (back-compatible defaults)
     assert "function exportResults(fmt, p)" in html
-    assert "function exportMethods(qArg)" in html and "function exportEvidence(qArg)" in html
+    assert "function exportMethods(scope)" in html and "function exportEvidence(scope)" in html
     # the Search-tab call sites are unchanged (no-arg) — nothing lost
     assert "exportResults('csv')" in html and "exportMethods()" in html and "exportEvidence()" in html
     import json

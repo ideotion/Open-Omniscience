@@ -11345,3 +11345,54 @@ ones being asserted about; `ruff` caught it, as `invalid-syntax`, only because t
 every time. Redone with `ast`, whose `end_lineno` covers a whole statement including its
 continuations, plus an `ast.parse()` on the result before writing. **A codemod that edits Python
 should be driven by the parser, and should refuse to write anything that does not parse.**
+
+**THE SEARCH-TAB ABSORPTION GATE, RE-MEASURED (2026-09-10) — the capability half is
+satisfied, and the blocker is now a different thing than the entry says.** The maintainer
+asked TWICE for one search entry ("two search entries, I prefer only the top one … there
+should not be a search button in the tabs"), and the removal has been gated since June on
+the `#an` window absorbing every Search-tab tool: *"Boolean query, source/lang/date
+filters, Export CSV/JSON, Methods appendix, Synthesize results, and Export SIGNED
+EVIDENCE; the Enter→window must ABSORB all of these first (never silently lose a tool)."*
+Nobody has re-measured that list since it was written, and the window has grown a great
+deal in the meantime.
+
+**Every named capability is present in `#an` today**, corpus-scoped, and two the list did
+not even name ride along: `exportResults('csv'|'json', anParams())`,
+`exportMethods(anParams())`, `exportEvidence(anParams())`,
+`synthesizeResults(this, anParams())`, `bulkLlm('summarize'|'translate','an')`,
+`aiRunPrompt('an')`, plus the Boolean query and the source / language / from / to / sort
+controls as `an-adv-*`. They are the SAME shared functions the Search tab calls, so this
+is one implementation reached from two places, not a reimplementation that could drift.
+
+**BUT THE LIST WAS SATISFIED ONLY FOR QUERY-DEFINED CORPORA, which is the finding.** Both
+report exports took a query STRING (`anQuery()`), and `_anApplySeed` sets `an-adv-query`
+to `tb.query || ""` — empty for every id-seeded corpus: a Lead's exact set, a
+When/Where/Who facet drill, a card corpus, anything opened through `openAnalysisForIds`.
+So the two buttons rendered unconditionally and refused on click, with advice that was
+false in that context ("Run a search first" to a reader already looking at a Lead's
+articles). The signed EVIDENCE bundle is the one that stings: the chain-of-custody export,
+unavailable for the most evidentiary corpus the window can hold. **`/api/reports/methods`
+and `/api/reports/evidence` have ALWAYS accepted `article_ids | query`** — one
+`_select_articles` serves both, and `tests/test_reporting_api.py` already proved the id
+path end to end. The capability existed the whole way down and the client threw away the
+one field it needed. Fixed here: one `_reportScope()` resolves an exact set or a query,
+and the id set travels.
+
+**SO THE REMAINING BLOCKER IS NOT A CAPABILITY, IT IS THE ROUTING.** Enter in the omnibar
+runs the SELECTED palette item (`palKey` → `palRun(_palSel)`), and "Run the full Boolean
+search" still leads to `#tab-search` prefilled. Nothing yet opens the `#an` window from a
+typed omnibar query, so the tab cannot be removed — not because a tool would be lost, but
+because the replacement has no entrance. That is a much smaller, nameable piece of work
+than the June entry's "the FULL Enter→corpus window with the analysis sub-tabs", which has
+since been built. **NOT DONE HERE, deliberately:** removing a whole sidebar tab is a
+maintainer-facing UI change, and the honest sequence is to build the Enter routing first,
+let it be used, and remove the tab after — not to do both in the turn that discovered the
+gate had moved.
+
+**A MEASUREMENT ERROR OF MY OWN, recorded because it briefly produced a confident wrong
+answer.** Comparing the two surfaces, I grepped `<button[^>]*onclick="cap"` — a regex that
+requires the whole opening tag on ONE line. Several of these buttons wrap, so the first
+comparison reported the Search tab as MISSING `exportMethods`, `synthesizeResults` and
+`bulkLlm`, and I nearly recorded that the `#an` window was already a superset. A
+line-anchored pattern over HTML answers a question about formatting, not about markup;
+the parse-the-attribute version gave the opposite answer.
