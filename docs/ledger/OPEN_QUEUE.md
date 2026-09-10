@@ -11855,7 +11855,8 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   rare (the shortlist's p99 elapsed was 138 s) -- but a worker asleep for a day is the Windows-lane
   hang in another coat, and it should be a ruling, not a surprise.
 
-- **QUESTION 2026-09-10 (maintainer, from running several blank instances) — PENDING RULING: THE
+- **RULED + SHIPPED 2026-09-10 (see the RULING that follows this entry) — WAS: QUESTION FROM
+  RUNNING SEVERAL BLANK INSTANCES: THE
   COLLECTION SHUFFLE IS TRULY RANDOM, BUT THE HEAD OF EVERY PASS IS STRUCTURALLY THE SAME
   SOURCES.** The maintainer: "Is the scraping engine really shuffling randomly ... I notice that
   when I run multiple instances of the same blank app, the initial sources seem to look alike."
@@ -11896,3 +11897,31 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   not a seed problem). Scope caveat: measured on `configs/sources.yml` alone; the other seeded
   catalogues add mostly large-stratum rows, which would sharpen the effect, not soften it. No
   code changed.
+
+- **RULING 2026-09-10 (maintainer, answering the shuffle question above) — SHIPPED THE SAME TURN:
+  "can we randomize language as well as tag selection smartly so that both languages and tags are
+  selected equally but in a random order?"** This AMENDS the 2026-06-17 stratified-interleave
+  ruling: the equal-turns guarantee stays, the strict round-robin that carried it does not.
+  WHAT SHIPPED (`stratified_interleave`): at every step the next source is drawn by picking
+  UNIFORMLY among the languages that still have sources, then UNIFORMLY among that language's live
+  tags, then taking the next member of that (language, tag) group (the group itself shuffled). Equal
+  RATE at every instant — which is exactly what the round-robin gave — with the PHASE randomised.
+  Every source still runs exactly once per pass (ordering is never exclusion); the opt-in country
+  priority ladder is untouched; the rng stays injectable so tests are deterministic. MEASURED on the
+  3,429-row catalogue (74 languages, 21 holding one source), thirty passes of one instance, before
+  and after: **sources leading EVERY pass 21 -> 0**; distinct sources ever reaching the first 100
+  550 -> 581; English share of the first 100 stays ~2 % against 69 % of the catalogue (the
+  anti-volume-bias property the 2026-06-17 ruling exists for is intact). THE COST, STATED: a prefix
+  is now balanced ON AVERAGE rather than exactly — over the first 148 slots the distinct languages
+  seen fall 74.0 -> 68.2 and the per-language count spread rises 0.75 -> 1.42 (a language missed
+  this pass is served the next). THE PART THAT DID NOT IMPROVE, ALSO STATED: two independent
+  instances still share about a third of their first 100 (33 % -> 39.5 %), because that sameness is
+  not the phase — **a head that is balanced across 74 languages must be drawn from the small
+  languages, and there are only ~80 sources in languages holding five or fewer.** Randomising the
+  phase spreads WHICH of them lead; it cannot enlarge the pool they come from. The only lever that
+  would is proportional representation, i.e. undoing the 2026-06-17 ruling and handing the head to
+  English — not recommended, not done. Tests: `tests/test_stratified_interleave.py` now pins the
+  RATE (a 50-source language and a 1-source language supply the next source equally often; same for
+  tags within a language), the NON-PINNING (ten single-source languages no longer fill the first
+  eleven slots of every pass) and the unchanged anti-domination property, in place of the two tests
+  that pinned an exact per-round count.

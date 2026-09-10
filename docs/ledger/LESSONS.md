@@ -8234,3 +8234,19 @@
   declared delay with no cap, and its per-pass fetcher forgets `_last_request`, so "refuse and retry
   next pass" would fetch a Crawl-delay-3600 host every pass -- the honest fix needs a persisted
   next-allowed-at per host, a ruling-shaped change.
+- **A ROUND-ROBIN GIVES YOU AN EQUAL RATE AND A FIXED PHASE, AND THE PHASE IS WHAT PEOPLE SEE
+  (2026-09-10):** the collection order was stratified round-robin — one source per live language per
+  round — which is genuinely fair (no language over-represented by having more sources) and was
+  genuinely randomised (unseeded rng, reshuffled per call). It still opened every pass on the same
+  sources, on every machine, because a stratum holding ONE member can only be represented in round
+  1: 21 of the catalogue's 74 languages hold one source, so those 21 led every pass with
+  probability 1. The maintainer spotted it by running blank instances side by side; no test could
+  have, because every test asserted the RATE and the rate was correct. **GENERAL FORM: when a
+  rotation must serve unequal strata equally, separate the two properties — the RATE (how often a
+  stratum is served) from the PHASE (when its turn falls). Round-robin fixes both; drawing uniformly
+  among the live strata at each step keeps the rate and frees the phase.** THE SECOND HALF OF THE
+  LESSON, which the measurement forced: freeing the phase did NOT make two fresh instances look
+  different (head overlap 33 % → 39.5 %), because prefix-balance across 74 languages means the head
+  must be drawn from the languages that have almost no sources — ~80 of 3,429. A property that
+  looks like randomness can be bounded by the SIZE OF THE POOL the fairness rule leaves you, and no
+  amount of shuffling enlarges it. Measure the pool before promising variety.
