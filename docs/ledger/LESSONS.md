@@ -8843,3 +8843,22 @@
   HOST. Two sources on one host would have carried a backoff each and both would have kept
   asking: the measure defeated by its own storage key. The near-miss is worth the note because
   the pull toward reuse is strongest exactly when the shape matches and the KEY does not.
+
+- **"WE COULD NOT DECIDE" IS NOT A DECISION, AND A STATUS FIELD WILL HAPPILY PRETEND OTHERWISE
+  (2026-09-11).** Stage A filed every unreachable robots.txt as `status: "rejected"`, so the
+  record of 7,847 hosts said the run had *judged and turned them down* when it had judged
+  nothing — and every later reader, including the one deciding whether to ban them, inherited
+  that. Giving the non-judgement its own status and **its own output file** is what stops a
+  deferral being spent like a verdict, because as long as both live in `rejections.csv` somebody
+  eventually reads the filename instead of the column. The reciprocal guard matters as much:
+  deferred must not become a quiet *yes* either — only a verified row may become a catalogue
+  entry, pinned by its own test. And check where the real judgement is before moving everything:
+  an explicit `Disallow` IS a decision, made by the host in the file designed to make it, and it
+  had to stay a rejection while everything around it moved.
+- **TWO VALUES MEANING THE SAME THING IS THE SAME BUG AS ONE VALUE MEANING TWO (2026-09-11).**
+  While separating "rejected" from "not judged", the codebase turned out to already have a
+  second not-judged status: `error` carried `crawl_delay_too_long` and `host_timeout`, with its
+  own comment saying they were not judged. Adding `deferred` beside it would have left the
+  vocabulary *worse* — a reader filtering for one would silently miss the other. The same pass
+  that splits an overloaded value should merge its duplicates, and `error` narrowed to the one
+  thing it should always have meant: something went wrong in our own code for this row.

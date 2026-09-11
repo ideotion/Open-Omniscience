@@ -262,3 +262,63 @@ def test_an_explicit_retry_forgets_the_backoff_it_created(tmp_path):
     vcf.run([], fetch=lambda *a, **k: None, out_dir=out, workers=1,
             retry_reasons={"robots_unavailable"}, forget_robots=forgotten.append)
     assert forgotten == ["a.example"]        # the retried host only, not the verified one
+
+
+# ------------------------------------------- a refusal is DEFERRED, never a rejection
+
+def test_a_robots_failure_is_deferred_and_an_explicit_disallow_is_still_a_rejection(tmp_path):
+    """Maintainer ruling 2026-09-11: "never drop a refused row -- keep them deferred."
+
+    Filing a refusal as `rejected` asserts a decision nobody made, and invites the next reader
+    to treat a deferral as a verdict -- which is how 7,847 hosts ended up in a bucket nobody
+    could act on. The line that must NOT move with it: an explicit `Disallow` is the host
+    telling us no, in the file designed to say so. That is a real judgement and stays a
+    rejection.
+    """
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "_vcf_defer", "scripts/analysis/verify_candidate_feeds.py"
+    )
+    vcf = importlib.util.module_from_spec(spec)
+    sys.modules["_vcf_defer"] = vcf
+    spec.loader.exec_module(vcf)
+
+    assert "robots_disallowed" not in vcf.DEFERRED_REASONS          # the load-bearing exclusion
+    for reason in ("robots_refused", "robots_server_error", "robots_unreachable",
+                   "robots_unavailable", "homepage_unreachable",
+                   "crawl_delay_too_long", "host_timeout"):
+        assert reason in vcf.DEFERRED_REASONS, reason
+        assert reason in vcf.REASONS, reason                        # and each is a real reason
+
+    # ...and the two files stay apart, so a deferral can never be read off as a verdict.
+    rows = [
+        vcf.Verdict(domain="a.example", status="deferred", reason="robots_refused"),
+        vcf.Verdict(domain="b.example", status="rejected", reason="robots_disallowed"),
+        vcf.Verdict(domain="c.example", status="deferred", reason="homepage_unreachable"),
+    ]
+    vcf.write_outputs(rows, tmp_path, today="2026-09-11")
+    rejected = (tmp_path / "rejections.csv").read_text(encoding="utf-8")
+    deferred = (tmp_path / "deferred.csv").read_text(encoding="utf-8")
+    assert "b.example" in rejected and "a.example" not in rejected and "c.example" not in rejected
+    assert "a.example" in deferred and "c.example" in deferred and "b.example" not in deferred
+
+
+def test_a_deferred_row_is_never_turned_into_a_catalogue_entry(tmp_path):
+    """Deferred is not a quiet yes either. Only a VERIFIED verdict becomes a catalogue row."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "_vcf_defer2", "scripts/analysis/verify_candidate_feeds.py"
+    )
+    vcf = importlib.util.module_from_spec(spec)
+    sys.modules["_vcf_defer2"] = vcf
+    spec.loader.exec_module(vcf)
+
+    with pytest.raises(ValueError):
+        vcf.to_catalogue_entry(
+            vcf.Verdict(domain="a.example", status="deferred", reason="robots_refused"),
+            today="2026-09-11",
+        )

@@ -12304,6 +12304,31 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
   "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
 
+- **RULED + SHIPPED 2026-09-11 (maintainer: "no, never drop a refused row — keep them deferred")
+  — A REFUSAL IS A DEFERRAL, AND THE OUTPUT NOW SAYS SO.** CHECKED FIRST, because the ruling could
+  already have been satisfied: nothing in the app DROPS a source on a robots refusal — no
+  `enabled = False`, no delete, grep-verified across `src/`; `robots_allowed` is descriptive and
+  feeds one query helper. So the app side needed nothing. **THE PIPELINE SIDE DID.** Stage A filed
+  every robots failure as `status: "rejected"`, which asserts a decision nobody made and invites
+  the next reader to spend a deferral like a verdict — which is exactly how 7,847 hosts came to sit
+  in a bucket nobody could act on. Shipped: a `DEFERRED_REASONS` set and a `deferred` status for
+  `robots_refused`, `robots_server_error`, `robots_unreachable`, the legacy `robots_unavailable`,
+  `homepage_unreachable`, `crawl_delay_too_long` and `host_timeout`; and a SECOND OUTPUT FILE —
+  `rejections.csv` is what the run judged and turned down, `deferred.csv` is what it could not
+  judge and must ask again. **THE LINE THAT DID NOT MOVE, and it is the load-bearing one:
+  `robots_disallowed` IS NOT DEFERRED.** An explicit `Disallow` is the host telling us no, in the
+  file designed to say so — a real judgement, respected, and still a rejection. A deferral is not a
+  quiet yes either: `to_catalogue_entry` still refuses anything that is not `verified`, pinned by
+  its own test. WHILE THERE, a conflation of the same family was closed: the codebase had TWO
+  statuses meaning "not judged" — `error` carried `crawl_delay_too_long` and `host_timeout`,
+  documented in its own comment as NOT judged. They move to `deferred`, and `error` narrows to what
+  it should always have meant: something went wrong in OUR code for this row. One existing test
+  asserted `("error", "crawl_delay_too_long")` and was updated DELIBERATELY, with the reason
+  written into the test rather than silently retargeted. STILL PENDING, the last place that reads a
+  path refusal as a policy: `src/monitoring/preflight.py`'s `robots_denied` verdict, which puts a
+  401/403 in the same bucket as an explicit `Disallow`. The tri-state `robots_allowed` fix stopped
+  it ASSERTING a permission it never had; it does not yet stop it calling a refusal a denial.
+
 - **SHIPPED 2026-09-11 — THE PER-HOST ROBOTS BACKOFF: A REFUSAL EXPIRES INSTEAD OF DECIDING
   (maintainer: "go ahead with the per-host backoff so refused rows expire").** THE COST IT
   REMOVES, measured: the completed run left 7,847 hosts whose robots.txt could not be read, and

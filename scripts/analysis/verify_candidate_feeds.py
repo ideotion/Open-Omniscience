@@ -65,6 +65,7 @@ RUN (inside a clearnet session, after building the venv -- in the repository or 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import hashlib
 import json
@@ -133,7 +134,7 @@ class Verdict:
     source_type: str = ""
     country: str = ""
     language_export: str = ""
-    status: str = "rejected"          # verified | rejected | error
+    status: str = "rejected"          # verified | rejected | deferred | error
     reason: str = ""                  # closed vocabulary, see REASONS
     homepage_url: str = ""
     site_title: str = ""
@@ -153,6 +154,25 @@ class Verdict:
     elapsed_s: float = 0.0
     checked_at: str = ""
     note: str = ""                    # what an error or host_timeout row can say about itself
+
+
+#: REASONS THAT ARE NOT A JUDGEMENT (maintainer ruling 2026-09-11: "never drop a refused row
+#: -- keep them deferred"). The run could not reach an answer about these candidates, so filing
+#: them as ``rejected`` asserts a decision nobody made and invites a later reader to treat a
+#: deferral as a verdict. They carry ``status: "deferred"`` and their own output file.
+#:
+#: ``robots_disallowed`` IS NOT HERE, and the distinction is the whole point: an explicit
+#: ``Disallow`` is the host telling us no, in the file designed to say so. That is a real
+#: judgement, it is respected, and it stays a rejection.
+DEFERRED_REASONS: frozenset[str] = frozenset({
+    "robots_refused",         # declined on THIS path -- over Tor, frequently the exit
+    "robots_server_error",    # the host is broken, and broken is not "no"
+    "robots_unreachable",     # we never got an answer at all
+    "robots_unavailable",     # the legacy label a pre-split run wrote
+    "homepage_unreachable",   # the homepage did not answer on either scheme
+    "crawl_delay_too_long",   # the host's declared Crawl-delay exceeds the probe budget
+    "host_timeout",           # still in flight when nothing had finished for STALL_S
+})
 
 
 REASONS = (
@@ -377,7 +397,8 @@ def verify_candidate(
         v.robots = "allowed"
         break
     if not html and not base:
-        v.status, v.reason = "rejected", last_reason
+        v.status = "deferred" if last_reason in DEFERRED_REASONS else "rejected"
+        v.reason = last_reason
         v.elapsed_s = round(time.monotonic() - started, 2)
         return v
     v.homepage_url = base
@@ -398,7 +419,7 @@ def verify_candidate(
         v.crawl_delay_s = float(delay)
         max_probes = min(MAX_FEED_PROBES, int(probe_budget_s // float(delay)))
         if max_probes <= 0:
-            v.status, v.reason = "error", "crawl_delay_too_long"
+            v.status, v.reason = "deferred", "crawl_delay_too_long"
             v.elapsed_s = round(time.monotonic() - started, 2)
             return v
 
@@ -543,11 +564,18 @@ def write_outputs(verdicts: list[Verdict], out_dir: Path, *, today: str) -> dict
     out_dir.mkdir(parents=True, exist_ok=True)
     reasons = Counter(v.reason for v in verdicts)
     verified = [v for v in verdicts if v.status == "verified"]
-    with (out_dir / "rejections.csv").open("w", encoding="utf-8", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(["domain", "name", "reason", "feed_probes", "robots"])
-        for v in verdicts:
-            if v.status != "verified":
+    # TWO FILES, because they are two different facts (ruling 2026-09-11). rejections.csv is
+    # what the run JUDGED and turned down; deferred.csv is what it could not judge and must ask
+    # again. Writing them together let a deferral be read as a verdict -- the exact conflation
+    # that put 7,847 hosts in a bucket nobody could act on.
+    for name, rows in (
+        ("rejections.csv", [v for v in verdicts if v.status == "rejected"]),
+        ("deferred.csv", [v for v in verdicts if v.status == "deferred"]),
+    ):
+        with (out_dir / name).open("w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["domain", "name", "reason", "feed_probes", "robots"])
+            for v in rows:
                 w.writerow([v.domain, v.name, v.reason, v.feed_probes, v.robots])
     entries = [to_catalogue_entry(v, today=today) for v in verified]
     header = (
@@ -675,10 +703,8 @@ def run(
         # operator overriding the deferral, which is exactly what the deferral is not for.
         if forget_robots is not None:
             for domain in redo:
-                try:
+                with contextlib.suppress(Exception):  # one host must never end the run
                     forget_robots(domain)
-                except Exception:  # noqa: BLE001 - one host must never end the run
-                    pass
     todo = [r for r in rows if (registrable_domain(str(r.get("domain") or "")) or "") not in done]
     if limit is not None:
         todo = todo[:limit]
@@ -733,7 +759,7 @@ def run(
                             source_type=str(r.get("source_type") or "").strip(),
                             country=str(r.get("country") or "").strip().lower(),
                             language_export=str(r.get("language") or "").strip().lower(),
-                            status="error", reason="host_timeout", elapsed_s=float(stall_s),
+                            status="deferred", reason="host_timeout", elapsed_s=float(stall_s),
                             checked_at=now.isoformat(timespec="seconds"),
                             note=f"still in flight after {stall_s:.0f}s with nothing finishing",
                         )
