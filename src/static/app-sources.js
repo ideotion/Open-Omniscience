@@ -865,13 +865,31 @@
       if (cp && cp.active_workers != null) txt += " · " + cp.active_workers + " " + T("workers");
       el.textContent = txt;
     }
+    // Field diagnostics 2026-09-11 (A4, same defect one file over): this was a
+    // setInterval firing an ASYNC _pollSchedRate every 3 s without awaiting it, so a
+    // slow server stacked the calls -- and it polls /api/scheduler/activity, the very
+    // endpoint that carried 160 of the 187 recorded stalls at status 500. At a 3 s
+    // interval against a 30 s pool timeout that is ten concurrent requests for one
+    // number. Rewritten as the self-scheduling awaited chain the rest of the app uses
+    // (_adaptivePoll, _ensureVitalsPoll), so 3 s is the GAP between polls, not the rate
+    // they are issued at, and a generation token retires a chain a restart superseded.
+    let _schedRateGen = 0;
     function startSchedRatePoll() {
       stopSchedRatePoll();
-      _pollSchedRate();
-      _schedRateTimer = setInterval(() => { if (!document.hidden) _pollSchedRate(); }, 3000);
+      const gen = ++_schedRateGen;
+      const tick = async () => {
+        if (gen !== _schedRateGen) return;
+        if (!document.hidden) {
+          try { await _pollSchedRate(); } catch (_e) { /* transient -- keep polling */ }
+        }
+        if (gen !== _schedRateGen) return;
+        _schedRateTimer = setTimeout(tick, 3000);
+      };
+      tick();
     }
     function stopSchedRatePoll() {
-      if (_schedRateTimer) { clearInterval(_schedRateTimer); _schedRateTimer = null; }
+      _schedRateGen++;                                 // retires any in-flight chain
+      if (_schedRateTimer) { clearTimeout(_schedRateTimer); _schedRateTimer = null; }
     }
 
     function applySchedConfig(c) {
