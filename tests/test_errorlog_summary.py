@@ -82,6 +82,44 @@ def test_summary_flags_a_lock_error_in_the_current_session(monkeypatch, tmp_path
     assert s["problems_this_session"] == 1
 
 
+def test_counter_drift_interrupted_error_is_counted(monkeypatch, tmp_path):
+    """C5 reconciliation: the field bundle showed ``counter_drift_error:
+    "interrupted"`` beside ``error_log.interrupted_errors_total: 0`` — a second
+    dishonesty, since the diagnostic's own except block never told the standard
+    `logging` module (which is what feeds this very counter) that anything
+    happened. FAILS on the current code: the counter-drift failure never reaches
+    the rolling log, so it can never be counted."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from src.database.models import Base
+    from src.monitoring.integrity import corpus_integrity
+
+    _fresh(monkeypatch, tmp_path)
+    errorlog.install()
+    errorlog.note_boot()
+
+    eng = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(eng)
+    with Session(eng) as s:
+        real_execute = s.execute
+
+        def _boom(stmt, *a, **k):
+            if "live_mentions" in str(stmt):
+                raise RuntimeError("interrupted")
+            return real_execute(stmt, *a, **k)
+
+        monkeypatch.setattr(s, "execute", _boom)
+        r = corpus_integrity(s, sample=100)
+        assert r["counter_drift"]["count_status"] == "error"
+
+    summ = errorlog.summary()
+    assert summ["interrupted_errors_total"] >= 1, (
+        f"the logged counter-drift failure must be counted: {summ!r}"
+    )
+    assert summ["interrupted_errors_this_session"] >= 1
+
+
 def test_empty_log_is_honest(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     s = errorlog.summary()

@@ -20,12 +20,15 @@ own that).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.database.maintenance import StatementTimeout, statement_deadline
+
+_LOG = logging.getLogger(__name__)
 
 
 def _scalar(session: Session, sql: str) -> int | None:
@@ -86,6 +89,11 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
             mention_drift = 0
             article_drift = 0
             worst: list[dict[str, Any]] = []
+            # C5: whether the query actually ran, tracked explicitly rather than inferred
+            # from an empty `rows` -- a genuinely clean sample of `sample` keywords also
+            # yields zero drift, so "0 drifting" is ambiguous with "never looked" unless
+            # the two are told apart by a flag, not by the numbers themselves.
+            drift_count_status = "ok"
             try:
                 rows = session.execute(
                     text(
@@ -100,7 +108,17 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                 raise
             except Exception as exc:  # noqa: BLE001 - a missing/corrupt table degrades, never 500
                 rows = []
+                drift_count_status = "error"
                 report["counter_drift_error"] = str(exc)[:200]
+                # C5 reconciliation: this failure previously reached only the report
+                # dict, never the standard `logging` module -- so it never landed in
+                # app_errors.jsonl and `errorlog.interrupted_errors_total` (which scans
+                # THAT log for "interrupted") stayed 0 even when this field read
+                # literally "interrupted". Logging it here is what makes the two
+                # counters agree, and is a real fact worth keeping regardless (a
+                # missing/corrupt table or an uncaught interrupt is a genuine problem,
+                # not merely a degraded diagnostic read).
+                _LOG.warning("corpus-integrity: counter-drift query failed (%s)", exc)
             for kid, term, mc, ac, live_m, live_a in rows:
                 checked += 1
                 dm = abs(int(mc or 0) - int(live_m or 0))
@@ -120,12 +138,17 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                             "live_articles": int(live_a or 0),
                         }
                     )
+            # C5: on the error path the counts were never computed -- report them as
+            # `None` (the fts_status `count_status` shape, copied exactly), never as a
+            # fabricated zero indistinguishable from a genuinely clean sample.
+            ok = drift_count_status == "ok"
             report["counter_drift"] = {
                 "mode": "full" if full else "sampled",
-                "checked": checked,
+                "count_status": drift_count_status,
+                "checked": checked if ok else None,
                 "sample": None if full else int(sample),
-                "keywords_with_mention_drift": mention_drift,
-                "keywords_with_article_drift": article_drift,
+                "keywords_with_mention_drift": mention_drift if ok else None,
+                "keywords_with_article_drift": article_drift if ok else None,
                 "examples": worst,
             }
 

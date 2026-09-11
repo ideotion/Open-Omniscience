@@ -136,7 +136,47 @@ def test_integrity_clean_corpus_has_no_drift(session):
     assert r["supported"] is True
     assert r["drift"] is False
     assert r["orphan_keywords"] == 0
-    assert r["counter_drift"]["keywords_with_mention_drift"] == 0
+    cd = r["counter_drift"]
+    assert cd["keywords_with_mention_drift"] == 0
+    assert cd["keywords_with_article_drift"] == 0
+    # C5: a genuinely clean sample must be DISTINGUISHABLE from "never looked" —
+    # real zeros, reported with an "ok" status, never an absence dressed as a zero.
+    assert cd["count_status"] == "ok"
+    assert cd["checked"] == 1
+
+
+def test_integrity_counter_drift_query_failure_is_honest(session, monkeypatch):
+    """C5: FAILS on the current code. When the counter-drift query itself blows up
+    (the field bundle's ``counter_drift_error: "interrupted"``), the report must
+    say so with ``count_status: "error"`` and ``None`` counts — NOT the fabricated
+    ``0`` that is indistinguishable from a genuinely clean sample."""
+
+    from src.monitoring.integrity import corpus_integrity
+
+    _seed(session)
+    real_execute = session.execute
+
+    def _boom(stmt, *a, **k):
+        # Only the counter-drift query itself fails — the orphan/dangling/FK
+        # tallies around it must keep working, exactly like a real mid-sweep
+        # interrupt would leave them.
+        if "live_mentions" in str(stmt):
+            raise RuntimeError("interrupted")
+        return real_execute(stmt, *a, **k)
+
+    monkeypatch.setattr(session, "execute", _boom)
+    r = corpus_integrity(session, sample=100)
+
+    cd = r["counter_drift"]
+    assert cd["count_status"] == "error", cd
+    assert cd["checked"] is None, "must not report a checked count that never happened"
+    assert cd["keywords_with_mention_drift"] is None, (
+        "must not fabricate a zero for a query that never ran"
+    )
+    assert cd["keywords_with_article_drift"] is None
+    assert r["counter_drift_error"] == "interrupted"
+    # The rest of the sweep degrades independently and keeps reporting real facts.
+    assert r["orphan_keywords"] == 0
 
 
 def test_integrity_flags_counter_drift_and_orphans(session):
