@@ -50,11 +50,11 @@ question the rerun exists to answer.
 
 | | | |
 | --- | --- | --- |
-| batches with both judges | **36** (FINAL) | |
-| canary failures | **0 and 0** | on 72 batch-judgements |
-| paired rows compared | **1,440** | |
-| agree on `kind` | | **97.4%** |
-| agree on `primary_source` | | **85.8%** |
+| batches with both judges | **40** | |
+| canary failures | **0 and 0** | on 80 batch-judgements |
+| paired rows compared | **1,600** | |
+| agree on `kind` | | **97.5%** |
+| agree on `primary_source` | | **85.3%** | (n=1,511)
 
 **The figures converged as the sample grew, which is the reason to trust them:**
 
@@ -62,11 +62,17 @@ question the rerun exists to answer.
 | --- | --- | --- | --- |
 | 30 batches | 1,200 | 97.2% | 84.7% |
 | 34 batches | 1,360 | 97.4% | 85.1% |
-| 36 batches | 1,440 | **97.4%** | **85.8%** |
+| 36 batches | 1,440 | 97.4% | 85.8% |
+| 40 batches | 1,600 | **97.5%** | **85.3%** |
 
-20% more data moved `kind` by 0.2 points and `primary_source` by 1.1. The run stopped at 36 of
-60 overlapping batches because agents kept dying to API timeouts and server-side rate limiting —
-not because the measurement needed more.
+A THIRD more data than the first reading moved `kind` by 0.3 points and `primary_source` within a
+1.1-point band that never trended. (An earlier revision of this file called 36 batches FINAL;
+more agents landed afterwards, so it was not. The figures did not care.)
+
+The run stopped at 40 of 60 overlapping batches because agents kept dying to API timeouts and
+server-side rate limiting — not because the measurement needed more. Judge A completed 48
+batches and judge B 48; the 8 without a counterpart are listed in neither judge's favour and are
+simply unused.
 
 ## This corrects the earlier reading, and the error was mine
 
@@ -90,9 +96,9 @@ batches" correction is doing real work and carries no directional bias.
 
 | disagreement | n |
 | --- | --- |
-| `academic` vs `institution` | 18 |
-| `institution` vs `trade-or-corporate` | 12 |
-| everything else | 4 |
+| `academic` vs `institution` | 21 |
+| `institution` vs `trade-or-corporate` | 15 |
+| everything else | 2 |
 
 **The largest single disagreement is exactly the open question about research institutes.** Two
 careful judges reading the same evidence cannot agree whether a research body is `academic` or
