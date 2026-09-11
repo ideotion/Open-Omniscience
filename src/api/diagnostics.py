@@ -831,7 +831,46 @@ def keyword_log(
                     json.dumps(_entry(s), separators=(",", ":")) for s in chunk
                 )
             yield "]"
-        yield ', "families": ' + json.dumps(families, separators=(",", ":"))
+        # Field diagnostics 2026-09-11 (B2): the DIGEST embedded the families dump in
+        # FULL, and that is where `keyword-log-digest.json` got its 73.2 MB -- 84x the
+        # next-largest archive member, ~96% of the whole bundle, and +3.4 GB of RSS on a
+        # 4,093.8 MB machine whose previous session had already ended unclean at peak
+        # 4158 MB. The cap this needed was already written, one path over:
+        # `_keyword_zip_families_cap` caps exactly this block for the ZIP path, and its
+        # own docstring records that the full 700k-family tail "was also why the byte cap
+        # never held" -- the same lesson, and the digest path had never been given it.
+        #
+        # Reused rather than re-invented: same helper, same env override, same
+        # sorted-by-mentions order, same honest omission record. A cap without the record
+        # beside it would be a silent truncation, which is the defect this batch is full
+        # of elsewhere.
+        #
+        # SCOPED TO `digest` ON PURPOSE: the non-digest single-file export is a contract
+        # ("byte-for-byte unchanged", asserted by its own test), so `families` itself is
+        # never mutated here -- only what this branch emits.
+        if digest:
+            _fam_cap = _keyword_zip_families_cap()
+            _fam_shown = (
+                families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
+            )
+            yield ', "families": ' + json.dumps(_fam_shown, separators=(",", ":"))
+            yield ', "families_provenance": ' + json.dumps(
+                {
+                    "shown": len(_fam_shown),
+                    "total": len(families),
+                    "omitted": len(families) - len(_fam_shown),
+                    "sorted_by": "mentions (desc)",
+                    "note": (
+                        "Only the top families are embedded in the digest (the full "
+                        "per-keyword family dump is large, redundant with the per-language "
+                        "shards, and unused by analyze_keyword_log.py). Set "
+                        "OO_KEYWORD_LOG_FAMILIES=0 to embed all."
+                    ),
+                },
+                separators=(",", ":"),
+            )
+        else:
+            yield ', "families": ' + json.dumps(families, separators=(",", ":"))
         yield ', "overrides": ' + json.dumps(
             [{"normalized_term": term, **data} for term, data in sorted(overrides.items())],
             separators=(",", ":"),
@@ -3659,6 +3698,48 @@ def _member_bytes(value) -> bytes:
     return bytes(getattr(value, "body", b""))  # JSONResponse / Response
 
 
+def _write_member(zf, name: str, value) -> int:
+    """Write one archive member, STREAMING a streamed body instead of materialising it.
+
+    Field diagnostics 2026-09-11 (B2). The old path was
+    ``zf.writestr(name, _member_bytes(value))``, and on the 73.2 MB keyword-log digest
+    that held three copies of the member at once: the list of chunks ``_drain``
+    accumulates, the joined ``bytes`` it returns, and whatever ``writestr`` buffers --
+    on a machine with 4,093.8 MB of RAM, beside a member whose own construction had
+    already pushed RSS up by 3.4 GB. Capping that member (above) is the real fix; this
+    is the net beneath it, so the NEXT large member does not repeat the shape.
+
+    Returns the number of UNCOMPRESSED bytes written, which is what the manifest's
+    ``bytes`` field has always meant -- counted as they go past rather than by
+    measuring a buffer, so the figure stays honest without a buffer existing.
+    """
+    body_iter = getattr(value, "body_iterator", None)
+    if body_iter is None:
+        payload = _member_bytes(value)
+        zf.writestr(name, payload)
+        return len(payload)
+
+    # A streamed response (the keyword log digest). This sync handler runs in a worker
+    # thread with no running loop, so a private loop is safe -- the same pattern
+    # ``_member_bytes`` itself uses, kept identical on purpose.
+    import asyncio
+
+    written = 0
+    # force_zip64: the member's size is unknown up front when streaming, and a member
+    # that grows past 4 GB must fail on its own terms rather than corrupt the archive.
+    with zf.open(name, "w", force_zip64=True) as fh:
+        async def _pump() -> int:
+            total = 0
+            async for chunk in body_iter:
+                buf = chunk.encode("utf-8") if isinstance(chunk, str) else chunk
+                fh.write(buf)
+                total += len(buf)
+            return total
+
+        written = asyncio.run(_pump())
+    return written
+
+
 def _fixity_bundle_member(db: Session) -> dict:
     """The BOUNDED fixity-audit bundle member (transversal audit 09, C2). Calls the
     real ``GET /api/integrity/fixity`` endpoint function directly (its own
@@ -4658,9 +4739,11 @@ def _write_all_diagnostics_zip(
                     if value is _ALL_DIAG_DEADLINE_SENTINEL:
                         outcome = "skipped-deadline"
                 if outcome in ("ok", "partial-deadline"):
-                    payload = _member_bytes(value)
-                    zf.writestr(name, payload)
-                    nbytes = len(payload)
+                    # Streamed straight into the archive rather than materialised
+                    # (field diagnostics 2026-09-11, B2 second half) -- see
+                    # _write_member for why the old `writestr(_member_bytes(...))`
+                    # cost three copies of the largest member.
+                    nbytes = _write_member(zf, name, value)
                 else:
                     marker = (
                         f"member exceeded its {_all_diag_nondb_member_deadline_s():.0f}s "

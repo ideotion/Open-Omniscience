@@ -241,6 +241,70 @@ def test_keyword_log_digest_mode(client, monkeypatch):
     assert len(full["keywords"]) >= 3      # the long tail is present in full mode
 
 
+def test_keyword_log_digest_caps_the_families_dump(client, monkeypatch):
+    """B2 (field diagnostics 2026-09-11): the digest embedded `families` in FULL, which
+    is where keyword-log-digest.json got its 73.2 MB -- 84x the next-largest archive
+    member, ~96% of the bundle, and +3.4 GB RSS on a 4,093.8 MB machine.
+
+    The cap already existed one path over (`_keyword_zip_families_cap`, applied by the
+    ZIP path, whose own docstring records that this same dump "was also why the byte cap
+    never held"). The digest now reuses it -- and records the omission, because a cap
+    without the record beside it is a silent truncation."""
+    from src.database.models import Keyword, KeywordMention, SessionLocal
+
+    s = SessionLocal()
+    try:
+        src = Source(name="Families source", domain="families.test")
+        s.add(src)
+        s.flush()
+        art = Article(
+            url="https://families.test/1",
+            canonical_url="https://families.test/1",
+            source_id=src.id,
+            title="Families seed",
+            hash="families-h1",
+            language="en",
+            content="seed",
+            created_at=datetime.now(UTC),
+        )
+        s.add(art)
+        s.flush()
+        for i in range(6):
+            kw = Keyword(term=f"zfam-{i:03d}", normalized_term=f"zfam-{i:03d}")
+            s.add(kw)
+            s.flush()
+            s.add(
+                KeywordMention(
+                    keyword_id=kw.id,
+                    article_id=art.id,
+                    count=5000 - i,
+                    observed_on=datetime.now(UTC).date(),
+                )
+            )
+        s.commit()
+    finally:
+        s.close()
+
+    monkeypatch.setenv("OO_KEYWORD_LOG_FAMILIES", "2")
+    data = client.get("/api/diagnostics/keywords", params={"digest": "1"}).json()["data"]
+
+    prov = data["families_provenance"]
+    assert len(data["families"]) <= 2
+    assert prov["shown"] == len(data["families"])
+    assert prov["total"] >= prov["shown"]
+    assert prov["omitted"] == prov["total"] - prov["shown"]
+    assert prov["sorted_by"] == "mentions (desc)"
+    assert "OO_KEYWORD_LOG_FAMILIES=0" in prov["note"]     # the way back is stated
+    # ...and the trim is real, not just declared.
+    assert prov["total"] > 2 and prov["omitted"] > 0
+
+    # THE CONTRACT THE FIX MUST NOT BREAK: the non-digest single-file export is
+    # "byte-for-byte unchanged" and carries NO families cap and NO provenance block.
+    full = client.get("/api/diagnostics/keywords").json()["data"]
+    assert "families_provenance" not in full
+    assert len(full["families"]) == prov["total"]
+
+
 # --------------------------------------------------------------------------- #
 #  Translated docs: ?lang= serving + honest fallback (ruled 2026-06-10)
 # --------------------------------------------------------------------------- #
