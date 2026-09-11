@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 import json
+import tempfile
 import zipfile
 
 from src.api.diagnostics import _write_member
@@ -57,43 +58,55 @@ def test_streamed_member_round_trips_and_reports_uncompressed_bytes():
         assert json.loads(zf.read("member.json")) == {"a": 1, "b": 2}
 
 
-def test_streamed_member_is_written_chunk_by_chunk_never_accumulated():
+def test_a_streamed_member_never_sits_whole_in_ram(monkeypatch):
     """The defect itself, asserted structurally rather than by measuring RSS (an RSS
     assertion on a shared CI box is the flaky shape this repo's ledger already records).
 
-    If the writer were still accumulating, EVERY chunk would be pulled from the iterator
-    before the first byte reached the archive. Interleaving proves it streams."""
-    order: list[str] = []
-    chunks = [f"chunk-{i:02d}-" for i in range(8)]
+    THE PROXY THIS TEST USES CHANGED WHEN D5 LANDED, and the reason is worth stating.
+    B2's first version asserted that reads and writes INTERLEAVE -- chunk in, chunk
+    straight out to the archive -- which was a fine proxy for "the member is never held
+    whole" while the writer piped directly into the zip. D5's per-member cap cannot work
+    that way: a member's final size is unknown until its last chunk, and the cap cannot
+    be enforced by truncating mid-write, because half a JSON document is invalid and
+    hides its own loss. So the writer now spools.
 
+    The property that actually mattered was never the interleaving -- it was that RAM
+    stays bounded by a CONSTANT rather than by the member's size. A SpooledTemporaryFile
+    delivers exactly that, and this asserts it directly: past the spool limit the buffer
+    ROLLS OVER to disk, so the 73.2 MB member that pushed RSS up by 3.4 GB could not sit
+    in memory today no matter how large it grew. Asserting the real property beats
+    asserting a proxy that has stopped tracking it."""
+    from src.api import diagnostics as dg
+
+    monkeypatch.setenv("OO_DIAG_MEMBER_MAX_MB", "0")        # no cap: exercise the big path
+    monkeypatch.setattr(dg, "_MEMBER_SPOOL_MAX", 1024)      # spill past 1 KiB
+
+    made: list = []
+    real_spooled = tempfile.SpooledTemporaryFile
+
+    def _watching(*a, **kw):
+        f = real_spooled(*a, **kw)
+        made.append(f)
+        return f
+
+    monkeypatch.setattr(tempfile, "SpooledTemporaryFile", _watching)
+
+    chunks = ["q" * 4096 for _ in range(8)]                 # 32 KiB, 32x the spool limit
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        real_open = zf.open
+        n = _write_member(zf, "big.json", _FakeStreamed(chunks))
 
-        def _tracking_open(name, mode="r", **kw):
-            fh = real_open(name, mode, **kw)
-            real_write = fh.write
-
-            def _w(b):
-                order.append("write")
-                return real_write(b)
-
-            fh.write = _w  # type: ignore[method-assign]
-            return fh
-
-        zf.open = _tracking_open  # type: ignore[method-assign]
-        _write_member(
-            zf, "streamed.txt", _FakeStreamed(chunks, on_chunk=lambda c: order.append("read"))
-        )
-
-    # Accumulate-then-write would read all 8 before writing any: "read"*8 then "write"*n.
-    first_write = order.index("write")
-    reads_before_first_write = order[:first_write].count("read")
-    assert reads_before_first_write <= 1, (
-        "the member was drained before anything was written -- that is the "
-        f"materialising shape B2 removed (order={order[:12]})"
+    assert made, "the writer did not spool at all"
+    # `_rolled` stays True on the object after close: it records that the buffer
+    # exceeded _MEMBER_SPOOL_MAX and moved to disk, i.e. RAM was bounded by the
+    # CONSTANT and not by the member's size.
+    assert getattr(made[0], "_rolled", False) is True, (
+        "the streamed member stayed entirely in RAM -- that is the materialising shape "
+        "B2 removed; the spool must roll over to disk past _MEMBER_SPOOL_MAX"
     )
-    assert order.count("read") == len(chunks)
+    assert n == 32768
+    with zipfile.ZipFile(buf) as zf:
+        assert zf.read("big.json") == b"q" * 32768          # and round-trips intact
 
 
 def test_non_streamed_members_are_unchanged():
@@ -106,3 +119,80 @@ def test_non_streamed_members_are_unchanged():
         payload = zf.read("plain.json")
     assert json.loads(payload) == {"hello": "world"}
     assert n == len(payload)
+
+
+# --------------------------------------------------------------------------- #
+#  D5 (maintainer request): a per-member byte cap, so no single member can make
+#  the whole archive unsendable again
+# --------------------------------------------------------------------------- #
+
+
+def _read_names(buf):
+    with zipfile.ZipFile(buf) as zf:
+        return zf.namelist()
+
+
+def test_an_over_cap_streamed_member_is_omitted_with_a_record_never_truncated(monkeypatch):
+    """The maintainer could not upload the bundle because ONE member reached 73.2 MB.
+    B2 fixed that member; this stops the NEXT one, whichever it turns out to be.
+
+    The member must be OMITTED WITH A RECORD, never truncated: half a JSON document is
+    invalid, so truncation would cost the operator the member AND the ability to tell
+    anything was lost."""
+    monkeypatch.setenv("OO_DIAG_MEMBER_MAX_MB", "0.001")      # 1,048 bytes
+    chunks = ["x" * 500 for _ in range(10)]                     # 5,000 bytes
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        n = _write_member(zf, "huge.json", _FakeStreamed(chunks))
+
+    names = _read_names(buf)
+    assert "huge.json" not in names, "the over-cap member must not be written at all"
+    assert "huge.json.omitted.json" in names
+
+    with zipfile.ZipFile(buf) as zf:
+        rec = json.loads(zf.read("huge.json.omitted.json"))
+    assert rec["omitted"] is True
+    assert rec["member"] == "huge.json"
+    assert rec["bytes_uncompressed"] == 5000          # its REAL size, stated
+    assert rec["cap_bytes"] == 1048
+    assert "OO_DIAG_MEMBER_MAX_MB" in rec["how_to_get_it"]
+    # The manifest's `bytes` must describe what was ACTUALLY written, so the archive's
+    # own accounting stays true rather than reporting a member it does not contain.
+    assert n == len(zf.read("huge.json.omitted.json")) if False else n == len(
+        json.dumps(rec, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+
+
+def test_an_over_cap_plain_member_is_omitted_too(monkeypatch):
+    """The cap is the BUILDER's, not the streaming path's -- a plain dict member that
+    runs large is exactly as unsendable."""
+    monkeypatch.setenv("OO_DIAG_MEMBER_MAX_MB", "0.001")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        _write_member(zf, "big.json", {"payload": ["y" * 100 for _ in range(50)]})
+    assert "big.json.omitted.json" in _read_names(buf)
+
+
+def test_a_member_within_the_cap_is_untouched(monkeypatch):
+    """The cap must not change the healthy path -- every member measured in the field
+    after B2 is under 1 MB, so the common case must round-trip byte-for-byte."""
+    monkeypatch.setenv("OO_DIAG_MEMBER_MAX_MB", "12")
+    chunks = ['{"ok":', "true}"]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        n = _write_member(zf, "fine.json", _FakeStreamed(chunks))
+    with zipfile.ZipFile(buf) as zf:
+        assert json.loads(zf.read("fine.json")) == {"ok": True}
+    assert n == len("".join(chunks))
+    assert "fine.json.omitted.json" not in _read_names(buf)
+
+
+def test_the_cap_can_be_disabled(monkeypatch):
+    """0 disables it -- an operator who wants everything must be able to say so."""
+    monkeypatch.setenv("OO_DIAG_MEMBER_MAX_MB", "0")
+    chunks = ["z" * 2000]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        _write_member(zf, "unbounded.json", _FakeStreamed(chunks))
+    assert "unbounded.json" in _read_names(buf)

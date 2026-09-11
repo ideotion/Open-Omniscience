@@ -3698,6 +3698,25 @@ def _member_bytes(value) -> bytes:
     return bytes(getattr(value, "body", b""))  # JSONResponse / Response
 
 
+# D5 (field diagnostics 2026-09-11, maintainer request): a PER-MEMBER byte cap, so no
+# single member can make the whole archive unsendable again. The manifest already
+# recorded `bytes` per member, so the builder always knew every size -- it just never
+# acted on one. 12 MB by default: comfortably above every healthy member measured in the
+# field (the largest after B2's cap is under 1 MB) while staying under the common 25 MB
+# attachment limit even if two members ran large at once. 0 disables the cap entirely.
+def _all_diag_member_max_bytes() -> int:
+    try:
+        mb = float(os.environ.get("OO_DIAG_MEMBER_MAX_MB", "12"))
+    except ValueError:
+        mb = 12.0
+    return 0 if mb <= 0 else int(mb * 1024 * 1024)
+
+
+# How much of a streamed member is held in RAM before it spills to disk. Deliberately far
+# below the cap: the point is that RAM stays bounded no matter how big the member gets.
+_MEMBER_SPOOL_MAX = 4 * 1024 * 1024
+
+
 def _write_member(zf, name: str, value) -> int:
     """Write one archive member, STREAMING a streamed body instead of materialising it.
 
@@ -3713,9 +3732,13 @@ def _write_member(zf, name: str, value) -> int:
     ``bytes`` field has always meant -- counted as they go past rather than by
     measuring a buffer, so the figure stays honest without a buffer existing.
     """
+    cap = _all_diag_member_max_bytes()
+
     body_iter = getattr(value, "body_iterator", None)
     if body_iter is None:
         payload = _member_bytes(value)
+        if cap and len(payload) > cap:
+            return _write_member_omission(zf, name, len(payload), cap)
         zf.writestr(name, payload)
         return len(payload)
 
@@ -3723,21 +3746,72 @@ def _write_member(zf, name: str, value) -> int:
     # thread with no running loop, so a private loop is safe -- the same pattern
     # ``_member_bytes`` itself uses, kept identical on purpose.
     import asyncio
+    import shutil
+    import tempfile
 
-    written = 0
-    # force_zip64: the member's size is unknown up front when streaming, and a member
-    # that grows past 4 GB must fail on its own terms rather than corrupt the archive.
-    with zf.open(name, "w", force_zip64=True) as fh:
+    # SPOOLED, not buffered: a member's final size is unknown until its last chunk, and
+    # the cap cannot be enforced by truncating mid-write -- half a JSON document is
+    # invalid, which is strictly worse than an honest omission. So it is spilled to a
+    # SpooledTemporaryFile, which keeps the common (small) member entirely in RAM and
+    # sends only a large one to disk. That bounds RAM at _MEMBER_SPOOL_MAX rather than at
+    # the member's size, which is the property B2 bought and this must not give back.
+    with tempfile.SpooledTemporaryFile(max_size=_MEMBER_SPOOL_MAX, suffix=".oodiag") as spool:
         async def _pump() -> int:
             total = 0
             async for chunk in body_iter:
                 buf = chunk.encode("utf-8") if isinstance(chunk, str) else chunk
-                fh.write(buf)
+                spool.write(buf)
                 total += len(buf)
             return total
 
         written = asyncio.run(_pump())
+        if cap and written > cap:
+            return _write_member_omission(zf, name, written, cap)
+        spool.seek(0)
+        # force_zip64: a member that grows past 4 GB must fail on its own terms rather
+        # than silently corrupt the archive.
+        with zf.open(name, "w", force_zip64=True) as fh:
+            shutil.copyfileobj(spool, fh, length=1024 * 1024)
     return written
+
+
+def _write_member_omission(zf, name: str, actual: int, cap: int) -> int:
+    """Replace an over-cap member with a RECORD of what was omitted, and why.
+
+    Field diagnostics 2026-09-11 (D5, the generalising half). The maintainer could not
+    upload the bundle because ONE member reached 73.2 MB. B2 fixed that member; this
+    stops the NEXT one doing it again, whichever member it turns out to be.
+
+    THE OMISSION IS NEVER SILENT AND THE MEMBER IS NEVER TRUNCATED. A truncated JSON
+    document is invalid, so it would cost the operator the member AND the ability to tell
+    that anything was lost -- the exact silent-truncation failure several other findings
+    in this batch are about. What lands instead is a small JSON naming the member, its
+    real size, the cap that excluded it, the env var that raises the cap, and the fact
+    that the member's own endpoint still serves it in full. The manifest's ``bytes`` then
+    reports what was actually written, so the archive's own accounting stays true.
+    """
+    payload = json.dumps(
+        {
+            "omitted": True,
+            "member": name,
+            "bytes_uncompressed": actual,
+            "cap_bytes": cap,
+            "reason": (
+                f"this member is {actual:,} bytes, over the {cap:,}-byte per-member cap "
+                "for the diagnostics archive, so it was left out rather than truncated "
+                "(a truncated JSON member would be invalid and would hide its own loss)"
+            ),
+            "how_to_get_it": (
+                "raise or disable the cap with OO_DIAG_MEMBER_MAX_MB (0 disables it), or "
+                "call this member's own endpoint directly -- the archive is a convenience "
+                "bundle of endpoints that each still serve their full output"
+            ),
+        },
+        ensure_ascii=False,
+        indent=2,
+    ).encode("utf-8")
+    zf.writestr(name + ".omitted.json", payload)
+    return len(payload)
 
 
 def _fixity_bundle_member(db: Session) -> dict:
