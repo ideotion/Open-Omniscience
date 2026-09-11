@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -58,6 +59,26 @@ _LOG = logging.getLogger(__name__)
 # run that did not finish cleanly.
 _STAGING_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-vllm-pip-build")
 _PART_SUFFIX = ".oopart"
+
+# Field diagnostics 2026-09-11 (C2). The forensics export printed "orphaned
+# backup/restore staging: none found" and then, a few lines later, listed
+# `pre-restore-20260906T065744Z.db` and `pre-restore-20260906T222535Z.db` at 25.8 GB
+# EACH -- 51.6 GB in an 80.8 GB data folder holding a 25.8 GB corpus, with no account of
+# where it had gone.
+#
+# THE SCANNER WAS RIGHT NOT TO CALL THEM ORPHANS, AND WRONG TO SAY NOTHING. They are a
+# deliberately RETAINED safety net with a real policy behind them (`_SNAPSHOT_KEEP = 3`
+# count-based, plus `prune_pre_restore_snapshots_by_age`'s 168 h time-driven backstop,
+# swept at boot and off-peak), so folding them in with `.bak-build-`/`.restore-` crash
+# residue would be dishonest in the OTHER direction -- it would invite an operator to
+# delete a working safety net. Both snapshots here were five days old, i.e. inside the
+# retention window and correctly kept.
+#
+# What was actually wrong is that they were silently swept into `other_bytes`, which is
+# the "everything else" bucket nobody reads. So they get their OWN named category,
+# itemised, with the policy that governs them stated -- the operator can then see 51.6 GB
+# of safety net and decide, rather than discovering it as an unexplained gap.
+_PRE_RESTORE_SNAPSHOT_RE = re.compile(r"^pre-restore-(\d{8}T\d{6}Z)\.db$")
 _PLAINTEXT_MEMBER_NAMES = ("corpus.db", "custody_log.db")
 
 _DB_NAME = "open_omniscience.db"
@@ -108,6 +129,7 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
         "generated_at": _now(),
         "entries": [],
         "suspect_staging": [],
+        "pre_restore_snapshots": [],
         "totals": {},
         "method": (
             "Recursive on-disk sizes of the data folder's top-level entries, symlinks "
@@ -115,7 +137,10 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
             "backup/restore temp dirs by the exact name patterns the backup code uses "
             "(.bak-build-*/.restore-*/*.oopart) — present only after a crashed run. "
             "plaintext_snapshot means the dir CONTAINS a decrypted corpus snapshot by "
-            "member NAME; treat it as sensitive and remove it deliberately. Local "
+            "member NAME; treat it as sensitive and remove it deliberately. "
+            "pre_restore_snapshots is a SEPARATE list of pre-restore-<ts>.db safety nets, "
+            "which are retained on purpose and are never counted as orphaned staging nor "
+            "folded into other_bytes — see pre_restore_policy. Local "
             "diagnostics only; nothing is transmitted."
         ),
     }
@@ -124,7 +149,7 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
         return out
 
     entries: list[dict[str, Any]] = []
-    db_bytes = wal_bytes = shm_bytes = staging_bytes = 0
+    db_bytes = wal_bytes = shm_bytes = staging_bytes = pre_restore_bytes = 0
     try:
         children = sorted(root.iterdir(), key=lambda p: p.name)
     except OSError as exc:
@@ -160,6 +185,15 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
                     m in members for m in _PLAINTEXT_MEMBER_NAMES
                 )
             out["suspect_staging"].append(suspect)
+        snap = _PRE_RESTORE_SNAPSHOT_RE.match(name)
+        if snap:
+            # Itemised as its own kind, NEVER as "orphaned staging" (it is retained on
+            # purpose) and never left to `other_bytes` (C2).
+            entry["kind"] = "pre_restore_snapshot"
+            pre_restore_bytes += size
+            out["pre_restore_snapshots"].append(
+                {"name": name, "bytes": size, "taken_at": snap.group(1)}
+            )
         entries.append(entry)
 
     entries.sort(key=lambda e: -int(e["bytes"]))
@@ -172,8 +206,27 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
         "wal_bytes": wal_bytes,
         "shm_bytes": shm_bytes,
         "orphaned_staging_bytes": staging_bytes,
-        "other_bytes": max(0, total - db_bytes - wal_bytes - shm_bytes - staging_bytes),
+        # Retained safety nets, counted apart from BOTH orphaned staging and the
+        # everything-else bucket -- "51.6 GB of deliberate safety net" and "51.6 GB of
+        # unexplained other" are different facts and only one of them is true (C2).
+        "pre_restore_snapshot_bytes": pre_restore_bytes,
+        "other_bytes": max(
+            0, total - db_bytes - wal_bytes - shm_bytes - staging_bytes - pre_restore_bytes
+        ),
     }
+    out["pre_restore_snapshots"].sort(key=lambda e: str(e["taken_at"]), reverse=True)
+    # Imported HERE rather than at module scope: forensics is on the boot path and
+    # src.backup.merge is a large module this does not otherwise need.
+    from src.backup.merge import _SNAPSHOT_KEEP, _SNAPSHOT_MAX_AGE_HOURS_DEFAULT
+
+    out["pre_restore_policy"] = (
+        "pre-restore-<ts>.db files are the restore safety net and are RETAINED ON "
+        "PURPOSE, not orphaned: the newest "
+        f"{_SNAPSHOT_KEEP} are kept whenever a later restore prunes, and "
+        f"{_SNAPSHOT_MAX_AGE_HOURS_DEFAULT:.0f}h is the time-driven backstop swept at "
+        "boot and off-peak (OO_PRE_RESTORE_SNAPSHOT_MAX_AGE_HOURS). They are listed "
+        "here so their size is accounted for, never to suggest deleting them."
+    )
     return out
 
 
@@ -970,6 +1023,21 @@ def render_text(d: dict[str, Any] | None = None) -> str:
             lines.append(f"    {e.get('name')} — {_mb(e.get('bytes'))}")
     else:
         lines.append("- orphaned backup/restore staging: none found")
+    # C2: this export said "none found" and then listed two 25.8 GB pre-restore-*.db
+    # files it had quietly folded into other_bytes -- 51.6 GB of an 80.8 GB folder with
+    # no account of where it went. They are retained ON PURPOSE, so they are named as
+    # such rather than as orphans, but they are never silent again.
+    snaps = inv.get("pre_restore_snapshots") or []
+    if snaps:
+        lines.append(
+            f"- pre-restore safety-net snapshots: {len(snaps)}, "
+            f"{_mb(tot.get('pre_restore_snapshot_bytes'))} — RETAINED ON PURPOSE, "
+            "not orphaned (see the retention policy below)."
+        )
+        for e in snaps[:10]:
+            lines.append(f"    {e.get('name')} — {_mb(e.get('bytes'))} (taken {e.get('taken_at')})")
+        if inv.get("pre_restore_policy"):
+            lines.append(f"    policy: {inv['pre_restore_policy']}")
     for e in (inv.get("entries") or [])[:12]:
         lines.append(f"    {e.get('name')} {e.get('kind') or ''} {_mb(e.get('bytes'))}")
     if inv.get("entries_truncated"):
