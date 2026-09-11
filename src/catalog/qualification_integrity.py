@@ -277,3 +277,145 @@ def qualification_integrity_report(
             "check by construction -- it was never judged, so there is no verdict to lose."
         ),
     }
+
+
+def repair_inversions(session: Session, *, dry_run: bool = True) -> dict[str, Any]:
+    """Reconcile every inversion :func:`qualification_integrity_report` finds: for a
+    source whose ``Source.status`` no longer agrees with its own newest JUDGING attempt,
+    restore ``status`` (+ the stamp columns) to what that history recorded.
+
+    THIS RE-DERIVES THE FINDING FROM THE SAME QUERY THE CHECKER USES, never a cached or
+    re-implemented one -- it runs the identical candidate join (``func.max(attempted_at)``
+    grouped by source, JUDGING_VERDICTS only) and the identical exact re-read
+    (``_newest_judging``, ordered ``attempted_at DESC, id DESC``) that
+    ``qualification_integrity_report`` runs, so "what this repairs" and "what that report
+    counts" can never silently drift apart.
+
+    THIS WRITES NO NEW ``SourceQualificationAttempt`` ROW. It reconciles EXISTING history
+    -- it does not make a fresh judgement, and the append-only attempt log is untouched.
+    The stamp mirrors ``evaluate_and_stamp``'s own rule exactly: a row restored to
+    'disqualified' carries no ``qualified_at``/``qualification_criteria_version``; a row
+    restored to 'qualified' carries the ATTEMPT's own ``attempted_at``/``criteria_version``,
+    never "now" -- restoring a stale verdict must never make it read as freshly re-checked.
+
+    ``dry_run=True`` (the default) computes and RETURNS the exact tally without writing
+    anything -- ``Source`` objects are left untouched and nothing is flushed. Passing
+    ``dry_run=False`` applies the reconciliation to the given ``session`` (flushed, not
+    committed -- the caller controls the transaction, exactly like ``evaluate_and_stamp``).
+
+    THIS FUNCTION MUST NEVER BE CALLED FROM AN AUTOMATIC PATH (boot, the scheduler, or any
+    code that runs without an operator's own say-so). Re-admitting a potentially large
+    population of sources into live collection at once is a real behaviour change --
+    bandwidth, per-host politeness, and the operator's own expectations of what is being
+    collected -- and it is the maintainer's call, never this code's. The only sanctioned
+    entry point is ``scripts/repair_qualification_inversions.py``, an operator-run CLI
+    that defaults to a dry run and requires an explicit ``--apply`` to write.
+
+    Both directions are reconciled, and named apart, for the same reason the report keeps
+    them apart: restoring a recorded ``disqualified`` (a known-bad source that was
+    laundered back into the trial queue) matters as much as restoring a ``qualified`` (a
+    source starved out of collection) -- treating this as qualified-only would launder
+    known-bad sources back into the trial queue on every run.
+    """
+    from src.database.models import Source
+    from src.database.models import SourceQualificationAttempt as A
+
+    newest_at = (
+        session.query(
+            A.source_id.label("source_id"),
+            func.max(A.attempted_at).label("last_at"),
+        )
+        .filter(A.verdict.in_(JUDGING_VERDICTS))
+        .group_by(A.source_id)
+        .subquery()
+    )
+    candidates = (
+        session.query(Source.id)
+        .join(newest_at, newest_at.c.source_id == Source.id)
+        .join(
+            A,
+            (A.source_id == Source.id) & (A.attempted_at == newest_at.c.last_at),
+        )
+        .filter(A.verdict.in_(JUDGING_VERDICTS), Source.status != A.verdict)
+        .distinct()
+        .all()
+    )
+
+    restored_to_qualified: list[dict[str, Any]] = []
+    restored_to_disqualified: list[dict[str, Any]] = []
+    n_restored_to_qualified = n_restored_to_disqualified = 0
+    resolved_by_tie = 0
+    for (sid,) in candidates:
+        attempt = _newest_judging(session, int(sid))
+        source = session.get(Source, int(sid))
+        if attempt is None or source is None:  # pragma: no cover - defensive
+            continue
+        if (source.status or "") == attempt.verdict:
+            # Same tie the grouped candidate query cannot break on its own; the exact
+            # re-read cleared it -- nothing to repair here, exactly as the report treats it.
+            resolved_by_tie += 1
+            continue
+        row = {
+            "domain": source.domain,
+            "was": source.status,
+            "restored_to": attempt.verdict,
+            "judged_at": _iso(attempt.attempted_at),
+            "criteria_version": attempt.criteria_version,
+        }
+        if attempt.verdict == STATUS_QUALIFIED:
+            n_restored_to_qualified += 1
+            if len(restored_to_qualified) < NAME_CAP:
+                restored_to_qualified.append(row)
+        elif attempt.verdict == STATUS_DISQUALIFIED:
+            n_restored_to_disqualified += 1
+            if len(restored_to_disqualified) < NAME_CAP:
+                restored_to_disqualified.append(row)
+        else:  # pragma: no cover - JUDGING_VERDICTS has exactly two members today
+            continue
+        if not dry_run:
+            source.status = attempt.verdict
+            if attempt.verdict == STATUS_QUALIFIED:
+                source.qualified_at = attempt.attempted_at
+                source.qualification_criteria_version = attempt.criteria_version
+            else:
+                source.qualified_at = None
+                source.qualification_criteria_version = None
+
+    if not dry_run and (restored_to_qualified or restored_to_disqualified):
+        session.flush()
+
+    total = n_restored_to_qualified + n_restored_to_disqualified
+    return {
+        "schema": SCHEMA,
+        "generated_at": _iso(datetime.now(UTC)),
+        "dry_run": dry_run,
+        "applied": (not dry_run) and total > 0,
+        "reconciled_total": total,
+        # THE LAUNDERING DIRECTION: restored to 'disqualified' -- a known-bad source that
+        # had been laundered back into the trial queue is pulled back out.
+        "restored_to_disqualified_total": n_restored_to_disqualified,
+        "restored_to_disqualified": restored_to_disqualified,
+        # THE DEMOTION DIRECTION: restored to 'qualified' -- a source starved out of live
+        # collection (the 2026-09-11 field finding's own signature) is re-admitted.
+        "restored_to_qualified_total": n_restored_to_qualified,
+        "restored_to_qualified": restored_to_qualified,
+        "names_cap": NAME_CAP,
+        "ties_resolved_by_append_order": resolved_by_tie,
+        "method": (
+            "Re-runs qualification_integrity_report's own candidate join (newest judging "
+            "attempt per source, JUDGING_VERDICTS only, exact re-read on "
+            "attempted_at DESC, id DESC to break a same-timestamp tie) and, unless "
+            "dry_run, sets Source.status (+ qualified_at/qualification_criteria_version, "
+            "mirroring evaluate_and_stamp's own stamp rule) to the verdict of that "
+            "attempt. Writes NO new SourceQualificationAttempt row -- this reconciles "
+            "existing history, it does not judge anything fresh."
+        ),
+        "caveat": (
+            "Only reconciles a source this instance's OWN history has a judging verdict "
+            "for -- a source with no judging attempt on record is outside this repair by "
+            "construction (see qualification_integrity_report's own caveat). "
+            "dry_run=True changes nothing; run scripts/repair_qualification_inversions.py "
+            "--apply to actually write the reconciliation -- never call this with "
+            "dry_run=False from an automatic path."
+        ),
+    }

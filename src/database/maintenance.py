@@ -759,13 +759,29 @@ _SOURCE_COUNTER_BACKFILL = (
 # Qualification lifecycle STAMP columns (0.3 CLOSE GATE ruling, 2026-07-19/20) for
 # stores created before they existed. ``status`` gets a real DEFAULT so every existing
 # row is immediately, honestly 'unqualified' (no NULL window, no silent admission); the
-# one-time backfill below then promotes a source that ALREADY has collected articles to
-# 'qualified' -- "the first collect pass over the catalog IS its qualification pass"
-# (maintainer ruling): a source this store already scraped has already, de facto, passed
-# its trial, so the admission gate must not suddenly starve an install that was already
-# collecting. A source with zero articles ever collected stays 'unqualified' and enters
-# the qualification job's normal candidate queue. Same additive self-heal pattern as
-# ensure_source_counter_columns; idempotent (PRAGMA-checked).
+# backfill below then runs in TWO PASSES, in order:
+#
+#   1. RECORDED VERDICT WINS (P0 finding, 2026-09-11 field bundle): if this instance's
+#      own ``source_qualification_attempts`` history already JUDGED the source, that
+#      verdict is restored -- in EITHER direction -- rather than re-derived from articles.
+#      Before this pass existed, a store whose ``status`` column was ever dropped and
+#      re-added (demonstrated here to happen via a restore that predates the column, or
+#      any path that recreates ``sources`` without it) reset EVERY row to 'unqualified'
+#      and then rebuilt the verdict from ``articles`` ALONE, silently discarding a real
+#      disqualification (laundering a known-bad source back into the trial queue) or a
+#      real qualification of a source this store simply has zero local articles for (e.g.
+#      a wire service whose corpus was pruned/never re-collected after the verdict was
+#      reached) -- starving it out of collection with no re-trial needed to explain it.
+#      See ``_source_qualification_history_restore_sql`` for the exact query.
+#   2. THE HAS-ARTICLES HEURISTIC (original rule, unchanged in meaning): only for a
+#      source pass 1 did NOT touch -- i.e. one with NO judging attempt on record at all
+#      -- "the first collect pass over the catalog IS its qualification pass" (maintainer
+#      ruling): a source this store already scraped has already, de facto, passed its
+#      trial. A source with zero articles ever collected AND no judging attempt stays
+#      'unqualified' and enters the qualification job's normal candidate queue.
+#
+# Same additive self-heal pattern as ensure_source_counter_columns; idempotent
+# (PRAGMA-checked).
 _SOURCE_QUALIFICATION_COLUMNS: dict[str, str] = {
     "status": "ALTER TABLE sources ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'unqualified'",
     "qualified_at": "ALTER TABLE sources ADD COLUMN qualified_at DATETIME",
@@ -773,11 +789,68 @@ _SOURCE_QUALIFICATION_COLUMNS: dict[str, str] = {
 }
 
 
+def _source_qualification_history_restore_sql() -> str:
+    """Pass 1 of the backfill: restore ``status`` (+ the stamp columns) from the newest
+    JUDGING attempt already on record for a source, before the has-articles guess ever
+    runs. "Newest judging attempt" is defined EXACTLY as
+    ``src.catalog.qualification_integrity._newest_judging`` defines it -- ordered
+    ``(attempted_at DESC, id DESC)`` among ``verdict IN ('qualified', 'disqualified')``
+    rows only (``JUDGING_VERDICTS``; the inner correlated subquery reproduces that same
+    order/tie-break per source) -- reused here as raw SQL rather than re-derived, because
+    this self-heal runs against a bare ``Engine`` with no ORM ``Session`` to call the ORM
+    helper through. ``no_evidence`` / ``inherited`` / ``curated`` attempts are NOT
+    judgements and are excluded exactly as ``qualification_integrity_report`` excludes
+    them -- a source with only those falls through untouched to pass 2.
+
+    The stamp mirrors ``evaluate_and_stamp``'s own rule exactly: a restored
+    'disqualified' verdict carries NO ``qualified_at``/``qualification_criteria_version``
+    (a stale 'qualified' stamp must never survive a later failure -- the same reason
+    ``evaluate_and_stamp`` clears them); a restored 'qualified' verdict carries the
+    ATTEMPT's own ``attempted_at``/``criteria_version``, never ``CURRENT_TIMESTAMP`` --
+    restoring a July verdict must not date it today, which would make a stale stamp read
+    as freshly re-checked and defeat the re-verification clock.
+
+    Only ever touches a row still 'unqualified' (the column's fresh DEFAULT) AND named by
+    the ``newest_judging`` CTE, so this can only ever RESTORE a verdict onto a
+    freshly-defaulted row -- never overwrite a real verdict written since (same safety
+    property as the has-articles pass: both are gated to run only once, immediately after
+    ``status`` was just added). No interpolation: the verdict strings are SQL literals
+    written directly in this constant query text, not built from a variable, so the
+    blocking bandit B608 gate has nothing to flag.
+    """
+    return (
+        "WITH newest_judging AS ("
+        "  SELECT a.source_id AS source_id, a.verdict AS verdict, "
+        "         a.attempted_at AS attempted_at, a.criteria_version AS criteria_version "
+        "  FROM source_qualification_attempts a "
+        "  WHERE a.verdict IN ('qualified', 'disqualified') "
+        "    AND a.id = ("
+        "      SELECT a2.id FROM source_qualification_attempts a2 "
+        "      WHERE a2.source_id = a.source_id "
+        "        AND a2.verdict IN ('qualified', 'disqualified') "
+        "      ORDER BY a2.attempted_at DESC, a2.id DESC LIMIT 1"
+        "    )"
+        ") "
+        "UPDATE sources SET "
+        "status = (SELECT verdict FROM newest_judging WHERE source_id = sources.id), "
+        "qualified_at = (SELECT CASE WHEN verdict = 'qualified' THEN attempted_at ELSE NULL END "
+        "FROM newest_judging WHERE source_id = sources.id), "
+        "qualification_criteria_version = (SELECT CASE WHEN verdict = 'qualified' "
+        "THEN criteria_version ELSE NULL END FROM newest_judging WHERE source_id = sources.id) "
+        "WHERE status = 'unqualified' "
+        "AND id IN (SELECT source_id FROM newest_judging)"
+    )
+
+
 def _source_qualification_backfill_sql() -> str:
-    # Promote to 'qualified' only sources with >=1 already-collected article; the rest
-    # keep the column DEFAULT ('unqualified'). Never touches a row the self-heal did not
-    # just create (WHERE status = 'unqualified' AND ... -- a fresh column is always
-    # 'unqualified' until this runs once, so this is safe to run only right after ADD).
+    # Pass 2 (the original rule): promote to 'qualified' only sources with >=1
+    # already-collected article; the rest keep the column DEFAULT ('unqualified'). Runs
+    # AFTER the history-restore pass, so it only ever sees rows pass 1 did NOT already
+    # settle (status is still 'unqualified' there iff there was no judging attempt to
+    # restore) -- "only where no judging attempt exists does the has-articles heuristic
+    # apply" (2026-09-11 fix). Never touches a row the self-heal did not just create
+    # (WHERE status = 'unqualified' AND ... -- a fresh column is always 'unqualified'
+    # until this runs once, so this is safe to run only right after ADD).
     # criteria_version rides as a BOUND parameter (:criteria_version) -- the constant
     # SQL carries no interpolation, so the blocking bandit B608 gate has nothing to flag.
     return (
@@ -792,13 +865,21 @@ def _source_qualification_backfill_sql() -> str:
 
 def ensure_source_qualification_columns(engine: Engine) -> list[str]:
     """Self-heal ``sources.status`` / ``.qualified_at`` / ``.qualification_criteria_version``
-    (the admission-gate STAMP) on a store created before they existed, then BACKFILL:
-    a source with an already-collected article is stamped 'qualified' (its first collect
-    pass already served as its qualification pass); everything else stays 'unqualified'
-    (the column default) and is picked up by the background qualification job. Additive,
-    idempotent; the backfill runs ONLY when ``status`` was just added (a fresh DB gets it
-    from create_all's own default, so no backfill would find anything unqualified with
-    articles -- but running unconditionally after a fresh add is still a no-op there).
+    (the admission-gate STAMP) on a store created before they existed, then BACKFILL in
+    order of precedence: (1) a source this instance already JUDGED (a row in
+    ``source_qualification_attempts`` with a ``qualified``/``disqualified`` verdict) has
+    that verdict RESTORED, in either direction -- see
+    ``_source_qualification_history_restore_sql`` for why this must run first: without it,
+    a store whose ``status`` column is ever dropped and recreated silently re-derives every
+    verdict from ``articles`` alone and discards real history (demonstrated in
+    tests/test_source_qualification.py). (2) only a source with NO judging attempt on
+    record falls to the has-articles guess: an already-collected article stamps it
+    'qualified' (its first collect pass already served as its qualification pass, per the
+    original maintainer ruling); everything else stays 'unqualified' (the column default)
+    and is picked up by the background qualification job. Additive, idempotent; both
+    passes run ONLY when ``status`` was just added (a fresh DB gets it from create_all's
+    own default, so neither pass finds anything to do -- but running them unconditionally
+    after a fresh add is still a no-op there).
     """
     if engine.url.get_backend_name() != "sqlite":
         return []
@@ -816,6 +897,19 @@ def ensure_source_qualification_columns(engine: Engine) -> list[str]:
                 conn.execute(text(ddl))
                 added.append(f"sources.{name}")
         if "sources.status" in added:
+            # Pass 1: a recorded verdict wins. Guarded on the attempts table actually
+            # existing -- a hand-built legacy store (or one whose self-heal chain has not
+            # yet reached the point create_all would have added this table) simply has no
+            # history to restore, and every source falls straight through to pass 2.
+            has_attempts = conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='source_qualification_attempts'"
+                )
+            ).fetchone()
+            if has_attempts:
+                conn.execute(text(_source_qualification_history_restore_sql()))
+            # Pass 2: the has-articles heuristic, for whatever pass 1 left 'unqualified'.
             conn.execute(
                 text(_source_qualification_backfill_sql()),
                 {"criteria_version": CRITERIA_VERSION},

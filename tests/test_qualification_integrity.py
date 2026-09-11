@@ -41,6 +41,7 @@ from src.catalog.qualification import (
 from src.catalog.qualification_integrity import (
     SCHEMA,
     qualification_integrity_report,
+    repair_inversions,
 )
 from src.database.models import Base, Source, SourceQualificationAttempt
 
@@ -302,3 +303,119 @@ def test_the_bundle_member_carries_the_finding_not_a_stub(session: Session) -> N
     assert body["schema"] == SCHEMA
     assert body["verdict"] == "inversions-found"
     assert [r["domain"] for r in body["laundered"]] == ["known-bad.example"]
+
+
+# --------------------------------------------------------------------------- #
+# repair_inversions -- the operator-triggered reconciliation
+# --------------------------------------------------------------------------- #
+
+def test_repair_inversions_dry_run_changes_nothing_but_reports_accurately(session: Session) -> None:
+    bad = _judged(session, "bad.example", STATUS_DISQUALIFIED)
+    good = _judged(session, "good.example", STATUS_QUALIFIED)
+    bad.status = STATUS_QUALIFIED    # laundered
+    good.status = STATUS_UNQUALIFIED  # demoted
+    session.flush()
+
+    out = repair_inversions(session, dry_run=True)
+
+    assert out["dry_run"] is True
+    assert out["applied"] is False
+    assert out["reconciled_total"] == 2
+    assert out["restored_to_disqualified_total"] == 1
+    assert [r["domain"] for r in out["restored_to_disqualified"]] == ["bad.example"]
+    assert out["restored_to_qualified_total"] == 1
+    assert [r["domain"] for r in out["restored_to_qualified"]] == ["good.example"]
+
+    # Nothing was actually written: re-fetch and confirm the inverted status stands,
+    # and the integrity report still sees both inversions.
+    session.expire_all()
+    assert session.get(Source, bad.id).status == STATUS_QUALIFIED
+    assert session.get(Source, good.id).status == STATUS_UNQUALIFIED
+    still = qualification_integrity_report(session)
+    assert still["inversions_total"] == 2
+
+
+def test_repair_inversions_real_run_reconciles_both_directions(session: Session) -> None:
+    bad = _judged(session, "bad.example", STATUS_DISQUALIFIED)
+    good = _judged(session, "good.example", STATUS_QUALIFIED)
+    bad.status = STATUS_QUALIFIED
+    good.status = STATUS_UNQUALIFIED
+    session.flush()
+
+    out = repair_inversions(session, dry_run=False)
+    session.commit()
+
+    assert out["applied"] is True
+    assert out["reconciled_total"] == 2
+
+    session.expire_all()
+    fixed_bad = session.get(Source, bad.id)
+    fixed_good = session.get(Source, good.id)
+    assert fixed_bad.status == STATUS_DISQUALIFIED
+    assert fixed_bad.qualified_at is None
+    assert fixed_good.status == STATUS_QUALIFIED
+    assert fixed_good.qualified_at is not None
+
+    # And the integrity report now sees a clean corpus.
+    clean = qualification_integrity_report(session)
+    assert clean["verdict"] == "consistent"
+    assert clean["inversions_total"] == 0
+
+
+def test_repair_inversions_stamps_the_attempts_own_date_not_now(session: Session) -> None:
+    """Restoring a July verdict must not date it today -- mirrors evaluate_and_stamp's
+    own rule and defeats nothing about the re-verification clock."""
+    old = NOW - timedelta(days=51)
+    src = _source(session, "wire.example", STATUS_QUALIFIED)
+    _attempt(session, src, STATUS_QUALIFIED, at=old, version="oo-source-qualification-1")
+    src.status = STATUS_UNQUALIFIED
+    session.flush()
+
+    repair_inversions(session, dry_run=False)
+    session.commit()
+    session.expire_all()
+
+    fixed = session.get(Source, src.id)
+    assert fixed.status == STATUS_QUALIFIED
+    # SQLite round-trips a DateTime as tz-naive; compare on the naive wall-clock value
+    # (the point under test is the DATE -- the attempt's own, never CURRENT_TIMESTAMP --
+    # not the tzinfo SQLAlchemy attaches on the way out).
+    assert fixed.qualified_at.replace(tzinfo=UTC) == old, (
+        "the ATTEMPT's own date, never CURRENT_TIMESTAMP"
+    )
+    assert fixed.qualification_criteria_version == "oo-source-qualification-1"
+
+
+def test_repair_inversions_writes_no_new_attempt_row(session: Session) -> None:
+    """This reconciles existing history -- it must never itself write a judgement."""
+    bad = _judged(session, "bad.example", STATUS_DISQUALIFIED)
+    bad.status = STATUS_QUALIFIED
+    session.flush()
+    before = session.query(SourceQualificationAttempt).count()
+
+    repair_inversions(session, dry_run=False)
+    session.commit()
+
+    after = session.query(SourceQualificationAttempt).count()
+    assert after == before, "repair_inversions must write no new attempt row"
+
+
+def test_repair_inversions_a_healthy_corpus_reconciles_nothing(session: Session) -> None:
+    _judged(session, "a.example", STATUS_QUALIFIED)
+    _judged(session, "b.example", STATUS_DISQUALIFIED)
+
+    out = repair_inversions(session, dry_run=False)
+    assert out["reconciled_total"] == 0
+    assert out["restored_to_qualified"] == [] and out["restored_to_disqualified"] == []
+
+
+def test_repair_inversions_reuses_the_same_join_as_the_report(session: Session) -> None:
+    """A legitimate re-qualification (newest attempt wins) must not be repaired -- the
+    same negative space the report itself is tested against, because repair_inversions
+    re-derives from the identical candidate query rather than a second implementation."""
+    src = _source(session, "recovered.example", STATUS_QUALIFIED)
+    _attempt(session, src, STATUS_DISQUALIFIED, at=NOW - timedelta(days=90))
+    _attempt(session, src, STATUS_QUALIFIED, at=NOW)
+
+    out = repair_inversions(session, dry_run=False)
+    assert out["reconciled_total"] == 0
