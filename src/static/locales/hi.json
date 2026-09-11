@@ -3250,5 +3250,21 @@
   "Readable text": "पठनीय पाठ",
   "Raw wikitext": "कच्चा विकिटेक्स्ट",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "हटाने के बाद कुछ भी पठनीय नहीं बचता — यह पृष्ठ केवल टेम्पलेट और तालिकाएँ हैं। कच्चा विकिटेक्स्ट दिखाया जा रहा है।",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "शाब्दिक छँटाई, रेंडर नहीं — टेम्पलेट और इन्फ़ोबॉक्स हटा दिए जाते हैं; संदर्भ, टिप्पणियाँ, तालिकाएँ और फ़ाइल लिंक निकाल दिए जाते हैं; लिंक के लेबल रखे जाते हैं। टेम्पलेट ने जो बनाया होता वह रेंडर नहीं, अनुपस्थित है।"
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "शाब्दिक छँटाई, रेंडर नहीं — टेम्पलेट और इन्फ़ोबॉक्स हटा दिए जाते हैं; संदर्भ, टिप्पणियाँ, तालिकाएँ और फ़ाइल लिंक निकाल दिए जाते हैं; लिंक के लेबल रखे जाते हैं। टेम्पलेट ने जो बनाया होता वह रेंडर नहीं, अनुपस्थित है।",
+  "Workers": "वर्कर",
+  "Fetching now": "अभी लाया जा रहा है",
+  "Limit this pass": "इस चक्र की सीमा",
+  "Configured maximum": "निर्धारित अधिकतम",
+  "Why the limit": "सीमा का कारण",
+  "the concurrency limits could not be read": "समानांतरता की सीमाएँ पढ़ी नहीं जा सकीं",
+  "both a measured memory back-off and the machine floor": "मापी गई मेमोरी कटौती और मशीन की न्यूनतम सीमा, दोनों",
+  "this machine backed off under memory pressure, so the ramp is capped": "यह मशीन मेमोरी दबाव में पीछे हटी, इसलिए बढ़ोतरी सीमित है",
+  "this machine is below the memory floor, so the fan-out is capped": "यह मशीन मेमोरी की न्यूनतम सीमा से नीचे है, इसलिए समानांतरता सीमित है",
+  "nothing is holding it back — the full configured maximum is available": "कुछ भी नहीं रोक रहा — पूरा निर्धारित अधिकतम उपलब्ध है",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "बैंडविड्थ नियंत्रक इस समय जितनी अनुमतियाँ चला रहा है। चक्रों के बीच नहीं दिखता — गिनने को कुछ नहीं होता।",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "यह चक्र जहाँ तक बढ़ सकता है: मापी गई अधिकतम सीमा और मशीन की न्यूनतम सीमा वाली रोक में से जो छोटी हो।",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "आपकी संग्रह-समानांतरता सेटिंग। यह कभी नहीं बदली जाती — ऊपर की सीमाएँ केवल एक चक्र के खर्च को बाँधती हैं।",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "मापी गई सीमा बिना दबाव वाले चक्रों के बाद ढीली पड़ती है और आपके निर्धारित अधिकतम तक पहुँचते ही हट जाती है। यह एक माप का कैश है, सेटिंग नहीं — data/collect_capacity.json हटाते ही यह तुरंत भुला दी जाती है।",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "इस मशीन ने मेमोरी दबाव में अपने वर्कर की संख्या खुद घटाई। संग्राहक अगला चक्र वहीं से शुरू करता है, वही उतार दोबारा नहीं चलता।",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "मेमोरी की न्यूनतम सीमा से नीचे की मशीन को कम समानांतरता पर रखा जाता है, जब तक आप इसे फिर चालू न करें।"
 }

@@ -3250,5 +3250,21 @@
   "Readable text": "Texto legible",
   "Raw wikitext": "Wikitexto en bruto",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "No queda nada legible tras la limpieza: esta página son solo plantillas y tablas. Se muestra el wikitexto en bruto.",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Limpieza léxica, no un renderizado: se retiran plantillas e infoboxes; se eliminan referencias, comentarios, tablas y enlaces de archivos; se conservan las etiquetas de enlace. Lo que una plantilla habría producido está ausente, no renderizado."
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Limpieza léxica, no un renderizado: se retiran plantillas e infoboxes; se eliminan referencias, comentarios, tablas y enlaces de archivos; se conservan las etiquetas de enlace. Lo que una plantilla habría producido está ausente, no renderizado.",
+  "Workers": "Trabajadores",
+  "Fetching now": "Descargando ahora",
+  "Limit this pass": "Límite de esta pasada",
+  "Configured maximum": "Máximo configurado",
+  "Why the limit": "Motivo del límite",
+  "the concurrency limits could not be read": "no se pudieron leer los límites de concurrencia",
+  "both a measured memory back-off and the machine floor": "tanto un repliegue de memoria medido como el umbral de la máquina",
+  "this machine backed off under memory pressure, so the ramp is capped": "esta máquina se replegó por presión de memoria, así que la subida está limitada",
+  "this machine is below the memory floor, so the fan-out is capped": "esta máquina está por debajo del umbral de memoria, así que la concurrencia está limitada",
+  "nothing is holding it back — the full configured maximum is available": "nada lo frena: el máximo configurado está disponible por completo",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "El número de permisos que el regulador de ancho de banda aplica en este momento. Ausente entre pasadas: no hay nada que contar.",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "Hasta dónde puede subir esta pasada: el menor entre el techo medido y el límite del umbral de la máquina.",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "Su ajuste de paralelismo de recolección. Nunca se reescribe: los límites de arriba solo acotan lo que gasta una pasada.",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "El techo medido se relaja tras las pasadas sin presión y desaparece al alcanzar su máximo configurado. Es la caché de una medición, nunca un ajuste: borrar data/collect_capacity.json lo olvida de inmediato.",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Esta máquina redujo por sí misma su número de trabajadores por presión de memoria. El recolector parte de ahí en la siguiente pasada en lugar de repetir el mismo descenso.",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Una máquina por debajo del umbral de memoria se mantiene con menos concurrencia hasta que usted vuelva a activarla."
 }

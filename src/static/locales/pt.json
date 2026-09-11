@@ -3250,5 +3250,21 @@
   "Readable text": "Texto legível",
   "Raw wikitext": "Wikitexto bruto",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "Nada legível sobrevive à limpeza: esta página é só modelos e tabelas. A mostrar o wikitexto bruto.",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Limpeza lexical, não uma renderização — modelos e infoboxes são retirados; referências, comentários, tabelas e ligações de ficheiros são removidos; os rótulos das ligações são mantidos. O que um modelo teria produzido está ausente, não renderizado."
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Limpeza lexical, não uma renderização — modelos e infoboxes são retirados; referências, comentários, tabelas e ligações de ficheiros são removidos; os rótulos das ligações são mantidos. O que um modelo teria produzido está ausente, não renderizado.",
+  "Workers": "Trabalhadores",
+  "Fetching now": "A obter agora",
+  "Limit this pass": "Limite desta passagem",
+  "Configured maximum": "Máximo configurado",
+  "Why the limit": "Motivo do limite",
+  "the concurrency limits could not be read": "não foi possível ler os limites de concorrência",
+  "both a measured memory back-off and the machine floor": "tanto um recuo de memória medido como o piso da máquina",
+  "this machine backed off under memory pressure, so the ramp is capped": "esta máquina recuou sob pressão de memória, por isso a subida está limitada",
+  "this machine is below the memory floor, so the fan-out is capped": "esta máquina está abaixo do piso de memória, por isso a concorrência está limitada",
+  "nothing is holding it back — the full configured maximum is available": "nada a trava — o máximo configurado está totalmente disponível",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "O número de permissões que o regulador de largura de banda aplica neste momento. Ausente entre passagens — não há nada a contar.",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "Até onde esta passagem pode subir: o menor entre o tecto medido e o limite do piso da máquina.",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "A sua definição de paralelismo de recolha. Nunca é reescrita — os limites acima apenas delimitam o que uma passagem gasta.",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "O tecto medido afrouxa após passagens sem pressão e desaparece assim que atinge o seu máximo configurado. É a cache de uma medição, nunca uma definição — apagar data/collect_capacity.json esquece-a de imediato.",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Esta máquina reduziu por si o seu número de trabalhadores sob pressão de memória. O recolector parte daí na passagem seguinte em vez de repetir a mesma descida.",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Uma máquina abaixo do piso de memória é mantida com menor concorrência até que a volte a ligar."
 }

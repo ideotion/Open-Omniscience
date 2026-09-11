@@ -3250,5 +3250,21 @@
   "Readable text": "Texte lisible",
   "Raw wikitext": "Wikitexte brut",
   "Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext.": "Rien de lisible ne subsiste après le nettoyage : cette page n'est faite que de modèles et de tableaux. Affichage du wikitexte brut.",
-  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Nettoyage lexical, pas un rendu — les modèles et infobox sont retirés ; les références, commentaires, tableaux et liens de fichiers sont supprimés ; les libellés de liens sont conservés. Ce qu'un modèle aurait produit est absent, et non rendu."
+  "Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.": "Nettoyage lexical, pas un rendu — les modèles et infobox sont retirés ; les références, commentaires, tableaux et liens de fichiers sont supprimés ; les libellés de liens sont conservés. Ce qu'un modèle aurait produit est absent, et non rendu.",
+  "Workers": "Travailleurs",
+  "Fetching now": "En cours de récupération",
+  "Limit this pass": "Limite de cette passe",
+  "Configured maximum": "Maximum configuré",
+  "Why the limit": "Raison de la limite",
+  "the concurrency limits could not be read": "les limites de parallélisme n’ont pas pu être lues",
+  "both a measured memory back-off and the machine floor": "à la fois un repli mémoire mesuré et le seuil machine",
+  "this machine backed off under memory pressure, so the ramp is capped": "cette machine s’est repliée sous la pression mémoire, la montée en charge est donc plafonnée",
+  "this machine is below the memory floor, so the fan-out is capped": "cette machine est sous le seuil mémoire, le parallélisme est donc plafonné",
+  "nothing is holding it back — the full configured maximum is available": "rien ne le freine — le maximum configuré est entièrement disponible",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "Le nombre de jetons que le régulateur de bande passante applique en ce moment. Absent entre les passes — il n’y a rien à compter.",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "Ce que cette passe peut atteindre : le plus petit du plafond mesuré et de la limite liée au seuil machine.",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "Votre réglage de parallélisme de collecte. Il n’est jamais réécrit — les limites ci-dessus ne bornent que ce qu’une passe dépense.",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "Le plafond mesuré se desserre après les passes sans pression et disparaît dès qu’il atteint votre maximum configuré. C’est le cache d’une mesure, jamais un réglage — supprimer data/collect_capacity.json l’oublie immédiatement.",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Cette machine a réduit d’elle-même son nombre de travailleurs sous la pression mémoire. Le collecteur repart de là à la passe suivante au lieu de refaire la même descente.",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Une machine sous le seuil mémoire est maintenue à un parallélisme réduit tant que vous ne le réactivez pas."
 }

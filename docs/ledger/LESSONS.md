@@ -8178,3 +8178,225 @@
   refresh one that was added later and is exercised less in manual testing.** Cheap to
   check, invisible when wrong, and a mutant that deletes the second call is worth having
   in the matrix.
+
+- **A "SLOW DOWNLOAD" COMPLAINT IS NOT NECESSARILY ABOUT THE DOWNLOAD (2026-09-10, the
+  collect-throughput investigation).** The field report was "the rate of article download
+  is now abnormally slow", and every instrument the app owns for that question — the
+  bandwidth governor, `collect_target_kbps`, the per-job rate sampler — measures bytes
+  over the wire. Measured with a harness that served every fetch from memory, throughput
+  was **flat at ~2.3 articles/s from 1 worker to 50**: the transport was never the
+  constraint, ~400 ms of pure-Python CPU per article was, and N worker threads simply took
+  turns under the GIL. **GENERAL FORM: before tuning the thing the complaint names,
+  measure the pipeline with that thing removed. If the number does not move, the name in
+  the complaint is a symptom.** The corollary is uncomfortable and worth stating: a
+  control loop that varies concurrency to hit a byte-rate target is inert on a CPU-bound
+  pipeline, and it will still produce confident-looking permit adjustments the whole time.
+
+- **A LARGE `re` ALTERNATION IS O(alternatives) AT EVERY POSITION, AND `re.I` REMOVES THE
+  ESCAPE HATCH (2026-09-10, `dateextract._MONTH_ALT`).** 555 multilingual month names,
+  4,159 characters, embedded in ten patterns scanned over a 60,000-character window.
+  Measured cost of two patterns that match the SAME dates: `_DMY_RE` (`11 September
+  2001`) **1.24 ms**, `_MDY_RE` (`September 11, 2001`) **43.73 ms** — a 35× spread whose
+  only cause is which end the alternation sits on. `_DMY_RE` begins `\b(\d{1,2})`, so
+  CPython fast-skips to positions that can match; `_MDY_RE` begins with the alternation,
+  so the engine tries up to 555 branches at every word boundary. CPython's `re` has no
+  trie/Aho–Corasick optimisation for alternations (the `regex` module and Rust's engine
+  do), and `re.IGNORECASE` disables the literal-prefix scan that would otherwise help.
+  **GENERAL FORM: when a hand-built alternation grows past a few dozen literals, its cost
+  stops being "a bigger pattern" and becomes a linear scan per input position. Put the
+  cheap discriminating token FIRST where the grammar allows, and otherwise pre-scan for
+  the literals actually present and rebuild the alternation from those — measured here at
+  33× on typical news prose, with identical matches by construction, since a literal
+  absent from the text could never have matched.** The trap in that fix, found before it
+  was written: 55 of the 555 names are not a single `\w+` run (four Arabic two-word names,
+  plus Devanagari and Bengali forms), so a naive tokenised pre-scan silently loses recall
+  in exactly the languages the multilingual tables were added for.
+
+- **A COST THAT GREW 10× OVER A MONTH LOOKS LIKE A SUDDEN REGRESSION TO THE PERSON
+  LIVING WITH IT (2026-09-10).** `extract_dates` went 14 ms → 62 ms → 142 ms per article
+  across 2026-06-15 / 07-01 / 07-15 and has been flat ever since. The report arrived on
+  09-10 and named "the past few days". Bisecting the last few days would have found
+  nothing and concluded there was no problem. **GENERAL FORM: when a complaint says
+  "recently" and the recent window is clean, widen the window before declaring the report
+  wrong — a plateau that everyone has stopped noticing is still the ceiling, and the
+  operator's sense of "recent" is calibrated to when it started hurting, not to when it
+  changed.** Measuring seven trees cost one afternoon and turned "no regression" from a
+  dismissal into a date.
+
+- **AN ENVIRONMENT-VARIABLE FEATURE FLAG READ INSIDE A PER-TOKEN LOOP IS A REAL COST
+  (2026-09-10, `extract._is_code_token`).** The flag read is the first line of a predicate
+  called once per unigram and once per token of every bigram and trigram window — ~8,150
+  `os.getenv` calls per article, 130,497 over a 16-article profile, and `os.getenv` is not
+  free (`os.environ.__getitem__` → `encodekey`). **GENERAL FORM: a reversibility flag is
+  cheap at a function boundary and expensive inside the loop that function is part of.
+  Read it once per call site that can afford it, and cache it.** Same profile, same
+  function: `_alnum_transitions` recomputes the identical answer for the identical token
+  up to six times, because the unigram pass and the two n-gram passes each ask
+  independently.
+
+- **A LEARNED CEILING THAT PERSISTS TO DISK IS A PERFORMANCE BUG WITH A LONG HALF-LIFE
+  (2026-09-10, `scheduler/capacity.py` + `bandwidth.py`).** `mem_low` (system-wide
+  available memory under a fixed 512 MB) triggers a MULTIPLICATIVE permit cut — measured
+  50 → 1 in five 1.5 s ticks — and that floor is then written to
+  `data/collect_capacity.json` and used as both the seed and the `ramp_ceiling` of every
+  later pass, across restarts. Over a slow transport that is 1.91 → 0.45 articles/s, a
+  4.2× slowdown with no code change and no visible cause. Recovery is ×2 per clean pass,
+  but only fires if the pass stops tripping a threshold that is about the whole MACHINE,
+  not about the collector — so a box also running a local model can sit under it forever.
+  **GENERAL FORM: when a self-tuning mechanism persists its worst observation, the
+  recovery path is the load-bearing half, and it must be driven by something the
+  mechanism itself can influence. And it must be VISIBLE where the operator watches the
+  work** — here `capacity.state_report` is rendered only inside the diagnostics report
+  payload, so the task manager shows a pass running 1 worker of a configured 50 and says
+  nothing about why. The neighbouring case is worse in kind: `cpu_saturated` fires at
+  92 % system-wide CPU, which a healthy CPU-bound collector produces BY ITSELF, so the
+  governor throttles the collector for doing its job well.
+
+- **A DIFFERENTIAL THAT GENERATES ITS OWN INPUTS MUST GENERATE THEM DETERMINISTICALLY —
+  `str.hash` IS RANDOMISED PER PROCESS (2026-09-10, the month-narrowing proof).** The
+  harness picked each test case's letter-casing with `hash(name + shape) % 4`, ran the two
+  trees in two interpreters, and reported **4,372 differences**. Every one was the harness:
+  `PYTHONHASHSEED` randomises `str.__hash__`, so the two sides were comparing *different
+  texts*. The failure is nasty because it looks exactly like a real regression — the dates
+  matched and only the provenance snippets differed, which reads as a subtle casing bug in
+  the code under test. **GENERAL FORM: in a cross-process differential, every input must be
+  a pure function of a declared seed. `random.Random(n)` is safe, `zlib.crc32` is safe,
+  `hash()` and set/dict iteration order are not.** The tell is a diff that is enormous and
+  uniform rather than sparse and specific.
+
+- **A GUARD THAT SURVIVES EVERY MUTATION IS NOT PROVEN CAUTIOUS, IT IS UNPROVEN — AND MAY
+  BE DOING HARM (2026-09-10, same work).** The month-presence scan shipped with two extra
+  safety nets: an "always keep the case-unsafe names" set and a second scan over
+  `casefold()`. Both survived the whole mutation matrix. The tempting reading is "cheap
+  insurance, keep them"; the correct one was to go find the REAL argument, which turned out
+  to be stronger — the scan lowers the same token with the same method as `_month_of`, the
+  one function every month loop resolves through and which skips on a miss, so a token the
+  scan cannot key is a token the old path refused too (verified exhaustively: 555 names × 5
+  casings × every language hint, zero violations). And the keep-set was **actively
+  harmful**: its predicate `n.casefold() != n` matched all ~26 Greek month names, silently
+  pinning 30 extra branches into the alternation of every article in every language —
+  eroding the very win it was guarding. **GENERAL FORM: when a mutation cannot kill a
+  guard, that is a question, not a reassurance. Either find the input that makes it
+  load-bearing, or find the invariant that makes it unnecessary and pin THAT as the test.
+  Do not keep it "just in case" — an unfalsifiable guard is one nobody can safely change
+  later, and this one was quietly paying its own cost.**
+
+- **`rx is SOME_MODULE_PATTERN` BREAKS THE MOMENT PATTERNS ARE BUILT PER DOCUMENT
+  (2026-09-10, same work).** The year-less date loop iterated
+  `((_DM_NOYEAR_RE, …), (_MD_NOYEAR_RE, …))` and re-derived which member it was on with
+  `if rx is _MD_NOYEAR_RE`, to apply the homograph guard that stops `"Marta 30 godina"`
+  becoming 30 March. Narrowing rebuilds those patterns per document, so `rx` is never the
+  module-level object again: the guard would have stopped firing **silently**, and the
+  extractor would have resumed a fabrication it had a verifier finding for. Caught by
+  reading the loop before editing it, and the mutation that puts the identity test back is
+  in the matrix. **GENERAL FORM: identity comparison against a module global is a hidden
+  coupling to "this object is a singleton". Any change that makes an object per-request,
+  per-document or per-tenant breaks every such test at once, and breaks them by silently
+  taking the other branch rather than by raising. Carry the discriminating FACT in the
+  loop's own tuple instead of re-deriving it from identity.**
+
+- **PUT THE CHEAP DISCRIMINATING TOKEN FIRST, OR THE ENGINE SCANS EVERY POSITION
+  (2026-09-10).** Two patterns in the same module, matching the same dates, over the same
+  22 KB: `_DMY_RE` ("11 September 2001") **1.24 ms**, `_MDY_RE` ("September 11, 2001")
+  **43.73 ms**. The only difference is which end the 555-name alternation sits on —
+  `_DMY_RE` opens `\b(\d{1,2})` so CPython fast-skips to digit positions, `_MDY_RE` opens
+  on the alternation so the engine tries branches at every word boundary. **GENERAL FORM:
+  a regex's cost is set by what its FIRST element lets the engine skip. When a pattern must
+  begin with a large literal set, the fix is to shrink that set to what the input can
+  actually contain — measured here at ~10x, with matches identical by construction because
+  a literal absent from the text could never have matched.**
+
+- **A CONTROL LOOP THAT READS A MACHINE-WIDE SIGNAL WILL THROTTLE ITSELF WHEN IT IS THE
+  LOAD (2026-09-10, P4).** The bandwidth governor cut a fetch permit every 1.5 s tick
+  whenever system CPU was ≥ 92% — and the collector is CPU-bound in pure Python, so a
+  perfectly healthy pass on a small box produces exactly that reading BY ITSELF. Measured:
+  50 permits to 1 in 73 seconds, for doing its job well, freeing nothing, because the CPU
+  it "gave back" was its own. The module's own comment already said CPU saturation "costs
+  throughput, not the machine"; nobody noticed the response to it still cost throughput.
+  **GENERAL FORM: when a self-protective control reads a whole-machine gauge, ask what
+  that gauge reads while the thing it governs is working normally. If the answer is
+  "saturated", the control is wired to fight itself.** The reading that separated the
+  cases — `cpu_proc_pct` — was already sampled, already written to the perf log, and
+  consulted by no decision at all: the fix was a comparison, not an instrument. Watch the
+  scale when making it: `psutil.cpu_percent()` is normalised 0-100 across the machine
+  while `Process.cpu_percent()` SUMS across cores, so 380% of 4 cores is 95% of the box,
+  and conflating them inverts the answer.
+
+- **A SELF-TUNING MECHANISM THAT PERSISTS ITS WORST OBSERVATION NEEDS A RECOVERY PATH IT
+  CAN ACTUALLY REACH (2026-09-10, P4b).** `capacity.py` records the worker floor a machine
+  reached under memory pressure and uses it as the next pass's seed AND ramp ceiling,
+  across restarts. Its relax branch needed a pass below a pressure share — but `mem_low`
+  is a WHOLE-MACHINE reading (available memory under a fixed 512 MB), so on a box also
+  running a local model every pass qualified as pressured, the floor walked to 1,
+  `min(current, floor)` re-pinned it, and the quiet pass could never arrive. Result:
+  1.91 → 0.45 articles/s, no code change, no visible cause, surviving restarts.
+  **GENERAL FORM: the recovery half of a learned limit is the load-bearing half, and it
+  must be driven by something the mechanism itself can influence. A limit learned from a
+  condition the subject cannot change is not a measurement of the subject — it is a
+  permanent sentence.** The fix that worked was narrow and checkable ("a ceiling of 1
+  cannot survive two passes") rather than a claim of full recovery, because nothing had
+  shown more workers were safe. And it was only safe because a DIFFERENT mechanism
+  (`memguard`, which pauses collection outright) is what actually protects the machine —
+  worth confirming before relaxing anything, since the tempting alternative is to raise
+  the threshold, which is regressing a safety number the measurement says works.
+
+- **WRITING THE RELAXED CASE THROUGH THE EXISTING BRANCH ALSO INHERITS ITS LABEL
+  (2026-09-10).** Routing the new "pressure the worker count did not cause" case into the
+  existing relax branch was right for the arithmetic and wrong for the record: that branch
+  stamps `reason: "a pass with no memory pressure"`, which is a false statement in the very
+  file an operator opens to find out why their collector is slow. **GENERAL FORM: when you
+  reuse a branch for a second cause, check what it WRITES as well as what it computes.
+  Shared code paths quietly share their explanations, and a stored reason is read long
+  after the arithmetic stops mattering.**
+
+- **A PAYLOAD NOBODY DRAWS IS THE SAME DEAD END AS A FEATURE NOBODY CAN REACH
+  (2026-09-10, P5).** Both concurrency caps were correct, measured, and exposed —
+  `state_report` inside the diagnostics report payload, the machine-floor cap into a log
+  line. Neither reached the task manager, which is where an operator watches collection.
+  So a pass running one worker of a configured fifty was, from the only window anyone
+  looks at, indistinguishable from "the app got slow". **GENERAL FORM: "the number is
+  available" and "the number is where the question is asked" are different claims. When
+  shipping a diagnostic, name the surface the question actually gets asked on — a
+  diagnostics export is where you look once you already suspect something.**
+
+- **"ABSENT" AND "MEASURED ZERO" ARE ONE CHARACTER APART IN SOURCE AND OPPOSITE ON SCREEN
+  (2026-09-10, P5).** The permit count must not draw when no pass is in flight (0 workers
+  and no pass are different facts, and a "0" there is a number where there is no
+  measurement) but MUST draw when a running pass really is at zero. The whole distinction
+  lives in `pg.permits != null` versus a truthiness test, and no source-level assertion
+  can tell the two apart — both are "the function mentions permits". **GENERAL FORM: any
+  honesty rule of the shape "absent means absent" needs a test that EXECUTES the renderer
+  with both inputs; grep-level guards pass on the mutant.** Six mutants, six dead, and the
+  measured-zero case is the one that would otherwise have been fixed into a bug.
+
+- **A NODE HARNESS PROVES THE HTML AND CANNOT SEE THE PAGE (2026-09-10, P5).** The
+  Workers panel passed 7 mutation-killed behavioural checks on its rendered HTML, and the
+  first real click-through showed the reason truncated to *"this machine backed o…"*
+  running off the panel edge — because `.vitals-pop .vr b` clamps a row's VALUE to 160px
+  with an ellipsis. That is correct for a figure and destroys a sentence, and it silently
+  destroyed the one thing the whole section exists to let an operator read. The HTML the
+  tests asserted on was right the entire time. **GENERAL FORM: a DOM-level test verifies
+  what you built; only a rendered page verifies what is legible. When a slice's value is
+  that someone can READ something, the click-through is part of the slice, not a follow-up
+  — and "browser-unverified, a click-through is owed" is a debt that hides exactly this
+  class of defect.** The corollary is the cheerful one: the click-through also let the
+  ×12 claim be verified by switching the locale live, instead of asserted from the fact
+  that the keys exist.
+
+- **PUTTING PROSE WHERE A FIGURE GOES INHERITS THE FIGURE'S TRUNCATION (2026-09-10).**
+  The row helper was built for `label → number`, so its value slot is `max-width:160px;
+  white-space:nowrap; text-overflow:ellipsis`. Reusing it for a sentence looked natural in
+  source and was wrong on screen. **GENERAL FORM: before reusing a layout helper, read its
+  CSS, not just its signature — a helper named `row` encodes assumptions about what its
+  value IS, and prose and figures want opposite treatments.**
+
+- **THE BACKEND'S OWN `method`/`reason` STRINGS ARE ENGLISH, AND A HOVER IS A CAVEAT
+  SURFACE (2026-09-10).** The first cut piped `capacity.state_report()`'s `method` and the
+  machine floor's `reason` straight into `title=`, which renders untranslated English to
+  every non-English operator — and this project's informed-consent non-negotiable puts
+  every caveat in 12 locales. `renderMachineFloor` had already set the right precedent for
+  the very same payload: translate the prose, keep only the measured NUMBERS and literal
+  tokens (an env var to type) from the backend. **GENERAL FORM: a payload field named
+  `method`, `reason` or `caveat` is documentation for a reader, so it is prose, so it is
+  subject to i18n. Passing it through to the UI is the easy path and the wrong one; the
+  mutant that puts it back belongs in the matrix.**
