@@ -439,7 +439,8 @@ def test_the_network_method_list_matches_the_fetchers_own_network_surface():
         and not n.name.startswith("_")
     }
     # Everything public on the fetcher is either wrapped or a LOCAL read.
-    local_only = {"cache_stats"}
+    # crawl_delay_for reads the host's CACHED robots decision only -- never a fetch (2026-09-10).
+    local_only = {"cache_stats", "crawl_delay_for"}
     assert public - local_only == set(fetch_release._NETWORK_METHODS), (
         "EthicalFetcher's public surface changed: decide whether the new method "
         "reaches the network (wrap it) or is local (add it to local_only)."

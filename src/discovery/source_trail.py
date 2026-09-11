@@ -156,7 +156,38 @@ def source_provenance(session, source_id: int) -> dict:
         "detail": detail,
         "citing_trail": citing_trail,
         "qualification_status": source.status,
+        "qualification_basis": _qualification_basis(session, source),
     }
+
+
+def _qualification_basis(session, source) -> str | None:
+    """WHY the row reads what it reads: ``measured`` (this instance judged it),
+    ``inherited`` (adopted from a backup or the shipped overlay), ``curated`` (stamped
+    because it ships in the curated catalogue, ruling 2026-09-10), or ``None`` (no stamp,
+    or a stamp that predates the attempt log). A qualified pill that hides which of these
+    it is would let a ruling's stamp read as a measurement -- the informed-consent rule
+    puts the basis beside the verdict, not behind it."""
+    from src.catalog.qualification import (
+        CURATED_CRITERIA_VERSION,
+        JUDGING_VERDICTS,
+        VERDICT_CURATED,
+        VERDICT_INHERITED,
+    )
+    from src.database.models import SourceQualificationAttempt as A
+
+    verdicts = {
+        v
+        for (v,) in session.query(A.verdict).filter(A.source_id == source.id).distinct()
+    }
+    if verdicts & set(JUDGING_VERDICTS):
+        return "measured"
+    if VERDICT_CURATED in verdicts or (
+        source.qualification_criteria_version == CURATED_CRITERIA_VERSION
+    ):
+        return "curated"
+    if VERDICT_INHERITED in verdicts:
+        return "inherited"
+    return None
 
 
 def source_citation_tally(session, source_id: int) -> dict:

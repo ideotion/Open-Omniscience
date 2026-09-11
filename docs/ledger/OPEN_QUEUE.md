@@ -12108,3 +12108,536 @@ housekeeping lane (discovery, source enrichment, the briefing refresh, the WAL
 checkpoint). They run *around* `run_scrape_once` on threads that compete for the same GIL
 and are outside every number in the report. Also unmeasured: SQLCipher (every DB figure in
 the report is a plaintext floor) and real Tor.
+ejecting the reader — cosmetic residue, explicitly not the P0.
+- **SOURCE QUALIFICATION THROUGHPUT — SEVEN RULINGS NEEDED, ONE PLAN OF RECORD, NOTHING CODED
+  (maintainer observations 2026-09-10; analysis `docs/plans/2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md`).**
+  The maintainer reported, on a live instance: the ~3,600 curated sources start `unqualified` by
+  deliberate decision ("maybe we will revise this decision"); after nearly three weeks of collection
+  only ~1,000 are qualified while discovery produced ~80,000 candidates — "the qualification engine
+  is far too slow and should be revisited"; and articles that should never have entered the corpus
+  are still being stored with the engine on. Ask: "seriously improve qualification performance and
+  efficiency", and grow the initial source list "significantly". Read-only analysis against `main`
+  @ `f85899a`; the plan lists the findings with their provenance. THE FIVE FINDINGS THAT CARRY IT:
+  (F1) ~1,000 in ~21 days is inside what `qualification_per_pass=5` × one lane kick per pass
+  permits — a design envelope, not a malfunction; (F2) `select_unqualified`'s least-recently-
+  attempted order (the 2026-07-23 livelock fix, correct then) now PARKS every catalog source whose
+  first trial produced no evidence BEHIND the ~73k never-attempted disabled candidates — at 5/pass
+  that is ~14,600 passes, i.e. never; (F3) the ride-along freezes the whole-corpus cohort ONCE PER
+  PASS to judge ≤7 sources (S5.1 hoisted it per RUN for the bulk job only; the ride-along has no
+  run) — ~1 GB and minutes at 1M articles, and the reason the machine floor can decline it
+  outright; (F4) the verdict is nearly liveness: with fewer than five pathological articles the
+  only disqualifier is "≥50 % of the trial's stored articles look like keyword furniture", the
+  floor fired on 0 of 457 field sources, and the 2026-08-11 export saw keyword coverage of 2.89 %
+  — so junk articles are the ARTICLE gate's measured hole (8–11 % of a 1M corpus is listing pages
+  above the 100-word guard; Tier A quarantine agreed 2026-08-23 and still unrun), never a
+  qualification bug; (F5) the bulk drain stops after 200 consecutive no-evidence candidates and
+  never restarts itself, and 62 % of the discovered rows are `institution`/`religious`, feedless.
+  **RULINGS NEEDED (each with the plan's recommended default; none assumed):** **R1** revise
+  "the curated catalog starts unqualified"? (a) keep + ship the overlay from the live instance
+  (B5); (b) PROVISIONAL ADMISSION for app-provided rows — collect from day one, verify in the
+  background, a `disqualified` verdict still removes (the `scrape_unqualified` +
+  `scrape_app_provided_only` semantics made the default for `via:*` rows; the row pill reads
+  "collecting · not yet verified", never "qualified"; the Feed/Home not-yet-qualified exclusions
+  then show progress instead of silence); (c) stamp by curation — stays rejected; (d) a+b.
+  Recommended (d), optionally narrowed to the 405 `verified: true` catalog entries whose flag the
+  seeder currently drops. **R2** B1: recommended (b) — a `qualified` verdict enables a discovered
+  row, capped per pass, diversity-weighted, with an audit view and undo (Q3a already asked for
+  trial auto-enable behind a setting). **R3** B6: recommended (c) extended — two absolute,
+  cohort-free extraction-failure criteria, `listing_url_rate` (already exported per source) and
+  `high_link_density`, thresholds calibrated from the maintainer's export and published beside
+  the constant; `pathology_abs_floor` stays 0.5. **R4** article gate: drop Tier-1 listing shapes
+  at ingest regardless of body length (a real article is structurally impossible there); run Tier
+  A; MEASURE Tier B before proposing it; a per-source listing share in the row. **R5** discovery
+  intake: publisher types only enter the trial queue by default; institutions/religious
+  organisations stay registry entries; unmanaged-language rows deferred; feedless rows trialled
+  only after a one-fetch feed autodiscovery or a sitemap. **R6** which operator runs to schedule
+  (world catalog generator, diversification brief, overlay B5, B11). **R7** baseline staleness
+  for a cached cohort (session default: newer of 24 h or the change token moving ≥1 %).
+  **THE PLAN'S NO-RULING SLICES (Phase 1, each a draft PR):** S1 attempt REASONS + trial tally on
+  `source_qualification_attempts` and a funnel diagnostic (today a `no_evidence` row cannot say
+  feed-403 from no-sitemap — every diagnosis here was inferred from counters); S2 TWO QUEUES with
+  their own budgets (app-provided/enabled first, discovered second) and a short retry ladder for
+  no-evidence inside each — ordering, never exclusion, the livelock reproducer re-run; S3 a
+  cohort CACHE for the ride-along keyed by the serve-gate change token (the seam S5.1 built),
+  `with_furniture=False` for trial verdicts as its own verdict-neutral commit; S4 bounded PARALLEL
+  trial fetches through the collector's worker pool, per-host politeness untouched; S5 a drain
+  that resumes itself (no-progress judged per queue); S6 pre-trial screening (unmanaged language
+  deferred; one guarded homepage fetch for feed autodiscovery, NULL-only `rss_url`; `no_channel`
+  costs no further fetches until due). Phase 2 = R1–R5's slices; Phase 3 = the operator supply
+  runs. **PHASE 0 FIRST:** the maintainer sends the all-diagnostics bundle (source-qualification
+  export, qualification-integrity, source-quality export, expedition log, pass journal) so the
+  session can say which of F1–F5 dominates on THIS instance and calibrate R3/R4 — "not measurable
+  here" is the honest verdict until then. NOT DONE HERE, on purpose: no setting flipped, no
+  threshold moved, no verdict written; the plan is the deliverable.
+
+- **RULED 2026-09-10 (maintainer, answering R1 of the source-qualification throughput plan): THE
+  CURATED CATALOGUE IS QUALIFIED, AND RE-VERIFIED LIKE ANY OTHER QUALIFIED SOURCE.** Verbatim:
+  "let's make the curated catalogue qualified, and as with any other qualified sources, they should
+  go through the same periodic re-qualification process as any other source." This AMENDS the
+  2026-07-20 sub-decision ("ALL sources are qualified BY DEFINITION — the curated catalog INCLUDED;
+  NO pre-qualified-by-curation stamp") and the "no grandfathering" clause restated in 0.4 gate Row
+  A: an app-provided catalogue row is stamped `qualified` at seed instead of waiting its turn behind
+  the discovery backlog, and the 2026-09-04 six-month re-verification clock is what keeps the stamp
+  honest — a catalogue source that fails its re-check is disqualified exactly like any other, and
+  stays a catalogue-review signal. HOW THE SESSION READS IT (design, not a second ruling): the
+  stamp's BASIS is recorded, never blurred into a measured verdict — a distinct attempt-log verdict
+  (`curated`, beside `inherited` and `no_evidence`; never a `Source.status` value), the clock
+  starting at adoption exactly as `inherited` does, a criteria-version marker that names the
+  catalogue rather than a judging criteria version, the qualification export reporting basis
+  `curated` and EXCLUDING such rows from the shipped overlay (a curated stamp must not come back
+  as an "earned" one after one round trip), and "a local verdict always wins": a row this instance
+  already judged — `qualified` or `disqualified` — is never re-stamped, so nothing is laundered.
+  Scope = the app-provided provenance set (`catalog.provenance_scope`), applied at seed for fresh
+  installs and as a NULL-only reconcile for existing ones (rows still `unqualified` with no judging
+  attempt). The 0.4 gate Row A's "no grandfathering" wording needs the same amendment when that
+  board is next touched. R2–R7 of the plan stay open.
+- **QUESTION RAISED 2026-09-10 (maintainer, the plan's R6 made concrete): THE ~80K DISCOVERED
+  CANDIDATES ARE "A TREASURE WE SHOULD NOT DISMISS" — how to handle them, and how to extract from
+  them the sources that COMPLEMENT the ~3,600 shipped ones.** The maintainer attached the
+  instance's full sources export (85,690 rows). Answered by measurement in the plan document's new
+  section (composition, feed presence, catalogue overlap, the gaps against `catalog_targets.yml`
+  the candidates can fill) and the handling pipeline it proposes; rulings it needs are listed
+  there, none taken.
+
+- **QUESTION 2026-09-10 (maintainer), ANSWERED WITH TOOLING — CAN AN INTERNET-CONNECTED SESSION
+  RUN A WORKFLOW OF AGENTS OVER THE CANDIDATE SOURCES AND GROW THE 3,600?** Verbatim: "can we use
+  an internet connected session with an attachment (like the one I just provided or a zip with
+  multiple files) to create a workflow of agents to check candidate sources and increase the
+  current list of 3600 sources ? I'd really want this initial list to be significantly increased.
+  In case of a workflow, think of token usage and maximize model choice and prompt quality to
+  avoid using most of my credit." ANSWER: yes — `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-10_
+  CANDIDATE_FEED_VERIFICATION.md`, with the tooling built and fake-fetcher-tested in the same PR
+  (this sandbox answers `000` for every publisher host, so nothing ran against the network). THE
+  DESIGN PRINCIPLE: checking a feed is not a judgement, so a zero-token script does the whole
+  mechanical half (robots fail-closed via the ONE guarded fetcher, homepage, declared-then-
+  conventional feed discovery bounded at six probes per host, the diversification brief's three
+  rules, headline language, resumable across sessions) and the model is handed only the residue
+  that needs a reader — is this journalism, which topics — in 40-row batches on Haiku with two
+  hand-known canaries per batch, files in and files out, every answer re-validated in plain code
+  (echo-back, enums, the catalogue's own topic vocabulary, canaries) before it can reach the
+  catalogue; a text splice then appends reviewed rows to `configs/sources.yml` and refuses what it
+  cannot vouch for. The arithmetic: ~5M tokens, four fifths on Haiku, for all 22k news rows —
+  against ~450M for one agent per candidate. Under the same-day curated-catalogue ruling the
+  appended rows are qualified at seed, which is what "increase the initial list" means here.
+  **DECISIONS FOR THE MAINTAINER, recorded with the brief's recommended defaults (§5):** D1 the
+  rows land in `configs/sources.yml` via the splice after PR review (recommended; the alternative
+  is a separate generated file with its own provenance and a seeder entry); D2 the acceptance bar
+  = journalism AND confidence high/medium, `low` rows listed for a human pass, never merged unread;
+  D3 the shortlist (3,588 rows) first, then the T4 remainder in ~4,000-row chunks — the yield of
+  the first chunk replaces the brief's estimate (≈6,000 new sources if 40 % have a live feed and
+  70 % read as journalism); D4 institutions and religious organisations stay out of this pipeline
+  by type. OPERATOR PREREQUISITE, a hard stop in the brief: an environment whose network policy
+  allows the candidate hosts, verified by the four-host probe before anything runs.
+
+- **RULED 2026-09-10 (maintainer, on how the candidate pipeline's run session works): NO GITHUB IN
+  THE INTERNET SESSION; EVERYTHING AUTONOMOUS; THE PROMPT TRAVELS BY HAND, NEVER THROUGH THE PR.**
+  Verbatim: "note that the internet session won't have access to github. Make everything
+  autonomous. Don't push the prompt to the PR, I'll copy and paste it manually. If you want me to
+  attach the existing (and previously sent) zip, be clear about this. Make the prompt easy to copy
+  and paste and detached from any github interaction unless necessary." DONE THE SAME TURN: the
+  pipeline travels as a self-contained KIT — `scripts/analysis/build_candidate_kit.py` builds ONE
+  zip holding the scripts at their repository paths, `src/` minus the UI and the IP table (the
+  import closure has lazy imports, so the whole tree goes rather than a hand list that fails in
+  the one place it cannot be fixed), `configs/` (dedupe + the topic vocabulary), the two worklists
+  derived from the export at build time (the 3,588-row shortlist, byte-equal to the research
+  shortlist, and the 18,457-row ordered remainder), the export itself as provenance, a
+  self-check (`candidate_kit_selfcheck.py` → `selfcheck.py`: the kit's OWN `src` is what imports,
+  the detector works, the fake-fetcher tests pass, the real fetcher refuses an `.invalid` host with
+  a named error, prepare → merge → splice plan run end to end — all before a token is spent) and
+  the runbook `docs/design/CANDIDATE_KIT_RUNBOOK.md` as `RUN.md`. STAGE A BUILDS THE ONE
+  `EthicalFetcher` DIRECTLY IN A KIT (`build_fetcher`, marked by `KIT_MANIFEST.json`) because the
+  app's factory reads the operator's safety settings from the encrypted key-value store, a
+  database stack the kit must not need; transparent mode, the honest bot UA, robots fail-closed
+  and the per-host politeness are unchanged, and the run log names the mode. THE DELIVERABLE is a
+  zip of `runs/` handed back as a file at each milestone and on any hard stop; STAGE C (the splice
+  into `configs/sources.yml`, the catalogue tests, the PR) STAYS IN A REPOSITORY-CONNECTED SESSION
+  — the only GitHub interaction, and it is the maintainer's review. Without a repository the
+  subagents get no `CLAUDE.md` injected, so a 40-row batch costs ~10k Haiku tokens, not ~23k. The
+  prompt was given in chat only (never in the PR, never in the tree), the kit was sent as a file,
+  and the maintainer was told plainly that the earlier export zip need NOT be re-attached — it is
+  inside the kit. STANDING: a run brief for a detached session is written for the kit, never for
+  a clone; an internet session is assumed to have PyPI and the publisher hosts and nothing else.
+
+- **RULED 2026-09-10 (maintainer, after starting the internet session with the kit): "ITS REAL
+  CONNECTION IS EXTREMELY LIMITED" — STAGE A RUNS ON THE MAINTAINER'S OWN MACHINE, STAGES B AND C
+  IN A REPOSITORY SESSION.** Verbatim: "Started the internet session with the kit, but it's real
+  connexion is extremely limited. Can you create a small program that I can execute that would
+  create a curated list I could send back over to you to implement into the repo ? Or anything
+  else we can use to bypass this ?" ANSWER, same turn: the split follows what each stage NEEDS —
+  Stage A needs the publishers and no model; Stage B needs a model and no publisher; Stage C needs
+  the repository. `run_stage_a.py` (kit root; standard library only; Python 3.12+; Windows, macOS,
+  Linux) does the whole local half in one command — venv, pins, four-host probe, self-check, Stage
+  A on both worklists, `stage_a_results_<date>.zip` — resumable and Ctrl-C-safe:
+  `verify_candidate_feeds.run` now stops taking hosts on an interrupt, lets the in-flight ones
+  finish unrecorded (re-judged next run), keeps every row written, and reports `interrupted` /
+  `judged_this_run` / `remaining` (exit 130 with the resume instruction); the console is forced to
+  UTF-8 so an IDN domain cannot crash a Windows run. The zip comes back as an attachment to a
+  repository session, which runs Stage B on Haiku from `verified.jsonl` and Stage C to a PR. The
+  cloud-session prompt is superseded FOR THIS RUN; the runbook keeps both paths (§8). OPTIONS NOT
+  TAKEN, stated so they are not re-derived: (a) an environment with an unrestricted network policy
+  — the maintainer's to choose; the same kit and prompt then work unchanged; (b) a GitHub Actions
+  `workflow_dispatch` runner — open egress, but a crawl on hosted runners is a usage-policy
+  judgement call and the six-hour job cap would need chunking through artifacts; not recommended
+  first; (c) triage on the app's local Ollama — a second model path for the same answers, not
+  worth building while Haiku batches cost ~10k tokens each.
+
+- **QUESTION 2026-09-10 (maintainer, from the first live Stage A run) — PENDING RULING: WHAT TO DO
+  WITH SOURCES WHOSE robots.txt IS UNREACHABLE OR UNAVAILABLE; "should we only ban those sources
+  which explicitly ban robots? What's the most ethical approach?"** FACTS FIRST. (1) What the ONE
+  fetcher does today (`EthicalFetcher._get_robots`): 200 → the file's rules; 404/410 → no rules,
+  allowed; **401/403 → the whole host is off-limits**; 5xx or anything else → fail closed;
+  network error, timeout, a redirect to a blocked target → fail closed. Every fail-closed outcome
+  is cached ONE HOUR (`_ROBOTS_TTL = 3600`) and re-read after that, and the refusal's message says
+  only "could not be determined", so the pipeline's `robots_unavailable` cannot tell a 403 from a
+  timeout. (2) What the app does with such a source: NOTHING permanent — qualification never
+  reads robots; a refused host simply yields no articles, so it stays `unqualified` (never
+  `disqualified`) and is retried on the scheduler's own clock, which is the "defer" behaviour
+  already; the KIT run is the only place the outcome is written as a REJECTION. (3) What the
+  standard says (RFC 9309 §2.3.1): a 4xx answer means the file is "unavailable" and a crawler
+  MAY access anything; a 5xx or a network error means it is "unreachable" and the crawler MUST
+  assume complete disallow, re-trying later, and MAY treat a file that stays unreachable for a
+  long period (the example is 30 days) as unavailable; a cached copy SHOULD NOT serve longer than
+  24 hours unless the file is unreachable. So the app is exactly the standard on 5xx/network and
+  on 404, and STRICTER than the standard on 401/403 — a choice, not an accident. RECOMMENDED
+  DEFAULT, in three parts, none of which relaxes the fail-closed non-negotiable: (a) an EXPLICIT
+  disallow is respected, and re-read periodically because policies change both ways — unchanged;
+  (b) UNREACHABLE (5xx, timeout, DNS, a blocked redirect) is not a verdict about the publisher
+  at all: never a ban, never an allowance, a RETRY — the app already does this hourly; the kit
+  should stop writing it as a rejection and re-judge those rows in a second pass at the end of
+  the run (a `--retry` over `robots_unavailable` and `homepage_unreachable`, last verdict per
+  domain winning), and a host that stays unreachable across passes is recorded as DEAD, not
+  banned; (c) REFUSED (401/403 to the honest bot's request for robots.txt) is the ambiguous case
+  and the ethical answer is "who is refusing": a publisher's edge that will not even show its
+  policy to a declared crawler has answered, and that answer is respected exactly like an
+  explicit Disallow — never retried under another identity, never routed around; but the
+  measurement must come from a plain clearnet path first, because the same host answers a Tor
+  exit or a datacenter range with 403 for reasons that are about the path, not the bot (the
+  standing "a host's Tor block is the host's choice, surfaced honestly with transport-aware
+  verdicts" rule). So the answer to "only ban the explicit ones?" is NO: explicit and refused
+  are both respected; unreachable is deferred; nothing is ever evaded. TO MAKE (b) AND (c)
+  MEASURABLE the fetcher should carry the cause on `RobotsUnavailable` (status or error class) so
+  the pipeline splits `robots_unavailable` into `robots_refused` and `robots_unreachable` — an
+  additive change, no behaviour change, and the numbers the ruling needs. NOT RECOMMENDED: the
+  RFC's "MAY access after 4xx" — permitted by the standard, but a research crawler that reads a
+  refusal as a permission has stopped being one; and the RFC's "30 days unreachable → treat as
+  unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
+  "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
+
+- **ADDENDUM 2026-09-10 (maintainer, same day) — THE DEFAULT DEPLOYMENT IS A WHONIX/TOR PATH THROUGH A
+  DEBIAN VM, SO THE "MEASURE FROM CLEARNET FIRST" HALF OF THE RECOMMENDATION ABOVE IS WITHDRAWN.** The
+  maintainer's question: "if you take into consideration that the default usage of the app would be to
+  use a Whonix/tor proxy through a debian VM, what would you do with the problem of the origin /
+  pathway discrimination problem?" FACTS. (1) For a Whonix operator there is NO clearnet path: the
+  workstation cannot reach the internet except through the gateway's Tor, so a "clearnet
+  measurement" is not merely unavailable, asking for it is asking the operator to deanonymise, which
+  the no-silent-downgrade non-negotiable already forbids even as a consented retry. (2) THREE places
+  collapse a 403 on robots.txt into a POLICY verdict: `EthicalFetcher._get_robots` (401/403 → the host
+  off-limits for one hour, persisted as `disallow_all`); `src/monitoring/preflight.py` (401/403 →
+  `robots = "blocked"` → verdict `robots_denied` → `robots_allowed = False` WRITTEN onto the source's
+  scraper settings, a stored policy fact derived from a path refusal); and the kit's Stage A
+  (`robots_unavailable` → a rejection row). (3) Over Tor a 403 is a statement about the PATH, not
+  about the crawler: in PROTECTED mode the request carries the generic Firefox UA, so there is no
+  declared bot for the host to refuse — the 403 is the exit's reputation, Tor as a class, the TLS
+  fingerprint (python-requests behind a Firefox UA; the "blend in" is partial and that is a fact,
+  not a proposal to change the ruled mode), or geography; in TRANSPARENT mode (the kit's mode) it is
+  any of those OR the bot, and nothing in the answer tells which. (4) The app cannot tell it is on
+  Tor unless the proxy is configured IN-APP: under Whonix's transparent torification with the app in
+  transparent mode, `proxied` is False, `_capture_server_ip` records a server IP as if clearnet, the
+  per-host isolation tokens do nothing (no SOCKS), and every "transport-aware" verdict is labelled
+  clearnet. (5) The precedent already drawn (markets, ruled 2026-06-12): a TCP-level refusal over Tor
+  is "often one exit's refusal", retried ONCE; an HTTP 403 and a robots refusal are NEVER retried.
+  (6) Tor rebuilds circuits on its own clock (MaxCircuitDirtiness default 10 min), so the fetcher's
+  hourly robots re-read already lands on a different circuit: the politeness clock IS Tor Browser's
+  "New Tor circuit for this site", at a crawler's cadence, not an IP-rotation loop.
+  REVISED RECOMMENDED DEFAULT (replaces part (c) above; (a) and (b) stand): (A) MAKE THE PATH A
+  FIRST-CLASS FACT — document the Whonix setup as protected mode pointed at the gateway's SOCKS port
+  (`socks5h://<gateway>:9050`) rather than the gateway's transparent proxying, so the app knows it is
+  on Tor and per-host isolation applies; add a consented Tor self-detection probe to the network
+  preflight (one fixed host, the Tor Project's own check endpoint, informational, the same shape as
+  the kit's four-host probe) so verdicts carry `transport: tor | proxy | clearnet` and the UI can say
+  "this instance reaches the web over Tor". (B) RE-LABEL THE 401/403 ROBOTS READ in all three places
+  from "off-limits" to "refused on this path": a REACH verdict with the same one-hour TTL, never
+  written as `robots_allowed = False`, never a kit rejection; the message names the transport ("the
+  host refused robots.txt to this Tor exit"); `RobotsUnavailable` carries the cause so the split
+  `robots_refused` / `robots_unreachable` becomes measurable (unchanged from above). Fail-closed is
+  untouched: a refusal still means nothing is fetched. (C) THE RETRY POLICY IS THE POLITENESS CLOCK
+  AND NOTHING ELSE — no exit-rotation loop, no new-circuit-on-403 action, no transport change; a host
+  that refuses every exit is refusing Tor and that stands; a host that refuses some exits gets through
+  on its own clock; in the kit, the `--retry` pass at the end of the run (a different circuit by
+  then), and a row still refused is `unreachable_over_tor`, KEPT as a candidate, never rejected. The
+  boundary in one line: we are willing to be refused; we are not willing to shop for an exit. (D)
+  SHIP REACH AS A MEASURED, DATED FACT instead of letting every Tor user rediscover it — the
+  maintainer's own Whonix instance measures per-source reach over Tor; the existing qualification
+  overlay carries a `tor_reach` (ok | refused, as-of date, n attempts) per source; a fresh Tor
+  install shows "Tor-hostile as of <date>" on the source, orders those sources LAST (ordering ≠
+  exclusion), and the qualification counts them as "unreachable over Tor" rather than "no evidence"
+  forever; the per-country count of Tor-hostile sources becomes visible, which is the honest picture
+  of what a Tor user can see (the anti-capping rule). NOT RECOMMENDED: a clearnet measurement of any
+  kind; TLS/browser impersonation to defeat fingerprint blocks (evasion); the RFC's MAY-access after a
+  4xx; reading a refusing publisher through an archive or mirror as a workaround (a separate question
+  that needs its own ruling; not this one). No CLAUDE.md amendment is needed by this default: the
+  fail-closed non-negotiable and "a host's Tor block is the host's choice, surfaced honestly with
+  transport-aware verdicts" are exactly what (B)–(D) implement; only the fetcher docstring's
+  "restricted 401/403 → off-limits" line would change wording. No code changed pending the ruling.
+
+- **QUESTION 2026-09-10 (found while explaining the kit's stall) — PENDING RULING: THE COLLECTOR
+  SLEEPS A WORKER FOR THE FULL DECLARED `Crawl-delay`, WITH NO CAP, AND ITS PER-PASS FETCHER
+  FORGETS WHEN IT LAST ASKED.** FACTS. `EthicalFetcher._respect_rate_limit` sleeps
+  `max(min_interval, Crawl-delay) - elapsed` inline, under the host lock, before every request; a
+  host declaring `Crawl-delay: 3600` parks a collector worker for an hour between two of its
+  articles, `86400` for a day (the kit's first live run hit exactly this shape: six probes at
+  Crawl-delay 900 cost one worker ninety minutes, and a longer delay held the worklist; SHIPPED
+  same day for the PIPELINE by bounding its probes with the host's own declaration -- the collector
+  is untouched). The obvious fix -- refuse to wait inline beyond a cap and retry next pass -- has a
+  POLITENESS TRAP: `make_fetcher()` builds a fresh `EthicalFetcher` per collection pass, whose
+  `_last_request` is empty, so the first request of every pass to that host pays no wait at all;
+  with passes minutes apart, "refuse and retry next pass" would fetch a Crawl-delay-3600 host every
+  few minutes, which is worse than sleeping. RECOMMENDED DEFAULT: (a) persist a per-host
+  next-allowed-at beside the persisted robots cache (`robots_cache.json` already survives the
+  per-pass rebuild for exactly this reason); (b) then refuse an inline wait beyond a cap (a few
+  minutes) with a NAMED `FetchError` ("Crawl-delay N s: not before T") that the collector counts
+  as its own bucket and the scheduler treats as a deferral, never a failure of the source; (c) the
+  ride-along qualification and the trial fetch inherit both. Not recommended: any cap without (a),
+  and any fetch before the declared delay has elapsed. Not urgent for the app -- such hosts are
+  rare (the shortlist's p99 elapsed was 138 s) -- but a worker asleep for a day is the Windows-lane
+  hang in another coat, and it should be a ruling, not a surprise.
+
+- **RULED + SHIPPED 2026-09-10 (see the RULING that follows this entry) — WAS: QUESTION FROM
+  RUNNING SEVERAL BLANK INSTANCES: THE
+  COLLECTION SHUFFLE IS TRULY RANDOM, BUT THE HEAD OF EVERY PASS IS STRUCTURALLY THE SAME
+  SOURCES.** The maintainer: "Is the scraping engine really shuffling randomly ... I notice that
+  when I run multiple instances of the same blank app, the initial sources seem to look alike."
+  MEASURED (offline, on the 3,429 rows of `configs/sources.yml`; eight independent shuffles).
+  (1) The randomness is REAL: `stratified_interleave` uses the unseeded `random` module, reshuffles
+  on every call, and nothing anywhere in `src/` seeds it -- so two processes draw different
+  streams and no fixed rotation exists. (2) But the order is not a random SAMPLE, it is a
+  stratified ROUND-ROBIN -- one source per LANGUAGE per round, and inside a language one per TAG
+  (ruled 2026-06-17, superseding the per-country round-robin). The catalogue has 74 languages and
+  266 (language, tag) strata; stratum sizes run from 1 to 498, median 2; **21 languages hold
+  exactly one source and 112 of the 266 strata hold exactly one.** A singleton stratum can only
+  ever be represented by its one source, so that source is in round 1 of every pass on every
+  instance. (3) The consequence, measured: two independent instances share 12 % of their first
+  20 sources and 33 % of their first 100, where uniform random sampling would share 0.6 % and
+  2.9 %; twelve sources sit in the first 100 of all eight runs (berria.eus/eu, rtl.lu/lb,
+  remate.ph/tl, rfa.org/yue, nashaniva.com/be, delfi.lv/lv, vistinomer.mk/mk, meydan.tv/az ...).
+  A source's chance of being in the first 100 fetched is **100 % if it is the only source in its
+  language, 46 % at 2-5, 10 % at 6-50, 1.3 % at 51-500, and 0.1 % for one of the 2,358 English
+  rows** -- against 2.9 % if the head were a uniform sample. So the head of a pass is not a
+  sample of the catalogue at all: it is the rare-language tail, in a near-fixed set.
+  (4) THIS IS NOT A BUG IN THE SHUFFLE, IT IS THE ARITHMETIC OF THE FAIRNESS RULE: "equal turns
+  per language in any prefix" plus "this language has one source" forces that source into the
+  first round. Any ordering with prefix-fair strata does this. (5) WHEN IT MATTERS: with
+  `max_sources_per_run = 0` (the default, unbounded) a COMPLETED pass fetches every source exactly
+  once, so the order is invisible; the head is the whole story only where a pass does not complete
+  -- a stopped pass, a memory/CPU wind-down (deferred ids do run first next pass), and above all
+  the first minutes of a blank app, which over the ruled Tor default is a long time. That is
+  exactly the maintainer's observation. RECOMMENDED DEFAULT: **(a) keep the ordering and make it
+  VISIBLE rather than surprising** -- the head is rare-language-first BY DESIGN, so say so where
+  the operator watches a first pass, since the current surprise is that a "random" engine looks
+  identical twice. **(b) If instance-to-instance variety at the head is wanted, the only lever
+  that does not re-introduce the volume bias is to rotate the ROUND SCHEDULE by a random offset
+  per pass** (a singleton language then lands at a random round instead of round 1): prefix
+  fairness is then satisfied across passes rather than within one pass -- a real trade, and the
+  maintainer's to make. NOT RECOMMENDED: dropping the stratification for a uniform shuffle (69 %
+  of the catalogue is English, so the head would become English and the 2026-06-17 ruling is
+  undone), and seeding the RNG per instance (it is already unseeded; the sameness is structural,
+  not a seed problem). Scope caveat: measured on `configs/sources.yml` alone; the other seeded
+  catalogues add mostly large-stratum rows, which would sharpen the effect, not soften it. No
+  code changed.
+
+- **RULING 2026-09-10 (maintainer, answering the shuffle question above) — SHIPPED THE SAME TURN:
+  "can we randomize language as well as tag selection smartly so that both languages and tags are
+  selected equally but in a random order?"** This AMENDS the 2026-06-17 stratified-interleave
+  ruling: the equal-turns guarantee stays, the strict round-robin that carried it does not.
+  WHAT SHIPPED (`stratified_interleave`): at every step the next source is drawn by picking
+  UNIFORMLY among the languages that still have sources, then UNIFORMLY among that language's live
+  tags, then taking the next member of that (language, tag) group (the group itself shuffled). Equal
+  RATE at every instant — which is exactly what the round-robin gave — with the PHASE randomised.
+  Every source still runs exactly once per pass (ordering is never exclusion); the opt-in country
+  priority ladder is untouched; the rng stays injectable so tests are deterministic. MEASURED on the
+  3,429-row catalogue (74 languages, 21 holding one source), thirty passes of one instance, before
+  and after: **sources leading EVERY pass 21 -> 0**; distinct sources ever reaching the first 100
+  550 -> 581; English share of the first 100 stays ~2 % against 69 % of the catalogue (the
+  anti-volume-bias property the 2026-06-17 ruling exists for is intact). THE COST, STATED: a prefix
+  is now balanced ON AVERAGE rather than exactly — over the first 148 slots the distinct languages
+  seen fall 74.0 -> 68.2 and the per-language count spread rises 0.75 -> 1.42 (a language missed
+  this pass is served the next). THE PART THAT DID NOT IMPROVE, ALSO STATED: two independent
+  instances still share about a third of their first 100 (33 % -> 39.5 %), because that sameness is
+  not the phase — **a head that is balanced across 74 languages must be drawn from the small
+  languages, and there are only ~80 sources in languages holding five or fewer.** Randomising the
+  phase spreads WHICH of them lead; it cannot enlarge the pool they come from. The only lever that
+  would is proportional representation, i.e. undoing the 2026-06-17 ruling and handing the head to
+  English — not recommended, not done. Tests: `tests/test_stratified_interleave.py` now pins the
+  RATE (a 50-source language and a 1-source language supply the next source equally often; same for
+  tags within a language), the NON-PINNING (ten single-source languages no longer fill the first
+  eleven slots of every pass) and the unchanged anti-domination property, in place of the two tests
+  that pinned an exact per-round count.
+
+- **SHIPPED 2026-09-11 — THE FIRST REAL CATALOGUE GROWTH FROM THE PIPELINE: 3,429 -> 3,923 SOURCES,
+  AND THE FOUR PIPELINE DECISIONS (D1-D4) WERE APPLIED ON THEIR RECORDED DEFAULTS.** The maintainer
+  ran Stage A to completion on their own machine and returned `stage_a_results_2026-09-10.zip`
+  (kit `oo-candidate-kit-2026-09-10-a1db266`, the time-bounded build): **22,045 of 22,045
+  candidates judged, 3,396 with a live parsing feed** -- shortlist 3,588 judged / 643 verified,
+  remainder 18,457 judged / 2,753 verified. The time bounds shipped the day before cost the run
+  exactly TWO rows (one `crawl_delay_too_long` per worklist) and NO `host_timeout` at all, against
+  the hours the un-bounded build lost to a single host. Stage B and C then ran here on the
+  SHORTLIST chunk. D1-D4 were recorded as decisions-before-the-first-merge with recommended
+  defaults and had not been separately ruled; the maintainer returning the zip with no further
+  instruction is the runbook's own "run Stage B and C on this", so the defaults were APPLIED AS
+  RECORDED and are flagged here for objection rather than assumed silently: **D1** the rows landed
+  in `configs/sources.yml` through the text splice, onto the draft PR, which IS the review;
+  **D2** acceptance = journalism AND confidence high-or-medium; **D3** the shortlist first, the
+  remainder to follow in chunks; **D4** institutions and religious organisations out by type --
+  already structural, since all 3,396 verified rows carry `source_type: news` (the worklists were
+  built from the news rows alone). MEASURED: 17 batches of 40 on Haiku, two hand-known canaries
+  mixed into each; **16 batches passed code re-validation on the first attempt and the canaries
+  were correct in every single one**; batch 11 answered only 35 of its 42 rows, was marked
+  untrusted WHOLE rather than merged partially, and passed on a re-run that named completeness as
+  the hard requirement. Of 643 verified rows, 494 merged and 149 were refused -- `academic` 57,
+  `other` 27, `institution` 18, `religious` 14, `aggregator` 12, `magazine`/`broadcaster` 5 each,
+  `trade-or-corporate` 4, `personal-blog` 2, `low_confidence` 5. The splice accepted all 494 and
+  refused none (no duplicate by registrable domain or alias against any shipped catalogue), and
+  the diff is **7,717 lines added, 0 deleted** -- the text splice never re-serialised a shipped
+  row. WHAT THE CATALOGUE GAINED: 494 sources over **97 countries and 65 languages** (news 305,
+  broadcaster 101, magazine 54, wire-agency 28, investigative 6; Europe 290, Asia 128, Africa 45,
+  North America 22, South America 8, Oceania 1), and **twelve countries that had NO catalogue
+  source at all now have one** (ad, ai, cw, gw, ky, ly, mr, pw, st, tl, va, ye) -- the T1 gap the
+  2026-09-10 analysis measured. Biggest gains: gr 14->43, no 8->36, se 10->38, fi 6->28, in
+  82->103, es 42->60. NOT DONE, DELIBERATELY: nothing
+  was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
+  are kept, not rejected, and wait on the robots ruling above.
+
+- **SHIPPED 2026-09-11 — THE RULING APPLIED: TWO NEW CATALOGUES, AND THE 60k GETS ITS OWN
+  WORKLISTS AND AN 8-MACHINE SPLIT.** The maintainer approved the recommendation and asked to deal
+  with the other 60k, with clear instructions, a new kit if needed, and — the constraint that drove
+  the engineering — *"I can run up to 8 versions of this script on 8 different VMs ... but we should
+  avoid source testing redundancy (avoid testing the same source 8 times)."*
+  **(1) THE TWO CATALOGUES.** `configs/academic_sources.yml` (606 rows, all `scientific-journal`,
+  `via:academic`) and `configs/official_sources.yml` (43 rows, `via:official`), seeded by default
+  in `seed_default_sources` after legal, and added to BOTH `APP_PROVIDED_PROVENANCES` and
+  `CURATED_PROVENANCES`. The second is the load-bearing choice and it is NOT a formality: leaving
+  them unqualified parks them behind the ~73k never-attempted discovered rows (finding F2), where
+  5/pass means never — so "let them earn it" would mean "never collect them", and there is nothing
+  to earn, because qualification is an extraction-validity check by its own docstring. Same basis
+  pill, same six-month re-check, same disqualification on a failed one. They stay OUT of
+  `configs/sources.yml` so a corpus statistic over the news catalogue keeps meaning what it says.
+  **(2) THE 43 ARE A SPLIT, NOT THE BUCKET.** The 135 `institution` rows were re-read on the
+  narrower question — is this a body that publishes THE RECORD of its own decisions, data or
+  operations? — 2 agents, Sonnet, both answering all 135 in full, default OUT when the evidence is
+  thin. **43 official, 92 not**: in are 19 government + 16 research institutes + 3 archives/libraries
+  + 3 NGO/think-tanks + 1 parliament + 1 statistics office (`parliament.na` publishing its own Order
+  Papers, `scb.se`, `governmentprintery.gov.bb`, `fn.se`); out are 43 universities (campus PR, not a
+  record), 16 clubs and associations, 13 professional bodies, museums and foundations. Typed with the
+  project's OWN `CANONICAL_SOURCE_TYPES` — `government-primary`, `academic-research`, `think-tank`,
+  `statistics` — which already existed and needed no new vocabulary.
+  **(3) THE 60k HAS WORKLISTS NOW.** `build_candidate_kit` emits `worklist_3_institutions.csv`
+  (37,079) and `worklist_4_religious.csv` (22,842) from the discovered rows `analyse()` never
+  offered Stage A at all. Religious is shipped but recommended LAST or not at all.
+  **(4) NO MACHINE RE-TESTS A SOURCE WE ALREADY HAVE.** Two separate redundancies, both measured.
+  (a) ACROSS THE FLEET: `--shard I/N` on `verify_candidate_feeds.py` and `run_stage_a.py`, keyed on
+  the REGISTRABLE DOMAIN via sha256 — the same key `run()` and the resume cursor already use, so the
+  split cannot drift from them, and stable rather than `hash()`, which is salted per process and
+  would hand each machine a DIFFERENT partition of one worklist (rows judged twice, rows judged
+  never, nothing in any single run's output showing it). Measured exact on the real 37,079-row
+  worklist: `[4518, 4750, 4549, 4575, 4665, 4724, 4676, 4622]`, sum 37,079. The results zip carries
+  `_shard3of8` in its name, because eight files called `stage_a_results_<date>.zip` is how seven
+  slices get silently overwritten in one folder. WHAT IT DOES NOT CLAIM, since the stronger claim is
+  the tempting one: `registrable_domain` strips `www.` but not arbitrary subdomains, so two hosts of
+  one organisation may land on two machines — no worse than `--workers 12` on one box, and moot on
+  this data, where all 18,457 remainder rows are already distinct registrable domains.
+  (b) AGAINST THE CATALOGUE: `analyse()` dedupes against the EXPORT's catalogue rows — the catalogue
+  as it was when the export was taken — and this pipeline has since added 2,800 rows of its own. A
+  fresh kit therefore re-offered them: **557 already-shipped domains in worklist 1 and 2,243 in
+  worklist 2**, measured. All four worklists now filter against every shipped catalogue, the two new
+  ones included; re-measured at 0, 0, 0, 0. w1 3,588 -> 3,031 and w2 18,457 -> 16,214 are that
+  subtraction, not a loss.
+  **(5) THE KIT IS REBUILT AND THE MAINTAINER NEEDS THE NEW ONE** — `oo-candidate-kit-2026-09-11`,
+  6.9 MB, built from the same export: it carries the sharding, the four deduped worklists, and the
+  fabricated-country-suffix fix, none of which exist in the 2026-09-10 zip.
+  A FIXTURE LESSON, caught by the new dedupe: `test_candidate_kit` used REAL newspaper domains
+  (`ladepeche.fr`, `ouest-france.fr`) as synthetic candidates, and the catalogue now ships them, so
+  the correct dedupe deleted the fixture's own rows and reddened two tests. The domains are now
+  `.example`, and the test that would have caught it earlier — no worklist may offer a domain the
+  catalogue already ships — is pinned.
+
+- **RULED + SHIPPED 2026-09-11 (maintainer: "go ahead with your recommendation") — SHOULD THE 1,245 NOT-JOURNALISM ROWS BE COLLECTED TOO?** The
+  maintainer, on the refusal counts: *"can you justify the 1,096 refusals are by type — academic
+  549, institution 117, broadcaster 107? Shouldn't they be scrapped as well if their content
+  passes the qualification step?"* FIRST, A CORRECTION OWED: "by type" was the wrong shorthand in
+  the PR summary. `merge` rejects on ONE boolean — `journalism`, "does this outlet publish
+  reporting?" — and the kind is only the LABEL recorded beside it, which is why
+  `not_journalism:broadcaster` (112) exists at all: a Japanese community FM or a Viasat
+  entertainment channel is a broadcaster in FORM whose feed is schedules and music. The type is
+  the description of what was refused, never the test.
+  SECOND, THE PREMISE DOES NOT HOLD, and it is THIS PR's own finding that breaks it: qualification
+  is not a content gate. `src/catalog/qualification.py` says so in its own docstring — the verdict
+  records "WHAT was checked (extraction validity) ... never a quality figure" — and F4 of the
+  2026-09-10 analysis measured it: 0 of 457 field sources reached the 0.5 pathology floor, and a
+  trial-sized cohort can only fire `PATHOLOGY_ABS_FLOOR` at all. So qualification asks "can we
+  extract text from this", which a peer-reviewed PDF-backed journal and a radio schedule both pass.
+  It cannot be the thing that decides; if a class is admitted, it is simply in.
+  THIRD, THE INSTINCT IS RIGHT AND THE PROJECT'S OWN BEHAVIOUR SAYS SO: the app already ships
+  **389 institutional sources** — `legal_sources.yml` 51, `legal_sources_generated.yml` 226,
+  `markets_sources.yml` 112. "Institutions are not for this app" is FALSE. D4 was a scoping
+  decision for this pipeline, never a principle, and the REPORT already called the 37,079
+  institutions "the seed of the official-sources vertical".
+  WHAT IS ACTUALLY IN THE THREE BUCKETS, read rather than assumed: `academic` 606 are peer-reviewed
+  journals (`vestnik.szd.si`, `nordiskbarnehageforskning.no`) — months-long cadence, a paper is not
+  an event, and the date/trend machinery would read them as news; `institution` 135 is MIXED and
+  wants splitting, not a blanket verdict (`fn.se` the UN Association of Sweden beside
+  `muzeum.torun.pl` a museum's events page and `esperanto.pl`); `broadcaster` 112 is where the
+  refusal is most defensible — nine `*fm*.jp` community stations, all nine judged non-reporting
+  consistently, plus entertainment TV.
+  RECOMMENDED (not done, awaiting the ruling): **not a blanket admit into `configs/sources.yml`.**
+  `academic` and the primary-source half of `institution` belong in their OWN catalogue beside
+  legal and markets, so the briefing and trend surfaces can lens them separately and a corpus
+  statistic keeps meaning what it says; `broadcaster`, `religious`, `personal-blog` and
+  `aggregator` stay out on the merits.
+  THE DECISION IS CHEAP AND STAYS CHEAP, which is the point of the artefact shipped with this
+  entry: `docs/research/sources/discovered_candidates_2026-09-10/stage_a/triage_refused_entries.yml`
+  holds all 1,245 unmerged rows as READY catalogue entries (the Stage A verdict — live parsing
+  feed, country, language, region) plus `refused_reason`/`refused_as`/`refused_confidence`/
+  `refused_note`/`worklist`. It exists because the triage answers and the 17 MB Stage A cursors
+  live only in an EPHEMERAL session scratchpad: without it, revisiting this costs a full Stage B
+  re-run. With it, admitting a class is a filter over one file into `merge_source_batch.py` —
+  proved here, not asserted: the 606 academic rows dry-ran through the splice as
+  `accepted 606, refused 0`, zero model spend, zero network, nothing written.
+
+- **SHIPPED 2026-09-11 (same day, second chunk) — THE REMAINDER: 3,923 -> 5,580 SOURCES, AND THE
+  CATALOGUE'S OWN NAMING CONVENTION CAUGHT A FABRICATED COUNTRY.** The maintainer asked to "go
+  ahead with the remainder", so the other 2,753 verified rows ran through the SAME pipeline on the
+  same D1-D4 defaults: **69 batches of 40 on Haiku** (2,891 rows with canaries), every one answered
+  IN FULL on the first pass -- the completeness wording learned from shortlist batch 11 was carried
+  into every prompt and the short-answer failure did not recur once. Two batches came back untrusted
+  on a DIFFERENT failure: an out-of-enum `kind` (`corporate` where the enum has `trade-or-corporate`;
+  `tabloid`, which is a TOPIC in the vocabulary and never a kind). The validator counts an
+  out-of-enum answer as an unanswered row and refuses the WHOLE batch -- 80 rows -- rather than
+  merging around it, which is the right refusal; both were re-run once on the escalation model
+  (the runbook's own prescription) naming the closed list literally, and both passed. Canaries were
+  read correctly in all 86 batches across the two chunks. **1,657 of 2,753 merged**, 1,096 refused
+  BY TYPE: `academic` 549, `institution` 117, `broadcaster` 107, `other` 95, `religious` 62,
+  `trade-or-corporate` 42, `magazine` 42, `aggregator` 39, `personal-blog` 35, `low_confidence` 8.
+  The splice accepted all 1,657 and refused none as a duplicate; the diff is **26,119 lines added,
+  0 deleted**. The new rows span **84 countries and 53 languages**, two of which (`ga` Irish, `zu`
+  Zulu) the catalogue did not have at all; by form, news 926, broadcaster 482, magazine 207,
+  wire-agency 27, investigative 15; by region, Europe 780, Asia 250, South America 248, North
+  America 194, Africa 94, Oceania 91. Biggest gains: es 60->194, ca 38->170, br 32->148, it 24->135,
+  au 28->112, no 36->109, ru 37->108, pl 20->82, mx 26->79, cz 24->73, ar 12->59. Over the two
+  chunks the catalogue grew **3,429 -> 5,580, a 63 % increase**, from 22,045 candidates the
+  maintainer's own machine verified at zero model cost.
+  **THE DEFECT THIS CHUNK FOUND, AND THE REASON IT IS WORTH THE PARAGRAPH:** the splice landed
+  `3CatInfo (tv)` -- the Catalan public broadcaster, `country: es` -- and
+  `tests/test_seed_sources.py::test_catalog_honours_its_own_country_suffix_convention` went red.
+  `configs/sources.yml` uses a trailing parenthetical as a human-authored ORIGIN marker, and
+  `country_from_title` reads it that way, so `(tv)` (the channel's branding) parses as TUVALU and
+  the name asserts an origin the row's own field denies. A harvested site title lands in that slot
+  by accident, which makes this a CLASS, not one row: it will recur on every future chunk. Fixed in
+  TWO places, matching each tool's contract -- `to_catalogue_entry` NORMALISES (a trailing
+  parenthetical is kept only when it agrees with the row's country, and dropped otherwise, including
+  when the row has no country, since then nothing supports the claim), and `merge_source_batch.py`
+  REFUSES (the splice's contract is refuse-never-rewrite; it is the gate for an entry arriving any
+  other way). The stated cost: a broadcaster genuinely branded `(TV)` loses that suffix, paid
+  because in THIS file that slot means origin and a name asserting an origin the row denies is a
+  fabricated fact. Pinned by 3 new tests (the contradiction stripped, an agreeing suffix KEPT, a
+  non-country parenthetical like `(English)` untouched, a name that is nothing but the suffix kept
+  rather than collapsed, and both splice refusals with their reasons).

@@ -106,8 +106,28 @@ VERDICT_NO_EVIDENCE = "no_evidence"
 # move the re-verification clock -- see `_last_clock_subquery`.
 VERDICT_INHERITED = "inherited"
 
+# A stamp the CURATED CATALOGUE carries BY RULING (maintainer, 2026-09-10: "make the curated
+# catalogue qualified, and as with any other qualified sources, they should go through the
+# same periodic re-qualification process as any other source"). This AMENDS the 2026-07-20
+# no-grandfathering clause: a hand-vetted catalogue row is admitted at seed instead of waiting
+# its turn behind a discovery backlog of tens of thousands, and the six-month re-verification
+# clock is what keeps the stamp honest -- a failed re-check disqualifies it like any other.
+# Like `inherited` and `no_evidence` it is an ATTEMPT-LOG-only verdict, never a Source.status
+# value: it records WHY the row reads qualified (curation, not measurement), it neither
+# advances nor resets the disqualified ladder, and it starts the local re-verification clock
+# exactly as adoption does (see CLOCK_VERDICTS). Scope = `provenance_scope.CURATED_PROVENANCES`.
+VERDICT_CURATED = "curated"
+
+# Written to `Source.qualification_criteria_version` by a curated stamp, so the STAMP ITSELF
+# says what judged it -- nothing did. A re-check that passes replaces it with the real
+# CRITERIA_VERSION; the overlay loader treats it as adoptable (a measured verdict outranks
+# curation, in either direction); the export reports it as basis `curated` and never ships it
+# as an earned verdict.
+CURATED_CRITERIA_VERSION = "oo-curated-catalog-1"
+
 # The verdicts that are actual JUDGEMENTS -- a real evaluation of real evidence, by some
-# instance. The other two attempt verdicts record why a judgement did NOT happen.
+# instance. The other attempt verdicts record why a judgement did NOT happen, or where a
+# stamp came from instead.
 JUDGING_VERDICTS = (STATUS_QUALIFIED, STATUS_DISQUALIFIED)
 
 # The verdicts that RESET the local re-verification clock. Deliberately WIDER than
@@ -115,8 +135,11 @@ JUDGING_VERDICTS = (STATUS_QUALIFIED, STATUS_DISQUALIFIED)
 # touches the ladder, and the export still reports it as basis "inherited"), but it IS the
 # moment this instance took responsibility for the source, so it is where the local clock
 # starts. `no_evidence` is in neither set -- it records that a judgement could not happen,
-# so counting it either way would be a lie in a different direction.
-CLOCK_VERDICTS = (*JUDGING_VERDICTS, VERDICT_INHERITED)
+# so counting it either way would be a lie in a different direction. `curated` (2026-09-10)
+# joins for the same reason as `inherited`: the stamp is not a judgement, but it is the moment
+# this instance admitted the source, and "the same periodic re-qualification process as any
+# other source" means the six-month clock starts there.
+CLOCK_VERDICTS = (*JUDGING_VERDICTS, VERDICT_INHERITED, VERDICT_CURATED)
 
 # RE-VERIFICATION OF A QUALIFIED SOURCE (maintainer ruling 2026-09-04). A FLAT interval,
 # never the disqualified ladder's doubling: doubling encodes diminishing hope after repeated
@@ -162,16 +185,17 @@ def consecutive_disqualifications_from_verdicts(verdicts_newest_first: list[str]
     """PURE core: count the TRAILING run of ``disqualified`` verdicts from the newest
     attempt backwards -- a single ``qualified`` verdict anywhere in the run stops the
     count (the ladder resets on the NEXT success, per the ruling). A ``no_evidence``
-    entry (2026-07-23 livelock fix) or an ``inherited`` one (2026-09-04) is INCONCLUSIVE
-    -- neither advances nor resets the ladder, so both are skipped rather than stopping
-    the count; a source stays at its real ladder position until an attempt that actually
-    judges it again. Inheriting a stamp is not this instance measuring anything, so it
-    must not be able to reset a ladder that real failures built."""
+    entry (2026-07-23 livelock fix), an ``inherited`` one (2026-09-04) or a ``curated`` one
+    (2026-09-10) is INCONCLUSIVE -- none advances or resets the ladder, so all are skipped
+    rather than stopping the count; a source stays at its real ladder position until an
+    attempt that actually judges it again. Inheriting or curating a stamp is not this
+    instance measuring anything, so it must not be able to reset a ladder that real
+    failures built."""
     n = 0
     for v in verdicts_newest_first:
         if v == STATUS_DISQUALIFIED:
             n += 1
-        elif v in (VERDICT_NO_EVIDENCE, VERDICT_INHERITED):
+        elif v in (VERDICT_NO_EVIDENCE, VERDICT_INHERITED, VERDICT_CURATED):
             continue
         else:
             break
@@ -450,6 +474,84 @@ def log_inherited_stamps(
             criteria_version=criteria_version,
         ))
     return len(sources)
+
+
+def log_curated_stamps(session: Session, sources: list[Source], *, now: datetime) -> int:
+    """Record that each source's stamp comes from the CURATED CATALOGUE (2026-09-10 ruling),
+    not from a measurement. Append-only like every other attempt row; ``Source.status`` is
+    the caller's to set. The attempt carries ``CURATED_CRITERIA_VERSION`` because no judging
+    criteria were applied, and a history that named one would be a lie about what happened."""
+    from src.database.models import SourceQualificationAttempt
+
+    for source in sources:
+        session.add(SourceQualificationAttempt(
+            source_id=source.id, attempted_at=now, verdict=VERDICT_CURATED,
+            criteria_version=CURATED_CRITERIA_VERSION,
+        ))
+    return len(sources)
+
+
+def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> dict:
+    """Admit the curated catalogue by ruling (maintainer, 2026-09-10) -- the seed-time and
+    boot-time reconcile that stamps every hand-vetted catalogue row ``qualified``.
+
+    WHAT IT TOUCHES, and only that: rows in ``provenance_scope.CURATED_PROVENANCES`` that
+    still read ``unqualified`` AND have never been JUDGED (no attempt row with a judging
+    verdict). Everything else is left exactly as it is:
+
+    * a ``disqualified`` catalogue row keeps its verdict -- the ruling admits the catalogue,
+      it does not launder a source this instance measured and refused;
+    * a ``qualified`` row (measured, inherited, or stamped by an earlier boot) is not
+      re-stamped, so the clock it already carries is never restarted;
+    * a discovered, cited or hand-added row is out of scope by provenance, whatever it reads.
+
+    Idempotent: a stamped row stops matching (``qualified`` is not ``unqualified``), so every
+    later boot is one indexed query and no writes. Runs AFTER ``apply_overlay`` at boot, so a
+    shipped, measured verdict for a catalogue domain -- a ``disqualified`` in particular --
+    lands first and wins.
+
+    Returns counts, kept apart because they are different facts: ``stamped`` (this call),
+    ``already_qualified`` (an earlier boot, a measurement, or an adoption), ``disqualified``
+    (measured and refused; untouched), ``kept_local`` (an unqualified row that nevertheless
+    carries a judging attempt -- an anomaly this never overwrites), ``curated`` (the scope).
+    """
+    from src.catalog.provenance_scope import curated_filter
+    from src.database.models import Source, SourceQualificationAttempt
+
+    now = now or datetime.now(UTC)
+    scope = session.query(Source).filter(curated_filter(Source.tags))
+    counts = {"curated": 0, "stamped": 0, "already_qualified": 0, "disqualified": 0,
+              "kept_local": 0}
+    pending = scope.filter(Source.status == STATUS_UNQUALIFIED).all()
+    counts["curated"] = int(scope.count())
+    counts["already_qualified"] = int(
+        scope.filter(Source.status == STATUS_QUALIFIED).count()
+    )
+    counts["disqualified"] = int(
+        scope.filter(Source.status == STATUS_DISQUALIFIED).count()
+    )
+    if not pending:
+        return counts
+    judged = {
+        int(sid)
+        for (sid,) in session.query(SourceQualificationAttempt.source_id)
+        .filter(SourceQualificationAttempt.verdict.in_(JUDGING_VERDICTS))
+        .distinct()
+    }
+    stamped: list[Source] = []
+    for source in pending:
+        if source.id in judged:
+            counts["kept_local"] += 1
+            continue
+        source.status = STATUS_QUALIFIED
+        source.qualified_at = now
+        source.qualification_criteria_version = CURATED_CRITERIA_VERSION
+        stamped.append(source)
+    if stamped:
+        log_curated_stamps(session, stamped, now=now)
+        session.commit()
+    counts["stamped"] = len(stamped)
+    return counts
 
 
 def evaluate_and_stamp(
