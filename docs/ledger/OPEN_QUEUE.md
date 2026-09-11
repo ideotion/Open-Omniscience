@@ -12488,6 +12488,49 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
   are kept, not rejected, and wait on the robots ruling above.
 
+- **PENDING RULING 2026-09-11 — SHOULD THE 1,245 NOT-JOURNALISM ROWS BE COLLECTED TOO?** The
+  maintainer, on the refusal counts: *"can you justify the 1,096 refusals are by type — academic
+  549, institution 117, broadcaster 107? Shouldn't they be scrapped as well if their content
+  passes the qualification step?"* FIRST, A CORRECTION OWED: "by type" was the wrong shorthand in
+  the PR summary. `merge` rejects on ONE boolean — `journalism`, "does this outlet publish
+  reporting?" — and the kind is only the LABEL recorded beside it, which is why
+  `not_journalism:broadcaster` (112) exists at all: a Japanese community FM or a Viasat
+  entertainment channel is a broadcaster in FORM whose feed is schedules and music. The type is
+  the description of what was refused, never the test.
+  SECOND, THE PREMISE DOES NOT HOLD, and it is THIS PR's own finding that breaks it: qualification
+  is not a content gate. `src/catalog/qualification.py` says so in its own docstring — the verdict
+  records "WHAT was checked (extraction validity) ... never a quality figure" — and F4 of the
+  2026-09-10 analysis measured it: 0 of 457 field sources reached the 0.5 pathology floor, and a
+  trial-sized cohort can only fire `PATHOLOGY_ABS_FLOOR` at all. So qualification asks "can we
+  extract text from this", which a peer-reviewed PDF-backed journal and a radio schedule both pass.
+  It cannot be the thing that decides; if a class is admitted, it is simply in.
+  THIRD, THE INSTINCT IS RIGHT AND THE PROJECT'S OWN BEHAVIOUR SAYS SO: the app already ships
+  **389 institutional sources** — `legal_sources.yml` 51, `legal_sources_generated.yml` 226,
+  `markets_sources.yml` 112. "Institutions are not for this app" is FALSE. D4 was a scoping
+  decision for this pipeline, never a principle, and the REPORT already called the 37,079
+  institutions "the seed of the official-sources vertical".
+  WHAT IS ACTUALLY IN THE THREE BUCKETS, read rather than assumed: `academic` 606 are peer-reviewed
+  journals (`vestnik.szd.si`, `nordiskbarnehageforskning.no`) — months-long cadence, a paper is not
+  an event, and the date/trend machinery would read them as news; `institution` 135 is MIXED and
+  wants splitting, not a blanket verdict (`fn.se` the UN Association of Sweden beside
+  `muzeum.torun.pl` a museum's events page and `esperanto.pl`); `broadcaster` 112 is where the
+  refusal is most defensible — nine `*fm*.jp` community stations, all nine judged non-reporting
+  consistently, plus entertainment TV.
+  RECOMMENDED (not done, awaiting the ruling): **not a blanket admit into `configs/sources.yml`.**
+  `academic` and the primary-source half of `institution` belong in their OWN catalogue beside
+  legal and markets, so the briefing and trend surfaces can lens them separately and a corpus
+  statistic keeps meaning what it says; `broadcaster`, `religious`, `personal-blog` and
+  `aggregator` stay out on the merits.
+  THE DECISION IS CHEAP AND STAYS CHEAP, which is the point of the artefact shipped with this
+  entry: `docs/research/sources/discovered_candidates_2026-09-10/stage_a/triage_refused_entries.yml`
+  holds all 1,245 unmerged rows as READY catalogue entries (the Stage A verdict — live parsing
+  feed, country, language, region) plus `refused_reason`/`refused_as`/`refused_confidence`/
+  `refused_note`/`worklist`. It exists because the triage answers and the 17 MB Stage A cursors
+  live only in an EPHEMERAL session scratchpad: without it, revisiting this costs a full Stage B
+  re-run. With it, admitting a class is a filter over one file into `merge_source_batch.py` —
+  proved here, not asserted: the 606 academic rows dry-ran through the splice as
+  `accepted 606, refused 0`, zero model spend, zero network, nothing written.
+
 - **SHIPPED 2026-09-11 (same day, second chunk) — THE REMAINDER: 3,923 -> 5,580 SOURCES, AND THE
   CATALOGUE'S OWN NAMING CONVENTION CAUGHT A FABRICATED COUNTRY.** The maintainer asked to "go
   ahead with the remainder", so the other 2,753 verified rows ran through the SAME pipeline on the
