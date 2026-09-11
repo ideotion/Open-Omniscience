@@ -100,6 +100,67 @@ def test_the_fix_shape_no_commit_can_land_inside_the_window(tmp_path):
     assert a.execute("SELECT count(*) FROM t").fetchone()[0] == 3
 
 
+def test_the_new_fix_shape_read_then_end_snapshot_then_gate_survives_a_concurrent_commit(tmp_path):
+    """THE NEW SHAPE (A2 fix, 2026-09-11): rather than holding the gate across the
+    whole scan (S2.4's fix -- correct, but it serialised every other writer behind a
+    26-minute scan on the field corpus, finding A2), end the read snapshot
+    (`ROLLBACK`) BEFORE taking the gate. This is the load-bearing proof: a concurrent
+    commit lands WHILE the (now ungated) read snapshot is open -- the exact
+    interleaving that produced SQLITE_BUSY_SNAPSHOT under the pre-S2.4 shape -- and
+    it must NOT break anything, because by the time the gate is taken and a write is
+    attempted, no snapshot survives to be promoted."""
+    path, a = _wal_store(tmp_path)
+    b = _second(path)
+    gate = threading.Lock()
+
+    # DECIDE phase: an UNGATED read. Takes a snapshot.
+    a.execute("BEGIN DEFERRED")
+    a.execute("SELECT count(*) FROM t").fetchone()
+    # A concurrent writer commits WHILE the snapshot is open -- this is fine now,
+    # because nothing here is about to promote that same transaction to a write.
+    b.execute("BEGIN IMMEDIATE")
+    b.execute("INSERT INTO t VALUES(2)")
+    b.execute("COMMIT")
+    # END the snapshot BEFORE the gate -- this one line is the entire fix.
+    a.execute("ROLLBACK")
+
+    # APPLY phase: a FRESH write transaction, opened only once the gate is held --
+    # no read snapshot is carried across the gate boundary.
+    with gate:
+        a.execute("BEGIN DEFERRED")
+        a.execute("SELECT count(*) FROM t").fetchone()  # a fresh snapshot, taken UNDER the gate
+        a.execute("INSERT INTO t VALUES(3)")
+        a.execute("COMMIT")  # must NOT raise SQLITE_BUSY_SNAPSHOT
+
+    # 1 from setup + b's concurrent insert + a's write: all three landed.
+    assert a.execute("SELECT count(*) FROM t").fetchone()[0] == 3
+
+
+def test_without_ending_the_snapshot_the_same_interleaving_still_breaks_it(tmp_path):
+    """NEGATIVE CONTROL for the test above -- proves it actually discriminates rather
+    than passing vacuously. Same interleaving, but WITHOUT the `ROLLBACK` that ends
+    the read snapshot before the gate is taken (i.e. the gate is bolted on around the
+    write without first ending the earlier read -- a naive "just add a lock" fix that
+    does NOT reproduce S2.4's actual mechanism). The old failure mode reproduces
+    exactly, which is what proves the ROLLBACK step above is the operative fix and
+    not incidental."""
+    path, a = _wal_store(tmp_path)
+    b = _second(path)
+    gate = threading.Lock()
+
+    a.execute("BEGIN DEFERRED")
+    a.execute("SELECT count(*) FROM t").fetchone()
+    b.execute("BEGIN IMMEDIATE")
+    b.execute("INSERT INTO t VALUES(2)")
+    b.execute("COMMIT")
+    # NO rollback here -- the snapshot from the ungated read is still open when the
+    # gate is (belatedly) taken and a write is attempted on the SAME transaction.
+    with gate:
+        with pytest.raises(sqlite3.OperationalError) as exc:
+            a.execute("INSERT INTO t VALUES(3)")
+        assert "locked" in str(exc.value).lower()
+
+
 def test_run_discovery_holds_the_gate_from_before_the_scan():
     """MUTATION TARGET, structural. Anchored on the parse tree, so a comment quoting
     write_lock cannot satisfy it, and scoped to run_discovery's own body.
@@ -133,31 +194,65 @@ def test_run_discovery_holds_the_gate_from_before_the_scan():
     raise AssertionError("run_discovery no longer opens a savepoint")
 
 
-def test_apply_source_topics_reads_inside_the_gate():
-    """The sibling call site: its write_lock used to be taken AFTER derive_source_topics
-    scanned the corpus, leaving the identical window."""
+def test_apply_source_topics_reads_outside_the_gate():
+    """The sibling call site, UPDATED for the A2 fix (2026-09-11): the corpus-wide
+    scan (derive_source_topics, a GROUP BY, AND the old session.query(Source).all()
+    -- 86,470 rows on the field corpus) used to run INSIDE the gate, right after it.
+    That fixed SQLITE_BUSY_SNAPSHOT (S2.4) but pinned a pooled connection for the
+    whole scan on every writer in the process (finding A2, the source_topics half).
+
+    The NEW shape moves the scan into source_topic_candidates (the decide phase),
+    called BEFORE any gate is taken, then ends that read transaction
+    (`session.rollback()`) before `apply_source_topics` opens the write gate for the
+    mechanical Source.tags updates + commit. This test must fail on the OLD shape
+    (gate held across the scan) and pass on the NEW one -- the opposite of what this
+    test asserted before the fix, which is the point: a test that would still pass
+    against the broken shape proves nothing."""
     import ast
 
-    src = open("src/analytics/source_topics.py", encoding="utf-8").read()
+    with open("src/analytics/source_topics.py", encoding="utf-8") as f:
+        src = f.read()
     tree = ast.parse(src)
-    fn = next(
+
+    apply_fn = next(
         n for n in ast.walk(tree)
         if isinstance(n, ast.FunctionDef) and n.name == "apply_source_topics"
     )
-    gate_line = derive_line = None
-    for node in ast.walk(fn):
-        if isinstance(node, ast.With):
-            for item in node.items:
-                call = item.context_expr
-                if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "write_lock":
-                    gate_line = call.lineno
-        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "derive_source_topics":
-            derive_line = node.lineno
+    # The corpus-wide scan must NEVER be called from inside apply_source_topics
+    # itself -- it must live entirely in the decide phase.
+    for node in ast.walk(apply_fn):
+        assert not (
+            isinstance(node, ast.Call) and getattr(node.func, "id", "") == "derive_source_topics"
+        ), "the corpus-wide scan must not be called from inside apply_source_topics"
+
+    # apply_source_topics must end its read transaction (session.rollback()) BEFORE
+    # taking the write gate -- ordered by source line, the same discriminator
+    # run_discovery's sibling test uses.
+    rollback_line = gate_line = None
+    for node in ast.walk(apply_fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "rollback":
+            rollback_line = node.lineno
+        if getattr(func, "id", "") == "write_lock":
+            gate_line = node.lineno
+    assert rollback_line is not None, "apply_source_topics must end its read transaction"
     assert gate_line is not None, "apply_source_topics must take the write gate"
-    assert derive_line is not None, "apply_source_topics must derive the topics"
-    assert gate_line < derive_line, (
-        "the gate must be held BEFORE the scan that takes the read snapshot"
+    assert rollback_line < gate_line, (
+        "the read snapshot must be ended BEFORE the write gate is taken"
     )
+
+    # The decide phase itself must still do the real derivation (never a stub that
+    # would make the above vacuously true).
+    decide_fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "source_topic_candidates"
+    )
+    assert any(
+        isinstance(n, ast.Call) and getattr(n.func, "id", "") == "derive_source_topics"
+        for n in ast.walk(decide_fn)
+    ), "source_topic_candidates must derive the topic proposals"
 
 
 def test_the_tail_ride_alongs_use_their_own_session():

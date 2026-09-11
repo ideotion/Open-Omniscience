@@ -258,23 +258,75 @@ def _add_candidate(session, *, domain: str, name: str | None, channel: str, evid
     return True
 
 
-def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -> list[str]:
-    """Suggest external domains that >= min_citations distinct stored articles cite."""
+def _citation_scan_budget_s() -> float:
+    """Soft wall-clock budget for the citation channel's article_links scan (finding
+    A2: the field corpus has 1.3M+ distinct (url, article_id) pairs, and an unbounded
+    scan pinned a pooled connection for 26 minutes). Default
+    ``OO_DISCOVERY_CITATION_BUDGET_S`` = 30s; <= 0 = unbounded. Same grammar as
+    ``src/analytics/store.py``'s ``_maint_budget_s``/``prune_orphan_keywords``."""
+    import os
+
+    try:
+        return float(os.getenv("OO_DISCOVERY_CITATION_BUDGET_S", "30"))
+    except ValueError:
+        return 30.0
+
+
+def citation_candidates(
+    session,
+    *,
+    cap: int,
+    min_citations: int = _CITATION_MIN,
+    budget_s: float | None = None,
+    extra_known: set[str] | None = None,
+) -> dict:
+    """DECIDE phase for the citation channel: PURE reads, no DB writes. Returns plain
+    Python values (dicts of primitives), never ORM objects, so nothing here can
+    lazy-load once the caller ends the read transaction. Safe to run OUTSIDE the
+    write gate and OUTSIDE any savepoint (see ``run_discovery``'s comment for why
+    that split fixes SQLITE_BUSY_SNAPSHOT rather than merely relocating it).
+
+    Streams the ``(normalized_url, article_id)`` pairs via ``yield_per`` -- the
+    field corpus has 1.3M+ distinct pairs, so the whole result is never
+    materialised at once -- under a soft wall-clock DEADLINE (``budget_s``; default
+    :func:`_citation_scan_budget_s`, <= 0 unbounded). A truncated scan reports
+    ``complete: False`` with the rows actually scanned and a stated reason, and
+    every per-domain citation count in that case is a FLOOR
+    (``distinct_citing_articles_at_least``), never presented under the
+    complete-scan key (``distinct_citing_articles``) -- a truncated number dressed
+    as a complete one is exactly the defect this fix exists to avoid.
+
+    ``extra_known`` carries domains already DECIDED (but not yet inserted) by an
+    earlier channel in the same ``run_discovery`` pass -- standing in for the
+    flush-based cross-channel dedup the old single continuous transaction gave for
+    free (see ``run_discovery``).
+    """
+    import time as _time
+
     from src.catalog.normalize import is_social, registrable_domain
     from src.database.models import ArticleLink
 
-    known = _existing_domains(session)
-    pairs = session.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct().all()
+    budget = budget_s if budget_s is not None else _citation_scan_budget_s()
+    deadline = (_time.monotonic() + budget) if budget > 0 else None
+
+    known = _existing_domains(session) | (extra_known or set())
     by_domain: dict[str, set[int]] = defaultdict(set)
-    for nu, aid in pairs:
+    rows_scanned = 0
+    complete = True
+    q = session.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct()
+    for nu, aid in q.yield_per(2000):
+        rows_scanned += 1
         dom = registrable_domain(nu)
         if dom:
             by_domain[dom.lower()].add(aid)
+        if deadline is not None and _time.monotonic() > deadline:
+            complete = False
+            break
 
-    created: list[str] = []
-    skipped = {"commerce": 0, "social": 0, "infrastructure": 0, "disqualified": 0}
+    decisions: list[dict] = []
+    skipped = {"commerce": 0, "social": 0, "infrastructure": 0}
     for dom, ids in sorted(by_domain.items(), key=lambda kv: -len(kv[1])):
-        if len(created) >= cap:
+        if len(decisions) >= cap:
             break
         if len(ids) < min_citations or dom in known:
             continue
@@ -292,23 +344,68 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
         if is_infrastructure_domain(dom):
             skipped["infrastructure"] += 1
             continue
-        if not _add_candidate(
-            session,
-            domain=dom,
-            name=None,
-            channel="citation",
-            evidence={
-                "reason": "frequently cited by your stored articles",
-                "distinct_citing_articles": len(ids),
-                "sample_article_ids": sorted(ids)[:5],
-            },
-        ):
-            skipped["disqualified"] += 1
-            continue
-        created.append(dom)
+        evidence: dict = {"sample_article_ids": sorted(ids)[:5]}
+        if complete:
+            evidence["reason"] = "frequently cited by your stored articles"
+            evidence["distinct_citing_articles"] = len(ids)
+        else:
+            evidence["reason"] = (
+                "frequently cited by your stored articles (the scan was cut short by "
+                "its wall-clock budget; this count is a floor, not the true total)"
+            )
+            evidence["distinct_citing_articles_at_least"] = len(ids)
+            evidence["rows_scanned"] = rows_scanned
+        decisions.append({"domain": dom, "name": None, "channel": "citation", "evidence": evidence})
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
+
+    reason = None
+    if not complete:
+        reason = f"wall-clock budget ({budget:.0f}s) reached after {rows_scanned} row(s) scanned"
+    return {
+        "decisions": decisions,
+        "skipped": skipped,
+        "complete": complete,
+        "rows_scanned": rows_scanned,
+        "budget_s": budget,
+        "reason": reason,
+    }
+
+
+def _apply_candidate_decisions(session, decisions: list[dict]) -> tuple[list[str], int]:
+    """APPLY phase shared by every channel: mechanical ``_add_candidate`` inserts only
+    -- no scanning, no aggregation. When called from ``run_discovery`` this runs with
+    the write gate held (see its comment); a standalone channel entry point (below)
+    may call it ungated, exactly as every channel always could before this split.
+    Returns ``(created_domains, disqualified_count)``."""
+    created: list[str] = []
+    disqualified = 0
+    for d in decisions:
+        if _add_candidate(
+            session, domain=d["domain"], name=d.get("name"), channel=d["channel"], evidence=d["evidence"]
+        ):
+            created.append(d["domain"])
+        else:
+            disqualified += 1
     if created:
         session.flush()  # autoflush is off app-wide; make the rows visible to callers
+    return created, disqualified
+
+
+def citation_channel(
+    session, *, cap: int, min_citations: int = _CITATION_MIN, _decided: dict | None = None
+) -> list[str]:
+    """Suggest external domains that >= min_citations distinct stored articles cite.
+
+    Compat entry point: decide (:func:`citation_candidates`) + apply
+    (:func:`_apply_candidate_decisions`) in one call when ``_decided`` is omitted --
+    this function never took the write gate itself (only ``run_discovery``'s caller
+    wraps the apply step), so every existing direct caller (tests/scripts) keeps its
+    old one-call, atomic-per-this-session behaviour unchanged. ``run_discovery``
+    passes a pre-computed ``_decided`` (from a call made BEFORE the write gate is
+    taken) so this call only does the write-side work."""
+    result = _decided if _decided is not None else citation_candidates(session, cap=cap, min_citations=min_citations)
+    created, disqualified = _apply_candidate_decisions(session, result["decisions"])
+    skipped = dict(result.get("skipped") or {}, disqualified=disqualified)
     if any(skipped.values()):
         _LOG.debug(
             "citation discovery skipped commerce=%(commerce)d social=%(social)d "
@@ -318,56 +415,73 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
     return created
 
 
-def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
-    """Suggest packaged-catalog entries for countries where coverage is thin."""
+def catalog_candidates(
+    session, *, cap: int, thin_threshold: int = 3, extra_known: set[str] | None = None
+) -> dict:
+    """DECIDE phase for the catalog channel: PURE reads (see ``citation_candidates``
+    for why that matters and is safe). Small/bounded by construction (the packaged
+    catalog is a static file), so no scan budget is needed here -- unlike the
+    citation channel's article_links scan (finding A2)."""
     from src.catalog.coverage import country_counts_from_session, coverage_report
     from src.ingest.seed_sources import load_sources_from_yaml
 
-    known = _existing_domains(session)
-    report = coverage_report(
-        country_counts_from_session(session), thin_threshold=thin_threshold
-    )
+    known = _existing_domains(session) | (extra_known or set())
+    counts = country_counts_from_session(session)
+    report = coverage_report(counts, thin_threshold=thin_threshold)
     targets = set(report.get("thin", []) or []) | set(report.get("missing", []) or [])
     if not targets:
-        return []
+        return {"decisions": []}
     try:
         catalog = load_sources_from_yaml()  # the packaged configs/sources.yml
     except Exception:  # noqa: BLE001 - a catalog problem must not break a scrape
         _LOG.warning("could not load the packaged catalog for discovery", exc_info=True)
-        return []
+        return {"decisions": []}
 
-    created: list[str] = []
+    decisions: list[dict] = []
     for entry in catalog:
-        if len(created) >= cap:
+        if len(decisions) >= cap:
             break
         dom = str(entry.get("domain") or "").lower()
         country = str(entry.get("country") or "").lower()
         # `dom in known` also catches a domain ALREADY proposed earlier in THIS
-        # batch (we add each created domain to `known` below): the packaged
+        # batch (we add each decided domain to `known` below): the packaged
         # catalog can list the same domain more than once (e.g. several language
         # editions), and adding it twice violated the source_candidates.domain
         # UNIQUE constraint — which used to poison the whole scrape transaction
         # and silently roll back the articles just stored (field log 2026-06-18).
         if not dom or dom in known or country not in targets:
             continue
-        n_there = country_counts_from_session(session).get(country, 0)
-        if not _add_candidate(
-            session,
-            domain=dom,
-            name=entry.get("name"),
-            channel="catalog",
-            evidence={
-                "reason": "packaged-catalog entry for a country your corpus covers thinly",
-                "country": country,
-                "your_sources_there": n_there,
-                "thin_threshold": thin_threshold,
-            },
-        ):
-            continue
-        created.append(dom)
+        n_there = counts.get(country, 0)  # computed once above, not re-queried per entry
+        decisions.append(
+            {
+                "domain": dom,
+                "name": entry.get("name"),
+                "channel": "catalog",
+                "evidence": {
+                    "reason": "packaged-catalog entry for a country your corpus covers thinly",
+                    "country": country,
+                    "your_sources_there": n_there,
+                    "thin_threshold": thin_threshold,
+                },
+            }
+        )
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
-    if created:
-        session.flush()  # autoflush is off app-wide; make the rows visible to callers
+    return {"decisions": decisions}
+
+
+def catalog_channel(
+    session, *, cap: int, thin_threshold: int = 3, _decided: dict | None = None
+) -> list[str]:
+    """Suggest packaged-catalog entries for countries where coverage is thin.
+
+    Compat entry point: decide (:func:`catalog_candidates`) + apply
+    (:func:`_apply_candidate_decisions`) in one call when ``_decided`` is omitted --
+    see :func:`citation_channel`'s docstring for the same shape and why it keeps
+    every existing direct caller working unchanged."""
+    result = (
+        _decided if _decided is not None else catalog_candidates(session, cap=cap, thin_threshold=thin_threshold)
+    )
+    created, _disqualified = _apply_candidate_decisions(session, result["decisions"])
     return created
 
 
@@ -422,19 +536,22 @@ def extract_reference_domains(wikitext: str | None) -> Counter:
     return counts
 
 
-def wikipedia_reference_channel(session, *, cap: int, min_pages: int = _WIKI_MIN_PAGES) -> list[str]:
-    """Discover source domains from the REFERENCES of the already-stored watched Wikipedia pages,
-    across ALL editions (ZERO-NETWORK — reuses the compressed wikitext the tracker already holds).
-    A domain cited by >= ``min_pages`` DISTINCT watched pages becomes a candidate (registered
-    DISABLED via ``SourceCandidate``, channel ``wikipedia``); the citing editions ride in the
-    evidence as the diversity signal. Never auto-scraped; promotion stays consented + audited."""
+def wikipedia_reference_candidates(
+    session, *, cap: int, min_pages: int = _WIKI_MIN_PAGES, extra_known: set[str] | None = None
+) -> dict:
+    """DECIDE phase for the Wikipedia-reference channel: PURE reads, streamed via
+    ``yield_per`` (see ``citation_candidates`` for why that matters and is safe).
+    Every watched page's wikitext is fully processed (``extract_reference_domains``)
+    within this same read, before the caller ends the transaction -- nothing here
+    lazy-loads afterward."""
     from src.database.models import WikiPage
     from src.wiki.corpus import _page_text
 
-    known = _existing_domains(session)
+    known = _existing_domains(session) | (extra_known or set())
     by_domain_pages: dict[str, set[int]] = defaultdict(set)
     by_domain_editions: dict[str, set[str]] = defaultdict(set)
-    for page in session.query(WikiPage).filter(WikiPage.watched.is_(True)):
+    q = session.query(WikiPage).filter(WikiPage.watched.is_(True))
+    for page in q.yield_per(200):
         text, _revid = _page_text(page)
         if not text:
             continue
@@ -442,96 +559,139 @@ def wikipedia_reference_channel(session, *, cap: int, min_pages: int = _WIKI_MIN
             by_domain_pages[dom].add(page.id)
             by_domain_editions[dom].add(page.wiki)
 
-    created: list[str] = []
+    decisions: list[dict] = []
     # rank by breadth of citing pages (the independence proxy at the page level), then domain
     for dom, pageids in sorted(by_domain_pages.items(), key=lambda kv: (-len(kv[1]), kv[0])):
-        if len(created) >= cap:
+        if len(decisions) >= cap:
             break
         if len(pageids) < min_pages or dom in known:
             continue
         editions = sorted(by_domain_editions[dom])
-        if not _add_candidate(
-            session,
-            domain=dom,
-            name=None,
-            channel="wikipedia",
-            evidence={
-                "reason": "cited in the references of your watched Wikipedia pages",
-                "distinct_citing_pages": len(pageids),
-                "editions": editions,  # the multi-edition de-biasing signal (never a score)
-                "sample_page_ids": sorted(pageids)[:5],
-            },
-        ):
-            continue
-        created.append(dom)
+        decisions.append(
+            {
+                "domain": dom,
+                "name": None,
+                "channel": "wikipedia",
+                "evidence": {
+                    "reason": "cited in the references of your watched Wikipedia pages",
+                    "distinct_citing_pages": len(pageids),
+                    "editions": editions,  # the multi-edition de-biasing signal (never a score)
+                    "sample_page_ids": sorted(pageids)[:5],
+                },
+            }
+        )
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
-    if created:
-        session.flush()  # autoflush is off app-wide; make the rows visible to callers
+    return {"decisions": decisions}
+
+
+def wikipedia_reference_channel(
+    session, *, cap: int, min_pages: int = _WIKI_MIN_PAGES, _decided: dict | None = None
+) -> list[str]:
+    """Discover source domains from the REFERENCES of the already-stored watched Wikipedia pages,
+    across ALL editions (ZERO-NETWORK — reuses the compressed wikitext the tracker already holds).
+    A domain cited by >= ``min_pages`` DISTINCT watched pages becomes a candidate (registered
+    DISABLED via ``SourceCandidate``, channel ``wikipedia``); the citing editions ride in the
+    evidence as the diversity signal. Never auto-scraped; promotion stays consented + audited.
+
+    Compat entry point: decide (:func:`wikipedia_reference_candidates`) + apply
+    (:func:`_apply_candidate_decisions`) in one call when ``_decided`` is omitted --
+    see :func:`citation_channel`'s docstring for the same shape and why it keeps
+    every existing direct caller working unchanged."""
+    result = (
+        _decided
+        if _decided is not None
+        else wikipedia_reference_candidates(session, cap=cap, min_pages=min_pages)
+    )
+    created, _disqualified = _apply_candidate_decisions(session, result["decisions"])
     return created
 
 
-def prune_noise_candidates(session) -> int:
-    """Delete already-staged PENDING candidates the noise filters now reject (commerce /
-    social / infrastructure). Discovery filtering is forward-only, so a candidate staged
-    before a filter existed (e.g. fonts.googleapis.com/bsky.app before 2026-07-10) lingers
-    in the list; this self-cleans it on the next discovery pass. Only ``status='candidate'``
-    rows are removed — a promoted source or a REMEMBERED dismissal is never touched."""
+def noise_candidates_to_prune(session) -> list[int]:
+    """DECIDE phase for the noise self-clean: PURE read, streamed via ``yield_per``.
+    Returns the ids of already-staged PENDING candidates the noise filters now
+    reject (commerce / social / infrastructure) -- plain ints, so nothing here can
+    lazy-load once the caller ends the read transaction."""
     from src.catalog.normalize import is_social
     from src.database.models import SourceCandidate
 
-    removed = 0
-    for r in session.query(SourceCandidate).filter(SourceCandidate.status == "candidate").all():
+    ids: list[int] = []
+    q = session.query(SourceCandidate).filter(SourceCandidate.status == "candidate")
+    for r in q.yield_per(500):
         dom = (r.domain or "").lower()
         if is_commerce_domain(dom) or is_social(dom) or is_infrastructure_domain(dom):
-            session.delete(r)
-            removed += 1
+            ids.append(r.id)
+    return ids
+
+
+def prune_candidates_by_id(session, ids: list[int]) -> int:
+    """APPLY phase: delete staged candidates by id. Must run with the write gate
+    held when called from ``run_discovery`` (see its comment); a standalone caller
+    may call it ungated exactly as ``prune_noise_candidates`` always could.
+
+    Re-filters on ``status == 'candidate'`` at delete time (not just at decide
+    time): a candidate promoted or dismissed in the gap between the decide read and
+    this apply write must never be swept up by a stale id list -- "a promoted
+    source or a REMEMBERED dismissal is never touched" (the original guarantee)
+    still has to hold even though decide and apply are no longer one continuous
+    transaction. Chunked under SQLite's 999-variable cap."""
+    from src.database.models import SourceCandidate
+
+    if not ids:
+        return 0
+    removed = 0
+    for i in range(0, len(ids), 500):
+        batch = ids[i : i + 500]
+        removed += (
+            session.query(SourceCandidate)
+            .filter(SourceCandidate.id.in_(batch), SourceCandidate.status == "candidate")
+            .delete(synchronize_session=False)
+        )
     if removed:
         session.flush()
     return removed
 
 
-def run_discovery(session, *, per_run: int = 10) -> dict:
-    """Run the offline channels under the operator's budget. Returns the report
-    that goes into the scheduler run log (the visible record of what happened)."""
-    if per_run <= 0:
-        return {"enabled": False, "created": 0}
-    # Run discovery inside a SAVEPOINT (nested transaction). Discovery is a
-    # best-effort post-scrape step; if it raises (e.g. a UNIQUE collision on
-    # source_candidates.domain) the savepoint rolls back ONLY discovery's own
-    # rows, leaving the outer transaction — and the articles the scrape just
-    # stored — intact and committable. Before this, any discovery error poisoned
-    # the shared session, every pass was recorded ok:false, and NO new articles
-    # were committed: "scraping stopped" (field log 2026-06-18). Data collection
-    # must never be broken by this side feature.
-    # S2.4 (2026-09-02): the gate is taken BEFORE the first read, not around the write.
-    #
-    # SQLite treats a SAVEPOINT opened outside a transaction as BEGIN DEFERRED, so the
-    # channels' reads below (citation_channel scans article_links whole) take a READ
-    # SNAPSHOT. If anything else commits before this block's flush -- the housekeeping
-    # lane, which is kicked one step earlier and commits through the gate, or the
-    # briefing thread, which commits between producers -- the flush's promotion to a
-    # write transaction returns SQLITE_BUSY_SNAPSHOT. The busy handler is NOT consulted
-    # while a read transaction is open, so the 30 s busy_timeout never applies and the
-    # error is INSTANT (reproduced: 0.0000 s with busy_timeout=30000). SQLAlchemy then
-    # issues ROLLBACK TO SAVEPOINT without RELEASE, the stale outer transaction
-    # survives, the next tail writer fails identically, and session_scope's final
-    # commit raises PendingRollbackError -- a 4-hour pass recorded ok:false.
-    #
-    # This was the most frequent error in the whole fleet (234 / 144 / 82 lifetime on
-    # the three field machines), and it was CREATED by moving the ride-alongs onto a
-    # concurrent lane thread.
-    #
-    # Holding the gate from before the scan is what makes the window safe: every
-    # in-process commit is gated, so none can land between the snapshot and the write.
-    # Rolling back before begin_nested() does NOT work -- the snapshot is taken by the
-    # reads INSIDE the savepoint, so the identical window remains.
+def prune_noise_candidates(session, *, _decided_ids: list[int] | None = None) -> int:
+    """Delete already-staged PENDING candidates the noise filters now reject (commerce /
+    social / infrastructure). Discovery filtering is forward-only, so a candidate staged
+    before a filter existed (e.g. fonts.googleapis.com/bsky.app before 2026-07-10) lingers
+    in the list; this self-cleans it on the next discovery pass. Only ``status='candidate'``
+    rows are removed — a promoted source or a REMEMBERED dismissal is never touched.
+
+    Compat entry point: decide (:func:`noise_candidates_to_prune`) + apply
+    (:func:`prune_candidates_by_id`) in one call when ``_decided_ids`` is omitted --
+    see :func:`citation_channel`'s docstring for the same shape and why it keeps
+    every existing direct caller working unchanged."""
+    ids = _decided_ids if _decided_ids is not None else noise_candidates_to_prune(session)
+    return prune_candidates_by_id(session, ids)
+
+
+def _run_discovery_on_a_shared_session(session, *, per_run: int, third: int) -> dict:
+    """FALLBACK shape, used only when the caller handed ``run_discovery`` a session
+    that ALREADY had an open transaction (pending work from before this call) --
+    the pre-A2 (S2.4) shape, unchanged: gate held from before the first read, one
+    savepoint wrapping decide+apply for every channel.
+
+    WHY THIS BRANCH EXISTS: the A2 perf fix below ends discovery's OWN read
+    snapshot with ``session.rollback()`` before taking the write gate -- safe only
+    when that snapshot is discovery's alone. If the session already carries
+    uncommitted work from BEFORE this call (a caller sharing its own
+    mid-transaction session -- exactly what
+    ``tests/test_discovery_isolation.py`` drives directly, and what discovery's
+    OWN docstring/comments describe as the pre-S2.4 shape: "on the SAME session as
+    the scrape"), that rollback would discard the caller's work too, not just
+    discovery's. This fallback never ends a snapshot it did not itself open, so it
+    is safe on ANY session -- at the cost of not getting the A2 fix (the scan runs
+    gated again) for that one call. Acceptable: a caller in this shape is, by
+    construction, not the scheduler's long pass tail (S2.4 already gives that one
+    its own fresh session via ``session_scope()``), so the 26-minute-scan-under-
+    the-gate risk (finding A2) does not apply to it.
+    """
     from src.database.writer import write_lock
 
     try:
         with write_lock(), session.begin_nested():
-            pruned = prune_noise_candidates(session)  # self-clean earlier noise
-            # three channels share the per-run budget: citations, Wikipedia references, catalog.
-            third = max(1, per_run // 3)
+            pruned = prune_noise_candidates(session)
             cited = citation_channel(session, cap=third)
             remaining = per_run - len(cited)
             wiki = wikipedia_reference_channel(session, cap=max(1, remaining // 2)) if remaining > 0 else []
@@ -553,3 +713,149 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
         "wikipedia": wiki,
         "catalog": catalogd,
     }
+
+
+def run_discovery(session, *, per_run: int = 10) -> dict:
+    """Run the offline channels under the operator's budget. Returns the report
+    that goes into the scheduler run log (the visible record of what happened).
+
+    THE SHAPE (A2 fix, 2026-09-11): a DECIDE phase (pure reads, no gate, no
+    savepoint) followed by an APPLY phase (mechanical inserts/deletes only, gated)
+    -- ONLY on a session that is FRESH when this is called (see
+    ``_run_discovery_on_a_shared_session`` for the fallback and why it exists).
+    The field measurement that forced this: pass-tail phase `discovery` clocked
+    1,590,907 ms (26.5 min), with a SAVEPOINT statement itself measured at 664,207
+    ms -- gate wait recorded *inside* a single statement, because S2.4's fix (gate
+    held from before the first read) serialised the whole citation-channel scan
+    (citation_channel's ArticleLink.query(...).distinct().all() -- 1.3M+ pairs on
+    the field corpus) behind the single-writer gate. S2.4 was a correct, narrow fix
+    for SQLITE_BUSY_SNAPSHOT; it also made every OTHER writer in the process queue
+    behind a 26-minute scan, draining the connection pool (finding A2).
+    """
+    if per_run <= 0:
+        return {"enabled": False, "created": 0}
+
+    from src.database.writer import write_lock
+
+    third = max(1, per_run // 3)
+
+    # `session.in_transaction()` is False on a session with nothing pending since
+    # its last commit/rollback, and True the moment ANY statement -- including a
+    # caller's own flush, made before this call -- has run. Only a FRESH session
+    # makes the "end the read snapshot with a rollback" step below safe (that
+    # snapshot is then provably ours alone, opened by our own first read); a
+    # session that already has pending work needs the safe fallback instead. This
+    # is the general form of the "run_discovery always gets its own short-lived
+    # session" fact the fix relies on for the scheduler's real call site
+    # (src/scheduler/runner.py's `with session_scope() as _disc_session:` hands
+    # it a session on which nothing has run yet, so `in_transaction()` is False
+    # there) -- checked here rather than merely assumed, because a direct caller
+    # (a unit test, a script) is not obliged to give discovery a fresh session.
+    if session.in_transaction():
+        return _run_discovery_on_a_shared_session(session, per_run=per_run, third=third)
+
+    # ----------------------------------------------------------------------- #
+    # DECIDE phase: plain reads ONLY -- no write_lock, no begin_nested(). Every
+    # *_candidates()/*_to_prune() helper returns plain Python values (dicts/lists
+    # of primitives, never ORM objects), so nothing here can lazy-load once the
+    # read transaction below is ended. `extra_known` threads each channel's
+    # just-decided domains into the next channel's dedup set -- standing in for
+    # the flush-based visibility the OLD single continuous transaction gave for
+    # free (channel 1 flushed its inserts, so channel 2's `_existing_domains`
+    # read saw them; here nothing is inserted until the APPLY phase below, so the
+    # decide calls must be told explicitly).
+    # ----------------------------------------------------------------------- #
+    try:
+        prune_ids = noise_candidates_to_prune(session)
+        extra_known: set[str] = set()
+
+        cite_result = citation_candidates(session, cap=third, extra_known=extra_known)
+        extra_known |= {d["domain"] for d in cite_result["decisions"]}
+        remaining = per_run - len(cite_result["decisions"])
+
+        wiki_cap = max(1, remaining // 2)
+        wiki_result = (
+            wikipedia_reference_candidates(session, cap=wiki_cap, extra_known=extra_known)
+            if remaining > 0
+            else {"decisions": []}
+        )
+        extra_known |= {d["domain"] for d in wiki_result["decisions"]}
+        remaining -= len(wiki_result["decisions"])
+
+        catalog_cap = remaining
+        catalog_result = (
+            catalog_candidates(session, cap=catalog_cap, extra_known=extra_known)
+            if remaining > 0
+            else {"decisions": []}
+        )
+    except Exception:  # noqa: BLE001 - discovery must never break the scrape
+        _LOG.warning(
+            "source discovery failed during the read/decide phase; nothing was written",
+            exc_info=True,
+        )
+        session.rollback()  # end whatever read transaction the failed scan left open
+        return {"enabled": True, "budget": per_run, "created": 0, "error": "discovery_rolled_back"}
+
+    # End the read transaction/snapshot BEFORE taking the write gate. This is SAFE
+    # ONLY because run_discovery always gets its OWN short-lived session (S2.4,
+    # src/scheduler/runner.py: `with session_scope() as _disc_session: run_discovery
+    # (_disc_session, ...)`) -- never the pass's own session -- so there is no
+    # caller's uncommitted work on `session` for this rollback to discard. Pinned by
+    # tests/test_discovery_busy_snapshot.py::test_the_tail_ride_alongs_use_their_own_session.
+    session.rollback()
+
+    # ----------------------------------------------------------------------- #
+    # APPLY phase: mechanical inserts/deletes only, GATED. Still wrapped in a
+    # SAVEPOINT -- discovery is a best-effort post-scrape step; if it raises (e.g.
+    # a UNIQUE collision on source_candidates.domain) the savepoint rolls back
+    # ONLY discovery's own rows, leaving the outer transaction intact and
+    # committable (field log 2026-06-18: before this guard, a discovery error
+    # poisoned the whole session and no new articles were committed).
+    #
+    # WHY SQLITE_BUSY_SNAPSHOT CANNOT RECUR under this shape: the rollback above
+    # means NO snapshot is held when this `with` block starts. `begin_nested()`
+    # therefore opens a FRESH transaction -- taken WHILE the gate is already held.
+    # SQLITE_BUSY_SNAPSHOT needs a read snapshot to be open BEFORE a write promotion
+    # is attempted, with some OTHER commit landing in between; here there is no
+    # "in between" -- the first read this transaction performs (if any, e.g. inside
+    # `_add_candidate`'s disqualified check) and the eventual write both happen
+    # after the gate is acquired, so no other writer's commit can land between
+    # them (the gate serialises every in-process writer). This is the same
+    # precondition S2.4 relied on ("gate held from before the first read");  the
+    # difference is WHICH transaction is gated -- a fresh, short write transaction
+    # instead of the one carrying the 26-minute scan.
+    # ----------------------------------------------------------------------- #
+    try:
+        with write_lock(), session.begin_nested():
+            pruned = prune_noise_candidates(session, _decided_ids=prune_ids)
+            cited = citation_channel(session, cap=third, _decided=cite_result)
+            wiki = wikipedia_reference_channel(session, cap=wiki_cap, _decided=wiki_result)
+            catalogd = catalog_channel(session, cap=catalog_cap, _decided=catalog_result)
+            session.flush()
+    except Exception:  # noqa: BLE001 - discovery must never break the scrape
+        _LOG.warning(
+            "source discovery failed; rolled back its savepoint, the scrape is unaffected",
+            exc_info=True,
+        )
+        return {"enabled": True, "budget": per_run, "created": 0, "error": "discovery_rolled_back"}
+
+    report = {
+        "enabled": True,
+        "budget": per_run,
+        "created": len(cited) + len(wiki) + len(catalogd),
+        "pruned_noise": pruned,
+        "citation": cited,
+        "wikipedia": wiki,
+        "catalog": catalogd,
+    }
+    # HONESTY (Part 2): if the citation scan was cut short by its wall-clock budget,
+    # say so in the report a human/operator actually reads -- never let a floor
+    # count travel silently as if it were the true total.
+    if not cite_result["complete"]:
+        report["citation_scan"] = {
+            "complete": False,
+            "rows_scanned": cite_result["rows_scanned"],
+            "budget_s": cite_result["budget_s"],
+            "reason": cite_result["reason"],
+        }
+    return report

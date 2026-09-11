@@ -99,32 +99,64 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
     return aggregate_source_topics(rows, min_articles=min_articles, top_n=top_n)
 
 
-def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> dict:
-    """Write deduced topics into the live ``Source.tags`` (additive, idempotent).
+def source_topic_candidates(session, *, min_articles: int = 5, top_n: int = 4) -> dict:
+    """DECIDE phase: PURE reads. Derives the corpus-wide topic proposals
+    (:func:`derive_source_topics`, a GROUP BY over keyword_mentions/keyword_tags --
+    see the module docstring's PERF NOTE) then looks up ONLY the sources those
+    proposals could possibly touch: a targeted ``Source.domain IN (...)`` lookup,
+    chunked under SQLite's 999-variable cap -- never the whole-table
+    ``session.query(Source).all()`` (86,470 rows on the field corpus) the old shape
+    ran INSIDE the write gate (finding A2, the other half of run_discovery's).
 
-    Unions the derived topics into each source's tag list -- never removes or
-    overwrites existing (curated) tags, so a second run adds nothing. Takes the
-    single-writer gate. Returns ``{"sources_updated", "tags_added"}``.
+    Returns plain primitives (``{"id", "topics"}`` per candidate) -- never ORM
+    objects -- so nothing here can lazy-load once the caller ends the read
+    transaction. Does NOT decide the final tag diff: `topics` is the proposal, not
+    yet compared against `Source.tags`, because a source's tags can change in the
+    gap between this read and the write below; :func:`apply_source_topics`
+    recomputes the diff against the CURRENT row under the gate instead of trusting
+    a snapshot that may be stale by then.
+    """
+    from src.database.models import Source
+
+    proposed = {
+        r["domain"]: r["topics"]
+        for r in derive_source_topics(session, min_articles=min_articles, top_n=top_n)
+    }
+    if not proposed:
+        return {"candidates": []}
+
+    domains = list(proposed)
+    candidates: list[dict] = []
+    for i in range(0, len(domains), 900):
+        batch = domains[i : i + 900]
+        rows = session.query(Source.id, Source.domain).filter(Source.domain.in_(batch))
+        for sid, domain in rows:
+            candidates.append({"id": sid, "topics": proposed[domain]})
+    return {"candidates": candidates}
+
+
+def _apply_source_topics_on_a_shared_session(session, *, min_articles: int, top_n: int) -> dict:
+    """FALLBACK shape, used only when the caller handed ``apply_source_topics`` a
+    session that ALREADY had an open transaction (pending work from before this
+    call). Mirrors ``src.discovery.channels._run_discovery_on_a_shared_session``:
+    the old (pre-A2) gate-before-the-scan shape, which never ends a snapshot it did
+    not itself open, so it is safe on ANY session. Both of THIS function's real
+    callers today hand it a fresh session (see ``apply_source_topics``'s
+    docstring), so this branch is not expected to run in production -- it exists
+    so a future/unexpected caller degrades to the safe, slower shape rather than
+    risking a stale-session rollback.
     """
     from src.database.models import Source
     from src.database.writer import write_lock
 
-    # S2.4 (2026-09-02): the gate must be held from BEFORE the read.
-    #
-    # derive_source_topics scans the corpus, which takes a read snapshot; the write
-    # below then promotes that same transaction. With the gate taken only around the
-    # write, anything that commits in between (the housekeeping lane, the briefing
-    # thread) makes the promotion return SQLITE_BUSY_SNAPSHOT -- instantly, because
-    # the busy handler is not consulted while a read transaction is open, so
-    # busy_timeout buys nothing. Same defect and same shape as run_discovery's.
     updated = added = 0
     with write_lock():
-        proposed = {r["domain"]: r["topics"] for r in derive_source_topics(
-            session, min_articles=min_articles, top_n=top_n
-        )}
+        proposed = {
+            r["domain"]: r["topics"]
+            for r in derive_source_topics(session, min_articles=min_articles, top_n=top_n)
+        }
         if not proposed:
             return {"sources_updated": 0, "tags_added": 0}
-        # one query, then match in Python -- avoids the SQLite 999-variable IN cap
         for src in session.query(Source).all():
             topics = proposed.get(src.domain)
             if not topics:
@@ -132,6 +164,72 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
             existing = [t.strip() for t in (src.tags or "").split(",") if t.strip()]
             have = set(existing)
             fresh = [t for t in topics if t not in have]
+            if fresh:
+                src.tags = ",".join(existing + fresh)
+                updated += 1
+                added += len(fresh)
+        session.commit()
+    return {"sources_updated": updated, "tags_added": added}
+
+
+def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> dict:
+    """Write deduced topics into the live ``Source.tags`` (additive, idempotent).
+
+    Unions the derived topics into each source's tag list -- never removes or
+    overwrites existing (curated) tags, so a second run adds nothing. Takes the
+    single-writer gate. Returns ``{"sources_updated", "tags_added"}``.
+
+    THE SHAPE (A2 fix, 2026-09-11): decide (:func:`source_topic_candidates`, a pure
+    read) then end that read transaction BEFORE taking the write gate, then apply
+    (mechanical Source.tags updates + commit) under the gate. Same reasoning as
+    ``src.discovery.channels.run_discovery`` (see its comment for the full
+    mechanism): with no snapshot held when the gate is taken, the write below opens
+    a FRESH transaction while the gate is already held, so no other writer's commit
+    can land between a read and a write promotion -- the exact precondition
+    SQLITE_BUSY_SNAPSHOT needs. The old shape held the gate across
+    `derive_source_topics` (a corpus-wide GROUP BY) AND `session.query(Source).all()`
+    (86,470 ORM entities) -- both now happen before the gate.
+
+    Ending the read snapshot via ``session.rollback()`` is SAFE ONLY because every
+    caller of this function hands it its OWN short-lived session, never one shared
+    with other pending work: the Diagnostics endpoint's request-scoped session
+    (``src/api/diagnostics.py`` `/enrich-sources`, via FastAPI's ``get_db`` --
+    closed at the end of that one request, with nothing else done on it) and the
+    scheduler tail's `_enr_session` from `session_scope()`
+    (``src/scheduler/runner.py``, S2.4's `run_auto_source_enrichment` ride-along --
+    its own session, never the pass's). Confirmed at both call sites -- and, as a
+    second line of defence for any OTHER caller,
+    ``session.in_transaction()`` is checked below (the same signal
+    ``run_discovery`` uses): False only on a session with nothing pending since its
+    last commit/rollback, which is the only case in which the rollback is provably
+    ours alone to make.
+    """
+    if session.in_transaction():
+        return _apply_source_topics_on_a_shared_session(session, min_articles=min_articles, top_n=top_n)
+
+    from src.database.models import Source
+    from src.database.writer import write_lock
+
+    decided = source_topic_candidates(session, min_articles=min_articles, top_n=top_n)
+    candidates = decided["candidates"]
+    if not candidates:
+        return {"sources_updated": 0, "tags_added": 0}
+
+    # End the read snapshot before taking the write gate -- see the docstring above.
+    session.rollback()
+
+    updated = added = 0
+    with write_lock():
+        for cand in candidates:
+            src = session.get(Source, cand["id"])
+            if src is None:
+                continue  # the row vanished between decide and apply; skip honestly
+            # Re-derive `fresh` against Source.tags AS IT IS NOW, not the decide-phase
+            # snapshot -- the row could have been curated in the gap between the read
+            # and the gate, and recomputing here means that edit is never clobbered.
+            existing = [t.strip() for t in (src.tags or "").split(",") if t.strip()]
+            have = set(existing)
+            fresh = [t for t in cand["topics"] if t not in have]
             if fresh:
                 src.tags = ",".join(existing + fresh)
                 updated += 1
