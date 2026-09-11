@@ -201,18 +201,41 @@ def test_sustained_pressure_still_pins(tmp_path):
 
 
 def test_without_a_denominator_the_old_strict_behaviour_is_kept(tmp_path):
-    """An absent sample count must not be guessed at: any pressure still pins."""
+    """An absent sample count must not be guessed at: any pressure still pins.
+
+    UPDATED DELIBERATELY (P4, 2026-09-10), not by reflex. The second half of this test
+    used to assert that a ceiling of 1 stays at 1 after a pass with ONE brushed tick and
+    no denominator, and P4 makes that untrue ON PURPOSE: a ceiling of 1 with a single
+    tick and nothing to divide it by is the unescapable state this record kept falling
+    into, and it is the same pathology ``_RELAX_SHARE`` was added for one level up
+    (machine A pinned at one worker with 1,239 MB free).
+
+    The test's own intent is intact and is what the assertions below still check: no
+    denominator is INVENTED, and pressure still pins at every ceiling above 1 — see
+    ``test_a_ceiling_of_one_can_never_survive_two_passes_in_a_row`` and
+    ``test_pressure_a_lower_worker_count_DID_relieve_still_pins`` in
+    tests/test_collect_capacity.py for the two halves of the new behaviour.
+    """
     from src.scheduler import capacity
 
     state = tmp_path / "capacity.json"
+    # A first pressured pass on an unrecorded machine still learns its floor, with no
+    # denominator and no guessing.
     capacity.record_pass(
         w_max=50, mem_low_ticks=900, mem_low_min_permits=1, samples=None, state_path=state
     )
     assert capacity.load_ceiling(state) == 1
+    # Pressure at a ceiling ABOVE one still pins strictly on a single tick — this is the
+    # "do not guess a denominator" property, checked where it still applies.
+    state2 = tmp_path / "capacity2.json"
     capacity.record_pass(
-        w_max=50, mem_low_ticks=1, mem_low_min_permits=1, samples=None, state_path=state
+        w_max=50, mem_low_ticks=900, mem_low_min_permits=4, samples=None, state_path=state2
     )
-    assert capacity.load_ceiling(state) == 1
+    assert capacity.load_ceiling(state2) == 4
+    capacity.record_pass(
+        w_max=50, mem_low_ticks=1, mem_low_min_permits=4, samples=None, state_path=state2
+    )
+    assert capacity.load_ceiling(state2) == 4, "one tick, no denominator: still pins"
 
 
 def test_the_sample_count_is_read_from_a_real_monitor_summary():

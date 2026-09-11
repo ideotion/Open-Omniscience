@@ -3349,5 +3349,21 @@
   "Grade at least one anchor first.": "请先至少为一个锚点评分。",
   "Enter at least a host and user.": "请至少输入主机和用户名。",
   "Group added.": "已添加组。",
-  "These signals are merely close in place and time within your current window.": "这些信号只是在您当前的时间窗口内于地点和时间上相近而已。"
+  "These signals are merely close in place and time within your current window.": "这些信号只是在您当前的时间窗口内于地点和时间上相近而已。",
+  "Workers": "工作线程",
+  "Fetching now": "正在抓取",
+  "Limit this pass": "本轮上限",
+  "Configured maximum": "已配置的最大值",
+  "Why the limit": "受限原因",
+  "the concurrency limits could not be read": "无法读取并发上限",
+  "both a measured memory back-off and the machine floor": "既有实测的内存退让，也有机器下限",
+  "this machine backed off under memory pressure, so the ramp is capped": "本机在内存压力下已退让，因此提速受限",
+  "this machine is below the memory floor, so the fan-out is capped": "本机低于内存下限，因此并发受限",
+  "nothing is holding it back — the full configured maximum is available": "没有任何限制——已配置的最大值可全部使用",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "带宽调节器当前运行的许可数。两轮之间不显示——没有可计数的内容。",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "本轮可提升到的上限：实测上限与机器下限限制中较小的一个。",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "您的采集并发设置。它永远不会被改写——上面的上限只限制单轮的用量。",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "实测上限会在没有压力的轮次后放宽，达到您配置的最大值后即被移除。它是一次测量的缓存，而非设置——删除 data/collect_capacity.json 会立即忘记它。",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "本机在内存压力下自行减少了工作线程数。采集器下一轮将从该值开始，而不是再走一遍同样的下降过程。",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "低于内存下限的机器会被限制在较小的并发，直到您重新开启为止。"
 }

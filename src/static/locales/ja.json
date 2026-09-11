@@ -3349,5 +3349,21 @@
   "Grade at least one anchor first.": "先にアンカーを少なくとも 1 つ採点してください。",
   "Enter at least a host and user.": "少なくともホストとユーザーを入力してください。",
   "Group added.": "グループを追加しました。",
-  "These signals are merely close in place and time within your current window.": "これらのシグナルは、現在のウィンドウ内で場所と時間が近いというだけです。"
+  "These signals are merely close in place and time within your current window.": "これらのシグナルは、現在のウィンドウ内で場所と時間が近いというだけです。",
+  "Workers": "ワーカー",
+  "Fetching now": "取得中",
+  "Limit this pass": "このパスの上限",
+  "Configured maximum": "設定した最大値",
+  "Why the limit": "制限の理由",
+  "the concurrency limits could not be read": "並列数の上限を読み取れませんでした",
+  "both a measured memory back-off and the machine floor": "実測のメモリ後退とマシン下限の両方",
+  "this machine backed off under memory pressure, so the ramp is capped": "このマシンはメモリ圧迫で後退したため、立ち上げが制限されています",
+  "this machine is below the memory floor, so the fan-out is capped": "このマシンはメモリ下限を下回るため、並列数が制限されています",
+  "nothing is holding it back — the full configured maximum is available": "妨げるものはありません — 設定した最大値をすべて使えます",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "帯域ガバナーが現在動かしている許可数です。パスの合間は表示されません — 数えるものがないためです。",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "このパスが到達できる上限：実測の上限とマシン下限による制限のうち小さい方です。",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "収集の並列数設定です。書き換えられることはありません — 上の上限は 1 回のパスが使う量を制限するだけです。",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "実測の上限は圧迫のないパスの後に緩み、設定した最大値に達すると取り除かれます。これは測定結果のキャッシュであり設定ではありません — data/collect_capacity.json を削除すればただちに忘れます。",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "このマシンはメモリ圧迫により自らワーカー数を減らしました。コレクターは次のパスをその値から始め、同じ降下を繰り返しません。",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "メモリ下限を下回るマシンは、再び有効にするまで少ない並列数に抑えられます。"
 }

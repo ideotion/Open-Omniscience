@@ -41,7 +41,7 @@ _LOG = logging.getLogger("monitoring.collect_perf")
 _CAP_LINES = 5000
 
 # Contention thresholds (honest, simple, and logged so the heuristic is auditable).
-_CPU_SATURATED_PCT = 92.0  # system-wide CPU at/above this = CPU is the limit
+_CPU_SATURATED_PCT = 92.0  # system-wide CPU at/above this = the machine is full
 _DEFAULT_MEM_FLOOR_MB = 512.0  # back off when available memory drops below this
 # Writer saturation: thread-seconds of write-wait accrued per wall-second. >= 1.0
 # means, on average, at least one worker spent the whole interval blocked on the
@@ -76,6 +76,75 @@ def _set_latest(sample: dict | None) -> None:
 
 
 _PROC = None  # persistent psutil.Process so cpu_percent() has a reference interval
+
+
+_CPU_COUNT: int | None = None
+
+
+def _cpu_count() -> int | None:
+    """Logical CPUs, read once. ``None`` when psutil cannot say, which is a distinct
+    fact from 1 and must not be rounded into one -- it is what makes the attribution
+    below unmeasurable rather than wrong."""
+    global _CPU_COUNT
+    if _CPU_COUNT is None:
+        try:
+            import psutil
+
+            _CPU_COUNT = psutil.cpu_count() or None
+        except Exception:  # noqa: BLE001 - psutil is an optional extra
+            return None
+    return _CPU_COUNT
+
+
+def cpu_contention(
+    cpu_sys_pct: float | None,
+    cpu_proc_pct: float | None,
+    cpu_count: int | None = None,
+) -> tuple[bool, float | None]:
+    """``(is_contention, others_pct)`` -- is the machine full BECAUSE OF SOMEONE ELSE?
+
+    P4 (2026-09-10). The old rule was ``cpu_sys >= 92`` alone, and the collector is
+    CPU-bound in pure Python: a healthy pass on a small box produces that reading BY
+    ITSELF. The governor then read its own useful work as contention and cut a permit
+    every 1.5 s tick -- measured, 50 permits to 1 in 73 seconds -- which reduces
+    throughput and frees nothing, because the CPU it "gave back" was the collector's.
+    ``bandwidth.py``'s own comment already said CPU saturation "costs throughput, not
+    the machine"; the response to it still cost throughput.
+
+    What the back-off is FOR is the other case, and that one is real and stays: this app
+    runs on the operator's own machine beside their browser, their editor and a local
+    model, and when one of those needs the CPU the collector should yield. So the
+    question is not "is the machine full" but "whose load is it", and the reading that
+    answers it was already being sampled and logged (``cpu_proc_pct``) and simply never
+    consulted by any decision.
+
+    THE TWO SCALES DIFFER and conflating them would invert the answer:
+    ``psutil.cpu_percent()`` is normalised 0-100 across the whole machine, while
+    ``Process.cpu_percent()`` SUMS across cores and reaches 100 x ncpu. Our share is
+    therefore ``cpu_proc_pct / cpu_count``, and "most of the load is not us" is
+    ``others > ours`` -- a ratio rather than a second magic number, and one that states
+    itself: the box is full and we are not the majority of it.
+
+    UNMEASURABLE FALLS BACK TO THE OLD RULE, deliberately. With no process reading or no
+    CPU count we cannot attribute the load, and the safe direction for a politeness
+    control is to keep yielding: this change only ever NARROWS the back-off, to the
+    cases where we have evidence it is someone else. ``others_pct`` is ``None`` there,
+    so the perf log says "we could not attribute this", never a fabricated zero.
+
+    NOTE what "ours" covers: the whole process, so the API server, the briefing
+    recompute and the housekeeping lane count as us. That is the intended reading --
+    the governor exists to protect the machine's OTHER tenants, not to arbitrate
+    between this app's own threads, and cutting collector permits to feed our own
+    background work is the same self-defeating trade in a smaller costume.
+    """
+    if cpu_sys_pct is None or cpu_sys_pct < _CPU_SATURATED_PCT:
+        return False, None
+    n = cpu_count if cpu_count is not None else _cpu_count()
+    if cpu_proc_pct is None or not n or n < 1:
+        return True, None  # saturated, attribution unavailable -> the old rule
+    ours = cpu_proc_pct / n
+    others = max(0.0, cpu_sys_pct - ours)
+    return others > ours, round(others, 1)
 
 
 def _proc_handle():
@@ -348,7 +417,9 @@ class CollectionMonitor:
         self._prev_tick_mono = now_mono
 
         mem_low = mem_avail is not None and mem_avail < self._mem_floor
-        cpu_saturated = cpu_sys is not None and cpu_sys >= _CPU_SATURATED_PCT
+        # P4: the machine being full is not the question -- whose load it is, is.
+        # See cpu_contention for why, and for what an unmeasurable attribution does.
+        cpu_saturated, cpu_others = cpu_contention(cpu_sys, vit.get("cpu_proc_pct"))
         # The writer is the limit when workers QUEUE behind it. The instantaneous
         # waiter count is bursty (a write releases fast, so a sample tick often
         # catches it at 1 even after a 23-deep queue), so saturation is decided
@@ -425,6 +496,11 @@ class CollectionMonitor:
             },
             "cpu_sys_pct": cpu_sys,
             "cpu_proc_pct": vit.get("cpu_proc_pct"),
+            # P4: the share of a saturated machine that is NOT this process -- the
+            # number the CPU back-off is actually decided on. None means either the
+            # machine was not saturated or the attribution could not be made; the
+            # perf log must not read those as "no other load", so neither is 0.
+            "cpu_others_pct": cpu_others,
             "mem_avail_mb": mem_avail,
             "mem_total_mb": vit.get("mem_total_mb"),
             "rss_mb": vit.get("rss_mb"),

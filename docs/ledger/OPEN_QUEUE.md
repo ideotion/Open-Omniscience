@@ -12006,3 +12006,86 @@ recommendation's own advice.
 returns 1 and will forever: the hit is the summary of the row that RECORDS the sweep, quoting the
 phrase it retired. A column-aware read of `refs` reports the truth — **zero** unresolved placeholders.
 Recorded in full in [`LESSONS.md`](LESSONS.md).
+
+---
+
+## PENDING (2026-09-10) — collector throughput: P1, P2, P4, P5 SHIPPED; only P3 open
+
+Recorded from the measured investigation in
+[`docs/audit/12_COLLECT_THROUGHPUT_2026-09-10.md`](../audit/12_COLLECT_THROUGHPUT_2026-09-10.md),
+reproducible with `scripts/analysis/collect_throughput_bench.py`. The field report was
+*"the rate of article download is now abnormally slow"*; the finding is that **the
+collector is CPU-bound, not download-bound** — throughput is flat at ~2.3 articles/s from
+1 worker to 50 on a 4-core box — and that **nothing regressed in the last few days**
+(per-article cost has been flat since 2026-07-15; it doubled between 06-15 and 07-15).
+
+**P1 — narrow the 555-name month alternation. SHIPPED 2026-09-10 (same session).**
+`extract_dates` 78-81 ms -> 7.7-8.3 ms per article (~10x); per-article extraction 159-163
+-> 68-77 ms (~2.2x); end-to-end collection 3.45 -> 5.61 art/s on a fast link and 2.62 ->
+3.63 over a 1.5 s/fetch transport. Identical SHA-256 over a 10,629-case / 11,973-candidate
+differential covering every one of the 555 names in four casings, both sides of `_MAX_SCAN`,
+32 language hints. Details and the mutation matrix in the audit report's §10; the reusable
+lessons (a differential whose harness used the randomised `str.hash`; two guards that
+survived every mutation and one of which was silently pinning 30 Greek names into every
+article; the identity check a per-document rebuild breaks) are in `LESSONS.md`.
+
+**P2 — take `OO_CODE_TOKEN_FILTER` out of the per-token path. SHIPPED 2026-09-10.**
+Keyword extraction 24-25 ms -> 11-12 ms per article. Byte-identical output with the flag
+on AND off, and the two hashes differ from each other so the check discriminates.
+
+**P3 — bound `htmldate`'s `dateparser` fallback in `extract_article`.** With a parseable
+`article:published_time` the whole extractor costs 6.9 ms. Without one,
+`trafilatura.extract_metadata` → `htmldate.find_date` → `dateparser` runs a full locale
+search: **measured 434 ms per article**, 44 % of a profile, `regex.compile` called 954
+times. That is a tail every awkwardly-dated page pays on the hot path. Bounding it changes
+published-date recall on those pages, so it is a ruling, not a cleanup. (Related and
+cheaper: `extract_article` parses the same HTML twice — `extract` then `extract_metadata`.)
+
+**P4 — the two self-inflicted throttles. SHIPPED 2026-09-10 (same session).**
+(a) `cpu_saturated` fired at 92% SYSTEM-WIDE CPU, which a healthy CPU-bound collector
+produces by itself — measured 50 permits to 1 in 73 s for doing its job well. It now
+compares `cpu_proc_pct` (already sampled, already logged, consulted by nothing) against
+the system total, with the scale difference stated: `Process.cpu_percent` sums across
+cores, `psutil.cpu_percent` does not. The back-off owed to the operator's OTHER processes
+is untouched; unmeasurable falls back to the old rule. (b) `mem_low` is a whole-machine
+reading, so a box running a local model pinned the persisted ceiling at 1 forever, across
+restarts — 1.91 -> 0.45 art/s with no code change and no visible cause. A pass that
+already ran at a ceiling of 1 and still saw sustained pressure now relaxes instead of
+re-pinning; the guarantee is narrow and checkable (a ceiling of 1 cannot survive two
+passes) and does NOT claim recovery to w_max while external pressure lasts. `memguard`,
+which is what actually protects the machine, is untouched. Details in the audit report §11.
+
+**P6 (NEW, 2026-09-10) — back the collector off on measured EVENT-LOOP LAG, not on CPU
+saturation.** P4a's honest cost: the API server shares this process, so collector threads
+and the event loop compete for one GIL, and the old blanket CPU back-off had an undesigned
+side effect -- cutting permits freed GIL time and kept the local UI responsive during a
+heavy pass. Not cutting them can make the UI feel slower while collecting on a small box.
+Accepted for now because the throughput that back-off bought was NEGATIVE (the CPU went
+back to the same process that wanted it) and because S3.4 already built the right surface
+for the real concern: `server_load` plus the client backoff it drives, fed by
+`latency.py`'s loop-block watchdog, which since S3.4 keeps every sample in a bounded window
+and publishes `latest` and `peak` separately. THE SIGNAL THEREFORE EXISTS AND IS NOT WIRED
+TO THE GOVERNOR. Loop lag is a DIRECT measurement of "we are starving our own server";
+CPU saturation is a proxy that cannot tell starving the server from doing the work. Wants
+its own measurement pass -- a threshold picked from real readings, not guessed -- and a
+test that the two cases are distinguishable.
+
+**P5 — surface the caps where collection is watched. SHIPPED 2026-09-10.**
+`capacity.concurrency_report()` composes the learned ceiling and the machine-floor cap
+and rides the `status()` payload the task manager already polls; the Schedule subtab
+grows a Workers section. The two causes are kept apart (different remedies), a healthy
+machine gets a plain "nothing is holding it back", an unreadable block says so, and no
+permit count is drawn when no pass is in flight — while a measured 0 still draws.
+16 strings x12 locales. BROWSER-VERIFIED in Chromium against the running app with the
+capacity file seeded to a ceiling of 1: no console errors, the #oo-tip bubble shows the
+translated method, and French renders every string. The click-through earned itself --
+it caught a defect the node harness structurally cannot see, `.vitals-pop .vr b` clamping
+the reason to 160px so it read "this machine backed o..." off the panel edge; the reason
+is now a wrapping line.
+
+**NOT MEASURED, and the next thing to instrument if the complaint is specifically
+"fewer articles per hour" rather than "each article takes longer":** the pass TAIL and the
+housekeeping lane (discovery, source enrichment, the briefing refresh, the WAL
+checkpoint). They run *around* `run_scrape_once` on threads that compete for the same GIL
+and are outside every number in the report. Also unmeasured: SQLCipher (every DB figure in
+the report is a plaintext floor) and real Tor.

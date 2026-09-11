@@ -3349,5 +3349,21 @@
   "Grade at least one anchor first.": "قيِّم مرساة واحدة على الأقل أولًا.",
   "Enter at least a host and user.": "أدخل المضيف واسم المستخدم على الأقل.",
   "Group added.": "أُضيفت المجموعة.",
-  "These signals are merely close in place and time within your current window.": "هذه الإشارات متقاربة فقط في المكان والزمان ضمن نافذتك الحالية."
+  "These signals are merely close in place and time within your current window.": "هذه الإشارات متقاربة فقط في المكان والزمان ضمن نافذتك الحالية.",
+  "Workers": "العمّال",
+  "Fetching now": "قيد الجلب الآن",
+  "Limit this pass": "حد هذه الجولة",
+  "Configured maximum": "الحد الأقصى المُعدّ",
+  "Why the limit": "سبب الحد",
+  "the concurrency limits could not be read": "تعذّرت قراءة حدود التوازي",
+  "both a measured memory back-off and the machine floor": "تراجع ذاكرة مقيس وحدّ الجهاز الأدنى معًا",
+  "this machine backed off under memory pressure, so the ramp is capped": "تراجع هذا الجهاز تحت ضغط الذاكرة، لذا صار التصاعد محدودًا",
+  "this machine is below the memory floor, so the fan-out is capped": "هذا الجهاز دون حدّ الذاكرة الأدنى، لذا صار التوازي محدودًا",
+  "nothing is holding it back — the full configured maximum is available": "لا شيء يعوقه — الحد الأقصى المُعدّ متاح بالكامل",
+  "The permit count the bandwidth governor is running right now. Absent between passes — there is nothing to count.": "عدد التصاريح الذي يشغّله منظّم النطاق الآن. لا يظهر بين الجولات — إذ لا شيء يُعدّ.",
+  "What this pass may ramp to: the smaller of the measured ceiling and the machine-floor cap.": "ما يمكن أن تبلغه هذه الجولة: الأصغر بين السقف المقيس وحدّ الجهاز الأدنى.",
+  "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "إعداد توازي الجمع الخاص بك. لا يُعاد كتابته أبدًا — الحدود أعلاه تقيّد ما تنفقه جولة واحدة فقط.",
+  "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "يرتخي السقف المقيس بعد الجولات التي لا ترى ضغطًا، ويُزال متى بلغ الحد الأقصى المُعدّ. إنه ذاكرة مؤقتة لقياس، لا إعداد — وحذف data/collect_capacity.json ينساه فورًا.",
+  "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "خفّض هذا الجهاز عدد عمّاله بنفسه تحت ضغط الذاكرة. يبدأ الجامع الجولة التالية من هناك بدل أن يعيد النزول ذاته.",
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "يُبقى الجهاز الذي دون حدّ الذاكرة الأدنى على توازٍ أقل حتى تعيد تشغيله."
 }
