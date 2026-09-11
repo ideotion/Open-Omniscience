@@ -1700,13 +1700,66 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
             finally:
                 raw_cur.close()
             freelist_after = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
+            reclaimed = max(freelist_before - freelist_after, 0)
+            page_size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
             report = {
                 "freelist_pages_before": freelist_before,
                 "freelist_pages_after": freelist_after,
-                "pages_reclaimed": max(freelist_before - freelist_after, 0),
+                "pages_reclaimed": reclaimed,
                 "requested_pages": pages,
+                "page_size": page_size,
+                "freelist_bytes_after": freelist_after * page_size,
                 "at": now.isoformat(timespec="seconds"),
             }
+            # C3 (field diagnostics 2026-09-11): this reported `pages_reclaimed: 1`
+            # against `requested_pages: 2000` with 141,679 pages still free -- about
+            # 2.22 GB stranded in a 27.7 GB database -- and said nothing about it. A run
+            # that reclaims 1 page of 2000 is not a successful run, and reporting only
+            # the bare number lets it read as one.
+            #
+            # IT IS NOT THE USUAL EXPLANATION, which is worth recording because that is
+            # the first thing a reader will reach for. The obvious cause is a store
+            # created at auto_vacuum=NONE whose pragma was flipped later -- a no-op
+            # without a full VACUUM, since the pointer-map pages do not exist -- but such
+            # a store reports mode 0 and takes the `not-incremental-mode` branch above.
+            # The field store reported 2. The pragma is live and the pages genuinely did
+            # not move.
+            #
+            # WHAT IS REPORTED IS THE OBSERVATION, NOT A CAUSE THAT WAS NEVER ESTABLISHED.
+            # The candidates are named because each is checkable by the operator, and the
+            # first is not a guess: incremental vacuum cannot release pages a reader may
+            # still need, and the SAME bundle recorded a read transaction open 17.4 hours
+            # pinning the WAL (finding C1, fixed separately, and a plausible reason this
+            # reclaimed nothing). Which one it was on that store is not something this
+            # code can know, so it does not say.
+            if pages > 0 and reclaimed < pages and freelist_after > pages:
+                report["reclaim_shortfall"] = {
+                    "reclaimed": reclaimed,
+                    "requested": pages,
+                    "still_free_pages": freelist_after,
+                    "still_free_bytes": freelist_after * page_size,
+                    "detail": (
+                        f"reclaimed {reclaimed} of {pages} requested pages while "
+                        f"{freelist_after:,} remain free. Incremental vacuum could not "
+                        "move them, so this run did NOT reclaim the space its other "
+                        "numbers might suggest."
+                    ),
+                    "candidates": [
+                        "a long-lived reader holds a snapshot those pages belong to -- "
+                        "incremental vacuum cannot release pages a reader may still "
+                        "need; check storage_composition.last_checkpoint.readers",
+                        "the free pages are not at the end of the file and this store "
+                        "lacks pointer-map coverage for them, so only a full VACUUM can "
+                        "compact it",
+                    ],
+                    "full_vacuum_note": (
+                        "A full VACUUM is the only operation that always compacts, and it "
+                        "is deliberately NOT run here: it blocks writes for its whole "
+                        "duration and needs free disk roughly equal to the database size, "
+                        "which on a large corpus is a real constraint rather than a "
+                        "footnote. It stays the operator's button in Settings."
+                    ),
+                }
     except Exception:  # noqa: BLE001 - a background safety net must never break the pass
         _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
         return {"skipped": "error"}
