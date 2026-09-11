@@ -12304,6 +12304,54 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
   "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
 
+- **ADDENDUM 2026-09-11 — THE 7,847 ROWS, MEASURED, AND ONE CORRECTION TO HOW THE QUESTION IS
+  USUALLY PUT.** The maintainer, returning to it: *"How should we interpret this? Should we consider
+  this as a green light for scraping, but add a more recurrent robots.txt verification? Is it also
+  ethical to completely ban it and exclude it from our catalogue?"* Three findings, all from the
+  code and the completed Stage A run; NOTHING could be measured against the live hosts, because this
+  sandbox answers `000` for every publisher (re-probed this turn, unchanged).
+  **(1) THE 'NO ROBOTS.TXT' CASE IS ALREADY A GREEN LIGHT AND IS NOT IN THIS BUCKET.**
+  `EthicalFetcher._get_robots` maps 404/410 to an EMPTY parser — `allow_all`, the standard
+  behaviour — so a host with no robots.txt proceeds normally and never reaches
+  `robots_unavailable`. The bucket is therefore only three things: **401/403 (refused)**, **5xx or an
+  unexpected status (server broken)**, and **a network failure, timeout, SSRF-blocked redirect or
+  redirect loop (unreachable)**. So "should we treat it as a green light" is asking about refusals
+  and failures, not about absence — absence is already handled.
+  **(2) WE CANNOT CURRENTLY TELL THE THREE APART, AND THAT IS STEP ZERO.** `RobotsUnavailable`
+  carries one message for all three causes and Stage A records the single label `unavailable`
+  (`verify_candidate_feeds.py:352`). Every row of the 7,847 is un-attributed. The additive fix the
+  entry above already proposed — the cause on the exception, `robots_refused` vs
+  `robots_unreachable` in the pipeline — is a prerequisite under EVERY possible ruling, including
+  "ban them", which cannot be made honestly without knowing what is being banned.
+  **(3) THE RATES SAY THE BUCKET IS DOMINATED BY THE PATHWAY, NOT BY HOST POLICY.** Over the
+  completed 22,045-row run: **`robots_unavailable` 7,847 (35.6 %) against `robots_disallowed` 262
+  (1.2 %) — thirty to one.** That is backwards from what the open web looks like: an explicit
+  `Disallow` is common and a host that refuses robots.txt outright is rare, so a 30:1 inversion is
+  not a property of publishers. Two corroborations. The bucket contains hosts that certainly DO
+  serve a robots.txt — `chd.sagepub.com` (SAGE), `zbc.co.zw` and `tdm.com.mo` (the Zimbabwean and
+  Macanese national broadcasters), `journalpioneer.com` and `kamloopsthisweek.com` (Canadian
+  regional dailies behind commercial WAFs). And the rate is UNIFORM rather than clustered: across
+  the fourteen highest-volume countries — ca, br, es, pl, ru, it, in, au, mx, jp, no, tr, ua, ro,
+  spanning every continent and every kind of internet governance — it sits in a **25–53 % band**,
+  while `robots_disallowed` stays flat at 0.4–2.7 % everywhere. A host-level or country-level policy
+  signal would vary with CDN penetration and legal regime; a pathway-level one is uniform, and this
+  is uniform. Read together with the 2026-09-10 addendum's point (3), the reading is that most of
+  these are Tor-exit reputation, not publishers refusing us.
+  **THE ANSWERS, unchanged in substance and now with the evidence under them.** Interpretation:
+  `robots_unavailable` is NOT a verdict, it is the ABSENCE of one, and the design error is that it
+  is currently spent like a verdict — a rejection row in the pipeline and, in
+  `src/monitoring/preflight.py`, a `robots_allowed = False` WRITTEN onto the source. An absence
+  should EXPIRE, not decide. Green light: NO as a blanket, because we cannot distinguish a refusal
+  from a failure; but the recurrent re-check the maintainer proposes is exactly right and is the
+  core of the recommendation — fail closed on the FETCH (the non-negotiable, untouched), while the
+  CATALOGUE holds the row as not-yet-judged with a per-host next-attempt and backoff, so the state
+  is re-earned rather than inherited. Ban and exclude: NO, and it is not the more ethical option but
+  a different error — deleting a publisher because a CDN declined our exit node punishes them for a
+  decision that was never theirs, throws away roughly a third of the discovered corpus on evidence
+  we have just shown is mostly about the path, and is irreversible in a way the refusal it claims to
+  respect is not. Respecting robots means not FETCHING; it has never meant refusing to know a
+  publisher exists.
+
 - **ADDENDUM 2026-09-10 (maintainer, same day) — THE DEFAULT DEPLOYMENT IS A WHONIX/TOR PATH THROUGH A
   DEBIAN VM, SO THE "MEASURE FROM CLEARNET FIRST" HALF OF THE RECOMMENDATION ABOVE IS WITHDRAWN.** The
   maintainer's question: "if you take into consideration that the default usage of the app would be to
