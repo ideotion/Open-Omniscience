@@ -8737,3 +8737,23 @@
   shipped them, the new — correct — dedupe deleted the fixture's own rows and reddened two tests that
   had nothing to do with the change. A synthetic fixture must be synthetic all the way down
   (`.example`), or it eventually collides with the real data the code under test consults.
+
+- **THE `merge=union` DUPLICATE TRAP IS CHEAPER TO PREVENT THAN TO REPAIR, AND PREVENTION MEANS
+  MAKING THE LINES IDENTICAL (2026-09-11, PR #1108 against the #1111 sweep).** The trap had fired
+  three times and was about to fire a fourth: a sweep branch was correcting five `PR pending`
+  placeholders that this branch had inherited from `main` in their stale form, and union keeps both
+  copies of a row the other side EDITED. Every previous instance was caught AFTER the merge, by the
+  prescribed duplicate-key scan, and repaired by deleting rows — which the record itself calls the
+  dangerous step, because deleting rows is how a real one disappears. **The cheaper move is
+  available to whichever branch notices first: union keeps an IDENTICAL line once, so applying the
+  other side's correction verbatim makes the collision impossible rather than detectable.** Verified
+  by simulating the union of the two files and asserting zero new duplicate keys, before pushing.
+  Two conditions make it safe, and both matter. **(1) Adopt the other side's value verbatim; do not
+  derive your own.** Two sessions resolving one row to different-but-defensible numbers produces a
+  duplicate AND a wrong number in the permanent record — strictly worse than doing nothing.
+  **(2) Corroborate it anyway before adopting** — here the merge commit named the PR and the branch,
+  and the rows' `key_paths` were that branch's own files. Rule (5b)'s binary-search archaeology was
+  neither used nor usable: this clone is SHALLOW, the exact condition (5b) warns produces ten
+  identical wrong numbers, so the answer had to come from evidence in hand instead. Read together
+  with (5b): the sweep is still owed, and a branch that can see the answer should sweep its own copy
+  rather than leave it for the merge to discover.
