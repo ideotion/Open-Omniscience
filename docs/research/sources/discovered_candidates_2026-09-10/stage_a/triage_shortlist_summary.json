@@ -1,0 +1,17 @@
+{
+ "entries": 494,
+ "rejected": 149,
+ "by_reason": {
+  "not_journalism:academic": 57,
+  "not_journalism:other": 27,
+  "not_journalism:institution": 18,
+  "not_journalism:religious": 14,
+  "not_journalism:aggregator": 12,
+  "not_journalism:magazine": 5,
+  "not_journalism:broadcaster": 5,
+  "not_journalism:trade-or-corporate": 4,
+  "not_journalism:personal-blog": 2,
+  "low_confidence": 5
+ },
+ "untrusted_batches": []
+}

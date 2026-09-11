@@ -8250,3 +8250,18 @@
   must be drawn from the languages that have almost no sources — ~80 of 3,429. A property that
   looks like randomness can be bounded by the SIZE OF THE POOL the fairness rule leaves you, and no
   amount of shuffling enlarges it. Measure the pool before promising variety.
+- **A BATCH MODEL THAT ANSWERS MOST OF A BATCH IS THE FAILURE MODE TO DESIGN FOR, NOT A WRONG
+  ANSWER (2026-09-11, the candidate pipeline's first real triage run):** across 17 Haiku batches of
+  42 rows, the classifications were sound — every one of the 34 hand-known canaries was read
+  correctly, and 16 batches passed code re-validation on the first attempt. The one failure was not
+  a misjudgement at all: batch 11 silently returned 35 rows instead of 42, having simply stopped.
+  Nothing in the answer itself looked wrong, and a merger that trusted per-row answers would have
+  taken the 35 and never noticed the 7. **GENERAL FORM: when a model returns a COLLECTION, the
+  count is a first-class check and belongs beside the enum and vocabulary checks — validate that
+  every input is echoed exactly once BEFORE looking at any answer's content, and treat a short
+  answer as an untrusted BATCH rather than a partial success.** The re-run fixed it by naming
+  completeness as the hard requirement and telling the model what to do with a row it could not
+  judge (answer it with low confidence, which the merge drops) — a model skips a hard row when the
+  prompt gives it no honest way to keep it. The canaries were worth their cost for a different
+  reason than expected: they proved the reading was trustworthy, which is what let a single
+  structural failure be re-run rather than casting doubt on the whole run.

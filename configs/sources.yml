@@ -39278,3 +39278,7720 @@ sources:
   - disinformation
   - nonprofit
   priority: 3
+- name: daily.ky
+  domain: daily.ky
+  rss_url: https://daily.ky/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ky
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: The Anguillian
+  domain: theanguillian.com
+  rss_url: https://theanguillian.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ai
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Curaçao.nu
+  domain: curacao.nu
+  rss_url: https://www.curacao.nu/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: cw
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Khabar Agency
+  domain: khbr.me
+  rss_url: https://www.khbr.me/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: ye
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - human-rights
+  priority: 3
+- name: Q138961092
+  domain: yementdy.com
+  rss_url: https://www.yementdy.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: ye
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Bondia
+  domain: bondia.ad
+  rss_url: https://www.bondia.ad/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: ad
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Diari d'Andorra
+  domain: diariandorra.ad
+  rss_url: https://www.diariandorra.ad/rss/home.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: ad
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Cadena Dial
+  domain: cadenadial.com
+  rss_url: https://www.cadenadial.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ad
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Europa FM
+  domain: europafm.com
+  rss_url: https://www.europafm.com/rss/234881.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ad
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: El Periòdic d'Andorra
+  domain: elperiodic.ad
+  rss_url: https://elperiodic.ad/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: ad
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: La Valira
+  domain: lavalira.eu
+  rss_url: https://lavalira.eu/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: ad
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: CoinGeek
+  domain: coingeek.com
+  rss_url: https://coingeek.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ag
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - technology
+  - finance
+  priority: 3
+- name: Antigua and Barbuda Broadcasting Services
+  domain: abstvradio.com
+  rss_url: https://abstvradio.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: ag
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+  language: en
+- name: ABC News
+  domain: abcnews.al
+  rss_url: https://abcnews.al/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: al
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+  language: sq
+- name: Albanian Radio Television
+  domain: rtsh.al
+  rss_url: https://rtsh.al/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: al
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+  language: sq
+- name: Koha Jonë
+  domain: kohajone.com
+  rss_url: https://kohajone.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sq
+  country: al
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: News 24
+  domain: news24.al
+  rss_url: https://www.news24.al/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: al
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+  language: sq
+- name: Shekulli
+  domain: shekulli.com.al
+  rss_url: https://shekulli.com.al/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sq
+  country: al
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Tëvë 1
+  domain: teve1.info
+  rss_url: https://teve1.info/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: al
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+  language: sq
+- name: A1plus
+  domain: a1plus.am
+  rss_url: https://a1plus.am/hy/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hy
+  country: am
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: EVN Report
+  domain: evnreport.com
+  rss_url: https://evnreport.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: am
+  region: asia
+  source_type: magazine
+  tags:
+  - news
+  - analysis
+  - general-news
+  priority: 3
+- name: PanARMENIAN.Net
+  domain: pan.am
+  rss_url: https://www.pan.am/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: am
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Mediamax news agency
+  domain: mediamax.am
+  rss_url: https://mediamax.am/en/index.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: am
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Azadliq
+  domain: azadliq.org
+  rss_url: https://www.azadliq.org/api/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: az
+  country: az
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  - human-rights
+  priority: 3
+- name: Bakinski Rabochi
+  domain: br.az
+  rss_url: https://br.az/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: az
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q65279892
+  domain: modern.az
+  rss_url: https://modern.az/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: az
+  country: az
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Trend News Agency
+  domain: trend.az
+  rss_url: https://www.trend.az/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: az
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - regional
+  - energy
+  priority: 3
+- name: Trend News Agency
+  domain: az.trend.az
+  rss_url: https://az.trend.az/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: az
+  country: az
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - regional
+  - energy
+  priority: 3
+- name: Yeni Müsavat
+  domain: musavat.com
+  rss_url: https://musavat.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: az
+  country: az
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Trend News Agency
+  domain: ru.trend.az
+  rss_url: https://ru.trend.az/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: az
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - regional
+  - energy
+  priority: 3
+- name: Alternativna TV
+  domain: atvbl.com
+  rss_url: https://api.atvbl.rs/rss/index.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: BN Televizija
+  domain: rtvbn.tv
+  rss_url: https://rtvbn.tv/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Center for Investigative Reporting
+  domain: cin.ba
+  rss_url: https://cin.ba/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: investigative
+  tags:
+  - news
+  - investigative
+  - general-news
+  priority: 3
+- name: Dnevni avaz
+  domain: avaz.ba
+  rss_url: https://avaz.ba/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Federal News Agency
+  domain: fena.ba
+  rss_url: https://fena.ba/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Naša riječ
+  domain: nasarijec.ba
+  rss_url: https://nasarijec.ba/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Nova (Bosnia and Herzegovina)
+  domain: novabh.tv
+  rss_url: https://novabh.tv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Pink Soap
+  domain: pink.rs
+  rss_url: https://pink.rs/rss-feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - tabloid
+  - politics
+  priority: 3
+- name: Radio 8
+  domain: radio8.ba
+  rss_url: https://radio8.ba/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Radio Sarajevo
+  domain: radiosarajevo.ba
+  rss_url: https://radiosarajevo.ba/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - culture
+  priority: 3
+- name: Radio Television of Republika Srpska
+  domain: rtrs.tv
+  rss_url: https://www.rtrs.tv/vijesti/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Radiotelevision of Herzeg-Bosnia
+  domain: rtv-hb.com
+  rss_url: https://rtv-hb.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: TVSA
+  domain: tvsa.ba
+  rss_url: https://tvsa.ba/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: ba
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  - society
+  priority: 3
+- name: SRNA
+  domain: srna.rs
+  rss_url: https://srna.rs/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sr
+  country: ba
+  region: europe
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  - business
+  priority: 3
+- name: CBC TV 8
+  domain: cbc.bb
+  rss_url: https://www.cbc.bb/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: bb
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - technology
+  - education
+  priority: 3
+- name: Al Bilad
+  domain: albiladpress.com
+  rss_url: https://www.albiladpress.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: bh
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - business
+  - culture
+  priority: 3
+- name: Fraternité
+  domain: fraternitebj.info
+  rss_url: https://www.fraternitebj.info/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: bj
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - politics
+  - society
+  - human-rights
+  priority: 3
+- name: Le Matinal
+  domain: lematinal.bj
+  rss_url: https://lematinal.bj/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: bj
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: ZNS-1
+  domain: znsbahamas.com
+  rss_url: https://znsbahamas.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: bs
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: The Tribune
+  domain: tribune242.com
+  rss_url: https://www.tribune242.com/rss/headlines/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: bs
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - environment
+  priority: 3
+- name: Bhutan Times
+  domain: bhutantimes.bt
+  rss_url: https://bhutantimes.bt/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: bt
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - society
+  - economy
+  priority: 3
+- name: Q139504013
+  domain: infos229.groupecrytalnews.com
+  rss_url: https://infos229.groupecrytalnews.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: bj
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Nexta
+  domain: nexta.tv
+  rss_url: https://nexta.tv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: by
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  - war
+  priority: 3
+- name: Q113585561
+  domain: ganc-chas.com
+  rss_url: https://ganc-chas.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: by
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  - politics
+  priority: 3
+- name: Q12150328
+  domain: gazetaby.com
+  rss_url: https://gazetaby.com/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: by
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - human-rights
+  priority: 3
+- name: Q67193219
+  domain: zarya.by
+  rss_url: https://zarya.by/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: by
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q85487916
+  domain: pridvinje.by
+  rss_url: https://pridvinje.by/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: by
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q85685608
+  domain: pvestnik.by
+  rss_url: https://www.pvestnik.by/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: by
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  - politics
+  priority: 3
+- name: Africanews
+  domain: fr.africanews.com
+  rss_url: https://fr.africanews.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: cg
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  - politics
+  priority: 3
+- name: Africa Presse
+  domain: africapresse.com
+  rss_url: https://africapresse.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: cm
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  - politics
+  priority: 3
+- name: RecordTV Cabo Verde
+  domain: recordeuropa.com
+  rss_url: https://recordeuropa.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: cv
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - culture
+  priority: 3
+- name: Rádio Morabeza
+  domain: radiomorabeza.cv
+  rss_url: https://radiomorabeza.cv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: cv
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Politis
+  domain: politis.com.cy
+  rss_url: https://www.politis.com.cy/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: cy
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - society
+  priority: 3
+- name: Radio Astra
+  domain: dialogos.com.cy
+  rss_url: https://dialogos.com.cy/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: cy
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  - environment
+  priority: 3
+- name: Q3567002
+  domain: ant1iwo.com
+  rss_url: https://www.ant1live.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: cy
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - healthcare
+  - geopolitical
+  priority: 3
+- name: Q61741880
+  domain: alphacyprus.com.cy
+  rss_url: https://alphacyprus.com.cy/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: cy
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - culture
+  priority: 3
+  language: el
+- name: Sigma TV
+  domain: sigmalive.com
+  rss_url: https://www.sigmalive.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: cy
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  - environment
+  priority: 3
+- name: Atardecer.com.do
+  domain: atardecer.com.do
+  rss_url: https://atardecer.com.do/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: do
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - economy
+  priority: 3
+- name: El Nacional
+  domain: elnacional.com.do
+  rss_url: https://elnacional.com.do/rss/home.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: do
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Hoy
+  domain: hoy.com.do
+  rss_url: https://hoy.com.do/rss/home.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: do
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Q138244907
+  domain: eldia.com.do
+  rss_url: https://eldia.com.do/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: do
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Noticia.do
+  domain: noticia.do
+  rss_url: https://noticia.do/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: do
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Tallinna24
+  domain: helsinginuutiset.fi
+  rss_url: https://www.helsinginuutiset.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: ee
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Järva Teataja
+  domain: jarvateataja.postimees.ee
+  rss_url: https://jarvateataja.postimees.ee/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: et
+  country: ee
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: The Point
+  domain: thepoint.gm
+  rss_url: https://thepoint.gm/posts/rss/xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: gm
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Africaguinee
+  domain: africaguinee.com
+  rss_url: https://www.africaguinee.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: gn
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Kringvarp Føroya
+  domain: kvf.fo
+  rss_url: https://kvf.fo/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: fo
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+  language: fo
+- name: Vision Guinee
+  domain: visionguinee.info
+  rss_url: https://www.visionguinee.info/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: gn
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Le Lynx
+  domain: lelynx.net
+  rss_url: https://lelynx.net/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: gn
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q48879330
+  domain: ang.gw
+  rss_url: https://ang.gw/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: gw
+  region: africa
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: HCH
+  domain: hch.tv
+  rss_url: https://hch.tv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: hn
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: HRCV-TV
+  domain: televicentro.hn
+  rss_url: https://www.televicentro.com:443/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: hn
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: La Gaceta
+  domain: lagaceta.hn
+  rss_url: https://lagaceta.hn/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: hn
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Telecadena
+  domain: televicentro.com
+  rss_url: https://www.televicentro.com:443/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: hn
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Azattyk
+  domain: rus.azattyk.org
+  rss_url: https://www.azattyqasia.org/api/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kg
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Azattyk
+  domain: azattyk.org
+  rss_url: https://www.azattyk.org/api/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ky
+  country: kg
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Kabar
+  domain: ar.kabar.kg
+  rss_url: https://ar.kabar.kg/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: kg
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - business
+  priority: 3
+- name: Kabar
+  domain: kabar.kg
+  rss_url: https://kabar.kg/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: kg
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kabar
+  domain: en.kabar.kg
+  rss_url: https://en.kabar.kg/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: kg
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kabar
+  domain: ru.kabar.kg
+  rss_url: https://ru.kabar.kg/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kg
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kabar
+  domain: tr.kabar.kg
+  rss_url: https://tr.kabar.kg/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: tr
+  country: kg
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kabar
+  domain: cn.kabar.kg
+  rss_url: https://cn.kabar.kg/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: kg
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q104665933
+  domain: mp.kg
+  rss_url: https://mp.kg/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kg
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: The Cambodia Daily
+  domain: cambodiadaily.com
+  rss_url: https://www.cambodiadaily.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: kh
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: The Phnom Penh Post
+  domain: postkhmer.com
+  rss_url: https://postkhmer.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: kh
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Lietuvos rytas
+  domain: lrytas.lt
+  rss_url: https://www.lrytas.lt/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lt
+  country: lt
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Play Radio
+  domain: playradio.lt
+  rss_url: https://playradio.lt/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lt
+  country: lt
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: Q16457939
+  domain: 15min.lt
+  rss_url: https://www.15min.lt/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lt
+  country: lt
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Vakarų ekspresas
+  domain: ve.lt
+  rss_url: https://ve.lt/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lt
+  country: lt
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Verslo žinios
+  domain: vz.lt
+  rss_url: https://www.vz.lt/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lt
+  country: lt
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - general-news
+  priority: 3
+- name: Alwatania TV
+  domain: ltv.ly
+  rss_url: https://ltv.ly/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: ly
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Libya Al Ahrar TV
+  domain: libyaalahrar.tv
+  rss_url: https://libyaalahrar.tv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: ly
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Riviera Radio
+  domain: rivieraradio.mc
+  rss_url: https://www.rivieraradio.mc/feed/latest-news/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: mc
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Eco FM
+  domain: ecofm.md
+  rss_url: https://ecofm.md/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - environment
+  - energy
+  - agriculture
+  priority: 3
+- name: Observatorul de Nord
+  domain: observatorul.md
+  rss_url: https://observatorul.md/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Radio Chișinău
+  domain: m.radiochisinau.md
+  rss_url: https://radiochisinau.md/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: TV8
+  domain: tv8.md
+  rss_url: https://tv8.md/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: TVR Moldova
+  domain: tvrmoldova.md
+  rss_url: https://tvrmoldova.md/rss/all
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Yam
+  domain: news.yam.md
+  rss_url: https://news.yam.md/ro/feeds
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Vocea Basarabiei
+  domain: voceabasarabiei.md
+  rss_url: https://voceabasarabiei.md/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: md
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Montenegrin News Agency
+  domain: mina.news
+  rss_url: https://mina.news/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: me
+  region: europe
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Parotsa
+  domain: parotsa.com
+  rss_url: https://www.parotsa.com/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mg
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - economy
+  - finance
+  - business
+  priority: 3
+- name: Makfax
+  domain: makfax.mk
+  rss_url: https://makfax.com.mk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: mk
+  region: europe
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+  language: mk
+- name: Roma Press
+  domain: romapress.mk
+  rss_url: https://romapress.mk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: mk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+  language: mk
+- name: Le Journal du Mali
+  domain: journaldumali.com
+  rss_url: https://journaldumali.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: ml
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Malijet
+  domain: malijet.com
+  rss_url: https://malijet.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: ml
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Malitribune
+  domain: malitribune.com
+  rss_url: https://malitribune.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: ml
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: MNB (TV channel)
+  domain: mnb.mn
+  rss_url: https://mnb.mn/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: mn
+  country: mn
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Al Akhbar
+  domain: alakhbar.info
+  rss_url: https://www.alakhbar.info/latest/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: mr
+  region: africa
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Initiatives News
+  domain: initiativesnews.com
+  rss_url: https://initiativesnews.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mr
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: MauriWeb
+  domain: mauriweb.info
+  rss_url: https://www.mauriweb.info/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mr
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: L'Authentique (Mauritania)
+  domain: lauthentic.info
+  rss_url: https://lauthentic.info/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mr
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q136346520
+  domain: amap.ml
+  rss_url: https://amap.ml/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mr
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Le Calame
+  domain: lecalame.info
+  rss_url: https://lecalame.info/?q=rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mr
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Television of Mauritania
+  domain: tvm.mr
+  rss_url: https://tvm.mr/ar/?feed=rss2
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: mr
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Radio Mauritanie
+  domain: radiomauritanie.mr
+  rss_url: https://radiomauritanie.mr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: mr
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Taqadoum info
+  domain: taqadoum.mr
+  rss_url: https://taqadoum.mr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: mr
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: MBC 2
+  domain: mbcradio.tv
+  rss_url: https://www.mbc.mu/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: mu
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Mauritanian Information Agency
+  domain: ami.mr
+  rss_url: https://www.ami.mr/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: mr
+  region: africa
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Rádio Moçambique
+  domain: rm.co.mz
+  rss_url: https://www.rm.co.mz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: mz
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Windhoek Observer
+  domain: observer.com.na
+  rss_url: https://observer24.com.na/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: na
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Agence Nigérienne de Presse
+  domain: anp.ne
+  rss_url: https://anp.ne/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: ne
+  region: africa
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Canal 4
+  domain: canal4.com.ni
+  rss_url: https://www.canal4.com.ni/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ni
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: La Nueva Radio YA
+  domain: nuevaya.com.ni
+  rss_url: https://nuevaya.com.ni/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ni
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: TN8
+  domain: tn8.tv
+  rss_url: https://www.tn8.ni/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ni
+  region: north-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Al Wisal
+  domain: wisal.fm
+  rss_url: https://wisal.fm/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: om
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - finance
+  priority: 3
+- name: Virgin Radio Oman
+  domain: virginradiooman.com
+  rss_url: https://virginradiooman.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: om
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Crítica Libre
+  domain: critica.com.pa
+  rss_url: https://www.critica.com.pa/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: pa
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - healthcare
+  priority: 3
+- name: El Vocero
+  domain: elvocero.com
+  rss_url: https://www.elvocero.com/search/?f=rss&amp;t=article&amp;l=50&amp;s=start_time&amp;sd=desc&amp;k%5B%5D=%23topstory
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: pr
+  region: north-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Island Times
+  domain: islandtimes.org
+  rss_url: https://islandtimes.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: pw
+  region: oceania
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - climate
+  priority: 3
+- name: Umuseke
+  domain: umuseke.rw
+  rss_url: https://umuseke.rw/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: rw
+  country: rw
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Umuryango
+  domain: umuryango.rw
+  rss_url: https://umuryango.rw/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: rw
+  country: rw
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Radio Dabanga
+  domain: radiodabanga.org
+  rss_url: https://www.dabangasudan.org/ar/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: sd
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - war
+  priority: 3
+- name: Imvaho Nshya
+  domain: imvahonshya.co.rw
+  rss_url: https://imvahonshya.co.rw/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: rw
+  country: rw
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Delo
+  domain: delo.si
+  rss_url: https://www.delo.si/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - culture
+  priority: 3
+- name: Gorenjski glas
+  domain: gorenjskiglas.si
+  rss_url: https://gorenjskiglas.si/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Planet TV
+  domain: siol.net
+  rss_url: https://siol.net/feeds/latest
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q12800128
+  domain: obramba.com
+  rss_url: https://www.obramba.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - defense
+  - war
+  priority: 3
+- name: Q20523162
+  domain: erast.si
+  rss_url: https://www.erast.si/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Radio City, Maribor
+  domain: radiocity.si
+  rss_url: https://radiocity.si/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Radio Kranj
+  domain: radio-kranj.si
+  rss_url: https://radio-kranj.si/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Radio Ognjišče
+  domain: radio.ognjisce.si
+  rss_url: https://radio.ognjisce.si/sl/feed/radio
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sl
+  country: si
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - society
+  priority: 3
+- name: Shabelle Media Network
+  domain: shabellemedia.com
+  rss_url: https://shabellemedia.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: so
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Somali Broadcasting Corporation
+  domain: allsbc.com
+  rss_url: https://allsbc.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  country: so
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+  language: so
+- name: Somali National Television
+  domain: sntv.so
+  rss_url: https://sntv.so/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sw
+  country: so
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Ampie's Broadcasting Corporation
+  domain: abcsuriname.com
+  rss_url: https://abcsuriname.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: De Ware Tijd
+  domain: dwtonline.com
+  rss_url: https://dwtonline.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Dagblad Suriname
+  domain: dbsuriname.com
+  rss_url: https://www.dbsuriname.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: GFC Nieuws
+  domain: gfcnieuws.com
+  rss_url: https://www.gfcnieuws.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: De West
+  domain: dagbladdewest.com
+  rss_url: https://dagbladdewest.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Waterkant
+  domain: waterkant.net
+  rss_url: https://www.waterkant.net/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: STVS
+  domain: stvs.sr
+  rss_url: https://stvs.sr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: sr
+  region: south-america
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: STP-Press
+  domain: stp-press.st
+  rss_url: https://www.stp-press.st/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: st
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Tchadinfos
+  domain: tchadinfos.com
+  rss_url: https://tchadinfos.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: td
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: New World TV
+  domain: newworldtv.com
+  rss_url: https://www.newworldtv.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: tg
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Asia-Plus news agency
+  domain: asiaplus.news
+  rss_url: https://asiaplus.news/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: tj
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Togolese Press Agency
+  domain: atop.tg
+  rss_url: https://atop.tg/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: tg
+  region: africa
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Rádio e Televisão de Timor-Leste
+  domain: rttlep.tl
+  rss_url: https://rttlep.tl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: tl
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Karakalpakstan news agency
+  domain: kknews.uz
+  rss_url: https://kknews.uz/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: uz
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Togo - Presse
+  domain: togopresse.tg
+  rss_url: https://togopresse.tg/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fr
+  country: tg
+  region: africa
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Uzbekistan National News Agency
+  domain: uza.uz
+  rss_url: https://uza.uz/uz/rss?q=%2Frss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: uz
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Agenzia Fides
+  domain: fides.org
+  rss_url: http://www.fides.org/it/news/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: it
+  country: va
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Turkmenistan State News Agency
+  domain: tdh.gov.tm
+  rss_url: https://tdh.gov.tm/tk/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: tk
+  country: tm
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Ajker Patrika
+  domain: ajkerpatrika.com
+  rss_url: https://www.ajkerpatrika.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: bd
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Amar Desh
+  domain: dailyamardesh.com
+  rss_url: https://www.dailyamardesh.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: bd
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Daily Sabuj Sylhet
+  domain: sobujsylhet.com
+  rss_url: https://sobujsylhet.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: bd
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Dainik Azadi
+  domain: dainikazadi.net
+  rss_url: https://dainikazadi.net/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: bd
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Sheershanews.com
+  domain: sheershanews.com
+  rss_url: https://sheershanews.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: bd
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Bulgarian National Radio
+  domain: bnrnews.bg
+  rss_url: https://bnrnews.bg/api/rss/main
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Nova
+  domain: nova.bg
+  rss_url: https://nova.bg/rss/latest
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Plovdiv24.bg
+  domain: plovdiv24.bg
+  rss_url: https://www.plovdiv24.bg/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q56071721
+  domain: toppresa.bg
+  rss_url: https://toppresa.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q59681937
+  domain: toest.bg
+  rss_url: https://www.toest.bg/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - analysis
+  priority: 3
+- name: Standart
+  domain: standartnews.com
+  rss_url: https://www.standartnews.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: TV7
+  domain: tv7.bg
+  rss_url: https://tv7.bg/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bg
+  country: bg
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Diário Brasil Nippou
+  domain: brasilnippou.com
+  rss_url: https://brasilnippou.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: br
+  region: south-america
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: La Quotidiana
+  domain: suedostschweiz.ch
+  rss_url: https://www.suedostschweiz.ch/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: de
+  country: ch
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: ABC
+  domain: abicko.cz
+  rss_url: https://www.abicko.cz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - general-news
+  - science
+  priority: 3
+- name: Aha!
+  domain: ahaonline.cz
+  rss_url: https://www.ahaonline.cz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: Blesk
+  domain: blesk.cz
+  rss_url: https://www.blesk.cz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: ChristNet
+  domain: christnet.eu
+  rss_url: https://www.christnet.eu/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: CNN Prima News
+  domain: cnn.iprima.cz
+  rss_url: https://cnn.iprima.cz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Deník Alarm
+  domain: denikalarm.cz
+  rss_url: https://denikalarm.cz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - analysis
+  - politics
+  priority: 3
+- name: Czech Radio Hradec Králové
+  domain: hradec.rozhlas.cz
+  rss_url: https://hradec.rozhlas.cz/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: e15
+  domain: e15.cz
+  rss_url: https://www.e15.cz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - economy
+  - finance
+  priority: 3
+- name: euro.cz
+  domain: euro.cz
+  rss_url: https://www.euro.cz/rss/clanky/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - economy
+  priority: 3
+- name: Expres FM
+  domain: expresfm.cz
+  rss_url: https://www.expresfm.cz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: HN.cz
+  domain: ihned.cz
+  rss_url: https://hn.cz/?m=rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - economy
+  - politics
+  priority: 3
+- name: Hospodářské noviny
+  domain: hn.cz
+  rss_url: https://hn.cz/?m=rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - economy
+  - politics
+  priority: 3
+- name: Listy
+  domain: listy.cz
+  rss_url: https://www.listy.cz/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  - politics
+  priority: 3
+- name: lupa.cz
+  domain: lupa.cz
+  rss_url: https://www.lupa.cz/rss/clanky-samostatne/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - technology
+  - cybersecurity
+  priority: 3
+- name: MovieZone
+  domain: moviezone.cz
+  rss_url: https://www.moviezone.cz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: cs
+  country: cz
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Allt om Historia
+  domain: historianet.nl
+  rss_url: https://historianet.nl/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nl
+  country: dk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - history
+  priority: 3
+- name: Allt om Historia
+  domain: historienet.dk
+  rss_url: https://historienet.dk/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - history
+  priority: 3
+- name: Altinget
+  domain: altinget.no
+  rss_url: https://www.altinget.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - politics
+  - policy
+  priority: 3
+- name: Campo
+  domain: campo.dk
+  rss_url: https://campo.dk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Arbejderen
+  domain: arbejderen.dk
+  rss_url: https://arbejderen.dk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - politics
+  priority: 3
+- name: Dagbladet Børsen
+  domain: borsen.dk
+  rss_url: https://borsen.dk/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - economy
+  - business
+  priority: 3
+- name: Atlas
+  domain: atlasmag.dk
+  rss_url: https://atlasmag.dk/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Frihedsbrevet
+  domain: frihedsbrevet.dk
+  rss_url: https://frihedsbrevet.dk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - investigative
+  - politics
+  priority: 3
+- name: Kontrast
+  domain: kontrast.dk
+  rss_url: https://kontrast.dk/feeds/rss/articles/latest-news/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - politics
+  priority: 3
+- name: Landbrugsavisen
+  domain: landbrugsavisen.dk
+  rss_url: https://landbrugsavisen.dk/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - agriculture
+  priority: 3
+- name: Q122665349
+  domain: kulturinformation.org
+  rss_url: https://kulturinformation.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Q12303427
+  domain: bilmagasinet.dk
+  rss_url: https://bilmagasinet.dk/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - technology
+  priority: 3
+- name: Q12325399
+  domain: radiolvn.dk
+  rss_url: https://radiolvn.dk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q124737142
+  domain: seinmag.dk
+  rss_url: https://seinmag.dk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Q138745785
+  domain: verdensbedstenyheder.dk
+  rss_url: https://verdensbedstenyheder.dk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: da
+  country: dk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Andra
+  domain: andra.eus
+  rss_url: https://andra.eus/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - society
+  - politics
+  priority: 3
+- name: ahotsa.info
+  domain: ahotsa.info
+  rss_url: https://ahotsa.info/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: eu
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: ARA Balears
+  domain: arabalears.cat
+  rss_url: https://www.arabalears.cat/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Catalunya diari
+  domain: catalunyadiari.com
+  rss_url: https://catalunyadiari.com/rss/last-posts
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Busturialdeko Hitza
+  domain: busturialdea.hitza.eus
+  rss_url: https://busturialdea.hitza.eus/rss/albisteak/azala.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: eu
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Canal 21 Ebre
+  domain: canal21ebre.com
+  rss_url: https://www.canal21ebre.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Catorze
+  domain: catorze.cat
+  rss_url: https://www.catorze.cat/uploads/feeds/feed_catorze_ca.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Diari de Terrassa
+  domain: diarideterrassa.com
+  rss_url: https://www.diarideterrassa.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Diari de Vilanova
+  domain: diaridevilanova.cat
+  rss_url: https://www.diaridevilanova.cat/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Directa
+  domain: directa.cat
+  rss_url: https://directa.cat/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: investigative
+  tags:
+  - news
+  - politics
+  - investigative
+  priority: 3
+- name: El Temps
+  domain: eltemps.cat
+  rss_url: https://www.eltemps.cat/sindica
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - politics
+  - culture
+  priority: 3
+- name: EnpresaBIDEA
+  domain: enpresabidea.eus
+  rss_url: https://www.enpresabidea.eus/uploads/feeds/feed_via-empresa-euskera_eu.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: eu
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  priority: 3
+- name: Gara
+  domain: naiz.eus
+  rss_url: https://www.naiz.eus/eu/rss/news.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Gaztezulo
+  domain: gaztezulo.eus
+  rss_url: https://www.gaztezulo.eus/RSS
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: eu
+  country: es
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Nació Digital
+  domain: naciodigital.cat
+  rss_url: https://naciodigital.cat/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ca
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Q120541603
+  domain: roucoson.com
+  rss_url: https://roucoson.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: gl
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Q12387123
+  domain: disquecool.com
+  rss_url: https://www.disquecool.com/comments/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: gl
+  country: es
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  - technology
+  priority: 3
+- name: Q12386773
+  domain: cronica3.com
+  rss_url: https://www.cronica3.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: gl
+  country: es
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Anna
+  domain: anna.fi
+  rss_url: https://anna.fi/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Arbetarbladet
+  domain: demokraatti.fi
+  rss_url: https://wp.demokraatti.fi/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - economy
+  priority: 3
+- name: Borgåbladet
+  domain: bbl.fi
+  rss_url: https://www.bbl.fi/feeds/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: City
+  domain: city.fi
+  rss_url: https://www.city.fi/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  - technology
+  priority: 3
+- name: Etelä-Saimaa
+  domain: esaimaa.fi
+  rss_url: https://www.esaimaa.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Fillari
+  domain: fillari-lehti.fi
+  rss_url: https://fillari-lehti.fi/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  priority: 3
+- name: Forssan Lehti
+  domain: forssanlehti.fi
+  rss_url: https://www.forssanlehti.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Gamereactor Finland
+  domain: gamereactor.fi
+  rss_url: https://www.gamereactor.fi/rss/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  - technology
+  priority: 3
+- name: Iisalmen Sanomat
+  domain: iisalmensanomat.fi
+  rss_url: https://www.iisalmensanomat.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Jyväskylän Ylioppilaslehti
+  domain: jylkkari.fi
+  rss_url: https://www.jylkkari.fi/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - education
+  priority: 3
+- name: Kaakonkulma
+  domain: kaakonkulma.fi
+  rss_url: https://www.kaakonkulma.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Kaltio
+  domain: kaltio.fi
+  rss_url: https://kaltio.fi/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Karjalan Heili
+  domain: karjalanheili.fi
+  rss_url: https://www.heili.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Karkkilan Tienoo
+  domain: karkkilantienoo.fi
+  rss_url: https://www.karkkilalainen.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Keskilaakso
+  domain: keskilaakso.fi
+  rss_url: https://www.keskilaakso.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Koneviesti
+  domain: koneviesti.fi
+  rss_url: https://www.koneviesti.fi/feeds/koneviesti-kaikki
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - agriculture
+  priority: 3
+- name: Kouvolan Sanomat
+  domain: kouvolansanomat.fi
+  rss_url: https://www.kouvolansanomat.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Kodin Kuvalehti
+  domain: kodinkuvalehti.fi
+  rss_url: https://www.kodinkuvalehti.fi/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Lieksan Lehti
+  domain: lieksanlehti.fi
+  rss_url: https://www.lieksanlehti.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Länsi-Uusimaa
+  domain: lansi-uusimaa.fi
+  rss_url: https://www.lansi-uusimaa.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Länsiväylä
+  domain: lansivayla.fi
+  rss_url: https://www.lansivayla.fi/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Maaseudun Tulevaisuus
+  domain: maaseuduntulevaisuus.fi
+  rss_url: https://www.maaseuduntulevaisuus.fi/feeds/maaseuduntulevaisuus
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fi
+  country: fi
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - agriculture
+  - general-news
+  priority: 3
+- name: GHN
+  domain: ghn.ge
+  rss_url: https://ghn.ge/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ka
+  country: ge
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Alfavita
+  domain: alfavita.gr
+  rss_url: https://www.alfavita.gr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - education
+  - general-news
+  priority: 3
+- name: Argolika
+  domain: argolika.gr
+  rss_url: https://argolika.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Best TV
+  domain: best-tv.gr
+  rss_url: https://best-tv.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Blue Sky
+  domain: blueskytv.gr
+  rss_url: https://blueskytv.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  - economy
+  priority: 3
+- name: CultureNow.gr
+  domain: culturenow.gr
+  rss_url: https://www.culturenow.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Crete TV
+  domain: cretetv.gr
+  rss_url: https://www.cretetv.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: eKorinthos
+  domain: ekorinthos.gr
+  rss_url: https://ekorinthos.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Eleftheros Typos
+  domain: eleftherostypos.gr
+  rss_url: https://www.eleftherostypos.gr/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: DION TV
+  domain: diontv.gr
+  rss_url: https://diontv.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Espresso
+  domain: espressonews.gr
+  rss_url: https://www.espressonews.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: Estia
+  domain: estianews.gr
+  rss_url: https://www.estianews.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - politics
+  - analysis
+  priority: 3
+- name: HuffPost Greece
+  domain: huffingtonpost.gr
+  rss_url: https://www.huffingtonpost.gr/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: LiFO
+  domain: lifo.gr
+  rss_url: https://www.lifo.gr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: MAD TV
+  domain: mad.gr
+  rss_url: https://www.mad.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: Mixani tou Xronou
+  domain: mixanitouxronou.gr
+  rss_url: https://www.mixanitouxronou.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: investigative
+  tags:
+  - news
+  - investigative
+  priority: 3
+- name: Nova Sports
+  domain: novasports.gr
+  rss_url: https://www.novasports.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Oikonomikos Tachydromos
+  domain: ot.gr
+  rss_url: https://www.ot.gr/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - finance
+  priority: 3
+- name: neakriti
+  domain: neakriti.gr
+  rss_url: https://www.neakriti.gr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: One Channel
+  domain: onetv.gr
+  rss_url: https://onechannel.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Peloponnisos
+  domain: pelop.gr
+  rss_url: https://pelop.gr/feed/gn
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Popaganda
+  domain: popaganda.gr
+  rss_url: https://popaganda.gr/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: investigative
+  tags:
+  - news
+  - investigative
+  priority: 3
+- name: Q137612076
+  domain: koutipandoras.gr
+  rss_url: https://www.koutipandoras.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q134511228
+  domain: parapolitika.gr
+  rss_url: https://www.parapolitika.gr/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q141021187
+  domain: tvfreaks.gr
+  rss_url: https://www.tvfreaks.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: Skai 100.3
+  domain: skairadio.gr
+  rss_url: https://skairadio.gr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  priority: 3
+- name: Social Business Channel
+  domain: sbctv.gr
+  rss_url: https://www.sbctv.gr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - business
+  - finance
+  priority: 3
+- name: SportDay
+  domain: sportday.gr
+  rss_url: https://sportday.gr/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Skai TV
+  domain: skaitv.gr
+  rss_url: https://www.skai.gr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Stochos
+  domain: stoxos.gr
+  rss_url: https://www.stoxos.gr/feeds/posts/default
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: el
+  country: gr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Antena Zadar
+  domain: antenazadar.hr
+  rss_url: https://www.antenazadar.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: 7Dnevno
+  domain: 7dnevno.hr
+  rss_url: https://www.dnevno.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - tabloid
+  priority: 3
+- name: City Radio
+  domain: cityportal.hr
+  rss_url: https://rvg.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Doma TV
+  domain: domatv.dnevnik.hr
+  rss_url: https://domatv.dnevnik.hr/assets/feed/articles
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Gloria
+  domain: gloria.hr
+  rss_url: https://www.gloria.hr/gl/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Glas Istre
+  domain: glasistre.hr
+  rss_url: https://www.glasistre.hr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Nova TV
+  domain: novatv.hr
+  rss_url: https://novatv.dnevnik.hr/assets/feed/articles
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q12640892
+  domain: radio-banovina.hr
+  rss_url: https://www.radio-banovina.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: RTL Croatia
+  domain: rtl.hr
+  rss_url: https://www.rtl.hr/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Studentski radio UNIOS
+  domain: radio.unios.hr
+  rss_url: https://radio.unios.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  priority: 3
+- name: Zadarski list
+  domain: zadarskilist.hr
+  rss_url: https://zadarskilist.novilist.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: hr
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: 168 Óra
+  domain: 168.hu
+  rss_url: https://168.hu/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: ATV
+  domain: atv.hu
+  rss_url: https://www.atv.hu/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Beol.hu
+  domain: beol.hu
+  rss_url: https://www.beol.hu/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Blikk
+  domain: blikk.hu
+  rss_url: https://www.blikk.hu/rss-articles.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - tabloid
+  priority: 3
+- name: Délmagyarország
+  domain: delmagyar.hu
+  rss_url: https://www.delmagyar.hu/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Femina.hu
+  domain: femina.hu
+  rss_url: https://femina.hu/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Echo TV
+  domain: echotv.hu
+  rss_url: https://hirtv.origo.hu/publicapi/hu/rss/hirtv/articles
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - economy
+  priority: 3
+- name: g7.hu
+  domain: g7.hu
+  rss_url: https://telex.hu/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Hetek
+  domain: hetek.hu
+  rss_url: https://www.hetek.hu/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - analysis
+  - politics
+  priority: 3
+- name: Hír TV
+  domain: hirtv.hu
+  rss_url: https://hirtv.origo.hu/publicapi/hu/rss/hirtv/articles
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - economy
+  priority: 3
+- name: Magyar Hírlap
+  domain: magyarhirlap.hu
+  rss_url: https://magyarhirlap.hu/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Magyar Narancs
+  domain: magyarnarancs.hu
+  rss_url: https://magyarnarancs.hu/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - analysis
+  - politics
+  priority: 3
+- name: Marie Claire Hungary
+  domain: marieclaire.hu
+  rss_url: https://marieclaire.hu/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: mandiner.hu
+  domain: mandiner.hu
+  rss_url: https://mandiner.hu/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Media1
+  domain: media1.hu
+  rss_url: https://media1.hu/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: hu
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Good News From Indonesia
+  domain: goodnewsfromindonesia.id
+  rss_url: https://www.goodnewsfromindonesia.id/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: id
+  country: id
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Indonesia Expat
+  domain: indonesiaexpat.id
+  rss_url: https://indonesiaexpat.id/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: id
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Jawa Pos Group
+  domain: jawapos.com
+  rss_url: https://www.jawapos.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: id
+  country: id
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Media Indonesia
+  domain: mediaindonesia.com
+  rss_url: https://mediaindonesia.com/feed/all
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: id
+  country: id
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Radio Republik Indonesia
+  domain: rri.co.id
+  rss_url: https://rri.co.id/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: id
+  country: id
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Epoch
+  domain: epoch.org.il
+  rss_url: https://epoch.org.il/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: he
+  country: il
+  region: asia
+  source_type: magazine
+  tags:
+  - news
+  - analysis
+  - geopolitical
+  priority: 3
+- name: Haredim10
+  domain: ch10.co.il
+  rss_url: https://ch10.co.il/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: he
+  country: il
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kol Chai
+  domain: emess.co.il
+  rss_url: https://www.emess.co.il/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: he
+  country: il
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Modi'in News
+  domain: mnews.co.il
+  rss_url: https://mnews.co.il/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: he
+  country: il
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q6759891
+  domain: okn.co.il
+  rss_url: https://www.okn.co.il/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: he
+  country: il
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - analysis
+  priority: 3
+- name: Aaj Samaj
+  domain: aajsamaaj.com
+  rss_url: https://www.aajsamaaj.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hi
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Andhra Prabha
+  domain: prabhanews.com
+  rss_url: https://prabhanews.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: te
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Aajkaal
+  domain: aajkaal.net
+  rss_url: https://www.aajkaal.in/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Asomiya Pratidin
+  domain: asomiyapratidin.in
+  rss_url: https://www.asomiyapratidin.in/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: as
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Chitralekha
+  domain: chitralekha.com
+  rss_url: https://chitralekha.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: gu
+  country: in
+  region: asia
+  source_type: magazine
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Dainik Navajyoti
+  domain: dainiknavajyoti.com
+  rss_url: https://dainiknavajyoti.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hi
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Dainik Agniban
+  domain: agniban.com
+  rss_url: https://www.agniban.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hi
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Deshbandhu
+  domain: deshbandhu.co.in
+  rss_url: https://www.deshbandhu.co.in/google_feeds.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hi
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Deshdoot
+  domain: deshdoot.com
+  rss_url: https://deshdoot.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: mr
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Dina Thanthi
+  domain: dailythanthi.com
+  rss_url: https://www.dailythanthi.com/stories.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ta
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: DY365
+  domain: dy365.in
+  rss_url: https://dy365live.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Ganadabi
+  domain: ganadabi.com
+  rss_url: https://ganadabi.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Hari Bhoomi
+  domain: haribhoomi.com
+  rss_url: https://www.haribhoomi.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hi
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Dharitri
+  domain: dharitri.com
+  rss_url: https://www.dharitri.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: or
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Hosa Digantha
+  domain: hosadigantha.in
+  rss_url: https://hosadigantha.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kn
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Janayugom
+  domain: janayugomonline.com
+  rss_url: https://janayugomonline.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ml
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Janmabhumi
+  domain: janmabhumidaily.com
+  rss_url: https://janmabhumi.in/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ml
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kannada Prabha
+  domain: kannadaprabha.com
+  rss_url: https://www.kannadaprabha.com/stories.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kn
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Kannada Times
+  domain: kannadatimes.com
+  rss_url: https://kannadatimes.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kn
+  country: in
+  region: asia
+  source_type: magazine
+  tags:
+  - news
+  - general-news
+  - culture
+  priority: 3
+- name: Kalantar
+  domain: bengalbyte.in
+  rss_url: https://bengalbyte.in/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bn
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Keraleeyam
+  domain: keraleeyammasika.com
+  rss_url: https://www.keraleeyammasika.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ml
+  country: in
+  region: asia
+  source_type: investigative
+  tags:
+  - news
+  - investigative
+  - human-rights
+  - environment
+  priority: 3
+- name: Arman Daily
+  domain: armandaily.ir
+  rss_url: https://armandaily.ir/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Donya ye Bazi
+  domain: dbazi.com
+  rss_url: https://www.dbazi.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - technology
+  priority: 3
+- name: Eghtesad Online
+  domain: eghtesadonline.com
+  rss_url: https://www.eghtesadonline.com/fa/updates/allnews
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - economy
+  priority: 3
+- name: Eghtesad Online
+  domain: en.eghtesadonline.com
+  rss_url: https://www.eghtesadonline.com/fa/updates/allnews
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - economy
+  priority: 3
+- name: Ettela'at
+  domain: ettelaat.com
+  rss_url: https://www.ettelaat.com/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Hamshahri
+  domain: hamshahrionline.ir
+  rss_url: https://www.hamshahrionline.ir/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Icana News Agency
+  domain: icana.ir
+  rss_url: https://www.icana.ir/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: fa
+  country: ir
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Iranian Students' News Agency
+  domain: en.isna.ir
+  rss_url: https://en.isna.ir/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ir
+  region: asia
+  source_type: wire-agency
+  tags:
+  - news
+  - geopolitical
+  priority: 3
+- name: Akita Broadcasting System
+  domain: akita-abs.co.jp
+  rss_url: https://www.akita-abs.co.jp/sitemap.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Bunshun Online
+  domain: bunshun.jp
+  rss_url: https://bunshun.jp/list/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: CABLEVISION Inc.
+  domain: fmyugao879.jp
+  rss_url: https://fmyugao879.jp/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Ehime Asahi Television
+  domain: eat.jp
+  rss_url: https://eat.jp/eat/?feed=rss2
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Elle Girl Japan
+  domain: ellegirl.jp
+  rss_url: https://www.ellegirl.jp/rss/default.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: FM Hatsukaichi
+  domain: 761.jp
+  rss_url: https://761.jp/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: FM K-City
+  domain: kawasakifm.co.jp
+  rss_url: https://www.kawasakifm.co.jp/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: FM Kagawa
+  domain: fmkagawa.co.jp
+  rss_url: https://www.fmkagawa.co.jp/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: FM Miyazaki
+  domain: joyfm.co.jp
+  rss_url: https://joyfm.co.jp/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: FM SAN-IN Co., Ltd.
+  domain: fm-sanin.co.jp
+  rss_url: https://www.fm-sanin.co.jp/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: FM Yamaguchi
+  domain: fmy.co.jp
+  rss_url: https://www.fmy.co.jp/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fuji News Network
+  domain: fnn.jp
+  rss_url: https://www.fnn.jp/list/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Fukui Shimbun
+  domain: fukuishimbun.co.jp
+  rss_url: https://www.fukuishimbun.co.jp/list/feed/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Chungbuk Ilbo
+  domain: inews365.com
+  rss_url: https://inews365.com/data/rss/news.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ko
+  country: kr
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Gongyu News
+  domain: 공유.net
+  rss_url: https://www.xn--ob0b790c.net/rankup_module/rankup_rss/index.html
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ko
+  country: kr
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - society
+  priority: 3
+- name: Gyeonggi Broadcasting Corporation
+  domain: kfm.co.kr
+  rss_url: https://www.kfm.co.kr/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ko
+  country: kr
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Kangwon Domin Ilbo
+  domain: kado.net
+  rss_url: https://cdn.kado.net/rss/gn_rss_allArticle.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ko
+  country: kr
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Kyeonggi Ilbo
+  domain: kyeonggi.com
+  rss_url: https://kyeonggi.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ko
+  country: kr
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: ALAU.KZ
+  domain: alau.kz
+  rss_url: https://alau.kz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Maeil Broadcasting Network
+  domain: mbn.mk.co.kr
+  rss_url: https://www.mbn.co.kr/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ko
+  country: kr
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Channel One Eurasia
+  domain: 1tv.kz
+  rss_url: https://1tv.kz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kk
+  country: kz
+  region: asia
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Otyrar-TV
+  domain: otyrar.kz
+  rss_url: https://otyrar.kz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: NewTimes.kz
+  domain: newtimes.kz
+  rss_url: https://newtimes.kz/news.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Q12572988
+  domain: qazaqadebieti.kz
+  rss_url: https://qazaqadebieti.kz/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kk
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Q4200913
+  domain: inkaraganda.kz
+  rss_url: https://inkaraganda.kz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q42201373
+  domain: time.kz
+  rss_url: https://time.kz/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Radio Azattyq
+  domain: azattyq.org
+  rss_url: https://www.azattyq.org/api/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kk
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Radio Azattyq
+  domain: rus.azattyq.org
+  rss_url: https://www.azattyqasia.org/api/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - geopolitical
+  priority: 3
+- name: Real Digital
+  domain: realdigital.kz
+  rss_url: https://www.realdigital.kz/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - technology
+  - ai
+  priority: 3
+- name: Aztag
+  domain: aztagdaily.com
+  rss_url: https://www.aztagdaily.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hy
+  country: lb
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Aztag
+  domain: aztagarabic.com
+  rss_url: https://aztagarabic.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: lb
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Q12544787
+  domain: 7-su.kz
+  rss_url: https://7-su.kz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: kk
+  country: kz
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Kurzemnieks
+  domain: kurzemnieks.lv
+  rss_url: https://kurzemnieks.lv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lv
+  country: lv
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Latgales Laiks
+  domain: latgaleslaiks.lv
+  rss_url: https://latgaleslaiks.lv/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lv
+  country: lv
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Latvijas Avīze
+  domain: la.lv
+  rss_url: https://www.la.lv/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lv
+  country: lv
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - economy
+  priority: 3
+- name: Neatkarīgā Rīta Avīze
+  domain: nra.lv
+  rss_url: https://nra.lv/rss/jaunakas-zinas/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lv
+  country: lv
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Rīgas Apriņķa Avīze
+  domain: aprinkis.lv
+  rss_url: https://kodols.lv/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: lv
+  country: lv
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Kosmo!
+  domain: kosmo.com.my
+  rss_url: https://www.kosmo.com.my/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: id
+  country: my
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - economy
+  priority: 3
+- name: Radio Lagos
+  domain: radionigerialagos.gov.ng
+  rss_url: https://radionigerialagos.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ng
+  region: africa
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Adresseavisen
+  domain: adressa.no
+  rss_url: https://www.adressa.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Agderposten
+  domain: agderposten.no
+  rss_url: https://www.agderposten.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Altaposten
+  domain: altaposten.no
+  rss_url: https://www.altaposten.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Askøyværingen
+  domain: av-avis.no
+  rss_url: https://www.av-avis.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nb
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Bergen Student-TV
+  domain: bstv.no
+  rss_url: https://bstv.no/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - culture
+  - society
+  priority: 3
+- name: Bergens Tidende
+  domain: bergens-tidende.no
+  rss_url: https://www.bt.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Birkenesavisa
+  domain: bavisa.no
+  rss_url: https://bavisa.no/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Bladet Tromsø
+  domain: itromso.no
+  rss_url: https://www.itromso.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Brønnøysunds Avis
+  domain: banett.no
+  rss_url: https://www.banett.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Bygdanytt
+  domain: bygdanytt.no
+  rss_url: https://www.bygdanytt.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Bygdebladet
+  domain: bygdebladet.com
+  rss_url: https://bygdebladet.com/atom.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nn
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Bømlo-nytt
+  domain: bomlo-nytt.no
+  rss_url: https://www.bomlo-nytt.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: nn
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: digi.no
+  domain: digi.no
+  rss_url: https://www.digi.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - technology
+  - ai
+  priority: 3
+- name: Document.no
+  domain: document.news
+  rss_url: https://www.document.news/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - politics
+  - general-news
+  priority: 3
+- name: Document.no
+  domain: document.no
+  rss_url: https://www.document.no/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - politics
+  - general-news
+  priority: 3
+- name: Dølen
+  domain: dolen.no
+  rss_url: https://www.dolen.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fargemagasinet
+  domain: fargemagasinet.no
+  rss_url: https://fargemagasinet.no/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  priority: 3
+- name: Fjordabladet
+  domain: fjordabladet.no
+  rss_url: https://www.fjordabladet.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fjordenes Tidende
+  domain: fjt.no
+  rss_url: https://www.fjt.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fjordingen
+  domain: fjordingen.no
+  rss_url: https://www.fjordingen.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fjuken
+  domain: fjuken.no
+  rss_url: https://www.fjuken.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Framtid i Nord
+  domain: framtidinord.no
+  rss_url: https://www.framtidinord.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fosna-Folket
+  domain: fosna-folket.no
+  rss_url: https://www.fosna-folket.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - politics
+  priority: 3
+- name: Frolendingen
+  domain: frolendingen.no
+  rss_url: https://frolendingen.no/atom.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Fædrelandsvennen
+  domain: fvn.no
+  rss_url: https://www.fvn.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Gamer.no
+  domain: gamer.no
+  rss_url: https://www.gamer.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - culture
+  - technology
+  priority: 3
+- name: Gamereactor Norway
+  domain: gamereactor.no
+  rss_url: https://www.gamereactor.no/rss/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - culture
+  - technology
+  priority: 3
+- name: Grimstad Adressetidende
+  domain: gat.no
+  rss_url: https://www.gat.no/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  priority: 3
+- name: Shilapatra
+  domain: shilapatra.com
+  rss_url: https://shilapatra.com/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ne
+  country: np
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Asian Century
+  domain: asiancenturyph.com
+  rss_url: https://asiancenturyph.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ph
+  region: asia
+  source_type: magazine
+  tags:
+  - news
+  - geopolitical
+  - politics
+  priority: 3
+- name: Pehle Pakistan
+  domain: pehlepakistan.pk
+  rss_url: https://pehlepakistan.pk/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: pk
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Archeowieści
+  domain: archeowiesci.pl
+  rss_url: https://archeowiesci.pl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - ancient-history
+  - science
+  priority: 3
+- name: Do Rzeczy
+  domain: dorzeczy.pl
+  rss_url: https://dorzeczy.pl/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Dziennik Polska-Europa-Świat
+  domain: dziennik.pl
+  rss_url: https://www.dziennik.pl/.feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - culture
+  priority: 3
+- name: Dziennik Wschodni
+  domain: dziennikwschodni.pl
+  rss_url: https://www.dziennikwschodni.pl/rss/articles/pl
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: A List Magazine
+  domain: alistmagazine.ro
+  rss_url: https://www.alistmagazine.ro/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Antena 1
+  domain: antena1.ro
+  rss_url: https://a1.ro/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - culture
+  priority: 3
+- name: Antena Stars
+  domain: antenastars.ro
+  rss_url: https://antenastars.ro/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: B1 TV
+  domain: b1.ro
+  rss_url: https://www.b1tv.ro/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Bihor Info
+  domain: bihorinfo.ro
+  rss_url: https://bihorinfo.ro/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: investigative
+  tags:
+  - news
+  - general-news
+  - regional
+  - investigative
+  priority: 3
+- name: Banater Zeitung
+  domain: adz.ro
+  rss_url: https://adz.news/startseite.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: de
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Curierul de Dolj
+  domain: curieruldedolj.ro
+  rss_url: https://curieruldedolj.ro/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: DCNews.Ro
+  domain: dcnews.ro
+  rss_url: https://www.dcnews.ro/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Digi FM
+  domain: digifm.ro
+  rss_url: https://www.digifm.ro/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - culture
+  priority: 3
+- name: Cuvântul Libertății
+  domain: cvlpress.ro
+  rss_url: https://cvlpress.ro/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Europa FM
+  domain: europafm.ro
+  rss_url: https://www.europafm.ro/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  - technology
+  priority: 3
+- name: Fanatik (Romania)
+  domain: fanatik.ro
+  rss_url: https://www.fanatik.ro/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Gazeta Sporturilor
+  domain: gsp.ro
+  rss_url: https://www.gsp.ro/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Hit Music Channel
+  domain: music-channel.ro
+  rss_url: https://www.music-channel.ro/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ro
+  country: ro
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Hargita Népe
+  domain: hargitanepe.ro
+  rss_url: https://hargitanepe.ro/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: ro
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Beta News Agency
+  domain: beta.rs
+  rss_url: https://beta.rs/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: rs
+  region: europe
+  source_type: wire-agency
+  tags:
+  - news
+  - general-news
+  - politics
+  - geopolitical
+  priority: 3
+- name: Forbes Serbia
+  domain: forbes.n1info.rs
+  rss_url: https://forbes.n1info.rs/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: rs
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - business
+  - finance
+  - politics
+  priority: 3
+- name: Hi-Files
+  domain: hi-files.com
+  rss_url: https://www.hi-files.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bs
+  country: rs
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - technology
+  priority: 3
+- name: NIN
+  domain: nin.rs
+  rss_url: https://www.nin.rs/rss/najnovije
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hr
+  country: rs
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - defense
+  priority: 3
+- name: Magyar Szó
+  domain: magyarszo.rs
+  rss_url: https://www.magyarszo.rs/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: rs
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Q16085545
+  domain: ilustrovana.com
+  rss_url: https://www.ilustrovana.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sr
+  country: rs
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - politics
+  - culture
+  priority: 3
+- name: Q72103783
+  domain: szabadmagyarszo.com
+  rss_url: https://szmsz.press/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: hu
+  country: rs
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Red (Serbia)
+  domain: redportal.rs
+  rss_url: https://redportal.pink.rs/rss-feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: bs
+  country: rs
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - tabloid
+  priority: 3
+- name: TV5 Užice
+  domain: tv5.rs
+  rss_url: https://www.tv5.rs/sitemap.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sr
+  country: rs
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Daimohk
+  domain: daymohk-gazet.ru
+  rss_url: https://daymohk-gazet.ru/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ru
+  country: ru
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Alingsås Tidning
+  domain: alingsastidning.se
+  rss_url: https://www.alingsastidning.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Altinget
+  domain: altinget.se
+  rss_url: https://www.altinget.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Arbetaren
+  domain: arbetaren.se
+  rss_url: https://www.arbetaren.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Allas
+  domain: allas.se
+  rss_url: https://www.allas.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Bike
+  domain: bike.se
+  rss_url: https://www.bike.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Bon
+  domain: bon.se
+  rss_url: https://bon.se/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Bohusläningen
+  domain: bohuslaningen.se
+  rss_url: https://www.bohuslaningen.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Camino
+  domain: caminomagasin.se
+  rss_url: https://caminomagasin.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - environment
+  - culture
+  priority: 3
+- name: Borås Tidning
+  domain: bt.se
+  rss_url: https://www.bt.se/feeds/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Brand
+  domain: tidningenbrand.se
+  rss_url: https://tidningenbrand.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - politics
+  priority: 3
+- name: Chef
+  domain: chef.se
+  rss_url: https://chef.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - business
+  priority: 3
+- name: Dagens Media
+  domain: dagensmedia.se
+  rss_url: https://www.dagensmedia.se/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - business
+  priority: 3
+- name: Dagens Medicin
+  domain: dagensmedicin.se
+  rss_url: https://www.dagensmedicin.se/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - healthcare
+  priority: 3
+- name: Dala-Demokraten
+  domain: dalademokraten.se
+  rss_url: https://www.dalademokraten.se/feeds/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Femina
+  domain: femina.se
+  rss_url: https://www.femina.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Flamman
+  domain: flamman.se
+  rss_url: https://www.flamman.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Forskning & Framsteg
+  domain: fof.se
+  rss_url: https://fof.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - science
+  priority: 3
+- name: Fotboll direkt
+  domain: fotbolldirekt.se
+  rss_url: https://fotbolldirekt.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Frilagt Hässleholm
+  domain: frilagt.se
+  rss_url: https://www.frilagt.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Enköpings-Posten
+  domain: eposten.se
+  rss_url: https://www.eposten.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Gamereactor Sweden
+  domain: gamereactor.se
+  rss_url: https://www.gamereactor.se/rss/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - technology
+  - culture
+  priority: 3
+- name: Haparandabladet
+  domain: hbwebben.se
+  rss_url: https://hbwebben.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - regional
+  priority: 3
+- name: Hockeysverige
+  domain: hockeysverige.se
+  rss_url: https://hockeysverige.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Innebandymagazinet
+  domain: innebandymagazinet.se
+  rss_url: https://innebandymagazinet.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  priority: 3
+- name: Katrineholms-Kuriren
+  domain: kkuriren.se
+  rss_url: https://www.kkuriren.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Kungälvs-Posten
+  domain: kungalvsposten.se
+  rss_url: https://www.kungalvsposten.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Länstidningen Östersund
+  domain: ltz.se
+  rss_url: https://www.ltz.se/feeds/feed.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  - policy
+  priority: 3
+- name: 'Medievärlden : publicistik, ekonomi, utveckling'
+  domain: medievarlden.se
+  rss_url: https://www.dagensmedia.se/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - business
+  - technology
+  priority: 3
+- name: Quark
+  domain: quark.sk
+  rss_url: https://www.quark.sk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: sk
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - science
+  - technology
+  priority: 3
+- name: Rádio Expres
+  domain: expres.sk
+  rss_url: https://www.expres.sk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: sk
+  region: europe
+  source_type: broadcaster
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Rádio Kiss
+  domain: kosicednes.sk
+  rss_url: https://kosicednes.sk/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: sk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Živé.sk
+  domain: zive.aktuality.sk
+  rss_url: https://zive.aktuality.sk/rss/najnovsie/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: sk
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - technology
+  - business
+  priority: 3
+- name: Manager Daily
+  domain: mgronline.com
+  rss_url: https://mgronline.com/store/rss/index.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: th
+  country: th
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: Thai Post
+  domain: thaipost.net
+  rss_url: https://www.thaipost.net/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: th
+  country: th
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: The Standard
+  domain: thestandard.co
+  rss_url: https://thestandard.co/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: th
+  country: th
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - culture
+  priority: 3
+- name: AIN
+  domain: ain.ua
+  rss_url: https://ain.ua/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: uk
+  country: ua
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - technology
+  - business
+  priority: 3
+- name: Bulletin of the National Academy of Sciences of Ukraine
+  domain: visnyk-nanu.org.ua
+  rss_url: https://visnyk-nanu.org.ua/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: uk
+  country: ua
+  region: europe
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - healthcare
+  priority: 3
+- name: Marie Claire Ukraine
+  domain: marieclaire.ua
+  rss_url: https://marieclaire.ua/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: uk
+  country: ua
+  region: europe
+  source_type: magazine
+  tags:
+  - news
+  - culture
+  priority: 3
+- name: Q136546089
+  domain: laocaitv.vn
+  rss_url: https://baolaocai.vn/rss/home.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: vi
+  country: vn
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - regional
+  - general-news
+  priority: 3
+- name: Tien Phong
+  domain: tienphong.vn
+  rss_url: https://tienphong.vn/rss/home.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: vi
+  country: vn
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  priority: 3
+- name: VietnamPlus
+  domain: vietnamplus.vn
+  rss_url: https://www.vietnamplus.vn/rss/home.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: vi
+  country: vn
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - economy
+  priority: 3
+- name: Voice of Vietnam
+  domain: vov.vn
+  rss_url: https://vov.vn/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: vi
+  country: vn
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - society
+  priority: 3
+- name: Voice of Vietnam
+  domain: english.vov.vn
+  rss_url: https://vov.vn/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: vi
+  country: vn
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - general-news
+  - politics
+  - society
+  priority: 3

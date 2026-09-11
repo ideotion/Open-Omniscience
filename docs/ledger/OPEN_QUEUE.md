@@ -11925,3 +11925,38 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   tags within a language), the NON-PINNING (ten single-source languages no longer fill the first
   eleven slots of every pass) and the unchanged anti-domination property, in place of the two tests
   that pinned an exact per-round count.
+
+- **SHIPPED 2026-09-11 — THE FIRST REAL CATALOGUE GROWTH FROM THE PIPELINE: 3,429 -> 3,923 SOURCES,
+  AND THE FOUR PIPELINE DECISIONS (D1-D4) WERE APPLIED ON THEIR RECORDED DEFAULTS.** The maintainer
+  ran Stage A to completion on their own machine and returned `stage_a_results_2026-09-10.zip`
+  (kit `oo-candidate-kit-2026-09-10-a1db266`, the time-bounded build): **22,045 of 22,045
+  candidates judged, 3,396 with a live parsing feed** -- shortlist 3,588 judged / 643 verified,
+  remainder 18,457 judged / 2,753 verified. The time bounds shipped the day before cost the run
+  exactly TWO rows (one `crawl_delay_too_long` per worklist) and NO `host_timeout` at all, against
+  the hours the un-bounded build lost to a single host. Stage B and C then ran here on the
+  SHORTLIST chunk. D1-D4 were recorded as decisions-before-the-first-merge with recommended
+  defaults and had not been separately ruled; the maintainer returning the zip with no further
+  instruction is the runbook's own "run Stage B and C on this", so the defaults were APPLIED AS
+  RECORDED and are flagged here for objection rather than assumed silently: **D1** the rows landed
+  in `configs/sources.yml` through the text splice, onto the draft PR, which IS the review;
+  **D2** acceptance = journalism AND confidence high-or-medium; **D3** the shortlist first, the
+  remainder to follow in chunks; **D4** institutions and religious organisations out by type --
+  already structural, since all 3,396 verified rows carry `source_type: news` (the worklists were
+  built from the news rows alone). MEASURED: 17 batches of 40 on Haiku, two hand-known canaries
+  mixed into each; **16 batches passed code re-validation on the first attempt and the canaries
+  were correct in every single one**; batch 11 answered only 35 of its 42 rows, was marked
+  untrusted WHOLE rather than merged partially, and passed on a re-run that named completeness as
+  the hard requirement. Of 643 verified rows, 494 merged and 149 were refused -- `academic` 57,
+  `other` 27, `institution` 18, `religious` 14, `aggregator` 12, `magazine`/`broadcaster` 5 each,
+  `trade-or-corporate` 4, `personal-blog` 2, `low_confidence` 5. The splice accepted all 494 and
+  refused none (no duplicate by registrable domain or alias against any shipped catalogue), and
+  the diff is **7,717 lines added, 0 deleted** -- the text splice never re-serialised a shipped
+  row. WHAT THE CATALOGUE GAINED: 494 sources over **97 countries and 65 languages** (news 305,
+  broadcaster 101, magazine 54, wire-agency 28, investigative 6; Europe 290, Asia 128, Africa 45,
+  North America 22, South America 8, Oceania 1), and **twelve countries that had NO catalogue
+  source at all now have one** (ad, ai, cw, gw, ky, ly, mr, pw, st, tl, va, ye) -- the T1 gap the
+  2026-09-10 analysis measured. Biggest gains: gr 14->43, no 8->36, se 10->38, fi 6->28, in
+  82->103, es 42->60. STILL TO RUN: the remainder's 2,753 verified rows, in chunks of the same
+  shape (69 batches), which is where the bulk of the growth is. NOT DONE, DELIBERATELY: nothing
+  was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
+  are kept, not rejected, and wait on the robots ruling above.
