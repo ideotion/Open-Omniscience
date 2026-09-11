@@ -12,6 +12,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
@@ -684,3 +685,71 @@ def test_guard_pressure_from_summary_reads_the_nested_shape():
     assert capacity.guard_pressure_from_summary(
         {"bottleneck": {"guard_pressure_ticks": 0, "guard_pressure_min_permits": None}}
     ) == (0, None)
+
+
+# --------------------------------------------------------------------------- #
+#  D2: the guard signal must actually REACH the learner (the wiring, not the
+#  mechanism) -- a built-but-unwired fix is a fix that fixes nothing
+# --------------------------------------------------------------------------- #
+
+
+def test_the_pass_tail_feeds_the_guard_signal_into_record_pass(monkeypatch):
+    """THE LINE THAT MAKES D2 DO ANYTHING. `capacity.record_pass` grew the ability to
+    learn from memory-GUARD pressure, but the learner only ever sees it if the pass tail
+    actually reads it out of the summary and passes it in. Built and unwired, the whole
+    of D2 is dead code -- and it would look fixed from the outside, which is worse than
+    looking broken.
+
+    Asserted by driving the real call: a summary carrying guard pressure and NO mem_low
+    (exactly the field shape -- the guard's RSS-relative threshold is crossed first on
+    any machine above ~3.4 GB, so mem_low never fires) must arrive at record_pass with
+    the guard numbers populated."""
+    from src.scheduler import capacity as _capacity
+    from src.scheduler import runner as _runner
+
+    seen: dict = {}
+
+    def _spy(**kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr(_capacity, "record_pass", _spy)
+
+    summary = {
+        "bottleneck": {
+            # The field shape: the governor's own check NEVER fired...
+            "mem_low_ticks": 0,
+            "mem_low_min_permits": None,
+            # ...while the guard's own thresholds were crossed repeatedly.
+            "guard_pressure_ticks": 40,
+            "guard_pressure_min_permits": 6,
+            "samples": 50,
+        }
+    }
+
+    # Drive the same extraction the pass tail performs, through the real helpers.
+    ticks, floor = _capacity.from_summary(summary)
+    gticks, gfloor = _capacity.guard_pressure_from_summary(summary)
+    _capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=ticks,
+        mem_low_min_permits=floor,
+        guard_pressure_ticks=gticks,
+        guard_pressure_min_permits=gfloor,
+        samples=_capacity.samples_from_summary(summary),
+    )
+
+    assert seen.get("guard_pressure_ticks") == 40, (
+        "the guard signal did not reach record_pass -- D2's mechanism is inert"
+    )
+    assert seen.get("guard_pressure_min_permits") == 6
+    assert seen.get("mem_low_ticks") == 0          # and the old signal is unchanged
+
+    # ...and the SOURCE of the pass tail must actually contain the wiring, so the call
+    # site cannot quietly lose it again while every unit test above still passes.
+    src = pathlib.Path(_runner.__file__).read_text(encoding="utf-8")
+    assert "guard_pressure_from_summary(summary)" in src, (
+        "runner.py's pass tail no longer reads the guard pressure out of the summary"
+    )
+    assert "guard_pressure_ticks=" in src and "guard_pressure_min_permits=" in src, (
+        "runner.py's pass tail no longer passes the guard signal into record_pass"
+    )
