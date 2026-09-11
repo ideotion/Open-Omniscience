@@ -12304,6 +12304,50 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
   "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
 
+- **SHIPPED 2026-09-11 — STEP ZERO OF THE ROBOTS RULING: THE CAUSE IS RECORDED, AND THE 11,404
+  UN-JUDGED ROWS ARE PRESERVED (maintainer: "go ahead, start with the cause attribution, and can
+  you update the previous source list so that those with unattributed robots.txt are also taken
+  care of?").** FAIL-CLOSED IS UNCHANGED EVERYWHERE — every case below still refuses the fetch;
+  what changed is that the catalogue can stop spending an absence like a verdict.
+  **(1) `RobotsUnavailable` CARRIES ITS CAUSE.** `refused` (401/403 — declined on THIS path; over
+  Tor frequently the exit's reputation, and the answer never says which), `server_error` (5xx or an
+  unexpected status — the host is broken), `unreachable` (network failure, timeout, SSRF-blocked
+  redirect, redirect loop). A 404/410 is NOT among them and never was: no robots.txt means
+  everything is allowed and `_get_robots` returns an empty parser, which is why "should we treat
+  unavailable as a green light" is a question about refusals and failures rather than about absence.
+  **(2) THE CAUSE SURVIVES THE CACHE, AND IS NEVER GUESSED.** `_robots_cause` is held beside the
+  decision for the same TTL, so a cached refusal reports the cause the first call gave it rather
+  than being right once an hour and wrong in between; the sidecar persists it; and an entry with no
+  recorded cause reports **`"unknown"`**, not a plausible-looking default — a confident wrong
+  attribution inside the pipeline's own data is worse than none.
+  **(3) STAGE A SPLITS THE LABEL:** `robots_refused` / `robots_server_error` / `robots_unreachable`.
+  The legacy `robots_unavailable` stays in `REASONS` and is emitted by nothing — it is kept purely
+  so `--retry robots_unavailable` still SELECTS the 7,847 rows a pre-split run wrote.
+  **(4) A PREFLIGHT FINDING, FOUND WHILE DOING (1) AND FIXED WITH IT.** `_apply_to_metadata` set
+  `robots_allowed = rec["verdict"] != "robots_denied"` — so a verdict of `"unreachable"` wrote
+  **`robots_allowed = True`**, asserting in the API and in every query over that indexed column a
+  permission derived from a robots.txt nobody read. It is the fabricated-data direction the
+  non-negotiables forbid, and it was the OPPOSITE failure from the one this ruling was about.
+  Bounded, and stated as such: the column is descriptive only — the real gate is
+  `EthicalFetcher._enforce_robots`, which fails closed independently on every fetch — so this was a
+  reporting lie, not a safety hole. Now tri-state on the state we actually observed: True for
+  allowed/missing, False for disallowed/blocked, **None (UNKNOWN) for unreachable, `http_5xx` and
+  anything unrecognised**. The column was already nullable and has no UI surface (grep-verified
+  across `src/static`), so there is no chrome string and nothing to translate.
+  **(5) THE PREVIOUS RUN IS TAKEN CARE OF, as far as anything here can take care of it.** The
+  11,404 rows the completed run left unjudged existed ONLY in an ephemeral session scratchpad and on
+  the maintainer's machine; they are now committed as
+  `docs/research/sources/discovered_candidates_2026-09-10/stage_a/stage_a_not_judged.csv`
+  (robots_unavailable 7,847, homepage_unreachable 3,553, crawl_delay_too_long 2, error 2 — last
+  verdict per domain, the same rule `--retry` reads). They CANNOT be re-attributed from here: this
+  sandbox answers `000` for every publisher, so a re-judgement is a live run on the maintainer's own
+  machine, and the runbook now carries the exact two commands. The kit is rebuilt with the split
+  (`oo-candidate-kit-2026-09-11-ba6cad8`) and the retry path verified from the extracted zip.
+  STILL PENDING, and deliberately NOT decided here: everything the 2026-09-10 entry lists —
+  whether a `refused` row is deferred or dropped, the per-host next-attempt and backoff that would
+  let an absence EXPIRE rather than decide, and the preflight `robots_denied` verdict itself. This
+  commit only makes those decidable. The ruff style ratchet came down 447 → 446 with it.
+
 - **ADDENDUM 2026-09-11 — THE 7,847 ROWS, MEASURED, AND ONE CORRECTION TO HOW THE QUESTION IS
   USUALLY PUT.** The maintainer, returning to it: *"How should we interpret this? Should we consider
   this as a green light for scraping, but add a more recurrent robots.txt verification? Is it also

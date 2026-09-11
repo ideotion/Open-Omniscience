@@ -8799,3 +8799,30 @@
   than given a policy chosen for convenience. The general form: when a field has more writers
   than the change is about, excluding it deliberately beats a merge rule that quietly loses
   someone's contribution.
+
+- **A BUCKET THAT HOLDS THREE DIFFERENT FACTS CANNOT BE RULED ON, AND THE COUNT IS THE TELL
+  (2026-09-11, robots_unavailable).** One label covered a refusal (401/403), a broken host (5xx)
+  and a network failure, so 7,847 rows — a third of a 22,045-row run — could not be acted on in
+  any direction, *including* the restrictive one: "ban them" is as un-makeable as "allow them"
+  when you do not know what you are banning. What exposed it was not reading the code but
+  comparing two counts: **7,847 unavailable against 262 explicitly disallowed, thirty to one**,
+  which is backwards from what the open web looks like, and then checking whether the rate was
+  uniform (25–53 % across fourteen countries on every continent) or clustered. **A host-level
+  signal varies with jurisdiction and CDN penetration; a pathway-level one is uniform.** The
+  general form: when a category is suspiciously large, compare it against its own near-neighbour
+  category and check whether it varies the way its claimed cause would.
+- **THE HALF-DONE ATTRIBUTION IS WORSE THAN NONE, SO SAY "UNKNOWN" (2026-09-11).** Once a cause
+  is recorded, three paths can silently invent one: a CACHED decision (right on the first call,
+  defaulted for the next hour), a decision RELOADED from a sidecar written before the field
+  existed, and an entry evicted from the map. Each would produce a confident, plausible,
+  authoritative-looking wrong attribution inside the very data a ruling will be made from. The
+  fix is not cleverness but a reserved value: cache the cause beside the decision for the same
+  TTL, persist it, and make the fallback **`"unknown"`** rather than the most likely cause.
+- **FIXING A FABRICATION OFTEN TURNS UP ITS MIRROR IMAGE (2026-09-11).** The robots work was
+  about not treating an un-read robots.txt as a refusal. Two files away, `preflight` was doing
+  the opposite with the same missing information: `robots_allowed = verdict != "robots_denied"`
+  wrote **True** when the verdict was *unreachable*, asserting a permission derived from a
+  robots.txt nobody read. Both errors come from one cause — a BOOLEAN column standing in for a
+  three-valued fact — and the repair for both is the same: let the column be NULL and mean
+  *unknown*. When you find a place that reads absence as one extreme, grep for the places that
+  read it as the other.

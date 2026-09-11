@@ -133,7 +133,19 @@ def _apply_to_metadata(session, source, rec: dict) -> None:
     if meta is None:
         meta = SourceMetadata(source_id=source.id)
         session.add(meta)
-    meta.robots_allowed = rec["verdict"] != "robots_denied"
+    # TRI-STATE, and the None is the point (2026-09-11). This was
+    # `rec["verdict"] != "robots_denied"`, which wrote robots_allowed=True whenever the
+    # verdict was "unreachable" -- asserting, in the API and in every query over this
+    # column, a permission that was never established, from a robots.txt we never read.
+    # The column is nullable and NULL means UNKNOWN: we did not learn whether crawling is
+    # allowed, which is a different fact from learning that it is.
+    robots_state = rec.get("robots")
+    if robots_state in ("allowed", "missing"):
+        meta.robots_allowed = True
+    elif robots_state in ("disallowed", "blocked"):
+        meta.robots_allowed = False
+    else:                                   # unreachable / http_5xx / anything unrecognised
+        meta.robots_allowed = None
     if rec.get("crawl_delay_s"):
         meta.crawl_delay = rec["crawl_delay_s"]
         # honour a robots crawl-delay larger than the source's current politeness

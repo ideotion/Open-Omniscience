@@ -147,7 +147,7 @@ class Verdict:
     titles: list[str] = field(default_factory=list)
     language_detected: str = ""
     language_basis: str = ""          # detected | export | unknown
-    robots: str = ""                  # allowed | disallowed | unavailable | ""
+    robots: str = ""                  # allowed | disallowed | unavailable:<cause> | ""
     crawl_delay_s: float = 0.0        # the host's declared Crawl-delay, when it declares one
     tags: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
@@ -156,7 +156,16 @@ class Verdict:
 
 
 REASONS = (
-    "duplicate_of_catalogue", "duplicate_in_run", "robots_disallowed", "robots_unavailable",
+    "duplicate_of_catalogue", "duplicate_in_run", "robots_disallowed",
+    # THE THREE FACTS THAT USED TO BE ONE (2026-09-11). Each refuses the fetch exactly as
+    # before -- fail-closed is unchanged -- but a catalogue can now tell them apart, which
+    # it must, because they deserve different answers and none of them is a policy:
+    "robots_refused",         # 401/403 -- declined on THIS path; over Tor, often the exit
+    "robots_server_error",    # 5xx or an unexpected status -- the host is broken
+    "robots_unreachable",     # network failure, timeout, blocked redirect, redirect loop
+    # ...and the legacy label, KEPT so `--retry robots_unavailable` still selects the 7,847
+    # rows a pre-split run wrote. Nothing emits it any more; it is a retry key and a record.
+    "robots_unavailable",
     "homepage_unreachable", "no_feed_found", "feed_unparseable", "feed_too_few_entries",
     "feed_stale", "feed_undated", "verified", "error",
     # status ``error`` = NOT judged, re-judged on demand with --retry:
@@ -348,9 +357,15 @@ def verify_candidate(
             v.robots = "disallowed"
             last_reason = "robots_disallowed"
             break
-        except RobotsUnavailable:
-            v.robots = "unavailable"
-            last_reason = "robots_unavailable"
+        except RobotsUnavailable as exc:
+            # SPLIT BY CAUSE (2026-09-11). One `robots_unavailable` bucket held three
+            # different facts, and 7,847 rows of the completed run are un-attributed
+            # because of it -- a refusal on this path, a broken host, and a network
+            # failure each want a different answer, and "ban them" cannot be ruled on
+            # honestly without knowing which is which.
+            cause = getattr(exc, "cause", "unknown")
+            v.robots = f"unavailable:{cause}"
+            last_reason = f"robots_{cause}" if cause != "unknown" else "robots_unavailable"
             break
         except FetchError:
             continue

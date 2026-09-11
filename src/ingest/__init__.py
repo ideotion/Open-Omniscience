@@ -105,7 +105,30 @@ class RobotsDisallowed(FetchError):
 
 
 class RobotsUnavailable(FetchError):
-    """robots.txt could not be determined -> fail closed, do not fetch."""
+    """robots.txt could not be determined -> fail closed, do not fetch.
+
+    ``cause`` NAMES WHICH OF THREE DIFFERENT FACTS THIS IS, because they were one bucket
+    until 2026-09-11 and the difference decides what a caller may honestly do next:
+
+      * ``"refused"``      401/403 -- the host (or something in front of it) declined to
+                           serve robots.txt on THIS path. Over Tor that is frequently the
+                           exit's reputation rather than the publisher's wish, and nothing
+                           in the answer says which, so it is never read as a policy.
+      * ``"server_error"`` 5xx or an unexpected status -- the host is broken, not speaking.
+      * ``"unreachable"``  a network failure, timeout, SSRF-blocked redirect or redirect
+                           loop -- we never got an answer at all.
+
+    A 404/410 is NOT here: no robots.txt means everything is allowed, and ``_get_robots``
+    returns an empty parser for it. So this exception only ever covers a refusal or a
+    failure -- never an absence.
+
+    FAIL-CLOSED IS UNCHANGED for every one of them: the fetch is refused either way. The
+    cause exists so the CATALOGUE can stop spending an absence like a verdict.
+    """
+
+    def __init__(self, message: str, *, cause: str = "unreachable") -> None:
+        super().__init__(message)
+        self.cause = cause
 
 
 class FetchFailed(FetchError):
@@ -190,7 +213,35 @@ def _load_persisted_robots(
     return out
 
 
-def _persist_robots_entry(path: Path, host_key: str, *, kind: str, body: str | None) -> None:
+def _persisted_robots_causes(path: Path) -> dict[str, str]:
+    """``{host_key: cause}`` from the sidecar, for entries that recorded one.
+
+    Separate from :func:`_load_persisted_robots` on purpose: that function's shape is
+    pinned by tests and by a repo invariant, and a refusal's CAUSE is additive metadata
+    rather than part of the decision. An entry written before the cause existed simply has
+    none, and the reader then reports ``"unknown"`` -- which is the honest answer, and the
+    reason this does not fall back to a plausible-looking default.
+    """
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text("utf-8")) or {}
+    except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
+        return {}
+    out: dict[str, str] = {}
+    for host_key, entry in raw.items():
+        try:
+            cause = entry.get("cause")
+        except Exception:  # noqa: BLE001 - one bad entry never breaks the load
+            continue
+        if isinstance(cause, str) and cause:
+            out[host_key] = cause
+    return out
+
+
+def _persist_robots_entry(
+    path: Path, host_key: str, *, kind: str, body: str | None, cause: str | None = None
+) -> None:
     """Best-effort: record ONE host's freshly-computed verdict in the persisted
     sidecar (read-modify-write, atomic temp+replace, lock-guarded against
     concurrent writers for different hosts). Never raises into the fetch path
@@ -204,7 +255,9 @@ def _persist_robots_entry(path: Path, host_key: str, *, kind: str, body: str | N
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
-            raw[host_key] = {"kind": kind, "body": body, "fetched_at": time.time()}
+            raw[host_key] = {
+                "kind": kind, "body": body, "fetched_at": time.time(), "cause": cause,
+            }
             # Bound the persisted file the SAME way the in-memory cache is bounded
             # (_ROBOTS_CACHE_MAX) -- oldest-fetched entries evicted first.
             if len(raw) > _ROBOTS_CACHE_MAX:
@@ -501,6 +554,9 @@ class EthicalFetcher:
         self._max_redirects = _MAX_REDIRECTS
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
+        #: host_key -> why robots could not be determined, for the same TTL as the
+        #: decision above. Only ever holds a host whose decision is None.
+        self._robots_cause: dict[str, str] = {}
         self._last_request: dict[str, float] = {}
         # C8: short-TTL DNS cache for the path that still resolves locally (a
         # remote-resolving SOCKS proxy skips this entirely -- see
@@ -533,6 +589,7 @@ class EthicalFetcher:
                 self._robots.update(
                     _load_persisted_robots(self._robots_cache_path, now_monotonic=self._now)
                 )
+                self._robots_cause.update(_persisted_robots_causes(self._robots_cache_path))
             except Exception:  # noqa: BLE001 - a bad cache load must never break construction
                 pass
 
@@ -1245,8 +1302,13 @@ class EthicalFetcher:
     def _enforce_robots(self, url: str, host_key: str, parsed) -> None:
         parser = self._get_robots(host_key, parsed)
         if parser is None:
+            # "unknown", never a plausible default: a sidecar entry written before the
+            # cause existed, or evicted from the map, has no cause to report, and inventing
+            # one would put a confident wrong attribution into the pipeline's own data.
+            cause = self._robots_cause.get(host_key, "unknown")
             raise RobotsUnavailable(
-                f"robots.txt for {host_key} could not be determined; refusing to fetch"
+                f"robots.txt for {host_key} could not be determined ({cause}); refusing to fetch",
+                cause=cause,
             )
         if not parser.can_fetch(self.user_agent, url):
             raise RobotsDisallowed(f"robots.txt disallows {url}")
@@ -1266,6 +1328,7 @@ class EthicalFetcher:
         # need none (defaults below cover every early-return/exception path).
         persist_kind = "disallow_all"
         persist_body: str | None = None
+        cause = "unreachable"
         try:
             # Follow redirects MANUALLY through the shared guarded loop so a
             # robots.txt that 30x-redirects to an internal address is refused
@@ -1286,21 +1349,36 @@ class EthicalFetcher:
                 decision = rp
                 persist_kind = "allow_all"
             elif status in (401, 403):
-                # Access to robots is restricted -> treat the whole site as off-limits.
+                # Access to robots is REFUSED on this path -> fail closed. Recorded as its
+                # own cause rather than as a policy: over Tor this is frequently the exit's
+                # reputation, and the answer does not say which (2026-09-11 measurement --
+                # 7,847 unavailable against 262 explicitly disallowed, thirty to one, at a
+                # uniform 25-53% across fourteen countries on every continent).
                 decision = None
+                cause = "refused"
             else:
-                # 5xx / unexpected -> cannot determine -> fail closed.
+                # 5xx / unexpected -> the host is broken, not speaking -> fail closed.
                 decision = None
+                cause = "server_error"
         except (requests.RequestException, FetchError):
             # network/timeout, an SSRF-blocked redirect target, a redirect to an
             # unsupported scheme, or too many redirects -> cannot safely determine
             # robots -> fail closed.
             decision = None
+            cause = "unreachable"
 
         self._robots[host_key] = (decision, self._now() + _ROBOTS_TTL)
+        # Cached beside the decision and for the same TTL: a caller that gets the cached
+        # refusal must be told the same cause the first call would have given it, or the
+        # attribution would be right once an hour and wrong in between.
+        if decision is None:
+            self._robots_cause[host_key] = cause
+        else:
+            self._robots_cause.pop(host_key, None)
         if _robots_persist_enabled():
             _persist_robots_entry(
-                self._robots_cache_path, host_key, kind=persist_kind, body=persist_body
+                self._robots_cache_path, host_key, kind=persist_kind, body=persist_body,
+                cause=cause if decision is None else None,
             )
         return decision
 
