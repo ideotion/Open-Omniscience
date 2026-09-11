@@ -440,7 +440,11 @@ def test_the_network_method_list_matches_the_fetchers_own_network_surface():
     }
     # Everything public on the fetcher is either wrapped or a LOCAL read.
     # crawl_delay_for reads the host's CACHED robots decision only -- never a fetch (2026-09-10).
-    local_only = {"cache_stats", "crawl_delay_for"}
+    # forget_robots DROPS cached robots state for a host (decision, cause, backoff counter) so an
+    # explicit --retry is not answered from the deferral its own earlier failure created. It only
+    # deletes dict entries; the next fetch then does the network work, through the wrapped path
+    # exactly as it would have anyway (2026-09-11).
+    local_only = {"cache_stats", "crawl_delay_for", "forget_robots"}
     assert public - local_only == set(fetch_release._NETWORK_METHODS), (
         "EthicalFetcher's public surface changed: decide whether the new method "
         "reaches the network (wrap it) or is local (add it to local_only)."

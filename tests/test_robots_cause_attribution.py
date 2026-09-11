@@ -106,7 +106,8 @@ def test_the_cause_is_persisted_and_read_back(tmp_path):
     with pytest.raises(RobotsUnavailable):
         f._enforce_robots("https://ex.example/x", "https://ex.example", None)
     if path.exists():                          # persistence is opt-in; assert it when on
-        assert json.loads(path.read_text())["https://ex.example"]["cause"] == "refused"
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        assert persisted["https://ex.example"]["cause"] == "refused"
         assert _persisted_robots_causes(path)["https://ex.example"] == "refused"
     assert _persisted_robots_causes(tmp_path / "absent.json") == {}
 
