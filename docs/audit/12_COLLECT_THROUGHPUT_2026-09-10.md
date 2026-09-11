@@ -663,3 +663,102 @@ two of the tick tests set `cpu_sys=99, cpu_proc=390`, which reads as *"the machi
 and it is us"* on a 4-core box and as *"it is someone else"* on a 16-core runner — where
 the tick would back off for CPU saturation and never reach the property under test. The
 core count is now pinned, because it is not what those tests are about.
+
+---
+
+## 14. What shipped (the double parse) — and the P6 defect it turned up
+
+The queue carried this as a parenthesis under P3: *"Related and cheaper: `extract_article`
+parses the same HTML twice — `extract` then `extract_metadata`."* It was deferred twice,
+because the obvious implementation is unsafe: `trafilatura.extract` **prunes** the tree it
+is given, so handing one parse to both public calls risks the second reading a mutated
+document. A correctness risk for about a millisecond is not a trade worth taking blind.
+
+### 14.1 The public API already does it, in the safe order
+
+`bare_extraction(..., with_metadata=True)` calls `load_html` **once**, runs
+`extract_metadata` on that tree, and only then runs the body extraction that prunes it.
+Metadata first is exactly the order that makes sharing safe, and it is upstream's own
+order rather than an arrangement of ours.
+
+| body chars | two calls | one call | saved |
+|---:|---:|---:|---:|
+| 3,000 | 2.05 ms | 1.77 ms | 0.28 ms (14 %) |
+| 12,000 | 3.27 ms | 2.86 ms | 0.41 ms (13 %) |
+| 22,000 | 4.64 ms | 3.96 ms | 0.68 ms (15 %) |
+| 60,000 | 11.46 ms | 10.16 ms | 1.30 ms (11 %) |
+
+Against a per-article extraction budget of 68–77 ms (§10), that is about 1 %. Small, and
+it is a removal of duplicated work rather than a trade — which is the only reason it is
+worth doing at all.
+
+### 14.2 The regression a diff cannot show
+
+`Extractor` defaults `date_params` to `set_date_params(extensive_search=True)`, and
+`extract_metadata` prefers a supplied `date_config` over its own `extensive` argument. So
+a switch to `bare_extraction` that omitted `date_extraction_params` would have **silently
+restored the unbounded date hunt §12 removed** — no signature change, no failing test at
+the time, nothing in the diff to see it in. It is passed explicitly, and pinned by a test
+that asserts a copyright footer still yields no date.
+
+### 14.3 The refusal: a metadata fault must not cost the article
+
+Folding two calls into one puts the body *behind* the metadata pass. `bare_extraction`
+catches only `TypeError`/`ValueError`, so anything else escaping the metadata pass would
+now return `None` for a page that plainly has an article — and the contract says `None`
+means *"no article here"*, never *"the byline parser threw"*.
+
+So a **raise** falls back to the previous two-call path, which survives a metadata fault
+with the body intact; a **return of `None`** does not, because that is a verdict
+(`bare_extraction` returns `None` for no tree, too-short, wrong language, duplicate) and
+re-extracting on it would parse every non-article page in a crawl twice — paying the saving
+back on the most common page there is.
+
+### 14.4 Proven by differential, guarded by tests
+
+**12,600 cases, zero differences.** Seven page shapes × five head shapes × ten body shapes
+× six languages × three URL forms × both date modes, comparing **every field** of the
+shipped `extract_article` against the previous two-call implementation. The harness drives
+the real function rather than a re-typed copy, because a re-typed copy would agree with
+the old path while the real extractor was broken.
+
+It discriminates, which is the half that makes the zero mean anything: dropping
+`date_extraction_params` produces **894** differences, dropping `with_metadata` **7,380**,
+flipping `include_tables` **720**. `include_comments` produces **0** — and that is not a
+blind spot but a fact worth recording: comments land in `document.comments`, a field this
+code never reads, so the flag cannot reach our output.
+
+`tests/test_extract_single_parse.py` — ten tests, seven mutants dead. The parse counter
+distinguishes `load_html` **calls** from **parses**: it is still called twice per article,
+because `bare_extraction` parses the string and then hands the *tree* to `extract_metadata`,
+which calls `load_html` again and gets it straight back. A test asserting one call would be
+asserting something false about working code.
+
+### 14.5 The defect this work found, which was mine and was already on `main`
+
+Running the new suite beside the existing ones turned two **collect-monitor** tests red —
+tests this change does not touch. They failed only when an app-starting suite ran first,
+and they failed on clean `main` too. The cause is P6's, shipped the day before:
+
+> `latency._LAG` is process-global over **ten seconds of wall clock**, and
+> `CollectionMonitor` read it unscoped. A collect pass starting shortly after an unrelated
+> synchronous burst therefore read that burst as **its own** contention and cut workers
+> for it.
+
+Under CI's random test ordering that is a coin flip, not a curiosity — a red `main`
+waiting for an unlucky seed. Fixed at the source rather than in the fixtures:
+`loop_pressure` takes a `since` mark and the monitor passes its own pass start, read from
+the **real** clock rather than the injectable `now_fn` (the two agree by default, which is
+precisely why that mutant survived the matrix until a test was written for it). Scoping to
+the pass makes the first seconds of every window thin, so the same function gained the
+matching refusal at the other end: below ten samples it reports **absent with a reason**
+rather than a fraction computed from three readings — the "low-n" line `latency`'s own
+snappy verdict already draws, in the same module.
+
+Five more mutants, five dead: dropping `since` at the caller, accepting and ignoring it,
+removing the low-n floor, dropping the ten-second window, and taking the pass mark from the
+injected clock.
+
+**The general shape, since it is the second time in two days:** a control that reads
+process-global state must say *which piece of work* the reading belongs to. A window bounds
+how **old** a measurement may be; only a `since` bounds what it is **about**.

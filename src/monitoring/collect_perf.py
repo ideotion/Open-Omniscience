@@ -352,6 +352,11 @@ class CollectionMonitor:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._started_at = time.time()
+        # A monotonic mark for THIS pass, read with the real clock rather than ``now_fn``:
+        # it is compared against latency.py's own ``time.monotonic`` stamps, and an
+        # injected test clock would be comparing two different timelines. See
+        # ``_loop_pressure`` for why a pass must not read lag recorded before it began.
+        self._started_mono = time.monotonic()
         # Rolling aggregates for the end-of-pass classification.
         self._n = 0
         self._rate_sum = 0.0
@@ -662,12 +667,19 @@ class CollectionMonitor:
         no instrumentation. A failure here reports itself rather than returning a healthy
         shape, because ``loop_starvation`` must be able to tell a quiet loop from a
         missing reading.
+
+        SCOPED TO THIS PASS (``since``), and that is a correction rather than a polish.
+        ``latency._LAG`` is process-global over ten seconds of wall clock, so a pass
+        starting shortly after an unrelated synchronous burst read that burst as its own
+        contention and cut workers for it. It was found where such things are found --
+        two collect-monitor tests failing only when an app-starting suite ran before
+        them, which under CI's random ordering is a coin flip rather than a curiosity.
         """
         try:
             from src.monitoring import latency
 
             threshold_ms, _ = loop_lag_thresholds()
-            return latency.loop_pressure(threshold_ms)
+            return latency.loop_pressure(threshold_ms, since=self._started_mono)
         except Exception as exc:  # noqa: BLE001
             _LOG.debug("loop-pressure read failed", exc_info=True)
             return {"measured": False, "reason": f"loop-lag read failed: {exc}"}

@@ -164,8 +164,16 @@ def _pin_cpu_count(monkeypatch, n: int = 4) -> None:
     monkeypatch.setattr(collect_perf, "_CPU_COUNT", n)
 
 
-def _monitor(governor, vitals, tmp_path):
-    return CollectionMonitor(
+def _monitor(governor, vitals, tmp_path, *, running_for_s: float = 30.0):
+    """A monitor for a pass that has ALREADY been running.
+
+    The tick reads only lag measured since its own pass began, so a monitor constructed
+    milliseconds ago would see none of the samples these tests inject -- and a test that
+    backdated nothing would be asserting against an empty window rather than against the
+    behaviour it names. Production monitors run for minutes; ``running_for_s`` says so out
+    loud instead of leaving the tests silently dependent on construction order.
+    """
+    mon = CollectionMonitor(
         governor=governor,
         pass_id="p6",
         mode="rss",
@@ -173,6 +181,8 @@ def _monitor(governor, vitals, tmp_path):
         vitals_fn=lambda: vitals,
         writer_stats_fn=lambda: _IDLE_WRITER,
     )
+    mon._started_mono = time.monotonic() - running_for_s
+    return mon
 
 
 def test_a_busy_collector_with_a_responsive_loop_is_not_backed_off(tmp_path, monkeypatch):
@@ -242,6 +252,112 @@ def test_an_unreadable_loop_never_reads_as_a_breach(tmp_path, monkeypatch):
     # Not `== 20`: a healthy machine in maximum mode RAMPS, so the property is that a
     # broken reading never CUT, not that the tick did nothing.
     assert g._sem.permits >= 20
+
+
+# --------------------------------------------------------------------------- #
+#  A PASS MUST NOT BE CHARGED FOR A STALL THAT PREDATES IT.
+# --------------------------------------------------------------------------- #
+
+
+def test_lag_recorded_before_the_pass_began_is_not_this_pass_contention(tmp_path, monkeypatch):
+    """The defect this pins was shipped and then found by its symptom.
+
+    ``latency._LAG`` is process-global over a ten-second wall-clock window, so a collect
+    pass starting shortly after an unrelated synchronous burst read that burst as its own
+    contention and cut workers for it. It surfaced as two collect-monitor tests that
+    failed ONLY when an app-starting suite ran before them — which, under CI's random
+    ordering, is a coin flip rather than a curiosity.
+    """
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    _pin_cpu_count(monkeypatch)
+    _inject([400.0] * 50)  # a genuine stall, recorded BEFORE this pass exists
+
+    g = BandwidthGovernor(mode="maximum", w_max=50)
+    g._sem.set_permits(20)
+    mon = _monitor(g, _HEALTHY, tmp_path, running_for_s=0.0)  # the pass starts NOW
+    mon._tick()
+
+    sample = collect_perf.recent_samples(1)[-1]
+    assert sample["adjust_reason"] != "loop-lag"
+    assert sample["loop"]["measured"] is False
+    assert sample["loop_backoff"]["engaged"] is False
+    assert g._sem.permits >= 20, "workers were cut for a stall that predates the pass"
+
+
+def test_the_pass_mark_is_on_the_same_timeline_as_the_lag_stamps(tmp_path, monkeypatch):
+    """``CollectionMonitor`` takes an injectable ``now_fn``, and two of its own tests use
+    one — so taking the pass mark from it rather than from the real clock would compare a
+    fake timeline against ``latency``'s real ``time.monotonic`` stamps. With a fake clock
+    starting at 0 every sample ever recorded looks like it came after the pass began, and
+    the scoping this file exists to pin is silently gone.
+
+    Written because that mutant survived the matrix: the two clocks agree by default, so
+    nothing else could tell them apart.
+    """
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    _pin_cpu_count(monkeypatch)
+    _inject([400.0] * 50)  # real-monotonic stamps, all before the pass
+
+    g = BandwidthGovernor(mode="maximum", w_max=50)
+    g._sem.set_permits(20)
+    mon = CollectionMonitor(
+        governor=g,
+        pass_id="p6",
+        mode="rss",
+        rate_fn=lambda: 200.0,
+        vitals_fn=lambda: _HEALTHY,
+        writer_stats_fn=lambda: _IDLE_WRITER,
+        now_fn=lambda: 0.0,  # a clock that is not time.monotonic
+    )
+    assert mon._started_mono > 1.0, "the pass mark came from the injected clock"
+    mon._tick()
+    sample = collect_perf.recent_samples(1)[-1]
+    assert sample["loop"]["measured"] is False
+    assert sample["adjust_reason"] != "loop-lag"
+    assert g._sem.permits >= 20
+
+
+def test_a_fraction_over_too_few_samples_is_refused_not_rounded():
+    """The same refusal at the other end. Scoping to the pass makes the first seconds of
+    every window thin, and three readings are not a fraction — so it reports ABSENT with
+    a reason rather than a number computed from too little. ``latency``'s own snappy
+    verdict already draws that line as "low-n"; this is the same line."""
+    _inject([400.0] * 3)
+    p = latency.loop_pressure(250.0)
+    assert p["measured"] is False
+    assert p["samples"] == 3 and p["fraction"] is None
+    assert "below the" in p["reason"]
+    assert loop_starvation(p) == (False, None)
+
+    _inject([400.0] * latency._LOOP_MIN_SAMPLES)
+    ok = latency.loop_pressure(250.0)
+    assert ok["measured"] is True and ok["fraction"] == 1.0
+
+
+def test_since_and_the_window_are_both_applied():
+    """Two independent filters, and dropping either one is a different bug: the window
+    keeps a reading current, ``since`` keeps it about the right piece of work."""
+    now = time.monotonic()
+    with latency._LOCK:
+        latency._LAG.clear()
+        for i in range(30):
+            latency._LAG.append((now - 20.0 + i * 0.1, 400.0))   # old: outside the window
+        for i in range(30):
+            latency._LAG.append((now - 2.0 + i * 0.05, 1.0))     # recent and quiet
+
+    inside = latency.loop_pressure(250.0)
+    assert inside["measured"] is True and inside["fraction"] == 0.0, (
+        "the stale burst leaked past the 10 s window"
+    )
+    # `since` = now is later than every sample above, so nothing survives it.
+    later = latency.loop_pressure(250.0, since=now)
+    assert later["measured"] is False and later["samples"] == 0, (
+        "a `since` later than every sample must read as unmeasured, not as quiet"
+    )
+    # ...and a `since` that reaches back past the stale burst still does not resurrect
+    # it, because the 10 s window has already dropped it: the two filters compose.
+    reaching_back = latency.loop_pressure(250.0, since=now - 3600.0)
+    assert reaching_back["measured"] is True and reaching_back["fraction"] == 0.0
 
 
 # --------------------------------------------------------------------------- #
