@@ -124,3 +124,104 @@ def test_no_new_socket_importers():
     )
     gone = _ALLOWED_HTTP_IMPORTERS - offenders
     assert not gone, f"allowlist is stale (no longer importers): {sorted(gone)}"
+
+
+# --------------------------------------------------------------------------- #
+# The WIDER ratchet: any socket-capable library, not only an HTTP client.
+# --------------------------------------------------------------------------- #
+# CLAUDE.md invariant #14f recorded this gap when the OpenTimestamps consent
+# gates shipped: the ratchet above matches only `requests`/`httpx`, so it "was
+# and remains blind to opentimestamps.calendar's import shape", and it named a
+# future session widening it as the fix. It is equally blind to imaplib, poplib,
+# http.client and bare `socket` -- every one of which can open an outbound
+# connection without touching the guarded fetch path.
+#
+# The premise this protects is the kill switch's: it "can only be airtight if
+# every outbound path is KNOWN". Airplane mode is enforced at the socket layer
+# (src/ingest/airplane.py), so a module reaching the network by some other
+# library is still refused while offline -- but it is refused by the net beneath,
+# not by anyone having thought about it. This ratchet is the thinking.
+_SOCKET_CAPABLE_MODULES = (
+    "requests", "httpx", "urllib.request", "urllib3", "http.client", "aiohttp",
+    "websockets", "ftplib", "smtplib", "imaplib", "poplib", "telnetlib",
+    "socket", "opentimestamps", "paramiko", "pycurl",
+)
+
+#: Every module that may import one, and WHY. Each was read before being listed
+#: -- an allowlist filled in from a failing run rather than from the code is the
+#: ratchet rubber-stamping itself.
+_ALLOWED_SOCKET_IMPORTERS: dict[str, str] = {
+    "src/ingest/__init__.py":
+        "THE fetch path: EthicalFetcher + the kill switch itself",
+    "src/safety/fetcher.py":
+        "the ONE guarded session factory (kill switch + proxy + UA)",
+    "src/llm/ollama.py":
+        "loopback-only by construction (localhost Ollama), _require_loopback-gated",
+    "src/llm/vllm_client.py":
+        "loopback-only by construction (localhost vLLM server)",
+    "src/ingest/airplane.py":
+        "IS the socket guard -- it patches getaddrinfo/create_connection/connect, "
+        "so importing socket and http.client is the mechanism, not a bypass",
+    "src/ingest/email.py":
+        "the live mailbox pull (imaplib/poplib). REAL egress to a user-named host, "
+        "and gated: both readers call _refuse_if_offline() before connecting "
+        "(ruling #11). Not routable through EthicalFetcher -- IMAP/POP are not HTTP",
+    "src/custody/timestamp.py":
+        "OpenTimestamps calendar submission (invariant #14f). REAL egress to three "
+        "public Bitcoin calendars, revealing IP + timing; consent-gated on all three "
+        "reachable paths and ots_stamp() refuses by name when the kill switch is on",
+    "src/api/system.py":
+        "CONSTANTS ONLY -- socket.AF_INET/AF_INET6 to filter psutil.net_if_addrs() "
+        "when listing LOCAL interface IPs for the consent popup (invariant #14). "
+        "No socket is constructed and nothing connects",
+    "src/llm/vllm_lifecycle.py":
+        "a port probe (connect_ex) against the CONFIGURED vLLM URL, defaulting to "
+        "127.0.0.1. A remote URL would egress here, which the airplane socket guard "
+        "refuses while offline -- listed so that is a known property, not a surprise",
+}
+
+
+def test_no_new_socket_capable_importers():
+    """Widened per invariant #14f: an HTTP client is not the only way out.
+
+    imaplib, poplib, http.client, opentimestamps and bare `socket` all reach the
+    network, and the narrow ratchet above sees none of them.
+    """
+    alt = "|".join(m.replace(".", r"\.") for m in _SOCKET_CAPABLE_MODULES)
+    pattern = re.compile(rf"^\s*(?:import\s+({alt})\b|from\s+({alt})\b)", re.M)
+    offenders = set()
+    for py in _SRC.rglob("*.py"):
+        if pattern.search(py.read_text(encoding="utf-8", errors="replace")):
+            offenders.add(py.relative_to(_SRC.parent).as_posix())
+
+    new = offenders - set(_ALLOWED_SOCKET_IMPORTERS)
+    assert not new, (
+        f"new module(s) import a socket-capable library: {sorted(new)} -- route "
+        "outbound traffic through the guarded fetch path (src/ingest), or add an "
+        "entry to _ALLOWED_SOCKET_IMPORTERS stating WHY, having read what it does. "
+        "The kill switch is airtight only while every outbound path is known."
+    )
+    gone = set(_ALLOWED_SOCKET_IMPORTERS) - offenders
+    assert not gone, (
+        f"allowlist is stale (no longer importers): {sorted(gone)} -- drop them, so "
+        "the list keeps meaning 'these, and only these, can reach the network'"
+    )
+
+
+def test_every_socket_importer_allowance_states_a_reason():
+    """A bare path in the allowlist is a rubber stamp. Each entry must say why,
+    because the next reader's only defence against a silently-added exemption is
+    that adding one requires writing a sentence they can disagree with."""
+    for path, reason in _ALLOWED_SOCKET_IMPORTERS.items():
+        assert len(reason.strip()) > 30, f"{path}: justification too thin: {reason!r}"
+
+
+def test_the_narrow_http_ratchet_is_a_subset_of_the_wide_one():
+    """The two lists must not drift apart: every HTTP-client importer is also a
+    socket-capable importer, so the narrow allowlist has to be contained in the
+    wide one. Without this they are two hand-maintained lists that agree only by
+    luck, and the wider guard could be quietly weakened by editing the wrong one."""
+    missing = _ALLOWED_HTTP_IMPORTERS - set(_ALLOWED_SOCKET_IMPORTERS)
+    assert not missing, (
+        f"in the HTTP allowlist but not the socket allowlist: {sorted(missing)}"
+    )

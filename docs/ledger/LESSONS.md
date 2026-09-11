@@ -6217,6 +6217,143 @@
     it changes a shared blocking gate and belongs to its own reviewed change — but measure the
     cost of tightening before deferring it, because all 11 non-English locales are currently at the
     full count, so today it would redden nothing.
+    **FIXED 2026-09-10, and the second finding is the part worth keeping.** The fix is the general
+    form above, applied: compute the ratio ONCE, keep `round(..., 1)` for the human table and add
+    an unrounded `percent_exact` for the COMPARISON — the display resolution and the decision
+    threshold are two different requirements, and a single variable serving both is what created
+    the slack. The failure line now names the missing COUNT beside the percentage, because at
+    n = 3265 the percentage alone prints "100.0%" for the very locale it is failing, which tells an
+    operator nothing about what to fix. What earned the change over a third deferral was hitting
+    the same defect from the OPPOSITE direction on the same day: restoring a deliberately-mutated
+    `fr.json` with `git checkout` discarded 19 uncommitted keys (the recorded restore-by-copy
+    hazard, hit again), and the gate whose whole job is "every consent/caveat string ships ×12"
+    reported `fr … complete … 100.0%`. GENERAL: a rounded gate does not only fail to catch a
+    regression you introduce on purpose — it fails to catch the one you introduce by accident,
+    which is the case it was actually built for. And when a deferral's stated reasons are
+    (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
+    (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
+    run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **A GUARD THAT PINS A CALL SPELLING IS NOT GUARDING THE THING IT NAMES (2026-09-10):**
+    `test_naming_sweep_ring_disappears_from_the_user_visible_ui` exists to prove a user-visible
+    "ring" became "group". It did that by requiring the literal `toast("Group added.")` and
+    forbidding `toast("Ring added.")` — so wrapping that call in `t()`, a change that touches no
+    user-visible word, failed a naming test. Worse in the other direction: `toast("Ring added.")`
+    is **not a substring of** `toast(t("Ring added."))`, so the FORBIDDEN half was blind to the
+    exact regression it exists for, as soon as anyone wrapped the call. Anchor on the quoted
+    STRING, never on the call around it. The file's own comment already said this for a sibling
+    entry — *"pinning the wrapper made this guard trip on a rename that never touched the word it
+    guards"* — and the same defect sat directly beneath that note in both halves, which is the
+    ordinary way a lesson fails to spread: it gets written where it was learned rather than
+    applied to its neighbours.
+  - **`t()` IS BOUND PER-FUNCTION IN THE UI MODULES, AND A `const` LATER IN THE SAME FUNCTION IS
+    WORSE THAN NO BINDING AT ALL (2026-09-10):** the nearest `const t = (window.OOI18N && …)`
+    ABOVE a call site is frequently in a DIFFERENT function — at `app-diagnostics.js:1400` the
+    visible one belonged to `runIrEval()` while the site sat in `goldBuilderSave()`. So a scope
+    scan that walks upward to the first binding it sees will happily conclude "in scope" and ship
+    a `ReferenceError`. And scanning only ABOVE is itself insufficient: `pullMailbox()` bound `t`
+    seventeen lines BELOW the site, where a `const` in the same block puts every earlier use in
+    the **temporal dead zone** — which fails at runtime while reading as perfectly correct, and
+    which `node --check` cannot see (it caught only the duplicate declaration I introduced).
+    RULE: resolve the binding against the WHOLE enclosing function body, both directions, and
+    treat "there is a `const t` somewhere above" as no evidence at all.
+  - **THE MISSING KEY IS THE BUG; THE MISSING `t()` WRAPPER IS A ~120 ms FLASH (recorded
+    2026-07-28, re-derived and nearly got wrong 2026-09-10 — read it before any i18n sweep):**
+    `i18n.js`'s MutationObserver translates dynamically-inserted text nodes and
+    `title`/`placeholder`/`aria-label` attributes whose value matches a locale key, so a bare
+    `toast("Preferences saved.")` whose key exists renders English for one frame and then
+    switches. Filing such sites as "never translated" is a fabricated finding. The practical
+    consequence when fixing them: KEY everything, and add the wrapper only where the flash is
+    observable. A toast lives on screen for seconds, so wrap it; a `title` attribute cannot be
+    hovered within 120 ms, so keying it is the whole fix and a wrapper there is churn in
+    rendering markup for no user-visible gain.
+
+  - **A GUARD THAT NEEDS A VALUE FROM ANOTHER FILE MUST READ IT FROM THAT FILE — A MIRRORED COPY
+    FAILS IN THE SAFE-LOOKING DIRECTION, AND THE COMMENT SAYING "MIRRORED DELIBERATELY" IS THE
+    SENTENCE TO DISTRUST (2026-09-10, hit twice in one session, the second time one commit after
+    fixing the first):** the reader's consent caveats are server-rendered, and `i18n.js` translates
+    a text node only when its DIRECT parent is outside the engine's skip list — so a key proves the
+    translation EXISTS while only the parent tag decides whether it is APPLIED. The guard I wrote
+    mirrored that skip list as a hardcoded constant, with a comment stating that mirroring meant
+    "if the engine ever widens it, this guard must FAIL and be re-read, not silently follow." A
+    mutant adding `FOOTER` to `i18n.js` passed. **A hardcoded mirror does the exact opposite of
+    that claim**: widening the engine leaves the copy narrow, so the check keeps passing while the
+    string stops being translated — it fails toward "everything is fine", which is the only
+    direction that never gets investigated. The same defect, in the same session, had just been
+    fixed in `test_unlock_sequence_covers_every_init_db_self_heal` (a regex over source that could
+    not tell a CALL from an IMPORT): both are a check reading a COPY of the thing rather than the
+    thing. RULE: read the value from its source of truth, and separately PIN it against the value
+    you reviewed, so a change reddens instead of drifting. Two assertions, not one — the pin catches
+    the change, the read keeps the check honest in the meantime. And when the source of truth is
+    refactored into a shape your parser cannot read, FAIL LOUDLY and say to re-derive it; falling
+    back to the last known value is the mirror bug with extra steps.
+    **THE TELL, and it is a comment rather than code:** "mirrored deliberately", "kept in sync
+    manually", "duplicated on purpose" all describe a DECISION someone made, and read as though the
+    hazard was considered and handled. None of them is a property anything tests. Treat that phrasing
+    as an unproven claim and write the mutant that checks it — here the mutant took two minutes and
+    the comment had been wrong the moment it was written.
+
+  - **A CORRECTION FILED AS A NEW ENTRY DOES NOT NEUTRALISE THE ENTRY IT CORRECTS — ANNOTATE
+    THE STALE ONE IN PLACE, WHERE THE NEXT READER ACTUALLY LANDS (2026-09-10, after it cost a
+    build and a revert):** the docket said `link-in-text-block (n=15)` and
+    `scrollable-region-focusable (n=3)` were STILL OPEN. Both were closed the next day, and the
+    closure WAS recorded — as a new entry further down, ending "Read those two as closed." Two
+    later sessions read the ORIGINAL entry, never reached the correction, and one of them rebuilt
+    a shipped, browser-measured fix and had to revert it. The correction was not missing; it was
+    merely somewhere else, in a file nobody reads front-to-back by design (rule (1) makes the
+    queue consulted, not memorised). A ledger appended in strict chronological order has this
+    failure built in: the OLDEST statement about a topic is the one a search hits first, and it
+    is the one most likely to be wrong. RULE: when you close or correct a docket item, edit the
+    entry that ASSERTS the stale thing — a `SUPERSEDED`/`STRUCK` line right under it, pointing
+    forward — as well as recording the new finding. Two lines in the old place beat two pages in
+    the new one.
+    **AND THE ARITHMETIC TRAP IT PRODUCED, which is reusable on its own:** the re-assertion
+    reasoned "the fix measured 23 nodes, the ledger says 15 are open, so 15 are OUTSIDE the fixed
+    selector — a future pass should start by finding where." 15 and 23 were never a remainder and
+    a whole; they are the SAME finding set counted over one document and over eight. SUBTRACTING
+    TWO COUNTS OF THE SAME THING TAKEN AT DIFFERENT SCOPES INVENTS A REMAINDER, and a remainder
+    reads as an actionable to-do, so the invention survives as work. Before writing "the residual
+    N", confirm both figures were measured over the same population — here the closing commit's
+    own message said outright that they were not.
+
+  - **A PARSER THAT REFUSES A BARE VALUE BECOMES A SILENT NO-OP THE MOMENT YOU STORE ITS OUTPUT
+    AND FEED IT BACK IN (2026-09-10, caught while drafting, before a line shipped):**
+    `parse_list_id` extracts `weekly.substack.com` from `List-Id: "Weekly" <weekly.substack.com>`
+    and deliberately REFUSES a bare unbracketed value — the phrase before the brackets is free
+    text, so reading it as an identifier would invent one. Correct, and it is the safety property.
+    But `publisher_key(from_addr, list_id)` calls that parser on its argument, and the new column
+    stores the already-PARSED bare identifier. Passing the stored value back through the same
+    parameter parses it a SECOND time, gets `None`, and drops to the refusal branch — the whole
+    feature doing nothing, while every assertion that the column exists, is written, is read, and
+    is handed to the resolver still passes green. The tell was reading the parser's docstring
+    rather than trusting the parameter's name; the empirical check that settles it in one line is
+    `assert parse(store(x)) is None`. THE RULE: when you begin persisting a parser's OUTPUT,
+    check every existing consumer of that field for whether it re-parses, because the field's
+    name does not change and nothing else will tell you. THE FIX SHAPE: give the caller a
+    SECOND, explicitly-named door (`list_id_parsed=`) rather than widening the parser to accept
+    both forms — widening restores exactly the ambiguity the refusal exists to prevent, and it
+    does so at the one place that was written to be strict. Pin it with a test that asserts BOTH
+    doors' outcomes on the SAME value, so the two paths cannot silently converge later.
+    Same family as the recorded "checking the wiring never proves the output": here the wiring
+    was flawless end to end and the output was still the refusal it had always been.
+  - **`Path.read_text()` APPLIES UNIVERSAL NEWLINES, SO ROUND-TRIPPING A LEDGER FILE THROUGH IT
+    SILENTLY REWRITES EVERY CRLF LINE — and the result is precisely the diff signature the
+    union-merge lesson teaches you to fear (2026-09-10, caught by that rule, twice in one edit):**
+    appending one row to `shipped.csv` produced a numstat of **54 added / 53 deleted** on an edit
+    that adds one line. First attempt: I had rebuilt the file through the `csv` module, which
+    re-quotes every field — obvious in hindsight, reverted, redone as a surgical line edit.
+    Second attempt still showed **13 / 12**, and the eleven "changed" lines were byte-identical in
+    every visible column. `od -c` on one of them gave the answer: those rows end `\r\n`, and
+    `read_text()` (newline=None) translates `\r\n` and lone `\r` to `\n` on READ, so writing the
+    string back normalises them. Fixed with `read_bytes()` / `write_bytes()` and byte-literal
+    splitting: 2 / 1, which is one row swept plus one row appended. WHY THIS MATTERS MORE THAN THE
+    keystrokes: `shipped.csv` is `merge=union`, so it never conflicts — eleven silently-rewritten
+    rows would have been kept ALONGSIDE main's originals as eleven duplicate entries in the
+    project's permanent shipped record, invisible to a marker grep and to a clean `git merge`.
+    RULES: (a) edit a ledger file with byte-level I/O, never `read_text`/`write_text`, and never by
+    round-tripping it through a parser that reformats; (b) `git diff --numstat` after EVERY ledger
+    edit and treat any deletion on an additive edit as a defect until explained — it fired twice
+    here and was right twice; (c) when `-` and `+` lines look identical, the difference is a byte
+    you cannot see, so go to `od -c` immediately instead of re-reading the text.
   - **`grep --include` IS A WHOLE-INVOCATION FILTER, NOT A POSITIONAL ONE — naming files of another
     type beside it searches NONE of them, and reports a confident nothing (2026-09-07):**
     `grep -rn "<needle>" src/static/*.js src/static/*.html src/ --include=*.py` looks like "search
@@ -8155,7 +8292,8 @@
   its docstring in the same commit — the words are part of the test's output, and they are
   read hardest at the worst moment.**
 
-- **AN ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
+- **[WITHDRAWN 2026-09-10, and the withdrawal is the lesson — see the entry below.] AN
+  ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
   (2026-09-10).** `scrollable-region-focusable` is satisfied by putting `tabindex="0"`
   on the scrollable element, and the tempting fix is to mark every `<pre>`. But a tab
   stop on a block that does not scroll is a keystroke that does nothing, and a Help
@@ -8178,6 +8316,66 @@
   refresh one that was added later and is exercised less in manual testing.** Cheap to
   check, invisible when wrong, and a mutant that deletes the second call is worth having
   in the matrix.
+
+  **WITHDRAWN.** The reasoning above is not wrong in general, but I applied it to a fix
+  that was already shipped, deliberate and browser-verified: `f37e043f` gives every Help
+  `<pre>` and `<table>` a `tabindex` in the markdown renderer, having measured 11 nodes
+  with axe across the eight served documents. Second-guessing that from source, without a
+  browser, produced a change that REMOVED tab stops the verified fix had added — and would
+  have removed all of them at once whenever the Help tab rendered while hidden
+  (`display:none` → zero geometry). **The narrower, load-bearing form: an existing fix that
+  looks over-broad may be over-broad ON PURPOSE, by someone who measured. Before refining
+  it, find out whether it was measured, and if it was, refine it with the same instrument
+  or not at all.**
+
+- **A DOCKET SAYS WHAT WAS TRUE WHEN SOMEONE WROTE IT; THE CODE SAYS WHAT IS TRUE NOW
+  (2026-09-10).** I picked up an item because the queue listed it under STILL OPEN, built
+  it, tested it, mutated it, shipped it — and it had been closed the previous day. The
+  correction was not hidden: the closing commit's own message said *"The Help numbers are
+  larger than the ledger recorded (15 and 3) because that sweep read one document"*. One
+  `git log -S` over the relevant CSS or renderer would have surfaced it before any code was
+  written. **GENERAL FORM: for any docket item, the first action is to check whether the
+  thing is still true, in the code, not in the entry — `git log -S` on a distinctive string
+  from the area costs seconds and is the only check that can catch a CLOSED item still
+  listed as open.** The sharpest part is that this session had already recorded this exact
+  lesson twice, for a stale REMAINING line and a stale test docstring, and then was caught
+  by a third instance: recognising a failure mode in other people's work does not
+  immunise you against it, and the moment of greatest risk is when the stale entry tells
+  you something you are pleased to hear — that there is a small, well-defined job available.
+
+- **A GREP FOR A PLACEHOLDER MATCHES THE ROW THAT RECORDS ITS OWN REMOVAL (2026-09-11).**
+  Protocol rule (5b) tells each session to sweep `PR pending` out of `shipped.csv`, and the
+  obvious check is `grep -c 'PR pending' docs/ledger/shipped.csv`. It returns **1**, and has
+  ever since the sweep SUCCEEDED — the hit is the *summary prose of the row that documents
+  the sweep*, which quotes the phrase it retired, including the words "now returns 0". A
+  future session running the prescribed check finds a hit, goes looking for a placeholder
+  that does not exist, and either wastes the search or "fixes" the historical record. The
+  check that works is **column-aware** — the placeholder lives in `refs`, so read `refs`:
+  `python -c "import csv;print([r for r in csv.DictReader(open('docs/ledger/shipped.csv',newline='')) if 'pending' in (r['refs'] or '').lower()])"`
+  (0 rows on 2026-09-11, against 1 line-grep hit). **GENERAL FORM: in a ledger that records
+  its own maintenance, any check phrased as "does this file still contain X" will eventually
+  match the entry announcing that X was removed — a self-referential false positive that
+  grows more likely the better the ledger is kept. Scope the check to the FIELD the defect
+  lives in, never to the file.** Same family as the `merge=union` lesson above: the file
+  looks clean to the tool you reach for first, and the tool that sees it is the one that
+  knows the file's *structure*.
+
+- **"CARRIED FORWARD UNVERIFIED" IS A LOAN, AND THE INTEREST IS PAID BY THE READER
+  (2026-09-11).** A question register written 2026-09-06 was banner-marked five days later
+  with an honest admission that only 1 of its 44 items had been re-checked. Checking all 44
+  took one session and found that **eight were already answered by shipped code** — one of
+  them (J2) closed by a commit whose `pyproject.toml` comment *names the question number*,
+  and two (D1, D5) asking for changes the tree already had. Three more were not stale but
+  **wrong in a way that changes the answer**: B1 offers (a) or (b) while the runner carries a
+  third path neither mentions; B2 asks whether to build an artifact that already exists; C1
+  proposes removing a path whose own docstring says it is kept "forever". And two (L9, L10)
+  read as oversights when the code had already enumerated the case and declined, on the
+  record, with a measurement. **GENERAL FORM: an unverified premise does not decay into
+  "slightly out of date" — it decays into a question whose ANSWER WOULD BE WRONG, because
+  the option set itself has moved. Marking a register unverified is honest but is not a
+  substitute for verifying it, and the cost of the pass is bounded and one-time while the
+  cost of the loan falls on whoever answers.** The tell worth generalising: every one of the
+  eight answered items was findable by reading a single named path from the question itself.
 
 - **A "SLOW DOWNLOAD" COMPLAINT IS NOT NECESSARILY ABOUT THE DOWNLOAD (2026-09-10, the
   collect-throughput investigation).** The field report was "the rate of article download
