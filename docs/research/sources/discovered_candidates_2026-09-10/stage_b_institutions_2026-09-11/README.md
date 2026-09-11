@@ -9,13 +9,23 @@ does not cost another full Stage B run — the same reason
 
 ## What the merge produced
 
+All 60 batches eventually passed the canary gate — 24 on the first pass, 36 only after being
+refused and re-run on the escalation model.
+
 | target | entries |
 | --- | --- |
 | `triaged_journalism.yml` → `configs/sources.yml` | 3 |
 | `triaged_academic.yml` → `configs/academic_sources.yml` | 36 |
-| `triaged_official.yml` → `configs/official_sources.yml` | 994 |
-| refused: `institution_not_primary_source` | 1,024 |
-| refused: batch untrusted (6 batches, canary failures) | 240 |
+| `triaged_official.yml` → `configs/official_sources.yml` | 1,124 |
+| refused: `institution_not_primary_source` | 1,101 |
+| refused: `low_confidence` | 57 |
+| refused: not an admitted kind (other 24, trade-or-corporate 19, religious 7) | 50 |
+
+**That 1,124 is a mongrel, and this is the clearest single reason not to admit it.** 24 blocks
+were judged by the first pass and 36 by the escalated one, and those two disagree by 2.75× on
+exactly the question that decides admission (below). The resulting 50.5% admission rate is not a
+property of the sources — it is the average of two different standards, weighted by which worker
+happened to draw which batch.
 
 ## Why none of it was admitted
 

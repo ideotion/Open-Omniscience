@@ -1,6 +1,6 @@
 # Candidate sources: feed-VERIFIED (verify_candidate_feeds.py) and model-TRIAGED
 # (triage_batches.py merge; canaries and vocabulary re-checked in code).
-# 994 entries, 2026-09-11. Splice into configs/official_sources.yml with
+# 1124 entries, 2026-09-11. Splice into configs/official_sources.yml with
 # scripts/merge_source_batch.py --target configs/official_sources.yml.
 sources:
 - name: Commission on TV and Radio of Armenia
@@ -8469,6 +8469,2146 @@ sources:
   - government
   - institution
   - culture
+  priority: 3
+- name: Conference of the Cantonal Governments
+  domain: kdk.ch
+  rss_url: https://kdk.ch/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: ch
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Joint Inspection Unit
+  domain: unjiu.org
+  rss_url: https://unjiu.org/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ch
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Chile. Servicio Nacional de Capacitación y Empleo
+  domain: sence.cl
+  rss_url: https://sence.gob.cl/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: cl
+  region: south-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+  language: es
+- name: Ministry of Communication
+  domain: mincom.gov.cm
+  rss_url: https://www.mincom.gov.cm/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fr
+  country: cm
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Ministry of Housing and Urban Development
+  domain: minhdu.gov.cm
+  rss_url: https://www.minhdu.gov.cm/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fr
+  country: cm
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Supreme Court of Justice of Colombia
+  domain: cortesuprema.gov.co
+  rss_url: https://cortesuprema.gov.co/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: co
+  region: south-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: Sistema Estadístico Nacional
+  domain: sen.gov.co
+  rss_url: https://sen.gov.co/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: co
+  region: south-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Cabo Verde. Supremo Tribunal de Justiça
+  domain: stj.cv
+  rss_url: https://www.stj.cv/index.php/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: pt
+  country: cv
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: Department of Insolvency
+  domain: insolvency.gov.cy
+  rss_url: https://www.insolvency.gov.cy/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: el
+  country: cy
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: Bakov nad Jizerou
+  domain: bakovnj.cz
+  rss_url: https://www.bakovnj.cz/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Benešov u Semil
+  domain: benesovusemil.cz
+  rss_url: https://www.benesovusemil.cz/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Bohumín
+  domain: bohumin.cz
+  rss_url: https://www.bohumin.cz/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Bukovinka
+  domain: bukovinka.cz
+  rss_url: https://www.bukovinka.cz/rozpocty-a-financni-dokumenty?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Bělov
+  domain: belov.cz
+  rss_url: https://belov.cz/obec/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Cerhovice
+  domain: cerhovice.cz
+  rss_url: https://www.cerhovice.cz/www/mestyscerhovice/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Chrastavec
+  domain: obecchrastavec.cz
+  rss_url: https://www.obecchrastavec.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Dlouhá Třebová
+  domain: dlouhatrebova.cz
+  rss_url: https://dlouhatrebova.cz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Dolní Hořice
+  domain: dolnihorice.cz
+  rss_url: https://www.dolnihorice.cz/www/obecdolnihorice/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Dubné
+  domain: dubne.cz
+  rss_url: https://www.dubne.cz/www/obecdubne/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Habří
+  domain: habri.cz
+  rss_url: https://www.habri.cz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Hrazany
+  domain: obechrazany.cz
+  rss_url: https://www.obechrazany.cz/www/obechrazany/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Jetětice
+  domain: jetetice.cz
+  rss_url: https://www.jetetice.cz/www/obecjetetice/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Kamenná
+  domain: oukamenna.cz
+  rss_url: https://www.oukamenna.cz/www/obeckamenna/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Moravská Třebová
+  domain: moravskatrebova.cz
+  rss_url: https://www.moravskatrebova.cz/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Nové Sady
+  domain: obecnovesady.cz
+  rss_url: https://www.obecnovesady.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Prostřední Poříčí
+  domain: prostredniporici.cz
+  rss_url: https://www.prostredniporici.cz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Přehořov
+  domain: prehorov.cz
+  rss_url: https://www.prehorov.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Přešovice
+  domain: presovice.cz
+  rss_url: https://www.presovice.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Pšov
+  domain: psov.cz
+  rss_url: https://www.psov.cz/aktuality?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Rokytnice nad Jizerou
+  domain: mesto-rokytnice.cz
+  rss_url: https://www.mesto-rokytnice.cz/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Samšina
+  domain: samsina.nasweb.eu
+  rss_url: https://www.samsina.nasweb.eu/www/obecsamsina/fs/wrs-rss/rss_cz.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Slavětín nad Metují
+  domain: slavetinnadmetuji.cz
+  rss_url: https://www.slavetinnadmetuji.cz/www/obecslavetinnadmetuji/fs/wrs-rss/rss_cz.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Sovětice
+  domain: sovetice.cz
+  rss_url: https://www.sovetice.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Svojek
+  domain: svojek.cz
+  rss_url: https://www.svojek.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Stříbrnice
+  domain: obecstribrnice.cz
+  rss_url: https://www.obecstribrnice.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Tuhaň
+  domain: tuhan.cz
+  rss_url: https://www.tuhan.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Týnec
+  domain: tynec.cz
+  rss_url: https://www.tynec.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Vevčice
+  domain: vevcice.cz
+  rss_url: https://vevcice.cz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Vělopolí
+  domain: velopoli.cz
+  rss_url: https://www.velopoli.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Zběšičky
+  domain: obeczbesicky.cz
+  rss_url: https://www.obeczbesicky.cz/www/obeczbesicky/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Čakov
+  domain: cakov.cz
+  rss_url: https://www.cakov.cz/www/obeccakov/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Římov
+  domain: rimov.cz
+  rss_url: https://www.rimov.cz/www/obecrimov/fs/wrs-rss/rss_cz.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Řídeč
+  domain: ridec.cz
+  rss_url: https://www.ridec.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Škvořetice
+  domain: obecskvoretice.cz
+  rss_url: https://www.obecskvoretice.cz/www/obecskvoretice/fs/wrs-rss/rss_vychozi.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Štěpánovice
+  domain: stepanovice.eu
+  rss_url: https://www.stepanovice.eu/rozpocty-a-financni-dokumenty?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Želetice
+  domain: zeletice.cz
+  rss_url: https://www.zeletice.cz/uredni-deska?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Žerotín
+  domain: ouzerotin.cz
+  rss_url: https://www.ouzerotin.cz/aktuality?action=atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: cs
+  country: cz
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Aichach-Friedberg
+  domain: lra-aic-fdb.de
+  rss_url: https://lra-aic-fdb.de/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Aurich
+  domain: landkreis-aurich.de
+  rss_url: https://www.landkreis-aurich.de/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: District of Erding
+  domain: landkreis-erding.de
+  rss_url: https://www.landkreis-erding.de/presse-aktuelles/pressemitteilungen-archiv/newsrss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Finanzamt Stadthagen
+  domain: lstn.niedersachsen.de
+  rss_url: https://lstn.niedersachsen.de/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Lower Saxony Ministry of Food, Agriculture and Consumer Protection
+  domain: ml.niedersachsen.de
+  rss_url: https://www.ml.niedersachsen.de/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  priority: 3
+- name: Lower Saxony Ministry of Science and Culture
+  domain: mwk.niedersachsen.de
+  rss_url: https://www.mwk.niedersachsen.de/rss.php
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  - culture
+  priority: 3
+- name: Ministerium für Wirtschaft, Innovation, Digitalisierung und Energie des Landes
+    Nordrhein-Westfalen
+  domain: wirtschaft.nrw
+  rss_url: https://wirtschaft.nrw/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - economy
+  - energy
+  priority: 3
+- name: municipality council of Rellingen
+  domain: rellingen.de
+  rss_url: https://www.rellingen.de/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: North Rhine-Westphalia Office for the Protection of the Constitution
+  domain: im.nrw
+  rss_url: https://www.im.nrw/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Q133293252
+  domain: salgen.de
+  rss_url: https://salgen.de/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Q19965321
+  domain: lrh.nrw.de
+  rss_url: https://lrh.nrw.de/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - financial
+  priority: 3
+- name: Q55501701
+  domain: datenschutz.rlp.de
+  rss_url: https://www.datenschutz.rlp.de/?type=9817
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - privacy
+  - cybersecurity
+  priority: 3
+- name: State Archive Baden-Württemberg
+  domain: landesarchiv-bw.de
+  rss_url: https://www.landesarchiv-bw.de/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - history
+  - culture
+  priority: 3
+- name: Uckermark District
+  domain: uckermark.de
+  rss_url: https://www.uckermark.de/media/rss/Verfuegungen.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - water
+  - agriculture
+  priority: 3
+- name: Verwaltungsgemeinschaft Reichling
+  domain: vg-reichling.de
+  rss_url: https://www.vg-reichling.de/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Wittenberg
+  domain: landkreis-wittenberg.de
+  rss_url: https://www.landkreis-wittenberg.de/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Ministry of Labour
+  domain: mt.gob.do
+  rss_url: https://mt.gob.do/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: do
+  region: north-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Q138331984
+  domain: ona-dz.org
+  rss_url: https://ona.dz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ar
+  country: dz
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - water
+  - environment
+  priority: 3
+- name: National Archives of Estonia
+  domain: ra.ee
+  rss_url: https://www.ra.ee/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: et
+  country: ee
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - history
+  - culture
+  priority: 3
+- name: Ajuntament de Riudaura
+  domain: riudaura.cat
+  rss_url: https://riudaura.cat/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ca
+  country: es
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Balearic Port Authority
+  domain: portsdebalears.com
+  rss_url: https://portsdebalears.com/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: es
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Q122241246
+  domain: gopp.gggid.com
+  rss_url: https://gopp.gov.eg/sitemap.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ar
+  country: eg
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Garrigoles Town Council
+  domain: garrigoles.cat
+  rss_url: https://garrigoles.cat/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ca
+  country: es
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Ministry of Equality
+  domain: igualdad.gob.es
+  rss_url: https://www.igualdad.gob.es/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: es
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - human-rights
+  priority: 3
+- name: Q58943492
+  domain: elciego.es
+  rss_url: https://www.elciego.es/es/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: es
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Santander City Council
+  domain: santander.es
+  rss_url: https://www.santander.es/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: es
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Falkland Islands Government Human Resources
+  domain: falklands.gov.fk
+  rss_url: https://www.gov.fk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: fk
+  region: south-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Falkland Islands Fisheries Department
+  domain: fig.gov.fk
+  rss_url: https://www.gov.fk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: fk
+  region: south-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Agency for French Education Abroad
+  domain: aefe.gouv.fr
+  rss_url: https://aefe.gouv.fr/fr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fr
+  country: fr
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+- name: Buckinghamshire Fire and Rescue Service
+  domain: bucksfire.gov.uk
+  rss_url: https://bucksfire.gov.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Chichester City Council
+  domain: chichestercity.gov.uk
+  rss_url: https://chichestercity.gov.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Cumbria Fire and Rescue Service
+  domain: cumbriafire.gov.uk
+  rss_url: https://www.cumbriafire.gov.uk:443/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Department of Education of Northern Ireland
+  domain: education-ni.gov.uk
+  rss_url: https://www.education-ni.gov.uk/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+- name: Neston Town Council
+  domain: neston.org.uk
+  rss_url: https://nestontowncouncil.gov.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: NHS Shropshire, Telford and Wrekin Integrated Care Board
+  domain: shropshiretelfordandwrekin.nhs.uk
+  rss_url: https://www.shropshiretelfordandwrekin.nhs.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - healthcare
+  priority: 3
+- name: Office of Rail and Road
+  domain: orr.gov.uk
+  rss_url: https://www.orr.gov.uk/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Sandwell Safeguarding Children Board
+  domain: sandwell.gov.uk
+  rss_url: https://www.sandwell.gov.uk/rss/news
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Croatian Science Foundation
+  domain: hrzz.hr
+  rss_url: https://hrzz.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: hr
+  country: hr
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: National and University Library in Zagreb
+  domain: nsk.hr
+  rss_url: https://nsk.hr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: hr
+  country: hr
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - culture
+  priority: 3
+- name: National Self-Government of Slovakians in Hungary
+  domain: slovaci.hu
+  rss_url: https://slovaci.hu/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: hu
+  country: hu
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: National Széchényi Library
+  domain: oszk.hu
+  rss_url: https://oszk.hu/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: hu
+  country: hu
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - culture
+  priority: 3
+- name: District Court of Kendal
+  domain: pn-kendal.go.id
+  rss_url: https://pn-kendal.go.id/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: id
+  country: id
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: District Court of Ponorogo
+  domain: pn-ponorogo.go.id
+  rss_url: https://www.pn-ponorogo.go.id/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: id
+  country: id
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: Architects Registration Board
+  domain: arb.org.uk
+  rss_url: https://arb.org.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Teaching Council
+  domain: teachingcouncil.ie
+  rss_url: https://www.teachingcouncil.ie/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ie
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+- name: Indian Council of Agricultural Research
+  domain: icar.org.in
+  rss_url: https://icar.org.in/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: in
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  priority: 3
+  language: en
+- name: Ministry of Economic Affairs and Finance (Iran)
+  domain: mefa.ir
+  rss_url: https://www.mefa.ir/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fa
+  country: ir
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - economy
+  - financial
+  priority: 3
+- name: Directorate of Health
+  domain: landlaeknir.is
+  rss_url: https://island.is:443/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: is
+  country: is
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - healthcare
+  priority: 3
+- name: Q1151075
+  domain: samgongustofa.is
+  rss_url: https://island.is/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: is
+  country: is
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: National Land Survey of Iceland
+  domain: lmi.is
+  rss_url: https://www.natt.is/is/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: is
+  country: is
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - environment
+  - science
+  priority: 3
+- name: Agenzia Nazionale per la Sicurezza del Volo
+  domain: ansv.it
+  rss_url: https://ansv.it/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: it
+  country: it
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: National Federation of the Orders of Doctors and Dental Surgeons
+  domain: portale.fnomceo.it
+  rss_url: https://portale.fnomceo.it/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: it
+  country: it
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - healthcare
+  priority: 3
+- name: Jamaica Bauxite Institute
+  domain: jbi.org.jm
+  rss_url: https://jbi.org.jm/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: jm
+  region: north-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Jamaica Social Investment Fund
+  domain: opm.gov.jm
+  rss_url: https://opm.gov.jm/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: jm
+  region: north-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - politics
+  priority: 3
+- name: General Legal Council of Jamaica
+  domain: generallegalcouncil.org
+  rss_url: https://www.generallegalcouncil.org/sitemap.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: jm
+  region: north-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: Hyōgo Prefecture
+  domain: web.pref.hyogo.lg.jp
+  rss_url: https://web.pref.hyogo.lg.jp/topics.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ja
+  country: jp
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Ogasawara Village
+  domain: vill.ogasawara.tokyo.jp
+  rss_url: https://www.vill.ogasawara.tokyo.jp/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ja
+  country: jp
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Ueno
+  domain: uenomura.jp
+  rss_url: https://uenomura.jp/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ja
+  country: jp
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Kenya Police
+  domain: kenyapolice.go.ke
+  rss_url: https://kenyapolice.go.ke/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ke
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Ministry of Posts and Telecommunications, Cambodia
+  domain: mptc.gov.kh
+  rss_url: https://mptc.gov.kh/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: kh
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - technology
+  priority: 3
+  language: km
+- name: National Centre for HIV/AIDS Dermatology and STDs, Cambodia
+  domain: nchads.org
+  rss_url: https://www.nchads.gov.kh/km/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: kh
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - healthcare
+  priority: 3
+  language: km
+- name: Law enforcement in Saint Lucia
+  domain: security.gov.vc
+  rss_url: https://security.gov.vc/security/index.php?format=feed&amp;type=rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: lc
+  region: north-america
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+  language: en
+- name: Q126953145
+  domain: ausettat.org
+  rss_url: https://ausettat.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ar
+  country: ma
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Q2826687
+  domain: anda.gov.ma
+  rss_url: https://anda.gov.ma/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fr
+  country: ma
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Agency for Electronic Communications
+  domain: aek.mk
+  rss_url: https://aek.mk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: mk
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - technology
+  priority: 3
+  language: mk
+- name: Selangor State Mufti Department
+  domain: muftiselangor.gov.my
+  rss_url: https://www.muftiselangor.gov.my/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: my
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+  language: ms
+- name: Instituto Nacional de Tecnologias de Informação e Comunicação
+  domain: intic.gov.mz
+  rss_url: https://intic.gov.mz/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: pt
+  country: mz
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - technology
+  - cybersecurity
+  priority: 3
+- name: Federal Ministry of Agriculture and Food Security
+  domain: agriculture.gov.ng
+  rss_url: https://agriculture.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: ng
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  priority: 3
+  language: en
+- name: Federal Ministry of Industry, Trade and Investment
+  domain: fmiti.gov.ng
+  rss_url: https://fmiti.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ng
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - business
+  - economy
+  priority: 3
+- name: Independent Corrupt Practices Commission
+  domain: icpc.gov.ng
+  rss_url: https://icpc.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ng
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - legal
+  priority: 3
+- name: National Environmental Standards and Regulations Enforcement Agency
+  domain: nesrea.gov.ng
+  rss_url: https://nesrea.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ng
+  region: africa
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - environment
+  priority: 3
+- name: Norwegian Veterinary Institute
+  domain: vetinst.no
+  rss_url: https://www.vetinst.no/rss-nyheter
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: 'no'
+  country: 'no'
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  - science
+  priority: 3
+- name: Construction Industry Authority of the Philippines
+  domain: construction.gov.ph
+  rss_url: https://construction.gov.ph/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Department of Education Regional Office IV-A
+  domain: depedcalabarzon.ph
+  rss_url: https://depedcalabarzon.ph/?feed=rss2
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+  language: en
+- name: Mactan Cebu International Airport Authority
+  domain: mciaa.gov.ph
+  rss_url: https://mciaa.gov.ph/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: National Wages and Productivity Commission
+  domain: nwpc.dole.gov.ph
+  rss_url: https://nwpc.dole.gov.ph/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - economy
+  priority: 3
+- name: Schools Division Office of Angeles City
+  domain: depedangelescity.com
+  rss_url: https://depedangelescity.com/?feed=rss2
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+  language: en
+- name: Schools Division Office of Cebu City
+  domain: depedcebucity.com
+  rss_url: https://depedcebucity.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+- name: Schools Division Office of Isabela
+  domain: deped-isabela.com.ph
+  rss_url: https://deped-isabela.com.ph/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+  language: en
+- name: Schools Division Office of Nueva Ecija
+  domain: deped-ne.net.ph
+  rss_url: https://deped-ne.net.ph/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: ph
+  region: asia
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+  language: en
+- name: Archiwum Państwowe w Łodzi
+  domain: lodz.ap.gov.pl
+  rss_url: https://www.lodz.ap.gov.pl/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: pl
+  country: pl
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - history
+  - culture
+  priority: 3
+- name: Policja
+  domain: policja.pl
+  rss_url: https://policja.pl/dokumenty/rss/1-rss-1.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: pl
+  country: pl
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Veterinary Inspection
+  domain: wetgiw.gov.pl
+  rss_url: https://wetgiw.gov.pl/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: pl
+  country: pl
+  region: europe
+  source_type: institution
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
   priority: 3
 - name: Património Cultural, I.P.
   domain: patrimoniocultural.gov.pt
