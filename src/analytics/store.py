@@ -1306,15 +1306,21 @@ def backfill_keyword_counters(session: Session) -> dict:
     session.query(Keyword).update(
         {Keyword.mention_count: 0, Keyword.article_count: 0}, synchronize_session=False
     )
-    if agg:
-        session.bulk_update_mappings(
-            Keyword,
-            [
-                {"id": kid, "mention_count": m, "article_count": a}
-                for kid, (m, a) in agg.items()
-            ],
-        )
-    session.commit()
+    # Gated explicitly: bulk_update_mappings is invisible to both write-gate hooks (C8).
+    # The preceding Query.update() IS gated (it fires do_orm_execute), so without this the
+    # two halves of one reconciliation ran on opposite sides of the gate.
+    from src.database.writer import write_lock
+
+    with write_lock():
+        if agg:
+            session.bulk_update_mappings(
+                Keyword,
+                [
+                    {"id": kid, "mention_count": m, "article_count": a}
+                    for kid, (m, a) in agg.items()
+                ],
+            )
+        session.commit()
     total = session.query(func.count(Keyword.id)).scalar() or 0
     return {"keywords": int(total), "with_mentions": len(agg)}
 
@@ -1407,34 +1413,44 @@ def reconcile_keyword_counters(
                 drift += 1
         # Repair the slice: zero + stamp everything in range (a never-mentioned keyword
         # is also "verified 0 as of now"), then set the keywords that have mentions.
-        session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
-            {
-                Keyword.mention_count: 0,
-                Keyword.article_count: 0,
-                Keyword.last_reconciled_at: stamp,
-            },
-            synchronize_session=False,
-        )
-        if agg:
-            session.bulk_update_mappings(
-                Keyword,
-                [
-                    {
-                        "id": kid,
-                        "mention_count": m,
-                        "article_count": a,
-                        "last_reconciled_at": stamp,
-                    }
-                    for kid, (m, a) in agg.items()
-                ],
+        #
+        # GATED AS ONE UNIT (C8 sweep): the Query.update() below IS gated on its own (it
+        # fires do_orm_execute) but bulk_update_mappings is invisible to BOTH write-gate
+        # hooks, so without this the zero-out and the repair that restores the real counts
+        # ran on opposite sides of the gate -- and a reader landing between them would see
+        # every keyword in the slice at zero. The gate is reentrant per thread, so the
+        # inner acquisitions are no-ops.
+        from src.database.writer import write_lock
+
+        with write_lock():
+            session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
+                {
+                    Keyword.mention_count: 0,
+                    Keyword.article_count: 0,
+                    Keyword.last_reconciled_at: stamp,
+                },
+                synchronize_session=False,
             )
-        scanned += len(ids)
-        with_mentions += len(agg)
-        after_id = hi
-        # Persist the watermark WITH the slice's repair (one commit; the resume point
-        # survives an app restart and travels with the corpus).
-        _cursor_set(session, RECONCILE_CURSOR_KEY, after_id)
-        session.commit()
+            if agg:
+                session.bulk_update_mappings(
+                    Keyword,
+                    [
+                        {
+                            "id": kid,
+                            "mention_count": m,
+                            "article_count": a,
+                            "last_reconciled_at": stamp,
+                        }
+                        for kid, (m, a) in agg.items()
+                    ],
+                )
+            scanned += len(ids)
+            with_mentions += len(agg)
+            after_id = hi
+            # Persist the watermark WITH the slice's repair (one commit; the resume point
+            # survives an app restart and travels with the corpus).
+            _cursor_set(session, RECONCILE_CURSOR_KEY, after_id)
+            session.commit()
         if budget > 0 and _time.monotonic() - t0 > budget:
             break  # soft deadline: stop cleanly; the stamps above disclose the partial
     if complete:
@@ -1742,8 +1758,13 @@ def reconcile_keyword_entity_status(session: Session) -> dict:
             updates.append({"id": int(kid), "is_entity": False, "entity_type": None})
             downgraded += 1
     if updates:
-        session.bulk_update_mappings(Keyword, updates)
-        session.commit()
+        # Gated explicitly: bulk_update_mappings fires NEITHER before_flush NOR
+        # do_orm_execute, so it reaches SQLite outside the single-writer gate (C8).
+        from src.database.writer import write_lock
+
+        with write_lock():
+            session.bulk_update_mappings(Keyword, updates)
+            session.commit()
     return {"checked": checked, "downgraded": downgraded}
 
 
@@ -1877,8 +1898,13 @@ def reconcile_article_language(
             still_unknown += 1
 
     if updates:
-        session.bulk_update_mappings(Article, updates)
-        session.commit()
+        # Gated explicitly: see the C8 note above -- bulk_update_mappings is invisible
+        # to both write-gate hooks.
+        from src.database.writer import write_lock
+
+        with write_lock():
+            session.bulk_update_mappings(Article, updates)
+            session.commit()
 
     remaining = (
         session.query(Article.id)
