@@ -34,12 +34,34 @@ evidence and must never be refused because something else could not be counted).
 
 from __future__ import annotations
 
+import math
 import os
 from typing import Any
 
 # The tier boundaries. Named, not inline, because the caveat quotes them.
 SMALL_RAM_MB = 4 * 1024
 MEDIUM_RAM_MB = 8 * 1024
+
+# Field diagnostics 2026-09-11 (D1): the boundaries had NO tolerance, and a raw MiB
+# comparison against a whole-GiB boundary is wrong for every real machine. A Qubes VM
+# provisioned at 4 GB measured `mem_total_mb 4093.8` and landed in the sub-4 GB tier BY
+# 2.2 MiB, with the generated reason reading "4,094 MiB of RAM is below the 4,096 MiB
+# floor" -- which is arithmetically true and factually misleading about the machine it
+# describes. NO machine provisioned at N GB reports N x 1024 MiB: firmware, the kernel's
+# own reservations and (on a VM) the hypervisor all take their cut before `MemTotal`. So
+# the defect was never about one box -- EVERY tier was shifted one notch down, and a
+# nominal 8 GB box measuring ~7,950 MiB was getting the band the comments describe as
+# 4-8 GB.
+#
+# WHY A TOLERANCE AND NOT ROUND-TO-NEAREST-GiB: round-to-nearest promotes a GENUINE
+# 3.5 GB machine (3,584 MiB) to the 4 GB tier, which is the same error in the other
+# direction and a worse one -- it hands memory the machine does not have. The tolerance
+# only ever recognises a reading as the whole GiB it is JUST BELOW, so a machine that
+# really is smaller stays where it is. 3% is the measured shape of the reserve: the
+# field's machine A reads 3,924 MiB against a nominal 4,096 (95.8%), and is correctly
+# still classified below -- it is a 3.83 GiB machine, not a 4 GiB one with a haircut.
+_TIER_TOLERANCE = 0.03
+"""How far below a whole GiB a reading may sit and still BE that provisioned size."""
 
 # Today's shipped values — the "large machine" tier is byte-identical to them, so a
 # machine with headroom is untouched by this module.
@@ -77,14 +99,58 @@ def total_ram_mb() -> float | None:
         return None
 
 
+def nominal_ram_mb(total_mb: float | None) -> float | None:
+    """The PROVISIONED size a measured reading implies, in MiB.
+
+    A reading within :data:`_TIER_TOLERANCE` of the next whole GiB IS that size -- the
+    shortfall is the machine's own reserve, not memory the operator does not have.
+    Anything further below is returned unchanged, so a genuinely smaller machine is
+    never rounded UP into a tier it cannot afford.
+
+    Shared with :mod:`src.config.machine_floor`, which carries the identical comparison
+    against the identical 4,096 MiB boundary: one of the two left unfixed would be the
+    same defect surviving in the path the fix did not touch.
+    """
+    if total_mb is None or total_mb <= 0:
+        return total_mb
+    up = math.ceil(total_mb / 1024.0)
+    if total_mb >= up * 1024.0 * (1.0 - _TIER_TOLERANCE):
+        return float(up * 1024)
+    return total_mb
+
+
 def _tier(total_mb: float | None) -> str:
     if total_mb is None:
         return "unmeasured"
-    if total_mb < SMALL_RAM_MB:
+    # Compared on the NOMINAL size, never the raw reading -- see _TIER_TOLERANCE.
+    nominal = nominal_ram_mb(total_mb)
+    if nominal is None:  # unreachable for a non-None reading; kept so the type is honest
+        return "unmeasured"
+    if nominal < SMALL_RAM_MB:
         return "small"
-    if total_mb < MEDIUM_RAM_MB:
+    if nominal < MEDIUM_RAM_MB:
         return "medium"
     return "large"
+
+
+def _rounded_nominal(measured: float | None) -> float | None:
+    """The inferred nominal size, rounded for reporting; ``None`` stays ``None``."""
+    nominal = nominal_ram_mb(measured)
+    return None if nominal is None else round(nominal, 1)
+
+
+def _nominal_note(measured: float | None) -> str:
+    """" (a nominal N MiB machine)" when the reading was recognised as a whole GiB.
+
+    Empty when the reading IS its own nominal, so the common case reads unchanged and
+    the note only ever appears where it explains something.
+    """
+    if measured is None:
+        return ""
+    nominal = nominal_ram_mb(measured)
+    if nominal is None or abs(nominal - measured) < 0.05:
+        return ""
+    return f" (a nominal {nominal:,.0f} MiB machine, within {_TIER_TOLERANCE:.0%})"
 
 
 def _env_int(name: str) -> int | None:
@@ -137,6 +203,10 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
 
     out: dict[str, Any] = {
         "total_ram_mb": round(measured, 1) if measured is not None else None,
+        # The size the tier was actually decided on. Reported BESIDE the raw reading,
+        # never instead of it: "4,093.8 measured" and "a 4,096 MiB machine" are two
+        # different facts and the operator is owed both (D1).
+        "nominal_ram_mb": _rounded_nominal(measured),
         "tier": tier,
         "db_pool_size": values["db_pool_size"],
         "db_max_overflow": values["db_max_overflow"],
@@ -165,7 +235,8 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
         )
     elif tier == "small":
         out["reason"] = (
-            f"{measured:,.0f} MiB of RAM is below the {SMALL_RAM_MB:,} MiB floor, so the "
+            f"{measured:,.0f} MiB of RAM{_nominal_note(measured)} is below the "
+            f"{SMALL_RAM_MB:,} MiB floor, so the "
             f"pool is {values['db_pool_size']}+{values['db_max_overflow']} connections at "
             f"{values['sqlite_cache_mb']} MiB of page cache each (worst case "
             f"{worst_case_cache_mb:,} MiB, against {connections * _LARGE['sqlite_cache_mb']:,} "
@@ -174,8 +245,9 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
         )
     else:
         out["reason"] = (
-            f"{measured:,.0f} MiB of RAM is at or above the {SMALL_RAM_MB:,} MiB floor "
-            f"({tier} tier); worst-case pool page cache {worst_case_cache_mb:,} MiB."
+            f"{measured:,.0f} MiB of RAM{_nominal_note(measured)} is at or above the "
+            f"{SMALL_RAM_MB:,} MiB floor ({tier} tier); worst-case pool page cache "
+            f"{worst_case_cache_mb:,} MiB."
         )
     return out
 
