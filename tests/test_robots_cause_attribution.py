@@ -149,3 +149,116 @@ def test_preflight_never_writes_a_permission_it_did_not_establish():
         rec = {"robots": state, "verdict": "x"}
         preflight._apply_to_metadata(_Session(), _Src(), rec)
         assert meta.robots_allowed is expected, state
+
+
+# --------------------------------------------------------------- the per-host backoff
+
+def test_the_backoff_schedule_doubles_from_the_base_and_is_capped(monkeypatch):
+    """Pure, so the schedule is asserted directly rather than inferred from timing. A
+    success is the plain TTL; failures double; the cap is the guarantee that a refusing
+    host is still re-asked, which is what makes this a deferral and not an exclusion."""
+    from src.ingest import _ROBOTS_TTL, _robots_ttl_for
+
+    assert _robots_ttl_for(0) == _ROBOTS_TTL          # read it -> normal cache
+    assert _robots_ttl_for(1) == _ROBOTS_TTL          # first failure -> base
+    assert _robots_ttl_for(2) == _ROBOTS_TTL * 2
+    assert _robots_ttl_for(4) == _ROBOTS_TTL * 8
+    assert _robots_ttl_for(99) == 24 * 3600.0         # capped, never unbounded
+    assert _robots_ttl_for(99) == _robots_ttl_for(1000)
+
+    monkeypatch.setenv("OO_ROBOTS_BACKOFF_CAP_S", "7200")
+    assert _robots_ttl_for(99) == 7200.0
+    # A cap BELOW the base would cache a failure for less time than a success, which is
+    # backwards; it is floored instead of honoured.
+    monkeypatch.setenv("OO_ROBOTS_BACKOFF_CAP_S", "1")
+    assert _robots_ttl_for(99) == _ROBOTS_TTL
+
+
+def test_repeated_failure_backs_the_host_off_and_one_success_clears_it(tmp_path):
+    """The whole point, on a real fetcher: a host that keeps refusing is asked less and
+    less often, and the moment it answers the counter is gone -- no lingering penalty."""
+    clock = {"t": 0.0}
+    answer = {"resp": _Resp(403)}
+    f = EthicalFetcher(min_interval_s=0, robots_cache_path=tmp_path / "r.json")
+    f._now = lambda: clock["t"]  # type: ignore[method-assign]
+    f._guarded_redirect_get = lambda url, **kw: (answer["resp"], url)  # type: ignore[method-assign]
+
+    from src.ingest import _ROBOTS_TTL
+
+    ttls = []
+    for _ in range(4):
+        with pytest.raises(RobotsUnavailable):
+            f._enforce_robots("https://ex.example/x", "https://ex.example", None)
+        ttls.append(f._robots["https://ex.example"][1] - clock["t"])
+        clock["t"] += ttls[-1] + 1          # let the entry expire, then ask again
+    assert ttls == [_ROBOTS_TTL, _ROBOTS_TTL * 2, _ROBOTS_TTL * 4, _ROBOTS_TTL * 8]
+    assert f._robots_fails["https://ex.example"] == 4
+
+    answer["resp"] = _Resp(200, "User-agent: *\nAllow: /")     # the host recovers
+    f._enforce_robots("https://ex.example/x", "https://ex.example", None)   # no raise
+    assert "https://ex.example" not in f._robots_fails
+    assert "https://ex.example" not in f._robots_cause
+    assert f._robots["https://ex.example"][1] - clock["t"] == _ROBOTS_TTL   # back to normal
+
+
+def test_the_backoff_survives_a_restart(tmp_path):
+    """A cold start that handed a host which had refused fifty times a fresh one-hour clock
+    would make the politeness measure no measure at all."""
+    import os
+
+    os.environ["OO_ROBOTS_PERSIST"] = "1"
+    try:
+        path = tmp_path / "r.json"
+        f = EthicalFetcher(min_interval_s=0, robots_cache_path=path)
+        f._guarded_redirect_get = lambda url, **kw: (_Resp(403), url)  # type: ignore[method-assign]
+        for _ in range(3):
+            with pytest.raises(RobotsUnavailable):
+                f._enforce_robots("https://ex.example/x", "https://ex.example", None)
+            f._robots.pop("https://ex.example", None)      # expire, keep the counter
+        assert f._robots_fails["https://ex.example"] == 3
+
+        reborn = EthicalFetcher(min_interval_s=0, robots_cache_path=path)
+        assert reborn._robots_fails.get("https://ex.example") == 3
+        assert reborn._robots_cause.get("https://ex.example") == "refused"
+    finally:
+        os.environ.pop("OO_ROBOTS_PERSIST", None)
+
+
+def test_forget_robots_clears_decision_cause_and_counter_together(tmp_path):
+    """A partial forget would re-ask the host and then back it off using failures it is no
+    longer counting. Scheme-agnostic, because a caller may name either form."""
+    f = EthicalFetcher(min_interval_s=0, robots_cache_path=tmp_path / "r.json")
+    f._guarded_redirect_get = lambda url, **kw: (_Resp(403), url)  # type: ignore[method-assign]
+    with pytest.raises(RobotsUnavailable):
+        f._enforce_robots("https://ex.example/x", "https://ex.example", None)
+    assert f._robots and f._robots_cause and f._robots_fails
+
+    assert f.forget_robots("ex.example") == 1        # bare host, no scheme
+    assert not f._robots and not f._robots_cause and not f._robots_fails
+    assert f.forget_robots("nothing.example") == 0 and f.forget_robots("") == 0
+
+
+def test_an_explicit_retry_forgets_the_backoff_it_created(tmp_path):
+    """Otherwise `--retry robots_unavailable` returns the cached refusal, rewrites the same
+    verdict, and looks like work while asking no host anything."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "_vcf_retry", "scripts/analysis/verify_candidate_feeds.py"
+    )
+    vcf = importlib.util.module_from_spec(spec)
+    sys.modules["_vcf_retry"] = vcf
+    spec.loader.exec_module(vcf)
+
+    out = tmp_path / "run"
+    out.mkdir()
+    (out / "verified.jsonl").write_text(
+        '{"domain": "a.example", "status": "rejected", "reason": "robots_unavailable"}\n'
+        '{"domain": "b.example", "status": "verified", "reason": "verified"}\n',
+        encoding="utf-8",
+    )
+    forgotten: list[str] = []
+    vcf.run([], fetch=lambda *a, **k: None, out_dir=out, workers=1,
+            retry_reasons={"robots_unavailable"}, forget_robots=forgotten.append)
+    assert forgotten == ["a.example"]        # the retried host only, not the verified one

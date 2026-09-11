@@ -653,6 +653,7 @@ def run(
     crawl_delay: Callable[[str], float | None] | None = None,
     probe_budget_s: float = PROBE_TIME_BUDGET_S, stall_s: float = STALL_S,
     shard: tuple[int, int] | None = None,
+    forget_robots: Callable[[str], object] | None = None,
 ) -> dict:
     now = now or datetime.now(UTC)
     if shard is not None:
@@ -668,6 +669,16 @@ def run(
         redo = {v.domain for v in prior if v.reason in retry_reasons}
         prior = [v for v in prior if v.domain not in redo]
         done = done - redo
+        # ...and forget each one's cached robots decision, or the per-host backoff that the
+        # earlier failure created would answer this run from cache: the same verdict rewritten,
+        # no host actually asked, and nothing in the output saying so. An explicit retry is an
+        # operator overriding the deferral, which is exactly what the deferral is not for.
+        if forget_robots is not None:
+            for domain in redo:
+                try:
+                    forget_robots(domain)
+                except Exception:  # noqa: BLE001 - one host must never end the run
+                    pass
     todo = [r for r in rows if (registrable_domain(str(r.get("domain") or "")) or "") not in done]
     if limit is not None:
         todo = todo[:limit]
@@ -813,6 +824,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = run(rows, fetch=fetcher.fetch, out_dir=args.out_dir, workers=args.workers,
                   catalogue=cat, resume=not args.no_resume, limit=args.limit, progress=_progress,
                   shard=parse_shard(args.shard) if args.shard else None,
+                  forget_robots=getattr(fetcher, "forget_robots", None),
                   retry_reasons=retry, crawl_delay=getattr(fetcher, "crawl_delay_for", None),
                   probe_budget_s=args.probe_budget, stall_s=args.stall)
     print(json.dumps(summary, indent=1))

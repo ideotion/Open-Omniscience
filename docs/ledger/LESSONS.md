@@ -8826,3 +8826,20 @@
   three-valued fact — and the repair for both is the same: let the column be NULL and mean
   *unknown*. When you find a place that reads absence as one extreme, grep for the places that
   read it as the other.
+
+- **A BACKOFF YOU ADD IS A CACHE AN OPERATOR'S "DO IT AGAIN" WILL HIT (2026-09-11, robots).**
+  Backing a failing host off is obviously right — and it silently breaks the one command whose
+  entire purpose is to re-ask those hosts, because `--retry` loads the persisted state and finds
+  every target already inside the deferral its own earlier failure created. The run answers from
+  cache, rewrites the identical verdict, and **looks like work while asking nobody anything** —
+  a failure with no error, no log line and a plausible output file. **Whenever you add a
+  deferral, find the explicit-override path and make it FORGET first**; and forget the whole
+  record together (decision, reason, counter), because a partial forget re-asks the host and
+  then backs it off using failures it is no longer counting.
+- **PUT THE BACKOFF WHERE THE FACT LIVES, NOT WHERE A SIMILAR TABLE ALREADY EXISTS
+  (2026-09-11).** `FeedFetchState` already had the exact shape wanted — a counter, a capped
+  self-resetting `skip_until`, even the right philosophy written in its docstring — and reusing
+  it would still have been wrong, because it is keyed per SOURCE while robots is a fact about a
+  HOST. Two sources on one host would have carried a backoff each and both would have kept
+  asking: the measure defeated by its own storage key. The near-miss is worth the note because
+  the pull toward reuse is strongest exactly when the shape matches and the KEY does not.

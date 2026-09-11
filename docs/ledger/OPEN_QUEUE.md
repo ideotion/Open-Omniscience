@@ -12304,6 +12304,38 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
   "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
 
+- **SHIPPED 2026-09-11 — THE PER-HOST ROBOTS BACKOFF: A REFUSAL EXPIRES INSTEAD OF DECIDING
+  (maintainer: "go ahead with the per-host backoff so refused rows expire").** THE COST IT
+  REMOVES, measured: the completed run left 7,847 hosts whose robots.txt could not be read, and
+  at the flat one-hour TTL every one is re-asked EVERY HOUR for ever — 7,847 requests an hour of
+  pure refusal traffic against publishers who already declined once. Doubling from the same
+  one-hour base (1, 2, 4 … capped at 24 h, `OO_ROBOTS_BACKOFF_CAP_S`) settles a persistently
+  refusing host at one request a day. **IT IS A DEFERRAL, NEVER AN EXCLUSION** — the same
+  guarantee and deliberately the same wording as the feed de-churn backoff: the CAP means every
+  host is re-asked within a day however long it has been failing, and ONE success clears the
+  counter outright with no lingering penalty. **WHY IT LIVES WITH THE DECISION rather than in its
+  own table:** robots is a PER-HOST fact and `FeedFetchState` is keyed per SOURCE, so reusing it
+  would give two sources on one host a backoff each and both would keep asking — the opposite of
+  the point; and the project's own lesson about two rate authorities disagreeing over one
+  quantity says not to add a second. Cached and persisted beside the decision, so there is ONE
+  authority over when a host is re-asked, and it SURVIVES A RESTART — a cold start that handed a
+  host which had refused fifty times a fresh one-hour clock would make the measure no measure.
+  **THE TRAP THIS CREATED, AND THE ESCAPE HATCH.** The backoff is the right default and the wrong
+  answer to an operator saying "check these again": a `--retry robots_unavailable` run loads the
+  sidecar and finds every host it means to re-ask already inside the backoff its OWN earlier
+  failure created, so it would answer from cache, rewrite the same verdict, and look like work
+  while asking no host anything. `EthicalFetcher.forget_robots(host)` drops the decision, the
+  cause and the counter TOGETHER (a partial forget would re-ask and then back off using failures
+  it is no longer counting), and `run()` calls it for every domain leaving the done-set.
+  **THE MULTI-VM RE-RUN THE MAINTAINER ASKED ABOUT WORKS TODAY, and is measured rather than
+  asserted:** give each machine a COPY of the finished run directory and add `--shard i/N
+  --retry robots_unavailable`. Over a 200-row cursor across 8 shards every host was asked exactly
+  once, the union was the whole retry set, and no host was asked twice; the cursor is
+  last-line-wins per domain, so the eight files concatenate. Runbook §3 carries it.
+  STILL PENDING: whether a `refused` row is ever DROPPED rather than deferred (recommended: no),
+  and the preflight `robots_denied` verdict, which still collapses a 401/403 into the same
+  bucket as an explicit `Disallow`. The ratchet held at 446.
+
 - **SHIPPED 2026-09-11 — STEP ZERO OF THE ROBOTS RULING: THE CAUSE IS RECORDED, AND THE 11,404
   UN-JUDGED ROWS ARE PRESERVED (maintainer: "go ahead, start with the cause attribution, and can
   you update the previous source list so that those with unattributed robots.txt are also taken
