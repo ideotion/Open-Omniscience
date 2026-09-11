@@ -106,8 +106,13 @@ See the session task list for the full set with per-finding evidence. Headline i
   | #1127 | C5 + C8 + the bulk-write hole: `writer.py` claimed coverage it did not have |
   | #1128 | D2 + D3 — the learner's starved signal, and the 48-second aggregate |
   | #1129 | C6 — a yielded maintenance window is counted, not silent |
+  | #1130 | D5 (second half) — the archive split into independently-openable capped zips |
 
   (#1125 closed as superseded: it fixed C5/C8's record without finding the root cause #1127 did.)
+
+  #1130 was opened later than the rest: D5's second half was deferred while the per-member cap
+  (#1118) removed the urgency, then built once the batch was otherwise in review. It follows the
+  same one-topic-per-PR rule and its ledger row is collected here like every other.
 
 - **Four findings closed WITHOUT a fix**, recorded so the next reader of this bundle does not
   re-investigate them: **C4** (the 9.86M orphan count stands; both proposed mechanisms disproven —
