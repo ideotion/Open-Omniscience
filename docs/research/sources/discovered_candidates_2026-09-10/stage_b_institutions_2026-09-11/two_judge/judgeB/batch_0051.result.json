@@ -1,0 +1,481 @@
+{
+ "rows": [
+  {
+   "domain": "kemhan.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dentalcouncil.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pcsaireland.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dee.assam.gov.in",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "mwfdelhi.hypotheses.org",
+   "journalism": false,
+   "kind": "academic",
+   "language": "en",
+   "topics": [
+    "history",
+    "culture"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "mykishtwar.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "low"
+  },
+  {
+   "domain": "kozhikodecorporation.lsgkerala.gov.in",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ml",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "necouncil.gov.in",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "h-iftaa.com",
+   "journalism": false,
+   "kind": "religious",
+   "language": "ar",
+   "topics": [],
+   "confidence": "high"
+  },
+  {
+   "domain": "nano.ir",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fa",
+   "topics": [
+    "technology",
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "qomshora.ir",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fa",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news",
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "leader.ir",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fa",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "reykjavik.is",
+   "journalism": false,
+   "kind": "institution",
+   "language": "is",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "acquirenteunico.it",
+   "journalism": false,
+   "kind": "institution",
+   "language": "it",
+   "topics": [
+    "energy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "nlj.gov.jm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "instituteofjamaica.org.jm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vnconsulate-fukuoka.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "vi",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "tokyo.philembassy.net",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "tokara.jp",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ja",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "senate.gov.kh",
+   "journalism": false,
+   "kind": "institution",
+   "language": "km",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "apsaraauthority.gov.kh",
+   "journalism": false,
+   "kind": "institution",
+   "language": "km",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "corea.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "epra.go.ke",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "energy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "immash.kz",
+   "journalism": false,
+   "kind": "academic",
+   "language": "kk",
+   "topics": [
+    "science",
+    "robotics"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "slncu.lk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education",
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "slbs.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "general"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lnb.lt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "lt",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "eige.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "human-rights",
+    "society"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "etikostarnyba.lt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "lt",
+   "topics": [
+    "education",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "lgia.gov.lv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "lv",
+   "topics": [
+    "technology"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "nda.gov.ly",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "yangon.gov.mm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "my",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mrpam.gov.mn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "mn",
+   "topics": [
+    "energy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "festivals.mt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "mt",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "afro.who.int",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "indiainmexico.gov.in",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "spr.gov.my",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ms",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "istanabudaya.gov.my",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ms",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ins.gov.mz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ihvnigeria.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  }
+ ]
+}

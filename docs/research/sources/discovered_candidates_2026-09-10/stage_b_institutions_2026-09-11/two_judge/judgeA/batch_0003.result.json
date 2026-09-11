@@ -1,0 +1,409 @@
+{
+ "rows": [
+  {
+   "domain": "prevysov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "roznov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rudnasy.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "slavkov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "straznadnisou.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "obecsloupvcechach.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecstruznice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vejvanovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vintirov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "obecvracovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "obec-vilanec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "vsenice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obec-ujezdec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "utechov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mestouvaly.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cerncice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ceska-kamenice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ricmanice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "zichlinek.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "lra-aoe.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "www1.wdr.de",
+   "journalism": true,
+   "kind": "broadcaster",
+   "language": "de",
+   "topics": [
+    "regional",
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "bayern.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "dpma.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "landkreis-pfaffenhofen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "lkgi.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vg-grammetal.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "gvv-gullen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "hzdr.de",
+   "journalism": false,
+   "kind": "academic",
+   "language": "de",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "it.nrw.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nla.niedersachsen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "laves.niedersachsen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "healthcare",
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mpim-bonn.mpg.de",
+   "journalism": false,
+   "kind": "academic",
+   "language": "en",
+   "topics": [
+    "science"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "polnischekultur.de",
+   "journalism": false,
+   "kind": "other",
+   "language": "de",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "feuerwehr-seelbach.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-wertheim.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-alkofen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-donnersdorf.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-geltendorf.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-helmstadt.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-kupferberg.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  }
+ ]
+}

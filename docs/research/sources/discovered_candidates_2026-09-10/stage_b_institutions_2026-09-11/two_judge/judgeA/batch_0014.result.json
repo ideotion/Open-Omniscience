@@ -1,0 +1,454 @@
+{
+ "rows": [
+  {
+   "domain": "transport.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "bvhn.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "sivilklareringsmyndighet.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "konkurransetilsynet.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "business",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "forbrukertilsynet.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "sysselmesteren.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "environment",
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "agmardt.org.nz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "panama.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "csc.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dost.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "binal.ac.pa",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news",
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "depedsanpablo.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ozamiz.deped.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "opolskie.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nid.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "franciszkanie.com",
+   "journalism": false,
+   "kind": "religious",
+   "language": "pl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "ztm.kielce.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "adop.pt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "chln.min-saude.pt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mtess.gov.py",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rumania.embajada.gob.ve",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "culture",
+    "economy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "politiadefrontiera.ro",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ro",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "sfda.gov.sa",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "sdf.sc",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "zimstockholm.gov.zw",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mucf.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "spv.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "norrbotten.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "pensionsmyndigheten.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "austcham.org.sg",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "en",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "oru.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "zvkds.si",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sl",
+   "topics": [
+    "culture",
+    "ancient-history"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ruzomberok.sk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sk",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pha.pl.so",
+   "journalism": false,
+   "kind": "institution",
+   "language": "so",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pm.gov.tn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "srtm.tn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "trinidadytobago.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "boryslavrada.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "bc-rada.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "war"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mcsc.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  }
+ ]
+}
