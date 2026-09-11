@@ -553,3 +553,134 @@ def test_an_unrecorded_machine_under_pressure_still_records_its_floor(state):
     assert capacity.record_pass(
         w_max=50, mem_low_ticks=900, mem_low_min_permits=1, samples=1000, state_path=state
     ) == 1
+
+
+# --------------------------------------------------------------------------- #
+#  D2 (2026-09-11): a SECOND pressure source. The memory guard's own RSS-
+#  relative trip point structurally precedes the governor's fixed 512 MB
+#  mem_low floor on any machine above ~3.4 GB total RAM, so mem_low_ticks can
+#  stay 0 for the machine's entire life while it is visibly under pressure.
+#  guard_pressure_ticks/guard_pressure_min_permits are that missing signal,
+#  and must reach the SAME sustained-pressure state machine as mem_low.
+# --------------------------------------------------------------------------- #
+
+
+def test_guard_pressure_alone_seeds_the_ceiling(state):
+    """The exact field defect: mem_low never fires (0 ticks), but the guard's own
+    threshold was crossed on almost every sample, and the governor happened to be
+    running at 6 permits while that held. That is a real, measured floor, and it
+    must reach the ceiling exactly as a mem_low floor would."""
+    out = capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=0,
+        mem_low_min_permits=None,
+        guard_pressure_ticks=900,
+        guard_pressure_min_permits=6,
+        samples=1000,
+        state_path=state,
+    )
+    assert out == 6
+    assert capacity.load_ceiling(state) == 6
+
+
+def test_guard_pressure_is_enough_even_when_mem_low_reports_nothing_at_all(state):
+    """``mem_low_ticks=None`` (no governor reading at all, not merely zero) must not
+    suppress a guard-only pass -- the ``mem_low_ticks is None`` short-circuit that
+    used to mean 'this pass never ran the monitor' must not also swallow a pass
+    that unambiguously DID run it and measured pressure a different way."""
+    out = capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=None,
+        mem_low_min_permits=None,
+        guard_pressure_ticks=900,
+        guard_pressure_min_permits=5,
+        samples=1000,
+        state_path=state,
+    )
+    assert out == 5
+
+
+def test_guard_pressure_at_full_width_is_an_honest_no_op(state):
+    """The guard does not itself cut permits, so a floor measured while nothing
+    else backed off equals w_max -- and recording that would be indistinguishable
+    from 'no pressure', which is exactly the honest outcome: this function has no
+    evidence that fewer workers would have helped."""
+    out = capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=0,
+        mem_low_min_permits=None,
+        guard_pressure_ticks=900,
+        guard_pressure_min_permits=50,
+        samples=1000,
+        state_path=state,
+    )
+    assert out is None
+    assert not state.exists()
+
+
+def test_rare_guard_pressure_relaxes_like_rare_mem_low(state):
+    capacity.record_pass(w_max=50, mem_low_ticks=28, mem_low_min_permits=1, state_path=state)
+    out = capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=0,
+        mem_low_min_permits=None,
+        guard_pressure_ticks=5,  # 0.5% of 1000 samples -- below _RELAX_SHARE
+        guard_pressure_min_permits=3,
+        samples=1000,
+        state_path=state,
+    )
+    assert out == 2, "rare guard pressure must relax the ceiling, not pin it"
+
+
+def test_a_ceiling_of_one_survives_neither_pressure_source(state):
+    """P4b's guarantee, re-checked with the guard as the ONLY sustained source."""
+    state.write_text(
+        json.dumps({"schema": capacity.SCHEMA, "ceiling": 1, "w_max_at_record": 50}),
+        "utf-8",
+    )
+    after = capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=0,
+        mem_low_min_permits=None,
+        guard_pressure_ticks=900,
+        guard_pressure_min_permits=1,
+        samples=1000,
+        state_path=state,
+    )
+    assert after == 2, "a ceiling of 1 must not survive a pass the guard still pressured"
+
+
+def test_the_lower_of_two_sustained_floors_wins(state):
+    out = capacity.record_pass(
+        w_max=50,
+        mem_low_ticks=900,
+        mem_low_min_permits=10,
+        guard_pressure_ticks=900,
+        guard_pressure_min_permits=4,
+        samples=1000,
+        state_path=state,
+    )
+    assert out == 4
+
+
+def test_guard_pressure_field_default_is_byte_identical_to_before(state):
+    """The no-op property, re-checked for the new kwargs: a caller that never
+    passes them (every caller before this change) must behave exactly as if
+    they did not exist."""
+    out = capacity.record_pass(
+        w_max=50, mem_low_ticks=28, mem_low_min_permits=1, state_path=state
+    )
+    assert out == 1
+    assert capacity.seed_for(50, state) == 1
+
+
+def test_guard_pressure_from_summary_reads_the_nested_shape():
+    assert capacity.guard_pressure_from_summary(
+        {"bottleneck": {"guard_pressure_ticks": 3, "guard_pressure_min_permits": 6}}
+    ) == (3, 6)
+    for bad in (None, {}, {"bottleneck": None}, {"bottleneck": []}, "nope"):
+        assert capacity.guard_pressure_from_summary(bad) == (None, None), bad
+    # A pass that genuinely saw no guard pressure reports 0 -- distinct from unreadable.
+    assert capacity.guard_pressure_from_summary(
+        {"bottleneck": {"guard_pressure_ticks": 0, "guard_pressure_min_permits": None}}
+    ) == (0, None)

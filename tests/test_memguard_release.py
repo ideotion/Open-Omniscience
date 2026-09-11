@@ -423,6 +423,47 @@ def test_swap_readings_are_absent_from_the_sample_when_not_supplied():
     assert g.state()["last_reading"]["proc_swap_rising"] is None
 
 
+# --------------------------------------------------------------------------- #
+# D2 (2026-09-11): the unlatched, per-sample reading underneath ``observe``'s
+# latch -- what lets a caller count pressure across a pass without waiting for
+# ``trip_after`` consecutive samples to fully engage.
+# --------------------------------------------------------------------------- #
+def test_raw_pressure_detects_pressure_before_the_latch_engages():
+    g = MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0, trip_after=3, resume_after=2)
+    assert g.raw_pressure(rss_mb=850.0, mem_avail_mb=600.0, mem_total_mb=1000.0) is True
+    # A single sample never latches the guard itself -- that is `observe`'s job,
+    # untouched by raw_pressure, which mutates no state at all.
+    assert g.engaged is False
+
+
+def test_raw_pressure_does_not_disturb_observes_own_latch():
+    g = MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0, trip_after=2, resume_after=2)
+    for _ in range(5):
+        g.raw_pressure(rss_mb=850.0, mem_avail_mb=600.0, mem_total_mb=1000.0)
+    assert g.engaged is False, "raw_pressure must never engage the guard on its own"
+
+
+def test_raw_pressure_is_healthy_below_both_thresholds():
+    g = MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0)
+    assert g.raw_pressure(rss_mb=100.0, mem_avail_mb=4000.0, mem_total_mb=8000.0) is False
+
+
+def test_raw_pressure_also_reads_the_absolute_available_floor():
+    g = MemoryGuard(rss_pct=99.0, avail_floor_mb=256.0)
+    assert g.raw_pressure(rss_mb=10.0, mem_avail_mb=100.0, mem_total_mb=100000.0) is True
+
+
+def test_raw_pressure_is_none_when_unmeasurable():
+    g = MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0)
+    assert g.raw_pressure(rss_mb=None, mem_avail_mb=None, mem_total_mb=None) is None
+
+
+def test_raw_pressure_is_none_when_disabled(monkeypatch):
+    monkeypatch.setenv("OO_MEM_GUARD", "0")
+    g = MemoryGuard(rss_pct=1.0, avail_floor_mb=100000.0)
+    assert g.raw_pressure(rss_mb=999.0, mem_avail_mb=1.0, mem_total_mb=1000.0) is None
+
+
 def test_the_portable_rss_instrument_does_not_perturb_what_it_measures(tmp_path):
     """The psutil path must see the same drop /proc sees — checked FROM Linux.
 

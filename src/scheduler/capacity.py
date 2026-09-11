@@ -66,6 +66,19 @@ _RELAX_FACTOR = 2
 _RELAX_SHARE = 0.10
 
 
+def _is_sustained(ticks: int, samples: int | None) -> bool:
+    """RARE pressure (below ``_RELAX_SHARE`` of the pass's own samples) reads as
+    healthy; anything else — including "no usable denominator", the old strict
+    behaviour — reads as sustained. Shared by every pressure SOURCE record_pass
+    folds in, so mem_low and the memory guard are judged by the identical rule.
+    """
+    if ticks <= 0:
+        return False
+    if isinstance(samples, int) and not isinstance(samples, bool) and samples > 0:
+        return (ticks / samples) > _RELAX_SHARE
+    return True
+
+
 def _default_state_path() -> Path:
     from src.paths import data_dir
 
@@ -138,12 +151,52 @@ def record_pass(
     mem_low_ticks: int | None,
     mem_low_min_permits: int | None,
     samples: int | None = None,
+    guard_pressure_ticks: int | None = None,
+    guard_pressure_min_permits: int | None = None,
     state_path: Path | None = None,
 ) -> int | None:
     """Fold one finished pass into the ceiling; return the new ceiling (``None`` = cleared).
 
     ``mem_low_ticks`` and ``mem_low_min_permits`` come straight from the collection
     monitor's own summary -- this function measures nothing itself.
+
+    D2 (2026-09-11) -- A SECOND, INDEPENDENT PRESSURE SOURCE. ``mem_low_ticks`` is the
+    GOVERNOR's own check (available memory under a fixed 512 MB), and it is not the
+    only thing this machine may have backed off under: ``scheduler.memguard`` trips at
+    its OWN thresholds (RSS >= 85% of total, or available <= 256 MB), and on any
+    machine above roughly 3.4 GB total RAM the guard's RSS-relative trip point is
+    reached at a LOWER RSS than the governor's mem_low floor -- so the guard engages
+    (or comes close: it needs three consecutive over-threshold samples to fully
+    latch, where a hovering machine can cross the line on many ticks without ever
+    holding it for three straight) while mem_avail_mb never drops far enough for
+    mem_low to fire at all. A learner reading only mem_low_ticks then sees zero
+    pressure, pass after pass, on a machine that is visibly straining -- exactly the
+    field symptom (``learned_ceiling`` null, ``ramp_capped_at`` == ``w_max``, after
+    seven armed runs on a 4 GB box sitting at 85% RSS).
+
+    ``guard_pressure_ticks``/``guard_pressure_min_permits`` carry that second signal
+    (``CollectionMonitor``'s ``guard_pressure_ticks``/``guard_pressure_min_permits``,
+    via :func:`guard_pressure_from_summary`) -- the UNLATCHED per-sample reading
+    (:meth:`~src.scheduler.memguard.MemoryGuard.raw_pressure`), not the latched
+    ``engaged`` state, precisely so a hovering-but-never-fully-engaged machine still
+    registers. It is judged by the identical rare-vs-sustained rule as mem_low
+    (:func:`_is_sustained`) and can independently trigger every branch below --
+    including the P4b ineffective-descent escape -- but it is NEVER folded into
+    ``mem_low_ticks`` itself: they are different facts (a different threshold, and
+    the guard does not itself cut permits the way a mem-low tick does), and this
+    function's own ``reason`` records which source actually supplied the floor
+    rather than blurring "the governor saw low memory" with "the guard did". When
+    BOTH sources see sustained pressure and both offer a usable floor, the LOWER of
+    the two wins (whichever demonstrably required fewer workers), and its label is
+    what gets recorded.
+
+    A GUARD-SOURCED FLOOR CAN BE A NO-OP, and that is honest rather than a bug: the
+    guard does not reduce permits, so ``guard_pressure_min_permits`` is only whatever
+    OTHER back-off (mem_low, the writer gate, CPU, loop-lag) happened to leave in
+    force while the guard was also under pressure -- on a pass where nothing else
+    ever cut permits, that number equals ``w_max`` and clears the ceiling exactly as
+    "no pressure" would, because this function genuinely has no evidence that fewer
+    workers would have helped. It never invents a number the pass did not measure.
 
     A pass that saw SUSTAINED pressure lowers the ceiling to the floor the governor
     actually reached (never raises it: pressure is not evidence of headroom). A pass
@@ -188,40 +241,58 @@ def record_pass(
     path = state_path or _default_state_path()
     current = load_ceiling(path)
 
-    if mem_low_ticks is None:
+    if mem_low_ticks is None and guard_pressure_ticks is None:
         return current  # the pass never ran the monitor; it says nothing either way.
 
-    sustained = mem_low_ticks > 0
-    if (
-        sustained
-        and isinstance(samples, int)
-        and not isinstance(samples, bool)
-        and samples > 0
-        and (mem_low_ticks / samples) <= _RELAX_SHARE
-    ):
-        # Pressure was seen but it was RARE — treat the pass as healthy so the ceiling
-        # can climb back. The guard's own engage/release record is unaffected; this is
-        # only about whether the ramp stays capped next pass.
-        sustained = False
+    mem_low_sustained = _is_sustained(mem_low_ticks or 0, samples)
+    guard_sustained = _is_sustained(guard_pressure_ticks or 0, samples)
+    sustained = mem_low_sustained or guard_sustained
 
     ineffective_descent = sustained and current == 1
     if ineffective_descent:
         # The pass ran the whole way at one worker and the pressure did not clear, so
         # this pass says nothing about our concurrency — see the docstring. Relax.
         sustained = False
+        mem_low_sustained = False
+        guard_sustained = False
         _LOG.info(
             "collect capacity: a pass at 1 worker still saw sustained memory pressure "
-            "(%s of %s ticks); the ceiling is not the lever, relaxing it",
-            mem_low_ticks, samples if samples is not None else "?",
+            "(mem-low %s/%s ticks; memory guard %s/%s ticks); the ceiling is not the "
+            "lever, relaxing it",
+            mem_low_ticks if mem_low_ticks is not None else "?",
+            samples if samples is not None else "?",
+            guard_pressure_ticks if guard_pressure_ticks is not None else "?",
+            samples if samples is not None else "?",
         )
 
     if sustained:
-        if not isinstance(mem_low_min_permits, int) or mem_low_min_permits < 1:
-            # Pressure was seen but the floor was not recorded: refuse to invent one.
+        # Each source offers its own floor only when IT judged the pass sustained
+        # and actually recorded one — a source that stayed quiet, or that saw
+        # pressure but never measured a floor, contributes nothing rather than a
+        # fabricated number. The lower of whatever is offered wins.
+        candidates: list[tuple[int, str]] = []
+        if (
+            mem_low_sustained
+            and isinstance(mem_low_min_permits, int)
+            and not isinstance(mem_low_min_permits, bool)
+            and mem_low_min_permits >= 1
+        ):
+            candidates.append((min(mem_low_min_permits, w_max), "memory pressure"))
+        if (
+            guard_sustained
+            and isinstance(guard_pressure_min_permits, int)
+            and not isinstance(guard_pressure_min_permits, bool)
+            and guard_pressure_min_permits >= 1
+        ):
+            candidates.append(
+                (min(guard_pressure_min_permits, w_max), "memory pressure (memory guard)")
+            )
+        if not candidates:
+            # Pressure was seen but no source recorded a usable floor: refuse to
+            # invent one.
             return current
-        floor = min(mem_low_min_permits, w_max)
+        floor, reason = min(candidates, key=lambda c: c[0])
         new = floor if current is None else min(current, floor)
-        reason = "memory pressure"
     else:
         if current is None:
             return None  # healthy and unrecorded -- nothing to write.
@@ -299,6 +370,27 @@ def from_summary(summary: dict | None) -> tuple[int | None, int | None]:
         return (None, None)
     ticks = block.get("mem_low_ticks")
     floor = block.get("mem_low_min_permits")
+    return (
+        ticks if isinstance(ticks, int) and not isinstance(ticks, bool) else None,
+        floor if isinstance(floor, int) and not isinstance(floor, bool) else None,
+    )
+
+
+def guard_pressure_from_summary(summary: dict | None) -> tuple[int | None, int | None]:
+    """Pull ``(guard_pressure_ticks, guard_pressure_min_permits)`` out of a pass summary.
+
+    D2's second signal, mirroring :func:`from_summary` exactly (same nesting trap,
+    same ``(None, None)`` refusal on an unreadable summary) but reading the memory
+    GUARD's own unlatched pressure reading rather than the governor's mem_low check
+    -- see ``record_pass``'s docstring for why the two are kept apart.
+    """
+    if not isinstance(summary, dict):
+        return (None, None)
+    block = summary.get("bottleneck")
+    if not isinstance(block, dict):
+        return (None, None)
+    ticks = block.get("guard_pressure_ticks")
+    floor = block.get("guard_pressure_min_permits")
     return (
         ticks if isinstance(ticks, int) and not isinstance(ticks, bool) else None,
         floor if isinstance(floor, int) and not isinstance(floor, bool) else None,

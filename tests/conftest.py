@@ -250,6 +250,22 @@ def _source_country_rollup_isolated():
 
 
 @pytest.fixture(autouse=True)
+def _source_type_rollup_isolated():
+    """D3 (2026-09-11): the ``/api/insights/source-types`` in-memory rollup
+    (``src.analytics.source_type_rollup``) is a process-global, bind-aware
+    singleton by design -- the SAME order-dependent-pollution class as
+    ``_source_country_rollup_isolated`` just above (and the exact incident that
+    fixture's own docstring records, for the sibling rollup this one mirrors).
+    Left shared, a test that calls ``refresh()`` against the real app engine
+    would leave a WARM rollup a LATER, unrelated test sees via the same bind."""
+    from src.analytics import source_type_rollup
+
+    source_type_rollup._reset_for_tests()
+    yield
+    source_type_rollup._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _served_counts_cache_isolated():
     """S3.2 (2026-09-02): the polled-count cache (``src.api.served_cache``) is a
     process-global, bind-aware singleton by design -- the SAME order-dependent-

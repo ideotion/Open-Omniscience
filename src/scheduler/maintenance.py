@@ -124,6 +124,17 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
             except Exception:  # noqa: BLE001
                 _LOG.warning("off-peak country rollup refresh failed", exc_info=True)
                 out["country_rollup"] = {"skipped": "error"}
+            # D3 (2026-09-11): the /api/insights/source-types rollup, on the same
+            # off-peak cadence -- but unlike country_rollup above, its own refresh()
+            # is change-token gated (this aggregate scans articles, not the few
+            # sources rows), so most idle windows are a cheap watermark-only no-op.
+            try:
+                from src.analytics import source_type_rollup
+
+                out["source_type_rollup"] = source_type_rollup.refresh(session)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("off-peak source-type rollup refresh failed", exc_info=True)
+                out["source_type_rollup"] = {"skipped": "error"}
             if stop():
                 out["cleanup"] = {"skipped": "stopping"}
                 return out
