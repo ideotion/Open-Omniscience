@@ -20,7 +20,7 @@ from datetime import datetime
 
 import trafilatura
 from dateutil import parser as date_parser
-from trafilatura.settings import set_date_params
+from trafilatura.settings import Document, set_date_params
 
 
 @dataclass
@@ -123,6 +123,15 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
 
     if doc is None:
         return None
+    if not isinstance(doc, Document):
+        # ``bare_extraction`` is typed ``Document | dict | None`` because of a DEPRECATED
+        # ``as_dict`` parameter this call never passes, so today this branch cannot be
+        # reached -- and it is a narrowing rather than a ``cast`` because the two differ
+        # exactly when it matters. A cast asserts the union away and would turn an
+        # upstream change into an AttributeError on a live collect pass; this lands on
+        # the path that still works. The test that forces it is what keeps it from being
+        # an unfalsifiable guard.
+        return _extract_resiliently(html, url=url)
     text = doc.text
     if not text or len(text.strip()) < _MIN_BODY_CHARS:
         return None

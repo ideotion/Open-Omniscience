@@ -762,3 +762,28 @@ injected clock.
 **The general shape, since it is the second time in two days:** a control that reads
 process-global state must say *which piece of work* the reading belongs to. A window bounds
 how **old** a measurement may be; only a `since` bounds what it is **about**.
+
+### 14.6 And the gate that caught the rest: `mypy`, not the tests
+
+The first push was red on CI with **10,454 tests passing**. The failing step was `mypy`:
+
+```
+src/ingest/extract.py:126: error: Item "dict[str, Any]" of "Document | dict[str, Any]"
+    has no attribute "text"  [union-attr]   (and :134 title, :135 author)
+```
+
+`bare_extraction` is annotated `Document | dict[str, Any] | None` — the dict arm exists
+only for a **deprecated `as_dict` parameter this call never passes**, so at runtime it is
+always a `Document` and every test passed. Moving from two narrow calls to one wrapper had
+widened the return type, and nothing about that is visible in the behaviour.
+
+Fixed by NARROWING rather than `cast`, because the two differ exactly where it matters: a
+cast asserts the union away and would turn an upstream change into an `AttributeError` on a
+live collect pass, where `if not isinstance(doc, Document): return _extract_resiliently(...)`
+lands on the path that still works. A guard for an unreachable branch is the shape this
+project removed once before, when two guards survived every mutation — so it has a test
+that forces the dict return and asserts the article survives, and a mutant that replaces
+the check with `if False:` dies.
+
+**The general form:** a higher-level wrapper can inherit a wider return type from a
+parameter you do not use. Type-check the swap, not only its behaviour.

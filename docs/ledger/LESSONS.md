@@ -9041,3 +9041,17 @@
   **GENERAL FORM: "how many times is the parser invoked" and "how many times is the
   document parsed" are different questions, and an idempotent loader makes the first a bad
   proxy for the second.**
+
+- **A WRAPPER INHERITS A WIDER RETURN TYPE FROM A PARAMETER YOU DO NOT USE — AND ONLY THE
+  TYPE CHECKER SEES IT (2026-09-11).** Replacing `extract` + `extract_metadata` with
+  `bare_extraction` shipped with **10,454 tests passing** and CI red: `bare_extraction` is
+  annotated `Document | dict[str, Any] | None`, where the dict arm exists solely for a
+  DEPRECATED `as_dict` parameter the call never passes. At runtime it is always a
+  `Document`, so no test could have caught it; `mypy` did, in three lines.
+  **GENERAL FORM: when swapping two narrow calls for one wrapper, run the type checker
+  before pushing — the behaviour is identical and the SIGNATURE is not.** And fix it by
+  NARROWING rather than `cast`: the two are equivalent today and differ exactly when it
+  matters, because a cast asserts the union away and turns an upstream change into an
+  `AttributeError` in production, where an `isinstance` check lands on the fallback that
+  still works. Give that branch a test which forces it, or it is the unfalsifiable guard
+  this ledger already removed once.

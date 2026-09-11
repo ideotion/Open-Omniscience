@@ -239,6 +239,26 @@ def test_the_fallback_still_honours_the_date_bound(monkeypatch):
     assert doc is not None and doc.published_at is None
 
 
+def test_a_dict_return_lands_on_the_fallback_rather_than_an_attribute_error(monkeypatch):
+    """``bare_extraction`` is typed ``Document | dict | None`` because of a deprecated
+    ``as_dict`` parameter this call never passes, so today the dict arm is unreachable.
+    It is narrowed rather than ``cast`` away because the two differ exactly when it
+    matters: a cast asserts the union out of existence and would turn an upstream change
+    into an ``AttributeError`` on a live collect pass, where the narrowing lands on the
+    path that still works.
+
+    This test is what keeps that from being an unfalsifiable guard -- the failure mode
+    this project removed once already, when two guards survived every mutation.
+    """
+    monkeypatch.setattr(
+        trafilatura, "bare_extraction", lambda *a, **kw: {"text": "a dict, somehow"}
+    )
+    doc = extract_article(_DATED, url="https://example.org/a")
+    assert doc is not None, "a dict return cost the article"
+    assert len(doc.text) > 200
+    assert doc.published_at is not None, "the fallback lost the metadata too"
+
+
 # --------------------------------------------------------------------------- #
 #  Output equivalence, spot-checked here and proven by the differential.
 # --------------------------------------------------------------------------- #
