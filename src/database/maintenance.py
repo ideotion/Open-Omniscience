@@ -1676,7 +1676,29 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
 
             pages = _incremental_vacuum_pages()
             freelist_before = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
-            conn.execute(text(f"PRAGMA incremental_vacuum({pages})"))
+            # C3 (field diagnostics 2026-09-09): PRAGMA incremental_vacuum(N) frees
+            # pages ONE AT A TIME, yielding one result row per page freed, and only
+            # runs its VDBE program as far as the caller steps it. pysqlite reports
+            # no column `description` for this pragma, so SQLAlchemy's CursorResult
+            # reads `description is None` as "this statement returns no rows" and
+            # closes/finalizes the cursor right after the single execute() step --
+            # which is exactly the step that frees page #1. So `conn.execute(text(...))`
+            # reclaimed exactly 1 page on every call, independent of `pages`, of the
+            # freelist size, and of whether the store predates auto_vacuum=INCREMENTAL
+            # (reproduced live and on a from-creation-INCREMENTAL store, ruling that
+            # hypothesis out). Fix: drive the DBAPI cursor directly, bypassing
+            # SQLAlchemy's CursorResult, and drain every yielded row so the VDBE
+            # program actually runs to completion. fetchmany() in bounded chunks
+            # rather than fetchall() so a large/unbounded `pages` never holds the
+            # whole freed-page count as buffered rows at once.
+            dbapi_conn = conn.connection.dbapi_connection
+            raw_cur = dbapi_conn.cursor()
+            try:
+                raw_cur.execute(f"PRAGMA incremental_vacuum({pages})")
+                while raw_cur.fetchmany(1000):
+                    pass
+            finally:
+                raw_cur.close()
             freelist_after = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
             report = {
                 "freelist_pages_before": freelist_before,
