@@ -223,8 +223,23 @@ def _run_startup_upkeep() -> None:
                 from src.catalog.qualification_overlay import apply_overlay
 
                 adopted = apply_overlay(session)
+                # THE CURATED CATALOGUE IS QUALIFIED BY RULING (2026-09-10): after the
+                # overlay -- so a shipped, MEASURED verdict for a catalogue domain lands
+                # first and wins -- every hand-vetted catalogue row still unqualified and
+                # never judged is stamped qualified and starts the six-month re-check
+                # clock. Idempotent: one indexed query and no writes on later boots.
+                from src.catalog.qualification import stamp_curated_catalog
+
+                curated = stamp_curated_catalog(session)
             if seeded.get("created"):
                 logger.info("Seeded %d catalog sources at startup.", seeded["created"])
+            if curated.get("stamped"):
+                logger.info(
+                    "Stamped %d curated catalogue source(s) qualified by ruling "
+                    "(%d already qualified, %d disqualified kept).",
+                    curated["stamped"], curated.get("already_qualified", 0),
+                    curated.get("disqualified", 0),
+                )
             if adopted.get("adopted"):
                 logger.info(
                     "Adopted %d shipped qualification verdict(s) (%d qualified, "
@@ -2904,12 +2919,22 @@ def _serve() -> None:
                 from src.catalog.qualification_overlay import apply_overlay
 
                 adopted = apply_overlay(session)
+                # The curated catalogue is qualified by ruling (2026-09-10); see the
+                # lifespan path above for why this runs after the overlay.
+                from src.catalog.qualification import stamp_curated_catalog
+
+                curated = stamp_curated_catalog(session)
             if result["created"]:
                 logger.info("Seeded %d starter sources on first run.", result["created"])
             if adopted.get("adopted"):
                 logger.info(
                     "Adopted %d shipped qualification verdict(s) on first run.",
                     adopted["adopted"],
+                )
+            if curated.get("stamped"):
+                logger.info(
+                    "Stamped %d curated catalogue source(s) qualified by ruling on first run.",
+                    curated["stamped"],
                 )
         except Exception as exc:  # noqa: BLE001 - never block startup on seeding
             logger.warning("Could not seed default sources: %s", exc)

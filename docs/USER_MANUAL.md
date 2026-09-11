@@ -555,13 +555,25 @@ robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
 it has been **qualified**. Every source carries one of three categorical stamps, never
 a quality score:
 
-- **unqualified** — not yet judged (the default for a brand-new source);
+- **unqualified** — not yet judged (the default for a discovered, cited or hand-added
+  source);
 - **qualified** — passed a small trial fetch that checked *extraction validity* (real
   prose vs a broken/junk scrape, e.g. a nav-menu page or a paywall wall) — it now
   joins regular collection;
 - **disqualified** — the trial's extracted pages looked structurally broken, not
   merely "boring" or terse (style is never judged, only whether real article text
   came back at all).
+
+**The curated catalogue that ships with the app is qualified from the start** (maintainer
+ruling 2026-09-10). Its rows — the hand-vetted news, spectrum, markets and law catalogues —
+carry a stamp whose *basis* is the catalogue itself, shown in the source's provenance panel
+as **qualified · by catalogue**, and they join collection on day one instead of waiting
+their turn behind the discovery backlog. The stamp is not a measurement and never reads as
+one: it is re-checked on the **same six-month clock as every qualified source** (below),
+a failed re-check disqualifies the source exactly like any other, a verdict this instance
+has already reached is never overwritten by it, and the qualification export counts such
+rows apart and never ships them as earned verdicts. Discovered, cited and hand-added
+sources still pass the trial.
 
 A **background job runs a few of these trial checks automatically on every online
 collection pass** (a bounded, consented, networked "few-article" fetch — refused

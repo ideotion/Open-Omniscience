@@ -7276,3 +7276,64 @@ caught. The branch now contributes zero: 450 with it, 450 without.
 entry:** read the gate out of `ci.yml`, never out of prose — and when a ratchet lands at zero slack,
 **measure the BASE BRANCH before concluding the red is yours**, because the delta is the only number
 that says whose finding it is.
+
+### 2026-09-10 — the union-merge duplicate on a rebased placeholder sweep
+
+The source-qualification planning PR (#1108) added one `shipped.csv` row reading `PR pending`,
+then swept it to `PR #1108` in a second commit once the number existed, per rule (5b). `main`
+moved before the PR was opened, so the branch was rebased onto the fresh tip. `git rebase`
+replayed the sweep commit as a three-way merge, and `shipped.csv`'s `merge=union` driver kept
+BOTH the placeholder line and the swept line — the ledger gained two rows for one plan, the
+numstat read `+2/0`, and nothing in the rebase output said so. The duplicate-key scan against
+`origin/main` (the check the 2026-09-07 entries prescribe) caught it; the placeholder copy was
+removed in its own commit.
+
+**LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** on a `merge=union` file,
+replaying a commit that edits a line you added earlier keeps both versions — a union-merged file
+cannot express an EDIT, only additions — so a commit that changes a line already added on the
+same branch must be squashed into the commit that added it before any rebase or merge, or the
+duplicate-key scan must run after every replay. The rule (5b) placeholder sweep is the common
+case: sweep it in the same commit, or expect two rows.
+
+## 2026-09-10 — The candidate kit: the pipeline packaged for an internet session with no repository
+
+The maintainer ruled, the same day the pipeline shipped, that the internet-connected session
+running it has no GitHub access, must be autonomous, and gets its prompt by hand. The pipeline
+now travels as a KIT built by `scripts/analysis/build_candidate_kit.py`: the scripts at their
+repository paths, `src/` minus the UI and the IP table, `configs/`, the two worklists derived
+from the export at build time (the 3,588-row shortlist, byte-equal to the research shortlist,
+and the 18,457-row ordered remainder), the export as provenance, a self-check and the runbook
+(`docs/design/CANDIDATE_KIT_RUNBOOK.md` → `RUN.md`). Verified here by building the real kit from
+the maintainer's export and running the self-check from the EXTRACTED ZIP on fresh Python 3.13
+and 3.12 venvs installed from the kit's pinned requirements: the kit's own `src` imports, the
+detector answers, the 25 fake-fetcher tests pass, the real fetcher refuses an `.invalid` host with
+a named error, prepare → merge → splice plan run end to end. Python 3.11 cannot install the pins
+(numpy 2.5 needs 3.12+), so the floor is 3.12 — measured, then written. Not run against any
+publisher host (the sandbox cannot). The analysis script's "other rows" step was a quadratic
+list scan — four minutes on 85k rows — replaced by an identity set; the regenerated report and
+shortlist are byte-identical to the committed ones.
+
+**LESSON, copied verbatim into `LESSONS.md` per rule (5a)(b):** a script that must run without
+the app cannot call the app's fetcher factory — `make_fetcher` reads the operator's settings from
+the encrypted key-value store, which is the database stack — and the import closure did not
+show it because the store is imported lazily inside a function body. An import closure is a
+lower bound: grep the closure's modules for `from src.` inside function bodies before believing
+a package runs standalone, and prove it with a self-check that CALLS the entry points in a fresh
+interpreter. A Python floor is measured by installing the pins, never inferred from syntax.
+
+## 2026-09-10 — Stage A bounded in time: the first live run's stall, explained from its own snapshot
+
+The maintainer's first live Stage A run (a Whonix-routed disposable VM, 12 workers) reported the
+kit "frozen": 3587 of 3588 shortlist rows judged, nothing changing for over an hour. The snapshot
+zip explained it without a network. The slowest judged hosts took exactly six times their robots
+`Crawl-delay` (ufal.mff.cuni.cz 5409 s, h21.hani.co.kr 3621 s, gazetatelegraf.com 1829 s, six
+probes each, robots allowed): `EthicalFetcher` sleeps the declared delay before every request and
+Stage A makes up to six feed probes per host. The one unjudged row (inyarwanda.com) is the same
+pattern with a longer delay, and `run()` waited on the pool's last member before the worklist
+could end. Shipped: the host's own declared delay bounds its probes (`crawl_delay_for`, read-only,
+divided into a 600 s budget; a delay the budget cannot afford once is `crawl_delay_too_long`, the
+delay recorded, the host not judged); a stall window of twenty minutes after which the in-flight
+hosts are `host_timeout` and the process exits without joining their threads; `--retry` by reason
+with a last-line-wins cursor; the kit's self-check re-runs for an updated kit; and, in the fetcher,
+a wall-clock deadline on one body read (a tarpit refusal, bucket `slow_body`). Lesson copied to
+LESSONS.md; the collector's own uncapped inline sleep is recorded in the open queue for a ruling.

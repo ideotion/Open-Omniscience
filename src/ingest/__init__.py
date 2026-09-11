@@ -423,11 +423,20 @@ class EthicalFetcher:
         max_retries: int = 2,
         retry_backoff_s: float = 0.5,
         robots_cache_path: Path | None = None,
+        body_deadline_s: float | None = None,
     ):
         self.user_agent = user_agent
         self.min_interval_s = min_interval_s
         self.timeout = timeout
         self.max_bytes = max_bytes
+        # A wall-clock bound on reading ONE body (2026-09-10, the candidate kit's first live
+        # run): the socket timeout bounds each recv, not the whole read, so a server that
+        # trickles a body a few bytes per timeout -- a tarpit -- holds a worker for as long as
+        # it likes. Generous by default (ten timeouts, never under two minutes) so a slow but
+        # honest Tor transfer of a large page still completes; only a trickle is refused, loudly.
+        self.body_deadline_s = (
+            float(body_deadline_s) if body_deadline_s is not None else max(10.0 * float(timeout), 120.0)
+        )
         self.respect_robots = respect_robots
         # Bounded retry/backoff for transient fetch failures (finding BUG-02).
         self.max_retries = max(0, int(max_retries))
@@ -608,6 +617,31 @@ class EthicalFetcher:
                 except Exception:  # noqa: BLE001 - unknowable delay: keep the entry
                     return True
         return False
+
+    def crawl_delay_for(self, url_or_netloc: str) -> float | None:
+        """The ``Crawl-delay`` (seconds) the host's CACHED robots.txt declares for this
+        fetcher's user agent, or ``None`` when none is declared or the host's robots
+        decision is not cached. Never fetches: a read-only view of what the last
+        ``fetch`` learned, for a caller that plans its NEXT requests to the host and
+        wants to know what each one will cost in waiting (the candidate pipeline's
+        probe budget: at Crawl-delay 900 six probes are ninety minutes of one worker).
+        A bare netloc is checked under both scheme keys, like ``_declares_crawl_delay``.
+        """
+        parsed = urlparse(url_or_netloc) if "://" in url_or_netloc else None
+        netloc = parsed.netloc if parsed is not None else url_or_netloc
+        keys: tuple[str, ...] = (f"{parsed.scheme}://{netloc}",) if parsed is not None else ()
+        keys += (f"https://{netloc}", f"http://{netloc}")
+        for k in keys:
+            cached = self._robots.get(k)
+            if cached is None or cached[0] is None:
+                continue
+            try:
+                delay = cached[0].crawl_delay(self.user_agent)
+            except Exception:  # noqa: BLE001 - an unreadable delay is nothing a caller can plan on
+                return None
+            if delay:
+                return float(delay)
+        return None
 
     def _bound_host_caches(self) -> None:
         """Keep the per-pass host caches bounded on a very wide/long pass.
@@ -1156,9 +1190,20 @@ class EthicalFetcher:
         if self._real_session and hasattr(response, "iter_content"):
             total = 0
             chunks: list[bytes] = []
-            for chunk in response.iter_content(chunk_size=65536):
+            started = self._now()
+            # 16 KiB chunks, not 64: the deadline below is checked between chunks, and a
+            # blocking read returns only when its chunk is full, so the chunk size is the
+            # granularity at which a trickling server can be caught.
+            for chunk in response.iter_content(chunk_size=16384):
                 if not chunk:
                     continue
+                if self._now() - started > self.body_deadline_s:
+                    if hasattr(response, "close"):
+                        response.close()
+                    raise FetchFailed(
+                        f"body read exceeded {self.body_deadline_s:.0f}s for {url} "
+                        "(a slow or trickling response)"
+                    )
                 total += len(chunk)
                 if total > self.max_bytes:
                     if hasattr(response, "close"):

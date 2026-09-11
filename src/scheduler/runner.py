@@ -285,17 +285,33 @@ def stratified_interleave(
 ) -> list:
     """Order sources with TRUE per-pass randomness, fairly STRATIFIED by LANGUAGE
     then by SOURCE TAG (maintainer-ruled 2026-06-17 — supersedes the per-country
-    round-robin for the default collection pass).
+    round-robin for the default collection pass; AMENDED 2026-09-10, see below).
 
-    Each language gets equal round-robin turns (language order shuffled EVERY call);
-    within a language each distinct tag gets equal turns (tag order shuffled); within
-    a (language, tag) group the sources are shuffled truly randomly. So no language
-    and no topic-tag is over-represented merely by having more sources, and the order
-    differs every pass (true randomness, not a fixed rotation). A source's stratum tag
-    is its FIRST tag (a multi-tag source picks one representative); sources with no
-    language / no tag share an "·unknown" / "·untagged" bucket so they are never
-    dropped. Per-host politeness is unaffected (it lives in the fetcher's host lock);
-    this only decides ORDER. ``rng`` is injectable so tests are deterministic.
+    EQUAL RATE, RANDOM PHASE. At every step the next source is drawn by picking
+    UNIFORMLY among the languages that still have sources, then UNIFORMLY among that
+    language's tags that still have sources, then taking the next member of that
+    (language, tag) group (the group itself is shuffled). So at every instant every
+    live language is equally likely to be served — no language and no topic-tag is
+    over-represented merely by having more sources — while WHERE in the pass a given
+    source lands is genuinely random. A source's stratum tag is its FIRST tag (a
+    multi-tag source picks one representative); sources with no language / no tag share
+    an "·unknown" / "·untagged" bucket so they are never dropped. Per-host politeness is
+    unaffected (it lives in the fetcher's host lock); this only decides ORDER. ``rng``
+    is injectable so tests are deterministic.
+
+    **AMENDED 2026-09-10 (maintainer, after measuring several blank instances): the
+    strict ROUND-ROBIN became this equal-rate DRAW.** The round-robin served each live
+    language exactly once per round, which is the same equal rate — but it also fixed
+    the PHASE: a language holding exactly one source could only ever be represented in
+    round 1, so those sources led every pass on every machine. Measured on the 3,429-row
+    catalogue (74 languages, 21 of them holding a single source): two independent
+    instances shared 33 % of their first 100 sources, and a source alone in its language
+    reached the first 100 with probability 1.00 against 0.001 for one of the 2,358
+    English rows. Drawing at random keeps the equality (in expectation at every step,
+    rather than exactly per round) and takes the phase with it. The cost is that a
+    prefix is now balanced on average instead of exactly: over the first N slots a
+    language's count is a draw around its fair share, not pinned to it. Ordering is
+    still never exclusion — every source runs exactly once per pass, as before.
 
     ``country_priority`` (a ``{iso2: weight>0}`` dict, default OFF/None = byte-identical to
     the pure stratified order) applies the maintainer's bandwidth PRIORITY LADDER: it decides
@@ -312,30 +328,35 @@ def stratified_interleave(
     for s in sources:
         by_lang.setdefault(_source_lang(s), {}).setdefault(_source_tag(s), []).append(s)
 
-    # Flatten each language into a tag-round-robin (tag order + within-tag shuffled).
-    lang_queues: list[list] = []
-    langs = list(by_lang.keys())
-    chooser.shuffle(langs)
-    for lang in langs:
-        tag_map = by_lang[lang]
-        tags = list(tag_map.keys())
-        chooser.shuffle(tags)
-        tag_queues = []
-        for t in tags:
-            grp = list(tag_map[t])
-            chooser.shuffle(grp)            # true randomness within a (lang, tag) group
-            tag_queues.append(grp)
-        flat: list = []
-        while tag_queues:
-            flat.extend(q.pop(0) for q in tag_queues)
-            tag_queues = [q for q in tag_queues if q]
-        lang_queues.append(flat)
+    # One bucket of tag-groups per language. Each group is shuffled, so WHICH member
+    # represents its stratum is random; the groups are stored reversed so taking the
+    # next member is an O(1) ``pop()`` from the end.
+    live: list[list[list]] = []
+    for tag_map in by_lang.values():
+        groups: list[list] = []
+        for grp in tag_map.values():
+            members = list(grp)
+            chooser.shuffle(members)
+            members.reverse()
+            groups.append(members)
+        live.append(groups)
 
-    # Round-robin across languages: one source per language per round.
+    # The draw: a uniform language, then a uniform tag within it, until nothing is left.
+    # An exhausted group/language is removed by swapping in the last element -- the draw
+    # is uniform, so the order of these lists never matters, and removal stays O(1).
     out: list = []
-    while lang_queues:
-        out.extend(q.pop(0) for q in lang_queues)
-        lang_queues = [q for q in lang_queues if q]
+    while live:
+        li = chooser.randrange(len(live))
+        groups = live[li]
+        gi = chooser.randrange(len(groups))
+        group = groups[gi]
+        out.append(group.pop())
+        if not group:
+            groups[gi] = groups[-1]
+            groups.pop()
+            if not groups:
+                live[li] = live[-1]
+                live.pop()
 
     # Bandwidth priority ladder (opt-in): a STABLE sort by descending country weight lifts
     # prioritised countries to the front WITHOUT dropping anyone (unlisted = weight 0, its

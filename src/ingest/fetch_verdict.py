@@ -33,6 +33,7 @@ FETCH_FAIL_REASONS = (
     "connect",  # connection refused / reset / timeout (transient transport)
     "not_html",  # fetched, but the body was not HTML
     "too_large",  # response exceeded the byte cap
+    "slow_body",  # the body trickled past the wall-clock read deadline (a tarpit)
     "bad_url",  # malformed URL / missing host / redirect loop / unsupported redirect
     "other",  # anything unrecognised (keeps the total honest)
 )
@@ -73,6 +74,8 @@ def classify_fetch_failure(detail: str | None) -> str:
         return "connect"
     if "non-html content" in d:
         return "not_html"
+    if "body read exceeded" in d:
+        return "slow_body"
     if "exceeds" in d and "byte" in d:
         return "too_large"
     if (

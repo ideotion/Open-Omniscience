@@ -166,3 +166,61 @@ def test_politeness_stamp_lands_even_when_transport_fails():
     f.fetch("https://example.com/b")
     assert len(clock.sleeps) == 1
     assert abs(clock.sleeps[0] - 4.0) < 1e-9
+
+
+# --------------------------------------------------------------------------- 2026-09-10
+# The candidate kit's first live run: a host declaring Crawl-delay 900 cost six probes ninety
+# minutes of one worker, because the delay is honoured before EVERY request. A caller planning
+# its next requests can now read the declared delay -- from the cache only, never a fetch.
+
+def test_crawl_delay_for_reads_the_cached_declaration_under_either_key_and_never_fetches():
+    session = _Session(robots_text="User-agent: *\nCrawl-delay: 900\nAllow: /")
+    f, clock = _fetcher(session, min_interval_s=0, respect_robots=True)
+    assert f.crawl_delay_for("https://slow.example/") is None  # not cached yet: unknown, not guessed
+    f.fetch("https://slow.example/")
+    assert f.crawl_delay_for("https://slow.example/") == 900.0
+    assert f.crawl_delay_for("https://slow.example/some/page") == 900.0  # keyed by host
+    assert f.crawl_delay_for("slow.example") == 900.0  # a bare netloc: both scheme keys tried
+    assert f.crawl_delay_for("https://other.example/") is None
+
+    plain = _Session(robots_text="User-agent: *\nAllow: /")
+    g, _ = _fetcher(plain, min_interval_s=0, respect_robots=True)
+    g.fetch("https://fast.example/")
+    assert g.crawl_delay_for("https://fast.example/") is None  # declared nothing: None, never 0
+
+
+def test_a_trickling_body_is_refused_at_the_wall_clock_deadline():
+    """The socket timeout bounds each recv, not the read: a tarpit that trickles a body a few
+    bytes per timeout used to hold a worker for as long as it liked (2026-09-10)."""
+    f = EthicalFetcher(min_interval_s=0, timeout=30.0)  # a REAL session: the streamed read path
+    assert f.body_deadline_s == 300.0  # ten timeouts, never under two minutes
+    assert EthicalFetcher(min_interval_s=0, timeout=5.0).body_deadline_s == 120.0
+    assert EthicalFetcher(min_interval_s=0, timeout=30.0, body_deadline_s=7).body_deadline_s == 7.0
+    clock = _FakeClock()
+    f._now = clock.now
+
+    class Trickle:
+        headers = {"Content-Type": "text/html"}
+        encoding = "utf-8"
+        closed = False
+
+        def iter_content(self, chunk_size):
+            for _ in range(10):
+                clock.advance(100.0)  # each chunk arrives 100 s after the last
+                yield b"x" * 10
+
+        def close(self):
+            self.closed = True
+
+    slow = Trickle()
+    with pytest.raises(FetchFailed, match="body read exceeded 300s .* trickling"):
+        f._read_body(slow, "https://tarpit.example/")
+    assert slow.closed  # the connection is dropped, not drained
+
+    class Prompt(Trickle):
+        def iter_content(self, chunk_size):
+            assert chunk_size == 16384  # the granularity at which a trickle can be caught
+            yield b"<html>ok</html>"
+
+    text, raw = f._read_body(Prompt(), "https://fine.example/")
+    assert text == "<html>ok</html>" and raw is None
