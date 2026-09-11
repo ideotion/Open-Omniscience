@@ -12954,7 +12954,43 @@ with an obvious fix.
 Written at the maintainer's request while the two-judge run was still in flight, so nothing
 depends on this session surviving. Grouped by what each item needs.
 
-### A. IN FLIGHT, AND EPHEMERAL — the one time-sensitive item
+### A. **RESOLVED THE SAME DAY — the result, and a correction to the entry below it**
+
+**A0. THE TWO-JUDGE RERUN RAN AND ANSWERED THE QUESTION.** Three agents died to API timeouts and
+server-side rate limiting, so it never reached 60/60 — but 30 batches carry BOTH judges, which is
+**1,200 paired rows independently classified on identical instructions**, and that is a sufficient
+sample. Preserved at
+`docs/research/.../stage_b_institutions_2026-09-11/two_judge/` (raw outputs + the neutral spec).
+
+    canary failures          0 and 0, across 60 batch-judgements
+    agree on kind            1,166 / 1,200 = 97.2%
+    agree on primary_source    961 / 1,134 = 84.7%
+
+**THIS CORRECTS WHAT IS WRITTEN IN B2 BELOW, AND THE ERROR WAS MINE.** The 25.8%-vs-71.0% split
+that B2 treats as evidence the column measures the judge was mostly an artefact of the
+**directional correction in the escalated prompt** — the line telling a worker that answering
+false by habit was wrong, written after one marked the European Commission non-primary. With both
+judges on the same NEUTRAL prompt they agree 84.7%. The axis is a real signal with a **15.3%
+contested band**, not a coin flip. B2's equity argument is untouched (two judges share a
+calibration, so agreement measures consistency and never correctness), but its framing of the
+axis as unreliable is too strong and should be read against this number.
+
+**THE METHOD FIX WORKED COMPLETELY AND SEPARATELY.** Six of ten workers failed the canary gate on
+the first pass; across 60 batch-judgements here, zero failures on either judge. The "read rows,
+not batches" correction carries no directional bias and belongs in the spec permanently.
+
+**THE DISAGREEMENTS ANSWER B1 EMPIRICALLY.** `academic` vs `institution` is 18 of the 34 kind
+disagreements — the single largest. Two careful judges reading identical evidence cannot agree
+where a research body goes, which is a GAP IN THE TAXONOMY rather than judge failure, and is
+direct evidence that B1 needs a ruling rather than a default. (`institution` vs
+`trade-or-corporate`, 12, is mostly bodies whose site has gone promotional or been taken over —
+see C6.)
+
+**REVISED RECOMMENDATION:** admit institution rows where both judges agree, defer the ~15% they
+do not, per the robots precedent. That is a defensible basis in a way a single judgement was not.
+It does not retire the case for the observable rewrite in B2.
+
+### A-old. IN FLIGHT, AND EPHEMERAL — superseded by A0, kept for the record
 
 **A1. The two-judge Stage B rerun.** 12 agents, both judges on the SAME neutral prompt
 (`SPEC_NEUTRAL.md` = the original spec + the method fix, WITHOUT the directional
