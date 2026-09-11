@@ -8984,8 +8984,14 @@
   so a collect pass starting shortly after an unrelated synchronous burst read that burst
   as **its own** contention and cut workers for it. The bounded window made the reading
   *current*; nothing made it *this pass's*. It surfaced as two collect-monitor tests that
-  failed only when an app-starting suite ran before them, which under random test ordering
-  is a red `main` waiting for an unlucky seed rather than a curiosity. **GENERAL FORM: when
+  failed only when an app-starting suite ran immediately before them. **A RIDER THAT IS
+  ITSELF A LESSON: the first write-up of this called that "a red `main` waiting for an
+  unlucky random-order seed", and that was wrong.** `pytest-randomly` is not a dependency
+  here — CI runs plain `pytest -q` in deterministic order — and the full suite did not
+  surface the defect even with it present, because the ten-second window ages the stale
+  samples out once other files run in between. Reaching for "this could go red in CI"
+  inflates a latent product bug into an incident; the bug was worth fixing on its own
+  terms, and the severity claim was worth checking before it reached four files. **GENERAL FORM: when
   a control reads process-global instrumentation, ask which piece of work the reading
   belongs to, and pass a `since` mark from that work's own start.** Two riders. (1) Scoping
   to the work makes the first seconds of every window thin, so the same function needs the

@@ -745,8 +745,22 @@ and they failed on clean `main` too. The cause is P6's, shipped the day before:
 > synchronous burst therefore read that burst as **its own** contention and cut workers
 > for it.
 
-Under CI's random test ordering that is a coin flip, not a curiosity — a red `main`
-waiting for an unlucky seed. Fixed at the source rather than in the fixtures:
+**A CORRECTION TO THIS SECTION'S FIRST DRAFT, which called that "a red `main` waiting for
+an unlucky random-order seed".** That was wrong, and checking it is how it was caught:
+`pytest-randomly` is **not a dependency of this project** — not in `requirements.lock`,
+not in `pyproject.toml`, not in CI, which runs plain `python -m pytest -q` in deterministic
+collection order. (The `-p no:randomly` flags used while investigating were therefore
+no-ops throughout.) And the full suite did **not** surface it even with the defect present:
+the pre-fix full run on this branch shows **zero** `test_collect_perf_monitor` failures,
+because the ten-second window ages the stale samples out once other files run between the
+two suites. That is why `main` stayed green.
+
+So the honest severity is lower than first written, and the honest defect is unchanged: a
+collect pass really was reading event-loop stalls recorded before it began, which is wrong
+about the product regardless of what any test ordering does. It reproduces when the two
+suites run adjacently, which is how it was found; it is latent otherwise.
+
+Fixed at the source rather than in the fixtures:
 `loop_pressure` takes a `since` mark and the monitor passes its own pass start, read from
 the **real** clock rather than the injectable `now_fn` (the two agree by default, which is
 precisely why that mutant survived the matrix until a test was written for it). Scoping to
