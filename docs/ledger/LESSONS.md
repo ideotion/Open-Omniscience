@@ -9023,3 +9023,21 @@
   holds, fix the assertion to test the property directly rather than relaxing it** — and check the
   new assertion still discriminates against the original defect (here the old shape used no spool
   at all, so it trips the new check from the other side).
+- **A RATCHET CEILING MUST BE CALIBRATED AGAINST THE TREE THAT WILL CARRY IT, NOT THE TREE IT WAS
+  EARNED ON (2026-09-11, PR #1115's own red CI; the ci.yml comment holds the local record).** The
+  field-diagnostics batch measured the advisory-ruff lane at 445 on the COMBINED tree and lowered
+  the ceiling 446 -> 445 — true of the work as a whole. The batch was then split into twelve topic
+  PRs and this branch rewritten to carry only the brief and the ledger, so the CODE that removed
+  the finding LEFT the branch while the tightened ceiling stayed. CI measures the merge into
+  `main`, found 446, and reddened a docs-only PR over a finding it had no way to fix. **The
+  restructuring invalidated a number nobody thought of as depending on it** — which is the part
+  worth carrying: a ceiling silently encodes an assumption about its own tree, and splitting,
+  rebasing or descoping a branch can falsify that assumption while every line of the change still
+  looks right. The drop was not lost, only unclaimed: a ratchet may always be lowered, so whichever
+  topic PR genuinely removes the finding can take 445 and prove it on its own tree. **Slack is safe
+  by construction here** — growth-only, and the script prints the new floor whenever the count
+  drops, so the next PR to touch the lane is handed the number. The script's docstring already
+  records why zero slack is undesirable: at zero slack a tool bump reddens everything at once.
+  Generalises to every count-over-a-tool gate in the repo (mypy, the i18n untranslatable and
+  unkeyed budgets, the CLAUDE.md line ceiling): after splitting or descoping a branch, re-ask
+  whether each recorded number is still a fact about what the branch now contains.
