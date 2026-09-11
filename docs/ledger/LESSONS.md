@@ -8757,3 +8757,18 @@
   identical wrong numbers, so the answer had to come from evidence in hand instead. Read together
   with (5b): the sweep is still owed, and a branch that can see the answer should sweep its own copy
   rather than leave it for the merge to discover.
+
+- **A PIPELINE SPLIT ACROSS TWO FILES NEEDS A TEST THAT SPANS BOTH, OR IT SHIPS HALF-WIRED
+  (2026-09-11, the candidate kit).** `build_candidate_kit.py` WRITES the worklist CSVs;
+  `run_stage_a.py` NAMES them in a `WORKLISTS` map that also supplies `--only`'s choices. Two
+  new worklists went into the builder alone, and the kit shipped with a runner that could not
+  run two of its own four worklists — the maintainer hit it on the first command of an
+  eight-machine run: `error: argument --only: invalid choice: 'institutions'`. Every test
+  exercised one half or the other, and **the kit's own self-check passed**, because it proves
+  the modules import and the pipeline runs end to end on a fixture — not that the runner can
+  reach the files the builder emitted. **The check that works derives BOTH sides from their
+  sources and compares them** (the CSV names regexed out of the builder against the basenames
+  in `WORKLISTS`), so the next addition cannot ship half-wired either. The general form:
+  when a producer and a consumer live in different files and agree only by convention, the
+  convention is the thing to assert — and a green self-check on the artifact is not evidence
+  that its two halves agree.

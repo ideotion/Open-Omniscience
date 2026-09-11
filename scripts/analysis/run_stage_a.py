@@ -52,7 +52,15 @@ PROBE_HOSTS = ("pypi.org", "feeds.bbci.co.uk", "www.lemonde.fr", "theanguillian.
 WORKLISTS = {  # insertion order is the RUN order: the review shortlist first, then the remainder
     "shortlist": ("worklists/worklist_1_shortlist.csv", "w1"),
     "remainder": ("worklists/worklist_2_remainder.csv", "w2"),
+    "institutions": ("worklists/worklist_3_institutions.csv", "w3"),
+    "religious": ("worklists/worklist_4_religious.csv", "w4"),
 }
+# What a BARE `run_stage_a.py` runs. The news worklists only, deliberately: institutions and
+# religious are a different question (primary sources, not reporting), they are three times the
+# rows, and an operator who typed no flag has not asked for a 79,000-row job. They are reached
+# with `--only institutions`. Every OTHER use of WORKLISTS -- --status, RESULTS.md, packaging --
+# iterates all four, so a run that HAS happened is always reported.
+DEFAULT_WORKLISTS = ("shortlist", "remainder")
 MAX_WORKERS = 12   # concurrency is across hosts; each host still sees one request every 2 s
 
 
@@ -229,7 +237,10 @@ def package(root: Path = ROOT, *, now: datetime | None = None, snapshot: bool = 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--only", choices=list(WORKLISTS), default=None, help="one worklist instead of both")
+    ap.add_argument("--only", choices=list(WORKLISTS), default=None,
+                    help="run ONE worklist. Without it: shortlist then remainder (the news rows). "
+                         "institutions and religious are opt-in -- they are a different question and "
+                         "three times the rows.")
     ap.add_argument("--workers", type=int, default=MAX_WORKERS, help=f"parallel hosts, at most {MAX_WORKERS}")
     ap.add_argument("--limit", type=int, default=None, help="rows to judge per worklist THIS run (resumable)")
     ap.add_argument("--timeout", type=float, default=20.0, help="seconds per request")
@@ -366,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         probe()
         if not args.skip_selfcheck:
             selfcheck(py, env=env)
-        for key in (list(WORKLISTS) if args.only is None else [args.only]):  # the shortlist first
+        for key in (list(DEFAULT_WORKLISTS) if args.only is None else [args.only]):  # the shortlist first
             rc = stage_a(py, key, args, env=env)
             if rc != 0:
                 code = rc

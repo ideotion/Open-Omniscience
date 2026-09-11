@@ -76,7 +76,9 @@ def test_the_venv_interpreter_path_follows_the_platform(tmp_path: Path):
 
 
 def test_the_run_order_is_the_shortlist_first_and_the_arguments_parse():
-    assert list(rsa.WORKLISTS) == ["shortlist", "remainder"]  # insertion order is the run order
+    # The map now holds all four worklists; the RUN order of a bare invocation is the news pair.
+    assert list(rsa.DEFAULT_WORKLISTS) == ["shortlist", "remainder"]
+    assert list(rsa.WORKLISTS)[:2] == ["shortlist", "remainder"]
     a = rsa.parse_args(["--workers", "64", "--only", "shortlist", "--limit", "300", "--timeout", "9"])
     assert a.workers == rsa.MAX_WORKERS == 12 and a.only == "shortlist" and a.limit == 300 and a.timeout == 9.0
     d = rsa.parse_args([])
@@ -168,4 +170,41 @@ def test_a_sharded_run_names_its_zip_and_passes_the_shard_down(tmp_path, monkeyp
     args = argparse.Namespace(workers=4, timeout=20.0, limit=None, retry=None, shard="3/8")
     rsa.stage_a(Path("py"), next(iter(rsa.WORKLISTS)), args, root=tmp_path, env={})
     assert "--shard" in seen["cmd"] and seen["cmd"][seen["cmd"].index("--shard") + 1] == "3/8"
+
+
+def test_every_worklist_the_kit_BUILDS_is_one_the_runner_can_RUN():
+    """The two halves of the kit are written in different files and nothing tied them together:
+    build_candidate_kit emits the worklist CSVs, run_stage_a names them in WORKLISTS, and
+    --only's choices come from that map. Adding worklists 3 and 4 to the builder alone shipped a
+    kit whose own runner answered
+
+        run_stage_a.py: error: argument --only: invalid choice: 'institutions'
+
+    to the documented command. Asserted from the two sources rather than a hand list, so a fifth
+    worklist cannot ship half-wired either."""
+    import re
+
+    builder = (_ROOT / "scripts" / "analysis" / "build_candidate_kit.py").read_text(encoding="utf-8")
+    built = set(re.findall(r'"(worklist_\d+_[a-z]+\.csv)"', builder))
+    assert len(built) >= 4, built
+
+    runnable = {csv_rel.split("/")[-1] for csv_rel, _ in rsa.WORKLISTS.values()}
+    assert built == runnable, f"built but not runnable: {built - runnable}; named but never built: {runnable - built}"
+
+    # ...and the run dirs stay distinct, or two worklists would share one resume cursor.
+    dirs = [d for _, d in rsa.WORKLISTS.values()]
+    assert len(dirs) == len(set(dirs)), dirs
+
+
+def test_a_bare_run_does_the_news_worklists_only():
+    """institutions + religious are 59,921 rows against the news lists' 19,245. An operator who
+    typed no flag has not asked for that, so they are opt-in -- but they must still be REPORTED
+    by --status and RESULTS.md once run, which iterate the full map."""
+    assert tuple(rsa.DEFAULT_WORKLISTS) == ("shortlist", "remainder")
+    assert set(rsa.DEFAULT_WORKLISTS) < set(rsa.WORKLISTS)
+    src = (_ROOT / "scripts" / "analysis" / "run_stage_a.py").read_text(encoding="utf-8")
+    assert "list(DEFAULT_WORKLISTS) if args.only is None" in src
+    for fn in ("def status_lines(", "def results_md("):
+        i = src.index(fn)
+        assert "WORKLISTS.items()" in src[i:i + 1400], fn  # the full map, not the default
 
