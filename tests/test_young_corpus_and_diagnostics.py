@@ -404,3 +404,115 @@ def test_keyword_log_caps_per_language_not_globally(client):
     assert "exported_per_language" in data["corpus"]
     assert "capped_languages" in data["corpus"]
     assert "PER dominant signature" in data["method"]
+
+
+# --------------------------------------------------------------------------- #
+#  The families cap must not bias the record (maintainer objection 2026-09-11)
+# --------------------------------------------------------------------------- #
+
+
+def test_families_summary_counts_every_family_not_just_the_printed_ones():
+    """THE ANTI-BIAS GUARANTEE. The printed list is capped; the RECORD is not.
+
+    The objection was that capping biases future diagnostics, and it was right: a global
+    top-N by mentions is the same mentions-ranked cut this file records as having
+    "structurally anglicised the export". So the cap may shrink what is PRINTED and must
+    not change what is COUNTED."""
+    from src.api.diagnostics import _families_summary
+
+    families = [
+        {"term": f"t{i}", "normalized": f"t{i}", "kind": "concept",
+         "mentions": 1000 - i, "articles": 5, "variants": 1, "manual": False,
+         "conflated_by": []}
+        for i in range(500)
+    ]
+    summary = _families_summary(families)
+
+    assert summary["total_families"] == 500          # ALL of them, not the print cap
+    assert summary["mentions"]["n"] == 500
+    assert summary["mentions"]["max"] == 1000
+    assert summary["mentions"]["min"] == 501         # the tail is represented
+    assert summary["by_kind"]["concept"] == 500
+
+
+def test_every_conflated_family_is_listed_however_rare():
+    """The defect signal must be selected ON THE SIGNAL, never on popularity.
+
+    `conflated_by` marks a family the lemma merge joined -- a POSSIBLE MISTAKE -- and a
+    wrong merge is likelier among rare terms than famous ones. Ranking by mentions would
+    hide defects preferentially, which is the exact bias being removed."""
+    from src.api.diagnostics import _families_summary
+
+    families = [
+        {"term": "popular", "normalized": "popular", "kind": "concept",
+         "mentions": 99999, "variants": 2, "manual": False, "conflated_by": []},
+    ] + [
+        # rare AND conflated -- precisely what a mentions-ranked cap would bury
+        {"term": f"rare{i}", "normalized": f"rare{i}", "kind": "concept",
+         "mentions": i, "variants": 3, "manual": False, "conflated_by": ["lemma"]}
+        for i in range(1, 6)
+    ]
+    summary = _families_summary(families)
+
+    conflated = summary["conflated"]
+    assert conflated["count"] == 5
+    assert {c["normalized"] for c in conflated["families"]} == {f"rare{i}" for i in range(1, 6)}
+    # ...and ordered RAREST FIRST, so the ordering does not re-create the popularity bias.
+    assert [c["mentions"] for c in conflated["families"]] == [1, 2, 3, 4, 5]
+
+
+def test_the_digest_declares_its_sample_unrepresentative(client, monkeypatch):
+    """A capped list that looks complete is the failure. The provenance must say the
+    sample is popularity-biased AND point at where the unbiased record lives."""
+    from src.database.models import Keyword, KeywordMention, SessionLocal
+
+    s = SessionLocal()
+    try:
+        src = Source(name="Bias source", domain="bias.test")
+        s.add(src)
+        s.flush()
+        art = Article(
+            url="https://bias.test/1", canonical_url="https://bias.test/1",
+            source_id=src.id, title="Bias seed", hash="bias-h1",
+            language="en", content="seed", created_at=datetime.now(UTC),
+        )
+        s.add(art)
+        s.flush()
+        for i in range(6):
+            kw = Keyword(term=f"zbias-{i:03d}", normalized_term=f"zbias-{i:03d}")
+            s.add(kw)
+            s.flush()
+            s.add(KeywordMention(keyword_id=kw.id, article_id=art.id,
+                                 count=5000 - i, observed_on=datetime.now(UTC).date()))
+        s.commit()
+    finally:
+        s.close()
+
+    monkeypatch.setenv("OO_KEYWORD_LOG_FAMILIES", "2")
+    data = client.get("/api/diagnostics/keywords", params={"digest": "1"}).json()["data"]
+
+    prov = data["families_provenance"]
+    assert prov["sample_is_representative"] is False
+    assert "Do NOT reason about the tail from it" in prov["selection_bias"]
+    assert "anglicise" in prov["selection_bias"].lower() or "English" in prov["selection_bias"]
+    assert "Nothing is DROPPED" in prov["note"]
+
+    # ...and the summary is actually present and covers MORE than the printed list.
+    summary = data["families_summary"]
+    assert summary["total_families"] == prov["total"]
+    assert summary["total_families"] > len(data["families"])
+    assert summary["mentions"]["n"] == summary["total_families"]
+    assert "conflated" in summary
+
+
+def test_quantiles_report_absence_rather_than_zero_on_an_empty_corpus():
+    """The same honesty rule finding C5 is about: "no families" and "families that all
+    scored 0" are different facts, so an empty input reports nulls with n=0."""
+    from src.api.diagnostics import _families_summary
+
+    summary = _families_summary([])
+    assert summary["total_families"] == 0
+    assert summary["mentions"]["n"] == 0
+    assert summary["mentions"]["median"] is None      # never a fabricated 0
+    assert summary["mentions"]["max"] is None
+    assert summary["conflated"]["count"] == 0

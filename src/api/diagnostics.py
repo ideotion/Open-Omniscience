@@ -237,6 +237,98 @@ def _keyword_zip_families_cap() -> int:
         return 1000
 
 
+def _quantiles(values: list[int]) -> dict:
+    """Min / p25 / median / p75 / p95 / max over an ALREADY-SORTED list, plus n and sum.
+
+    Nearest-rank, no interpolation: these are counts of real things, and an interpolated
+    "2.5 mentions" would be a number no keyword has. Empty input reports nulls with n=0
+    rather than zeros -- "no families" and "families that all scored 0" are different
+    facts (the same rule finding C5 is about).
+    """
+    n = len(values)
+    if not n:
+        return {"n": 0, "sum": 0, "min": None, "p25": None,
+                "median": None, "p75": None, "p95": None, "max": None}
+
+    def at(frac: float) -> int:
+        return values[min(n - 1, max(0, int(round(frac * (n - 1)))))]
+
+    return {
+        "n": n,
+        "sum": sum(values),
+        "min": values[0],
+        "p25": at(0.25),
+        "median": at(0.50),
+        "p75": at(0.75),
+        "p95": at(0.95),
+        "max": values[-1],
+    }
+
+
+def _families_summary(families: list[dict]) -> dict:
+    """Facts about EVERY family, so capping the printed list costs no aggregate answer.
+
+    The maintainer's objection to the 2026-09-11 families cap was that capping biases
+    future diagnostics, and it was correct: a global top-N by mentions is the same
+    mentions-ranked cut this file already records as having "structurally anglicised the
+    export", and it hides `conflated_by` (a possible bad merge) preferentially, because a
+    wrong merge is likelier among rare terms than famous ones.
+
+    This is the answer to that: the printed list shrinks, the RECORD does not. Everything
+    here is computed over the full list before any cap is applied, so "how long is the
+    tail", "what is the mention distribution", "how many families are of kind X" and
+    "which families did the lemma merge join" all stay answerable from the digest alone.
+    """
+    mentions = sorted(int(f.get("mentions") or 0) for f in families)
+    variants = sorted(int(f.get("variants") or 0) for f in families)
+    by_kind: dict[str, int] = {}
+    conflated: list[dict] = []
+    manual = 0
+    for f in families:
+        by_kind[str(f.get("kind") or "unknown")] = by_kind.get(str(f.get("kind") or "unknown"), 0) + 1
+        if f.get("manual"):
+            manual += 1
+        if f.get("conflated_by"):
+            conflated.append(
+                {
+                    "term": f.get("term"),
+                    "normalized": f.get("normalized"),
+                    "kind": f.get("kind"),
+                    "mentions": f.get("mentions"),
+                    "variants": f.get("variants"),
+                    "conflated_by": f.get("conflated_by"),
+                }
+            )
+    # Rarest first: the whole point is that the tail is where a bad merge hides, so the
+    # ordering must not re-create the popularity bias this block exists to remove.
+    conflated.sort(key=lambda c: (int(c.get("mentions") or 0), str(c.get("normalized") or "")))
+    return {
+        "total_families": len(families),
+        "by_kind": dict(sorted(by_kind.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "manual_overrides": manual,
+        "mentions": _quantiles(mentions),
+        "variants": _quantiles(variants),
+        "single_member_families": sum(1 for v in variants if v <= 1),
+        # SELECTED ON THE SIGNAL, NEVER ON RANK: a conflated family is a possible bad
+        # merge, so every one is listed however rare it is. Ordered rarest-first for the
+        # same reason.
+        "conflated": {
+            "count": len(conflated),
+            "families": conflated,
+            "method": (
+                "Every family carrying conflated_by (the lemma merge joined it), listed "
+                "in full and ordered rarest-first -- selected by the signal, never by "
+                "mentions, because a wrong merge is likelier among rare terms."
+            ),
+        },
+        "method": (
+            "Computed over ALL families before the print cap is applied, so the capped "
+            "`families` list costs no aggregate answer about the tail. Counts only; no "
+            "scores."
+        ),
+    }
+
+
 def _safe_lang_filename(lang: str) -> str:
     """A filesystem/zip-safe stem for a language code ('?' -> 'unknown')."""
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in (lang or ""))
@@ -849,22 +941,59 @@ def keyword_log(
         # ("byte-for-byte unchanged", asserted by its own test), so `families` itself is
         # never mutated here -- only what this branch emits.
         if digest:
+            # THE TAIL IS SUMMARISED, NOT SELECTED AWAY (maintainer's bias objection,
+            # 2026-09-11). The first version of this cap simply took the top N by
+            # mentions -- and that is a GLOBAL mentions-ranked cut, which is precisely
+            # the shape this same file records at line 54 as having "structurally
+            # anglicised the export", and which `method` (a few lines below) warns
+            # against in its own words: "a global cap would anglicise the export". The
+            # per-language keyword quota exists to avoid exactly that, and a global
+            # families cut on top of it hands the bias straight back.
+            #
+            # Worse, popularity is the wrong axis for the thing most worth finding here:
+            # `conflated_by` marks a family the lemma merge joined, i.e. a POSSIBLE
+            # MISTAKE, and a wrong merge is likelier among rare terms than famous ones.
+            # Ranking by mentions hides defects preferentially.
+            #
+            # So the cap no longer decides WHICH FACTS SURVIVE, only which rows are
+            # printed in full:
+            #   * every family is counted in `families_summary`, computed over ALL of
+            #     them -- totals, per-kind counts, and the mention/variant distributions
+            #     -- so no AGGREGATE question about the tail becomes unanswerable;
+            #   * every conflated family is listed, selected ON THE SIGNAL rather than on
+            #     popularity, so the defect-bearing subset is never rank-filtered;
+            #   * the popularity sample is still there for a human glance, and is now
+            #     LABELLED as unrepresentative instead of being left to look complete.
+            # The full per-family record remains one endpoint away, and that export is
+            # per-language fair by construction.
             _fam_cap = _keyword_zip_families_cap()
             _fam_shown = (
                 families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
             )
             yield ', "families": ' + json.dumps(_fam_shown, separators=(",", ":"))
+            yield ', "families_summary": ' + json.dumps(
+                _families_summary(families), separators=(",", ":")
+            )
             yield ', "families_provenance": ' + json.dumps(
                 {
                     "shown": len(_fam_shown),
                     "total": len(families),
                     "omitted": len(families) - len(_fam_shown),
                     "sorted_by": "mentions (desc)",
+                    "sample_is_representative": False,
+                    "selection_bias": (
+                        "This list is the top families BY MENTIONS, which is a global "
+                        "mentions-ranked cut and therefore skews English and skews "
+                        "popular. Do NOT reason about the tail from it. Every family is "
+                        "still counted in families_summary, and every conflated family "
+                        "is listed there in full regardless of rank."
+                    ),
                     "note": (
-                        "Only the top families are embedded in the digest (the full "
-                        "per-keyword family dump is large, redundant with the per-language "
-                        "shards, and unused by analyze_keyword_log.py). Set "
-                        "OO_KEYWORD_LOG_FAMILIES=0 to embed all."
+                        "Only the top families are printed in full here (the complete "
+                        "per-family dump is large and is redundant with the per-language "
+                        "shards). Nothing is DROPPED: the tail is summarised in "
+                        "families_summary. Set OO_KEYWORD_LOG_FAMILIES=0 to print all, "
+                        "or use the full keyword export, which is per-language fair."
                     ),
                 },
                 separators=(",", ":"),
