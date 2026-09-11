@@ -225,6 +225,37 @@
   (how many concurrent handlers a small field machine actually reaches) does not exist yet —
   guessing a cap would be the fabricated-number failure. **PENDING: the maintainer's call on
   whether to build the polled-GET cap, and on which measurement should size it.**
+  **THE MISSING MEASUREMENT NOW EXISTS (recorded 2026-09-11 from the operator's
+  `oo-all-diagnostics-20260911-154750` field bundle, PR #1115). THE CAP IS STILL NOT BUILT — this
+  entry supplies the number the ruling was waiting on, and nothing else.** The entry above says the
+  sizing measurement "does not exist yet"; this is it, taken on a real field machine under a real
+  stall rather than on a bench:
+  • `GET /api/scheduler/activity` — **p50 26.6 ms against p95 30,044.7 ms over n=234**. The p95 is
+    `pool_timeout` (30 s, `src/database/session.py`) plus change: a clean SINGLE pool timeout, so
+    the endpoint's own work is ~27 ms and everything above that is waiting for a connection.
+  • **160 of 187 recorded stalls were that one endpoint at status 500**, with 732 frontend errors,
+    all `fetch-5xx`.
+  • **Observed concurrency: five deep.** The watchdog caught five concurrent
+    `/api/scheduler/activity` requests spaced 6.0 s apart — exactly the closed-panel vitals
+    cadence. So the answer to "how many concurrent handlers a small field machine actually
+    reaches" on THIS polled GET is 5, not the theoretical 40 anyio threadpool tokens.
+  • The pool it faced: `_SMALL` = 6 + 2 = 8 connections (`src/config/memory_budget.py`), and
+    `FLOOR_MAX_WORKERS = 8` (`src/config/machine_floor.py`) was set EQUAL to that bound by its own
+    docstring, so at full fan-out the collector was entitled to every connection.
+  **TWO CAVEATS THE RULING SHOULD HAVE, because they change what the number means.** (1) The
+  five-deep pile-up was PARTLY THE CLIENT'S OWN DOING: `app-core.js`'s vitals tick armed the next
+  poll without awaiting the previous one, so a slow server turned a 6 s cadence into a 6 s issue
+  RATE. That is fixed in this same PR (finding A4, commit `699cd6fe`), which means a re-measurement
+  after A4 would likely show a shallower pile — size the cap against the post-A4 world, not this
+  number. (2) The depth was a SYMPTOM of the stall, not its cause: the root was a 26-minute
+  write-gate hold (finding A1) draining the pool. A cap sized against a stalled machine may be
+  tighter than a healthy one needs.
+  **WHAT IS ALREADY BUILT, so the ruling is only about the server half:** the CLIENT half exists —
+  `api()` already honours 429/503 + `Retry-After` and feeds `_noteServerBusy()`. Only the
+  server-side admission cap is missing.
+  **STILL PENDING, unchanged and deliberately not guessed:** whether to build the narrow
+  polled-GET cap at all, and if so at what depth and over which routes. This session did NOT build
+  it.
   **THE CLASS-B DECISION TAKEN (recorded so it is not re-litigated, and so it can be reversed
   knowingly):** PRH-23 moved the first-run preflight onto the background-job registry, which
   means the pass tail no longer BLOCKS on it — so it now overlaps the housekeeping lane, and
