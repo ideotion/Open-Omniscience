@@ -122,12 +122,13 @@ def _article_count(session) -> int:
         return 0
 
 
-def _is_cache_stale(session, payload: dict) -> bool:
+def _is_cache_stale(session, payload: dict, *, current: int | None = None) -> bool:
     """True iff the corpus has grown materially since the cache was generated, so
     the cached cards no longer reflect the corpus (the empty-Home-despite-data bug).
     A cache with no recorded count (pre-this-change) is treated as stale once."""
     cached = payload.get("article_count")
-    current = _article_count(session)
+    if current is None:                      # D4: reuse a count the caller already paid for
+        current = _article_count(session)
     if cached is None:
         # Unknown baseline: refresh once only if the corpus is non-trivial, so an
         # already-empty corpus doesn't trigger a pointless recompute.
@@ -363,7 +364,30 @@ def get_briefing(
     progress bar. ``background=False`` (tests / scheduler / explicit in-process callers)
     keeps the recompute SYNCHRONOUS on ``session`` — unchanged behaviour."""
     cached = _read_cache()
-    stale = cached is not None and _is_cache_stale(session, cached)
+    # D4 (field diagnostics 2026-09-11): /api/briefing measured p95 60,113.8 ms, and it
+    # ran the SAME `SELECT count(Article.id)` THREE times per request -- once for the
+    # staleness check and twice more inside corpus_tier (which called _corpus_articles
+    # and _is_young, each counting independently). Over a 1.34M-row table that is three
+    # full index scans for one number that cannot change mid-request. Counted at most
+    # ONCE here, lazily (a request that needs neither still pays nothing), and threaded
+    # into both consumers.
+    #
+    # NOT the mechanism the field brief proposed. It looked for "a second pool
+    # acquisition or a retry" on the strength of three routes landing within 700 ms of
+    # exactly 60 s = 2x pool_timeout. There is no second acquisition: none of these
+    # routes opens a second session on the request thread, and the ~60 s is
+    # OO_STATEMENT_TIMEOUT_S, a DELIBERATE single statement deadline that happens to sit
+    # at twice the pool timeout. /api/insights/latest and /api/insights/trending-windows
+    # are therefore working as designed and are left alone. This route had a real
+    # duplicate-work defect, and it is this one.
+    _counted: list[int] = []
+
+    def _count_once() -> int:
+        if not _counted:
+            _counted.append(_article_count(session))
+        return _counted[0]
+
+    stale = cached is not None and _is_cache_stale(session, cached, current=_count_once())
     need_recompute = force or cached is None or stale
     if need_recompute and background:
         # Off-request: kick one background recompute, serve the current cache meanwhile.
@@ -397,7 +421,7 @@ def get_briefing(
     from src.briefing.producers import corpus_tier
 
     try:
-        view["corpus_tier"] = corpus_tier(session)
+        view["corpus_tier"] = corpus_tier(session, article_count=_count_once())
     except Exception:  # noqa: BLE001 - the tier must never break the feed
         _LOG.warning("corpus_tier failed; omitting from briefing", exc_info=True)
     return view

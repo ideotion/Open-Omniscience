@@ -62,8 +62,12 @@ def _corpus_articles(session) -> int:
     return int(session.query(func.count(Article.id)).scalar() or 0)
 
 
-def _is_young(session) -> bool:
-    return _corpus_articles(session) < _YOUNG_CORPUS_ARTICLES
+def _is_young(session, *, article_count: int | None = None) -> bool:
+    """``article_count`` lets a caller that has ALREADY counted pass the number in
+    rather than paying for the same COUNT again (D4). Default None = count it here, so
+    every existing caller is byte-identical."""
+    n = _corpus_articles(session) if article_count is None else article_count
+    return n < _YOUNG_CORPUS_ARTICLES
 
 
 def _growth_math_row(term: dict, *, prefix: str = "") -> tuple[str, str]:
@@ -146,16 +150,21 @@ def _corpus_age_days(session) -> int:
     return max(0, (hi - lo).days)
 
 
-def corpus_tier(session) -> dict:
+def corpus_tier(session, *, article_count: int | None = None) -> dict:
     """The corpus maturity STAGE plus the real numbers + thresholds behind it.
 
     Pure (read-only); returns a plain dict — NO score field, NO composite. The UI
     shows the stage word beside the real ``articles``/``age_days`` and explains the
     thresholds (carried here) in the hover.
     """
-    articles = _corpus_articles(session)
+    # D4 (field diagnostics 2026-09-11): this ran `SELECT count(Article.id)` TWICE --
+    # once here and once inside `_is_young` -- and `/api/briefing` then paid for a third
+    # in `_is_cache_stale`. Three identical counts over a 1.34M-row table, per request,
+    # on a route measured at p95 60,113.8 ms. Counted once, threaded through; the
+    # optional parameter keeps every other caller byte-identical.
+    articles = _corpus_articles(session) if article_count is None else article_count
     age_days = _corpus_age_days(session)
-    if _is_young(session) or age_days < _TIER_MIN_SPAN_DAYS:
+    if _is_young(session, article_count=articles) or age_days < _TIER_MIN_SPAN_DAYS:
         tier = "early"
     elif articles >= _TIER_ESTABLISHED_ARTICLES and age_days >= _TIER_ESTABLISHED_DAYS:
         tier = "established"
