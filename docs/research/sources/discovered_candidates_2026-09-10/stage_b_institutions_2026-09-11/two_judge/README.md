@@ -50,11 +50,11 @@ question the rerun exists to answer.
 
 | | | |
 | --- | --- | --- |
-| batches with both judges | **42** | |
-| canary failures | **0 and 0** | on 84 batch-judgements |
-| paired rows compared | **1,680** | |
-| agree on `kind` | | **97.4%** |
-| agree on `primary_source` | | **85.4%** | (n=1,584)
+| batches with both judges | **46** | |
+| canary failures | **0 and 0** | on 92 batch-judgements |
+| paired rows compared | **1,840** | |
+| agree on `kind` | | **97.1%** |
+| agree on `primary_source` | | **84.6%** |
 
 **The figures converged as the sample grew, which is the reason to trust them:**
 
@@ -64,12 +64,22 @@ question the rerun exists to answer.
 | 34 batches | 1,360 | 97.4% | 85.1% |
 | 36 batches | 1,440 | 97.4% | 85.8% |
 | 40 batches | 1,600 | 97.5% | 85.3% |
-| 42 batches | 1,680 | **97.4%** | **85.4%** |
+| 42 batches | 1,680 | 97.4% | 85.4% |
+| 46 batches | 1,840 | **97.1%** | **84.6%** |
 
-**Read these as ranges, not point estimates: `kind` 97.2–97.5%, `primary_source` 84.7–85.8%.**
-Forty percent more data than the first reading moved neither outside a one-point band, and
-neither trended. That is what the two-judge design was for, and it is the form the result should
-be quoted in — a single decimal implies a precision the method does not have.
+**Read these as ranges: `kind` 97.1–97.5%, `primary_source` 84.6–85.8%.**
+
+**AND NOTE THAT THE PREVIOUS RANGE FAILED ITS OWN TEST.** A revision of this file stated
+97.2–97.5% and 84.7–85.8%, with the explicit claim that stating a range would stop further data
+from rewriting the figure. The very next arrival landed at 97.1% and 84.6% — outside both, by a
+tenth of a point in each case. The range had been built from a run of samples that happened to be
+increasing, so it recorded a trend as if it were a bound. The widened range above is the observed
+extremes over all six readings and carries no such claim: it is a description of what was seen,
+not a prediction about what comes next.
+
+Nothing about the conclusion moves — ~97% on `kind`, ~85% on `primary_source`, a ~15% contested
+band — and that is the honest reason the failure is worth recording rather than smoothing: the
+substance was never at stake, so there was nothing to be gained by quietly restating the bound.
 
 (Two earlier revisions of this file called a smaller sample FINAL. More agents kept landing, so
 neither was. The figures did not care, which is the point; the record is left showing that it
