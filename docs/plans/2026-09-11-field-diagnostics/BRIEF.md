@@ -86,7 +86,35 @@ See the session task list for the full set with per-finding evidence. Headline i
 
 ## Rules for the work
 
-- **One PR.** All of it lands on `claude/comprehensive-app-audit-i6hmoc`.
+- **One topic PR per finding** (amended 2026-09-11: the batch opened as a single PR and the
+  maintainer asked for it split "for the sake of the repo's history clarity"). This branch keeps
+  only the brief and the ledger, and lands LAST — every `shipped.csv` row for the batch is
+  collected here with its real per-topic PR number, because parallel branches editing that file
+  is the union-merge duplicate-row trap `CLAUDE.md` records.
+
+  | PR | Finding |
+  |---|---|
+  | #1117 | B1 — the self-heal rebuilt qualification verdicts from articles, ignoring history |
+  | #1118 | B2 + D5(cap) — the 73 MB digest member, a per-member byte cap, the families-cap bias |
+  | #1119 | C1 — a DB session held across every LLM call (the 17.4-hour reader) |
+  | #1120 | C2 — 51.6 GB the storage inventory was hiding |
+  | #1121 | A4 + A5 — stacking polls, and the sorted COUNT |
+  | #1122 | D1 — RAM tier boundaries with no tolerance |
+  | #1123 | D4 — three corpus COUNTs per briefing request |
+  | #1124 | C3 — incremental vacuum reclaiming 1 page of 2000, + honest shortfall reporting |
+  | #1126 | **A1/A2 — the write gate no longer spans a whole-corpus scan (the root cause)** |
+  | #1127 | C5 + C8 + the bulk-write hole: `writer.py` claimed coverage it did not have |
+  | #1128 | D2 + D3 — the learner's starved signal, and the 48-second aggregate |
+  | #1129 | C6 — a yielded maintenance window is counted, not silent |
+
+  (#1125 closed as superseded: it fixed C5/C8's record without finding the root cause #1127 did.)
+
+- **Four findings closed WITHOUT a fix**, recorded so the next reader of this bundle does not
+  re-investigate them: **C4** (the 9.86M orphan count stands; both proposed mechanisms disproven —
+  `Keyword(` is instantiated in exactly one place, 1:1 with its mention in the same transaction),
+  **C7** (two honest instruments answering different questions, not a contradiction), **D2's
+  premise** (the finding compared two different process instances — see #1128 for the real defect),
+  and **D3 part 1** (already fixed on main by `9915af4f`).
 - Ledger protocol applies: `shipped.csv` rows per rule (5a), lessons to `LESSONS.md`,
   pending rulings to `OPEN_QUEUE.md`, and the `CLAUDE.md` line ceiling re-measured if touched.
 - Anything needing a maintainer ruling is **recorded, not guessed** — in particular the
