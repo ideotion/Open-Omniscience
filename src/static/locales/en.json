@@ -3368,5 +3368,14 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "A machine below the memory floor is held to a smaller fan-out until you turn it back on."
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "A machine below the memory floor is held to a smaller fan-out until you turn it back on.",
+  "All diagnostics (split)": "All diagnostics (split)",
+  "Splitting the archive…": "Splitting the archive…",
+  "No archive to split yet — build one with the All diagnostics button first.": "No archive to split yet — build one with the All diagnostics button first.",
+  "Could not split the archive: {why}": "Could not split the archive: {why}",
+  "the archive produced no volumes": "the archive produced no volumes",
+  "Downloading {n} pieces…": "Downloading {n} pieces…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them",
+  "Sent {n} pieces — send them all together.": "Sent {n} pieces — send them all together.",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build."
 }

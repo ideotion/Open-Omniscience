@@ -3368,5 +3368,14 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "আপনার সংগ্রহ-সমান্তরালতার সেটিং। এটি কখনও বদলে দেওয়া হয় না — উপরের সীমাগুলি কেবল একটি চক্রের ব্যয় বাঁধে।",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "চাপবিহীন চক্রের পর মাপা সীমা শিথিল হয় এবং আপনার নির্ধারিত সর্বোচ্চে পৌঁছালে সরে যায়। এটি একটি মাপের ক্যাশ, সেটিং নয় — data/collect_capacity.json মুছলেই সঙ্গে সঙ্গে ভুলে যায়।",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "এই যন্ত্র মেমরির চাপে নিজেই কর্মীসংখ্যা কমিয়েছে। সংগ্রাহক পরের চক্র সেখান থেকেই শুরু করে, একই নামা আবার হাঁটে না।",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "মেমরির ন্যূনতম সীমার নিচের যন্ত্রকে কম সমান্তরালতায় রাখা হয়, যতক্ষণ না আপনি তা আবার চালু করেন।"
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "মেমরির ন্যূনতম সীমার নিচের যন্ত্রকে কম সমান্তরালতায় রাখা হয়, যতক্ষণ না আপনি তা আবার চালু করেন।",
+  "All diagnostics (split)": "সমস্ত ডায়াগনস্টিকস (বিভক্ত)",
+  "Splitting the archive…": "আর্কাইভ বিভক্ত করা হচ্ছে…",
+  "No archive to split yet — build one with the All diagnostics button first.": "বিভক্ত করার মতো কোনও আর্কাইভ নেই — আগে সমস্ত ডায়াগনস্টিকস বোতাম দিয়ে একটি তৈরি করুন।",
+  "Could not split the archive: {why}": "আর্কাইভ বিভক্ত করা যায়নি: {why}",
+  "the archive produced no volumes": "আর্কাইভ থেকে কোনও খণ্ড তৈরি হয়নি",
+  "Downloading {n} pieces…": "{n}টি খণ্ড ডাউনলোড হচ্ছে…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "এক বা একাধিক লগ ক্রমসংখ্যাযুক্ত অংশে কাটা — volumes.json বলে কোনগুলি এবং কীভাবে জোড়া দিতে হয়",
+  "Sent {n} pieces — send them all together.": "{n}টি খণ্ড পাঠানো হয়েছে — সবগুলি একসঙ্গে পাঠান।",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "একই সম্পূর্ণ আর্কাইভ, কয়েকটি ছোট .zip ফাইলে বিভক্ত, যাতে যেখানে একটি বড় ফাইল সংযুক্ত করা যায় না সেখানেও পাঠানো যায়। প্রতিটি খণ্ড যেকোনও আনজিপ টুলে নিজে নিজেই খোলে। কোনও লগ এক খণ্ডে না আঁটার মতো বড় হলে সেটি ক্রমসংখ্যাযুক্ত অংশে কাটা হয়, আর সেটটি বলে কোনগুলি এবং কীভাবে জোড়া দিতে হয়। এটি ইতিমধ্যে তৈরি আর্কাইভকেই বিভক্ত করে — কখনও নতুন বিল্ড শুরু করে না।"
 }

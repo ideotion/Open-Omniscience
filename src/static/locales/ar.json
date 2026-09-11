@@ -3368,5 +3368,14 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "إعداد توازي الجمع الخاص بك. لا يُعاد كتابته أبدًا — الحدود أعلاه تقيّد ما تنفقه جولة واحدة فقط.",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "يرتخي السقف المقيس بعد الجولات التي لا ترى ضغطًا، ويُزال متى بلغ الحد الأقصى المُعدّ. إنه ذاكرة مؤقتة لقياس، لا إعداد — وحذف data/collect_capacity.json ينساه فورًا.",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "خفّض هذا الجهاز عدد عمّاله بنفسه تحت ضغط الذاكرة. يبدأ الجامع الجولة التالية من هناك بدل أن يعيد النزول ذاته.",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "يُبقى الجهاز الذي دون حدّ الذاكرة الأدنى على توازٍ أقل حتى تعيد تشغيله."
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "يُبقى الجهاز الذي دون حدّ الذاكرة الأدنى على توازٍ أقل حتى تعيد تشغيله.",
+  "All diagnostics (split)": "كل التشخيصات (مُقسَّمة)",
+  "Splitting the archive…": "جارٍ تقسيم الأرشيف…",
+  "No archive to split yet — build one with the All diagnostics button first.": "لا يوجد أرشيف لتقسيمه بعد — أنشئ واحدًا أولًا بزر «كل التشخيصات».",
+  "Could not split the archive: {why}": "تعذّر تقسيم الأرشيف: {why}",
+  "the archive produced no volumes": "لم يُنتج الأرشيف أي أجزاء",
+  "Downloading {n} pieces…": "جارٍ تنزيل {n} من الأجزاء…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "سجلّ واحد أو أكثر مقسّم إلى أجزاء مرقّمة — يوضّح volumes.json أيّها وكيفية إعادة دمجها",
+  "Sent {n} pieces — send them all together.": "تم إرسال {n} من الأجزاء — أرسلها جميعًا معًا.",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "نفس الأرشيف المكتمل، مُقسَّمًا إلى عدة ملفات ‎.zip‎ أصغر ليمكن إرفاقه حيث لا يمر ملف واحد كبير. كل جزء يُفتح بمفرده بأي أداة لفك الضغط. وإذا كان أحد السجلات أكبر من أن يتسع في جزء واحد، فإنه يُقطَّع إلى أجزاء مرقّمة، وتوضّح المجموعة أيّها وكيفية إعادة دمجها. يقسّم الأرشيف المبني بالفعل — ولا يبدأ بناءً جديدًا أبدًا."
 }
