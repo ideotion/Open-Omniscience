@@ -11947,3 +11947,62 @@ country-choropleth choice, which stays open precisely because the two answer dif
 no measurement settles it; M4 the newsletter attach sequencing, unblocked by the List-Id column but
 moving data between sources; M5 whether the ~150 markup-split i18n fragments are worth markup
 surgery or whether 470 is the floor; M6 the operator steps no session can take.
+
+---
+
+### 2026-09-11 — THE QUESTION REGISTER IS NOW VERIFIED: what that changed, and the five items whose answer moved
+
+`docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md` was written 2026-09-06 and
+banner-marked on 2026-09-10 with an honest admission that **43 of its 44 questions were carried
+forward unverified**. All of sections A–L have now been checked against the tree, one item at a time,
+and the verdicts are written into that file — a results table in its banner, plus a `VERIFIED
+2026-09-11` note under each of the twenty questions whose verdict changes what a reader should do. The
+register is the place to read them; only what is still OPEN, or newly open, is recorded here.
+
+**Eight questions are answered and are closed as posed** — A2, A3, C7, D1, D5, H1, J2, L8. Two of
+them (D1, D5) asked for changes the tree already had; J2's closing commit names the question number in
+`pyproject.toml`'s own comment. **A2 is answered the way the recommendation declined:**
+`RELEASE_0.4_GATE.md` was stood up *before* the tag, arguing its own case — so what is left there is
+not "now or at the tag" but **whether its rows D, E and F become bars**, which it marks as proposals.
+
+**Five items came back with a different question than the one on the page. These are the live ones:**
+
+1. **B1 is missing an option.** The premises hold, but `src/scheduler/runner.py` already carries a
+   `scrape_unqualified` settings escape hatch relaxing the runner from `status == qualified` to
+   `status != disqualified`. The question offers (a) restrict trials to `enabled=True` and (b) let a
+   `qualified` verdict flip `enabled`. **Neither disposes of the hatch, so it survives whichever is
+   ruled** — it needs settling in the same breath or it becomes a third, un-ruled collection policy.
+2. **B2 is narrower than it reads.** Option (1) — "derive a versioned per-language stoplist into the
+   repo" — **already exists**: `configs/stopwords_iso` + `configs/stopwords_extra`, curated and
+   registry-tracked (`STOPWORDS_ISO_AS_OF`). The live ruling is only whether triage-derived additions
+   may merge INTO that artifact. Same irreversibility argument, much smaller change.
+3. **C1 asks to remove something the code says is kept forever.** `read_artifact`'s docstring
+   (`src/backup/artifact.py:649`) reads "Accepts, **forever** (D7): … legacy bare SQLite backups, and
+   legacy v1 .ooenc files". Answering C1 "remove it" also means amending that line; answering it
+   "keep" means C1 is already closed by the docstring. Either way the two must be reconciled, and no
+   session should quietly pick one.
+4. **H4's debt grew while the question waited.** Counted 2026-09-11 with an explicit handler-name
+   pattern: **335 in `index.html` + 278 across `app-*.js` = 613 inline handlers**, against the 590
+   recorded five days earlier — ~4% in five days, because every slice shipped meanwhile added handlers
+   in the existing style. The CSP still carries `'unsafe-inline'`. This is the one un-ruled item with
+   a measured growth rate, which is the argument for funding it rather than a new argument about it.
+5. **L9 and L10 are not oversights, and both defaults would overturn a reasoned position.**
+   `src/ai_layer/source_tags.py` already enumerates the whole non-topical vocabulary in
+   `_NON_TOPICAL_CLASSES` — `provenance` (`via:`, `world-catalog`), `coverage-state`, and
+   `stance-or-ownership` (the entire `lean-*` scale) — and marks the table **"Reported, never
+   filtered"**, with the reason ("deciding that `independent` is not a topic is a taxonomy ruling a
+   human makes") and the measurement (one such tag proposed **once in 921 assignments**; "latent, not
+   live contamination"). The register's defaults — remove the lean scale, filter the `via:*` and
+   coverage-state prefixes — are real choices, and the `via:*` half is the one that needs no judgement,
+   but neither is a bug fix, and the register said nothing about the stance they would reverse.
+
+**Two housekeeping facts, recorded so nobody re-derives them.** **H2 and L2 are the same question**
+(is Chromium-in-sandbox plus your click-through the verification bar?), asked once in each section —
+answer it once. And **D7 is half shipped**: the capability-probe sweep is done (`_probe_ots()` returns
+a round-trip verdict), so the only live half is the pqcrypto 1.0 migration, still pinned `<1.0` by the
+recommendation's own advice.
+
+**A trap for the next session that runs rule (5b).** `grep -c 'PR pending' docs/ledger/shipped.csv`
+returns 1 and will forever: the hit is the summary of the row that RECORDS the sweep, quoting the
+phrase it retired. A column-aware read of `refs` reports the truth — **zero** unresolved placeholders.
+Recorded in full in [`LESSONS.md`](LESSONS.md).

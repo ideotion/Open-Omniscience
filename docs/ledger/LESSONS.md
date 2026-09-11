@@ -8342,3 +8342,37 @@
   by a third instance: recognising a failure mode in other people's work does not
   immunise you against it, and the moment of greatest risk is when the stale entry tells
   you something you are pleased to hear — that there is a small, well-defined job available.
+
+- **A GREP FOR A PLACEHOLDER MATCHES THE ROW THAT RECORDS ITS OWN REMOVAL (2026-09-11).**
+  Protocol rule (5b) tells each session to sweep `PR pending` out of `shipped.csv`, and the
+  obvious check is `grep -c 'PR pending' docs/ledger/shipped.csv`. It returns **1**, and has
+  ever since the sweep SUCCEEDED — the hit is the *summary prose of the row that documents
+  the sweep*, which quotes the phrase it retired, including the words "now returns 0". A
+  future session running the prescribed check finds a hit, goes looking for a placeholder
+  that does not exist, and either wastes the search or "fixes" the historical record. The
+  check that works is **column-aware** — the placeholder lives in `refs`, so read `refs`:
+  `python -c "import csv;print([r for r in csv.DictReader(open('docs/ledger/shipped.csv',newline='')) if 'pending' in (r['refs'] or '').lower()])"`
+  (0 rows on 2026-09-11, against 1 line-grep hit). **GENERAL FORM: in a ledger that records
+  its own maintenance, any check phrased as "does this file still contain X" will eventually
+  match the entry announcing that X was removed — a self-referential false positive that
+  grows more likely the better the ledger is kept. Scope the check to the FIELD the defect
+  lives in, never to the file.** Same family as the `merge=union` lesson above: the file
+  looks clean to the tool you reach for first, and the tool that sees it is the one that
+  knows the file's *structure*.
+
+- **"CARRIED FORWARD UNVERIFIED" IS A LOAN, AND THE INTEREST IS PAID BY THE READER
+  (2026-09-11).** A question register written 2026-09-06 was banner-marked five days later
+  with an honest admission that only 1 of its 44 items had been re-checked. Checking all 44
+  took one session and found that **eight were already answered by shipped code** — one of
+  them (J2) closed by a commit whose `pyproject.toml` comment *names the question number*,
+  and two (D1, D5) asking for changes the tree already had. Three more were not stale but
+  **wrong in a way that changes the answer**: B1 offers (a) or (b) while the runner carries a
+  third path neither mentions; B2 asks whether to build an artifact that already exists; C1
+  proposes removing a path whose own docstring says it is kept "forever". And two (L9, L10)
+  read as oversights when the code had already enumerated the case and declined, on the
+  record, with a measurement. **GENERAL FORM: an unverified premise does not decay into
+  "slightly out of date" — it decays into a question whose ANSWER WOULD BE WRONG, because
+  the option set itself has moved. Marking a register unverified is honest but is not a
+  substitute for verifying it, and the cost of the pass is bounded and one-time while the
+  cost of the loan falls on whoever answers.** The tell worth generalising: every one of the
+  eight answered items was findable by reading a single named path from the question itself.
