@@ -303,7 +303,9 @@ def test_load_manifest_refuses_a_foreign_volume_set(tmp_path):
     purpose; they are not interchangeable, and the reader must say so by kind."""
     d = tmp_path / "vols"
     d.mkdir()
-    (d / dv.MANIFEST_NAME).write_text(json.dumps({"kind": "oo-volumes-1", "volumes": []}))
+    (d / dv.MANIFEST_NAME).write_text(
+        json.dumps({"kind": "oo-volumes-1", "volumes": []}), encoding="utf-8"
+    )
     with pytest.raises(dv.VolumeError, match="not a diagnostics volume set"):
         dv.load_manifest(d)
 
