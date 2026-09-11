@@ -97,8 +97,10 @@ Transport, Bhutan's Ministry of Foreign Affairs, Ministry of Home Affairs and Na
 Statistics Bureau, three Cameroonian ministries, two Gambian ministries, Georgia's Ministry
 of Education and Science, Paraguay's Ministry of Women, Russia's Federal Agency for Mineral
 Resources, the Philippine Space Agency, the Ethiopian National Dialogue Commission, Burundi's
-National Assembly, the Victorian Auditor-General's Office. 37 of the 267 are national or
-state-level bodies; **53 countries** are represented.
+National Assembly, the Victorian Auditor-General's Office. **53 countries** are represented,
+which is an exact count; 37 of the 267 match a national- or state-body NAME PATTERN, which is
+not — one of the 37 is a provincial schools division, so read that figure as a sweep of the
+names rather than a census of the bodies.
 
 Every one of them had been excluded by a robots.txt fetch that failed once. There is no
 signal anywhere in the catalogue that distinguishes "this publisher declined" from "we
@@ -124,6 +126,12 @@ export never resolved a label. Same class as the identity-field defects already 
 queue: name, country and `wikidata_type` are evidence, not fact.
 
 **Zero of the 267 collide with the 6,400 hosts already in the catalogue.**
+
+**Three of the 267 are flagged by the scan below and must not be spliced unread:**
+`brasil.embajada.gob.ve` and `pn-ende.go.id` at the confident tier, and
+`bangladeshembassy.es` at the weak one — where reading it settles the matter, because a
+Bangladeshi embassy does not publish Spanish casino reviews. That is the intended division of
+labour: the weak tier put it in front of a reader, and the reader decided.
 
 ---
 

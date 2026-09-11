@@ -50,11 +50,8 @@ import argparse
 import csv
 import json
 import re
-import sys
 from collections import Counter
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Namespaces whose registration is restricted to a government body. The point is not that
 # government sites matter more -- it is that nobody else can HOLD one, so spam under it is a
