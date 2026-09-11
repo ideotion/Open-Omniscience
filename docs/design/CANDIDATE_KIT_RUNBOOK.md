@@ -97,8 +97,24 @@ Everything the run writes goes under `runs/`. Nothing else in the kit is modifie
 
 ## 3. Stage A — feed verification, zero tokens
 
-Two worklists, in this order: `worklist_1_shortlist.csv` (3,588 rows, the gap classes T1–T3),
-then `worklist_2_remainder.csv` (the remaining discovered news rows, ~18,500, T3 overflow first).
+FOUR worklists now. The two NEWS lists first, in this order: `worklist_1_shortlist.csv` (the gap
+classes T1–T3) then `worklist_2_remainder.csv` (the remaining discovered news rows, T3 overflow
+first). Then, under the 2026-09-11 ruling, the two the earlier kits never offered Stage A at all:
+`worklist_3_institutions.csv` (~37k discovered `institution` rows — ministries, regulators, courts,
+statistical offices, IGOs and the like, the seed of the official-sources vertical) and
+`worklist_4_religious.csv` (~22.8k), which is shipped but runs LAST or not at all.
+
+**Every worklist is deduped against every SHIPPED catalogue at build time**, the two new ones
+included, so no run spends a request on a source the app already holds. Row counts therefore SHRINK
+between kit builds as the pipeline merges its own output; that is the filter working, not data loss.
+
+**RUNNING ON SEVERAL MACHINES — `--shard I/N`.** Give each machine the same command with its own
+`I`: `--shard 1/8` … `--shard 8/8`. The split is by HOST (sha256 of the registrable domain, the same
+key the resume cursor uses), so no source is ever tested twice across the fleet and each host still
+sees one request per `--min-interval` — a split by row would have let two machines hammer one host
+at double the agreed rate, which no single machine's log would show. Each machine's results zip is
+named for its shard (`stage_a_results_<date>_shard3of8.zip`); collect all of them, since eight files
+of one name would silently overwrite seven slices of the worklist.
 Work each in chunks so a cut-off costs little; every chunk is the SAME command, resumed:
 
 ```
