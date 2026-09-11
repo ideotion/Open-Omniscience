@@ -12818,3 +12818,51 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   fabricated fact. Pinned by 3 new tests (the contradiction stripped, an agreeing suffix KEPT, a
   non-country parenthetical like `(English)` untouched, a name that is nothing but the suffix kept
   rather than collapsed, and both splice refusals with their reasons).
+
+### 2026-09-11 — A GREEN SUITE THAT WENT RED ON A TEST NOBODY TOUCHED: the markup timing ratio can report the quadratic bomb on linear code
+
+**PENDING: a two-line fix, not applied, because it belongs to no branch currently open.** Recorded
+so the next session that meets this does not spend its budget the way this one nearly did.
+
+`tests/test_markup_blocks.py::test_an_unclosed_block_opener_no_longer_costs_a_scan_per_opener`
+failed once in a full-suite run on the source-qualification branch (PR #1113), on the
+`{| class=wikitable` shape. **That branch touches none of `src/utils/markup_blocks.py`,
+`src/analytics/extract.py` or `src/wiki/corpus.py`** — `git diff --stat origin/main...HEAD` on
+those three paths is empty — so the first question was whether the recorded K*N regex bomb had
+come back through some path nobody expected.
+
+It had not. **The test measures a wall-clock RATIO of two single timings**, 100,000 chars against
+400,000, and asserts the ratio is under 8. Its own docstring explains, correctly, why a ratio
+beats an absolute bar: *"an absolute bar would be a bet on this runner's speed."* The reasoning
+stops one step short. A ratio survives a runner that is uniformly slow; it does NOT survive a
+runner that is **intermittently busy**, because a single scheduler preemption lands on ONE of the
+two measurements and moves the ratio by however long the preemption was. The absolute durations
+here are ~0.7 ms and ~3 ms, so one preemption is enough.
+
+**Measured, rather than argued.** On an otherwise-quiet container, 12 consecutive trials: median
+ratio 4.15, max 4.69, zero over the bar (linear is 4.0, so the measurement is honest). Then with
+four busy cores alongside it:
+
+```
+best-of-1 (as the test runs it):  median 5.31  max 17.53  FAILED 3 of 15
+best-of-3:                        median 4.15  max  4.61  FAILED 0 of 15
+```
+
+**The max of 17.53 is the finding, not the three failures.** The docstring cites 15.9x as the
+signature of the pre-fix quadratic scan. A contended runner can therefore make this test report
+*the exact number that means the bomb is back*, on code that is provably linear — which is the
+worst failure mode a guard test can have, because the evidence it presents for its own alarm is
+indistinguishable from the real thing.
+
+**The fix, if the maintainer wants it:** `_time` runs the function once; have it take the `min` of
+a small number of repeats (3 is enough, per the table above) and have `_scaling` use that. The
+minimum is the run least disturbed by anything else on the box, which is the standard way to time
+against a noisy clock — and it changes nothing about WHAT is measured, so the guard keeps its
+teeth. Both `_scaling` and the sibling opener-count ratio above it call `_time` and would be
+covered by the one change.
+
+**Not applied here on purpose.** PR #1113 is the catalogue-corrections and robots-deferral branch;
+a timing-test fix is unrelated to it, and this project's rule is to say what is failing with a
+proposed patch rather than widen a PR on my own judgement. CI has NOT gone red on this test — the
+failure was local, in a full-suite verification run, and the same test passed in the same session
+under quiet conditions.
