@@ -50,11 +50,11 @@ question the rerun exists to answer.
 
 | | | |
 | --- | --- | --- |
-| batches with both judges | **40** | |
-| canary failures | **0 and 0** | on 80 batch-judgements |
-| paired rows compared | **1,600** | |
-| agree on `kind` | | **97.5%** |
-| agree on `primary_source` | | **85.3%** | (n=1,511)
+| batches with both judges | **42** | |
+| canary failures | **0 and 0** | on 84 batch-judgements |
+| paired rows compared | **1,680** | |
+| agree on `kind` | | **97.4%** |
+| agree on `primary_source` | | **85.4%** | (n=1,584)
 
 **The figures converged as the sample grew, which is the reason to trust them:**
 
@@ -63,11 +63,17 @@ question the rerun exists to answer.
 | 30 batches | 1,200 | 97.2% | 84.7% |
 | 34 batches | 1,360 | 97.4% | 85.1% |
 | 36 batches | 1,440 | 97.4% | 85.8% |
-| 40 batches | 1,600 | **97.5%** | **85.3%** |
+| 40 batches | 1,600 | 97.5% | 85.3% |
+| 42 batches | 1,680 | **97.4%** | **85.4%** |
 
-A THIRD more data than the first reading moved `kind` by 0.3 points and `primary_source` within a
-1.1-point band that never trended. (An earlier revision of this file called 36 batches FINAL;
-more agents landed afterwards, so it was not. The figures did not care.)
+**Read these as ranges, not point estimates: `kind` 97.2–97.5%, `primary_source` 84.7–85.8%.**
+Forty percent more data than the first reading moved neither outside a one-point band, and
+neither trended. That is what the two-judge design was for, and it is the form the result should
+be quoted in — a single decimal implies a precision the method does not have.
+
+(Two earlier revisions of this file called a smaller sample FINAL. More agents kept landing, so
+neither was. The figures did not care, which is the point; the record is left showing that it
+moved rather than quietly revising its own superlatives.)
 
 The run stopped at 40 of 60 overlapping batches because agents kept dying to API timeouts and
 server-side rate limiting — not because the measurement needed more. Judge A completed 48
@@ -96,8 +102,8 @@ batches" correction is doing real work and carries no directional bias.
 
 | disagreement | n |
 | --- | --- |
-| `academic` vs `institution` | 21 |
-| `institution` vs `trade-or-corporate` | 15 |
+| `academic` vs `institution` | 22 |
+| `institution` vs `trade-or-corporate` | 17 |
 | everything else | 2 |
 
 **The largest single disagreement is exactly the open question about research institutes.** Two
