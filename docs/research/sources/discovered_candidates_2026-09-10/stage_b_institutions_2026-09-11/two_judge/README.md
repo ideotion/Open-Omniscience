@@ -50,16 +50,23 @@ question the rerun exists to answer.
 
 | | | |
 | --- | --- | --- |
-| batches with both judges | **34** | |
-| canary failures | **0 and 0** | on 68 batch-judgements |
-| paired rows compared | **1,360** | |
+| batches with both judges | **36** (FINAL) | |
+| canary failures | **0 and 0** | on 72 batch-judgements |
+| paired rows compared | **1,440** | |
 | agree on `kind` | | **97.4%** |
-| both said `institution` | 1,279 | |
-| agree on `primary_source` | | **85.1%** |
+| agree on `primary_source` | | **85.8%** |
 
-**The figures are stable.** At 30 batches they read 97.2% and 84.7%; four more batches — 13% more
-data — moved them to 97.4% and 85.1%. A measurement that does not move as the sample grows is
-one worth trusting.
+**The figures converged as the sample grew, which is the reason to trust them:**
+
+| overlap | paired rows | `kind` | `primary_source` |
+| --- | --- | --- | --- |
+| 30 batches | 1,200 | 97.2% | 84.7% |
+| 34 batches | 1,360 | 97.4% | 85.1% |
+| 36 batches | 1,440 | **97.4%** | **85.8%** |
+
+20% more data moved `kind` by 0.2 points and `primary_source` by 1.1. The run stopped at 36 of
+60 overlapping batches because agents kept dying to API timeouts and server-side rate limiting —
+not because the measurement needed more.
 
 ## This corrects the earlier reading, and the error was mine
 
@@ -126,3 +133,21 @@ Stage A verified every one of these, correctly: the feed parses and is fresh. On
 the content catches it. There is still **no detection rule** (open queue C6), and the count here
 is deliberately a NAMED LIST rather than a total, because an automated proxy over the judges'
 own labels mixes real takeovers with ordinary disagreement.
+
+
+## One more class of defect, distinct from the hijacked domains
+
+Judges also found rows whose NAME is simply wrong in the export, which is not the same as a
+domain that has been taken over:
+
+* a row named **"Supreme Court of Pakistan"** that is in fact a press-freedom NGO;
+* a **"Directorate of Agricultural Research"** that is in fact a peer-reviewed journal;
+* a metrology institute and a UK statistics regulator whose fetched headlines were **lorem-ipsum
+  and CMS test placeholders** — the site is real, the evidence is empty.
+
+Together with the `country: ca` on a `cityofvancouver.us` row (open queue C7), this says the
+export's identity fields — name, country, `wikidata_type` — are **evidence, not fact**. The
+neutral spec already tells judges the type is a hint and the headlines are the evidence, which is
+why these surfaced at all. The lorem-ipsum case is its own small hazard: an empty-evidence row
+cannot be judged on evidence, and judges resolved it from the body's structural mandate instead,
+which is exactly the kind of inference the spec otherwise forbids.
