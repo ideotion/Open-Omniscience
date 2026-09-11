@@ -1,0 +1,485 @@
+{
+  "rows": [
+    {
+      "domain": "tortella.cat",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ca",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "kotus.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "syyttajalaitos.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "valtiokonttori.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "finance",
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "soite.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "oikeus.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "en.osterbottensvalfard.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "vakehyva.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "bnu.fr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "francia.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "geopolitical",
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "embassyofliberia-paris.org",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "general-news",
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "iccwbo.org",
+      "journalism": false,
+      "kind": "trade-or-corporate",
+      "language": "en",
+      "topics": [
+        "business",
+        "economy"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "domain": "jsp-saintmauricedebeynost.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "budget.gouv.fr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "economy",
+        "finance",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "abertilleryandllanhilleth-wcc.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "aria.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "science",
+        "technology",
+        "climate"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "avonandsomerset.police.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "broadstone-tc.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "coventry.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "regional",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "cumbria.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy",
+        "science"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "reinounido.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "culture",
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "estyn.gov.wales",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "education"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "osteopathy.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "hartlepool.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthcareimprovementscotland.org",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "healthwatchbradford.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchbury.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatcheastsussex.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchhartlepool.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchnottinghamshire.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchpeterborough.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchrochdale.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchsheffield.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchrutland.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchwakefield.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchwandsworth.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchwam.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchwolverhampton.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "queenelizabetholympicpark.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "bristolbrc.nihr.ac.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "science",
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    }
+  ]
+}

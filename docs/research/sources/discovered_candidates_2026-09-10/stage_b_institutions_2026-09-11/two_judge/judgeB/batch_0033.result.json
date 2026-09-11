@@ -1,0 +1,486 @@
+{
+ "rows": [
+  {
+   "domain": "ladadi.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "lstn.niedersachsen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "landkreis-holzminden.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional",
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vgem-koelleda.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ml.niedersachsen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "agriculture",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mwk.niedersachsen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "education",
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "demogr.mpg.de",
+   "journalism": false,
+   "kind": "academic",
+   "language": "en",
+   "topics": [
+    "science",
+    "society"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "wirtschaft.nrw",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "business",
+    "energy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rellingen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "im.nrw",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ff-horgauergreut.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy",
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "feuerwehr-othfresen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ff-altensittenbach.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ff-dietmannsried.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-bad-groenenbach.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ff-ihrlerstein.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr.mittelehrenbach.de",
+   "journalism": false,
+   "kind": "other",
+   "language": "de",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "feuerwehr-parkstein.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "salgen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ff-untereichen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-trostberg.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "lrh.nrw.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "finance",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "datenschutz.rlp.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "privacy",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "landesarchiv-bw.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "studentenwerk-pb.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "uckermark.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vpe.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "vgn-online.de",
+   "journalism": false,
+   "kind": "other",
+   "language": "de",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "happurg.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "kleinwallstadt.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "vg-reichling.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "zweckverband-gvm.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "water",
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "landkreis-wittenberg.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mt.gob.do",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "economy",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ona-dz.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "water",
+    "environment"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ecuador.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical",
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ra.ee",
+   "journalism": false,
+   "kind": "institution",
+   "language": "et",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "riudaura.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "portsdebalears.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "economy",
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cambramanresa.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  }
+ ]
+}

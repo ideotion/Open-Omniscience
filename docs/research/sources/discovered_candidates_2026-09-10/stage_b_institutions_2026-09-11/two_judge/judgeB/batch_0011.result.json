@@ -1,0 +1,441 @@
+{
+ "rows": [
+  {
+   "domain": "feuerwehr-viereth.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-waischenfeld.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "wachenroth.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vgem-wiesentheid.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rvv.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vgf-info.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vogtlandauskunft.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vghofheim.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "markt-schirnding.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "weissenfels.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "wvs.nrw",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "water"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "wver.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "water"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "jobsqd.com",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "en",
+   "topics": [
+    "business"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "agn.gob.do",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "cultura.gob.do",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "creg.gov.dz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "energy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "onedd.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "albons.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "altaribagorça.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "capmany.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "elpaso.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "philembassymadrid.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "foixa.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "sepblac.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "finance",
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "institutestudisaranesi.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "oc",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "idescat.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "gss.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "aretxabaleta.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "eu",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "elgoibar.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "eu",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "getaria.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "eu",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "camaraleon.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "puertosantander.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "tarrega.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "en.kotus.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vtv.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ulosottolaitos.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "yvtltk.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "legal",
+    "human-rights"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rikosseuraamus.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ekhva.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rbf.gov.fj",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  }
+ ]
+}

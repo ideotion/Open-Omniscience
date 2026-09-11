@@ -1,0 +1,489 @@
+{
+ "rows": [
+  {
+   "domain": "cocin-cartagena.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "business"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "aytocuellar.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "gopp.gggid.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "dip-caceres.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional",
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "garrigoles.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional",
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mislata.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional",
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "igualdad.gob.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "human-rights",
+    "society"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mont-ras.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "museosdetenerife.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "elciego.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "camaracantabria.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy",
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "arrasate.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "electronica-submarina.com",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "es",
+   "topics": [
+    "defense",
+    "technology"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "amezketa.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "eu",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "santander.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional",
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "verges.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "kaupunkiliikenne.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "falklands.gov.fk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "politics",
+    "energy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "academie-francaise.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "fig.gov.fk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "politics",
+    "energy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "aefe.gouv.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "education",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "health-data-hub.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "healthcare",
+    "technology"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ugcb.net",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ambalaos-france.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "lo",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "bucksfire.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "chichestercity.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "dartharbour.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "cumbriafire.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "earlham.ac.uk",
+   "journalism": false,
+   "kind": "academic",
+   "language": "en",
+   "topics": [
+    "science",
+    "biotech"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "healthwatchbarkinganddagenham.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchlincolnshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchplymouth.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchredbridge.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchswindon.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchtameside.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchtorbay.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchwestsussex.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchwalsall.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "education-ni.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "west-norfolk.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  }
+ ]
+}

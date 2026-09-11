@@ -1,0 +1,422 @@
+{
+ "rows": [
+  {
+   "domain": "embajadadehonduras.org.co",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "es",
+   "topics": [],
+   "confidence": "high"
+  },
+  {
+   "domain": "upme.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "energy",
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ipsonas.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "bacice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "obecbiskupice.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "borovnicka.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "bosonohy.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "brezi.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "brezina-nad-jizerou.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "brezno.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dolnichvatliny.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "obecdvory.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dusejovsko.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "hamryns.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "obec-hradec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "obec-hajek.estranky.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "konetopy.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "kostomlaty-obec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "kralovske-porici.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "kurim.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecledce.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "obeclom.eud.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lounovicepodblanikem.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "lukavice.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "luziceuhodonina.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mzd.gov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mojne.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "moravskekninice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nahorany.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "myslocovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "pasovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "prepychy.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "pribice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "tolstejn.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obec-radkov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "radetice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rodna.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecseletice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "slabcice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "starehodejovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  }
+ ]
+}

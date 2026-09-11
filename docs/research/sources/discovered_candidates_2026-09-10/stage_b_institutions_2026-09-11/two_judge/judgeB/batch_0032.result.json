@@ -1,0 +1,482 @@
+{
+ "rows": [
+  {
+   "domain": "nepomuk-pb.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "olomouc.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "oupetrovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional",
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "prostredniporici.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "prehorov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "presovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "psov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mesto-rokytnice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rozdrojovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rybitvi.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "samsina.nasweb.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional",
+    "water"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy",
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "rymarov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "slavetinnadmetuji.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "sovetice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "svojek.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecstribrnice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "svitavy.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "tyniste.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "tuhan.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "tynec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "trebetin.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "vevcice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "velopoli.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obeczbesicky.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cakov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rimov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rikovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ridec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecskvoretice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "obeczatcany.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "stepanovice.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "zeletice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "zelatovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ouzerotin.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lra-aic-fdb.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional",
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ou-zdar.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "landkreis-aurich.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "kek-spk.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "landkreis-erding.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "enzkreis.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  }
+ ]
+}

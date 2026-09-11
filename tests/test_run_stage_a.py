@@ -181,12 +181,21 @@ def test_every_worklist_the_kit_BUILDS_is_one_the_runner_can_RUN():
         run_stage_a.py: error: argument --only: invalid choice: 'institutions'
 
     to the documented command. Asserted from the two sources rather than a hand list, so a fifth
-    worklist cannot ship half-wired either."""
+    worklist cannot ship half-wired either.
+
+    A worklist may be emitted by EITHER builder (2026-09-11): ``build_candidate_kit`` derives
+    worklists 1-4 from the sources export, and ``build_retry_worklist`` derives the retry list
+    from finished runs -- a deferred row is owed another look and only a completed run knows
+    which rows those are. The invariant is unchanged and still has its teeth: every worklist the
+    runner names is produced by SOME builder in this tree, and every produced worklist is
+    runnable. The bug above would still fail this."""
     import re
 
-    builder = (_ROOT / "scripts" / "analysis" / "build_candidate_kit.py").read_text(encoding="utf-8")
-    built = set(re.findall(r'"(worklist_\d+_[a-z]+\.csv)"', builder))
-    assert len(built) >= 4, built
+    built: set[str] = set()
+    for name in ("build_candidate_kit.py", "build_retry_worklist.py"):
+        src = (_ROOT / "scripts" / "analysis" / name).read_text(encoding="utf-8")
+        built |= set(re.findall(r'"?(worklist_\d+_[a-z]+\.csv)"?', src))
+    assert len(built) >= 5, built
 
     runnable = {csv_rel.split("/")[-1] for csv_rel, _ in rsa.WORKLISTS.values()}
     assert built == runnable, f"built but not runnable: {built - runnable}; named but never built: {runnable - built}"

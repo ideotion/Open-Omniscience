@@ -54,6 +54,10 @@ WORKLISTS = {  # insertion order is the RUN order: the review shortlist first, t
     "remainder": ("worklists/worklist_2_remainder.csv", "w2"),
     "institutions": ("worklists/worklist_3_institutions.csv", "w3"),
     "religious": ("worklists/worklist_4_religious.csv", "w4"),
+    # The RETRY worklist (2026-09-11 ruling: a deferred row is never dropped). Built by
+    # scripts/analysis/build_retry_worklist.py from finished runs, so it only exists in a kit
+    # whose operator asked for one -- every worklist here is skipped when its CSV is absent.
+    "retry": ("worklists/worklist_5_retry.csv", "w5"),
 }
 # What a BARE `run_stage_a.py` runs. The news worklists only, deliberately: institutions and
 # religious are a different question (primary sources, not reporting), they are three times the

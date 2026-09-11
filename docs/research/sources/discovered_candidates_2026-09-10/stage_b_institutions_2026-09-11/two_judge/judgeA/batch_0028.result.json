@@ -1,0 +1,481 @@
+{
+ "rows": [
+  {
+   "domain": "erc.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "waterfordcouncil.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mib.gov.in",
+   "journalism": false,
+   "kind": "institution",
+   "language": "hi",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mop.gov.iq",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "policy",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ebratmuseum.ir",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fa",
+   "topics": [
+    "history"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "asl2abruzzo.it",
+   "journalism": false,
+   "kind": "institution",
+   "language": "it",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vinnueftirlit.is",
+   "journalism": false,
+   "kind": "institution",
+   "language": "is",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "italia.embajada.gob.ve",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "jadsc.gov.jm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "economy",
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "moca.gov.jm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "japon.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "sudanembassy.jp",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "usf.gov.jm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "town.horokanai.hokkaido.jp",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ja",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "town.iwanai.hokkaido.jp",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ja",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "town.pippu.hokkaido.jp",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ja",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "city.sapporo.jp",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ja",
+   "topics": [
+    "regional",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "kilimo.go.ke",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "transport.go.ke",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "wrti.go.ke",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment",
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "economy",
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "omsar.gov.lb",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "nphil.gov.lr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "snj.public.lu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "education",
+    "society"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "memorialiemuzeji.lv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "lv",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "abhgzr.ma",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "water"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ansp.md",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ro",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mddic.gov.mn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "mn",
+   "topics": [
+    "technology",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mmhi.gov.mn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "mn",
+   "topics": [
+    "energy",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ncst.mw",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "science",
+    "technology"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "mod.gov.mn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "mn",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "siies.yucatan.gob.mx",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "education",
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mcnti.gouv.ne",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "technology",
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ecn.na",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lasbca.lagosstate.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "labour.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nicaragua.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "marena.gob.ni",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "nsm.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "cybersecurity",
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "havarikommisjonen.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "police.govt.nz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  }
+ ]
+}

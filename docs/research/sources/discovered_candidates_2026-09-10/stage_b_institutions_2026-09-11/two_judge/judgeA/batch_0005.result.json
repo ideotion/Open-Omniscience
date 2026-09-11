@@ -1,0 +1,460 @@
+{
+ "rows": [
+  {
+   "domain": "healthwatchbromley.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchcornwall.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchnewcastle.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchlewisham.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "low",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchnottingham.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchstokeontrent.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchtrafford.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchwalthamforest.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchshropshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lesotholondon.org.uk",
+   "journalism": false,
+   "kind": "magazine",
+   "language": "en",
+   "topics": [
+    "technology"
+   ],
+   "confidence": "low"
+  },
+  {
+   "domain": "lerwick-harbour.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "community-council.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "lra.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nature.scot",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "scotblood.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "slough.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "syfire.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vehicle-certification-agency.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "technology"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "procurement.gd",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mogcsw.gov.gm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "human-rights"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "justice-ni.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "protectioncivile.gouv.ht",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cephaiti.ht",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "hungria.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ukrajinci.hu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "hu",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-nunukan.go.id",
+   "journalism": false,
+   "kind": "aggregator",
+   "language": "en",
+   "topics": [
+    "technology"
+   ],
+   "confidence": "low"
+  },
+  {
+   "domain": "pn-pangkalpinang.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-sleman.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-tuban.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cnam.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "disinformation"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "heritageireland.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "gaeilge.ie",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ga",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "shora-gc.ir",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fa",
+   "topics": [
+    "politics",
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "sepahnews.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fa",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mms.is",
+   "journalism": false,
+   "kind": "institution",
+   "language": "is",
+   "topics": [
+    "education"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "heradsdomstolar.is",
+   "journalism": false,
+   "kind": "institution",
+   "language": "is",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "vinnumalastofnun.is",
+   "journalism": false,
+   "kind": "institution",
+   "language": "is",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ambacam.it",
+   "journalism": false,
+   "kind": "institution",
+   "language": "it",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "lavoro.gov.it",
+   "journalism": false,
+   "kind": "institution",
+   "language": "it",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "verkehr.provinz.bz.it",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  }
+ ]
+}

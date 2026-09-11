@@ -1,0 +1,471 @@
+{
+ "rows": [
+  {
+   "domain": "mkip.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "7aac.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "unas.org.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "unmc.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare",
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "uneb.ac.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nim.uz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uz",
+   "topics": [
+    "science",
+    "quantum"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "minmujer.gob.ve",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "human-rights",
+    "politics"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "venezuela.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "nac.org.zm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "intema.gob.ar",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "unesco.at",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "education",
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "forwit.at",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "science",
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "dca.wa.gov.au",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "forestrysa.com.au",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "phrn.org.au",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "science",
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "securitecivile.be",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "epthinktank.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "brusseleir.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "bvlar.be",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "zuidwestlimburg.be",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "shabla.bg",
+   "journalism": false,
+   "kind": "institution",
+   "language": "bg",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "tcpbolivia.bo",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "fapespa.pa.gov.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "science",
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "caubr.gov.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "riodasostras.rj.gov.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "salto.sp.gov.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "gamingboardbahamas.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "tajembassy.by",
+   "journalism": false,
+   "kind": "aggregator",
+   "language": "ru",
+   "topics": [
+    "technology",
+    "business"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "sib.org.bz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "banqueducanada.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "finance",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "bolivianembassy.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "corporate.flyeia.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ottawa.mofa.go.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mentalhealthcommission.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "gvha.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "onf.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "nctr.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "human-rights",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "suiza.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "pichilemu.cl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "wastereduction.gov.hk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  }
+ ]
+}

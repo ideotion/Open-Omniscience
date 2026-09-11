@@ -12923,3 +12923,308 @@ a timing-test fix is unrelated to it, and this project's rule is to say what is 
 proposed patch rather than widen a PR on my own judgement. CI has NOT gone red on this test — the
 failure was local, in a full-suite verification run, and the same test passed in the same session
 under quiet conditions.
+
+### 2026-09-11 — FIELD REPORT: "only 2600 sources collecting" on an updated older instance, and why the tag was the wrong question
+
+**CLOSED by the same session, measured first.** Maintainer: *"I just reinstalled / updated the app on
+an older instance, and notice that there are only 2600 sources collecting, which contradicts our
+recent pushes qualifying over 5000 sources."* It did contradict them, and the report was right.
+
+**WHAT THE NUMBER IS.** "Sources (collecting)" is
+`COUNT(*) WHERE enabled IS TRUE AND status = 'qualified'` (`src/api/database.py:152`), labelled in
+`src/static/app-library.js:30`. That predicate is byte-identical to the scheduler's admission gate
+(`src/scheduler/runner.py:440,447`), so the figure is honest: those rows really are the ones that
+collect.
+
+**THE CAUSE — three correct decisions composing into a strand.** `stamp_curated_catalog` scoped on
+`curated_filter(Source.tags)`, i.e. the `via:<origin>` provenance tag. That tag is a fact about the
+ROW, written by the seeder when it CREATES one. Then:
+
+1. `via:` tagging entered the seeder on **2026-06-08** (`6ebab04b`), so every row created before it
+   carries none;
+2. `reconcile_source_metadata` **strips the marker on purpose** when healing an existing row —
+   `value = ",".join(t for t in ... if not t.startswith("via:"))` — because copying it "would assert
+   an origin this row may not have". That reasoning is RIGHT, and it means a row can never acquire
+   one later;
+3. `tags` is deliberately outside the catalogue-corrections three-way merge (four writers; a union
+   cannot express a removal).
+
+So a pre-2026-06-08 row was permanently outside the scope, stayed `unqualified`, and never
+collected — however many times the app was updated. The ride-along cannot rescue it either:
+`qualification_per_pass = 5`, against a backlog of tens of thousands.
+
+**MEASURED, against the real 6,195-row catalogue.** Plant 3,000 legacy rows with descriptive tags
+and no `via:` marker, run the boot sequence (`seed_default_sources` → `ensure_channel_tags` →
+`apply_overlay` → `stamp_curated_catalog`):
+
+```
+legacy rows carry 'news,politics'            -> collecting 3,195   (exactly the rows the update CREATED)
+the same rows carry 'news,politics,via:curated' -> collecting 6,195   (0 left unqualified)
+```
+
+The only difference between the two runs is the one tag. An instance holding ~3,595 catalogue
+domains would read ~2,600 — the reported number.
+
+**THE FIX, and why it is not "backfill the tag".** Backfilling would assert an origin, which is the
+thing (2) refuses for good reason. The tag answers *"did the seeder make this row?"*; the
+2026-09-10 ruling asks about the **catalogue** — *"the curated catalogue is qualified"* — which is a
+fact about the **domain**. So the scope is now the tag **OR** membership of the shipped curated
+catalogues (`curated_catalogue_domains()`, 6,400 domains over seven files). The two halves are both
+needed: the tag catches a row whose domain has since been RETIRED from the file (a catalogue edit
+must not silently un-qualify a running instance), and membership catches a shipped domain whose row
+never got a tag. Nothing is asserted about origin — only that we ship the domain, which is
+checkable.
+
+**Untouched, and tested:** a hand-added domain the catalogue does not ship; a measured
+`disqualified` on a catalogue domain (the ruling admits the catalogue, it does not launder a
+judgement); a hand-disabled row (stamped `qualified`, `enabled=False` respected, so it still does
+not collect).
+
+**TWO PERFORMANCE FACTS worth keeping.** (a) The scope is decided in PYTHON over three columns, not
+through a `domain IN (6,400 values)`: **SQLite caps host parameters at 999 before 3.32** and the
+SQLCipher builds vary by platform, so a large IN would raise "too many SQL variables" on exactly the
+older installs this fixes. Every catalogue-sized IN now goes through `_id_chunks` (400). (b)
+`load_sources_from_yaml` now uses **libyaml** (`yaml.CSafeLoader`) when the wheel carries it —
+measured 3,148 ms → 411 ms on `configs/sources.yml` alone, and boot parses seven catalogues. Same
+SAFE loader either way; a speed choice, never a safety one.
+
+Measured on a 73,002-row instance (3,000 legacy + 70,000 discovered): boot 1 **1,350 ms**, stamping
+6,194; boot 2 **130 ms**, stamping 0.
+
+**WHAT THIS DOES NOT FIX, stated rather than left to be found.** The missing `via:` tag also makes
+`app_provided_filter` wrong on an old install, so the **"only sources that came with the app"
+scraping-scope toggle** (`scrape_app_provided_only`, `runner.py:449`) under-matches there in exactly
+the same way. It is NOT fixed here because that toggle's wording is about the ROW's origin, so the
+same substitution is not obviously right for it — it needs a ruling on what the toggle means before
+it can be widened.
+
+**AND A SECOND ONE, from the trace: four surfaces report a "source count" from four different
+predicates** — `sources_qualified` (enabled AND qualified), `/api/scheduler/targets.total_enabled`
+(enabled only), `/api/sources/qualification/config` `counts.qualified` (qualified, IGNORING
+enabled), `/api/scheduler/coverage` `totals.total` (enabled AND has-rss, IGNORING status). They
+legitimately disagree; the coverage panel's denominator in particular counts sources collection will
+never touch. Not reconciled here — that is a UI ruling about which number is THE number, not a bug
+with an obvious fix.
+
+## 2026-09-11 — THE OPEN DOCKET after the institutions pass (maintainer asked for everything on the list)
+
+Written at the maintainer's request while the two-judge run was still in flight, so nothing
+depends on this session surviving. Grouped by what each item needs.
+
+### A. **RESOLVED THE SAME DAY — the result, and a correction to the entry below it**
+
+**A0. THE TWO-JUDGE RERUN RAN AND ANSWERED THE QUESTION.** Three agents died to API timeouts and
+server-side rate limiting, so it never reached 60/60 — but 30 batches carry BOTH judges, which is
+**1,200 paired rows independently classified on identical instructions**, and that is a sufficient
+sample. Preserved at
+`docs/research/.../stage_b_institutions_2026-09-11/two_judge/` (raw outputs + the neutral spec).
+
+    canary failures          0 and 0, across 60 batch-judgements
+    agree on kind            1,166 / 1,200 = 97.2%
+    agree on primary_source    961 / 1,134 = 84.7%
+
+**THIS CORRECTS WHAT IS WRITTEN IN B2 BELOW, AND THE ERROR WAS MINE.** The 25.8%-vs-71.0% split
+that B2 treats as evidence the column measures the judge was mostly an artefact of the
+**directional correction in the escalated prompt** — the line telling a worker that answering
+false by habit was wrong, written after one marked the European Commission non-primary. With both
+judges on the same NEUTRAL prompt they agree 84.7%. The axis is a real signal with a **15.3%
+contested band**, not a coin flip. B2's equity argument is untouched (two judges share a
+calibration, so agreement measures consistency and never correctness), but its framing of the
+axis as unreliable is too strong and should be read against this number.
+
+**THE METHOD FIX WORKED COMPLETELY AND SEPARATELY.** Six of ten workers failed the canary gate on
+the first pass; across 60 batch-judgements here, zero failures on either judge. The "read rows,
+not batches" correction carries no directional bias and belongs in the spec permanently.
+
+**THE DISAGREEMENTS ANSWER B1 EMPIRICALLY.** `academic` vs `institution` is 18 of the 34 kind
+disagreements — the single largest. Two careful judges reading identical evidence cannot agree
+where a research body goes, which is a GAP IN THE TAXONOMY rather than judge failure, and is
+direct evidence that B1 needs a ruling rather than a default. (`institution` vs
+`trade-or-corporate`, 12, is mostly bodies whose site has gone promotional or been taken over —
+see C6.)
+
+**REVISED RECOMMENDATION:** admit institution rows where both judges agree, defer the ~15% they
+do not, per the robots precedent. That is a defensible basis in a way a single judgement was not.
+It does not retire the case for the observable rewrite in B2.
+
+### A-old. IN FLIGHT, AND EPHEMERAL — superseded by A0, kept for the record
+
+**A1. The two-judge Stage B rerun.** 12 agents, both judges on the SAME neutral prompt
+(`SPEC_NEUTRAL.md` = the original spec + the method fix, WITHOUT the directional
+`primary_source` nudge that biased the escalated pass). Judge A → `scratchpad/stageb/judgeA/`,
+judge B → `judgeB/`, 60 batches each.
+
+**THE OUTPUTS LIVE IN AN EPHEMERAL SESSION SCRATCHPAD.** This is the exact complaint the
+2026-09-11 refused-entries note made about the previous run: without preservation, revisiting
+costs a full re-run. **When they land, commit both judges' `batch_*.result.json` sets** (~3 MB
+total including the batch inputs) beside
+`docs/research/sources/discovered_candidates_2026-09-10/stage_b_institutions_2026-09-11/`.
+If this session ended before that happened, the 120 classifications are gone and the rerun
+starts over.
+
+**What to do with them:** validate each judge separately against the canaries, then compute
+per-row agreement on `kind` and on `primary_source`. **The disagreement rate is the deliverable**
+— it measures how much of the axis is judgement rather than fact. Rows where the judges disagree
+are DEFERRED, not rejected, per the robots precedent (a non-answer is not a no).
+
+### B. PENDING RULINGS
+
+**B1. Where does a RESEARCH INSTITUTE belong?** It is neither a peer-reviewed journal nor a body
+publishing public records. Tags that already exist: `research` (607), `academic` (607),
+`research-institute` (16), `science` (395), `applied-science` (80). RECOMMENDED:
+`official_sources.yml` with `source_type: academic-research` — the slot exists — tagged
+`research`/`research-institute`. An institute's feed is an organisation publishing about itself
+on a weekly cadence, which is an institution's shape, not a journal's ("a paper is not an
+event").
+
+**B2. Is `primary_source` the right cut at all?** The stakes, stated because the maintainer asked
+for them: (a) EQUITY — the test embeds a judgement about which institutions count, applied across
+84 countries, and a model calibrated on Western administrative norms will under-admit
+small-language and global-South bodies while looking like a quality filter; a Czech village's
+zoning notices ARE the only public record of that fact. (b) REFUSAL IS NOT NEUTRAL — "we could
+not tell" is being recorded as "no", which is the shape the robots ruling already rejected. (c)
+THE LABEL MUST BE TRUE — if `official_sources.yml` is full of tourism boards the name lies, and
+if it excludes real ministries the coverage figures understate. RECOMMENDED: defer-not-reject
+now, then **rewrite the axis as an OBSERVABLE** — "does this feed publish dated official
+instruments (decisions, tenders, regulations, statistics releases)?" is checkable against the
+headlines and does not require a model to hold opinions about which countries' institutions are
+real.
+
+**B3. The 16 mis-shelved journals.** `official_sources.yml` carries 16 rows tagged
+`research-institute` with `source_type: academic-research` that are in fact JOURNALS (*Chilean
+Journal of Agricultural Research*, *Lebanese Science Journal*, *Helminthologia*). They belong in
+`academic_sources.yml`. Shipped that way by this pipeline; a small, safe cleanup.
+
+### C. CARRIED DEFECTS, each measured and none fixed
+
+**C1. `preflight`'s `robots_denied` verdict still collapses a 401/403 into the same bucket as an
+explicit `Disallow`** — the last place reading a path refusal as a policy. Offered, never ruled.
+
+**C2. The `app_provided_filter` / "only sources that came with the app" scraping-scope toggle
+(`scrape_app_provided_only`) under-matches on any install older than `via:` tagging**, for the
+same reason the curated stamp did. NOT fixed with the stamp because that toggle's wording is
+about the ROW's origin, so the catalogue-membership substitution is not obviously right for it.
+
+**C3. Four surfaces report a "source count" from four different predicates** —
+`sources_qualified` (enabled AND qualified), `/api/scheduler/targets.total_enabled` (enabled
+only), `/api/sources/qualification/config` `counts.qualified` (ignores enabled),
+`/api/scheduler/coverage` `totals.total` (ignores status). They legitimately disagree; the
+coverage panel counts sources collection will never touch. Needs a ruling on which is THE number.
+
+**C4. `tests/test_triage_proposal.py::test_the_bundle_member_produces_a_real_report_not_a_sentinel`
+fails when the triage modules run together** — inter-test database pollution, reproduced
+identically with this branch's changes stashed, so it predates all of it.
+
+**C5. `test_no_dangerous_eval_or_deserialization_sinks` skips `#` comments but not docstrings**,
+so PROSE ABOUT a banned API trips it. Worked around by rewording; the guard could skip docstrings.
+
+**C6. HIJACKED INSTITUTIONAL DOMAINS have no detection rule.** `lancashireprobation.co.uk`,
+`ffw-ungelstetten.de` and `peru.embajada.gob.ve` serve gambling spam under the name of a
+probation service, a fire brigade and an embassy; `ambassade-du-burundi.fr` is a travel blog.
+Stage A cannot see it — the feed parses and is fresh, which is all Stage A checks. Only a reader
+of the CONTENT catches it, and today that is a model's incidental observation rather than a rule.
+**This is also the strongest argument that Stage B earns its cost**, independent of the
+`primary_source` question.
+**C6 IS NOW PARTLY ANSWERED (2026-09-11, from the second Stage A pass).**
+`scripts/analysis/scan_content_integrity.py` reads the titles Stage A already fetched — no
+tokens, no socket — and tiers what it finds. Over 6,036 verified rows it flags 46. The tier
+that is trustworthy is `restricted_namespace`: gambling copy on a namespace no private party
+can REGISTER (`.gov.*`, `.gob.*`, `.go.id`, `.gouv.*`, `.mil`), which cannot be a lapsed
+domain and must therefore be a compromised live delegation. 10 for 10, and it turned one
+incidental judge observation into a structural finding — **eight of them are subdomains of
+`embajada.gob.ve`; of the 13 Venezuelan missions in the corpus, ten are compromised or serve
+`test` posts.** The `lexicon` tier is ~0.6 precise and is named so nobody mistakes it: its 29
+include a national gambling REGULATOR tendering casino licences and three outlets already in
+`configs/sources.yml` doing their jobs, so **a rule that acted on this signal would have
+deleted them**, and `tests/test_content_integrity_scan.py` pins those three as a permanent
+negative control. STILL OPEN: recall is unmeasured and partial (it misses every takeover on
+an ordinary namespace whose copy avoids the lexicon — `gartzambia.org`, `sedlecko.cz`,
+`ordnancerta.com` are three the judges caught and this does not), and NOTHING of this is
+wired into the app: whether a content-integrity signal belongs anywhere near ingest is a
+behaviour change, and it is B4 below rather than something the analysis kit may decide.
+
+**C7. A country field can contradict its own domain.** `cityofvancouver.us` — a US city — carries
+`country: ca`. Found incidentally; the export's country attribution has not been audited, and a
+naive ccTLD check is NOT the audit (`.uk` vs `gb` and `.eu` for EU bodies are both legitimate).
+
+### D. WORK NOT YET RUN
+
+**D1. ~~The 8-VM retry run~~ — RUN AND ANALYSED 2026-09-11.** Result in
+`docs/research/sources/discovered_candidates_2026-09-10/stage_a/fleet_w5_retry_2026-09-11/`.
+23,237 rows, 8 disjoint shards (union = sum, zero overlapping pairs, and the judged set is
+exactly the worklist), **267 verified (1.15%)** against the first pass's 6.40%. What it bought
+is the TRANSITION MATRIX, not the 267: a fifth of the `robots_unavailable` bucket (3,237 of
+15,875) came back `homepage_unreachable`, so the host is simply gone and the robots failure was
+a symptom — **the 62:1 numerator is not 15,875 live publishers we decline to read**, and the
+figure should be quoted with that subtraction shown. Of the 15,875, only 829 got a readable
+robots.txt on the second ask and 29 of those said Disallow, so failing closed is not concealing
+a mass of refusals. A dead host stays dead: 88.3% of `homepage_unreachable` was still
+unreachable days later from eight vantages, 0.60% recovered. NO third-pass yield is projected —
+that population failed TWICE and the two points available describe different populations.
+**The recovery is not marginal:** `bmi.bund.de` (German Federal Ministry of the Interior),
+Brazil's Ministry of Transport, three Bhutanese national bodies, three Cameroonian ministries,
+Burundi's National Assembly — 37 national/state bodies across 53 countries, each excluded until
+now by one robots.txt fetch that failed once.
+
+**D2. Three worklists have never been run at all:** shortlist (3,031), remainder (16,214),
+religious (22,842). Only institutions (37,079) has been through Stage A.
+
+**D3. The Stage B splice itself.** Nothing from the institutions pass has been admitted to any
+catalogue, and the reason is recorded in the artifact's README, not just here.
+
+### 2026-09-11 — THE SECOND STAGE A PASS: what it settled, and the four things it opened
+
+The maintainer ran the retry worklist across 8 VMs and returned the results. D1 above carries
+the measurement; C6 carries the detection rule it produced. These are the items that are NEW,
+and none of them is decided.
+
+**B4. DOES A CONTENT-INTEGRITY SIGNAL BELONG ANYWHERE NEAR THE APP, or does it stay in the
+analysis kit?** Today it is a script over finished run output — read-only, no socket, no effect
+on anything shipped. Making it act would be a behaviour change of exactly the kind this project
+does not let code decide for itself, and there are three honest positions:
+*(a) leave it in the kit* — a reading list a human works through before a splice. This is what
+shipped, and it costs nothing but attention.
+*(b) flag at admission* — a candidate that trips `restricted_namespace` cannot be spliced
+without a written override. Cheap, and the tier is 10-for-10.
+*(c) flag in the running catalogue* — re-check admitted sources periodically, because a domain
+that was clean when admitted can be taken over afterwards, and today nothing would ever notice.
+(c) is the one with a real cost: it is a recurring fetch of admitted sources for a reason the
+user did not ask for, which needs its own consent story and cannot be smuggled in beside
+collection. **Recommendation: (b) now, (c) written up as a design before any code.** Never a
+silent drop, in any of the three — the `lexicon` tier would have deleted three legitimate news
+outlets, and that is not a hypothetical about some future looser rule.
+
+**B5. THE VENEZUELAN EMBASSY PLATFORM IS COMPROMISED AND NOBODY HAS BEEN TOLD.** Ten of the 13
+`embajada.gob.ve` missions in the corpus serve gambling affiliate copy or `test` posts, on a
+restricted government namespace. We found it; we are not the affected party. There is no
+practice in this project for what to do when a scrape incidentally discovers that a third
+party's infrastructure is compromised — and the same question already applies to
+`pn-ende.go.id` and `pn-nunukan.go.id` (two Indonesian district courts) and `usf.gov.jm`.
+The options are: say nothing and simply exclude them; publish the list as research; or attempt
+responsible disclosure to each body. **This is a ruling, not a technical choice**, and it is
+the maintainer's: disclosure means initiating contact with foreign government bodies, which is
+outside anything the app's ethics section contemplates. Recorded so the finding does not
+quietly become a list in a CSV nobody acts on. Note the list IS committed either way — the
+evidence is in `content_integrity_flags.csv` and is a fact about public web content.
+
+**C8. 26 of the 267 (9.7%) carry a bare Wikidata Q-id as their NAME** — the export never
+resolved a label, so the row would be spliced as `Q133293483`. Same family as C7 (identity
+fields are evidence, not fact); distinct in that this one is mechanically detectable and
+mechanically fixable, by re-querying the label or by declining to admit an unlabelled row.
+
+**C9. 43% OF THE SECOND PASS'S YIELD IS ONE COUNTRY.** 116 of the 267 are Czech municipalities
+publishing their statutory *úřední deska*; 42 share the path `/uredni-deska?action=atom`, so
+they are almost certainly one CMS vendor's product. They are legitimate, distinct institutions
+and this is not a reason to exclude them — but admitting them makes a supplier outage a
+correlated failure across dozens of catalogue rows, and it moves the corpus's geographic
+balance by a visible amount in a single splice. Worth a decision made deliberately rather than
+one made by not noticing.
+
+**D4. A THIRD PASS is possible and is NOT recommended on the strength of these numbers.**
+**22,199** rows are still DEFERRED and would be re-asked; the other 771 the second pass
+RESOLVED into rejections — 474 no feed, 200 unparseable, 42 stale, and **32 explicit
+`Disallow`** — and those must never be re-asked, which is the whole reason the retry builder
+reads `DEFERRED_REASONS` rather than "everything that is not verified". The measured decay is
+6.40% → 1.15%, and within that, re-asking an unreachable homepage returned 0.60%. A third pass
+runs against rows that failed TWICE. Nobody should quote a projected yield for it, including
+this entry.
