@@ -277,22 +277,23 @@ def init_db() -> None:
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_detected_language_column,
-        ensure_article_keyword_indexed_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
+        ensure_article_keyword_indexed_column,
+        ensure_article_newsletter_list_id_column,
+        ensure_article_quarantine_columns,
+        ensure_article_source_revision_column,
+        ensure_article_top_keyword_columns,
         ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
-        ensure_article_quarantine_columns,
-        ensure_article_source_revision_column,
-        ensure_article_newsletter_list_id_column,
-        ensure_article_top_keyword_columns,
         ensure_law_document_language_columns,
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
+        ensure_source_catalog_baseline_column,
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
@@ -339,6 +340,7 @@ def init_db() -> None:
     # The newsletter List-Id on articles (ingest provenance; self-heal, no backfill) --
     # the ruled stable key for a platform sender whose host names no publication.
     ensure_article_newsletter_list_id_column(engine)
+    ensure_source_catalog_baseline_column(engine)
 
     ensure_hot_indexes(engine)
 

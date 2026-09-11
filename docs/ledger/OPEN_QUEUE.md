@@ -12488,6 +12488,53 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
   are kept, not rejected, and wait on the robots ruling above.
 
+- **RULED + SHIPPED 2026-09-11 — A CATALOGUE CORRECTION NOW REACHES AN EXISTING INSTALL, WITHOUT
+  OVERWRITING THE OPERATOR (maintainer: "go ahead with the three-way merge").** The maintainer
+  asked whether stopping, updating and restarting a days-old instance would pick up the new
+  qualified sources — *"I trust not"* — and how to avoid export/import. MEASURED FIRST, because the
+  answer had two halves and only one was a problem. (a) NEW ROWS ALREADY FLOW, and their instinct
+  was right about the app as it WAS: before #1108 an update added the rows and left them
+  `unqualified`, parked behind the ~73k never-attempted discovered rows (F2), i.e. never collected.
+  With `stamp_curated_catalog` wired at both boot sites (`main.py:233`, `:2926`), a simulated
+  days-old install seeded from the OLD 3,429-row catalogue gained **2,800 sources — 2,151 + 606
+  academic + 43 official — all registered, all qualified, all enabled**, while every piece of local
+  state survived: earned verdicts kept their clock (not restarted), a disqualified row stayed
+  disqualified, a hand-disabled row stayed disabled, discovered candidates survived. No
+  export/import needed. (b) THE REAL GAP, found while checking (a): re-seeding is ADD-ONLY, so a
+  CORRECTION to a row that already exists never arrives. Measured: a row whose `rss_url` the
+  catalogue had fixed still served `https://STALE.example/old-feed` after a re-seed. That matters
+  because feeds rot at scale — of the 22,045 candidates Stage A judged, 2,622 had an unparseable
+  feed and 669 a stale one — and the same rot reaches rows we already ship.
+  WHY IT NEEDED A RULING RATHER THAN A PATCH: an operator can edit a source in the UI, and a
+  two-way comparison cannot tell "the value we shipped, untouched" from "the value they chose" —
+  both are merely *not* the new catalogue value. Overwriting both is, in
+  `reconcile_source_metadata`'s own words about itself, a data-loss bug wearing a maintenance
+  task's clothes; overwriting neither is the status quo.
+  SHIPPED: `Source.catalog_baseline` (additive nullable TEXT, migration `b3e77a91c5d4` + boot
+  self-heal on the `source_revision` precedent, registered in `SELF_HEALED_COLUMNS` so the drift
+  guard covers it) holds a small JSON record of what the catalogue last shipped for that row — the
+  THIRD side. `sync_catalogue_corrections` then runs per owned field: ships-now == shipped-then →
+  skip (a steady catalogue costs comparisons and NO writes); live == shipped-then → the operator
+  never touched it, APPLY; otherwise KEEP theirs and REPORT it by domain and field. The baseline
+  advances even when the edit is kept, so a conflict is reported ONCE rather than nagging every
+  boot. `CATALOGUE_OWNED_FIELDS` = rss_url, name, country, language, region, source_type; the
+  operator's own knobs (enabled, priority, rate_limit_ms, reliability_score) are never touched.
+  THREE DELIBERATE LIMITS, each stated rather than discovered later. **`tags` is out of v1** — a
+  SET with four writers (catalogue, the seed's `via:` marker, `ensure_channel_tags`, the operator)
+  where a replace silently drops the other three and a union cannot express the REMOVAL that
+  correcting a wrong tag means; it needs its own policy. **A row with no baseline adopts the
+  current catalogue and changes nothing** — every row predating the column is in that position and
+  guessing whether an untraceable value was an edit is the guess the column exists to avoid, so the
+  cost is stated: a correction made BEFORE this shipped never reaches an existing row. **An EMPTY
+  live value is a gap, not an edit**, and is skipped here, so this and `reconcile_source_metadata`
+  (which fills empties and refuses everything else) cannot fight over one field.
+  MEASURED ON THE REAL CATALOGUE: the corrected feed URL arrives on an untouched row; the same
+  correction against an operator-edited row leaves their value and reports the divergence; a
+  steady-state re-boot applies 0, keeps 0, adopts 0 and writes nothing, at 173 ms over 6,670
+  catalogue rows against the 135 ms its pre-existing sibling already costs. 7 behavioural tests,
+  including an anti-vacuity case asserting EVERY owned field really carries a correction. The ruff
+  style ratchet came DOWN 448 → 447 with this change.
+
 - **SHIPPED 2026-09-11 — THE RULING APPLIED: TWO NEW CATALOGUES, AND THE 60k GETS ITS OWN
   WORKLISTS AND AN 8-MACHINE SPLIT.** The maintainer approved the recommendation and asked to deal
   with the other 60k, with clear instructions, a new kit if needed, and — the constraint that drove

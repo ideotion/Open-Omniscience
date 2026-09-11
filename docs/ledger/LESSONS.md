@@ -8772,3 +8772,30 @@
   when a producer and a consumer live in different files and agree only by convention, the
   convention is the thing to assert — and a green self-check on the artifact is not evidence
   that its two halves agree.
+
+- **"NEVER OVERWRITE" AND "ALWAYS OVERWRITE" ARE BOTH WRONG WHEN A FILE AND A USER CAN BOTH OWN
+  A FIELD — YOU NEED THE THIRD SIDE (2026-09-11, catalogue corrections).** Re-seeding filled
+  empty fields and refused to touch anything else, so a corrected feed URL never reached an
+  install that already held the row, and export/import was the only remedy. The tempting repair
+  — overwrite from the catalogue — silently reverts whatever the operator set in the UI, which
+  is worse than the bug. **The reason neither rule works is that a two-way comparison cannot
+  distinguish the two cases that matter: "the value we shipped, which they never touched" and
+  "the value they chose" are equally just *not* the new value.** Recording what was last
+  shipped turns it into a three-way merge and the ambiguity disappears. Three details carried
+  the design and generalise: (1) **an empty live value is a GAP, not an edit** — without that
+  rule the fill-empties mechanism and the correct-values mechanism fight over the same field on
+  the same boot; (2) **advance the baseline even when you keep the user's value**, so a conflict
+  is reported once instead of nagging on every start for the life of the install; (3) **with no
+  baseline, adopt and change nothing** — every pre-existing row is in that position, and
+  inferring whether an untraceable value was an edit is precisely the guess the record exists
+  to avoid. The cost of (3) is real and belongs in the docs, not in a surprise: a correction
+  made before the mechanism shipped never reaches an old row.
+- **A SET-VALUED FIELD WITH SEVERAL WRITERS IS NOT A MERGE PROBLEM YOU SOLVE IN PASSING
+  (2026-09-11).** `tags` looked like just another field to include in the three-way merge, and
+  is not: four different things write it (the shipped catalogue, the seed's `via:` provenance
+  marker, a channel-tag heal, and the operator). A replace silently drops the other three
+  writers' work; a union is safe but **cannot express a removal, which is exactly what
+  correcting a wrong tag means**. So it was left out of v1 with the reason recorded, rather
+  than given a policy chosen for convenience. The general form: when a field has more writers
+  than the change is about, excluding it deliberately beats a merge rule that quietly loses
+  someone's contribution.
