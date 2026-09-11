@@ -14,6 +14,7 @@ explicit extraction failure -- it never fabricates a placeholder article.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -38,6 +39,43 @@ class ExtractedDoc:
 _MIN_BODY_CHARS = 200
 
 
+def extensive_date_search_enabled() -> bool:
+    """Is htmldate's last-resort free-text date hunt enabled? (OO_EXTENSIVE_DATE_SEARCH; off)
+
+    P3 (2026-09-11). ``trafilatura.extract_metadata`` defaults ``extensive=True``, which
+    switches TWO things on inside ``htmldate.find_date``: the element scan widens from a
+    sensible element list to ``.//*``, and -- the expensive half -- a LAST RESORT walks
+    every free-text segment of the page through ``dateparser``'s locale search.
+
+    MEASURED on this tree (`collect_throughput_bench.py dates`), and the reason the
+    default is OFF is not the speed:
+
+    * Every STRUCTURED placement is unaffected: ``article:published_time``, JSON-LD
+      ``datePublished``, ``<time datetime>`` and ``<span class="date">`` return the same
+      date at the same cost with the flag either way. Nothing is traded there.
+    * When the page has NO real publication date, the last resort does not return
+      "unknown" -- it returns SOMETHING. A copyright footer became ``2019-01-01``, a
+      sidebar of related articles became ``2011-01-12``, and a filler sentence in the body
+      became ``2001-09-11``. Those are wrong publication dates, stored as this article's
+      date, and they propagate into the timemap, the agenda and every trend. The bounded
+      path returns ``None``, which is the true answer and one the app already renders
+      honestly.
+    * The cost is LANGUAGE-DEPENDENT, which matters for a collector that reads 12
+      languages: ``custom_parse`` handles English shapes without ``dateparser``, so an
+      English page pays little. A Spanish or Russian page carrying ~150 distinct textual
+      dates measured 216 ms / 206 ms against 7 ms bounded -- ~30x, and the same order as
+      the 434 ms recorded in the field profile, which this reproduces only once the page
+      is non-English.
+
+    WHAT IS ACTUALLY LOST, stated rather than glossed: a date that appears ONLY in an
+    element outside htmldate's fast list (``<a class="date">``, ``<td class="date">``) or
+    ONLY in free text. Those are real, correct dates the bounded path misses, and they are
+    why this is a flag rather than a deletion -- ``OO_EXTENSIVE_DATE_SEARCH=1`` restores
+    the old behaviour whole, with the fabrication risk above attached to it.
+    """
+    return os.getenv("OO_EXTENSIVE_DATE_SEARCH", "0") == "1"
+
+
 def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None:
     """Extract an article from raw HTML, or return ``None`` if there isn't one.
 
@@ -59,8 +97,12 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
 
     title = author = language = canonical = None
     published_at: datetime | None = None
+    # One read of the flag per article, never per candidate date expression -- the P2
+    # shape (a settings read that had migrated into a hot inner loop).
     try:
-        meta = trafilatura.extract_metadata(html, default_url=url)
+        meta = trafilatura.extract_metadata(
+            html, default_url=url, extensive=extensive_date_search_enabled()
+        )
     except Exception:
         meta = None
     if meta is not None:

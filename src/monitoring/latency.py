@@ -247,6 +247,58 @@ def loop_lag() -> dict[str, Any]:
     }
 
 
+def loop_pressure(threshold_ms: float) -> dict[str, Any]:
+    """How much of the watchdog's recent window sat AT OR ABOVE ``threshold_ms``.
+
+    P6 (2026-09-11). ``loop_lag()`` publishes ``latest`` and ``peak``, and neither can
+    drive a control on its own -- which is why this is a third reading rather than a
+    comparison bolted onto one of those two.
+
+    ``peak_ms`` is STICKY: the window is 10 s and the collector's governor ticks every
+    1.5 s, so ONE spike is still the peak seven ticks later and a control reading it would
+    keep cutting workers long after the loop recovered. ``latest_ms`` is the opposite
+    failure -- a single 200 ms probe reads near zero on a loaded server that happened to
+    be free at that instant, which ``loop_lag``'s own docstring already says.
+
+    The reading that separates a spike from sustained pressure is the FRACTION of the
+    window that breached, and it is the one measurement that survives contact with what
+    was actually observed: at 32 collector threads on a 4-core box the peak reached
+    210 ms while the p50 stayed at 2 ms and only 3 % of samples passed 25 ms. A peak rule
+    calls that starvation. The fraction calls it a spike, which is what it is.
+
+    ``measured`` is False, with a reason, when the watchdog has no sample in the window --
+    no running loop, or it was never started. The fraction is then ABSENT, never 0.0:
+    "the loop is fine" and "nobody looked" are opposite claims and a control must not act
+    on the second while believing the first.
+    """
+    now = time.monotonic()
+    with _LOCK:
+        vals = [v for (t, v) in _LAG if (now - t) <= _LAG_WINDOW_S]
+    if not vals:
+        return {
+            "measured": False,
+            "over": None,
+            "samples": 0,
+            "fraction": None,
+            "peak_ms": None,
+            "p50_ms": None,
+            "threshold_ms": round(float(threshold_ms), 1),
+            "window_s": _LAG_WINDOW_S,
+            "reason": "the event-loop watchdog has no sample in the window",
+        }
+    over = sum(1 for v in vals if v >= threshold_ms)
+    return {
+        "measured": True,
+        "over": over,
+        "samples": len(vals),
+        "fraction": round(over / len(vals), 3),
+        "peak_ms": round(max(vals), 1),
+        "p50_ms": _pct(sorted(vals), 50),
+        "threshold_ms": round(float(threshold_ms), 1),
+        "window_s": _LAG_WINDOW_S,
+    }
+
+
 def start_watchdog() -> None:
     """Start the loop-block watchdog on the running event loop (idempotent).
     Safe to call from an async lifespan; a no-op if there is no running loop."""
