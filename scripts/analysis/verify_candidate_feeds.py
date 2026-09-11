@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -562,6 +563,49 @@ def write_outputs(verdicts: list[Verdict], out_dir: Path, *, today: str) -> dict
     return summary
 
 
+def shard_index(domain: str, shards: int) -> int:
+    """Which of ``shards`` machines owns this host. Keyed on the REGISTRABLE DOMAIN.
+
+    That key is the whole point, not a detail. Politeness in this fetcher is a PER-HOST lock
+    held inside ONE process, so it cannot span machines: if two shards each held rows that
+    resolve to the same host, each would wait its own ``--min-interval`` and the host would
+    quietly see DOUBLE the agreed rate -- the fleet breaking a promise no single machine could
+    see itself breaking. Keying the split on the SAME function the fetcher and the resume
+    cursor already key on means that cannot happen: rows the run treats as one host
+    (``x.example`` and ``www.x.example``) land on one machine, and the per-host guarantee
+    holds across the fleet exactly as it does on one box.
+
+    WHAT IT DOES NOT CLAIM, stated because the stronger claim is the tempting one:
+    ``registrable_domain`` strips ``www.`` but not arbitrary subdomains, so ``a.ui.ac.id`` and
+    ``b.ui.ac.id`` are two hosts here and may land on two machines. That is not a regression --
+    the per-host lock never covered sibling hosts of one organisation either, so a single run
+    at ``--workers 12`` can already fetch both at once. Measured on the real remainder
+    worklist, the question is moot: all 18,457 rows are distinct registrable domains, one row
+    per host.
+
+    sha256 rather than ``hash()``, which is salted per process and would give each machine a
+    DIFFERENT partition of the same worklist -- rows judged twice and rows judged never, with
+    nothing in any single run's output to show it. Stable across machines, versions and runs.
+    """
+    if shards < 1:
+        raise ValueError("shards must be >= 1")
+    d = registrable_domain(domain) or normalize_domain(domain) or domain
+    return int.from_bytes(hashlib.sha256(d.encode("utf-8")).digest()[:8], "big") % shards
+
+
+def parse_shard(spec: str) -> tuple[int, int]:
+    """``"3/8"`` -> ``(3, 8)``, one-based and validated. Refuses anything a typo would produce,
+    because a silently-wrong shard spec is a silently-incomplete run."""
+    try:
+        i_s, n_s = spec.split("/", 1)
+        i, n = int(i_s), int(n_s)
+    except ValueError:
+        raise ValueError(f"--shard wants I/N, e.g. 3/8 (got {spec!r})") from None
+    if n < 1 or not (1 <= i <= n):
+        raise ValueError(f"--shard I/N needs 1 <= I <= N and N >= 1 (got {spec!r})")
+    return i, n
+
+
 def load_candidates(path: Path) -> list[dict]:
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.DictReader(fh))
@@ -593,8 +637,12 @@ def run(
     retry_reasons: set[str] | frozenset[str] = frozenset(),
     crawl_delay: Callable[[str], float | None] | None = None,
     probe_budget_s: float = PROBE_TIME_BUDGET_S, stall_s: float = STALL_S,
+    shard: tuple[int, int] | None = None,
 ) -> dict:
     now = now or datetime.now(UTC)
+    if shard is not None:
+        i, n = shard
+        rows = [r for r in rows if shard_index(str(r.get("domain") or ""), n) == i - 1]
     catalogue = set(catalogue or ())
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl = out_dir / "verified.jsonl"
@@ -719,6 +767,10 @@ def main(argv: list[str] | None = None) -> int:
                          "e.g. host_timeout,crawl_delay_too_long")
     ap.add_argument("--probe-budget", type=float, default=PROBE_TIME_BUDGET_S,
                     help="seconds a host's declared Crawl-delay may cost across its feed probes")
+    ap.add_argument("--shard", default=None, metavar="I/N",
+                    help="judge only this machine's slice of the worklist, e.g. 3/8. Split by HOST, "
+                         "so every row of one host stays on one machine and the per-host politeness "
+                         "interval still holds across the fleet. Give each machine its own --out-dir.")
     ap.add_argument("--stall", type=float, default=STALL_S,
                     help="seconds without any host finishing before the in-flight ones are host_timeout")
     args = ap.parse_args(argv)
@@ -745,6 +797,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = run(rows, fetch=fetcher.fetch, out_dir=args.out_dir, workers=args.workers,
                   catalogue=cat, resume=not args.no_resume, limit=args.limit, progress=_progress,
+                  shard=parse_shard(args.shard) if args.shard else None,
                   retry_reasons=retry, crawl_delay=getattr(fetcher, "crawl_delay_for", None),
                   probe_budget_s=args.probe_budget, stall_s=args.stall)
     print(json.dumps(summary, indent=1))

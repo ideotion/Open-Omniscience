@@ -55,6 +55,11 @@ SPECTRUM_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "sourc
 # offices across every region (source_type legal/ip). The trackable consolidated-law
 # *documents* in the same file are registered separately (src/law/catalog.py).
 LEGAL_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
+# The two catalogues the 2026-09-11 ruling admitted: sources that are NOT reporting and are
+# deliberately kept OUT of configs/sources.yml, so a corpus statistic over the news catalogue
+# keeps meaning what it says. Seeded by default -- a primary source no one collects is no use.
+ACADEMIC_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "academic_sources.yml"
+OFFICIAL_SOURCES_PATH = Path(__file__).resolve().parents[2] / "configs" / "official_sources.yml"
 
 # YAML keys that map 1:1 to Source columns (everything except name/domain/tags,
 # which are handled explicitly).
@@ -366,4 +371,12 @@ def seed_default_sources(session: Session, path: Path | None = None) -> SeedResu
             for s in legal:
                 s["_provenance"] = "legal"
             sources = sources + legal
+        # Scholarly journals and official/primary-source bodies (2026-09-11 ruling), each in its
+        # own catalogue with its own provenance so every surface can lens them apart from news.
+        for extra, prov in ((ACADEMIC_SOURCES_PATH, "academic"), (OFFICIAL_SOURCES_PATH, "official")):
+            if extra.exists():
+                rows = load_sources_from_yaml(extra)
+                for s in rows:
+                    s["_provenance"] = prov
+                sources = sources + rows
     return seed_sources(session, sources)

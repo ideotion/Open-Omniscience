@@ -250,6 +250,66 @@ def test_a_country_suffix_with_no_country_on_the_row_is_dropped_too():
     assert vcf._name_without_a_false_country("(tv)", "es") == "(tv)"
 
 
+def test_sharding_partitions_the_worklist_exactly_once_and_never_splits_a_host():
+    """Eight VMs on one worklist. The two properties that make that safe, and a third that
+    makes it reproducible -- asserted on real-shaped domains rather than on the hash."""
+    rows = [_row(f"news{i}.example") for i in range(400)]
+    rows += [_row(h) for h in ("a.co.uk", "b.co.uk", "x.example", "y.example")]
+    # Several rows of ONE host, which is the case the host-keyed split exists for.
+    rows += [_row("news7.example"), _row("www.news7.example")]
+
+    N = 8
+    buckets = [[r for r in rows if vcf.shard_index(r["domain"], N) == i] for i in range(N)]
+
+    # 1. A PARTITION: every row judged exactly once across the fleet, none twice, none never.
+    assert sum(len(b) for b in buckets) == len(rows)
+    assert {r["domain"] for b in buckets for r in b} == {r["domain"] for r in rows}
+    for i, b in enumerate(buckets):
+        for r in b:
+            assert [j for j in range(N) if vcf.shard_index(r["domain"], N) == j] == [i]
+
+    # 2. THE SHARD KEY IS THE RUN'S OWN DOMAIN KEY -- the politeness guarantee. Per-host rate
+    #    limiting lives inside one process, so rows the run treats as ONE host must not land on
+    #    two machines. Asserted against the very function run()/load_resume key on, so the two
+    #    cannot drift apart; a subdomain is a DIFFERENT host to both, and that is consistent.
+    assert vcf.shard_index("www.news7.example", N) == vcf.shard_index("news7.example", N)
+    for r in rows:
+        d = vcf.registrable_domain(r["domain"]) or r["domain"]
+        assert vcf.shard_index(r["domain"], N) == vcf.shard_index(d, N)
+
+    # 3. STABLE, not salted: the same answer in any process, or the machines disagree about
+    #    who owns what. A PYTHONHASHSEED-dependent split would fail this across processes.
+    assert vcf.shard_index("news7.example", N) == vcf.shard_index("news7.example", N)
+    assert vcf.shard_index("theguardian.com", 8) == 7  # pinned: a change here re-partitions live runs
+
+    # And it actually spreads -- a split that puts everything on one machine would pass 1-3.
+    assert all(len(b) > 0 for b in buckets), [len(b) for b in buckets]
+
+
+def test_run_judges_only_its_own_shard(tmp_path):
+    rows = [_row(f"s{i}.example") for i in range(40)]
+    table = {}
+    for r in rows:
+        table[f"https://{r['domain']}/"] = HOME_WITH_LINK
+        table[f"https://{r['domain']}/feed.xml"] = _rss(5)
+    judged = {}
+    for i in (1, 2, 3):
+        out = tmp_path / f"shard{i}"
+        vcf.run(rows, fetch=FakeFetch(dict(table)), out_dir=out, workers=2, now=NOW,
+                catalogue=set(), shard=(i, 3))
+        judged[i] = {v.domain for v in vcf.load_resume(out / "verified.jsonl")[0]}
+    # Disjoint, and together the whole worklist -- the fleet's output concatenates cleanly.
+    assert judged[1] & judged[2] == set() and judged[1] & judged[3] == set() and judged[2] & judged[3] == set()
+    assert judged[1] | judged[2] | judged[3] == {r["domain"] for r in rows}
+
+
+def test_a_malformed_shard_spec_is_refused_rather_than_silently_partial():
+    for bad in ("8", "0/8", "9/8", "3/0", "a/8", "3/8/2", "-1/8"):
+        with pytest.raises(ValueError):
+            vcf.parse_shard(bad)
+    assert vcf.parse_shard("3/8") == (3, 8) and vcf.parse_shard("1/1") == (1, 1)
+
+
 def test_only_a_verified_verdict_becomes_an_entry():
     v = vcf.Verdict(domain="x.example", status="rejected", reason="feed_stale")
     with pytest.raises(ValueError):

@@ -47,6 +47,7 @@ CATALOGUE_FILES = (
     "configs/sources.yml", "configs/sources_spectrum.yml", "configs/markets_sources.yml",
     "configs/legal_sources.yml", "configs/legal_sources_generated.yml",
     "configs/world_news_sources.yml",
+    "configs/academic_sources.yml", "configs/official_sources.yml",
 )
 REQUIRED = ("name", "domain", "rss_url", "verified", "last_verified")
 _LANGUAGE_CODES = frozenset({

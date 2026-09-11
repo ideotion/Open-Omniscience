@@ -129,3 +129,43 @@ def test_the_splice_writes_no_provenance_tag_so_the_seed_owns_it(session):
     seed_default_sources(session)
     row = session.query(Source).filter_by(domain=_catalogue_domains()[-1]).one()
     assert "via:curated" in (row.tags or "")
+
+
+def test_the_two_admitted_catalogues_seed_under_their_own_provenance_and_qualify(session):
+    """The 2026-09-11 ruling: scholarly journals and primary-source bodies are collected, but in
+    their OWN catalogues, never mixed into configs/sources.yml.
+
+    Both halves matter and neither is visible in one file alone. If the provenance did not seed,
+    the rows would sit unqualified forever behind the never-attempted discovered rows (finding
+    F2) and be collected by nothing. If the rows leaked into the news catalogue instead, every
+    corpus statistic over it would silently start counting journals as reporting.
+    """
+    from src.ingest.seed_sources import ACADEMIC_SOURCES_PATH, OFFICIAL_SOURCES_PATH
+
+    news = set(_catalogue_domains())
+    for path, kinds in (
+        (ACADEMIC_SOURCES_PATH, {"scientific-journal"}),
+        (OFFICIAL_SOURCES_PATH,
+         {"government-primary", "academic-research", "think-tank", "statistics", "igo"}),
+    ):
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        rows = (raw or {}).get("sources") or []
+        assert rows, path
+        assert {str(r["source_type"]) for r in rows} <= kinds, path
+        # Kept OUT of the news catalogue -- the whole point of a separate file.
+        assert not ({str(r["domain"]) for r in rows} & news), path
+        # Provenance is added at SEED time, exactly as for configs/sources.yml.
+        assert not [t for r in rows for t in (r.get("tags") or []) if str(t).startswith("via:")]
+
+    seed_default_sources(session)
+    stamp_curated_catalog(session)
+
+    for path, tag in ((ACADEMIC_SOURCES_PATH, "via:academic"), (OFFICIAL_SOURCES_PATH, "via:official")):
+        domains = {str(r["domain"]) for r in (yaml.safe_load(path.read_text(encoding="utf-8")) or {})["sources"]}
+        got = session.query(Source).filter(Source.domain.in_(domains)).all()
+        assert len(got) > 0, path
+        for r in got:
+            assert tag in (r.tags or ""), (path, r.domain)
+            assert is_curated(r), r.domain
+            assert r.status == STATUS_QUALIFIED, r.domain
+            assert r.enabled is True, r.domain

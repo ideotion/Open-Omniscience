@@ -13,6 +13,7 @@ and a snapshot is named as one.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -144,3 +145,27 @@ def test_the_retry_flag_passes_through_and_the_selfcheck_marker_is_keyed_by_the_
     marker.write_text("2026-09-10T10:00:00+00:00", encoding="utf-8")  # the pre-keyed marker shape
     rsa.selfcheck(Path("py"), root)
     assert len(runs) == 3
+
+
+def test_a_sharded_run_names_its_zip_and_passes_the_shard_down(tmp_path, monkeypatch):
+    """Eight machines, eight zips. If they all came back called stage_a_results_<date>.zip the
+    operator would overwrite seven slices of the worklist on the way into one folder, and
+    nothing in any single file would say so."""
+    (tmp_path / "runs" / "w1").mkdir(parents=True)
+    (tmp_path / "runs" / "w1" / "verified.jsonl").write_text("", encoding="utf-8")
+    plain = rsa.package(tmp_path, now=NOW)
+    sharded = rsa.package(tmp_path, now=NOW, shard="3/8")
+    assert plain.name != sharded.name
+    assert "shard3of8" in sharded.name and "shard" not in plain.name
+
+    # ...and the flag actually reaches Stage A rather than only naming the output.
+    seen = {}
+
+    class _Proc:
+        def wait(self): return 0
+
+    monkeypatch.setattr(rsa.subprocess, "Popen", lambda cmd, **kw: (seen.update(cmd=cmd), _Proc())[1])
+    args = argparse.Namespace(workers=4, timeout=20.0, limit=None, retry=None, shard="3/8")
+    rsa.stage_a(Path("py"), next(iter(rsa.WORKLISTS)), args, root=tmp_path, env={})
+    assert "--shard" in seen["cmd"] and seen["cmd"][seen["cmd"].index("--shard") + 1] == "3/8"
+

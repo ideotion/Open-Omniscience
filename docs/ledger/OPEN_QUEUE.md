@@ -12488,7 +12488,60 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
   are kept, not rejected, and wait on the robots ruling above.
 
-- **PENDING RULING 2026-09-11 — SHOULD THE 1,245 NOT-JOURNALISM ROWS BE COLLECTED TOO?** The
+- **SHIPPED 2026-09-11 — THE RULING APPLIED: TWO NEW CATALOGUES, AND THE 60k GETS ITS OWN
+  WORKLISTS AND AN 8-MACHINE SPLIT.** The maintainer approved the recommendation and asked to deal
+  with the other 60k, with clear instructions, a new kit if needed, and — the constraint that drove
+  the engineering — *"I can run up to 8 versions of this script on 8 different VMs ... but we should
+  avoid source testing redundancy (avoid testing the same source 8 times)."*
+  **(1) THE TWO CATALOGUES.** `configs/academic_sources.yml` (606 rows, all `scientific-journal`,
+  `via:academic`) and `configs/official_sources.yml` (43 rows, `via:official`), seeded by default
+  in `seed_default_sources` after legal, and added to BOTH `APP_PROVIDED_PROVENANCES` and
+  `CURATED_PROVENANCES`. The second is the load-bearing choice and it is NOT a formality: leaving
+  them unqualified parks them behind the ~73k never-attempted discovered rows (finding F2), where
+  5/pass means never — so "let them earn it" would mean "never collect them", and there is nothing
+  to earn, because qualification is an extraction-validity check by its own docstring. Same basis
+  pill, same six-month re-check, same disqualification on a failed one. They stay OUT of
+  `configs/sources.yml` so a corpus statistic over the news catalogue keeps meaning what it says.
+  **(2) THE 43 ARE A SPLIT, NOT THE BUCKET.** The 135 `institution` rows were re-read on the
+  narrower question — is this a body that publishes THE RECORD of its own decisions, data or
+  operations? — 2 agents, Sonnet, both answering all 135 in full, default OUT when the evidence is
+  thin. **43 official, 92 not**: in are 19 government + 16 research institutes + 3 archives/libraries
+  + 3 NGO/think-tanks + 1 parliament + 1 statistics office (`parliament.na` publishing its own Order
+  Papers, `scb.se`, `governmentprintery.gov.bb`, `fn.se`); out are 43 universities (campus PR, not a
+  record), 16 clubs and associations, 13 professional bodies, museums and foundations. Typed with the
+  project's OWN `CANONICAL_SOURCE_TYPES` — `government-primary`, `academic-research`, `think-tank`,
+  `statistics` — which already existed and needed no new vocabulary.
+  **(3) THE 60k HAS WORKLISTS NOW.** `build_candidate_kit` emits `worklist_3_institutions.csv`
+  (37,079) and `worklist_4_religious.csv` (22,842) from the discovered rows `analyse()` never
+  offered Stage A at all. Religious is shipped but recommended LAST or not at all.
+  **(4) NO MACHINE RE-TESTS A SOURCE WE ALREADY HAVE.** Two separate redundancies, both measured.
+  (a) ACROSS THE FLEET: `--shard I/N` on `verify_candidate_feeds.py` and `run_stage_a.py`, keyed on
+  the REGISTRABLE DOMAIN via sha256 — the same key `run()` and the resume cursor already use, so the
+  split cannot drift from them, and stable rather than `hash()`, which is salted per process and
+  would hand each machine a DIFFERENT partition of one worklist (rows judged twice, rows judged
+  never, nothing in any single run's output showing it). Measured exact on the real 37,079-row
+  worklist: `[4518, 4750, 4549, 4575, 4665, 4724, 4676, 4622]`, sum 37,079. The results zip carries
+  `_shard3of8` in its name, because eight files called `stage_a_results_<date>.zip` is how seven
+  slices get silently overwritten in one folder. WHAT IT DOES NOT CLAIM, since the stronger claim is
+  the tempting one: `registrable_domain` strips `www.` but not arbitrary subdomains, so two hosts of
+  one organisation may land on two machines — no worse than `--workers 12` on one box, and moot on
+  this data, where all 18,457 remainder rows are already distinct registrable domains.
+  (b) AGAINST THE CATALOGUE: `analyse()` dedupes against the EXPORT's catalogue rows — the catalogue
+  as it was when the export was taken — and this pipeline has since added 2,800 rows of its own. A
+  fresh kit therefore re-offered them: **557 already-shipped domains in worklist 1 and 2,243 in
+  worklist 2**, measured. All four worklists now filter against every shipped catalogue, the two new
+  ones included; re-measured at 0, 0, 0, 0. w1 3,588 -> 3,031 and w2 18,457 -> 16,214 are that
+  subtraction, not a loss.
+  **(5) THE KIT IS REBUILT AND THE MAINTAINER NEEDS THE NEW ONE** — `oo-candidate-kit-2026-09-11`,
+  6.9 MB, built from the same export: it carries the sharding, the four deduped worklists, and the
+  fabricated-country-suffix fix, none of which exist in the 2026-09-10 zip.
+  A FIXTURE LESSON, caught by the new dedupe: `test_candidate_kit` used REAL newspaper domains
+  (`ladepeche.fr`, `ouest-france.fr`) as synthetic candidates, and the catalogue now ships them, so
+  the correct dedupe deleted the fixture's own rows and reddened two tests. The domains are now
+  `.example`, and the test that would have caught it earlier — no worklist may offer a domain the
+  catalogue already ships — is pinned.
+
+- **RULED + SHIPPED 2026-09-11 (maintainer: "go ahead with your recommendation") — SHOULD THE 1,245 NOT-JOURNALISM ROWS BE COLLECTED TOO?** The
   maintainer, on the refusal counts: *"can you justify the 1,096 refusals are by type — academic
   549, institution 117, broadcaster 107? Shouldn't they be scrapped as well if their content
   passes the qualification step?"* FIRST, A CORRECTION OWED: "by type" was the wrong shorthand in

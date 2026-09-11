@@ -198,7 +198,8 @@ def _complete_lines(path: Path) -> bytes:
     return bytes(out)
 
 
-def package(root: Path = ROOT, *, now: datetime | None = None, snapshot: bool = False) -> Path:
+def package(root: Path = ROOT, *, now: datetime | None = None, snapshot: bool = False,
+            shard: str | None = None) -> Path:
     """``stage_a_results_<date>.zip`` (or ``stage_a_snapshot_<date>T<HHMM>.zip`` while a run is
     still going) beside the kit: everything under runs/, the manifest, RESULTS.md. Every
     ``verified.jsonl`` goes in with complete lines only, so the zip is readable whenever it is
@@ -208,7 +209,10 @@ def package(root: Path = ROOT, *, now: datetime | None = None, snapshot: bool = 
     runs.mkdir(exist_ok=True)
     (runs / "RESULTS.md").write_text(results_md(root, now=now), encoding="utf-8")
     stamp = now.strftime("%Y-%m-%dT%H%M") if snapshot else now.date().isoformat()
-    out = root / (f"stage_a_snapshot_{stamp}.zip" if snapshot else f"stage_a_results_{stamp}.zip")
+    # Eight machines returning eight files called stage_a_results_<date>.zip is how a shard gets
+    # silently overwritten and its slice of the worklist is never seen again. The name carries it.
+    tag = f"_shard{shard.replace('/', 'of')}" if shard else ""
+    out = root / (f"stage_a_snapshot_{stamp}{tag}.zip" if snapshot else f"stage_a_results_{stamp}{tag}.zip")
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for p in sorted(runs.rglob("*")):
             if not p.is_file():
@@ -232,6 +236,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--retry", default=None,
                     help="re-judge rows whose last verdict has one of these reasons (comma-separated), "
                          "e.g. host_timeout,crawl_delay_too_long")
+    ap.add_argument("--shard", default=None, metavar="I/N",
+                    help="run only this machine's slice, e.g. --shard 3/8. Split by host, so the "
+                         "8 machines never test the same source twice and each host still sees one "
+                         "request per interval. The results zip is named for the shard.")
     ap.add_argument("--skip-selfcheck", action="store_true")
     ap.add_argument("--no-zip", action="store_true")
     ap.add_argument("--status", action="store_true",
@@ -309,6 +317,8 @@ def stage_a(py: Path, key: str, args: argparse.Namespace, root: Path = ROOT, env
         cmd += ["--limit", str(args.limit)]
     if args.retry:
         cmd += ["--retry", args.retry]
+    if getattr(args, "shard", None):
+        cmd += ["--shard", args.shard]
     # Popen + wait, not subprocess.run: run() would SIGKILL the child a quarter-second after a
     # Ctrl-C, before it could finish the in-flight hosts and write its outputs. The child gets the
     # same Ctrl-C from the terminal and handles it itself; here we only wait for it.
@@ -343,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         for line in status_lines(now=now):
             print(line)
         if not args.no_zip and (ROOT / "runs").exists():
-            z = package(now=now, snapshot=True)
+            z = package(now=now, snapshot=True, shard=getattr(args, 'shard', None))
             print(f"\n== snapshot: {z}  ({z.stat().st_size / 1e6:.1f} MB) -- attach it to a repository-connected "
                   "Claude session to have Stage B and C run on what exists so far", flush=True)
         return 0
@@ -368,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         code = exc.returncode or 1
     finally:
         if not args.no_zip and (ROOT / "runs").exists():
-            z = package()
+            z = package(shard=getattr(args, 'shard', None))
             print(f"\n== packaged: {z}  ({z.stat().st_size / 1e6:.1f} MB) -- attach this to a repository-connected "
                   "Claude session for Stage B and C", flush=True)
     if code == 130:

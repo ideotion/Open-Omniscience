@@ -34,6 +34,8 @@ APP_PROVIDED_PROVENANCES: frozenset[str] = frozenset({
     "spectrum",   # the source-diversification batch
     "wikidata",   # configs/world_news_sources.yml -- NOT wikidata-discovery
     "legal",      # the worldwide law & IP official portals
+    "academic",   # configs/academic_sources.yml -- scholarly journals (2026-09-11 ruling)
+    "official",   # configs/official_sources.yml -- primary-source bodies (2026-09-11 ruling)
 })
 
 APP_PROVIDED_TAGS: frozenset[str] = frozenset(
@@ -54,6 +56,14 @@ CURATED_PROVENANCES: frozenset[str] = frozenset({
     "markets",          # configs/markets_sources.yml
     "legal",            # configs/legal_sources.yml
     "legal-generated",  # configs/legal_sources_generated.yml, built from the vetted law catalogue
+    # The 2026-09-11 ruling's two catalogues. They are here for the SAME reason the pipeline's
+    # rows in sources.yml are: leaving them unqualified would park them behind the never-attempted
+    # discovered rows (finding F2) and they would never be collected at all -- and qualification
+    # is an extraction-validity check (this module's siblings measure it), never a quality gate,
+    # so "earning" it would decide nothing. Same basis pill, same six-month re-check, same
+    # disqualification on a failed one.
+    "academic",         # configs/academic_sources.yml
+    "official",         # configs/official_sources.yml
 })
 
 CURATED_TAGS: frozenset[str] = frozenset(f"via:{p}" for p in CURATED_PROVENANCES)

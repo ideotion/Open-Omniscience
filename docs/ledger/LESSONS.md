@@ -8712,3 +8712,28 @@
   same size on the ledger — one out-of-enum cell costs all 42 rows of its batch — and both were
   recovered by the single escalation the runbook already prescribes, so the design held; only the
   prompt needed a sentence it did not have.
+
+- **A FLEET CANNOT KEEP A PROMISE ONE PROCESS MAKES (2026-09-11, Stage A sharding).** Politeness
+  here is a per-host lock held inside one process, so it does not span machines: eight VMs each
+  waiting their own `--min-interval` on the same host means the host sees eight times the agreed
+  rate, and no single machine's log shows anything wrong. The fix is not more coordination, it is
+  a SPLIT KEY that makes the situation impossible — shard on the same domain key the fetcher and
+  the resume cursor already use, so rows the run treats as one host land on one machine and the
+  per-host guarantee holds unchanged across the fleet. Two sub-lessons worth as much as the rule:
+  (a) **never `hash()` for a cross-machine partition** — it is salted per process, so each machine
+  computes a DIFFERENT partition of the same worklist, and the failure mode is rows judged twice
+  and rows judged never with nothing in any single run's output to show it; sha256, always.
+  (b) **name the output for its shard** — eight files called `results_<date>.zip` is how seven
+  slices get silently overwritten on the way into one folder.
+- **"DEDUPED" IS ALWAYS DEDUPED AGAINST A SNAPSHOT, AND THE SNAPSHOT AGES (2026-09-11).** The
+  worklist builder deduped candidates against the catalogue rows IN THE EXPORT — correct the day
+  the export was taken, and quietly wrong a day later, because the same pipeline had since added
+  2,800 rows to the shipped catalogue. A freshly built kit therefore re-offered them: 557 in one
+  worklist, 2,243 in another, measured. Nothing was broken, no test failed, and the cost would have
+  landed on other people's servers. When a filter's reference set can itself change, filter against
+  the LIVE set as well as the snapshot, and pin it with a test that reads the real catalogue.
+- **A TEST FIXTURE MADE OF REAL NAMES IS A TIME BOMB (2026-09-11, same change).** `test_candidate_kit`
+  used `ladepeche.fr` and `ouest-france.fr` as stand-in candidates. The moment the catalogue actually
+  shipped them, the new — correct — dedupe deleted the fixture's own rows and reddened two tests that
+  had nothing to do with the change. A synthetic fixture must be synthetic all the way down
+  (`.example`), or it eventually collides with the real data the code under test consults.

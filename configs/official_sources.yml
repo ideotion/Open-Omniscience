@@ -1,0 +1,689 @@
+# Official / primary-source bodies -- feed-verified (Stage A) and model-triaged, then admitted by the
+# maintainer's 2026-09-11 ruling. Seeded with provenance via:official.
+# A SEPARATE catalogue, not configs/sources.yml, ON PURPOSE: these are not reporting, and
+# mixing them into the news corpus would change what a corpus statistic means.
+# 43 entries. Provenance: docs/research/sources/discovered_candidates_2026-09-10/.
+sources:
+- name: Official Gazette
+  domain: governmentprintery.gov.bb
+  rss_url: https://governmentprintery.gov.bb/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: bb
+  region: north-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Government Gazette of the Republic of Namibia
+  domain: parliament.na
+  rss_url: https://www.parliament.na/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: na
+  region: africa
+  source_type: government-primary
+  tags:
+  - official
+  - parliament
+  priority: 3
+- name: Memorias del Instituto de Investigaciones en Ciencias de la Salud
+  domain: ins.gov.py
+  rss_url: https://ins.gov.py/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: py
+  region: south-america
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - healthcare
+  priority: 3
+- name: Current Awareness Service
+  domain: current.ndl.go.jp
+  rss_url: https://current.ndl.go.jp/cap-rss/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: government-primary
+  tags:
+  - official
+  - archive-or-library
+  priority: 3
+- name: Environmental Protection and Natural Resources
+  domain: ios.edu.pl
+  rss_url: https://ios.edu.pl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  priority: 3
+- name: Slovak Ethnology
+  domain: sav.sk
+  rss_url: https://www.sav.sk/rss/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: sk
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  priority: 3
+- name: Shiokaze
+  domain: chosa-kai.jp
+  rss_url: https://www.chosa-kai.jp/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ja
+  country: jp
+  region: asia
+  source_type: think-tank
+  tags:
+  - official
+  - ngo-or-thinktank
+  priority: 3
+- name: Q11822498
+  domain: schuman.pl
+  rss_url: https://schuman.pl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: think-tank
+  tags:
+  - official
+  - ngo-or-thinktank
+  priority: 3
+- name: Q10717526
+  domain: fn.se
+  rss_url: https://fn.se/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: se
+  region: europe
+  source_type: think-tank
+  tags:
+  - official
+  - ngo-or-thinktank
+  - human-rights
+  - policy
+  priority: 3
+- name: Información, Cultura y Sociedad
+  domain: inibi.institutos.filo.uba.ar
+  rss_url: https://inibi.institutos.filo.uba.ar/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ar
+  region: south-america
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - education
+  priority: 3
+- name: Lilloa
+  domain: lillo.org.ar
+  rss_url: https://lillo.org.ar/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: ar
+  region: south-america
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  priority: 3
+- name: Australian Indigenous Health Bulletin
+  domain: healthbulletin.org.au
+  rss_url: https://healthbulletin.org.au/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: au
+  region: oceania
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - healthcare
+  priority: 3
+- name: Hoehnea (revista)
+  domain: infraestruturameioambiente.sp.gov.br
+  rss_url: https://semil.sp.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935259
+  domain: itaberaba.ba.gov.br
+  rss_url: https://itaberaba.ba.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935263
+  domain: itabuna.ba.gov.br
+  rss_url: https://itabuna.ba.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935083
+  domain: guaratingueta.sp.gov.br
+  rss_url: https://guaratingueta.sp.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935262
+  domain: itaborai.rj.gov.br
+  rss_url: https://site.ib.itaborai.rj.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935316
+  domain: jatai.go.gov.br
+  rss_url: https://www.jatai.go.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935327
+  domain: imprensaoficial.jundiai.sp.gov.br
+  rss_url: https://imprensaoficial.jundiai.sp.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935700
+  domain: mage.rj.gov.br
+  rss_url: https://mage.rj.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124935730
+  domain: montesanto.ba.gov.br
+  rss_url: https://montesanto.ba.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124989556
+  domain: buzios.aexecutivo.com.br
+  rss_url: https://buzios.rj.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124989670
+  domain: campos.rj.gov.br
+  rss_url: https://campos.rj.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124989695
+  domain: caxias.ma.gov.br
+  rss_url: https://caxias.ma.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Q124989710
+  domain: conde.pb.gov.br
+  rss_url: https://conde.pb.gov.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pt
+  country: br
+  region: south-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  priority: 3
+- name: Chilean Journal of Agricultural Research
+  domain: inia.cl
+  rss_url: https://www.inia.cl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: cl
+  region: south-america
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  priority: 3
+- name: Agronomía Costarricense
+  domain: mag.go.cr
+  rss_url: https://mag.go.cr/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: cr
+  region: north-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  - agriculture
+  - policy
+  priority: 3
+- name: Analecta Hibernica
+  domain: irishmanuscripts.ie
+  rss_url: https://www.irishmanuscripts.ie/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ie
+  region: europe
+  source_type: government-primary
+  tags:
+  - official
+  - archive-or-library
+  - history
+  - ancient-history
+  priority: 3
+- name: Lebanese Science Journal
+  domain: cnrs.edu.lb
+  rss_url: https://cnrs.edu.lb/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: ar
+  country: lb
+  region: asia
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  priority: 3
+- name: Q125952537
+  domain: chihuahua.gob.mx
+  rss_url: https://chihuahua.gob.mx/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: mx
+  region: north-america
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  - politics
+  - policy
+  priority: 3
+- name: Trace
+  domain: cemca.org.mx
+  rss_url: https://cemca.org.mx/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: es
+  country: mx
+  region: north-america
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - ancient-history
+  - science
+  - culture
+  priority: 3
+- name: Bauchi State Television
+  domain: bauchistate.gov.ng
+  rss_url: https://home.bauchistate.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: ng
+  region: africa
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  - politics
+  - regional
+  priority: 3
+- name: Building Research Journal
+  domain: ustarch.sav.sk
+  rss_url: https://ustarch.sav.sk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: pl
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  - applied-science
+  priority: 3
+- name: Helminthologia
+  domain: pau.saske.sk
+  rss_url: https://pau.saske.sk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: pl
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  - applied-science
+  priority: 3
+- name: Journal of Animal and Feed Sciences
+  domain: ifzz.pl
+  rss_url: https://ifzz.pl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  - applied-science
+  priority: 3
+- name: Journal of Official Statistics
+  domain: scb.se
+  rss_url: https://www.scb.se/feed/statistiknyheter
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sv
+  country: pl
+  region: europe
+  source_type: statistics
+  tags:
+  - official
+  - statistics
+  - economy
+  - finance
+  priority: 3
+- name: Polish Yearbook of International Law
+  domain: inp.pan.pl
+  rss_url: https://inp.pan.pl/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: pl
+  country: pl
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - legal
+  - policy
+  priority: 3
+- name: Ekológia
+  domain: sopsr.sk
+  rss_url: https://www.sopsr.sk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: sk
+  country: sk
+  region: europe
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  - environment
+  priority: 3
+- name: Turkish Journal of Agriculture and Forestry Sciences
+  domain: tubitak.gov.tr
+  rss_url: https://tubitak.gov.tr/tr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: tr
+  country: tr
+  region: asia
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  priority: 3
+- name: Academic Papers of  Vernadskyi National Library of Ukraine
+  domain: nbuv.gov.ua
+  rss_url: https://nbuv.gov.ua/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: uk
+  country: ua
+  region: europe
+  source_type: government-primary
+  tags:
+  - official
+  - archive-or-library
+  - history
+  priority: 3
+- name: Condensed matter physics
+  domain: icmp.lviv.ua
+  rss_url: https://icmp.lviv.ua/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: uk
+  country: ua
+  region: europe
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - science
+  - applied-science
+  priority: 3
+- name: SA News
+  domain: sanews.gov.za
+  rss_url: https://www.sanews.gov.za/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: za
+  region: africa
+  source_type: government-primary
+  tags:
+  - official
+  - government
+  - politics
+  - policy
+  priority: 3
+- name: Strelitzia
+  domain: sanbi.org
+  rss_url: https://www.sanbi.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-10'
+  language: en
+  country: za
+  region: africa
+  source_type: academic-research
+  tags:
+  - official
+  - research-institute
+  - environment
+  - science
+  priority: 3

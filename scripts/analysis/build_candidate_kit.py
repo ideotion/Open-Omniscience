@@ -51,6 +51,8 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 _ROOT = Path(__file__).resolve().parents[2]
 
 KIT_VERSION = 1
@@ -191,14 +193,65 @@ def build_worklists(rows: list[dict], root: Path, out_dir: Path, *, cap: int = S
             "flags": k.get("flags", ""),
         }
 
-    shortlist = [_row(k) for k in result["shortlist"]]
+    # Every domain ALREADY SHIPPED, so no machine spends a request on a source the catalogue
+    # holds. analyse() dedupes against the EXPORT's catalogue rows, which is the catalogue as it
+    # was when the export was taken -- and this pipeline has since added 2,800 of its own. Left
+    # unfiltered, a fresh kit re-tests them: on a fleet that is thousands of wasted requests
+    # against real publishers, which is exactly the politeness the rest of this file protects.
+    cat_domains: set[str] = set()
+    for r in rows:
+        if (r.get("enabled") or "").strip().lower() == "true":
+            cat_domains.update(cc._alias_set(cc._reg(r.get("domain") or "")))
+    for name in ("sources", "sources_spectrum", "markets_sources", "legal_sources",
+                 "legal_sources_generated", "world_news_sources", "academic_sources",
+                 "official_sources"):
+        f = root / "configs" / f"{name}.yml"
+        if not f.exists():
+            continue
+        for r in (yaml.safe_load(f.read_text(encoding="utf-8")) or {}).get("sources") or []:
+            cat_domains.update(cc._alias_set(cc._reg(str(r.get("domain") or ""))))
+
+    def _fresh(ks: list[dict]) -> list[dict]:
+        return [k for k in ks if not (cc._alias_set(cc._reg(k["domain"])) & cat_domains)]
+
+    shortlist = [_row(k) for k in _fresh(result["shortlist"])]
     short_domains = {r["domain"] for r in shortlist}
-    rest = [k for k in result["kept"] if k["domain"] not in short_domains]
+    rest = [k for k in _fresh(result["kept"]) if k["domain"] not in short_domains]
     rest.sort(key=lambda k: (_TIER_ORDER.get(k["tier"], 9), k["country"], k["name"].lower()))
     remainder = [_row(k) for k in rest]
 
+    # --- worklists 3 and 4: the OTHER 60k. analyse() keeps only the discovered `news` rows, so
+    # the institution and religious rows -- 59,923 of them -- have never been offered to Stage A
+    # at all. The 2026-09-11 ruling admits primary sources, so they get their own worklists, in
+    # their own files, run separately: an institution is a different question from a newspaper
+    # and the triage that reads them must be told which it is looking at.
+    def _other(kind: str) -> list[dict]:
+        out, seen = [], set()
+        for r in rows:
+            if cc.DISCOVERY_TAG not in cc._tags(r.get("tags")):
+                continue
+            if (r.get("source_type") or "") != kind:
+                continue
+            dom = cc._reg(r.get("domain") or "")
+            if not dom or dom in seen or (cc._alias_set(dom) & cat_domains):
+                continue
+            seen.add(dom)
+            out.append({
+                "tier": kind, "name": r.get("name") or dom, "domain": dom,
+                "source_type": kind, "country": (r.get("country") or "").lower(),
+                "language": (r.get("language") or "").lower(), "language_basis": "export",
+                "tags": r.get("tags") or "", "catalogue_sources_in_country": "",
+                "catalogue_sources_in_language": "", "flags": "",
+            })
+        out.sort(key=lambda k: (k["country"], k["name"].lower()))
+        return out
+
+    institutions, religious = _other("institution"), _other("religious")
+
     out_dir.mkdir(parents=True, exist_ok=True)
-    for name, data in (("worklist_1_shortlist.csv", shortlist), ("worklist_2_remainder.csv", remainder)):
+    for name, data in (("worklist_1_shortlist.csv", shortlist), ("worklist_2_remainder.csv", remainder),
+                       ("worklist_3_institutions.csv", institutions),
+                       ("worklist_4_religious.csv", religious)):
         with (out_dir / name).open("w", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(WORKLIST_FIELDS), lineterminator="\n")
             w.writeheader()
@@ -207,6 +260,7 @@ def build_worklists(rows: list[dict], root: Path, out_dir: Path, *, cap: int = S
         "export_rows": len(rows), "catalogue_rows": result["catalogue"], "discovered_rows": result["discovered"],
         "news_rows": result["news"], "news_kept": result["news_kept"], "tiers": dict(sorted(result["tiers"].items())),
         "worklist_1_shortlist": len(shortlist), "worklist_2_remainder": len(remainder), "shortlist_cap": cap,
+        "worklist_3_institutions": len(institutions), "worklist_4_religious": len(religious),
         "capped_countries": dict(sorted(result["shortlist_capped_countries"].items())),
     }
     (out_dir / "WORKLISTS.md").write_text(_worklists_md(counts), encoding="utf-8")
@@ -227,6 +281,13 @@ def _worklists_md(c: dict) -> str:
         f"Gap classes against the catalogue's own per-country and per-language counts (a class, never a score): {tiers}.\n\n"
         f"- `worklist_1_shortlist.csv` -- {c['worklist_1_shortlist']:,} rows: T1 + T2 + T3, capped at {c['shortlist_cap']} per "
         f"country, ordered by class, country, name. Countries the cap truncated (totals): {capped}.\n"
+        f"- `worklist_3_institutions.csv` -- {c.get('worklist_3_institutions', 0):,} rows: the discovered "
+        "`institution` rows, deduped against every shipped catalogue. A DIFFERENT question from a "
+        "newspaper -- Stage A verifies the feed the same way, but the triage that reads them must "
+        "be told it is judging primary sources, not reporting.\n"
+        f"- `worklist_4_religious.csv` -- {c.get('worklist_4_religious', 0):,} rows: the discovered "
+        "`religious` rows, same treatment. Run LAST, or not at all -- a parish newsletter is not a "
+        "primary source, though a national church's own record can be.\n"
         f"- `worklist_2_remainder.csv` -- {c['worklist_2_remainder']:,} rows: every other candidate, the capped-out "
         "T1-T3 overflow first, then T4, in the same order. An order of work, never an exclusion.\n\n"
         "Columns: " + ", ".join(f"`{f}`" for f in WORKLIST_FIELDS) + ". `verify_candidate_feeds.py` reads "

@@ -50,10 +50,10 @@ def _export(tmp_path: Path, *, catalogue_fr: int = 20) -> Path:
         for i in range(catalogue_fr)
     ] + [
         # discovered news: one in a country with NO catalogue source (T1), three French
-        '24ora,24ora.com,,news,aw,,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
-        'Ouest-France,ouest-france.fr,,news,fr,fr,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
-        'Le Télégramme,letelegramme.fr,,news,fr,fr,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
-        'La Dépêche,ladepeche.fr,,news,fr,fr,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
+        '24ora,24ora.example,,news,aw,,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
+        'Ouest-France,ouest.example.fr,,news,fr,fr,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
+        'Le Télégramme,telegramme.example.fr,,news,fr,fr,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
+        'La Dépêche,depeche.example.fr,,news,fr,fr,global,"news,world-catalog,via:wikidata-discovery",2,2000,False,',
         # discovered but not news: never a candidate
         'Ministère,interieur.gouv.fr,,institution,fr,fr,global,"government,institution,via:wikidata-discovery",2,2000,False,',
         # a discovered duplicate of a catalogue domain: dropped
@@ -114,13 +114,40 @@ def test_the_requirements_pin_what_the_scripts_import(kit: Path):
     assert all("==" in ln for ln in text.splitlines() if ln and not ln.startswith("#"))
 
 
+def test_a_worklist_never_offers_a_domain_the_catalogue_ALREADY_SHIPS(tmp_path):
+    """Redundancy is the cost that shows up on someone else's server. analyse() dedupes against
+    the EXPORT's catalogue rows -- the catalogue as it was when the export was taken -- and this
+    pipeline has since added 2,800 rows of its own. Measured on the real export before the fix:
+    557 already-shipped domains in worklist 1 and 2,243 in worklist 2, every one of them a
+    request a fleet would spend re-testing a source the app already has."""
+    import yaml as _yaml
+
+    shipped = [str(r.get("domain") or "")
+               for r in (_yaml.safe_load((_ROOT / "configs" / "sources.yml").read_text(encoding="utf-8"))
+                         or {}).get("sources") or []][:3]
+    assert all(shipped), shipped
+    src = tmp_path / "open-omniscience-sources.csv"
+    src.write_text(_HEADER + "\n".join([
+        f'A,{shipped[0]},,news,fr,fr,global,"news,via:wikidata-discovery",2,2000,False,',
+        f'B,{shipped[1]},,institution,fr,fr,global,"news,via:wikidata-discovery",2,2000,False,',
+        'C,fresh.example,,news,fr,fr,global,"news,via:wikidata-discovery",2,2000,False,',
+    ]) + "\n", encoding="utf-8")
+    rows, _ = bck.load_export(src)
+    bck.build_worklists(rows, _ROOT, tmp_path / "wl", cap=100)
+    seen = set()
+    for f in (tmp_path / "wl").glob("worklist_*.csv"):
+        seen |= {r["domain"] for r in _read(f)}
+    assert shipped[0] not in seen and shipped[1] not in seen, seen
+    assert "fresh.example" in seen
+
+
 def test_the_worklists_are_the_shortlist_and_the_ordered_remainder(kit: Path):
     short = _read(kit / "worklists" / "worklist_1_shortlist.csv")
     rest = _read(kit / "worklists" / "worklist_2_remainder.csv")
     assert list(short[0].keys()) == list(bck.WORKLIST_FIELDS)
-    assert [r["domain"] for r in short] == ["24ora.com"] and short[0]["tier"] == "T1"
+    assert [r["domain"] for r in short] == ["24ora.example"] and short[0]["tier"] == "T1"
     assert short[0]["source_type"] == "news" and "via:wikidata-discovery" in short[0]["tags"]
-    assert [r["domain"] for r in rest] == ["ladepeche.fr", "letelegramme.fr", "ouest-france.fr"]  # T4, by name
+    assert [r["domain"] for r in rest] == ["depeche.example.fr", "telegramme.example.fr", "ouest.example.fr"]  # T4, by name
     assert {r["tier"] for r in rest} == {"T4"}
     all_domains = {r["domain"] for r in short + rest}
     assert "interieur.gouv.fr" not in all_domains and "journal0.fr" not in all_domains and "www.journal0.fr" not in all_domains
@@ -133,8 +160,8 @@ def test_the_remainder_starts_with_the_capped_out_overflow(tmp_path: Path):
     counts = bck.build_worklists(rows, _ROOT, tmp_path / "wl", cap=1)
     short = _read(tmp_path / "wl" / "worklist_1_shortlist.csv")
     rest = _read(tmp_path / "wl" / "worklist_2_remainder.csv")
-    assert [(r["tier"], r["domain"]) for r in short] == [("T1", "24ora.com"), ("T2", "ladepeche.fr")]  # one per country
-    assert [(r["tier"], r["domain"]) for r in rest] == [("T2", "letelegramme.fr"), ("T2", "ouest-france.fr")]
+    assert [(r["tier"], r["domain"]) for r in short] == [("T1", "24ora.example"), ("T2", "depeche.example.fr")]  # one per country
+    assert [(r["tier"], r["domain"]) for r in rest] == [("T2", "telegramme.example.fr"), ("T2", "ouest.example.fr")]
     assert counts["capped_countries"] == {"fr": 3} and counts["worklist_1_shortlist"] == 2 and counts["worklist_2_remainder"] == 2
 
 
