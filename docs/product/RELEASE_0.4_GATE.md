@@ -100,6 +100,16 @@ three-day label.
 **Closes when** one report shows P0.3 with samples spanning ≥ 72 h and no climb, **and** the
 soak-window artifact (row D) shows the process actually stayed up for the window it reports on.
 
+**New in this window, and worth a glance while it runs (P6, 2026-09-11):** every
+`collect_perf.jsonl` sample now carries a `loop` block — the API server's own event-loop lag,
+as the share of a 10 s window that was blocked. It is *not* a gate condition and closes
+nothing here; it is recorded because the bench that motivated it could not make the collector
+starve the server (a synchronous handler cost 3.4-3.5 ms at p50 whether 0 or 32 workers were
+collecting), and a three-day run at release scale is the first thing that could contradict
+that. `loop_lag_ticks` in the pass summary is 0 on a healthy pass by design, so a non-zero one
+is the signal — and if the accompanying note says the back-off *stood down*, the loop was
+being blocked by something that is not the collector.
+
 ---
 
 ### Row C — diagnostics on the ~1M-article instance

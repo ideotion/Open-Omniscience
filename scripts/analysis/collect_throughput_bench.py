@@ -26,6 +26,13 @@ WHAT IT MEASURES, and what a reader may therefore conclude:
   ``governor``-- the control loop alone, driven with fixed contention flags. No I/O at
                  all; it answers "what would the governor do if this flag were true",
                  which a live pass can only answer by accident.
+  ``dates``   -- P3. htmldate's last-resort date hunt, per PLACEMENT and per LANGUAGE:
+                 what it costs, and what it returns on a page that has no publication
+                 date. The second column is the reason the bound shipped.
+  ``loop``    -- P6. Event-loop lag and a synchronous handler's wall time against
+                 collector worker count, on a real loop with the real watchdog. This is
+                 the measurement that decides whether the collector starves our own
+                 server; it came back saying it does not.
 
 WHAT IT CANNOT SEE, stated rather than implied:
 
@@ -47,6 +54,8 @@ USAGE
     python3 scripts/analysis/collect_throughput_bench.py sweep --delay 1.5
     python3 scripts/analysis/collect_throughput_bench.py governor
     python3 scripts/analysis/collect_throughput_bench.py patterns
+    python3 scripts/analysis/collect_throughput_bench.py dates
+    python3 scripts/analysis/collect_throughput_bench.py loop --seconds 7
 
     # compare two trees (a git worktree of an older commit works unchanged):
     python3 scripts/analysis/collect_throughput_bench.py stages --repo /tmp/oo-old
@@ -347,9 +356,218 @@ def cmd_patterns(args) -> None:
           f"= {sum(r[0] for r in carriers) / total * 100:.0f}% of all pattern time")
 
 
+# --------------------------------------------------------------------------- #
+# dates: what the unbounded date search costs, and what it INVENTS (P3)
+# --------------------------------------------------------------------------- #
+
+_MONTHS_BY_LANG = {
+    "en": "January February March April May June July August September October November December",
+    "fr": "janvier février mars avril mai juin juillet août septembre octobre novembre décembre",
+    "es": "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre",
+    "ru": "января февраля марта апреля мая июня июля августа сентября октября ноября декабря",
+}
+
+_PLACEMENTS = {
+    "meta article:published_time":
+        ("<meta property='article:published_time' content='2026-03-04T09:15:00Z'>", ""),
+    "json-ld datePublished":
+        ("<script type='application/ld+json'>{\"@type\":\"NewsArticle\","
+         "\"datePublished\":\"2026-03-04T09:15:00Z\"}</script>", ""),
+    "time[datetime]": ("", "<time datetime='2026-03-04T09:15:00Z'>4 March 2026</time>"),
+    "span.date": ("", "<span class='date'>4 March 2026</span>"),
+    "a.date": ("", "<a class='date' href='/archive/2026/03/04'>4 March 2026</a>"),
+    "td.date": ("", "<table><tr><td class='date'>4 March 2026</td></tr></table>"),
+    "free text only": ("", "<p>Published 4 March 2026 by the secretariat.</p>"),
+    "footer copyright ONLY (no real date)":
+        ("", "<footer>Copyright 2019 The Institute. All rights reserved.</footer>"),
+    "related sidebar ONLY (no real date)":
+        ("", "<aside><h3>Related</h3><ul><li>An earlier report, 12 January 2011</li>"
+             "<li>The first consultation, 8 August 2014</li></ul></aside>"),
+    "a date only in the body prose":
+        ("", "<p>Officials met on 11 September 2001 and returned to it later.</p>"),
+    "no date anywhere": ("", ""),
+}
+
+
+def _neutral_body(rnd, nchars: int) -> str:
+    """A body with NO date mentions at all.
+
+    ``_body`` deliberately seeds 30 % of its paragraphs with "On 11 September 2001...",
+    which is right for the extraction benches and fatal here: htmldate finds that date
+    early and never reaches the last resort, so a page built on it measures the CHEAP
+    path while claiming to measure the expensive one. The first run of this mode did
+    exactly that and reported a 1.2x ratio for a 30x effect.
+    """
+    out, n = [], 0
+    while n < nchars:
+        p = " ".join(rnd.choice(_VOCAB) for _ in range(rnd.randint(30, 70)))
+        out.append("<p>" + p + "</p>")
+        n += len(p)
+    return "".join(out)
+
+
+def _date_page(rnd, size, *, head="", body_extra="", lang="en", dated_nodes=0):
+    nodes = ""
+    if dated_nodes:
+        months = _MONTHS_BY_LANG[lang].split()
+        seen, out = set(), []
+        while len(seen) < dated_nodes:
+            s = f"{rnd.randint(1, 28)} {rnd.choice(months)} {rnd.randint(1998, 2025)}"
+            if s in seen:
+                continue
+            seen.add(s)
+            out.append(f"<li>{s}</li>")
+        nodes = "<aside><ul>" + "".join(out) + "</ul></aside>"
+    return (f"<html lang='{lang}'><head><title>The committee assessment</title>{head}</head>"
+            f"<body>{nodes}<article><h1>The committee assessment</h1>{body_extra}"
+            f"{_neutral_body(rnd, size)}</article></body></html>")
+
+
+def cmd_dates(args) -> None:
+    import trafilatura
+
+    # htmldate memoises EVERY candidate expression in a process-wide 8192-entry LRU
+    # (``try_date_expr``), so a warm repeat of the same page measures the cache, not the
+    # search -- the first run of this mode did that and reported 1.1x for a 30x effect.
+    # A collector meeting new pages pays the COLD cost per distinct expression; a corpus
+    # that repeats expressions pays the warm one. Both are real, so both are printed.
+    from htmldate.extractors import try_date_expr
+
+    def run(html, extensive, *, cold, n=3):
+        trafilatura.extract_metadata(html, default_url="https://ex.org/a", extensive=extensive)
+        total = 0.0
+        for _ in range(n):
+            if cold:
+                try_date_expr.cache_clear()
+            t0 = time.perf_counter()
+            m = trafilatura.extract_metadata(html, default_url="https://ex.org/a",
+                                             extensive=extensive)
+            total += time.perf_counter() - t0
+        return total / n * 1000, (m.date if m else None)
+
+    print("P3 -- htmldate's last-resort date hunt. TRUE publication date = 2026-03-04.")
+    print("The middle column is the cost argument; the RIGHT-HAND dates are the honesty one.\n")
+    print(f"{'date placement':<38} {'unbounded':>22} {'bounded':>22}")
+    print("-" * 84)
+    for name, (head, body_extra) in _PLACEMENTS.items():
+        rnd = random.Random(5)
+        html = _date_page(rnd, args.size, head=head, body_extra=body_extra)
+        t1, d1 = run(html, True, cold=True)
+        t0, d0 = run(html, False, cold=True)
+        flag = ""
+        if d1 and str(d1) != "2026-03-04":
+            flag = "  <- INVENTED"
+        elif d1 and not d0:
+            flag = "  <- lost by the bound"
+        print(f"{name:<38} {str(d1):>12} {t1:>8.1f}ms {str(d0):>12} {t0:>8.1f}ms{flag}")
+
+    print("\nAnd the cost is LANGUAGE-dependent: htmldate's own fast parser covers the")
+    print("English shapes, so only the others reach dateparser's locale search.\n")
+    print(f"{'lang':<6} {'nodes':>6} {'COLD unbounded':>16} {'COLD bounded':>14} "
+          f"{'ratio':>7} {'WARM unbounded':>16}")
+    print("-" * 72)
+    for lang in ("en", "fr", "es", "ru"):
+        for dated in (30, 150):
+            rnd = random.Random(11)
+            html = _date_page(rnd, args.size, lang=lang, dated_nodes=dated)
+            t1, _ = run(html, True, cold=True)
+            t0, _ = run(html, False, cold=True)
+            tw, _ = run(html, True, cold=False)
+            print(f"{lang:<6} {dated:>6} {t1:>14.1f}ms {t0:>12.1f}ms "
+                  f"{t1 / max(t0, 1e-9):>6.1f}x {tw:>14.1f}ms")
+    print("\nCOLD is what a collector meeting NEW pages pays; WARM is the same page again,")
+    print("served by htmldate's 8192-entry expression cache. A long run sits between them,")
+    print("and moves toward COLD as the corpus's distinct date expressions exceed 8192.")
+
+
+# --------------------------------------------------------------------------- #
+# loop: does the collector starve our own API server? (P6)
+# --------------------------------------------------------------------------- #
+
+def cmd_loop(args) -> None:
+    import asyncio
+    import threading
+
+    from src.monitoring import latency
+
+    rnd = random.Random(5)
+    pages = [_page(rnd, 0, j, args.size) for j in range(24)]
+
+    def worker(stop, counter):
+        from src.analytics.extract import get_extractor
+        from src.ingest.extract import extract_article
+        from src.timemap.dateextract import extract_dates
+        ex = get_extractor("baseline")
+        i = 0
+        while not stop.is_set():
+            doc = extract_article(pages[i % len(pages)], url="https://bench.example/x")
+            i += 1
+            if doc:
+                ex.extract(doc.text, title="Story", language="en")
+                extract_dates(doc.text, language="en")
+            counter[0] += 1
+
+    def handler_body():
+        """A modest SYNCHRONOUS handler, the shape latency.py exists to police: real
+        Python on the loop, not a sleep. A sleep would measure nothing -- it yields."""
+        tot = 0
+        for i in range(60_000):
+            tot += i * i % 7
+        return tot
+
+    async def probe(stop, out):
+        while not stop.is_set():
+            t0 = time.monotonic()
+            handler_body()
+            out.append((time.monotonic() - t0) * 1000.0)
+            await asyncio.sleep(0.05)
+
+    def pct(vals, p):
+        if not vals:
+            return 0.0
+        s = sorted(vals)
+        return s[min(len(s) - 1, int(round(p / 100 * (len(s) - 1))))]
+
+    async def main_loop():
+        latency.start_watchdog()
+        await asyncio.sleep(0.5)
+        print("P6 -- is the collector starving our own API server?\n")
+        print(f"{'workers':>7} {'art/s':>7} | {'HANDLER ms':>20} | {'LOOP LAG ms':>22} | {'window >=':>16}")
+        print(f"{'':>7} {'':>7} | {'p50':>9}{'p95':>11} | {'p50':>7}{'p95':>7}{'peak':>8} | {'250ms':>8}{'25ms':>8}")
+        print("-" * 84)
+        for n in [int(x) for x in str(args.sweep_workers).split(",")]:
+            latency._reset_for_tests()
+            stop, counter, reqs = threading.Event(), [0], []
+            ts = [threading.Thread(target=worker, args=(stop, counter), daemon=True)
+                  for _ in range(n)]
+            for t in ts:
+                t.start()
+            task = asyncio.create_task(probe(stop, reqs))
+            t0 = time.monotonic()
+            await asyncio.sleep(args.seconds)
+            el, done = time.monotonic() - t0, counter[0]
+            with latency._LOCK:
+                lags = [v for _, v in latency._LAG]
+            stop.set()
+            await asyncio.sleep(0.05)
+            task.cancel()
+            for t in ts:
+                t.join(timeout=5)
+            f250 = sum(1 for v in lags if v >= 250) / max(1, len(lags))
+            f25 = sum(1 for v in lags if v >= 25) / max(1, len(lags))
+            print(f"{n:>7} {done / el:>7.1f} | {pct(reqs, 50):>9.1f}{pct(reqs, 95):>11.1f} | "
+                  f"{pct(lags, 50):>7.1f}{pct(lags, 95):>7.1f}{max(lags or [0]):>8.1f} | "
+                  f"{f250:>8.0%}{f25:>8.0%}")
+        print("\nA handler column that does not move with the worker count is the finding:")
+        print("the GIL switches every 5 ms, so a loop task loses slices, not seconds.")
+
+    asyncio.run(main_loop())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("mode", choices=("stages", "pass", "sweep", "governor", "patterns"))
+    ap.add_argument("mode", choices=("stages", "pass", "sweep", "governor", "patterns",
+                                     "dates", "loop"))
     ap.add_argument("--repo", default=os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))), help="tree to measure (a git worktree works)")
     ap.add_argument("--articles", type=int, default=12)
@@ -360,11 +578,13 @@ def main() -> None:
                     help="simulated per-fetch latency (1.5 ~ the Tor shape)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--sweep-workers", default="1,4,8,16,50")
+    ap.add_argument("--seconds", type=float, default=7.0, help="loop: seconds per row")
     args = ap.parse_args()
 
     _bootstrap(args.repo)
     {"stages": cmd_stages, "pass": cmd_pass, "sweep": cmd_sweep,
-     "governor": cmd_governor, "patterns": cmd_patterns}[args.mode](args)
+     "governor": cmd_governor, "patterns": cmd_patterns, "dates": cmd_dates,
+     "loop": cmd_loop}[args.mode](args)
 
 
 if __name__ == "__main__":

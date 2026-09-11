@@ -12028,7 +12028,7 @@ Recorded in full in [`LESSONS.md`](LESSONS.md).
 
 ---
 
-## PENDING (2026-09-10) — collector throughput: P1, P2, P4, P5 SHIPPED; only P3 open
+## CLOSED (2026-09-10/09-11) — collector throughput: P1, P2, P3, P4, P5, P6 ALL SHIPPED
 
 Recorded from the measured investigation in
 [`docs/audit/12_COLLECT_THROUGHPUT_2026-09-10.md`](../audit/12_COLLECT_THROUGHPUT_2026-09-10.md),
@@ -12052,13 +12052,31 @@ article; the identity check a per-document rebuild breaks) are in `LESSONS.md`.
 Keyword extraction 24-25 ms -> 11-12 ms per article. Byte-identical output with the flag
 on AND off, and the two hashes differ from each other so the check discriminates.
 
-**P3 — bound `htmldate`'s `dateparser` fallback in `extract_article`.** With a parseable
-`article:published_time` the whole extractor costs 6.9 ms. Without one,
-`trafilatura.extract_metadata` → `htmldate.find_date` → `dateparser` runs a full locale
-search: **measured 434 ms per article**, 44 % of a profile, `regex.compile` called 954
-times. That is a tail every awkwardly-dated page pays on the hot path. Bounding it changes
-published-date recall on those pages, so it is a ruling, not a cleanup. (Related and
-cheaper: `extract_article` parses the same HTML twice — `extract` then `extract_metadata`.)
+**P3 — bound `htmldate`'s `dateparser` fallback. SHIPPED 2026-09-11 (maintainer: "do P3
+and P6"), and the item TURNED AROUND under measurement.** It was recorded as a speed trade
+— 434 ms per article against published-date recall. Measuring it first (`bench dates`, the
+reproduction) found something else: on a page with **no publication date at all** the last
+resort does not answer "unknown", it answers. A copyright footer became `2019-01-01`, a
+*Related articles* sidebar `2011-01-12`, a sentence in the body `2001-09-11` — each stored
+as that article's publication date, travelling into the timemap, the agenda and every
+trend with nothing downstream able to tell it from a real one. **So the reason it shipped
+is the fabrication, not the speed.** Every STRUCTURED placement is untouched
+(`article:published_time`, JSON-LD, `<time datetime>`, `<span class="date">` — same date,
+same cost), and what is genuinely lost is named: a date only in `<a class="date">`,
+`<td class="date">` (htmldate's element scan narrowing, not the free-text resort) or only
+in free text. `OO_EXTENSIVE_DATE_SEARCH=1` restores the old behaviour whole, with the
+fabrications attached. TWO CORRECTIONS TO THE RECORDED FIGURE, both load-bearing: the cost
+is **language-dependent** (htmldate's own fast parser covers the English shapes, so only
+the others reach `dateparser` — es/ru measured 220/207 ms against 9 ms bounded, ~24x/14x,
+where en is 1.4x), and it is **not a flat per-article tail** — `try_date_expr` is an
+`@lru_cache(8192)` over expressions, process-wide, so a warm repeat costs ~10 ms and a long
+run moves toward the cold figure only as the corpus's distinct date expressions exceed
+8,192. Report §12; `tests/test_extract_date_bound.py`, 4 mutants dead.
+**STILL OPEN, deliberately untouched:** `extract_article` parses the same HTML twice
+(`extract` then `extract_metadata`). It was left alone because `trafilatura.extract`
+PRUNES the tree it is given, so handing one parse to both risks the second reading a
+mutated document — a correctness risk for ~1 ms, and one that would need its own
+differential to retire.
 
 **P4 — the two self-inflicted throttles. SHIPPED 2026-09-10 (same session).**
 (a) `cpu_saturated` fired at 92% SYSTEM-WIDE CPU, which a healthy CPU-bound collector
@@ -12074,8 +12092,28 @@ re-pinning; the guarantee is narrow and checkable (a ceiling of 1 cannot survive
 passes) and does NOT claim recovery to w_max while external pressure lasts. `memguard`,
 which is what actually protects the machine, is untouched. Details in the audit report §11.
 
-**P6 (NEW, 2026-09-10) — back the collector off on measured EVENT-LOOP LAG, not on CPU
-saturation.** P4a's honest cost: the API server shares this process, so collector threads
+**P6 — back the collector off on measured EVENT-LOOP LAG. SHIPPED 2026-09-11, and THE
+MEASUREMENT CAME BACK NEGATIVE, which is the finding.** `bench loop` puts a synchronous
+handler body on a real event loop and runs it against real per-article extraction in
+collector threads: **the handler does not move.** From 0 workers to 32 it costs 3.4-3.5 ms
+at p50 and ~4 ms at p95, and loop-lag p95 stays at or under 20 ms. CPython switches the GIL
+every 5 ms, so a loop task loses slices, not seconds. **P4a's stated cost is smaller than
+it was recorded as being, and this control does not fire on the workload that motivated
+it.** It ships as a NET rather than a fix, and says so: 250 ms sustained across a quarter
+of a 10 s window is far outside anything the bench produced. The design is mostly refusals
+— the reading is a FRACTION, because `peak_ms` is sticky over a 10 s window against a
+1.5 s tick (the measured 379 ms singleton would cut workers for seven ticks after recovery)
+and `latest_ms` reads near zero on a loaded server that happened to be free; an absent
+reading is `measured: False` with a reason, never a fabricated `0.0`; `FRACTION=0` disables
+the control outright rather than hiding it behind an unreachable threshold; and the reading
+rides EVERY sample, since on this workload the number is most of what the control delivers.
+**P4a's lesson is promoted from a comment to a mechanism:** a synchronous call on the loop
+blocks it by itself, so after 8 fruitless cuts (12 s, longer than the lag window on
+purpose) the back-off says so once and stands down, re-arming on a healthy tick. Report
+§13; `tests/test_loop_lag_backoff.py`, 11 mutants dead.
+
+*The original entry, kept because it is the record of what was believed before the
+measurement:* P4a's honest cost: the API server shares this process, so collector threads
 and the event loop compete for one GIL, and the old blanket CPU back-off had an undesigned
 side effect -- cutting permits freed GIL time and kept the local UI responsive during a
 heavy pass. Not cutting them can make the UI feel slower while collecting on a small box.

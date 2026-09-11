@@ -8806,3 +8806,84 @@
   when a producer and a consumer live in different files and agree only by convention, the
   convention is the thing to assert — and a green self-check on the artifact is not evidence
   that its two halves agree.
+
+- **A PERFORMANCE ITEM CAN TURN OUT TO BE AN HONESTY ITEM, AND YOU ONLY FIND OUT BY
+  LOOKING AT WHAT THE SLOW PATH RETURNS (2026-09-11, P3).** The queue recorded
+  `htmldate`'s last-resort date search as 434 ms per article — a speed trade against
+  published-date recall, deferred for a ruling. Measuring the OUTPUT beside the timing
+  changed the item: on a page with no publication date the last resort does not answer
+  "unknown", it answers. A copyright footer became `2019-01-01`, a *Related articles*
+  sidebar `2011-01-12`, a sentence in the body `2001-09-11` — each stored as that
+  article's publication date, with nothing downstream able to tell it from a real one.
+  **GENERAL FORM: when profiling names an expensive fallback, print what it RETURNS on the
+  inputs that reach it before deciding what the change costs.** A fallback exists because
+  the cheap path failed, so it is running on exactly the inputs where its answer is least
+  constrained — which is where it is most likely to be inventing. The trade here was never
+  recall-for-speed; the expensive path was buying wrong answers, and the honest measurement
+  of its recall is a truth table by placement, not a percentage over a scraped sample.
+
+- **A BENCH THAT REUSES A FIXTURE INHERITS ITS ASSUMPTIONS — AND CAN MEASURE THE CHEAP
+  PATH WHILE CLAIMING THE EXPENSIVE ONE (2026-09-11, twice in one afternoon).** The new
+  date bench reported **1.2× for a 30× effect**, twice, for two different reasons. (1) It
+  reused the harness's `_body()`, which deliberately seeds 30 % of its paragraphs with
+  *"On 11 September 2001…"* — right for the extraction benches, fatal here, because
+  htmldate found that date early and never reached the last resort the mode exists to
+  measure. (2) It warmed each page before timing it, and `htmldate.extractors.try_date_expr`
+  is an `@lru_cache(8192)` over candidate expressions, so the timed repeat measured the
+  cache. **GENERAL FORM: before trusting a benchmark that contradicts a recorded figure,
+  check that the fixture still reaches the code path, and that a memoising layer has not
+  turned the warm-up into the measurement.** The fix for the second one is also the honest
+  reporting: print COLD and WARM side by side, because a long collection run sits between
+  them and moves toward cold as the corpus's distinct inputs exceed the cache.
+
+- **A COST THAT ONLY APPEARS IN SOME LANGUAGES WILL NOT REPRODUCE IN ENGLISH (2026-09-11,
+  P3).** The recorded 434 ms would not reproduce, and chasing that produced the real
+  characterisation rather than a correction to the record: `htmldate`'s own `custom_parse`
+  handles the English date shapes without ever reaching `dateparser`, so only the others
+  pay the locale search. Spanish and Russian pages measured 220 ms and 207 ms against 9 ms
+  bounded (~24× and ~14×) where English was 1.4×. **GENERAL FORM: in an app that reads
+  twelve languages, an English fixture is not a representative fixture, and a performance
+  figure that fails to reproduce may be a figure that was measured on a different locale
+  rather than a figure that was wrong.**
+
+- **THE MEASUREMENT THAT REFUTES YOUR OWN PREMISE IS STILL THE DELIVERABLE (2026-09-11,
+  P6).** P6 existed to fix P4a's stated cost: the API server shares the process, so
+  removing the blanket CPU back-off might starve it and make the local UI feel slow. Put on
+  a real event loop with a real synchronous handler and real collector threads, **the
+  handler did not move** — 3.4–3.5 ms p50 from 0 workers to 32, loop-lag p95 at or under
+  20 ms. CPython switches the GIL every 5 ms, so a loop task loses slices, not seconds. The
+  control shipped anyway, as a net rather than a fix, with the negative result as its
+  headline and the numbers that would trip it published. **GENERAL FORM: a control for a
+  harm you could not reproduce is honest only if it SAYS so — in the docstring, the report
+  and the tests — and only if its reading is visible when it is quiet, because otherwise an
+  operator cannot tell "we watched and it was fine" from "nobody looked".**
+
+- **A BACK-OFF SHOULD CHECK WHETHER ITS OWN RESPONSE IS WORKING (2026-09-11, P6, promoting
+  P4a's lesson from a comment to a mechanism).** P4a removed a CPU back-off that was not
+  wrong about its reading — the machine really was full — but whose response could not
+  relieve what it responded to, because the CPU it freed went back to the same process.
+  Loop lag can be in the identical position: a synchronous call on the event loop blocks it
+  BY ITSELF and no number of collector permits handed back will move that. The difference
+  is that the outcome is measurable within the pass, so the control now cuts, remembers the
+  reading it started from, and after a patience window with no improvement says once that
+  the collector is not the cause and stands down — re-arming on a healthy tick, so standing
+  down is per-episode rather than for the pass. **GENERAL FORM: where a control's effect on
+  its own input is measurable, measure it; a comment promising "this is the case where
+  cutting helps" is an assumption, and the same assumption is what the previous control got
+  wrong.** The patience window has to be longer than the signal's own averaging window —
+  here 12 s against a 10 s lag window — or the control judges its cut against samples taken
+  before the cut, and finds no improvement that could possibly be there yet.
+
+- **`peak` AND `latest` BOTH FAIL AS CONTROL INPUTS, AND THE FRACTION OF A WINDOW IS WHAT
+  WORKS (2026-09-11, P6).** `latency.py` published `latest_ms` and `peak_ms` separately and
+  correctly, for a disclosure. Neither survives being made into a back-off trigger: the
+  peak is STICKY (a 10 s window against a 1.5 s governor tick means one spike is still the
+  peak seven ticks later, so the control keeps cutting long after recovery), and the latest
+  is a single sample that reads near zero on a loaded server that happened to be free at
+  that instant — which that module's own docstring already said about it. What discriminates
+  a spike from sustained pressure is the SHARE of the window that breached: at 32 collector
+  threads the measured peak was 379 ms while the p50 was 1.6 ms and 3 % of samples passed
+  250 ms. **GENERAL FORM: a reading published for a human to look at is not automatically a
+  reading a controller can act on. Before wiring an existing metric to a decision, ask what
+  its window and its cadence do to the decision's stability, and add the third reading if
+  neither published one has the right shape.**

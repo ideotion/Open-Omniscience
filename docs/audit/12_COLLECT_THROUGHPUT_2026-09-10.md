@@ -469,3 +469,182 @@ section exists to let an operator read. The reason is now a wrapping line rather
 `.vr` value. The HTML was correct throughout; only the rendered page showed it, which is
 precisely the argument for the click-through rather than an argument against the node
 harness.
+
+---
+
+## 12. What shipped (P3) — and why the item turned around under measurement
+
+P3 was recorded as a SPEED item: *"`trafilatura.extract_metadata` → `htmldate.find_date`
+→ `dateparser` runs a full locale search: measured 434 ms per article."* Bounding it was
+expected to be a straight trade of published-date recall for throughput, which is why it
+was left as a ruling rather than a cleanup.
+
+Measuring it first changed the argument. `collect_throughput_bench.py dates` is the
+reproduction; run it before touching any of this.
+
+### 12.1 The bound costs nothing where a real date exists
+
+| date placement | unbounded | bounded |
+|---|---|---|
+| `meta article:published_time` | 2026-03-04 · 1.6 ms | **2026-03-04** · 1.5 ms |
+| JSON-LD `datePublished` | 2026-03-04 · 1.5 ms | **2026-03-04** · 1.4 ms |
+| `<time datetime>` | 2026-03-04 · 2.3 ms | **2026-03-04** · 2.3 ms |
+| `<span class="date">` | 2026-03-04 · 2.2 ms | **2026-03-04** · 2.3 ms |
+
+Those four are what a real news page uses. Nothing is traded on any of them, which is the
+precondition for the rest of the argument being worth making.
+
+### 12.2 The reason it shipped is not the speed
+
+On a page with **no publication date at all**, the last resort does not answer "unknown".
+It answers.
+
+| the page's only date-like text | unbounded returns | bounded returns |
+|---|---|---|
+| `Copyright 2019 The Institute.` | **2019-01-01** | `None` |
+| a *Related articles* sidebar | **2011-01-12** | `None` |
+| `Officials met on 11 September 2001…` in the body | **2001-09-11** | `None` |
+
+Each of those is stored as *this article's publication date* and travels into the
+timemap, the agenda and every trend as fact, with nothing downstream able to tell it from
+a real one. `None` is the true answer and one the app already renders honestly. A project
+whose first non-negotiable is *no fabricated anything* cannot keep a date source that
+fabricates on exactly the pages where it is the only source.
+
+### 12.3 What the bound genuinely loses, stated rather than glossed
+
+| date placement | unbounded | bounded |
+|---|---|---|
+| `<a class="date">` | 2026-03-04 | **lost** |
+| `<td class="date">` | 2026-03-04 | **lost** |
+| a date only in free text | 2026-03-04 | **lost** |
+
+Two of the three are not the free-text resort at all — they are htmldate's element scan
+narrowing from `.//*` to a fast list (`div h2 h3 h4 li p span time ul`), so an anchor or a
+table cell falls outside it. These are correct dates the bounded path misses. That is why
+`OO_EXTENSIVE_DATE_SEARCH=1` restores the old behaviour whole, with §12.2 attached to it.
+
+### 12.4 The 434 ms reproduces — but only once the page is not in English
+
+The recorded figure did not reproduce at first, and chasing that is where the real
+characterisation came from. htmldate's `custom_parse` handles the English date shapes
+without ever reaching `dateparser`; only the shapes it cannot parse go to the locale
+search. So the cost is **language-dependent**, which matters rather a lot for a collector
+that reads twelve.
+
+| language | distinct dated nodes | unbounded (cold) | bounded | ratio |
+|---|---:|---:|---:|---:|
+| en | 150 | 12.4 ms | 9.1 ms | 1.4× |
+| fr | 150 | 27.7 ms | 9.4 ms | 3.0× |
+| **es** | 150 | **219.7 ms** | 9.2 ms | **23.9×** |
+| **ru** | 150 | **206.7 ms** | 15.1 ms | **13.7×** |
+
+**Two corrections to the recorded figure, both of which a reader needs.** First, it is not
+a flat per-article tail: `htmldate.extractors.try_date_expr` is an `@lru_cache(8192)` over
+candidate expressions, process-wide, so the same page measured *warm* costs ~10 ms rather
+than ~220 ms. A long run sits between the two and moves toward the cold figure as the
+corpus's distinct date expressions exceed 8,192. Second, the first run of the bench itself
+reported **1.2× for a 30× effect**, because it reused `_body()` — which deliberately seeds
+30 % of its paragraphs with *"On 11 September 2001…"*, so htmldate found a date early and
+never reached the last resort. The mode now builds on a date-free body, and says so where
+the function is defined.
+
+### 12.5 Guarded
+
+`tests/test_extract_date_bound.py` — twelve tests, and the middle block is the load-bearing
+one: it asserts that the unbounded search returns a **wrong** date where the bound returns
+none, and fails loudly if upstream ever stops fabricating, because the case for the bound
+would then have to be re-argued rather than quietly inherited. Four mutants, four dead:
+restoring the upstream default, hardcoding the bound past the flag, defaulting the flag on,
+and reading the flag by truthiness instead of an explicit `"1"`.
+
+---
+
+## 13. What shipped (P6) — a control whose headline is that it does not fire
+
+P6 came out of P4a's own honest cost: the API server shares this process, so collector
+threads and the event loop compete for one GIL, and the blanket CPU back-off that P4a
+removed had an undesigned side effect — cutting permits freed GIL time and kept the local
+UI responsive during a heavy pass. The queue recorded loop lag as the direct measurement
+of that concern, and asked for *a threshold picked from real readings, not guessed*.
+
+### 13.1 The readings, and they say the premise does not hold
+
+`collect_throughput_bench.py loop` puts a **synchronous** handler body on a real event loop
+— the shape `latency.py` exists to police — and runs it against real per-article extraction
+in collector threads.
+
+| workers | art/s | handler p50 | handler p95 | lag p50 | lag p95 | lag peak | window ≥250 ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | — | 3.5 ms | 4.0 ms | 0.9 | 2.4 | 3.1 | 0 % |
+| 1 | 30.8 | 3.4 ms | 4.3 ms | 5.5 | 15.3 | 53.2 | 0 % |
+| 8 | 23.3 | 3.4 ms | 3.8 ms | 1.7 | 10.7 | 11.2 | 0 % |
+| 16 | 22.3 | 3.5 ms | 5.3 ms | 1.9 | 12.1 | 104.3 | 0 % |
+| 32 | 22.5 | 3.4 ms | 4.0 ms | 1.6 | 20.1 | 379.7 | 3 % |
+
+**The handler column does not move.** From zero collector threads to thirty-two, a
+synchronous handler on the loop costs 3.4–3.5 ms at p50 and ~4 ms at p95. CPython switches
+the GIL every 5 ms, so a loop task loses slices, not seconds. **P4a's stated cost is
+therefore smaller than it was recorded as being**, and the control P6 asks for does not fire
+on the workload that motivated it.
+
+### 13.2 So it ships as a net, and the design is mostly refusals
+
+*The reading is a fraction, not a peak.* `latency.loop_pressure(threshold_ms)` reports what
+share of the watchdog's window breached. Neither published number works as a control on its
+own: `peak_ms` is sticky over a 10 s window against a 1.5 s governor tick, so the 379.7 ms
+singleton above would keep cutting workers for seven ticks after the loop recovered;
+`latest_ms` reads near zero on a loaded server that happened to be free at that instant,
+which `loop_lag`'s own docstring already said. The fraction calls a spike a spike.
+
+*An absent reading is absent.* No running loop, or a watchdog that never started, gives
+`measured: False` with a reason and a `None` fraction — never `0.0`. A broken read reports
+itself rather than returning a healthy shape, and never breaks the tick.
+
+*Off is expressed as off.* `OO_LOOP_LAG_BACKOFF_FRACTION=0` disables the control and still
+publishes the reading. A threshold set so high it can never be reached would be a disabled
+control that still looks armed.
+
+*The reading rides every sample.* Since this control does not fire on the measured
+workload, the number is most of what it delivers: an operator must be able to tell *we
+watched and it was fine* from *nobody looked*.
+
+### 13.3 P4a's lesson, promoted from a comment to a mechanism
+
+A synchronous call on the event loop blocks it **by itself**, and no number of collector
+permits handed back will move that. Cutting anyway is precisely the failure P4a removed —
+descending against a cause the descent cannot reach. The difference here is that the
+outcome is measurable *within the pass*, so the control checks its own work:
+`CollectionMonitor._loop_lag_gate` cuts while the lag holds, and after
+`_LOOP_LAG_PATIENCE` (8 ticks = 12 s, deliberately longer than `latency.py`'s own 10 s
+window, so the samples being judged were taken *after* the first cut) with no improvement
+it says so once and stands down. A healthy tick re-arms it, so standing down is
+per-episode rather than for the pass.
+
+The defaults — 250 ms sustained across a quarter of the window — sit far outside anything
+the bench produced. If this fires, something is happening the bench could not make happen.
+
+### 13.4 Guarded
+
+`tests/test_loop_lag_backoff.py` — seventeen tests, and the discrimination the queue asked
+for is driven through the real `_tick`: a CPU-saturated collector with a responsive loop
+must not be cut (that was the measured 50-to-1 collapse), a starving loop must. **Eleven
+mutants, eleven dead**: deciding on the peak instead of the fraction, treating an absent
+reading as measured, removing the give-up rule, latching it for the whole pass, giving up
+while the cuts *are* working, letting loop-lag mask a more certain harm, raising instead of
+reporting on a broken read, dropping the reading from the sample when the control is quiet,
+bypassing the gate entirely, keeping the observation only when the control acted, and
+emitting the pass note on a zero reading.
+
+The last two came from re-reading the diff before pushing rather than from the matrix, and
+they are the same defect twice: the worst reading of the pass was being recorded *inside*
+the gate, so it went missing in the two cases a reader most needs it — the back-off
+switched off by configuration, and lag that stayed under the bar. Both would then have read
+as a pass with no lag at all. An observation must not be conditional on the control having
+chosen to act.
+
+One more found the same way, and it would have been a red CI rather than a silent hole:
+two of the tick tests set `cpu_sys=99, cpu_proc=390`, which reads as *"the machine is full
+and it is us"* on a 4-core box and as *"it is someone else"* on a 16-core runner — where
+the tick would back off for CPU saturation and never reach the property under test. The
+core count is now pinned, because it is not what those tests are about.

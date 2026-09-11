@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -47,6 +48,17 @@ _DEFAULT_MEM_FLOOR_MB = 512.0  # back off when available memory drops below this
 # means, on average, at least one worker spent the whole interval blocked on the
 # single writer — the gate, not bandwidth, is the limit.
 _WRITER_WAIT_RATE_SAT = 1.0
+
+# P6 (2026-09-11): event-loop starvation. The API server shares this process with the
+# collector, so a worker thread and a request handler compete for one GIL. These two
+# numbers are read from MEASUREMENT, not chosen for roundness -- see loop_starvation.
+_LOOP_LAG_MS = 250.0  # a watchdog sample at/above this is "the loop was blocked"
+_LOOP_LAG_FRACTION = 0.25  # ...and this much of the window must be, before it counts
+# How many consecutive loop-lag cuts to make before concluding the collector is NOT the
+# cause. 8 ticks x 1.5 s = 12 s, which is longer than latency.py's own 10 s lag window --
+# deliberately, because a shorter patience would judge the cut against samples taken
+# before it, and find no improvement that could possibly be there yet.
+_LOOP_LAG_PATIENCE = 8
 
 
 def _log_path():
@@ -136,6 +148,15 @@ def cpu_contention(
     the governor exists to protect the machine's OTHER tenants, not to arbitrate
     between this app's own threads, and cutting collector permits to feed our own
     background work is the same self-defeating trade in a smaller costume.
+
+    ONE EXCEPTION, added by P6 and deliberately kept OUT of this function: the API
+    server is our own thread but it is not our own WORK -- it is the operator waiting on
+    a click, and throughput and interactivity are different currencies. What makes that a
+    separate signal rather than a special case here is that it is separately MEASURABLE:
+    ``loop_starvation`` reads the event loop's own scheduling delay, which says whether
+    the operator is being made to wait, where this function can only say the machine is
+    busy. Adding it to "ours" would have folded a measurable harm into an aggregate that
+    cannot express it.
     """
     if cpu_sys_pct is None or cpu_sys_pct < _CPU_SATURATED_PCT:
         return False, None
@@ -145,6 +166,71 @@ def cpu_contention(
     ours = cpu_proc_pct / n
     others = max(0.0, cpu_sys_pct - ours)
     return others > ours, round(others, 1)
+
+
+def loop_lag_thresholds() -> tuple[float, float]:
+    """``(threshold_ms, min_fraction)`` for the loop-starvation back-off.
+
+    ``OO_LOOP_LAG_BACKOFF_MS`` / ``OO_LOOP_LAG_BACKOFF_FRACTION``; a fraction of 0
+    disables the signal outright (it can then never be True), which is the honest way to
+    turn a control off -- rather than a threshold so high it is off while looking armed.
+    """
+    def _num(name: str, default: float) -> float:
+        try:
+            return float(os.environ.get(name, str(default)))
+        except ValueError:
+            return default
+
+    return _num("OO_LOOP_LAG_BACKOFF_MS", _LOOP_LAG_MS), _num(
+        "OO_LOOP_LAG_BACKOFF_FRACTION", _LOOP_LAG_FRACTION
+    )
+
+
+def loop_starvation(pressure: dict | None) -> tuple[bool, float | None]:
+    """``(is_starving, fraction)`` -- is the collector holding the GIL off our own server?
+
+    P6 (2026-09-11). P4a removed the blanket CPU back-off because a CPU-bound collector
+    produces a full machine BY ITSELF and cutting its permits handed the CPU back to the
+    same process. The residue P4a recorded was interactivity: the old back-off had an
+    undesigned side effect of freeing GIL time for the API server, so removing it might
+    make the local UI feel slower during a pass. Loop lag is the DIRECT measurement of
+    that concern, where CPU saturation cannot tell starving our server from doing the work.
+
+    THE MEASUREMENT CAME BACK NEGATIVE, and that is the honest headline of this control.
+    On a 4-core box, with a synchronous handler body running on the loop while collector
+    threads did real per-article extraction, request latency was FLAT from 0 workers to
+    32 -- p50 3.4-3.6 ms, p95 ~4 ms throughout -- and loop-lag p95 stayed at or under
+    11 ms. Only at 32 workers did a singleton spike reach 210 ms, 3 % of samples. CPython
+    switches the GIL every 5 ms, so a loop wakeup waits slices, not seconds. **P4a's cost
+    is therefore smaller than it was recorded as being, and this control does not fire on
+    the workload that motivated it.**
+
+    It ships anyway, as a net rather than a fix, and the defaults say so: 250 ms sustained
+    across a quarter of a 10 s window is far outside anything the measurement produced, so
+    if this fires, something is happening that the bench could not make happen -- a
+    synchronous DB call on the loop, a slow disk, swap. Publishing the numbers that would
+    trip it is what keeps it from being a control that merely looks protective.
+
+    WHAT IT REFUSES. An absent measurement is not starvation: with no running loop, or a
+    watchdog that never started, ``pressure["measured"]`` is False and this returns False
+    with ``None`` -- a missing reading must never be read as a healthy one OR as a
+    breach. And a fraction, not a peak, is what decides: see ``latency.loop_pressure``
+    for why each of the two published readings fails as a control on its own.
+
+    The caller owns one more refusal this function cannot: a back-off that does not
+    RELIEVE the lag is the exact P4a failure in a smaller costume, so ``CollectionMonitor``
+    gives up after ``_LOOP_LAG_PATIENCE`` fruitless cuts rather than descending forever
+    against a cause that is not the collector.
+    """
+    if not pressure or not pressure.get("measured"):
+        return False, None
+    frac = pressure.get("fraction")
+    if frac is None:
+        return False, None
+    _, min_fraction = loop_lag_thresholds()
+    if min_fraction <= 0:
+        return False, float(frac)  # disabled by configuration; the reading still reports
+    return bool(frac >= min_fraction), float(frac)
 
 
 def _proc_handle():
@@ -294,6 +380,17 @@ class CollectionMonitor:
         # floor the machine hit.
         self._mem_low_ticks = 0
         self._mem_low_min_permits: int | None = None
+        # P6: the loop-lag back-off, and the evidence that it is or is not working.
+        # ``_loop_lag_streak`` counts CONSECUTIVE cuts made for loop lag; if the lag has
+        # not eased after _LOOP_LAG_PATIENCE of them, the collector is not the cause and
+        # cutting further is P4a's exact failure -- descending against something the
+        # descent cannot reach. ``_loop_lag_abandoned`` latches that off until a healthy
+        # tick clears it, so one blocked-loop episode cannot walk the pass to 1 worker.
+        self._loop_lag_ticks = 0
+        self._loop_lag_streak = 0
+        self._loop_lag_abandoned = False
+        self._loop_lag_at_streak_start: float | None = None
+        self._loop_lag_max_fraction: float | None = None
         # Per-tick deltas of the gate's CUMULATIVE counters — the real saturation
         # signal. Instantaneous ``waiters`` reads ~1 at a sample tick even when the
         # gate queued 23 deep between ticks (a write releases fast), so the old
@@ -433,17 +530,36 @@ class CollectionMonitor:
             or (contended_rate is not None and contended_rate >= max(1.0, permits * 0.5))
         )
 
+        # P6: is the collector holding the GIL off our own API server? A reading, a
+        # decision, and a refusal to keep cutting when cutting is not helping.
+        loop_pressure = self._loop_pressure()
+        loop_lagging, loop_fraction = loop_starvation(loop_pressure)
+        # Record the worst reading of the pass HERE rather than inside the gate: it is an
+        # observation, and an observation that is only kept when the control chose to act
+        # would go missing in exactly the two cases a reader most needs it -- the control
+        # disabled by configuration, and lag that stayed under the bar.
+        if loop_fraction is not None:
+            self._loop_lag_max_fraction = (
+                loop_fraction
+                if self._loop_lag_max_fraction is None
+                else max(self._loop_lag_max_fraction, loop_fraction)
+            )
+        loop_lagging = self._loop_lag_gate(loop_lagging, loop_fraction)
+
         new_permits, reason = self._gov.observe(
             rate,
             writer_saturated=writer_saturated,
             cpu_saturated=cpu_saturated,
             mem_low=mem_low,
+            loop_lagging=loop_lagging,
         )
 
         # Aggregates for the summary.
         self._n += 1
         self._rate_sum += rate
         self._peak_permits = max(self._peak_permits, permits, new_permits)
+        if reason == "loop-lag":
+            self._loop_lag_ticks += 1
         if reason == "mem-low":
             self._mem_low_ticks += 1
             self._mem_low_min_permits = (
@@ -501,6 +617,17 @@ class CollectionMonitor:
             # machine was not saturated or the attribution could not be made; the
             # perf log must not read those as "no other load", so neither is 0.
             "cpu_others_pct": cpu_others,
+            # P6: the event loop's own scheduling delay, in EVERY sample rather than
+            # only when it acts. A control that measured something and never showed the
+            # reading would leave an operator unable to tell "we watched and it was fine"
+            # from "nobody looked" -- and on the measured workload this one does not fire,
+            # so the reading is most of its value. ``measured: False`` carries its reason.
+            "loop": loop_pressure,
+            "loop_backoff": {
+                "engaged": loop_lagging,
+                "streak": self._loop_lag_streak,
+                "abandoned": self._loop_lag_abandoned,
+            },
             "mem_avail_mb": mem_avail,
             "mem_total_mb": vit.get("mem_total_mb"),
             "rss_mb": vit.get("rss_mb"),
@@ -526,6 +653,76 @@ class CollectionMonitor:
             _hwm_observe(phase=f"collecting (pass {self._pass_id})" if self._pass_id else "collecting")
         except Exception:  # noqa: BLE001 - never break a sample on a forensic sidecar
             pass
+
+    def _loop_pressure(self) -> dict | None:
+        """This tick's event-loop reading, or an honest absence.
+
+        Read through the module attribute so a test can swap it, and never allowed to
+        break a tick: instrumentation that can fail the thing it measures is worse than
+        no instrumentation. A failure here reports itself rather than returning a healthy
+        shape, because ``loop_starvation`` must be able to tell a quiet loop from a
+        missing reading.
+        """
+        try:
+            from src.monitoring import latency
+
+            threshold_ms, _ = loop_lag_thresholds()
+            return latency.loop_pressure(threshold_ms)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.debug("loop-pressure read failed", exc_info=True)
+            return {"measured": False, "reason": f"loop-lag read failed: {exc}"}
+
+    def _loop_lag_gate(self, lagging: bool, fraction: float | None) -> bool:
+        """P4a's lesson as a MECHANISM: stop cutting when cutting is not helping.
+
+        The CPU back-off P4a removed was wrong not because the reading was false -- the
+        machine really was full -- but because the response could not relieve what it
+        responded to. Loop lag can be in the same position: a synchronous call on the
+        event loop blocks it BY ITSELF, and no number of collector permits given back
+        will move that. The difference is that here the outcome is measurable within the
+        pass, so the control can check its own work instead of a comment promising it does.
+
+        So: while the lag holds, cut, and remember the fraction at the start of the
+        streak. After ``_LOOP_LAG_PATIENCE`` consecutive cuts -- 12 s, longer than
+        latency.py's own 10 s window, so the samples being judged are ones taken AFTER
+        the first cut -- if the fraction has not come down at all, conclude that the
+        collector is not the cause, say so once, and stop. A healthy tick clears the
+        latch, so a later, genuinely collector-caused episode is still acted on.
+        """
+        if not lagging:
+            if self._loop_lag_streak or self._loop_lag_abandoned:
+                self._loop_lag_streak = 0
+                self._loop_lag_abandoned = False
+                self._loop_lag_at_streak_start = None
+            return False
+
+        if self._loop_lag_abandoned:
+            return False
+
+        if self._loop_lag_streak == 0:
+            self._loop_lag_at_streak_start = fraction
+        self._loop_lag_streak += 1
+
+        if self._loop_lag_streak > _LOOP_LAG_PATIENCE:
+            start = self._loop_lag_at_streak_start
+            improved = start is not None and fraction is not None and fraction < start
+            if not improved:
+                self._loop_lag_abandoned = True
+                _LOG.info(
+                    "collect: %d consecutive worker cuts did not ease event-loop lag "
+                    "(%.0f%% of the window blocked at the start, %.0f%% now) — the "
+                    "collector is not what is holding the loop, so the loop-lag back-off "
+                    "stands down for this episode; something is blocking the loop itself",
+                    self._loop_lag_streak - 1,
+                    (start or 0.0) * 100,
+                    (fraction or 0.0) * 100,
+                )
+                return False
+            # It IS easing: keep going, and re-baseline so the next stretch is judged
+            # against where this one got to rather than against the original peak.
+            self._loop_lag_streak = 1
+            self._loop_lag_at_streak_start = fraction
+        return True
 
     def _sample_pool(self) -> None:
         """One cheap reading of the engine pool's checked-out count.
@@ -640,6 +837,32 @@ class CollectionMonitor:
                 "never assume a bigger box will hit the same ceiling."
             )
 
+        # P6: what the event loop did this pass, said in the same place the memory
+        # headroom is said. Absent when the loop was never blocked, because a line
+        # reporting "0 loop-lag ticks" on every healthy pass is noise that trains a
+        # reader to skip the section where the real one will appear.
+        loop_note = None
+        if self._loop_lag_ticks or self._loop_lag_abandoned or self._loop_lag_max_fraction:
+            worst = (
+                f"{self._loop_lag_max_fraction * 100:.0f}% of a sampling window"
+                if self._loop_lag_max_fraction is not None
+                else "an unmeasured share of the window"
+            )
+            loop_note = (
+                f"the API server's event loop was blocked for {worst} at worst this pass; "
+                f"{self._loop_lag_ticks} worker cut(s) were made for it"
+            )
+            if not self._loop_lag_ticks:
+                loop_note += (
+                    " — none, because it stayed under the back-off's bar or the back-off "
+                    "is switched off; the reading is reported either way"
+                )
+            if self._loop_lag_abandoned:
+                loop_note += (
+                    " — and they did not ease it, so the back-off stood down: something "
+                    "other than the collector was holding the loop"
+                )
+
         return {
             "verdict": verdict,
             "method": (
@@ -659,6 +882,10 @@ class CollectionMonitor:
             "mem_low_ticks": self._mem_low_ticks,
             "mem_low_min_permits": self._mem_low_min_permits,
             "memory_headroom_note": memory_headroom_note,
+            "loop_lag_ticks": self._loop_lag_ticks,
+            "loop_lag_max_fraction": self._loop_lag_max_fraction,
+            "loop_lag_backoff_abandoned": self._loop_lag_abandoned,
+            "loop_lag_note": loop_note,
         }
 
     def _db_memory(self) -> dict:
