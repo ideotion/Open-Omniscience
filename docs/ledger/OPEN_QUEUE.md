@@ -10531,6 +10531,25 @@ a real row disappears).
 of this branch, compare against the COMMON ANCESTOR with multiplicity preserved, and check both
 directions — introduced AND lost.
 
+**THIRD INSTANCE, 2026-09-11 (PR #1111), and it is the cleanest evidence for the standing
+question below.** The sweep branch merged `main` after `main` had picked up the
+register-verification merge (`52a91e32`), which carries this branch's own five rows in their
+PRE-SWEEP form while the branch carries them corrected: **938 rows against an expected 933, five
+duplicate pairs differing in the `refs` column alone.** The pattern is now measured three times
+and its shape is no longer in doubt — **a sweep branch is, by construction, the most exposed
+branch in the repository**, because every branch cut before the sweep holds a stale copy of a row
+the sweep corrected and union keeps both. The two tells recorded above BOTH failed here, in
+opposite directions: union made this merge purely additive, where the first instance had
+deletions. Only the scan itself saw it. Resolved by deleting the five stale copies and keeping
+the swept twin, with the deletion refusing any candidate that lacked a same-key twin differing in
+`refs` alone, then re-scanned in both directions (933 rows, none introduced, **none lost**, six
+duplicate keys which are the ancestor's own, zero placeholders). Recorded separately in
+`LESSONS.md`, together with an unrelated empirical fact this merge turned up: **GitHub reported
+the PR `mergeable_state: "dirty"` while the local merge was clean**, because `.gitattributes`
+merge drivers are not applied by its server-side probe — so on this repository a `dirty` verdict
+on a `shipped.csv`-only diff may mean the union driver was not consulted rather than that a human
+must choose between two versions.
+
 **THE STANDING QUESTION L8 ACTUALLY RAISES, put to the maintainer rather than answered here:**
 should a row be allowed to carry `PR pending` at all? A test asserting `grep -c "PR pending" == 0`
 would end the refill permanently, at the cost of forcing every session to open its PR before

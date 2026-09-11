@@ -8598,3 +8598,36 @@
   `method`, `reason` or `caveat` is documentation for a reader, so it is prose, so it is
   subject to i18n. Passing it through to the UI is the easy path and the wrong one; the
   mutant that puts it back belongs in the matrix.**
+
+- **GITHUB'S `mergeable_state: "dirty"` DOES NOT HONOUR `.gitattributes` MERGE DRIVERS, SO ON
+  THIS REPOSITORY IT CAN MEAN THE OPPOSITE OF WHAT IT SAYS (2026-09-11, PR #1111).** The PR
+  reported `dirty` — a conflict a human has to resolve — on a diff touching exactly one file,
+  `docs/ledger/shipped.csv`, which `.gitattributes` marks `merge=union`. A local `git merge` of
+  the same two commits succeeded with no conflict and no marker, because the union driver comes
+  from the working tree's attributes and GitHub's server-side mergeability probe does not appear
+  to apply them. **GENERAL FORM: a mergeability verdict from a host is computed by a merge that
+  may not be YOUR merge. Before believing either answer — "conflicted" or "clean" — reproduce it
+  locally.** The asymmetry matters more than the inconvenience: a `dirty` that resolves cleanly
+  wastes a few minutes, and a `clean` that hides a union-manufactured duplicate is the failure
+  the next lesson is about.
+
+- **THE `merge=union` DUPLICATE TRAP FIRED A THIRD TIME, ON THE ONE BRANCH WHERE IT WAS
+  CERTAIN TO, AND ONLY THE PRESCRIBED SCAN SAW IT (2026-09-11, PR #1111).** A branch that
+  SWEEPS `PR pending` placeholders is by construction the most exposed thing in the
+  repository: every branch cut before the sweep carries the stale copy of a row the sweep
+  corrected, and union keeps both. Here `main` picked up a register-verification merge
+  carrying this branch's own five rows in their pre-sweep form while the branch carried them
+  corrected; the merge produced **938 rows against an expected 933 — five duplicate pairs
+  differing in the `refs` column alone.** No conflict marker existed, `git merge` reported
+  success, and the numstat tell was useless in BOTH of its recorded forms: union made this
+  merge purely additive, where the first recorded instance had deletions. **GENERAL FORM: when
+  a hazard has a recorded TELL and a recorded CHECK, the tell is an accident of one instance
+  and the check is the invariant — run the check.** Two riders. (1) The repair is itself the
+  dangerous step, because deleting rows to fix duplicates is exactly how a real row
+  disappears: make the deletion REFUSE unless each candidate has a twin under the same
+  `(date, area, item)` key differing in the refs column ALONE, and re-scan in BOTH directions
+  afterwards — introduced AND lost. (2) Sweeping a placeholder does not close it; the
+  placeholder **refills**, because rows are written before their PR number exists. Swept to
+  zero on 2026-09-09, five more one repository day later. The standing question that would end
+  it permanently — a test pinning the count at zero, at the cost of making every session open
+  its PR before writing its ledger row — is the maintainer's, and is still open.
