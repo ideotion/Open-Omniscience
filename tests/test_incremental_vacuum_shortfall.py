@@ -1,24 +1,31 @@
-"""Incremental vacuum says so when it could not reclaim (C3).
+"""What incremental vacuum reports about the pages it did not reclaim (C3).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Field diagnostics 2026-09-11. The off-peak incremental vacuum reported
-``freelist_pages_before 141679`` -> ``after 141678`` against ``requested_pages 2000``:
-ONE page reclaimed of two thousand, with about 2.22 GB still stranded in a 27.7 GB
-database -- and said nothing about it. A run that reclaims 1 page of 2000 is not a
-successful run, and reporting only the bare number lets it read as one.
+Field diagnostics 2026-09-11. The off-peak pass reported ``freelist_pages_before
+141679`` -> ``after 141678`` against ``requested_pages 2000``: ONE page reclaimed of two
+thousand, with about 2.22 GB stranded in a 27.7 GB database -- and said nothing about it.
 
-NOT THE USUAL EXPLANATION. The obvious cause is a store created at ``auto_vacuum=NONE``
-whose pragma was flipped later -- a no-op without a full VACUUM, because the pointer-map
-pages do not exist -- but such a store reports mode 0 and takes the existing
-``not-incremental-mode`` branch. The field store reported 2, so the pragma was live and
-the pages genuinely did not move.
+THE FIRST READING OF THAT WAS WRONG, and this file records the correction because the
+wrong reading is the intuitive one. It looked like a store the pragma could not help, so
+the first fix shipped an alarm on "asked for N, got fewer, and more than N are still
+free". But the pragma was never stepped past its first page (SQLAlchemy finalises a
+cursor it believes returns no rows), so that condition was measuring the BUG, not the
+store, and it fires approximately never once the cursor is drained.
 
-What this pins is therefore the HONESTY, not a cause: the observation is reported, the
-checkable candidates are named, and no mechanism is asserted that was never established.
-The repo's rule is that a measurement which could not be taken is absent with a reason,
-never dressed up as a result.
+The three outcomes that actually occur were then measured on a real store (freelist 445,
+page_size 4096):
+
+  * budget-bound   -- requested 5 -> reclaimed exactly 5, 440 still free;
+  * unobstructed   -- requested 100,000 -> freelist drained to ZERO;
+  * reader-blocked -- a second connection holding a read snapshot makes the pragma RAISE
+    ``database is locked``, rather than quietly returning fewer pages.
+
+So what these tests pin is that the report names a RESIDUAL as a budget statement, with
+the knob that changes it, and does not dress a healthy bounded run up as a fault by
+blaming a reader that is not there. Inventing a cause for a healthy run is the same
+defect as staying silent about an unhealthy one, pointed the other way.
 """
 
 from __future__ import annotations
@@ -70,21 +77,21 @@ def test_a_healthy_reclaim_carries_no_shortfall_noise(tmp_path, monkeypatch):
     assert "skipped" not in report, report
     # Asked for far MORE pages than are free, so the request was not the limit and
     # whatever remains is not a shortfall against it -- no alarm.
-    assert "reclaim_shortfall" not in report
     assert report["pages_reclaimed"] > 0
-    # Worth recording what this fixture actually showed: even in INCREMENTAL mode with
-    # no long-lived reader, `incremental_vacuum` did NOT drain the freelist completely
-    # (a few hundred pages survived a 100,000-page request). That is a real, local
-    # reproduction of the shape the field saw in the extreme -- and exactly why the
-    # shortfall condition is "we asked for N, got fewer, and MORE than N are still
-    # free" rather than the naive "anything left over", which would cry wolf here.
-    assert report["freelist_pages_after"] < report["freelist_pages_before"]
-    assert report["freelist_pages_after"] <= report["requested_pages"]
+    # CORRECTED once the cursor drain landed. This comment used to record that "a few
+    # hundred pages survived a 100,000-page request" and built the alarm condition on
+    # it. That was the BUG being measured, not the store: the pragma was never stepped
+    # past its first page. With the drain, an unobstructed store given a budget larger
+    # than its freelist drains to ZERO, so there is no residual to report at all.
+    assert report["freelist_pages_after"] == 0
+    assert "residual" not in report
 
 
-def test_a_partial_reclaim_says_so_with_its_numbers_and_candidates(tmp_path, monkeypatch):
-    """THE FIELD SHAPE: far more pages remain free than were reclaimed. The report must
-    state the shortfall rather than presenting `pages_reclaimed` as a result."""
+def test_a_budget_bound_run_names_its_residual_without_crying_wolf(tmp_path, monkeypatch):
+    """A pass that spends its whole allowance and leaves pages free is the design
+    working -- bounded work in an idle window -- but the operator still needs to know
+    the pages are there. Measured shape: freelist 445, budget 5 -> reclaimed exactly 5,
+    440 still free."""
     monkeypatch.setenv("OO_INCREMENTAL_VACUUM_PAGES", "5")
     engine, _ = _store(tmp_path, auto_vacuum="INCREMENTAL")
     _fill_then_free(engine)
@@ -92,26 +99,46 @@ def test_a_partial_reclaim_says_so_with_its_numbers_and_candidates(tmp_path, mon
     report = maybe_incremental_vacuum(engine)
 
     assert "skipped" not in report, report
-    short = report.get("reclaim_shortfall")
-    assert short is not None, (
-        f"a run that left {report.get('freelist_pages_after')} pages free after asking "
-        f"for {report.get('requested_pages')} reported no shortfall: {report}"
-    )
-    assert short["requested"] == 5
-    assert short["still_free_pages"] == report["freelist_pages_after"]
-    assert short["still_free_bytes"] == report["freelist_pages_after"] * report["page_size"]
-    assert "did NOT reclaim" in short["detail"]
+    # The drain means the budget is now honoured exactly, which is the whole fix.
+    assert report["pages_reclaimed"] == 5
+    res = report["residual"]
+    assert res["budget_bound"] is True
+    assert res["still_free_pages"] == report["freelist_pages_after"]
+    assert res["still_free_bytes"] == report["freelist_pages_after"] * report["page_size"]
 
-    # The candidates must be CHECKABLE pointers, not a shrug -- and the reader-snapshot
-    # one is named first because the same bundle measured a 17.4-hour reader (C1).
-    assert len(short["candidates"]) >= 2
-    assert any("reader" in c for c in short["candidates"])
-    assert any("full VACUUM" in c for c in short["candidates"])
+    # It must read as a budget statement, NOT as a fault: no invented cause, and the
+    # knob that actually changes the outcome is named.
+    assert "The per-pass budget was the limit, not the store" in res["detail"]
+    assert "OO_INCREMENTAL_VACUUM_PAGES" in res["detail"]
+    assert "reader" not in res["detail"], "a healthy budget-bound run must not blame a reader"
 
-    # A full VACUUM is offered with its real cost, and explicitly NOT run automatically.
-    note = short["full_vacuum_note"]
+    # A full VACUUM stays offered with its real cost, and explicitly not run here.
+    note = res["full_vacuum_note"]
     assert "blocks writes" in note and "free disk" in note
     assert "operator's button" in note
+
+
+def test_a_reader_blocked_run_raises_rather_than_under_reclaiming(tmp_path):
+    """Pins the measurement the residual's wording depends on. A second connection
+    holding a read snapshot does NOT make incremental_vacuum quietly return fewer pages
+    -- it makes the pragma raise `database is locked`, which lands in the existing error
+    branch. This is why the budget-bound path carries no reader-snapshot 'candidates':
+    that shape does not reach it."""
+    import sqlite3
+
+    engine, path = _store(tmp_path, auto_vacuum="INCREMENTAL")
+    _fill_then_free(engine)
+
+    blocker = sqlite3.connect(str(path), isolation_level=None)
+    try:
+        blocker.execute("BEGIN")
+        blocker.execute("SELECT count(*) FROM t").fetchone()
+        report = maybe_incremental_vacuum(engine)
+    finally:
+        blocker.execute("ROLLBACK")
+        blocker.close()
+
+    assert report == {"skipped": "error"}, report
 
 
 def test_a_store_not_in_incremental_mode_still_takes_the_existing_honest_branch(tmp_path):
@@ -121,4 +148,4 @@ def test_a_store_not_in_incremental_mode_still_takes_the_existing_honest_branch(
     report = maybe_incremental_vacuum(engine)
     assert report["skipped"] == "not-incremental-mode"
     assert report["auto_vacuum"] == 0
-    assert "reclaim_shortfall" not in report
+    assert "residual" not in report

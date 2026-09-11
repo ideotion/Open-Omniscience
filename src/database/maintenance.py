@@ -1711,47 +1711,60 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
                 "freelist_bytes_after": freelist_after * page_size,
                 "at": now.isoformat(timespec="seconds"),
             }
-            # C3 (field diagnostics 2026-09-11): this reported `pages_reclaimed: 1`
-            # against `requested_pages: 2000` with 141,679 pages still free -- about
-            # 2.22 GB stranded in a 27.7 GB database -- and said nothing about it. A run
-            # that reclaims 1 page of 2000 is not a successful run, and reporting only
-            # the bare number lets it read as one.
+            # C3 (field diagnostics 2026-09-11), REVISED once the mechanism was known.
+            # The field reported `pages_reclaimed: 1` against `requested_pages: 2000`
+            # with 141,679 pages still free -- about 2.22 GB stranded in a 27.7 GB
+            # database -- and said nothing about it. The first version of this block
+            # treated that as an unexplained partial reclaim and raised an alarm on
+            # "asked for N, got fewer, and more than N are still free".
             #
-            # IT IS NOT THE USUAL EXPLANATION, which is worth recording because that is
-            # the first thing a reader will reach for. The obvious cause is a store
-            # created at auto_vacuum=NONE whose pragma was flipped later -- a no-op
-            # without a full VACUUM, since the pointer-map pages do not exist -- but such
-            # a store reports mode 0 and takes the `not-incremental-mode` branch above.
-            # The field store reported 2. The pragma is live and the pages genuinely did
-            # not move.
+            # THAT CONDITION WAS MEASURING THE BUG, NOT THE STORE. The drain above is
+            # why every run returned 1: the pragma was never stepped past its first
+            # page. With it fixed, the three reachable outcomes were measured directly
+            # on a real store (freelist 445, page_size 4096):
             #
-            # WHAT IS REPORTED IS THE OBSERVATION, NOT A CAUSE THAT WAS NEVER ESTABLISHED.
-            # The candidates are named because each is checkable by the operator, and the
-            # first is not a guess: incremental vacuum cannot release pages a reader may
-            # still need, and the SAME bundle recorded a read transaction open 17.4 hours
-            # pinning the WAL (finding C1, fixed separately, and a plausible reason this
-            # reclaimed nothing). Which one it was on that store is not something this
-            # code can know, so it does not say.
-            if pages > 0 and reclaimed < pages and freelist_after > pages:
-                report["reclaim_shortfall"] = {
-                    "reclaimed": reclaimed,
-                    "requested": pages,
+            #   * budget-bound  -- requested 5  -> reclaimed exactly 5, 440 still free.
+            #   * unobstructed  -- requested 100,000 -> freelist drained to ZERO.
+            #   * reader-blocked-- a second connection holding a read snapshot makes the
+            #     pragma RAISE `database is locked`; it does not silently under-reclaim.
+            #     That path therefore lands in the `except` below and reports
+            #     `skipped: error`, which is where it belongs.
+            #
+            # So "asked for N and got fewer" is not the shape a healthy store produces,
+            # and an alarm hung on it would now fire approximately never while the thing
+            # an operator actually needs to know -- that pages remain -- went unsaid.
+            #
+            # WHAT IS REPORTED IS THEREFORE A BUDGET STATEMENT, NOT A FAULT. A residual
+            # after a full-budget run means the freelist is larger than one pass's
+            # allowance, which is the design working: bounded work in an idle window.
+            # It is named, with its real numbers and the knob that changes it, so the
+            # operator can tell "this needs more passes" from "this is stuck" -- and it
+            # deliberately carries no reader-snapshot or pointer-map "candidates", which
+            # were written for the partial-reclaim shape that the measurements above show
+            # does not occur. Inventing a cause for a healthy run is the same defect as
+            # staying silent about an unhealthy one, pointed the other way.
+            if freelist_after > 0 and page_size > 0:
+                budget_bound = pages > 0 and reclaimed >= pages
+                report["residual"] = {
                     "still_free_pages": freelist_after,
                     "still_free_bytes": freelist_after * page_size,
+                    "reclaimed": reclaimed,
+                    "requested": pages,
+                    "budget_bound": budget_bound,
                     "detail": (
-                        f"reclaimed {reclaimed} of {pages} requested pages while "
-                        f"{freelist_after:,} remain free. Incremental vacuum could not "
-                        "move them, so this run did NOT reclaim the space its other "
-                        "numbers might suggest."
+                        f"reclaimed {reclaimed:,} of the {pages:,} pages this pass was "
+                        f"allowed, leaving {freelist_after:,} free "
+                        f"({freelist_after * page_size:,} bytes). The per-pass budget was "
+                        "the limit, not the store: later passes continue from here, and "
+                        "OO_INCREMENTAL_VACUUM_PAGES raises it."
+                        if budget_bound
+                        else
+                        f"reclaimed {reclaimed:,} of {pages:,} requested pages while "
+                        f"{freelist_after:,} remain free. The budget was NOT the limit, so "
+                        "something stopped the pragma short -- check "
+                        "storage_composition.last_checkpoint.readers for a long-lived "
+                        "reader holding a snapshot those pages belong to."
                     ),
-                    "candidates": [
-                        "a long-lived reader holds a snapshot those pages belong to -- "
-                        "incremental vacuum cannot release pages a reader may still "
-                        "need; check storage_composition.last_checkpoint.readers",
-                        "the free pages are not at the end of the file and this store "
-                        "lacks pointer-map coverage for them, so only a full VACUUM can "
-                        "compact it",
-                    ],
                     "full_vacuum_note": (
                         "A full VACUUM is the only operation that always compacts, and it "
                         "is deliberately NOT run here: it blocks writes for its whole "
