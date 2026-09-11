@@ -141,8 +141,15 @@ jobs:
       # Shipping the older, tighter number would redden main on the merge commit over
       # findings that are not this PR's, which is worse than a ceiling that reflects the
       # tree it guards. Lowering it is always welcome; the script prints the new floor.
+      #
+      # LOWERED 446 -> 445 on 2026-09-11 (PR #1115, the field-diagnostics batch). Not a
+      # cleanup pass: the batch's own work happened to remove one advisory finding more
+      # than it added, and the script prints the new floor when it can drop, so taking it
+      # is the ratchet working as designed. A ceiling left above the real count is a
+      # ratchet that does nothing -- which is the failure this step's own comment above
+      # records (344 -> 432 -> 450 while the lane was "allowed to fail").
       - name: Lint — style non-growth ratchet (may only be lowered)
-        run: python scripts/ruff_ratchet.py --max 446
+        run: python scripts/ruff_ratchet.py --max 445
 
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session
