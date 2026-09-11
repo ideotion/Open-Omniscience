@@ -175,7 +175,7 @@ def _series_window(session, metric: str, *, days: int) -> dict[str, Any]:
         return {
             "metric": metric, "value": None, "first": None, "delta": None,
             "reason": (
-                "no snapshot recorded yet — the hourly recorder runs in the scheduler's "
+                "no snapshot recorded yet — the recorder runs opportunistically in the scheduler's "
                 "idle maintenance, so this fills in once the run has been up an hour"
             ),
             "recording_began_at": hist.get("recording_began_at"),

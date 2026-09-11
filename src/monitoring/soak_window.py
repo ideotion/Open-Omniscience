@@ -17,7 +17,9 @@ already exist and states, for each one, THE WINDOW IT ACTUALLY READ:
 - process uptime (``forensics.session_uptime``) is the soak's own clock;
 - the memory-guard engage counters and the write-gate counters are
   process-cumulative, so they align with that clock exactly;
-- ``wal_bytes`` is an hourly snapshot with infinite retention, so it spans restarts
+- ``wal_bytes`` is an AT-MOST-hourly snapshot with infinite retention, so it spans
+  restarts (at most: the recorder rides the scheduler's off-peak window opportunistically
+  and yields it whenever a collect pass owns the lock -- see C6, 2026-09-11)
   and is filtered back down to this window;
 - the ``/api/database/stats`` p95 comes from a 512-request reservoir, so it is a
   reading about recent requests and NOT about the soak, and says so;
@@ -171,7 +173,7 @@ def _memory_guard(window: dict[str, Any]) -> dict[str, Any]:
 def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
     """The recorded ``wal_bytes`` maximum inside the window.
 
-    The series has its OWN window — hourly snapshots, infinite retention, spanning
+    The series has its OWN window — AT-MOST-hourly snapshots, infinite retention, spanning
     restarts — so the wider history is reported beside the in-window figure rather
     than being silently conflated with it.
     """
@@ -196,7 +198,9 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
         "read_days": days,
         "series_points_read": len(series),
         "series_basis": (
-            "hourly snapshots with infinite retention; the series survives restarts, "
+            "snapshots bucketed by hour (AT MOST one per hour, and fewer when the "
+            "recorder's off-peak window is yielded -- see scheduler maintenance_skips) "
+            "with infinite retention; the series survives restarts, "
             "so it is wider than this process's window and is filtered to it below"
         ),
     }
@@ -238,7 +242,7 @@ def _wal(session: Session, window: dict[str, Any]) -> dict[str, Any]:
     if not inside:
         out["measured"] = False
         out["reason"] = (
-            "no hourly snapshot has been recorded since this process started; the "
+            "no snapshot has been recorded since this process started; the "
             "series above is earlier history and describes other sessions"
         )
         return out
@@ -445,7 +449,7 @@ def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[
         "unmeasured": unmeasured,
         "method": (
             "Composes readings that already exist: process uptime (the soak clock), "
-            "the memory-guard and write-gate process-cumulative counters, the hourly "
+            "the memory-guard and write-gate process-cumulative counters, the at-most-hourly "
             "wal_bytes snapshot series filtered to this window, the "
             f"{_DB_STATS_ROUTE} latency reservoir, and the rolling error log. No new "
             "sampler, no estimate, no composite."
