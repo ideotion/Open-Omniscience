@@ -12948,3 +12948,104 @@ enabled), `/api/scheduler/coverage` `totals.total` (enabled AND has-rss, IGNORIN
 legitimately disagree; the coverage panel's denominator in particular counts sources collection will
 never touch. Not reconciled here — that is a UI ruling about which number is THE number, not a bug
 with an obvious fix.
+
+## 2026-09-11 — THE OPEN DOCKET after the institutions pass (maintainer asked for everything on the list)
+
+Written at the maintainer's request while the two-judge run was still in flight, so nothing
+depends on this session surviving. Grouped by what each item needs.
+
+### A. IN FLIGHT, AND EPHEMERAL — the one time-sensitive item
+
+**A1. The two-judge Stage B rerun.** 12 agents, both judges on the SAME neutral prompt
+(`SPEC_NEUTRAL.md` = the original spec + the method fix, WITHOUT the directional
+`primary_source` nudge that biased the escalated pass). Judge A → `scratchpad/stageb/judgeA/`,
+judge B → `judgeB/`, 60 batches each.
+
+**THE OUTPUTS LIVE IN AN EPHEMERAL SESSION SCRATCHPAD.** This is the exact complaint the
+2026-09-11 refused-entries note made about the previous run: without preservation, revisiting
+costs a full re-run. **When they land, commit both judges' `batch_*.result.json` sets** (~3 MB
+total including the batch inputs) beside
+`docs/research/sources/discovered_candidates_2026-09-10/stage_b_institutions_2026-09-11/`.
+If this session ended before that happened, the 120 classifications are gone and the rerun
+starts over.
+
+**What to do with them:** validate each judge separately against the canaries, then compute
+per-row agreement on `kind` and on `primary_source`. **The disagreement rate is the deliverable**
+— it measures how much of the axis is judgement rather than fact. Rows where the judges disagree
+are DEFERRED, not rejected, per the robots precedent (a non-answer is not a no).
+
+### B. PENDING RULINGS
+
+**B1. Where does a RESEARCH INSTITUTE belong?** It is neither a peer-reviewed journal nor a body
+publishing public records. Tags that already exist: `research` (607), `academic` (607),
+`research-institute` (16), `science` (395), `applied-science` (80). RECOMMENDED:
+`official_sources.yml` with `source_type: academic-research` — the slot exists — tagged
+`research`/`research-institute`. An institute's feed is an organisation publishing about itself
+on a weekly cadence, which is an institution's shape, not a journal's ("a paper is not an
+event").
+
+**B2. Is `primary_source` the right cut at all?** The stakes, stated because the maintainer asked
+for them: (a) EQUITY — the test embeds a judgement about which institutions count, applied across
+84 countries, and a model calibrated on Western administrative norms will under-admit
+small-language and global-South bodies while looking like a quality filter; a Czech village's
+zoning notices ARE the only public record of that fact. (b) REFUSAL IS NOT NEUTRAL — "we could
+not tell" is being recorded as "no", which is the shape the robots ruling already rejected. (c)
+THE LABEL MUST BE TRUE — if `official_sources.yml` is full of tourism boards the name lies, and
+if it excludes real ministries the coverage figures understate. RECOMMENDED: defer-not-reject
+now, then **rewrite the axis as an OBSERVABLE** — "does this feed publish dated official
+instruments (decisions, tenders, regulations, statistics releases)?" is checkable against the
+headlines and does not require a model to hold opinions about which countries' institutions are
+real.
+
+**B3. The 16 mis-shelved journals.** `official_sources.yml` carries 16 rows tagged
+`research-institute` with `source_type: academic-research` that are in fact JOURNALS (*Chilean
+Journal of Agricultural Research*, *Lebanese Science Journal*, *Helminthologia*). They belong in
+`academic_sources.yml`. Shipped that way by this pipeline; a small, safe cleanup.
+
+### C. CARRIED DEFECTS, each measured and none fixed
+
+**C1. `preflight`'s `robots_denied` verdict still collapses a 401/403 into the same bucket as an
+explicit `Disallow`** — the last place reading a path refusal as a policy. Offered, never ruled.
+
+**C2. The `app_provided_filter` / "only sources that came with the app" scraping-scope toggle
+(`scrape_app_provided_only`) under-matches on any install older than `via:` tagging**, for the
+same reason the curated stamp did. NOT fixed with the stamp because that toggle's wording is
+about the ROW's origin, so the catalogue-membership substitution is not obviously right for it.
+
+**C3. Four surfaces report a "source count" from four different predicates** —
+`sources_qualified` (enabled AND qualified), `/api/scheduler/targets.total_enabled` (enabled
+only), `/api/sources/qualification/config` `counts.qualified` (ignores enabled),
+`/api/scheduler/coverage` `totals.total` (ignores status). They legitimately disagree; the
+coverage panel counts sources collection will never touch. Needs a ruling on which is THE number.
+
+**C4. `tests/test_triage_proposal.py::test_the_bundle_member_produces_a_real_report_not_a_sentinel`
+fails when the triage modules run together** — inter-test database pollution, reproduced
+identically with this branch's changes stashed, so it predates all of it.
+
+**C5. `test_no_dangerous_eval_or_deserialization_sinks` skips `#` comments but not docstrings**,
+so PROSE ABOUT a banned API trips it. Worked around by rewording; the guard could skip docstrings.
+
+**C6. HIJACKED INSTITUTIONAL DOMAINS have no detection rule.** `lancashireprobation.co.uk`,
+`ffw-ungelstetten.de` and `peru.embajada.gob.ve` serve gambling spam under the name of a
+probation service, a fire brigade and an embassy; `ambassade-du-burundi.fr` is a travel blog.
+Stage A cannot see it — the feed parses and is fresh, which is all Stage A checks. Only a reader
+of the CONTENT catches it, and today that is a model's incidental observation rather than a rule.
+**This is also the strongest argument that Stage B earns its cost**, independent of the
+`primary_source` question.
+
+**C7. A country field can contradict its own domain.** `cityofvancouver.us` — a US city — carries
+`country: ca`. Found incidentally; the export's country attribution has not been audited, and a
+naive ccTLD check is NOT the audit (`.uk` vs `gb` and `.eu` for EU bodies are both legitimate).
+
+### D. WORK NOT YET RUN
+
+**D1. The 8-VM retry run** over the 23,237 deferred rows (15,875 robots + 7,357 unreachable),
+using the cause attribution that shipped 2026-09-11 — so the flat `robots_unavailable` splits
+into `robots_refused` / `robots_server_error` / `robots_unreachable` and the measured 62:1 finally
+says WHICH. Kit `oo-candidate-kit-2026-09-11-96d80b01`. In the maintainer's hands.
+
+**D2. Three worklists have never been run at all:** shortlist (3,031), remainder (16,214),
+religious (22,842). Only institutions (37,079) has been through Stage A.
+
+**D3. The Stage B splice itself.** Nothing from the institutions pass has been admitted to any
+catalogue, and the reason is recorded in the artifact's README, not just here.
