@@ -1179,6 +1179,41 @@ def ensure_article_newsletter_list_id_column(engine: Engine) -> list[str]:
     return added
 
 
+# Additive + NULLABLE with NO backfill, on the source_revision pattern. NULL means "the
+# catalogue baseline was never recorded for this row", which is every row predating the
+# column -- and sync_catalogue_corrections ADOPTS the current catalogue for those and changes
+# nothing, rather than guessing whether an untraceable value was an operator's edit.
+_SOURCE_CATALOG_BASELINE_COLUMN: dict[str, str] = {
+    "catalog_baseline": "ALTER TABLE sources ADD COLUMN catalog_baseline TEXT",
+}
+
+
+def ensure_source_catalog_baseline_column(engine: Engine) -> list[str]:
+    """Self-heal ``sources.catalog_baseline`` (idempotent, additive, no backfill).
+
+    Not every install runs alembic and ``create_all`` never ALTERs an existing table, so a
+    store predating this column would raise "no such column" on the first BOOT -- the seed
+    path reads it on every start. No-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
+        for name, ddl in _SOURCE_CATALOG_BASELINE_COLUMN.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added sources catalogue-baseline column(s): {', '.join(added)}")
+    return added
+
+
 # The complete map of live-DB self-healed columns, table -> column names. This is the
 # machine-readable contract the migration-drift guard test checks every add_column in
 # migrations/versions/ against (tests/test_migration_self_heal_drift.py), so a future
@@ -1219,6 +1254,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         frozenset(_SOURCE_QUALIFICATION_COLUMNS)
         | frozenset(_SOURCE_LAST_CRAWLED_COLUMN)
         | frozenset(_SOURCE_COUNTER_COLUMNS)
+        | frozenset(_SOURCE_CATALOG_BASELINE_COLUMN)
     ),
 }
 

@@ -16,6 +16,8 @@ fetcher.
 
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 
 import yaml
@@ -139,6 +141,12 @@ def _to_source_kwargs(s: dict) -> dict:
 #: report names the loss without dumping it; the COUNT beside them is exact.
 _SHADOW_EXAMPLES = 8
 
+#: How many kept operator edits a correction sync names. The COUNT beside them is exact;
+#: the examples are there so the log says WHICH rows diverged, not merely how many.
+_CONFLICT_EXAMPLES = 8
+
+_LOGGER = logging.getLogger(__name__)
+
 
 def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
     """Catalog entries a domain-keyed seeder can never register: ``{domain: [shadowed]}``.
@@ -197,6 +205,150 @@ def catalog_domain_collisions(sources: list[dict]) -> dict[str, list[dict]]:
         else:
             seen.add(domain)
     return shadowed
+
+
+# THE FIELDS THE CATALOGUE OWNS, as opposed to the ones the OPERATOR owns. The split is the
+# whole policy of :func:`sync_catalogue_corrections` and it is deliberately conservative.
+#
+# OWNED HERE: facts about the SOURCE that the shipped catalogue is the authority on, and that
+# an operator edits rarely if ever. A fixed feed URL is the case that motivated this -- of the
+# 22,045 candidates Stage A judged, 2,622 had an unparseable feed and 669 a stale one, and the
+# same rot reaches rows we already ship.
+#
+# NOT OWNED, and left alone forever: ``enabled``, ``priority``, ``rate_limit_ms``,
+# ``reliability_score`` -- the operator's own knobs, which the UI exists to set.
+#
+# ``tags`` IS DELIBERATELY OUT of v1, and the reason is not timidity. It is a SET with FOUR
+# writers -- the catalogue, the seed's ``via:`` provenance marker, ``ensure_channel_tags``, and
+# the operator -- so a replace would silently drop the other three, while a union can never
+# express a REMOVAL, which is precisely what correcting a wrong tag means. A set needs its own
+# merge policy and its own ruling; a half-considered one here would lose provenance quietly.
+CATALOGUE_OWNED_FIELDS: tuple[str, ...] = (
+    "rss_url", "name", "country", "language", "region", "source_type",
+)
+
+
+def _norm(value: object) -> str | None:
+    """One comparison form, so ``""`` and ``None`` and ``" es "`` cannot read as three values."""
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    return text_value or None
+
+
+def _baseline_of(row: Source) -> dict | None:
+    """What the catalogue last shipped for this row, or None if it has never been recorded."""
+    raw = getattr(row, "catalog_baseline", None)
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return None                      # unreadable -> treat as unknown, never as "unedited"
+    return parsed if isinstance(parsed, dict) else None
+
+
+def sync_catalogue_corrections(session: Session, sources: list[dict]) -> dict:
+    """Push CORRECTIONS from the shipped catalogue onto rows that already exist -- a THREE-WAY
+    merge, so a fix reaches an untouched row and can never overwrite the operator's own edit.
+
+    THE GAP THIS CLOSES, and why the existing mechanism could not.
+    :func:`reconcile_source_metadata` fills a field that is EMPTY and refuses to touch anything
+    else, which is the right rule for a gap and the wrong one for a correction: when the
+    catalogue fixes a dead feed URL, a wrong country or a name that fabricates an origin, every
+    install that already holds that row keeps the broken value forever, and the only remedy is
+    an export/import. Measured before this shipped: a row whose ``rss_url`` the catalogue had
+    corrected still served the stale URL after a re-seed.
+
+    WHY NOT SIMPLY OVERWRITE. Because the operator can edit a source in the UI, and a re-seed
+    silently reverting that is "a data-loss bug wearing a maintenance task's clothes" -- the
+    words reconcile_source_metadata already uses about itself. So this needs to distinguish
+    "the value we shipped, untouched" from "the value the operator chose", and a two-way
+    comparison cannot: both are simply "not equal to the new catalogue value".
+
+    THE THIRD SIDE is ``Source.catalog_baseline``: a small JSON record of what the catalogue
+    last shipped for this row. For each owned field there are then three values -- what the
+    catalogue ships NOW, what it shipped THEN (the baseline), and what the row holds LIVE:
+
+      * ships now == shipped then  -> upstream changed nothing. Skipped, so a steady state
+        costs one comparison and no write.
+      * live == shipped then       -> the operator never touched it, so the correction is
+        theirs to receive. APPLIED.
+      * otherwise                  -> the operator's value differs from what we gave them.
+        KEPT, and REPORTED by domain and field. Never overwritten, never silently dropped.
+
+    A LIVE VALUE THAT IS EMPTY IS A GAP, NOT AN EDIT, and is skipped here so the two mechanisms
+    cannot fight over one field: filling empties belongs to reconcile_source_metadata, and
+    without this rule a freshly-filled field would read as an operator edit on the same boot.
+
+    THE BASELINE ADVANCES EVEN WHEN THE EDIT IS KEPT. A conflict is therefore reported ONCE,
+    at the boot where it arises, rather than nagging on every start for the life of the
+    install -- and the operator's value stands, which is the outcome that matters.
+
+    A ROW WITH NO BASELINE ADOPTS THE CURRENT CATALOGUE AND CHANGES NOTHING. Every row that
+    predates this column is in that position, and we cannot tell an operator's edit from a
+    shipped value without a baseline to compare against. So the first boot after the upgrade
+    RECORDS where things stand and moves on: corrections made from then on flow, and nothing
+    an operator set is touched on the strength of a guess. The cost is stated plainly -- a
+    correction the catalogue made BEFORE this shipped will not reach an existing row.
+    """
+    from src.database.models import Source
+
+    by_domain: dict[str, dict] = {}
+    for s in sources:
+        domain = (s.get("domain") or "").strip().lower()
+        if not domain or not (s.get("name") or "").strip():
+            continue
+        by_domain.setdefault(domain, s)   # first-entry-wins, as seed_sources and reconcile do
+    empty = {"checked": 0, "applied": 0, "kept": 0, "adopted": 0, "conflicts": []}
+    if not by_domain:
+        return empty
+
+    rows = session.query(Source).filter(Source.domain.in_(list(by_domain))).all()
+    applied = adopted = 0
+    conflicts: list[dict] = []
+    dirty = False
+    for row in rows:
+        entry = by_domain.get((row.domain or "").strip().lower())
+        if entry is None:
+            continue
+        computed = _to_source_kwargs(entry)
+        shipped = {f: _norm(computed.get(f)) for f in CATALOGUE_OWNED_FIELDS}
+        base = _baseline_of(row)
+        if base is None:
+            row.catalog_baseline = json.dumps(shipped, sort_keys=True)
+            adopted += 1
+            dirty = True
+            continue
+        touched = False
+        for field in CATALOGUE_OWNED_FIELDS:
+            now, then = shipped[field], _norm(base.get(field))
+            if now == then:
+                continue                            # upstream unchanged
+            live = _norm(getattr(row, field, None))
+            if live is None:
+                continue                            # a gap -- reconcile_source_metadata owns it
+            touched = True
+            if live == then:
+                setattr(row, field, computed.get(field))
+                applied += 1
+            else:
+                conflicts.append(
+                    {"domain": row.domain, "field": field, "kept": live, "catalogue": now}
+                )
+        if touched:
+            row.catalog_baseline = json.dumps(shipped, sort_keys=True)
+            dirty = True
+    if dirty:
+        session.commit()
+    if applied or conflicts:
+        _LOGGER.info(
+            "catalogue corrections: %d applied, %d kept as operator edits", applied, len(conflicts)
+        )
+    return {
+        "checked": len(rows), "applied": applied, "kept": len(conflicts),
+        "adopted": adopted, "conflicts": conflicts[:_CONFLICT_EXAMPLES],
+    }
 
 
 def reconcile_source_metadata(session: Session, sources: list[dict]) -> dict:
@@ -326,9 +478,15 @@ def seed_sources(session: Session, sources: list[dict]) -> SeedResult:
     # row that already existed. NULL-only, so a re-seed can add what is missing and can
     # never revert what an operator set.
     reconciled = reconcile_source_metadata(session, sources)
+    # ...and then the other half: a field that is NOT empty but that the catalogue has since
+    # CORRECTED. reconcile fills gaps and refuses to touch anything else; this pushes the fix
+    # onto rows the operator never edited, and reports the ones they did. Runs AFTER, so a
+    # field reconcile just filled reads as a gap rather than as an edit (sync skips empties).
+    corrections = sync_catalogue_corrections(session, sources)
     return {
         "created": len(to_add),
         "reconciled": reconciled,
+        "corrections": corrections,
         "skipped": skipped_existing + len(shadowed) + skipped_malformed,
         "total": len(sources),
         "skipped_existing": skipped_existing,

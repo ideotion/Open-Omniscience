@@ -105,7 +105,30 @@ class RobotsDisallowed(FetchError):
 
 
 class RobotsUnavailable(FetchError):
-    """robots.txt could not be determined -> fail closed, do not fetch."""
+    """robots.txt could not be determined -> fail closed, do not fetch.
+
+    ``cause`` NAMES WHICH OF THREE DIFFERENT FACTS THIS IS, because they were one bucket
+    until 2026-09-11 and the difference decides what a caller may honestly do next:
+
+      * ``"refused"``      401/403 -- the host (or something in front of it) declined to
+                           serve robots.txt on THIS path. Over Tor that is frequently the
+                           exit's reputation rather than the publisher's wish, and nothing
+                           in the answer says which, so it is never read as a policy.
+      * ``"server_error"`` 5xx or an unexpected status -- the host is broken, not speaking.
+      * ``"unreachable"``  a network failure, timeout, SSRF-blocked redirect or redirect
+                           loop -- we never got an answer at all.
+
+    A 404/410 is NOT here: no robots.txt means everything is allowed, and ``_get_robots``
+    returns an empty parser for it. So this exception only ever covers a refusal or a
+    failure -- never an absence.
+
+    FAIL-CLOSED IS UNCHANGED for every one of them: the fetch is refused either way. The
+    cause exists so the CATALOGUE can stop spending an absence like a verdict.
+    """
+
+    def __init__(self, message: str, *, cause: str = "unreachable") -> None:
+        super().__init__(message)
+        self.cause = cause
 
 
 class FetchFailed(FetchError):
@@ -118,6 +141,45 @@ class BlockedTarget(FetchFailed):
 
 # How long a robots.txt decision is cached, in seconds.
 _ROBOTS_TTL = 3600.0
+
+# PER-HOST BACKOFF FOR A ROBOTS FAILURE (2026-09-11 ruling: "so refused rows expire").
+#
+# THE COST IT REMOVES, measured: the completed 22,045-row run left 7,847 hosts whose
+# robots.txt could not be read. At a flat one-hour TTL every one of them is re-asked every
+# hour, for ever -- 7,847 requests an hour of pure refusal traffic against publishers who
+# already declined once. Doubling from the same one-hour base settles a persistently
+# refusing host at one request a day instead.
+#
+# IT IS A DEFERRAL, NEVER AN EXCLUSION -- the same guarantee, and the same wording, the feed
+# de-churn backoff gives (see FeedFetchState): the CAP means every host is re-asked within
+# _ROBOTS_BACKOFF_CAP_S however long it has been failing, and a single success clears the
+# counter completely. Nothing is ever struck off; a refusal only gets quieter.
+#
+# WHY IT LIVES WITH THE DECISION rather than in its own table: robots is a PER-HOST fact and
+# FeedFetchState is keyed per SOURCE, so two sources on one host would each carry their own
+# backoff and each would keep asking -- the opposite of the point. Cached and persisted
+# beside the decision it belongs to, so there is ONE authority over when a host is re-asked.
+def _robots_backoff_cap_s() -> float:
+    """Read live (not frozen at import) so a test or an operator can change it without
+    re-importing the module; floored at the base TTL, since a cap below it would mean a
+    failure is cached for LESS time than a success, which is backwards."""
+    try:
+        value = float(os.getenv("OO_ROBOTS_BACKOFF_CAP_S", "") or 24 * 3600.0)
+    except ValueError:
+        value = 24 * 3600.0
+    return max(value, _ROBOTS_TTL)
+
+
+def _robots_ttl_for(consecutive_failures: int) -> float:
+    """Seconds to cache a robots decision after ``consecutive_failures`` failures in a row.
+
+    Zero failures (a decision we actually read) is the plain TTL. Then 1h, 2h, 4h ... to the
+    cap. Pure, so the schedule is asserted directly rather than inferred from timing.
+    """
+    if consecutive_failures <= 0:
+        return _ROBOTS_TTL
+    exp = min(consecutive_failures - 1, 32)          # cap the exponent before the min()
+    return min(_ROBOTS_TTL * (2.0**exp), _robots_backoff_cap_s())
 
 # --------------------------------------------------------------------------- #
 # A5 (2026-07-24 throughput brief, C4): persist the robots.txt verdict cache to
@@ -168,7 +230,13 @@ def _load_persisted_robots(
         try:
             fetched_at = float(entry["fetched_at"])
             kind = entry["kind"]
-            remaining = _ROBOTS_TTL - (wall_now - fetched_at)
+            # The entry's own TTL when it recorded one (the per-host backoff), else the
+            # flat base -- which is exactly what an entry written before the backoff had.
+            try:
+                entry_ttl = float(entry.get("ttl") or _ROBOTS_TTL)
+            except (TypeError, ValueError):
+                entry_ttl = _ROBOTS_TTL
+            remaining = entry_ttl - (wall_now - fetched_at)
             if remaining <= 0:
                 continue  # expired -- re-fetch, never trust stale (NEGATIVE-SPACE)
             decision: RobotFileParser | None
@@ -190,7 +258,57 @@ def _load_persisted_robots(
     return out
 
 
-def _persist_robots_entry(path: Path, host_key: str, *, kind: str, body: str | None) -> None:
+def _persisted_robots_fails(path: Path) -> dict[str, int]:
+    """``{host_key: consecutive_failures}`` from the sidecar. Absent (an entry written
+    before the backoff existed) reads as 0, which only means the next failure starts the
+    schedule from the base -- never that the host is treated as having succeeded."""
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text("utf-8")) or {}
+    except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
+        return {}
+    out: dict[str, int] = {}
+    for host_key, entry in raw.items():
+        try:
+            fails = int(entry.get("fails") or 0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if fails > 0:
+            out[host_key] = fails
+    return out
+
+
+def _persisted_robots_causes(path: Path) -> dict[str, str]:
+    """``{host_key: cause}`` from the sidecar, for entries that recorded one.
+
+    Separate from :func:`_load_persisted_robots` on purpose: that function's shape is
+    pinned by tests and by a repo invariant, and a refusal's CAUSE is additive metadata
+    rather than part of the decision. An entry written before the cause existed simply has
+    none, and the reader then reports ``"unknown"`` -- which is the honest answer, and the
+    reason this does not fall back to a plausible-looking default.
+    """
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text("utf-8")) or {}
+    except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
+        return {}
+    out: dict[str, str] = {}
+    for host_key, entry in raw.items():
+        try:
+            cause = entry.get("cause")
+        except Exception:  # noqa: BLE001 - one bad entry never breaks the load
+            continue
+        if isinstance(cause, str) and cause:
+            out[host_key] = cause
+    return out
+
+
+def _persist_robots_entry(
+    path: Path, host_key: str, *, kind: str, body: str | None, cause: str | None = None,
+    fails: int = 0, ttl: float | None = None,
+) -> None:
     """Best-effort: record ONE host's freshly-computed verdict in the persisted
     sidecar (read-modify-write, atomic temp+replace, lock-guarded against
     concurrent writers for different hosts). Never raises into the fetch path
@@ -204,7 +322,13 @@ def _persist_robots_entry(path: Path, host_key: str, *, kind: str, body: str | N
                     raw = json.loads(path.read_text("utf-8")) or {}
                 except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
                     raw = {}
-            raw[host_key] = {"kind": kind, "body": body, "fetched_at": time.time()}
+            raw[host_key] = {
+                "kind": kind, "body": body, "fetched_at": time.time(), "cause": cause,
+                # The backoff must SURVIVE a restart, or every cold start would hand a
+                # host that has refused fifty times a fresh one-hour clock -- which is
+                # how a politeness measure quietly becomes no measure at all.
+                "fails": fails, "ttl": ttl,
+            }
             # Bound the persisted file the SAME way the in-memory cache is bounded
             # (_ROBOTS_CACHE_MAX) -- oldest-fetched entries evicted first.
             if len(raw) > _ROBOTS_CACHE_MAX:
@@ -501,6 +625,13 @@ class EthicalFetcher:
         self._max_redirects = _MAX_REDIRECTS
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
+        #: host_key -> why robots could not be determined, for the same TTL as the
+        #: decision above. Only ever holds a host whose decision is None.
+        self._robots_cause: dict[str, str] = {}
+        #: host_key -> consecutive robots FAILURES, which set that host's next TTL
+        #: (_robots_ttl_for). Cleared by a single success; persisted, so a restart does
+        #: not hand a host that refused fifty times a fresh one-hour clock.
+        self._robots_fails: dict[str, int] = {}
         self._last_request: dict[str, float] = {}
         # C8: short-TTL DNS cache for the path that still resolves locally (a
         # remote-resolving SOCKS proxy skips this entirely -- see
@@ -533,6 +664,8 @@ class EthicalFetcher:
                 self._robots.update(
                     _load_persisted_robots(self._robots_cache_path, now_monotonic=self._now)
                 )
+                self._robots_cause.update(_persisted_robots_causes(self._robots_cache_path))
+                self._robots_fails.update(_persisted_robots_fails(self._robots_cache_path))
             except Exception:  # noqa: BLE001 - a bad cache load must never break construction
                 pass
 
@@ -1242,11 +1375,44 @@ class EthicalFetcher:
 
     # -- robots ------------------------------------------------------------ #
 
+    def forget_robots(self, host_or_key: str) -> int:
+        """Drop every cached robots decision for this host, returning how many were dropped.
+
+        THE TRAP THIS EXISTS FOR. The per-host backoff is the right default and the wrong
+        answer to an OPERATOR SAYING "check these again". A `--retry robots_unavailable` run
+        starts by loading the sidecar, so every host it means to re-ask is already inside the
+        backoff that its own earlier failure created -- the run would return the cached
+        refusal, rewrite the same verdict, and look like work while asking no host anything.
+
+        So an explicit retry forgets first. Scheme-agnostic (the cache is keyed by
+        ``https://host``, and a run may name either), and it clears the decision, the cause
+        and the failure counter together -- a partial forget would re-ask the host and then
+        apply a backoff computed from failures it is no longer counting.
+        """
+        raw = (host_or_key or "").strip().lower()
+        if not raw:
+            return 0
+        netloc = raw.split("://", 1)[-1].split("/", 1)[0]
+        if not netloc:
+            return 0
+        dropped = 0
+        for key in [k for k in self._robots if k.split("://", 1)[-1].split("/", 1)[0] == netloc]:
+            self._robots.pop(key, None)
+            self._robots_cause.pop(key, None)
+            self._robots_fails.pop(key, None)
+            dropped += 1
+        return dropped
+
     def _enforce_robots(self, url: str, host_key: str, parsed) -> None:
         parser = self._get_robots(host_key, parsed)
         if parser is None:
+            # "unknown", never a plausible default: a sidecar entry written before the
+            # cause existed, or evicted from the map, has no cause to report, and inventing
+            # one would put a confident wrong attribution into the pipeline's own data.
+            cause = self._robots_cause.get(host_key, "unknown")
             raise RobotsUnavailable(
-                f"robots.txt for {host_key} could not be determined; refusing to fetch"
+                f"robots.txt for {host_key} could not be determined ({cause}); refusing to fetch",
+                cause=cause,
             )
         if not parser.can_fetch(self.user_agent, url):
             raise RobotsDisallowed(f"robots.txt disallows {url}")
@@ -1266,6 +1432,7 @@ class EthicalFetcher:
         # need none (defaults below cover every early-return/exception path).
         persist_kind = "disallow_all"
         persist_body: str | None = None
+        cause = "unreachable"
         try:
             # Follow redirects MANUALLY through the shared guarded loop so a
             # robots.txt that 30x-redirects to an internal address is refused
@@ -1286,21 +1453,41 @@ class EthicalFetcher:
                 decision = rp
                 persist_kind = "allow_all"
             elif status in (401, 403):
-                # Access to robots is restricted -> treat the whole site as off-limits.
+                # Access to robots is REFUSED on this path -> fail closed. Recorded as its
+                # own cause rather than as a policy: over Tor this is frequently the exit's
+                # reputation, and the answer does not say which (2026-09-11 measurement --
+                # 7,847 unavailable against 262 explicitly disallowed, thirty to one, at a
+                # uniform 25-53% across fourteen countries on every continent).
                 decision = None
+                cause = "refused"
             else:
-                # 5xx / unexpected -> cannot determine -> fail closed.
+                # 5xx / unexpected -> the host is broken, not speaking -> fail closed.
                 decision = None
+                cause = "server_error"
         except (requests.RequestException, FetchError):
             # network/timeout, an SSRF-blocked redirect target, a redirect to an
             # unsupported scheme, or too many redirects -> cannot safely determine
             # robots -> fail closed.
             decision = None
+            cause = "unreachable"
 
-        self._robots[host_key] = (decision, self._now() + _ROBOTS_TTL)
+        # A FAILURE BACKS OFF; A SUCCESS CLEARS THE COUNTER OUTRIGHT. The deferral is
+        # per host and capped, so a host that keeps refusing is asked once a day instead
+        # of once an hour, and is never struck off.
+        if decision is None:
+            fails = self._robots_fails.get(host_key, 0) + 1
+            self._robots_fails[host_key] = fails
+            self._robots_cause[host_key] = cause
+        else:
+            fails = 0
+            self._robots_fails.pop(host_key, None)
+            self._robots_cause.pop(host_key, None)
+        ttl = _robots_ttl_for(fails)
+        self._robots[host_key] = (decision, self._now() + ttl)
         if _robots_persist_enabled():
             _persist_robots_entry(
-                self._robots_cache_path, host_key, kind=persist_kind, body=persist_body
+                self._robots_cache_path, host_key, kind=persist_kind, body=persist_body,
+                cause=cause if decision is None else None, fails=fails, ttl=ttl,
             )
         return decision
 

@@ -12304,6 +12304,155 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   unavailable" flip — a host that cannot serve robots.txt for a month is down, and "down" is not
   "allowed". The 1-hour TTL stays; the 6-month qualified re-check already re-reads policy.
 
+- **RULED + SHIPPED 2026-09-11 (maintainer: "no, never drop a refused row — keep them deferred")
+  — A REFUSAL IS A DEFERRAL, AND THE OUTPUT NOW SAYS SO.** CHECKED FIRST, because the ruling could
+  already have been satisfied: nothing in the app DROPS a source on a robots refusal — no
+  `enabled = False`, no delete, grep-verified across `src/`; `robots_allowed` is descriptive and
+  feeds one query helper. So the app side needed nothing. **THE PIPELINE SIDE DID.** Stage A filed
+  every robots failure as `status: "rejected"`, which asserts a decision nobody made and invites
+  the next reader to spend a deferral like a verdict — which is exactly how 7,847 hosts came to sit
+  in a bucket nobody could act on. Shipped: a `DEFERRED_REASONS` set and a `deferred` status for
+  `robots_refused`, `robots_server_error`, `robots_unreachable`, the legacy `robots_unavailable`,
+  `homepage_unreachable`, `crawl_delay_too_long` and `host_timeout`; and a SECOND OUTPUT FILE —
+  `rejections.csv` is what the run judged and turned down, `deferred.csv` is what it could not
+  judge and must ask again. **THE LINE THAT DID NOT MOVE, and it is the load-bearing one:
+  `robots_disallowed` IS NOT DEFERRED.** An explicit `Disallow` is the host telling us no, in the
+  file designed to say so — a real judgement, respected, and still a rejection. A deferral is not a
+  quiet yes either: `to_catalogue_entry` still refuses anything that is not `verified`, pinned by
+  its own test. WHILE THERE, a conflation of the same family was closed: the codebase had TWO
+  statuses meaning "not judged" — `error` carried `crawl_delay_too_long` and `host_timeout`,
+  documented in its own comment as NOT judged. They move to `deferred`, and `error` narrows to what
+  it should always have meant: something went wrong in OUR code for this row. One existing test
+  asserted `("error", "crawl_delay_too_long")` and was updated DELIBERATELY, with the reason
+  written into the test rather than silently retargeted. STILL PENDING, the last place that reads a
+  path refusal as a policy: `src/monitoring/preflight.py`'s `robots_denied` verdict, which puts a
+  401/403 in the same bucket as an explicit `Disallow`. The tri-state `robots_allowed` fix stopped
+  it ASSERTING a permission it never had; it does not yet stop it calling a refusal a denial.
+
+- **SHIPPED 2026-09-11 — THE PER-HOST ROBOTS BACKOFF: A REFUSAL EXPIRES INSTEAD OF DECIDING
+  (maintainer: "go ahead with the per-host backoff so refused rows expire").** THE COST IT
+  REMOVES, measured: the completed run left 7,847 hosts whose robots.txt could not be read, and
+  at the flat one-hour TTL every one is re-asked EVERY HOUR for ever — 7,847 requests an hour of
+  pure refusal traffic against publishers who already declined once. Doubling from the same
+  one-hour base (1, 2, 4 … capped at 24 h, `OO_ROBOTS_BACKOFF_CAP_S`) settles a persistently
+  refusing host at one request a day. **IT IS A DEFERRAL, NEVER AN EXCLUSION** — the same
+  guarantee and deliberately the same wording as the feed de-churn backoff: the CAP means every
+  host is re-asked within a day however long it has been failing, and ONE success clears the
+  counter outright with no lingering penalty. **WHY IT LIVES WITH THE DECISION rather than in its
+  own table:** robots is a PER-HOST fact and `FeedFetchState` is keyed per SOURCE, so reusing it
+  would give two sources on one host a backoff each and both would keep asking — the opposite of
+  the point; and the project's own lesson about two rate authorities disagreeing over one
+  quantity says not to add a second. Cached and persisted beside the decision, so there is ONE
+  authority over when a host is re-asked, and it SURVIVES A RESTART — a cold start that handed a
+  host which had refused fifty times a fresh one-hour clock would make the measure no measure.
+  **THE TRAP THIS CREATED, AND THE ESCAPE HATCH.** The backoff is the right default and the wrong
+  answer to an operator saying "check these again": a `--retry robots_unavailable` run loads the
+  sidecar and finds every host it means to re-ask already inside the backoff its OWN earlier
+  failure created, so it would answer from cache, rewrite the same verdict, and look like work
+  while asking no host anything. `EthicalFetcher.forget_robots(host)` drops the decision, the
+  cause and the counter TOGETHER (a partial forget would re-ask and then back off using failures
+  it is no longer counting), and `run()` calls it for every domain leaving the done-set.
+  **THE MULTI-VM RE-RUN THE MAINTAINER ASKED ABOUT WORKS TODAY, and is measured rather than
+  asserted:** give each machine a COPY of the finished run directory and add `--shard i/N
+  --retry robots_unavailable`. Over a 200-row cursor across 8 shards every host was asked exactly
+  once, the union was the whole retry set, and no host was asked twice; the cursor is
+  last-line-wins per domain, so the eight files concatenate. Runbook §3 carries it.
+  STILL PENDING: whether a `refused` row is ever DROPPED rather than deferred (recommended: no),
+  and the preflight `robots_denied` verdict, which still collapses a 401/403 into the same
+  bucket as an explicit `Disallow`. The ratchet held at 446.
+
+- **SHIPPED 2026-09-11 — STEP ZERO OF THE ROBOTS RULING: THE CAUSE IS RECORDED, AND THE 11,404
+  UN-JUDGED ROWS ARE PRESERVED (maintainer: "go ahead, start with the cause attribution, and can
+  you update the previous source list so that those with unattributed robots.txt are also taken
+  care of?").** FAIL-CLOSED IS UNCHANGED EVERYWHERE — every case below still refuses the fetch;
+  what changed is that the catalogue can stop spending an absence like a verdict.
+  **(1) `RobotsUnavailable` CARRIES ITS CAUSE.** `refused` (401/403 — declined on THIS path; over
+  Tor frequently the exit's reputation, and the answer never says which), `server_error` (5xx or an
+  unexpected status — the host is broken), `unreachable` (network failure, timeout, SSRF-blocked
+  redirect, redirect loop). A 404/410 is NOT among them and never was: no robots.txt means
+  everything is allowed and `_get_robots` returns an empty parser, which is why "should we treat
+  unavailable as a green light" is a question about refusals and failures rather than about absence.
+  **(2) THE CAUSE SURVIVES THE CACHE, AND IS NEVER GUESSED.** `_robots_cause` is held beside the
+  decision for the same TTL, so a cached refusal reports the cause the first call gave it rather
+  than being right once an hour and wrong in between; the sidecar persists it; and an entry with no
+  recorded cause reports **`"unknown"`**, not a plausible-looking default — a confident wrong
+  attribution inside the pipeline's own data is worse than none.
+  **(3) STAGE A SPLITS THE LABEL:** `robots_refused` / `robots_server_error` / `robots_unreachable`.
+  The legacy `robots_unavailable` stays in `REASONS` and is emitted by nothing — it is kept purely
+  so `--retry robots_unavailable` still SELECTS the 7,847 rows a pre-split run wrote.
+  **(4) A PREFLIGHT FINDING, FOUND WHILE DOING (1) AND FIXED WITH IT.** `_apply_to_metadata` set
+  `robots_allowed = rec["verdict"] != "robots_denied"` — so a verdict of `"unreachable"` wrote
+  **`robots_allowed = True`**, asserting in the API and in every query over that indexed column a
+  permission derived from a robots.txt nobody read. It is the fabricated-data direction the
+  non-negotiables forbid, and it was the OPPOSITE failure from the one this ruling was about.
+  Bounded, and stated as such: the column is descriptive only — the real gate is
+  `EthicalFetcher._enforce_robots`, which fails closed independently on every fetch — so this was a
+  reporting lie, not a safety hole. Now tri-state on the state we actually observed: True for
+  allowed/missing, False for disallowed/blocked, **None (UNKNOWN) for unreachable, `http_5xx` and
+  anything unrecognised**. The column was already nullable and has no UI surface (grep-verified
+  across `src/static`), so there is no chrome string and nothing to translate.
+  **(5) THE PREVIOUS RUN IS TAKEN CARE OF, as far as anything here can take care of it.** The
+  11,404 rows the completed run left unjudged existed ONLY in an ephemeral session scratchpad and on
+  the maintainer's machine; they are now committed as
+  `docs/research/sources/discovered_candidates_2026-09-10/stage_a/stage_a_not_judged.csv`
+  (robots_unavailable 7,847, homepage_unreachable 3,553, crawl_delay_too_long 2, error 2 — last
+  verdict per domain, the same rule `--retry` reads). They CANNOT be re-attributed from here: this
+  sandbox answers `000` for every publisher, so a re-judgement is a live run on the maintainer's own
+  machine, and the runbook now carries the exact two commands. The kit is rebuilt with the split
+  (`oo-candidate-kit-2026-09-11-ba6cad8`) and the retry path verified from the extracted zip.
+  STILL PENDING, and deliberately NOT decided here: everything the 2026-09-10 entry lists —
+  whether a `refused` row is deferred or dropped, the per-host next-attempt and backoff that would
+  let an absence EXPIRE rather than decide, and the preflight `robots_denied` verdict itself. This
+  commit only makes those decidable. The ruff style ratchet came down 447 → 446 with it.
+
+- **ADDENDUM 2026-09-11 — THE 7,847 ROWS, MEASURED, AND ONE CORRECTION TO HOW THE QUESTION IS
+  USUALLY PUT.** The maintainer, returning to it: *"How should we interpret this? Should we consider
+  this as a green light for scraping, but add a more recurrent robots.txt verification? Is it also
+  ethical to completely ban it and exclude it from our catalogue?"* Three findings, all from the
+  code and the completed Stage A run; NOTHING could be measured against the live hosts, because this
+  sandbox answers `000` for every publisher (re-probed this turn, unchanged).
+  **(1) THE 'NO ROBOTS.TXT' CASE IS ALREADY A GREEN LIGHT AND IS NOT IN THIS BUCKET.**
+  `EthicalFetcher._get_robots` maps 404/410 to an EMPTY parser — `allow_all`, the standard
+  behaviour — so a host with no robots.txt proceeds normally and never reaches
+  `robots_unavailable`. The bucket is therefore only three things: **401/403 (refused)**, **5xx or an
+  unexpected status (server broken)**, and **a network failure, timeout, SSRF-blocked redirect or
+  redirect loop (unreachable)**. So "should we treat it as a green light" is asking about refusals
+  and failures, not about absence — absence is already handled.
+  **(2) WE CANNOT CURRENTLY TELL THE THREE APART, AND THAT IS STEP ZERO.** `RobotsUnavailable`
+  carries one message for all three causes and Stage A records the single label `unavailable`
+  (`verify_candidate_feeds.py:352`). Every row of the 7,847 is un-attributed. The additive fix the
+  entry above already proposed — the cause on the exception, `robots_refused` vs
+  `robots_unreachable` in the pipeline — is a prerequisite under EVERY possible ruling, including
+  "ban them", which cannot be made honestly without knowing what is being banned.
+  **(3) THE RATES SAY THE BUCKET IS DOMINATED BY THE PATHWAY, NOT BY HOST POLICY.** Over the
+  completed 22,045-row run: **`robots_unavailable` 7,847 (35.6 %) against `robots_disallowed` 262
+  (1.2 %) — thirty to one.** That is backwards from what the open web looks like: an explicit
+  `Disallow` is common and a host that refuses robots.txt outright is rare, so a 30:1 inversion is
+  not a property of publishers. Two corroborations. The bucket contains hosts that certainly DO
+  serve a robots.txt — `chd.sagepub.com` (SAGE), `zbc.co.zw` and `tdm.com.mo` (the Zimbabwean and
+  Macanese national broadcasters), `journalpioneer.com` and `kamloopsthisweek.com` (Canadian
+  regional dailies behind commercial WAFs). And the rate is UNIFORM rather than clustered: across
+  the fourteen highest-volume countries — ca, br, es, pl, ru, it, in, au, mx, jp, no, tr, ua, ro,
+  spanning every continent and every kind of internet governance — it sits in a **25–53 % band**,
+  while `robots_disallowed` stays flat at 0.4–2.7 % everywhere. A host-level or country-level policy
+  signal would vary with CDN penetration and legal regime; a pathway-level one is uniform, and this
+  is uniform. Read together with the 2026-09-10 addendum's point (3), the reading is that most of
+  these are Tor-exit reputation, not publishers refusing us.
+  **THE ANSWERS, unchanged in substance and now with the evidence under them.** Interpretation:
+  `robots_unavailable` is NOT a verdict, it is the ABSENCE of one, and the design error is that it
+  is currently spent like a verdict — a rejection row in the pipeline and, in
+  `src/monitoring/preflight.py`, a `robots_allowed = False` WRITTEN onto the source. An absence
+  should EXPIRE, not decide. Green light: NO as a blanket, because we cannot distinguish a refusal
+  from a failure; but the recurrent re-check the maintainer proposes is exactly right and is the
+  core of the recommendation — fail closed on the FETCH (the non-negotiable, untouched), while the
+  CATALOGUE holds the row as not-yet-judged with a per-host next-attempt and backoff, so the state
+  is re-earned rather than inherited. Ban and exclude: NO, and it is not the more ethical option but
+  a different error — deleting a publisher because a CDN declined our exit node punishes them for a
+  decision that was never theirs, throws away roughly a third of the discovered corpus on evidence
+  we have just shown is mostly about the path, and is irreversible in a way the refusal it claims to
+  respect is not. Respecting robots means not FETCHING; it has never meant refusing to know a
+  publisher exists.
+
 - **ADDENDUM 2026-09-10 (maintainer, same day) — THE DEFAULT DEPLOYMENT IS A WHONIX/TOR PATH THROUGH A
   DEBIAN VM, SO THE "MEASURE FROM CLEARNET FIRST" HALF OF THE RECOMMENDATION ABOVE IS WITHDRAWN.** The
   maintainer's question: "if you take into consideration that the default usage of the app would be to
@@ -12488,6 +12637,53 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
   are kept, not rejected, and wait on the robots ruling above.
 
+- **RULED + SHIPPED 2026-09-11 — A CATALOGUE CORRECTION NOW REACHES AN EXISTING INSTALL, WITHOUT
+  OVERWRITING THE OPERATOR (maintainer: "go ahead with the three-way merge").** The maintainer
+  asked whether stopping, updating and restarting a days-old instance would pick up the new
+  qualified sources — *"I trust not"* — and how to avoid export/import. MEASURED FIRST, because the
+  answer had two halves and only one was a problem. (a) NEW ROWS ALREADY FLOW, and their instinct
+  was right about the app as it WAS: before #1108 an update added the rows and left them
+  `unqualified`, parked behind the ~73k never-attempted discovered rows (F2), i.e. never collected.
+  With `stamp_curated_catalog` wired at both boot sites (`main.py:233`, `:2926`), a simulated
+  days-old install seeded from the OLD 3,429-row catalogue gained **2,800 sources — 2,151 + 606
+  academic + 43 official — all registered, all qualified, all enabled**, while every piece of local
+  state survived: earned verdicts kept their clock (not restarted), a disqualified row stayed
+  disqualified, a hand-disabled row stayed disabled, discovered candidates survived. No
+  export/import needed. (b) THE REAL GAP, found while checking (a): re-seeding is ADD-ONLY, so a
+  CORRECTION to a row that already exists never arrives. Measured: a row whose `rss_url` the
+  catalogue had fixed still served `https://STALE.example/old-feed` after a re-seed. That matters
+  because feeds rot at scale — of the 22,045 candidates Stage A judged, 2,622 had an unparseable
+  feed and 669 a stale one — and the same rot reaches rows we already ship.
+  WHY IT NEEDED A RULING RATHER THAN A PATCH: an operator can edit a source in the UI, and a
+  two-way comparison cannot tell "the value we shipped, untouched" from "the value they chose" —
+  both are merely *not* the new catalogue value. Overwriting both is, in
+  `reconcile_source_metadata`'s own words about itself, a data-loss bug wearing a maintenance
+  task's clothes; overwriting neither is the status quo.
+  SHIPPED: `Source.catalog_baseline` (additive nullable TEXT, migration `b3e77a91c5d4` + boot
+  self-heal on the `source_revision` precedent, registered in `SELF_HEALED_COLUMNS` so the drift
+  guard covers it) holds a small JSON record of what the catalogue last shipped for that row — the
+  THIRD side. `sync_catalogue_corrections` then runs per owned field: ships-now == shipped-then →
+  skip (a steady catalogue costs comparisons and NO writes); live == shipped-then → the operator
+  never touched it, APPLY; otherwise KEEP theirs and REPORT it by domain and field. The baseline
+  advances even when the edit is kept, so a conflict is reported ONCE rather than nagging every
+  boot. `CATALOGUE_OWNED_FIELDS` = rss_url, name, country, language, region, source_type; the
+  operator's own knobs (enabled, priority, rate_limit_ms, reliability_score) are never touched.
+  THREE DELIBERATE LIMITS, each stated rather than discovered later. **`tags` is out of v1** — a
+  SET with four writers (catalogue, the seed's `via:` marker, `ensure_channel_tags`, the operator)
+  where a replace silently drops the other three and a union cannot express the REMOVAL that
+  correcting a wrong tag means; it needs its own policy. **A row with no baseline adopts the
+  current catalogue and changes nothing** — every row predating the column is in that position and
+  guessing whether an untraceable value was an edit is the guess the column exists to avoid, so the
+  cost is stated: a correction made BEFORE this shipped never reaches an existing row. **An EMPTY
+  live value is a gap, not an edit**, and is skipped here, so this and `reconcile_source_metadata`
+  (which fills empties and refuses everything else) cannot fight over one field.
+  MEASURED ON THE REAL CATALOGUE: the corrected feed URL arrives on an untouched row; the same
+  correction against an operator-edited row leaves their value and reports the divergence; a
+  steady-state re-boot applies 0, keeps 0, adopts 0 and writes nothing, at 173 ms over 6,670
+  catalogue rows against the 135 ms its pre-existing sibling already costs. 7 behavioural tests,
+  including an anti-vacuity case asserting EVERY owned field really carries a correction. The ruff
+  style ratchet came DOWN 448 → 447 with this change.
+
 - **SHIPPED 2026-09-11 — THE RULING APPLIED: TWO NEW CATALOGUES, AND THE 60k GETS ITS OWN
   WORKLISTS AND AN 8-MACHINE SPLIT.** The maintainer approved the recommendation and asked to deal
   with the other 60k, with clear instructions, a new kit if needed, and — the constraint that drove
@@ -12622,3 +12818,51 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   fabricated fact. Pinned by 3 new tests (the contradiction stripped, an agreeing suffix KEPT, a
   non-country parenthetical like `(English)` untouched, a name that is nothing but the suffix kept
   rather than collapsed, and both splice refusals with their reasons).
+
+### 2026-09-11 — A GREEN SUITE THAT WENT RED ON A TEST NOBODY TOUCHED: the markup timing ratio can report the quadratic bomb on linear code
+
+**PENDING: a two-line fix, not applied, because it belongs to no branch currently open.** Recorded
+so the next session that meets this does not spend its budget the way this one nearly did.
+
+`tests/test_markup_blocks.py::test_an_unclosed_block_opener_no_longer_costs_a_scan_per_opener`
+failed once in a full-suite run on the source-qualification branch (PR #1113), on the
+`{| class=wikitable` shape. **That branch touches none of `src/utils/markup_blocks.py`,
+`src/analytics/extract.py` or `src/wiki/corpus.py`** — `git diff --stat origin/main...HEAD` on
+those three paths is empty — so the first question was whether the recorded K*N regex bomb had
+come back through some path nobody expected.
+
+It had not. **The test measures a wall-clock RATIO of two single timings**, 100,000 chars against
+400,000, and asserts the ratio is under 8. Its own docstring explains, correctly, why a ratio
+beats an absolute bar: *"an absolute bar would be a bet on this runner's speed."* The reasoning
+stops one step short. A ratio survives a runner that is uniformly slow; it does NOT survive a
+runner that is **intermittently busy**, because a single scheduler preemption lands on ONE of the
+two measurements and moves the ratio by however long the preemption was. The absolute durations
+here are ~0.7 ms and ~3 ms, so one preemption is enough.
+
+**Measured, rather than argued.** On an otherwise-quiet container, 12 consecutive trials: median
+ratio 4.15, max 4.69, zero over the bar (linear is 4.0, so the measurement is honest). Then with
+four busy cores alongside it:
+
+```
+best-of-1 (as the test runs it):  median 5.31  max 17.53  FAILED 3 of 15
+best-of-3:                        median 4.15  max  4.61  FAILED 0 of 15
+```
+
+**The max of 17.53 is the finding, not the three failures.** The docstring cites 15.9x as the
+signature of the pre-fix quadratic scan. A contended runner can therefore make this test report
+*the exact number that means the bomb is back*, on code that is provably linear — which is the
+worst failure mode a guard test can have, because the evidence it presents for its own alarm is
+indistinguishable from the real thing.
+
+**The fix, if the maintainer wants it:** `_time` runs the function once; have it take the `min` of
+a small number of repeats (3 is enough, per the table above) and have `_scaling` use that. The
+minimum is the run least disturbed by anything else on the box, which is the standard way to time
+against a noisy clock — and it changes nothing about WHAT is measured, so the guard keeps its
+teeth. Both `_scaling` and the sibling opener-count ratio above it call `_time` and would be
+covered by the one change.
+
+**Not applied here on purpose.** PR #1113 is the catalogue-corrections and robots-deferral branch;
+a timing-test fix is unrelated to it, and this project's rule is to say what is failing with a
+proposed patch rather than widen a PR on my own judgement. CI has NOT gone red on this test — the
+failure was local, in a full-suite verification run, and the same test passed in the same session
+under quiet conditions.

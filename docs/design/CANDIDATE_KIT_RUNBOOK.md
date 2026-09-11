@@ -146,6 +146,30 @@ about seven polite requests two seconds apart, so roughly 15–20 s per host per
 workers about 2,000–2,500 hosts an hour — worklist 1 in under two hours, worklist 2 in eight to
 nine. Cost in model tokens: zero.
 
+### Re-judging what a run could not judge (`--retry`), across several machines
+
+A finished run leaves rows it could not judge — `robots_unavailable` above all. To ask those
+hosts again with a kit built on or after 2026-09-11 (which records WHY robots could not be
+read), give **each machine a COPY of the finished run directory** and add its shard:
+
+```
+# on VM i of N, with runs/w3/ copied in from the original run
+python3 run_stage_a.py --only institutions --shard i/N --retry robots_unavailable
+```
+
+Each machine re-judges **only its own slice** and leaves the rest of the cursor untouched.
+Measured over a 200-row cursor across 8 shards: every host asked exactly once, the union is the
+whole retry set, no host asked twice. Collect the eight `verified.jsonl` files and concatenate
+them — the cursor is last-line-wins per domain, so the new verdicts outrank the old ones and
+duplicated unchanged lines are harmless.
+
+**Why a retry is not swallowed by the backoff.** A robots failure now backs that host off
+per-host (1 h, 2 h, 4 h … capped at 24 h), so a `--retry` run would otherwise load the sidecar,
+find every host it means to re-ask already inside the backoff its own earlier failure created,
+answer from cache, and rewrite the same verdict while asking nobody anything. `run()` therefore
+calls `EthicalFetcher.forget_robots` for each domain leaving the done-set: an explicit retry is
+an operator overriding the deferral, which is exactly what the deferral is not for.
+
 ## 4. Stage B — triage, the only model stage
 
 For each worklist directory once its Stage A is complete:
