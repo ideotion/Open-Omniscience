@@ -78,10 +78,30 @@ def extract_for_articles(
     if work:
         sweep_text_budget(work[0].content)
 
-    with session_scope() as session:
-        already: set[int] = set()
-        if skip_existing and work:
-            ids = [w.article_id for w in work]
+    # C1 (field diagnostics 2026-09-11): the dedup read and the whole slow loop used to
+    # share ONE `session_scope()`. The measured consequence was a read transaction open
+    # **17.4 hours** (`readers.oldest_age_s 62500.007`, thread "AnyIO worker thread"),
+    # pinning the WAL so hard that the checkpoint reclaimed nothing at all
+    # (`wal_bytes_before == wal_bytes_after == 918880`).
+    #
+    # The mechanism is specifically the SKIP/FAIL path, which is why per-article commits
+    # did not save it: a commit ends the transaction, but a run where every article is
+    # skipped, vetoed or fails NEVER COMMITS, so the snapshot taken by the dedup SELECT
+    # below stays open for the entire run -- and this is a GENERATOR, so if the consumer
+    # stops iterating (a client disconnecting mid-stream) the frame is suspended with the
+    # `with` block still entered, and the connection is not released until collection.
+    # That is the "streamed/generator response" escape from `get_db()`'s `finally`.
+    #
+    # So: read the worklist, then RELEASE the session -- the exact narrow pattern this
+    # module's own caller already uses one level up (`_langdetect_worker` in
+    # src/api/ai.py: "read the worklist, then release the session"). Writes take their own
+    # short-lived session per stored article. One pool checkout per article is negligible
+    # beside the LLM call it accompanies, and it means no DB connection is held across
+    # ANY network wait.
+    already: set[int] = set()
+    if skip_existing and work:
+        ids = [w.article_id for w in work]
+        with session_scope() as session:  # read the worklist, then release the session
             already = {
                 r[0]
                 for r in session.execute(
@@ -90,44 +110,46 @@ def extract_for_articles(
                     )
                 ).all()
             }
-        for i, w in enumerate(work, 1):
-            if skip_existing and w.article_id in already:
-                skipped += 1
-                yield {"event": "item", "i": i, "total": total,
-                       "article_id": w.article_id, "status": "skipped"}
-                continue
-            try:
-                terms = extract_terms(
-                    client, w.title, w.content, model=model,
-                    max_terms=max_terms, keep_alive=keep_alive, system=system,
-                )
-            except LLMUnavailable as exc:
-                # Ollama down / model missing / airplane mode — won't recover mid-run.
-                yield {"event": "done", "total": total, "stored": stored,
-                       "skipped": skipped, "failed": failed, "terms": terms_total,
-                       "aborted": True, "reason": str(exc)[:200]}
-                return
-            except LLMError as exc:
-                failed += 1
-                yield {"event": "item", "i": i, "total": total,
-                       "article_id": w.article_id, "status": "failed",
-                       "error": str(exc)[:200]}
-                continue
+
+    for i, w in enumerate(work, 1):
+        if skip_existing and w.article_id in already:
+            skipped += 1
+            yield {"event": "item", "i": i, "total": total,
+                   "article_id": w.article_id, "status": "skipped"}
+            continue
+        try:
+            terms = extract_terms(
+                client, w.title, w.content, model=model,
+                max_terms=max_terms, keep_alive=keep_alive, system=system,
+            )
+        except LLMUnavailable as exc:
+            # Ollama down / model missing / airplane mode — won't recover mid-run.
+            yield {"event": "done", "total": total, "stored": stored,
+                   "skipped": skipped, "failed": failed, "terms": terms_total,
+                   "aborted": True, "reason": str(exc)[:200]}
+            return
+        except LLMError as exc:
+            failed += 1
+            yield {"event": "item", "i": i, "total": total,
+                   "article_id": w.article_id, "status": "failed",
+                   "error": str(exc)[:200]}
+            continue
+        with session_scope() as session:  # a write-only session, held for the write
             added = ai_store.record_keywords(
                 session, w.article_id, terms, model=model, kind=kind,
                 language=w.language, prompt_version=prompt_version,
-                # The article's own text, so each stored term records WHERE it occurs
-                # in it. The title is included because a term the model took from the
-                # headline is grounded exactly as much as one from the body -- the same
-                # text the model was shown (`_combined_text`'s shape), so a term the
-                # model could have read is never reported as absent from the text.
+            # The article's own text, so each stored term records WHERE it occurs
+            # in it. The title is included because a term the model took from the
+            # headline is grounded exactly as much as one from the body -- the same
+            # text the model was shown (`_combined_text`'s shape), so a term the
+            # model could have read is never reported as absent from the text.
                 evidence_text=f"{w.title}\n\n{w.content}" if w.title else w.content,
             )
             session.commit()  # persist progress; release the gate between articles
-            stored += 1
-            terms_total += added
-            yield {"event": "item", "i": i, "total": total,
-                   "article_id": w.article_id, "status": "stored", "terms": added}
+        stored += 1
+        terms_total += added
+        yield {"event": "item", "i": i, "total": total,
+               "article_id": w.article_id, "status": "stored", "terms": added}
 
     yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
            "failed": failed, "terms": terms_total, "aborted": False}

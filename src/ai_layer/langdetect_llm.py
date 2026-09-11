@@ -206,10 +206,24 @@ def detect_for_articles(
     yield {"event": "start", "total": total, "model": model, "kind": LANG_KIND}
     stored = skipped = failed = none = vetoed = 0
 
-    with session_scope() as session:
-        already: set[int] = set()
-        if skip_existing and work:
-            ids = [w.article_id for w in work]
+    # C1 (field diagnostics 2026-09-11), the same defect as src/ai_layer/jobs.py and fixed
+    # the same way: the dedup read and the whole slow loop shared ONE `session_scope()`,
+    # leaving a read transaction open across every LLM call. Measured in the field at
+    # **17.4 hours** open ("AnyIO worker thread"), pinning the WAL so the checkpoint
+    # reclaimed nothing (`wal_bytes_before == wal_bytes_after`).
+    #
+    # Per-article commits did not save it, and this module shows why even more plainly
+    # than jobs.py does: `skipped`, `none` and `vetoed` outcomes all `continue` WITHOUT
+    # writing anything, so a run of articles the model cannot classify -- exactly the
+    # residue this job is designed to chew through repeatedly -- never commits at all, and
+    # the dedup SELECT's snapshot stays open for the whole run.
+    #
+    # Read the worklist, then release the session (the pattern this module's own caller
+    # already uses in src/api/ai.py); writes take a short-lived session of their own.
+    already: set[int] = set()
+    if skip_existing and work:
+        ids = [w.article_id for w in work]
+        with session_scope() as session:  # read the worklist, then release the session
             already = {
                 r[0]
                 for r in session.execute(
@@ -219,67 +233,68 @@ def detect_for_articles(
                 ).all()
             }
 
-        workers = max(1, max_workers)
-        idx = 0
-        n = len(work)
-        while idx < n:
-            if should_stop is not None and should_stop():
-                yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
-                       "failed": failed, "none": none, "vetoed": vetoed, "aborted": True,
-                       "reason": "cancelled"}
-                return
-            batch: list[tuple[int, ArticleWork]] = []
-            while idx < n and len(batch) < workers:
-                w = work[idx]
-                idx += 1
-                pos = idx
-                if skip_existing and w.article_id in already:
-                    skipped += 1
-                    yield {"event": "item", "i": pos, "total": total,
-                           "article_id": w.article_id, "status": "skipped"}
-                    continue
-                batch.append((pos, w))
-            if not batch:
+    workers = max(1, max_workers)
+    idx = 0
+    n = len(work)
+    while idx < n:
+        if should_stop is not None and should_stop():
+            yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
+                   "failed": failed, "none": none, "vetoed": vetoed, "aborted": True,
+                   "reason": "cancelled"}
+            return
+        batch: list[tuple[int, ArticleWork]] = []
+        while idx < n and len(batch) < workers:
+            w = work[idx]
+            idx += 1
+            pos = idx
+            if skip_existing and w.article_id in already:
+                skipped += 1
+                yield {"event": "item", "i": pos, "total": total,
+                       "article_id": w.article_id, "status": "skipped"}
                 continue
+            batch.append((pos, w))
+        if not batch:
+            continue
 
-            results = run_concurrent(
-                batch,
-                lambda item: detect_language_llm(
-                    client, item[1].title, item[1].content, model=model, keep_alive=keep_alive
-                ),
-                max_workers=workers,
-            )
-            for (pos, w), res in zip(batch, results, strict=True):
-                if not res.ok:
-                    if isinstance(res.error, LLMUnavailable):
-                        yield {"event": "done", "total": total, "stored": stored,
-                               "skipped": skipped, "failed": failed, "none": none,
-                               "vetoed": vetoed, "aborted": True, "reason": str(res.error)[:200]}
-                        return
-                    failed += 1
-                    yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
-                           "status": "failed", "error": str(res.error)[:200]}
-                    continue
-                code = res.value
-                if not code:
-                    none += 1  # garbage/unknown answer — store NOTHING (miss over invent)
-                    yield {"event": "item", "i": pos, "total": total,
-                           "article_id": w.article_id, "status": "none"}
-                    continue
-                refused, why = answer_vetoed(code, answer_veto or {})
-                if refused:
-                    vetoed += 1
-                    yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
-                           "status": "vetoed", "language": code, "reason": why}
-                    continue
+        results = run_concurrent(
+            batch,
+            lambda item: detect_language_llm(
+                client, item[1].title, item[1].content, model=model, keep_alive=keep_alive
+            ),
+            max_workers=workers,
+        )
+        for (pos, w), res in zip(batch, results, strict=True):
+            if not res.ok:
+                if isinstance(res.error, LLMUnavailable):
+                    yield {"event": "done", "total": total, "stored": stored,
+                           "skipped": skipped, "failed": failed, "none": none,
+                           "vetoed": vetoed, "aborted": True, "reason": str(res.error)[:200]}
+                    return
+                failed += 1
+                yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
+                       "status": "failed", "error": str(res.error)[:200]}
+                continue
+            code = res.value
+            if not code:
+                none += 1  # garbage/unknown answer — store NOTHING (miss over invent)
+                yield {"event": "item", "i": pos, "total": total,
+                       "article_id": w.article_id, "status": "none"}
+                continue
+            refused, why = answer_vetoed(code, answer_veto or {})
+            if refused:
+                vetoed += 1
+                yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
+                       "status": "vetoed", "language": code, "reason": why}
+                continue
+            with session_scope() as session:  # write-only, released immediately
                 ai_store.record_keywords(
                     session, w.article_id, [code], model=model, kind=LANG_KIND,
                     language=code, prompt_version=LANGDETECT_PROMPT_VERSION,
                 )
                 session.commit()  # persist progress; release the gate between articles
-                stored += 1
-                yield {"event": "item", "i": pos, "total": total,
-                       "article_id": w.article_id, "status": "stored", "language": code}
+            stored += 1
+            yield {"event": "item", "i": pos, "total": total,
+                   "article_id": w.article_id, "status": "stored", "language": code}
 
     yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
            "failed": failed, "none": none, "vetoed": vetoed, "aborted": False}
