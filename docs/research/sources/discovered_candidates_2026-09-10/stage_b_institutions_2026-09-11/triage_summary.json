@@ -1,0 +1,37 @@
+{
+ "entries": 1033,
+ "by_target": {
+  "journalism": 3,
+  "academic": 36,
+  "official": 994
+ },
+ "targets": {
+  "journalism": "configs/sources.yml",
+  "academic": "configs/academic_sources.yml",
+  "official": "configs/official_sources.yml"
+ },
+ "written": {
+  "journalism": "/tmp/claude-0/-home-user-Open-Omniscience/24a35035-4988-5d18-910e-950c919eeb32/scratchpad/stageb/out/triaged.yml",
+  "academic": "/tmp/claude-0/-home-user-Open-Omniscience/24a35035-4988-5d18-910e-950c919eeb32/scratchpad/stageb/out/triaged_academic.yml",
+  "official": "/tmp/claude-0/-home-user-Open-Omniscience/24a35035-4988-5d18-910e-950c919eeb32/scratchpad/stageb/out/triaged_official.yml"
+ },
+ "rejected": 1340,
+ "by_reason": {
+  "institution_not_primary_source": 1024,
+  "not_admitted:trade-or-corporate": 17,
+  "not_admitted:other": 14,
+  "not_admitted:religious": 7,
+  "low_confidence": 36,
+  "batch_untrusted": 240,
+  "not_admitted:broadcaster": 1,
+  "not_admitted:personal-blog": 1
+ },
+ "untrusted_batches": [
+  "batch_0031.json: canary failed: theguardian.com",
+  "batch_0032.json: canary failed: theguardian.com",
+  "batch_0033.json: canary failed: theguardian.com",
+  "batch_0034.json: canary failed: theguardian.com",
+  "batch_0035.json: canary failed: theguardian.com",
+  "batch_0036.json: canary failed: theguardian.com"
+ ]
+}
