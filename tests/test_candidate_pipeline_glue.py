@@ -55,7 +55,7 @@ def _verified_jsonl(path: Path, n: int, *, verified: bool = True) -> None:
 
 # ------------------------------------------------------------------ prepare
 
-def test_prepare_batches_only_verified_rows_and_mixes_in_both_canaries(tmp_path):
+def test_prepare_batches_only_verified_rows_and_mixes_in_every_canary(tmp_path):
     src = tmp_path / "verified.jsonl"
     _verified_jsonl(src, 5)
     with src.open("a", encoding="utf-8") as fh:
@@ -64,8 +64,10 @@ def test_prepare_batches_only_verified_rows_and_mixes_in_both_canaries(tmp_path)
     assert m["rows"] == 5 and len(m["batches"]) == 2
     b1 = json.loads(Path(m["batches"][0]).read_text(encoding="utf-8"))
     domains = [r["domain"] for r in b1]
-    assert "theguardian.com" in domains and "ec.europa.eu" in domains and "bad.example" not in domains
-    assert domains[0] != "theguardian.com" and domains[-1] != "ec.europa.eu"  # never at the edges
+    assert {c["domain"] for c in tb.CANARIES} <= set(domains), "every canary rides in every batch"
+    assert "bad.example" not in domains
+    canaries = {c["domain"] for c in tb.CANARIES}
+    assert domains[0] not in canaries and domains[-1] not in canaries  # never at the edges
     assert not any("expected" in r for r in b1)  # the answers never ride in the batch
     vocab = json.loads((tmp_path / "triage" / "vocabulary.json").read_text(encoding="utf-8"))
     assert "news" in vocab and "state-media" not in vocab and not any(v.startswith("via:") for v in vocab)
@@ -74,21 +76,24 @@ def test_prepare_batches_only_verified_rows_and_mixes_in_both_canaries(tmp_path)
 # ------------------------------------------------------------------ validate
 
 def _batch_rows():
-    return [{"domain": "a.example"}, {"domain": "theguardian.com"}, {"domain": "b.example"}, {"domain": "ec.europa.eu"}]
+    return [{"domain": "a.example"}, {"domain": "theguardian.com"}, {"domain": "b.example"},
+            {"domain": "ec.europa.eu"}, {"domain": "rijksmuseum.nl"}]
 
 
 def _good_answers():
     return {"rows": [
         {"domain": "a.example", "journalism": True, "kind": "news", "language": "fr", "topics": ["politics", "made-up"], "confidence": "high"},
         {"domain": "theguardian.com", "journalism": True, "kind": "news", "language": "en", "topics": [], "confidence": "high"},
-        {"domain": "b.example", "journalism": False, "kind": "institution", "language": "fr", "topics": [], "confidence": "medium"},
-        {"domain": "ec.europa.eu", "journalism": False, "kind": "institution", "language": "en", "topics": [], "confidence": "high"},
+        {"domain": "b.example", "journalism": False, "kind": "institution", "language": "fr", "topics": [], "confidence": "medium", "primary_source": True},
+        {"domain": "ec.europa.eu", "journalism": False, "kind": "institution", "language": "en", "topics": [], "confidence": "high", "primary_source": True},
+        {"domain": "rijksmuseum.nl", "journalism": False, "kind": "institution", "language": "nl", "topics": [], "confidence": "high", "primary_source": False},
     ]}
 
 
 def test_validate_accepts_a_clean_batch_and_leashes_the_vocabulary():
     answers, problems = tb.validate_result(_batch_rows(), _good_answers(), {"politics", "news"})
-    assert problems == [] and set(answers) == {"a.example", "theguardian.com", "b.example", "ec.europa.eu"}
+    assert problems == [] and set(answers) == {"a.example", "theguardian.com", "b.example",
+                                              "ec.europa.eu", "rijksmuseum.nl"}
     assert answers["a.example"]["topics"] == ["politics"]  # the invented topic is dropped, the row kept
 
 
@@ -133,12 +138,19 @@ def test_merge_keeps_only_verified_journalism_from_trusted_batches(tmp_path):
                 exp = dict(c["expected"])
                 if flip_canary:
                     exp["journalism"] = not exp["journalism"]
-                out.append({"domain": r["domain"], "journalism": exp["journalism"], "kind": exp["kind"],
-                            "language": exp["language"], "topics": [], "confidence": "high"})
+                ans = {"domain": r["domain"], "journalism": exp["journalism"], "kind": exp["kind"],
+                       "language": exp["language"], "topics": [], "confidence": "high"}
+                if "primary_source" in exp:
+                    ans["primary_source"] = exp["primary_source"]
+                out.append(ans)
             else:
-                out.append({"domain": r["domain"], "journalism": r["domain"] != "s1.example",
-                            "kind": "news" if r["domain"] != "s1.example" else "institution",
-                            "language": "fr", "topics": [topic], "confidence": confidence})
+                inst = r["domain"] == "s1.example"
+                row = {"domain": r["domain"], "journalism": not inst,
+                       "kind": "institution" if inst else "news",
+                       "language": "fr", "topics": [topic], "confidence": confidence}
+                if inst:
+                    row["primary_source"] = False   # a museum-shaped institution: refused
+                out.append(row)
         Path(batch_path.replace(".json", ".result.json")).write_text(json.dumps({"rows": out}), encoding="utf-8")
 
     answer(m["batches"][0], flip_canary=False)      # s0 (news), s1 (institution)
@@ -149,9 +161,89 @@ def test_merge_keeps_only_verified_journalism_from_trusted_batches(tmp_path):
     e = doc["sources"][0]
     assert e["verified"] is True and e["last_verified"] == "2026-09-10" and topic in e["tags"]
     assert not any(t.startswith("via:") for t in e["tags"])
-    assert summary["by_reason"]["not_journalism:institution"] == 1
+    assert summary["by_reason"]["institution_not_primary_source"] == 1
     assert summary["by_reason"]["batch_untrusted"] == 2
     assert len(summary["untrusted_batches"]) == 1
+
+
+def test_merge_routes_each_admitted_class_to_its_own_catalogue(tmp_path):
+    """THE 2026-09-11 RULING, which refused a blanket verdict on the institution bucket.
+
+    ``academic`` and the primary-source half of ``institution`` "belong in their OWN catalogue
+    beside legal and markets, so the briefing and trend surfaces can lens them separately and a
+    corpus statistic keeps meaning what it says". The half that is NOT a primary source -- the
+    maintainer's own example was a museum's events page beside the UN Association of Sweden --
+    stays out, and so do broadcaster, religious, personal-blog and aggregator, on the merits.
+
+    All four cases in one batch, because the thing that would break is the ROUTING, and routing
+    is only testable when more than one destination is in play at once.
+    """
+    src = tmp_path / "verified.jsonl"
+    _verified_jsonl(src, 4)
+    triage = tmp_path / "triage"
+    m = tb.prepare(src, triage, batch_size=4)
+    assert len(m["batches"]) == 1
+
+    kinds = {                       # s0 journalism · s1 academic · s2 primary · s3 refused
+        "s0.example": {"journalism": True, "kind": "news"},
+        "s1.example": {"journalism": False, "kind": "academic"},
+        "s2.example": {"journalism": False, "kind": "institution", "primary_source": True},
+        "s3.example": {"journalism": False, "kind": "institution", "primary_source": False},
+    }
+    rows = json.loads(Path(m["batches"][0]).read_text(encoding="utf-8"))
+    out = []
+    for r in rows:
+        c = next((x for x in tb.CANARIES if x["domain"] == r["domain"]), None)
+        if c:
+            a = dict(c["expected"])
+            out.append({"domain": r["domain"], "topics": [], "confidence": "high", **a})
+        else:
+            out.append({"domain": r["domain"], "language": "fr", "topics": [],
+                        "confidence": "high", **kinds[r["domain"]]})
+    Path(m["batches"][0].replace(".json", ".result.json")).write_text(
+        json.dumps({"rows": out}), encoding="utf-8")
+
+    summary = tb.merge(src, triage, tmp_path / "out.yml", today="2026-09-11")
+    assert summary["untrusted_batches"] == [], summary["untrusted_batches"]
+
+    def domains(path):
+        return [e["domain"] for e in (yaml.safe_load(Path(path).read_text(encoding="utf-8"))["sources"] or [])]
+
+    assert domains(tmp_path / "out.yml") == ["s0.example"]
+    assert domains(tmp_path / "out_academic.yml") == ["s1.example"]
+    assert domains(tmp_path / "out_official.yml") == ["s2.example"]
+    assert summary["by_target"] == {"journalism": 1, "academic": 1, "official": 1}
+    assert summary["by_reason"]["institution_not_primary_source"] == 1, (
+        "an institution refused for not being a primary source must be counted as THAT, not "
+        "lumped with a broadcaster refused on the merits -- the counts are how the next "
+        "admission decision gets made"
+    )
+    # The source_type keeps the class, so every surface can lens them apart from reporting.
+    acad = yaml.safe_load((tmp_path / "out_academic.yml").read_text(encoding="utf-8"))["sources"][0]
+    offi = yaml.safe_load((tmp_path / "out_official.yml").read_text(encoding="utf-8"))["sources"][0]
+    assert acad["source_type"] == "scientific-journal" and offi["source_type"] == "institution"
+
+
+def test_a_target_with_no_rows_is_written_empty_rather_than_skipped(tmp_path):
+    """An ABSENT file reads as "the stage did not run"; an empty one says "it ran and found
+    none". Those are different facts and the operator acts differently on them."""
+    src = tmp_path / "verified.jsonl"
+    _verified_jsonl(src, 2)
+    triage = tmp_path / "triage"
+    m = tb.prepare(src, triage, batch_size=2)
+    rows = json.loads(Path(m["batches"][0]).read_text(encoding="utf-8"))
+    out = []
+    for r in rows:
+        c = next((x for x in tb.CANARIES if x["domain"] == r["domain"]), None)
+        a = dict(c["expected"]) if c else {"journalism": True, "kind": "news", "language": "fr"}
+        out.append({"domain": r["domain"], "topics": [], "confidence": "high", **a})
+    Path(m["batches"][0].replace(".json", ".result.json")).write_text(
+        json.dumps({"rows": out}), encoding="utf-8")
+    tb.merge(src, triage, tmp_path / "out.yml", today="2026-09-11")
+    for name in ("out.yml", "out_academic.yml", "out_official.yml"):
+        assert (tmp_path / name).exists(), f"{name} was skipped instead of written empty"
+    doc = yaml.safe_load((tmp_path / "out_official.yml").read_text(encoding="utf-8"))
+    assert doc["sources"] == [] or doc["sources"] is None
 
 
 # ------------------------------------------------------------------ splice
