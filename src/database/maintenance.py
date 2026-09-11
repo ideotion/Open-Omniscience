@@ -1691,7 +1691,18 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
             # program actually runs to completion. fetchmany() in bounded chunks
             # rather than fetchall() so a large/unbounded `pages` never holds the
             # whole freed-page count as buffered rows at once.
+            # SQLAlchemy types this Optional, and it really is None for an invalidated
+            # or detached connection. REFUSED BY NAME rather than fallen back on: the
+            # only fallback available is conn.execute(), which is precisely the path
+            # that silently reclaims 1 page of the N requested. A quiet degradation to
+            # the bug this comment describes would be worse than a logged failure, so
+            # the raise lands in the enclosing handler and is recorded with a reason.
             dbapi_conn = conn.connection.dbapi_connection
+            if dbapi_conn is None:
+                raise RuntimeError(
+                    "no DBAPI connection to drive PRAGMA incremental_vacuum on; "
+                    "refusing rather than falling back to the single-page path"
+                )
             raw_cur = dbapi_conn.cursor()
             try:
                 raw_cur.execute(f"PRAGMA incremental_vacuum({pages})")
