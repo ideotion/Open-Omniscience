@@ -3377,5 +3377,6 @@
   "Downloading {n} pieces…": "正在下载 {n} 个分卷…",
   "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "有一个或多个日志被切成编号分片 — volumes.json 说明是哪些以及如何重新拼接",
   "Sent {n} pieces — send them all together.": "已发送 {n} 个分卷 — 请将它们一并发送。",
-  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "同一个已完成的存档，切分为多个较小的 .zip 文件，以便在单个大文件无法上传的地方作为附件发送。每个分卷都可用任意解压工具单独打开。如果某个日志过大、单个分卷装不下，它会被切成编号分片，整套文件会说明是哪些以及如何重新拼接。只切分已经生成的存档 — 绝不会启动新的构建。"
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "同一个已完成的存档，切分为多个较小的 .zip 文件，以便在单个大文件无法上传的地方作为附件发送。每个分卷都可用任意解压工具单独打开。如果某个日志过大、单个分卷装不下，它会被切成编号分片，整套文件会说明是哪些以及如何重新拼接。只切分已经生成的存档 — 绝不会启动新的构建。",
+  "A build is running — wait for it, then split the archive it produces.": "正在构建中 — 请等待完成，然后分卷它生成的存档。"
 }

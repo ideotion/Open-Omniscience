@@ -550,12 +550,20 @@
         try {
           m = await api("/api/diagnostics/all-job/volumes");
         } catch (e) {
-          // The honest distinction: nothing to split is a DIFFERENT fact from a split
-          // that failed, and only one of them is fixed by pressing the other button.
-          const msg = (e && e.message) || "";
-          set(/404/.test(msg)
-            ? t("No archive to split yet — build one with the All diagnostics button first.")
-            : tf("Could not split the archive: {why}", { why: msg || t("unknown error") }));
+          // Three DIFFERENT facts, and only one of them is fixed by pressing the other
+          // button: nothing built yet (404), a build in flight whose archive is not the
+          // one on disk (409), and an actual failure. Read from the STRUCTURED
+          // `e.status` that api() attaches, never by pattern-matching the message --
+          // a message is prose and will be reworded.
+          const status = e && e.status;
+          const why = (e && (e.detail || e.message)) || t("unknown error");
+          if (status === 404) {
+            set(t("No archive to split yet — build one with the All diagnostics button first."));
+          } else if (status === 409) {
+            set(t("A build is running — wait for it, then split the archive it produces."));
+          } else {
+            set(tf("Could not split the archive: {why}", { why }));
+          }
           return;
         }
         const vols = (m && m.volumes) || [];

@@ -3377,5 +3377,6 @@
   "Downloading {n} pieces…": "{n} 個のファイルをダウンロード中…",
   "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "1 つ以上のログが番号付きの断片に分割されています — どれをどう結合するかは volumes.json に記載されています",
   "Sent {n} pieces — send them all together.": "{n} 個のファイルを送出しました — すべてまとめて送ってください。",
-  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "同じ完成済みアーカイブを、大きな 1 ファイルでは添付できない場所でも送れるよう、小さな .zip に分割したものです。各ファイルはどの解凍ツールでも単独で開けます。1 つのログが 1 ファイルに収まらないほど大きい場合は番号付きの断片に分割され、どれをどう結合するかがセット内に記載されます。すでに作成済みのアーカイブを分割するだけで、新たなビルドは決して開始しません。"
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "同じ完成済みアーカイブを、大きな 1 ファイルでは添付できない場所でも送れるよう、小さな .zip に分割したものです。各ファイルはどの解凍ツールでも単独で開けます。1 つのログが 1 ファイルに収まらないほど大きい場合は番号付きの断片に分割され、どれをどう結合するかがセット内に記載されます。すでに作成済みのアーカイブを分割するだけで、新たなビルドは決して開始しません。",
+  "A build is running — wait for it, then split the archive it produces.": "ビルドが実行中です — 完了を待ってから、そのアーカイブを分割してください。"
 }

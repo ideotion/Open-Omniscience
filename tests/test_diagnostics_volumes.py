@@ -454,3 +454,26 @@ def test_two_split_members_with_the_same_basename_do_not_overwrite_each_other(tm
             assert (dest / base.replace("/", "__")).read_bytes() == s.read(base)
     for path in written:
         assert Path(path).resolve().parent == dest.resolve(), "nothing escapes dest"
+
+
+def test_a_running_build_refuses_the_split_rather_than_serving_the_previous_bundle(
+    _diag_dir, monkeypatch
+):
+    """The SAME refusal the single-file download already makes, for the same reason. The
+    operator asked the NEW run a question and the previous run's bundle cannot answer it;
+    splitting it and handing over the pieces would be a fabricated result wearing a fresh
+    timestamp. Checked in the route rather than inherited: _newest_all_diagnostics_archive
+    only skips '.part' files, so on its own it returns the previous archive mid-build."""
+    from fastapi import HTTPException
+
+    from src.api import diagnostics as d
+
+    src = _build_bundle(_diag_dir)
+    src.rename(_diag_dir / "oo-all-diagnostics-20260911-120000.zip")
+    monkeypatch.setattr(d._ALL_DIAG_JOB, "status", lambda: {"state": "running"})
+
+    with pytest.raises(HTTPException) as exc:
+        d.all_diagnostics_volumes()
+    assert exc.value.status_code == 409
+    assert "running" in exc.value.detail
+    assert not list(d._all_diagnostics_volumes_dir().glob("*.zip")), "nothing was split"

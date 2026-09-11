@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import pathlib
+import threading
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -5029,6 +5030,15 @@ def _all_diagnostics_volumes_dir():
     return d
 
 
+# ONE splitter at a time. Two clicks (or a click and a scripted call) would otherwise
+# race on one directory: the second call's staleness sweep deletes the first call's
+# volumes WHILE it is still writing them, and whichever finishes last publishes a
+# manifest naming files the other already removed. Cheap to hold -- the split is bounded
+# file work on an archive that is already final, and a second caller simply waits and
+# then finds the finished set rather than rebuilding it.
+_ALL_DIAG_VOLUMES_LOCK = threading.Lock()
+
+
 def _ensure_volume_set(src: pathlib.Path) -> dict:
     """The volume set for ``src``, built only if it is not already the current one.
 
@@ -5040,14 +5050,15 @@ def _ensure_volume_set(src: pathlib.Path) -> dict:
     from src.api import diagnostics_volumes as dvol
 
     out = _all_diagnostics_volumes_dir()
-    with contextlib.suppress(Exception):
-        current = dvol.load_manifest(out)
-        if current.get("source") == src.name and dvol.verify_volume_set(out)["ok"]:
-            return current
-    for stale in out.iterdir():
-        with contextlib.suppress(OSError):
-            stale.unlink()
-    return dvol.write_volume_set(src, out)
+    with _ALL_DIAG_VOLUMES_LOCK:
+        with contextlib.suppress(Exception):
+            current = dvol.load_manifest(out)
+            if current.get("source") == src.name and dvol.verify_volume_set(out)["ok"]:
+                return current
+        for stale in out.iterdir():
+            with contextlib.suppress(OSError):
+                stale.unlink()
+        return dvol.write_volume_set(src, out)
 
 
 @router.get("/all-job/volumes")
@@ -5070,6 +5081,21 @@ def all_diagnostics_volumes() -> JSONResponse:
     on a machine already short of space is a real cost -- the volumes are removed and
     rebuilt when a newer archive replaces them, never accumulated across builds.
     """
+    # NEVER serve a stale archive while a build is RUNNING -- the same refusal the
+    # single-file download already makes, for the same reason. The operator asked the
+    # NEW run a question and the previous run's bundle cannot answer it; splitting it up
+    # and handing over the pieces would be a fabricated result wearing a fresh timestamp,
+    # which is the one thing a diagnostic must not produce. Checked HERE rather than
+    # inherited: _newest_all_diagnostics_archive only skips `.part` files, so on its own
+    # it would cheerfully return the previous archive mid-build.
+    if _ALL_DIAG_JOB.status().get("state") == "running":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "a build is running — its archive is not ready to split, and the previous "
+                "one cannot answer what this run was started to ask"
+            ),
+        )
     src = _newest_all_diagnostics_archive()
     if src is None:
         raise HTTPException(
