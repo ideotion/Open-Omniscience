@@ -65,6 +65,7 @@ RUN (inside a clearnet session, after building the venv -- in the repository or 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import hashlib
 import json
@@ -133,7 +134,7 @@ class Verdict:
     source_type: str = ""
     country: str = ""
     language_export: str = ""
-    status: str = "rejected"          # verified | rejected | error
+    status: str = "rejected"          # verified | rejected | deferred | error
     reason: str = ""                  # closed vocabulary, see REASONS
     homepage_url: str = ""
     site_title: str = ""
@@ -147,7 +148,7 @@ class Verdict:
     titles: list[str] = field(default_factory=list)
     language_detected: str = ""
     language_basis: str = ""          # detected | export | unknown
-    robots: str = ""                  # allowed | disallowed | unavailable | ""
+    robots: str = ""                  # allowed | disallowed | unavailable:<cause> | ""
     crawl_delay_s: float = 0.0        # the host's declared Crawl-delay, when it declares one
     tags: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
@@ -155,8 +156,36 @@ class Verdict:
     note: str = ""                    # what an error or host_timeout row can say about itself
 
 
+#: REASONS THAT ARE NOT A JUDGEMENT (maintainer ruling 2026-09-11: "never drop a refused row
+#: -- keep them deferred"). The run could not reach an answer about these candidates, so filing
+#: them as ``rejected`` asserts a decision nobody made and invites a later reader to treat a
+#: deferral as a verdict. They carry ``status: "deferred"`` and their own output file.
+#:
+#: ``robots_disallowed`` IS NOT HERE, and the distinction is the whole point: an explicit
+#: ``Disallow`` is the host telling us no, in the file designed to say so. That is a real
+#: judgement, it is respected, and it stays a rejection.
+DEFERRED_REASONS: frozenset[str] = frozenset({
+    "robots_refused",         # declined on THIS path -- over Tor, frequently the exit
+    "robots_server_error",    # the host is broken, and broken is not "no"
+    "robots_unreachable",     # we never got an answer at all
+    "robots_unavailable",     # the legacy label a pre-split run wrote
+    "homepage_unreachable",   # the homepage did not answer on either scheme
+    "crawl_delay_too_long",   # the host's declared Crawl-delay exceeds the probe budget
+    "host_timeout",           # still in flight when nothing had finished for STALL_S
+})
+
+
 REASONS = (
-    "duplicate_of_catalogue", "duplicate_in_run", "robots_disallowed", "robots_unavailable",
+    "duplicate_of_catalogue", "duplicate_in_run", "robots_disallowed",
+    # THE THREE FACTS THAT USED TO BE ONE (2026-09-11). Each refuses the fetch exactly as
+    # before -- fail-closed is unchanged -- but a catalogue can now tell them apart, which
+    # it must, because they deserve different answers and none of them is a policy:
+    "robots_refused",         # 401/403 -- declined on THIS path; over Tor, often the exit
+    "robots_server_error",    # 5xx or an unexpected status -- the host is broken
+    "robots_unreachable",     # network failure, timeout, blocked redirect, redirect loop
+    # ...and the legacy label, KEPT so `--retry robots_unavailable` still selects the 7,847
+    # rows a pre-split run wrote. Nothing emits it any more; it is a retry key and a record.
+    "robots_unavailable",
     "homepage_unreachable", "no_feed_found", "feed_unparseable", "feed_too_few_entries",
     "feed_stale", "feed_undated", "verified", "error",
     # status ``error`` = NOT judged, re-judged on demand with --retry:
@@ -348,9 +377,15 @@ def verify_candidate(
             v.robots = "disallowed"
             last_reason = "robots_disallowed"
             break
-        except RobotsUnavailable:
-            v.robots = "unavailable"
-            last_reason = "robots_unavailable"
+        except RobotsUnavailable as exc:
+            # SPLIT BY CAUSE (2026-09-11). One `robots_unavailable` bucket held three
+            # different facts, and 7,847 rows of the completed run are un-attributed
+            # because of it -- a refusal on this path, a broken host, and a network
+            # failure each want a different answer, and "ban them" cannot be ruled on
+            # honestly without knowing which is which.
+            cause = getattr(exc, "cause", "unknown")
+            v.robots = f"unavailable:{cause}"
+            last_reason = f"robots_{cause}" if cause != "unknown" else "robots_unavailable"
             break
         except FetchError:
             continue
@@ -362,7 +397,8 @@ def verify_candidate(
         v.robots = "allowed"
         break
     if not html and not base:
-        v.status, v.reason = "rejected", last_reason
+        v.status = "deferred" if last_reason in DEFERRED_REASONS else "rejected"
+        v.reason = last_reason
         v.elapsed_s = round(time.monotonic() - started, 2)
         return v
     v.homepage_url = base
@@ -383,7 +419,7 @@ def verify_candidate(
         v.crawl_delay_s = float(delay)
         max_probes = min(MAX_FEED_PROBES, int(probe_budget_s // float(delay)))
         if max_probes <= 0:
-            v.status, v.reason = "error", "crawl_delay_too_long"
+            v.status, v.reason = "deferred", "crawl_delay_too_long"
             v.elapsed_s = round(time.monotonic() - started, 2)
             return v
 
@@ -528,11 +564,18 @@ def write_outputs(verdicts: list[Verdict], out_dir: Path, *, today: str) -> dict
     out_dir.mkdir(parents=True, exist_ok=True)
     reasons = Counter(v.reason for v in verdicts)
     verified = [v for v in verdicts if v.status == "verified"]
-    with (out_dir / "rejections.csv").open("w", encoding="utf-8", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(["domain", "name", "reason", "feed_probes", "robots"])
-        for v in verdicts:
-            if v.status != "verified":
+    # TWO FILES, because they are two different facts (ruling 2026-09-11). rejections.csv is
+    # what the run JUDGED and turned down; deferred.csv is what it could not judge and must ask
+    # again. Writing them together let a deferral be read as a verdict -- the exact conflation
+    # that put 7,847 hosts in a bucket nobody could act on.
+    for name, rows in (
+        ("rejections.csv", [v for v in verdicts if v.status == "rejected"]),
+        ("deferred.csv", [v for v in verdicts if v.status == "deferred"]),
+    ):
+        with (out_dir / name).open("w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["domain", "name", "reason", "feed_probes", "robots"])
+            for v in rows:
                 w.writerow([v.domain, v.name, v.reason, v.feed_probes, v.robots])
     entries = [to_catalogue_entry(v, today=today) for v in verified]
     header = (
@@ -638,6 +681,7 @@ def run(
     crawl_delay: Callable[[str], float | None] | None = None,
     probe_budget_s: float = PROBE_TIME_BUDGET_S, stall_s: float = STALL_S,
     shard: tuple[int, int] | None = None,
+    forget_robots: Callable[[str], object] | None = None,
 ) -> dict:
     now = now or datetime.now(UTC)
     if shard is not None:
@@ -653,6 +697,14 @@ def run(
         redo = {v.domain for v in prior if v.reason in retry_reasons}
         prior = [v for v in prior if v.domain not in redo]
         done = done - redo
+        # ...and forget each one's cached robots decision, or the per-host backoff that the
+        # earlier failure created would answer this run from cache: the same verdict rewritten,
+        # no host actually asked, and nothing in the output saying so. An explicit retry is an
+        # operator overriding the deferral, which is exactly what the deferral is not for.
+        if forget_robots is not None:
+            for domain in redo:
+                with contextlib.suppress(Exception):  # one host must never end the run
+                    forget_robots(domain)
     todo = [r for r in rows if (registrable_domain(str(r.get("domain") or "")) or "") not in done]
     if limit is not None:
         todo = todo[:limit]
@@ -707,7 +759,7 @@ def run(
                             source_type=str(r.get("source_type") or "").strip(),
                             country=str(r.get("country") or "").strip().lower(),
                             language_export=str(r.get("language") or "").strip().lower(),
-                            status="error", reason="host_timeout", elapsed_s=float(stall_s),
+                            status="deferred", reason="host_timeout", elapsed_s=float(stall_s),
                             checked_at=now.isoformat(timespec="seconds"),
                             note=f"still in flight after {stall_s:.0f}s with nothing finishing",
                         )
@@ -798,6 +850,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = run(rows, fetch=fetcher.fetch, out_dir=args.out_dir, workers=args.workers,
                   catalogue=cat, resume=not args.no_resume, limit=args.limit, progress=_progress,
                   shard=parse_shard(args.shard) if args.shard else None,
+                  forget_robots=getattr(fetcher, "forget_robots", None),
                   retry_reasons=retry, crawl_delay=getattr(fetcher, "crawl_delay_for", None),
                   probe_budget_s=args.probe_budget, stall_s=args.stall)
     print(json.dumps(summary, indent=1))

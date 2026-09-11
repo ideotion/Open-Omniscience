@@ -8887,3 +8887,93 @@
   reading a controller can act on. Before wiring an existing metric to a decision, ask what
   its window and its cadence do to the decision's stability, and add the third reading if
   neither published one has the right shape.**
+
+- **"NEVER OVERWRITE" AND "ALWAYS OVERWRITE" ARE BOTH WRONG WHEN A FILE AND A USER CAN BOTH OWN
+  A FIELD — YOU NEED THE THIRD SIDE (2026-09-11, catalogue corrections).** Re-seeding filled
+  empty fields and refused to touch anything else, so a corrected feed URL never reached an
+  install that already held the row, and export/import was the only remedy. The tempting repair
+  — overwrite from the catalogue — silently reverts whatever the operator set in the UI, which
+  is worse than the bug. **The reason neither rule works is that a two-way comparison cannot
+  distinguish the two cases that matter: "the value we shipped, which they never touched" and
+  "the value they chose" are equally just *not* the new value.** Recording what was last
+  shipped turns it into a three-way merge and the ambiguity disappears. Three details carried
+  the design and generalise: (1) **an empty live value is a GAP, not an edit** — without that
+  rule the fill-empties mechanism and the correct-values mechanism fight over the same field on
+  the same boot; (2) **advance the baseline even when you keep the user's value**, so a conflict
+  is reported once instead of nagging on every start for the life of the install; (3) **with no
+  baseline, adopt and change nothing** — every pre-existing row is in that position, and
+  inferring whether an untraceable value was an edit is precisely the guess the record exists
+  to avoid. The cost of (3) is real and belongs in the docs, not in a surprise: a correction
+  made before the mechanism shipped never reaches an old row.
+- **A SET-VALUED FIELD WITH SEVERAL WRITERS IS NOT A MERGE PROBLEM YOU SOLVE IN PASSING
+  (2026-09-11).** `tags` looked like just another field to include in the three-way merge, and
+  is not: four different things write it (the shipped catalogue, the seed's `via:` provenance
+  marker, a channel-tag heal, and the operator). A replace silently drops the other three
+  writers' work; a union is safe but **cannot express a removal, which is exactly what
+  correcting a wrong tag means**. So it was left out of v1 with the reason recorded, rather
+  than given a policy chosen for convenience. The general form: when a field has more writers
+  than the change is about, excluding it deliberately beats a merge rule that quietly loses
+  someone's contribution.
+
+- **A BUCKET THAT HOLDS THREE DIFFERENT FACTS CANNOT BE RULED ON, AND THE COUNT IS THE TELL
+  (2026-09-11, robots_unavailable).** One label covered a refusal (401/403), a broken host (5xx)
+  and a network failure, so 7,847 rows — a third of a 22,045-row run — could not be acted on in
+  any direction, *including* the restrictive one: "ban them" is as un-makeable as "allow them"
+  when you do not know what you are banning. What exposed it was not reading the code but
+  comparing two counts: **7,847 unavailable against 262 explicitly disallowed, thirty to one**,
+  which is backwards from what the open web looks like, and then checking whether the rate was
+  uniform (25–53 % across fourteen countries on every continent) or clustered. **A host-level
+  signal varies with jurisdiction and CDN penetration; a pathway-level one is uniform.** The
+  general form: when a category is suspiciously large, compare it against its own near-neighbour
+  category and check whether it varies the way its claimed cause would.
+- **THE HALF-DONE ATTRIBUTION IS WORSE THAN NONE, SO SAY "UNKNOWN" (2026-09-11).** Once a cause
+  is recorded, three paths can silently invent one: a CACHED decision (right on the first call,
+  defaulted for the next hour), a decision RELOADED from a sidecar written before the field
+  existed, and an entry evicted from the map. Each would produce a confident, plausible,
+  authoritative-looking wrong attribution inside the very data a ruling will be made from. The
+  fix is not cleverness but a reserved value: cache the cause beside the decision for the same
+  TTL, persist it, and make the fallback **`"unknown"`** rather than the most likely cause.
+- **FIXING A FABRICATION OFTEN TURNS UP ITS MIRROR IMAGE (2026-09-11).** The robots work was
+  about not treating an un-read robots.txt as a refusal. Two files away, `preflight` was doing
+  the opposite with the same missing information: `robots_allowed = verdict != "robots_denied"`
+  wrote **True** when the verdict was *unreachable*, asserting a permission derived from a
+  robots.txt nobody read. Both errors come from one cause — a BOOLEAN column standing in for a
+  three-valued fact — and the repair for both is the same: let the column be NULL and mean
+  *unknown*. When you find a place that reads absence as one extreme, grep for the places that
+  read it as the other.
+
+- **A BACKOFF YOU ADD IS A CACHE AN OPERATOR'S "DO IT AGAIN" WILL HIT (2026-09-11, robots).**
+  Backing a failing host off is obviously right — and it silently breaks the one command whose
+  entire purpose is to re-ask those hosts, because `--retry` loads the persisted state and finds
+  every target already inside the deferral its own earlier failure created. The run answers from
+  cache, rewrites the identical verdict, and **looks like work while asking nobody anything** —
+  a failure with no error, no log line and a plausible output file. **Whenever you add a
+  deferral, find the explicit-override path and make it FORGET first**; and forget the whole
+  record together (decision, reason, counter), because a partial forget re-asks the host and
+  then backs it off using failures it is no longer counting.
+- **PUT THE BACKOFF WHERE THE FACT LIVES, NOT WHERE A SIMILAR TABLE ALREADY EXISTS
+  (2026-09-11).** `FeedFetchState` already had the exact shape wanted — a counter, a capped
+  self-resetting `skip_until`, even the right philosophy written in its docstring — and reusing
+  it would still have been wrong, because it is keyed per SOURCE while robots is a fact about a
+  HOST. Two sources on one host would have carried a backoff each and both would have kept
+  asking: the measure defeated by its own storage key. The near-miss is worth the note because
+  the pull toward reuse is strongest exactly when the shape matches and the KEY does not.
+
+- **"WE COULD NOT DECIDE" IS NOT A DECISION, AND A STATUS FIELD WILL HAPPILY PRETEND OTHERWISE
+  (2026-09-11).** Stage A filed every unreachable robots.txt as `status: "rejected"`, so the
+  record of 7,847 hosts said the run had *judged and turned them down* when it had judged
+  nothing — and every later reader, including the one deciding whether to ban them, inherited
+  that. Giving the non-judgement its own status and **its own output file** is what stops a
+  deferral being spent like a verdict, because as long as both live in `rejections.csv` somebody
+  eventually reads the filename instead of the column. The reciprocal guard matters as much:
+  deferred must not become a quiet *yes* either — only a verified row may become a catalogue
+  entry, pinned by its own test. And check where the real judgement is before moving everything:
+  an explicit `Disallow` IS a decision, made by the host in the file designed to make it, and it
+  had to stay a rejection while everything around it moved.
+- **TWO VALUES MEANING THE SAME THING IS THE SAME BUG AS ONE VALUE MEANING TWO (2026-09-11).**
+  While separating "rejected" from "not judged", the codebase turned out to already have a
+  second not-judged status: `error` carried `crawl_delay_too_long` and `host_timeout`, with its
+  own comment saying they were not judged. Adding `deferred` beside it would have left the
+  vocabulary *worse* — a reader filtering for one would silently miss the other. The same pass
+  that splits an overloaded value should merge its duplicates, and `error` narrowed to the one
+  thing it should always have meant: something went wrong in our own code for this row.

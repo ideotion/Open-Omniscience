@@ -2103,11 +2103,12 @@ def _merge_sources(con, batch_id, results) -> None:
         con, batch_id, "sources",
         "INSERT INTO sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
         " reliability_score, language, region, country, source_type, update_frequency,"
-        " cacheability, status, qualified_at, qualification_criteria_version)"
+        " cacheability, status, qualified_at, qualification_criteria_version,"
+        " catalog_baseline)"
         " SELECT i.name, i.domain, i.rss_url, i.rate_limit_ms, i.enabled, i.priority, i.tags,"
         " i.reliability_score, i.language, i.region, i.country, i.source_type,"
         " i.update_frequency, i.cacheability, i.status, i.qualified_at,"
-        " i.qualification_criteria_version"
+        " i.qualification_criteria_version, i.catalog_baseline"
         " FROM inc.sources i"
         " WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)",
     )

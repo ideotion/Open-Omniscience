@@ -31,3 +31,46 @@ Canaries were read correctly in all 86 batches across both chunks.
 Refusals are by TYPE, not by quality: the largest class is `academic` (57 + 549), then
 `institution`, `broadcaster` and `other`. A refusal here is "not an outlet that publishes
 reporting", never "a bad source".
+
+## The 11,404 rows that were NOT JUDGED (and how to finish them)
+
+`stage_a_not_judged.csv` carries every row the completed run left without a verdict — kept,
+never rejected. They are not failures of the candidate; they are places the run could not
+reach an answer.
+
+| reason | n | what it means |
+| --- | ---: | --- |
+| `robots_unavailable` | 7,847 | robots.txt could not be read. **Three different facts** until 2026-09-11 — see below. |
+| `homepage_unreachable` | 3,553 | the homepage did not answer on either scheme |
+| `crawl_delay_too_long` | 2 | the host's declared `Crawl-delay` exceeds the probe budget |
+| `error` | 2 | an unexpected exception inside one host, recorded rather than ending the run |
+
+**The `robots_unavailable` bucket was un-attributable, and now is not.** It never contained
+"this host has no robots.txt" — a 404/410 means everything is allowed and proceeds normally.
+It contained a **refusal** (401/403), a **broken host** (5xx), and a **network failure**, under
+one label. From 2026-09-11 the fetcher carries the cause and Stage A records
+`robots_refused` / `robots_server_error` / `robots_unreachable` instead.
+
+Why it matters which: over the completed run these were **7,847 against 262 explicitly
+disallowed — thirty to one**, at a **uniform 25–53 %** across the fourteen highest-volume
+countries on every continent, and the bucket includes hosts that certainly do serve a
+robots.txt. A host-level policy signal varies by country; a pathway-level one is uniform. On a
+Tor-routed run most of this is very likely the exit's reputation rather than the publisher's
+wish — but *likely* is not *measured*, which is exactly what the split now makes possible.
+
+**To finish them**, with a kit built on or after 2026-09-11, against the run directories the
+original produced:
+
+```
+python3 run_stage_a.py --only shortlist  --retry robots_unavailable
+python3 run_stage_a.py --only remainder  --retry robots_unavailable
+```
+
+`--retry` re-judges the rows whose **last** verdict carries that reason; the old lines stay in
+the cursor and the new ones outrank them, so nothing is lost and the run is resumable as usual.
+The legacy `robots_unavailable` key is kept in `REASONS` for exactly this — nothing emits it any
+more, but it still selects the rows a pre-split run wrote. Add `homepage_unreachable` to the
+same flag to retry those too.
+
+Fail-closed is unchanged throughout: every one of these still refuses the fetch. The cause
+exists so the catalogue can stop spending an absence like a verdict.

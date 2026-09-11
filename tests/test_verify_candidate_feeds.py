@@ -401,7 +401,10 @@ def test_a_crawl_delay_the_budget_cannot_afford_once_is_not_judged_and_records_t
     fetch = FakeFetch(table)
     v = vcf.verify_candidate(_row(), fetch=fetch, now=NOW, catalogue=set(), seen=set(),
                              crawl_delay=lambda _u: 3600.0, probe_budget_s=600.0)
-    assert (v.status, v.reason) == ("error", "crawl_delay_too_long")
+    # status DEFERRED, not "error" (ruling 2026-09-11). This row was never judged, and the
+    # codebase had two statuses meaning that -- which is the conflation the whole robots
+    # thread was about. `error` now means only "something went wrong in OUR code for this row".
+    assert (v.status, v.reason) == ("deferred", "crawl_delay_too_long")
     assert v.crawl_delay_s == 3600.0 and v.feed_probes == 0
     assert fetch.calls == ["https://ex.example/"]  # the homepage only: not one probe was paid for
     assert v.homepage_url == "https://ex.example/" and v.site_title == "The Example Gazette"

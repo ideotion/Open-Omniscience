@@ -468,6 +468,20 @@ class Source(Base):
     # same cover-everything guarantee every other rotation in this file gives.
     last_crawled_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # WHAT THE CATALOGUE LAST SHIPPED FOR THIS ROW (2026-09-11), as a small JSON object over
+    # src.ingest.seed_sources.CATALOGUE_OWNED_FIELDS. It is the THIRD SIDE of a three-way merge
+    # and exists for one reason: without it, a re-seed cannot tell "the value we shipped,
+    # untouched" from "the value the operator chose in the UI" -- both are merely "not the new
+    # catalogue value" -- so a corrected feed URL could only ever be applied by overwriting the
+    # operator's own edit, or not applied at all. It was not applied at all, and an export and
+    # re-import was the only remedy.
+    #
+    # NOT a copy of the row and never read as one: only the owned fields, only for comparison.
+    # NULL means "never recorded", which is every row predating the column -- those ADOPT the
+    # current catalogue on the next boot and change nothing, because guessing whether an
+    # untraceable value was an edit is exactly the guess this column exists to avoid.
+    catalog_baseline: Mapped[str | None] = mapped_column(Text)
+
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
 
