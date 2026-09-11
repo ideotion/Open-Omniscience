@@ -188,9 +188,17 @@ def test_the_splice_refuses_what_it_cannot_vouch_for():
         (_entry(tags=["news", "via:curated"]), "row-provenance tag via:curated"),
         (_entry(tags=["news", "fr"]), "language code in tags: fr"),
         (_entry(tags=["news", "france"]), "country name in tags: france"),
+        (_entry(name="3CatInfo (tv)"), "name states country tv, entry says fr"),
+        ({k: v for k, v in _entry(name="Island Radio (tv)").items() if k != "country"},
+         "name states country tv, entry says none"),
     ]
     for e, why in cases:
         assert msb.check_entry(e, existing=existing, seen=set()) == why, why
+    # The convention SATISFIED is not a refusal, and neither is a parenthetical that names no
+    # country -- otherwise the guard would be refusing the catalogue's own naming style.
+    assert msb.check_entry(_entry(name="Le Monde (France)"), existing=existing, seen=set()) is None
+    assert msb.check_entry(_entry(name="Kyodo News (English)"), existing=existing, seen=set()) is None
+
     accepted, refused = msb.plan([_entry(), _entry()], existing=existing)
     assert len(accepted) == 1 and refused == [("new.example", "duplicate within the batch")]
 

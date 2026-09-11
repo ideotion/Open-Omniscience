@@ -8265,3 +8265,31 @@
   prompt gives it no honest way to keep it. The canaries were worth their cost for a different
   reason than expected: they proved the reading was trustworthy, which is what let a single
   structural failure be re-run rather than casting doubt on the whole run.
+
+- **A HARVESTED NAME CAN MAKE A CLAIM THE ROW DENIES, AND ONLY THE FILE'S OWN CONVENTION KNOWS
+  (2026-09-11, candidate pipeline, remainder chunk).** `configs/sources.yml` uses a trailing
+  parenthetical as a human-authored ORIGIN marker — `Name (Country)` — and `country_from_title`
+  reads it that way. The pipeline takes names from site titles, so a title that merely ENDS in a
+  parenthetical drops into that slot: `3CatInfo (tv)`, the Catalan public broadcaster with
+  `country: es`, asserted TUVALU. Nothing in the row was wrong except the name, and the name was
+  not wrong anywhere else — only inside this file, where that slot means something. The general
+  shape: **when a file gives a position a meaning, data imported into that position inherits the
+  meaning whether or not it meant it.** Two things follow. (1) The catch came from the repo's own
+  invariant test, not from review — 1,657 rows went past a careful reading and one line of plain
+  code found the one that lied; a convention worth having is worth a test that knows it. (2) The
+  fix goes where each tool's contract puts it: the ENTRY BUILDER normalises (it composes the name,
+  so it owns it), and the SPLICE refuses (its contract is refuse-never-rewrite; rewriting there
+  would make the appended text stop matching the reviewed batch). Splitting it that way costs one
+  extra guard and keeps both contracts true; putting both halves in one place would have broken
+  one of them.
+- **THE FIX FOR ONE BATCH FAILURE TRAVELS; THE NEXT FAILURE IS A DIFFERENT ONE (2026-09-11).**
+  The shortlist chunk lost a batch to a SHORT answer (35 of 42 rows), and naming completeness as
+  the hard requirement in every subsequent prompt held: all 69 remainder batches answered in full,
+  first pass. The two that still failed failed on something else entirely — a `kind` outside the
+  closed enum (`corporate` for `trade-or-corporate`; `tabloid`, which is a TOPIC in this
+  vocabulary and never a kind). Worth writing down because the temptation after a hardening that
+  works is to treat the failure mode as closed: **a batch model's ways of not answering your
+  schema are plural, and the code validator is what finds the next one.** Both failures were the
+  same size on the ledger — one out-of-enum cell costs all 42 rows of its batch — and both were
+  recovered by the single escalation the runbook already prescribes, so the design held; only the
+  prompt needed a sentence it did not have.

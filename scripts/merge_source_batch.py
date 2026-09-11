@@ -16,7 +16,12 @@ to the END of the file, and it refuses anything it cannot vouch for:
   (``Source.domain`` is UNIQUE, so the entry would be SHADOWED and never registered -- the
   475-entry loss the catalogue already carries, not to be grown);
 * a duplicate within the batch;
-* a tag that is a row-provenance marker (``via:*``), a country name, or a language code.
+* a tag that is a row-provenance marker (``via:*``), a country name, or a language code;
+* a ``name`` whose trailing parenthetical the catalogue reads as a COUNTRY that the entry's
+  own ``country`` field contradicts (``3CatInfo (tv)`` with ``country: es`` -- ``tv`` is
+  Tuvalu, the suffix is the channel's branding). The splice refuses rather than rewrites:
+  names are normalised upstream, where the entry is built, and this is the gate that catches
+  one arriving any other way.
 
 Dry-run by default: prints the plan. ``--apply`` writes. Idempotent: a second apply of the
 same batch appends nothing.
@@ -35,7 +40,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.catalog.countries import normalize_country  # noqa: E402
-from src.catalog.normalize import registrable_domain  # noqa: E402
+from src.catalog.normalize import country_from_title, registrable_domain  # noqa: E402
 from src.utils.url_utils import DOMAIN_ALIASES, normalize_domain  # noqa: E402
 
 CATALOGUE_FILES = (
@@ -88,6 +93,9 @@ def check_entry(e: dict, *, existing: set[str], seen: set[str]) -> str | None:
         return "already in a shipped catalogue"
     if dom in seen:
         return "duplicate within the batch"
+    title_country = country_from_title(str(e["name"]))
+    if title_country and title_country != str(e.get("country") or "").strip().lower():
+        return f"name states country {title_country}, entry says {e.get('country') or 'none'}"
     for t in e.get("tags") or []:
         t = str(t)
         if t.startswith("via:"):

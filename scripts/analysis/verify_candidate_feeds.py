@@ -87,7 +87,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.catalog.countries import continent_of  # noqa: E402
-from src.catalog.normalize import registrable_domain  # noqa: E402
+from src.catalog.normalize import country_from_title, registrable_domain  # noqa: E402
 from src.ingest import FetchError, RobotsDisallowed, RobotsUnavailable  # noqa: E402
 from src.utils.url_utils import DOMAIN_ALIASES, normalize_domain  # noqa: E402
 
@@ -466,6 +466,31 @@ def build_fetcher(*, min_interval_s: float, timeout: float, max_bytes: int, root
 
 # --------------------------------------------------------------------------- outputs
 
+def _name_without_a_false_country(name: str, country: str | None) -> str:
+    """Strip a trailing ``(xx)`` that the catalogue would READ AS A COUNTRY but the row
+    contradicts.
+
+    ``configs/sources.yml`` uses a trailing parenthetical as a human-authored ORIGIN marker
+    (``Name (Country)``), and ``country_from_title`` reads it that way -- so a harvested site
+    title that happens to end in something parsing as an ISO-2 code makes an origin CLAIM by
+    accident. The measured case: ``3CatInfo (tv)``, the Catalan public broadcaster, where
+    ``(tv)`` is the channel's own branding and ``tv`` is Tuvalu; the row's own ``country`` says
+    ``es``. The catalogue's own invariant test caught it
+    (``test_catalog_honours_its_own_country_suffix_convention``).
+
+    So the parenthetical is kept ONLY when it agrees with the row's country, and dropped
+    otherwise -- including when the row has no country at all, since then nothing supports the
+    claim. A broadcaster genuinely branded ``(TV)`` loses that suffix: a small cosmetic cost,
+    paid because in THIS file that slot means origin, and a name asserting an origin the row
+    denies is a fabricated fact, not a formatting nit.
+    """
+    code = country_from_title(name)
+    if not code or code == (country or "").strip().lower():
+        return name
+    stripped = re.sub(r"\s*\([^()]*\)\s*$", "", name).strip()
+    return stripped or name
+
+
 def to_catalogue_entry(v: Verdict, *, today: str) -> dict:
     """A ``configs/sources.yml`` entry for a VERIFIED verdict -- the schema the diversification
     brief fixed. Fields the run could not establish are OMITTED, never guessed."""
@@ -475,7 +500,7 @@ def to_catalogue_entry(v: Verdict, *, today: str) -> dict:
     if "news" not in tags:
         tags.insert(0, "news")
     entry: dict = {
-        "name": v.name or v.site_title or v.domain,
+        "name": _name_without_a_false_country(v.name or v.site_title or v.domain, v.country),
         "domain": v.domain,
         "rss_url": v.feed_url,
         "rate_limit_ms": 2000,

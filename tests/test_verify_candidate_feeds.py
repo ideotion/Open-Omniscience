@@ -214,6 +214,42 @@ def test_an_unknown_country_is_omitted_and_region_stays_global():
     assert "country" not in e and e["region"] == "global"
 
 
+def test_a_harvested_name_never_claims_a_country_the_row_denies():
+    """``3CatInfo (tv)``, measured on the 2026-09-11 remainder chunk: the Catalan public
+    broadcaster, whose ``(tv)`` branding the catalogue's ``Name (Country)`` convention reads as
+    Tuvalu while the row's own country says ``es``. It tripped
+    test_catalog_honours_its_own_country_suffix_convention AFTER the splice, which is one step
+    too late, so the name is normalised where the entry is BUILT."""
+    fetch = FakeFetch({"https://ex.example/": HOME_WITH_LINK, "https://ex.example/feed.xml": _rss(5)})
+    v = vcf.verify_candidate(_row(name="3CatInfo (tv)"), fetch=fetch, now=NOW, catalogue=set(), seen=set())
+    assert vcf.to_catalogue_entry(v, today="2026-09-10")["name"] == "3CatInfo"
+
+    # An agreeing suffix is the convention itself and is KEPT.
+    v2 = vcf.verify_candidate(_row(name="Le Monde (France)"), fetch=FakeFetch(
+        {"https://ex.example/": HOME_WITH_LINK, "https://ex.example/feed.xml": _rss(5)}),
+        now=NOW, catalogue=set(), seen=set())
+    assert vcf.to_catalogue_entry(v2, today="2026-09-10")["name"] == "Le Monde (France)"
+
+    # A parenthetical that is no country at all is not the convention's business.
+    v3 = vcf.verify_candidate(_row(name="Kyodo News (English)"), fetch=FakeFetch(
+        {"https://ex.example/": HOME_WITH_LINK, "https://ex.example/feed.xml": _rss(5)}),
+        now=NOW, catalogue=set(), seen=set())
+    assert vcf.to_catalogue_entry(v3, today="2026-09-10")["name"] == "Kyodo News (English)"
+
+
+def test_a_country_suffix_with_no_country_on_the_row_is_dropped_too():
+    """Nothing on the row supports the claim, so the name must not make it -- and the entry
+    still keeps a usable name rather than collapsing to the bare domain."""
+    fetch = FakeFetch({"https://ex.example/": HOME_WITH_LINK, "https://ex.example/feed.xml": _rss(5)})
+    v = vcf.verify_candidate(_row(name="Island Radio (tv)", country=""), fetch=fetch, now=NOW,
+                             catalogue=set(), seen=set())
+    e = vcf.to_catalogue_entry(v, today="2026-09-10")
+    assert "country" not in e and e["name"] == "Island Radio"
+
+    # A name that is NOTHING BUT the suffix keeps it: stripping would leave no name at all.
+    assert vcf._name_without_a_false_country("(tv)", "es") == "(tv)"
+
+
 def test_only_a_verified_verdict_becomes_an_entry():
     v = vcf.Verdict(domain="x.example", status="rejected", reason="feed_stale")
     with pytest.raises(ValueError):

@@ -11956,7 +11956,45 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   North America 22, South America 8, Oceania 1), and **twelve countries that had NO catalogue
   source at all now have one** (ad, ai, cw, gw, ky, ly, mr, pw, st, tl, va, ye) -- the T1 gap the
   2026-09-10 analysis measured. Biggest gains: gr 14->43, no 8->36, se 10->38, fi 6->28, in
-  82->103, es 42->60. STILL TO RUN: the remainder's 2,753 verified rows, in chunks of the same
-  shape (69 batches), which is where the bulk of the growth is. NOT DONE, DELIBERATELY: nothing
+  82->103, es 42->60. NOT DONE, DELIBERATELY: nothing
   was re-judged from the 7,847 `robots_unavailable` and 3,553 `homepage_unreachable` rows -- they
   are kept, not rejected, and wait on the robots ruling above.
+
+- **SHIPPED 2026-09-11 (same day, second chunk) — THE REMAINDER: 3,923 -> 5,580 SOURCES, AND THE
+  CATALOGUE'S OWN NAMING CONVENTION CAUGHT A FABRICATED COUNTRY.** The maintainer asked to "go
+  ahead with the remainder", so the other 2,753 verified rows ran through the SAME pipeline on the
+  same D1-D4 defaults: **69 batches of 40 on Haiku** (2,891 rows with canaries), every one answered
+  IN FULL on the first pass -- the completeness wording learned from shortlist batch 11 was carried
+  into every prompt and the short-answer failure did not recur once. Two batches came back untrusted
+  on a DIFFERENT failure: an out-of-enum `kind` (`corporate` where the enum has `trade-or-corporate`;
+  `tabloid`, which is a TOPIC in the vocabulary and never a kind). The validator counts an
+  out-of-enum answer as an unanswered row and refuses the WHOLE batch -- 80 rows -- rather than
+  merging around it, which is the right refusal; both were re-run once on the escalation model
+  (the runbook's own prescription) naming the closed list literally, and both passed. Canaries were
+  read correctly in all 86 batches across the two chunks. **1,657 of 2,753 merged**, 1,096 refused
+  BY TYPE: `academic` 549, `institution` 117, `broadcaster` 107, `other` 95, `religious` 62,
+  `trade-or-corporate` 42, `magazine` 42, `aggregator` 39, `personal-blog` 35, `low_confidence` 8.
+  The splice accepted all 1,657 and refused none as a duplicate; the diff is **26,119 lines added,
+  0 deleted**. The new rows span **84 countries and 53 languages**, two of which (`ga` Irish, `zu`
+  Zulu) the catalogue did not have at all; by form, news 926, broadcaster 482, magazine 207,
+  wire-agency 27, investigative 15; by region, Europe 780, Asia 250, South America 248, North
+  America 194, Africa 94, Oceania 91. Biggest gains: es 60->194, ca 38->170, br 32->148, it 24->135,
+  au 28->112, no 36->109, ru 37->108, pl 20->82, mx 26->79, cz 24->73, ar 12->59. Over the two
+  chunks the catalogue grew **3,429 -> 5,580, a 63 % increase**, from 22,045 candidates the
+  maintainer's own machine verified at zero model cost.
+  **THE DEFECT THIS CHUNK FOUND, AND THE REASON IT IS WORTH THE PARAGRAPH:** the splice landed
+  `3CatInfo (tv)` -- the Catalan public broadcaster, `country: es` -- and
+  `tests/test_seed_sources.py::test_catalog_honours_its_own_country_suffix_convention` went red.
+  `configs/sources.yml` uses a trailing parenthetical as a human-authored ORIGIN marker, and
+  `country_from_title` reads it that way, so `(tv)` (the channel's branding) parses as TUVALU and
+  the name asserts an origin the row's own field denies. A harvested site title lands in that slot
+  by accident, which makes this a CLASS, not one row: it will recur on every future chunk. Fixed in
+  TWO places, matching each tool's contract -- `to_catalogue_entry` NORMALISES (a trailing
+  parenthetical is kept only when it agrees with the row's country, and dropped otherwise, including
+  when the row has no country, since then nothing supports the claim), and `merge_source_batch.py`
+  REFUSES (the splice's contract is refuse-never-rewrite; it is the gate for an entry arriving any
+  other way). The stated cost: a broadcaster genuinely branded `(TV)` loses that suffix, paid
+  because in THIS file that slot means origin and a name asserting an origin the row denies is a
+  fabricated fact. Pinned by 3 new tests (the contradiction stripped, an agreeing suffix KEPT, a
+  non-country parenthetical like `(English)` untouched, a name that is nothing but the suffix kept
+  rather than collapsed, and both splice refusals with their reasons).
