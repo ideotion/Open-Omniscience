@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.database.maintenance import StatementTimeout, statement_deadline
+from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
 
 
 def _scalar(session: Session, sql: str) -> int | None:
@@ -82,10 +82,14 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
             # keywords and compare to the maintained counters. Drift here means the
             # reconcile pass is due; the exact live aggregate is the source of truth.
             scope = "" if full else f"ORDER BY mention_count DESC LIMIT {int(sample)}"
-            checked = 0
-            mention_drift = 0
-            article_drift = 0
+            checked: int | None = 0
+            mention_drift: int | None = 0
+            article_drift: int | None = 0
             worst: list[dict[str, Any]] = []
+            # ok | timed_out | error — mirrors fts_status's count_status vocabulary
+            # (src/database/fts.py), so a reader who has already learned that block's
+            # convention reads this one the same way.
+            count_status = "ok"
             try:
                 rows = session.execute(
                     text(
@@ -100,26 +104,79 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                 raise
             except Exception as exc:  # noqa: BLE001 - a missing/corrupt table degrades, never 500
                 rows = []
-                report["counter_drift_error"] = str(exc)[:200]
-            for kid, term, mc, ac, live_m, live_a in rows:
-                checked += 1
-                dm = abs(int(mc or 0) - int(live_m or 0))
-                da = abs(int(ac or 0) - int(live_a or 0))
-                if dm:
-                    mention_drift += 1
-                if da:
-                    article_drift += 1
-                if (dm or da) and len(worst) < 25:
-                    worst.append(
-                        {
-                            "keyword_id": int(kid),
-                            "term": term,
-                            "mention_count": int(mc or 0),
-                            "live_mentions": int(live_m or 0),
-                            "article_count": int(ac or 0),
-                            "live_articles": int(live_a or 0),
-                        }
-                    )
+                # C5 (field diagnostics 2026-09-11): sqlite3/sqlcipher3 surface OUR OWN
+                # progress-handler interrupt as a plain OperationalError("interrupted")
+                # -- the SAME raw shape as a genuinely missing/corrupt table -- and this
+                # except sits INSIDE the enclosing ``with statement_deadline(session)``,
+                # so it catches that raw error BEFORE statement_deadline's own __exit__
+                # ever sees it and can translate it into a typed StatementTimeout. Left
+                # unhandled here, that made an interrupted scan of `sample` keywords
+                # (checked=0) indistinguishable from a genuinely clean one (also
+                # checked=0, but because there is nothing to find drift IN) -- the
+                # exact false all-clear C5 measured. Tell the two apart the same way
+                # statement_deadline's own translator does: the shared deadline
+                # (published via session.info so a caller can read it as data, not
+                # only catch it as an exception — see deadline_expired's docstring)
+                # had already elapsed AND the driver is reporting an interrupt, not
+                # some unrelated failure.
+                if deadline_expired(session) and "interrupt" in str(exc).lower():
+                    count_status = "timed_out"
+                    checked = None
+                    mention_drift = None
+                    article_drift = None
+                    # This whole sweep is bounded by ONE shared deadline (the
+                    # enclosing `with statement_deadline(session)`), and once the
+                    # driver's progress handler has fired once it keeps firing on
+                    # every later statement on this connection (elapsed time only
+                    # grows) -- so whatever ran after this point would have been cut
+                    # short too. Surface that at the top level rather than let the
+                    # remaining foreign-key check silently degrade to a bare None
+                    # with no stated reason.
+                    timed_out = True
+                    # C5 reconciliation: this does NOT bump
+                    # error_log.summary()["interrupted_errors_total"], and that is
+                    # correct, not a second bug -- that counter (src/monitoring/
+                    # errorlog.py::_is_interrupted) only scans app_errors.jsonl,
+                    # which is populated by the process-wide WARNING+ logging
+                    # handler and by the request middleware's HTTP-error records.
+                    # This module never calls into `logging` (it is a read-only
+                    # diagnostic designed to degrade INTO its own JSON report, not
+                    # via a raised/logged exception, precisely so the diagnostics
+                    # endpoint can still return 200 with an honest partial result).
+                    # The two counters watch disjoint populations by construction:
+                    # one counts interruptions that were LOGGED, the other counts
+                    # this specific in-report status field for a scan that finished
+                    # (with a stated gap) rather than raising. Widening the log
+                    # counter to also scan this report would double-book the same
+                    # event under two different collection mechanisms; it is not
+                    # done here.
+                else:
+                    count_status = "error"
+                    report["counter_drift_error"] = str(exc)[:200]
+            if checked is not None:
+                # checked / mention_drift / article_drift are always set together
+                # (all int, or all None on the timeout branch above) -- spelled out
+                # for mypy, which narrows only the variable this `if` itself tests.
+                assert mention_drift is not None and article_drift is not None
+                for kid, term, mc, ac, live_m, live_a in rows:
+                    checked += 1
+                    dm = abs(int(mc or 0) - int(live_m or 0))
+                    da = abs(int(ac or 0) - int(live_a or 0))
+                    if dm:
+                        mention_drift += 1
+                    if da:
+                        article_drift += 1
+                    if (dm or da) and len(worst) < 25:
+                        worst.append(
+                            {
+                                "keyword_id": int(kid),
+                                "term": term,
+                                "mention_count": int(mc or 0),
+                                "live_mentions": int(live_m or 0),
+                                "article_count": int(ac or 0),
+                                "live_articles": int(live_a or 0),
+                            }
+                        )
             report["counter_drift"] = {
                 "mode": "full" if full else "sampled",
                 "checked": checked,
@@ -127,6 +184,7 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                 "keywords_with_mention_drift": mention_drift,
                 "keywords_with_article_drift": article_drift,
                 "examples": worst,
+                "count_status": count_status,
             }
 
             # (FTS presence/health/staleness is probed OUTSIDE this shared deadline — see

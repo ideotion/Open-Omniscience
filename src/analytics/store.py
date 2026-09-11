@@ -2044,10 +2044,34 @@ def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
             tally["prune"] = {"skipped": "error"}
         try:
             tally["language"] = reconcile_keyword_language(session)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             session.rollback()
             _LOG.warning("automatic keyword-language reconcile failed", exc_info=True)
-            tally["language"] = {"skipped": "error"}
+            # C8 (field diagnostics 2026-09-11): this used to record the bare string
+            # {"skipped": "error"} -- no exception class, no message -- into the SAME
+            # tally corpus-integrity.json surfaces as auto_cleanup.last_tally.language,
+            # beside sibling blocks (prune/entity_status) that report full arithmetic on
+            # success. That left a real, recurring failure (>=2 days live) completely
+            # undiagnosable from the diagnostics bundle: the _LOG.warning one line up
+            # already has the exception's class and message (exc_info=True captures the
+            # full traceback into the app log too) -- this just carries the same two
+            # facts into the RECORD, the way src/backup/runlog.py's `run()` does for a
+            # failed backup (cls=type(exc).__name__, msg=str(exc)) and the way every
+            # other diagnostic surface in this tree already reports a caught exception
+            # (the f"{type(exc).__name__}: {exc}" shape used across src/monitoring and
+            # src/ai_layer). No partial count is invented: reconcile_keyword_language's
+            # only DB write is the final bulk_update_mappings + commit near its end, and
+            # `session.rollback()` above already undoes that if the failure landed after
+            # it started but before it committed -- so "no keywords were changed" is a
+            # true fact, not a guess, and there is no in-flight scan progress worth a
+            # number (the per-chunk language distribution is scan-local and never
+            # persisted). Root-causing what actually raises is next: this fix's whole
+            # job is to make that traceback show up in the next bundle instead of
+            # vanishing into a bare string.
+            tally["language"] = {
+                "skipped": "error",
+                "error": f"{type(exc).__name__}: {exc}"[:500],
+            }
         try:
             tally["entity_status"] = reconcile_keyword_entity_status(session)
         except Exception:  # noqa: BLE001 - a background safety net must never break the pass

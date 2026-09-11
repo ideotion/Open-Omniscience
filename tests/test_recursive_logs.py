@@ -153,6 +153,52 @@ def test_integrity_flags_counter_drift_and_orphans(session):
     assert ex["mention_count"] == 99 and ex["live_mentions"] == 3
 
 
+def test_counter_drift_interrupted_by_own_deadline_is_not_a_false_clean(session, monkeypatch):
+    """C5 field diagnostics (2026-09-11): a live bundle showed
+    counter_drift_error:"interrupted" beside counter_drift:{checked:0,
+    keywords_with_mention_drift:0, ...} and timed_out:false -- a scan our OWN
+    statement_deadline aborted before it examined a single keyword, reported
+    indistinguishably from a genuinely clean sweep of `sample` keywords. This forces
+    that exact shape (the raw sqlite3 "interrupted" OperationalError, with the shared
+    deadline already elapsed) and proves it is no longer reported as a clean 0/0/0.
+
+    On current main this FAILS: checked lands at 0 (not None), counter_drift carries
+    no count_status, and r["timed_out"] is False even though the scan was cut short.
+    """
+    import sqlite3
+
+    from sqlalchemy.orm import Session as ORMSession
+
+    from src.monitoring.integrity import corpus_integrity
+
+    _seed(session, drift=True)  # real drift exists -- must never be reported as clean
+
+    # An effectively-zero deadline: by the time the counter-drift query below runs,
+    # real wall-clock time will already have elapsed past it, so deadline_expired()
+    # reads True exactly as it would once statement_deadline's progress handler had
+    # genuinely fired.
+    monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "0.000001")
+
+    orig_execute = ORMSession.execute
+
+    def _fake_execute(self, clause, *a, **kw):
+        # Only the counter-drift GROUP BY selects live_mentions; every other query in
+        # the sweep (orphan tallies, FK check, fts_status, ...) passes through untouched.
+        if "live_mentions" in str(clause):
+            raise sqlite3.OperationalError("interrupted")
+        return orig_execute(self, clause, *a, **kw)
+
+    monkeypatch.setattr(ORMSession, "execute", _fake_execute)
+
+    r = corpus_integrity(session, sample=100)
+    cd = r["counter_drift"]
+    assert cd["checked"] is None, f"an interrupted scan must not read checked=0; got {cd}"
+    assert cd["keywords_with_mention_drift"] is None
+    assert cd["keywords_with_article_drift"] is None
+    assert cd.get("count_status") == "timed_out", cd
+    assert r["timed_out"] is True, "the sweep was cut short and must say so at the top level"
+
+
 # -- #3 slow query + EXPLAIN ----------------------------------------------------- #
 
 
@@ -250,3 +296,35 @@ def test_automatic_keyword_cleanup_prunes_orphans_then_gates_fresh(session, tmp_
     assert store.keyword_cleanup_state()["last_run"] is not None
     r2 = store.maybe_cleanup_keywords(session)
     assert r2.get("skipped") == "fresh"
+
+
+def test_language_reconcile_failure_is_recorded_with_class_and_message(
+    session, tmp_path, monkeypatch
+):
+    """C8 field diagnostics (2026-09-11): a live bundle showed
+    auto_cleanup.last_tally.language == {"skipped": "error"} -- a bare string with no
+    exception class, no message, no count -- beside sibling prune/entity_status blocks
+    that report full arithmetic, for a failure that had been recurring for >= 2 days
+    with nothing able to say what it was. _LOG.warning(..., exc_info=True) right next
+    to the old bare-string assignment already had the class and message; this proves
+    they now reach the RECORD corpus-integrity.json surfaces, not just the app log.
+
+    On current main this FAILS: tally["language"] == {"skipped": "error"} exactly,
+    with no "error" key at all.
+    """
+    import src.analytics.store as store
+
+    monkeypatch.setattr(store, "_cleanup_marker_path", lambda: tmp_path / "keyword_cleanup.json")
+    _seed(session)  # a clean, non-drifting corpus -- prune/entity_status succeed normally
+
+    def _boom(session, **kwargs):
+        raise RuntimeError("simulated: database is locked")
+
+    monkeypatch.setattr(store, "reconcile_keyword_language", _boom)
+    r = store.maybe_cleanup_keywords(session)
+    lang = r["language"]
+    assert lang["skipped"] == "error"
+    assert lang.get("error") == "RuntimeError: simulated: database is locked", lang
+    # The sibling blocks that DID succeed are unaffected -- this is a targeted record
+    # fix, not a change to the other two reconcile passes.
+    assert "downgraded" in r["entity_status"]
