@@ -41,12 +41,18 @@ is not a design choice, it is a contradiction -- the first attempt at this modul
 wrote the checksums, appended the manifest, and thereby invalidated every checksum it
 had just recorded. So the two jobs are separated by name:
 
-  * ``volumes-readme.json``, inside EVERY volume -- what this set is, how many volumes
-    there are and what they are called, which volume carries each member, which members
-    are split and how to rejoin them. A reader holding ONE volume can answer "what am I
-    missing?" from it. It carries no checksums, and says so.
-  * ``volumes.json``, a sidecar BESIDE the volumes -- the same, plus each volume's
-    SHA-256 and byte count, which is what :func:`verify_volume_set` checks.
+  * ``volumes-readme.json``, inside EVERY volume -- the set's SHAPE (how many volumes,
+    how they are named, which members are split and how to rejoin them) plus THIS
+    volume's own contents. A reader holding ONE volume can still answer "what am I
+    missing, and what are the missing ones called?". Everything in it is bounded by what
+    the volume already holds, which is not a style preference: the first version embedded
+    the whole set's cross-volume member map, that map GROWS as the cap shrinks, and at a
+    20 KB cap it made every one of 2164 volumes 39 KB -- the index alone twice the cap.
+    It carries no checksums, and says where they are.
+  * ``volumes.json``, a sidecar BESIDE the volumes -- the full cross-volume member map,
+    plus each volume's SHA-256 and byte count, which is what :func:`verify_volume_set`
+    checks. It is the only descriptor that grows with the set, and it never has to fit
+    inside one.
 
 ORDERING is deliberate: ``manifest.json`` (and the bundle journal) are placed FIRST,
 in volume 1, because they are what tells a reader what the run did. A reader who
