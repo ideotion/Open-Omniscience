@@ -12866,3 +12866,85 @@ a timing-test fix is unrelated to it, and this project's rule is to say what is 
 proposed patch rather than widen a PR on my own judgement. CI has NOT gone red on this test — the
 failure was local, in a full-suite verification run, and the same test passed in the same session
 under quiet conditions.
+
+### 2026-09-11 — FIELD REPORT: "only 2600 sources collecting" on an updated older instance, and why the tag was the wrong question
+
+**CLOSED by the same session, measured first.** Maintainer: *"I just reinstalled / updated the app on
+an older instance, and notice that there are only 2600 sources collecting, which contradicts our
+recent pushes qualifying over 5000 sources."* It did contradict them, and the report was right.
+
+**WHAT THE NUMBER IS.** "Sources (collecting)" is
+`COUNT(*) WHERE enabled IS TRUE AND status = 'qualified'` (`src/api/database.py:152`), labelled in
+`src/static/app-library.js:30`. That predicate is byte-identical to the scheduler's admission gate
+(`src/scheduler/runner.py:440,447`), so the figure is honest: those rows really are the ones that
+collect.
+
+**THE CAUSE — three correct decisions composing into a strand.** `stamp_curated_catalog` scoped on
+`curated_filter(Source.tags)`, i.e. the `via:<origin>` provenance tag. That tag is a fact about the
+ROW, written by the seeder when it CREATES one. Then:
+
+1. `via:` tagging entered the seeder on **2026-06-08** (`6ebab04b`), so every row created before it
+   carries none;
+2. `reconcile_source_metadata` **strips the marker on purpose** when healing an existing row —
+   `value = ",".join(t for t in ... if not t.startswith("via:"))` — because copying it "would assert
+   an origin this row may not have". That reasoning is RIGHT, and it means a row can never acquire
+   one later;
+3. `tags` is deliberately outside the catalogue-corrections three-way merge (four writers; a union
+   cannot express a removal).
+
+So a pre-2026-06-08 row was permanently outside the scope, stayed `unqualified`, and never
+collected — however many times the app was updated. The ride-along cannot rescue it either:
+`qualification_per_pass = 5`, against a backlog of tens of thousands.
+
+**MEASURED, against the real 6,195-row catalogue.** Plant 3,000 legacy rows with descriptive tags
+and no `via:` marker, run the boot sequence (`seed_default_sources` → `ensure_channel_tags` →
+`apply_overlay` → `stamp_curated_catalog`):
+
+```
+legacy rows carry 'news,politics'            -> collecting 3,195   (exactly the rows the update CREATED)
+the same rows carry 'news,politics,via:curated' -> collecting 6,195   (0 left unqualified)
+```
+
+The only difference between the two runs is the one tag. An instance holding ~3,595 catalogue
+domains would read ~2,600 — the reported number.
+
+**THE FIX, and why it is not "backfill the tag".** Backfilling would assert an origin, which is the
+thing (2) refuses for good reason. The tag answers *"did the seeder make this row?"*; the
+2026-09-10 ruling asks about the **catalogue** — *"the curated catalogue is qualified"* — which is a
+fact about the **domain**. So the scope is now the tag **OR** membership of the shipped curated
+catalogues (`curated_catalogue_domains()`, 6,400 domains over seven files). The two halves are both
+needed: the tag catches a row whose domain has since been RETIRED from the file (a catalogue edit
+must not silently un-qualify a running instance), and membership catches a shipped domain whose row
+never got a tag. Nothing is asserted about origin — only that we ship the domain, which is
+checkable.
+
+**Untouched, and tested:** a hand-added domain the catalogue does not ship; a measured
+`disqualified` on a catalogue domain (the ruling admits the catalogue, it does not launder a
+judgement); a hand-disabled row (stamped `qualified`, `enabled=False` respected, so it still does
+not collect).
+
+**TWO PERFORMANCE FACTS worth keeping.** (a) The scope is decided in PYTHON over three columns, not
+through a `domain IN (6,400 values)`: **SQLite caps host parameters at 999 before 3.32** and the
+SQLCipher builds vary by platform, so a large IN would raise "too many SQL variables" on exactly the
+older installs this fixes. Every catalogue-sized IN now goes through `_id_chunks` (400). (b)
+`load_sources_from_yaml` now uses **libyaml** (`yaml.CSafeLoader`) when the wheel carries it —
+measured 3,148 ms → 411 ms on `configs/sources.yml` alone, and boot parses seven catalogues. Same
+SAFE loader either way; a speed choice, never a safety one.
+
+Measured on a 73,002-row instance (3,000 legacy + 70,000 discovered): boot 1 **1,350 ms**, stamping
+6,194; boot 2 **130 ms**, stamping 0.
+
+**WHAT THIS DOES NOT FIX, stated rather than left to be found.** The missing `via:` tag also makes
+`app_provided_filter` wrong on an old install, so the **"only sources that came with the app"
+scraping-scope toggle** (`scrape_app_provided_only`, `runner.py:449`) under-matches there in exactly
+the same way. It is NOT fixed here because that toggle's wording is about the ROW's origin, so the
+same substitution is not obviously right for it — it needs a ruling on what the toggle means before
+it can be widened.
+
+**AND A SECOND ONE, from the trace: four surfaces report a "source count" from four different
+predicates** — `sources_qualified` (enabled AND qualified), `/api/scheduler/targets.total_enabled`
+(enabled only), `/api/sources/qualification/config` `counts.qualified` (qualified, IGNORING
+enabled), `/api/scheduler/coverage` `totals.total` (enabled AND has-rss, IGNORING status). They
+legitimately disagree; the coverage panel's denominator in particular counts sources collection will
+never touch. Not reconciled here — that is a UI ruling about which number is THE number, not a bug
+with an obvious fix.

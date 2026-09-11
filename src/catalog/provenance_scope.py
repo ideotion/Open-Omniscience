@@ -26,6 +26,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 # Exactly the provenances `seed_sources.load_and_seed` stamps for catalogs COMMITTED to the
 # repository. Kept as an exact set, never a prefix rule -- see the module docstring.
 APP_PROVIDED_PROVENANCES: frozenset[str] = frozenset({
@@ -85,7 +87,14 @@ def is_app_provided(source) -> bool:
 def is_curated(source) -> bool:
     """True when this source came from one of the hand-vetted catalogues (see
     ``CURATED_PROVENANCES``) -- the set the 2026-09-10 ruling stamps qualified at seed."""
-    return any(t in CURATED_TAGS for t in _tags(getattr(source, "tags", None)))
+    return is_curated_tags(getattr(source, "tags", None))
+
+
+def is_curated_tags(raw: str | None) -> bool:
+    """The same test against a raw tags STRING, for a caller reading columns rather than
+    ORM objects. One implementation, two entry points -- `is_curated` delegates here, so
+    the token-exact rule can never fork into two subtly different versions."""
+    return any(t in CURATED_TAGS for t in _tags(raw))
 
 
 def _tag_filter(column, tags: frozenset[str]):
@@ -109,3 +118,74 @@ def app_provided_filter(column):
 def curated_filter(column):
     """The SQL twin of :func:`is_curated`, token-exact for the same reason."""
     return _tag_filter(column, CURATED_TAGS)
+
+
+# THE CURATED CATALOGUES THEMSELVES, as files rather than as tags. See
+# `curated_catalogue_domains` for why this exists beside `CURATED_TAGS`.
+CURATED_CATALOGUE_FILES: tuple[str, ...] = (
+    "sources.yml",                    # via:curated
+    "sources_spectrum.yml",           # via:spectrum
+    "markets_sources.yml",            # via:markets
+    "legal_sources.yml",              # via:legal
+    "legal_sources_generated.yml",    # via:legal-generated
+    "academic_sources.yml",           # via:academic
+    "official_sources.yml",           # via:official
+)
+
+
+def curated_catalogue_domains() -> frozenset[str]:
+    """Every domain the CURATED catalogues ship, lowercased.
+
+    WHY THIS EXISTS, AND WHY THE TAG WAS NOT ENOUGH (2026-09-11, from a field report).
+    ``CURATED_TAGS`` asks "did the seeder create this row?", by reading the ``via:``
+    marker it writes. That is a fact about the ROW. The 2026-09-10 ruling is about the
+    CATALOGUE -- "the curated catalogue is qualified" -- which is a fact about the
+    DOMAIN, and the two come apart on any install older than the tagging:
+
+    * ``via:`` tagging entered the seeder on 2026-06-08, so every row created before it
+      carries none;
+    * ``reconcile_source_metadata`` STRIPS the marker on purpose when it heals an
+      existing row (its own docstring: copying it "would assert an origin this row may
+      not have"), which is right -- and means a row can never acquire one later;
+    * ``tags`` is deliberately outside the catalogue-corrections merge (it has four
+      writers and a union cannot express a removal).
+
+    So a pre-2026-06-08 row is permanently outside a tag-scoped query, however many
+    times the app is updated. Measured on a simulated older install: 3,000 legacy rows,
+    update, and 3,000 of them stayed ``unqualified`` -- i.e. never collected -- while
+    the 3,195 rows the same update CREATED were all stamped. Adding the one tag to the
+    legacy rows moved the count to 6,195 and 0.
+
+    Reading the catalogue files answers the ruling's actual question without guessing
+    about origin: this asserts only that the domain IS in a catalogue we ship, which is
+    checkable, never that the row ARRIVED that way, which is not. A hand-added domain
+    the catalogue does not carry is untouched either way.
+    """
+    return _curated_catalogue_domains()
+
+
+@lru_cache(maxsize=1)
+def _curated_catalogue_domains() -> frozenset[str]:
+    """The cached body. The catalogues are files that ship with the app and cannot
+    change while it runs, so this is read ONCE per process -- it sits on the boot path
+    beside the seeder, which parses the same files, and paying for them twice on every
+    boot to answer a question whose answer is fixed would be a poor trade."""
+    from pathlib import Path
+
+    from src.ingest.seed_sources import load_sources_from_yaml
+
+    configs = Path(__file__).resolve().parents[2] / "configs"
+    domains: set[str] = set()
+    for name in CURATED_CATALOGUE_FILES:
+        path = configs / name
+        if not path.exists():          # a catalogue may legitimately not ship
+            continue
+        try:
+            entries = load_sources_from_yaml(path)
+        except Exception:              # noqa: BLE001 - a broken file must not block boot
+            continue
+        for entry in entries:
+            domain = str(entry.get("domain") or "").strip().lower()
+            if domain:
+                domains.add(domain)
+    return frozenset(domains)

@@ -491,6 +491,18 @@ def log_curated_stamps(session: Session, sources: list[Source], *, now: datetime
     return len(sources)
 
 
+# SQLite caps host parameters at 999 before 3.32, and the SQLCipher builds this app ships
+# against vary by platform. Anything that builds an IN clause from a collection whose size
+# the catalogue decides goes through here, so a bigger catalogue can never become a runtime
+# error on somebody's older install. 400 leaves room for the rest of a statement's binds.
+_ID_CHUNK = 400
+
+
+def _id_chunks(ids: list[int], size: int = _ID_CHUNK):
+    for start in range(0, len(ids), size):
+        yield ids[start:start + size]
+
+
 def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> dict:
     """Admit the curated catalogue by ruling (maintainer, 2026-09-10) -- the seed-time and
     boot-time reconcile that stamps every hand-vetted catalogue row ``qualified``.
@@ -515,22 +527,40 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
     (measured and refused; untouched), ``kept_local`` (an unqualified row that nevertheless
     carries a judging attempt -- an anomaly this never overwrites), ``curated`` (the scope).
     """
-    from src.catalog.provenance_scope import curated_filter
+    from src.catalog.provenance_scope import curated_catalogue_domains, is_curated_tags
     from src.database.models import Source, SourceQualificationAttempt
 
     now = now or datetime.now(UTC)
-    scope = session.query(Source).filter(curated_filter(Source.tags))
+    # SCOPE = the provenance tag OR the catalogue itself, and the two answer different
+    # halves. The TAG catches a row the seeder created whose domain has since been retired
+    # from the shipped file -- a catalogue edit must not silently un-qualify a running
+    # instance. CATALOGUE MEMBERSHIP catches a shipped domain whose row never got a tag,
+    # which is every row on an install older than tagging (2026-06-08); see
+    # `curated_catalogue_domains` for the field report and the measurement.
+    #
+    # Decided in PYTHON over three columns rather than through a `domain IN (...)` of the
+    # ~6,400 curated domains, deliberately: SQLite caps host parameters at 999 before
+    # 3.32, and the SQLCipher builds this app ships against vary by platform, so a large
+    # IN would raise "too many SQL variables" on exactly the older installs this fixes.
+    # The scan is three columns over a table of thousands, already indexed by nothing it
+    # needs -- cheap next to the catalogue parse it sits beside at boot.
+    domains = curated_catalogue_domains()
     counts = {"curated": 0, "stamped": 0, "already_qualified": 0, "disqualified": 0,
               "kept_local": 0}
-    pending = scope.filter(Source.status == STATUS_UNQUALIFIED).all()
-    counts["curated"] = int(scope.count())
-    counts["already_qualified"] = int(
-        scope.filter(Source.status == STATUS_QUALIFIED).count()
-    )
-    counts["disqualified"] = int(
-        scope.filter(Source.status == STATUS_DISQUALIFIED).count()
-    )
-    if not pending:
+    pending_ids: list[int] = []
+    for sid, domain, tags, status in session.query(
+        Source.id, Source.domain, Source.tags, Source.status
+    ):
+        if not (is_curated_tags(tags) or str(domain or "").strip().lower() in domains):
+            continue
+        counts["curated"] += 1
+        if status == STATUS_QUALIFIED:
+            counts["already_qualified"] += 1
+        elif status == STATUS_DISQUALIFIED:
+            counts["disqualified"] += 1
+        elif status == STATUS_UNQUALIFIED:
+            pending_ids.append(int(sid))
+    if not pending_ids:
         return counts
     judged = {
         int(sid)
@@ -538,15 +568,15 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
         .filter(SourceQualificationAttempt.verdict.in_(JUDGING_VERDICTS))
         .distinct()
     }
+    to_stamp = [sid for sid in pending_ids if sid not in judged]
+    counts["kept_local"] = len(pending_ids) - len(to_stamp)
     stamped: list[Source] = []
-    for source in pending:
-        if source.id in judged:
-            counts["kept_local"] += 1
-            continue
-        source.status = STATUS_QUALIFIED
-        source.qualified_at = now
-        source.qualification_criteria_version = CURATED_CRITERIA_VERSION
-        stamped.append(source)
+    for chunk in _id_chunks(to_stamp):          # chunked for the same 999-parameter reason
+        for source in session.query(Source).filter(Source.id.in_(chunk)):
+            source.status = STATUS_QUALIFIED
+            source.qualified_at = now
+            source.qualification_criteria_version = CURATED_CRITERIA_VERSION
+            stamped.append(source)
     if stamped:
         log_curated_stamps(session, stamped, now=now)
         session.commit()

@@ -8862,3 +8862,34 @@
   vocabulary *worse* — a reader filtering for one would silently miss the other. The same pass
   that splits an overloaded value should merge its duplicates, and `error` narrowed to the one
   thing it should always have meant: something went wrong in our own code for this row.
+
+### A PROXY FOR A FACT DRIFTS FROM IT, AND THE DRIFT IS INVISIBLE (2026-09-11, from a field report)
+
+`stamp_curated_catalog` asked *"does this row carry a `via:curated` tag?"* to mean *"is this a
+curated-catalogue source?"*. The tag is written by the seeder when it CREATES a row, so it is a fact
+about the ROW; the question is about the DOMAIN. On a fresh install the two agree perfectly, which
+is exactly why the substitution survived review and a full test suite: every test planted a row the
+way the seeder does.
+
+They come apart on an install older than the tagging (2026-06-08). And nothing could ever close the
+gap, because `reconcile_source_metadata` **strips** the provenance marker on purpose when it heals
+an existing row — rightly, since copying it would assert an origin the row may not have. So a
+pre-tagging row was permanently outside the scope, stayed `unqualified`, and never collected.
+Measured: 3,000 legacy rows, run the update, and 3,000 of them stayed stranded while the 3,195 rows
+the SAME update created were all stamped. The maintainer saw it as "only 2600 sources collecting".
+
+**The generalisable part.** When a check reaches for a marker instead of the thing itself, ask what
+would have to be true for the marker to be absent on a genuine member. Here the answer was "the row
+predates the marker" — a condition no test written after the marker existed can produce by accident,
+and which every real old install satisfies. The fix was not to backfill the marker (that would
+assert the origin the strip refuses to guess) but to **ask the source of truth**: the catalogue is a
+file we ship, so membership is checkable. Both tests are kept, because they catch different things —
+the marker catches a row whose domain has since left the file, the file catches a domain whose row
+never got a marker.
+
+**Two facts worth keeping from the fix.** (1) **SQLite caps host parameters at 999 before 3.32**,
+and the SQLCipher builds vary by platform, so an `IN` built from a collection whose size a config
+file decides is a portability landmine — on exactly the older installs a fix like this targets.
+Decide in Python over a few columns, or chunk. (2) **`yaml.CSafeLoader` is ~7.6× faster than the
+pure-Python `SafeLoader`** (3,148 ms → 411 ms on a 5,580-entry catalogue) and is the same SAFE
+loader. If a boot path parses YAML of any size, it should be using it.
