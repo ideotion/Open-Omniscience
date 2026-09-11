@@ -161,6 +161,7 @@ class BandwidthGovernor:
         writer_saturated: bool = False,
         cpu_saturated: bool = False,
         mem_low: bool = False,
+        loop_lagging: bool = False,
         now: float | None = None,
     ) -> tuple[int, str]:
         """Adjust the permit count from the measured rate + contention flags.
@@ -169,14 +170,27 @@ class BandwidthGovernor:
         tick (safety first); rate tracking is rate-limited to ``min_adjust_interval``
         so the controller settles instead of oscillating. The permit count is
         always within ``[1, w_max]``.
+
+        The flags are checked in order of how certain the harm is, and the reason names
+        the FIRST that is true rather than blurring them: memory can kill the machine,
+        the writer is a measured queue, CPU contention is someone else's need, and
+        ``loop_lagging`` (P6) is our own server being made to wait. They are separate
+        reasons because the remedies and the evidence differ, and a reader of the perf
+        log has to be able to tell which one moved the permits.
         """
         now = time.monotonic() if now is None else now
         cur = self._sem.permits
 
         # 1) Contention always wins — reduce immediately, regardless of the rate.
-        if mem_low or writer_saturated or cpu_saturated:
+        if mem_low or writer_saturated or cpu_saturated or loop_lagging:
             reason = (
-                "mem-low" if mem_low else "writer-saturated" if writer_saturated else "cpu-saturated"
+                "mem-low"
+                if mem_low
+                else "writer-saturated"
+                if writer_saturated
+                else "cpu-saturated"
+                if cpu_saturated
+                else "loop-lag"
             )
             if mem_low:
                 # Memory is the one contention signal where overshoot is not merely slow
@@ -190,6 +204,12 @@ class BandwidthGovernor:
                 # not the machine, and over-cutting them just wastes capacity.
                 new = max(1, cur // 2)
             else:
+                # Writer, CPU and loop-lag all get the LINEAR step. P6's is linear for the
+                # same reason the other two are — it costs throughput, not the machine —
+                # and for one more: unlike memory, the collector may not even be the cause
+                # of loop lag (a synchronous call on the loop blocks it by itself), so the
+                # descent has to be slow enough for CollectionMonitor to notice it is not
+                # helping and stop. A multiplicative cut would reach the floor first.
                 new = max(1, cur - 1)
             if new != cur:
                 self._sem.set_permits(new)
