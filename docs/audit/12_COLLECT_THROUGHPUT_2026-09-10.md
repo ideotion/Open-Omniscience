@@ -511,6 +511,21 @@ a real one. `None` is the true answer and one the app already renders honestly. 
 whose first non-negotiable is *no fabricated anything* cannot keep a date source that
 fabricates on exactly the pages where it is the only source.
 
+### 12.2b The app was already built for a missing date; it was not built for a wrong one
+
+Checked rather than assumed, because the whole ruling turns on it. Nothing requires
+`published_at`, and nothing drops an article without one. The tree coalesces
+consistently — `published_at or created_at` in `analytics/store.py`, `ingest/batch.py`,
+`analytics/queries.py`, `bulletin/stories.py`, `api/diagnostics.py` — so an undated
+article is placed at the time we *observed* it, which is a fact we hold. `signals/lineage.py`
+carries `undated` as its own explicit population, and invariant #13b already renders
+article-deduced dates as their own filterable category with the never-confirmed caveat
+visible.
+
+So the bound moves an article from **"carries a fabricated publication date"** to
+**"dated by observation, and labelled as such"**. There is no path that silently degrades,
+and the one that did is the one being removed.
+
 ### 12.3 What the bound genuinely loses, stated rather than glossed
 
 | date placement | unbounded | bounded |
