@@ -8938,3 +8938,86 @@ became `broadcaster`.
 4. **Refusing the whole batch for one canary is right.** A worker that cannot recognise the
    European Commission as a source of public record has an untrustworthy `primary_source` column
    everywhere, not just on that row. 240 rows discarded for one field is the correct trade.
+
+---
+
+## 2026-09-11 — A DEFERRAL IS TWO DIFFERENT FACTS WEARING ONE LABEL, and the only way to tell them apart is to ask again
+
+**The setting.** 37,079 institutions through Stage A. 23,237 deferred, 15,875 of them on
+robots alone against 255 explicit `Disallow` — the 62:1 that justified building a retry path.
+The maintainer then ran the retry across 8 VMs, and the comparison is the lesson.
+
+**A fifth of the robots bucket was never about robots.** 3,237 of the 15,875 came back
+`homepage_unreachable`: the host is gone. The robots fetch had failed because there was
+nothing there to answer, and the first pass could not say so because it stopped at the first
+gate and recorded the gate it stopped at.
+
+So **"15,875 unavailable" is a correct count of what we recorded and a wrong count of what we
+are declining to read.** Both sentences are true and they are not the same sentence. A single
+reason field per row makes a pipeline stage report *where it stopped*, which is only the same
+thing as *why* when nothing upstream of it was also broken.
+
+**The generalisable parts.**
+
+1. **A reason code records where the process stopped, not what is true about the subject.**
+   When you quote one as a fact about the world, say which gate produced it. The honest form of
+   the 62:1 is "15,875 recorded, of which at least 20.4% are dead hosts".
+2. **The only way to decompose a stop-at-first-gate bucket is to run it again against a
+   pipeline that has more gates.** No amount of re-reading the original output would have
+   found those 3,237 — the information was never in it.
+3. **Re-asking settles the ethics question that the count could not.** Of the 15,875, exactly
+   829 got a readable robots.txt on the second ask and 29 said Disallow. Failing closed is not
+   hiding a mass of publishers who had refused; it is mostly hosts that do not answer.
+4. **Measure the decay instead of projecting it.** 6.40% verified on a first ask, 1.15% on a
+   second ask of what it deferred, 0.60% for an unreachable homepage specifically. A third pass
+   runs against rows that failed *twice* — a different population — so the right output is
+   "run it and see", not a number. (This project has already stated a bound built from a rising
+   sequence and watched the next sample land outside it. Twice is a pattern.)
+5. **And the cost of the rule is not the long tail you assume it is.** The retry recovered the
+   German Federal Ministry of the Interior, Brazil's Ministry of Transport, Bhutan's Ministry
+   of Foreign Affairs, Burundi's National Assembly — 37 national or state bodies across 53
+   countries. Each had been excluded, permanently and silently, by one robots.txt fetch that
+   failed once. A fail-closed rule with no retry path is not conservative; it is a coin flip
+   whose result you keep forever.
+
+---
+
+## 2026-09-11 — THE CHEAP SIGNAL WAS ALREADY IN THE DATA, and the reason to tier it is what a confident version would have deleted
+
+**The setting.** Stage A verifies that a feed parses and is fresh, and refuses every other
+question by design. A hijacked institutional domain passes both tests *better than the real
+institution* — an affiliate content farm publishes several times a day. Two model judges
+reading 1,840 rows found about a dozen of these, one at a time, as incidental observations.
+
+**They were findable for free.** A regex over the entry titles Stage A had *already fetched*
+finds the same class: no tokens, no second network call, no new fetch path. 46 flags over
+6,036 verified rows. The signal had been sitting in the run output the whole time; what was
+missing was anyone looking at the content as evidence about identity rather than as payload.
+
+**But the naive version of that rule would have deleted three working news sources.** The bare
+gambling lexicon flags 39 rows, and among them: a national gambling REGULATOR publishing a
+tender for casino licences; Italian football reporting where *poker* means four goals in a
+match; a Pamplona social club named the *Nuevo Casino Principal*; two English sentences using
+"betting on" idiomatically. Three of the 39 — `redgol.cl`, `elivebrescia.tv`,
+`radiorukungiri.co.ug` — are in `configs/sources.yml` right now, doing their jobs.
+
+**The generalisable parts.**
+
+1. **Before building a detector, check whether the evidence is already on disk.** The expensive
+   pass had been fetching and storing exactly what the cheap rule needed.
+2. **Tier by what makes the inference sound, not by how many terms matched.** The trustworthy
+   tier here is not "more casino words"; it is *the namespace*. Nobody but a government can
+   HOLD a `.gob.ve` or a `.go.id`, so spam under one cannot be a lapsed registration someone
+   bought — it must be a compromised live delegation. 10 for 10, where the same words on a
+   `.com` are ~0.6 precise.
+3. **Name the weak tier so its name carries the warning.** `lexicon` is a reading list;
+   `restricted_namespace` is a finding. A caller that reads only the tier should still be
+   right about how much to trust it.
+4. **Pin the false positives you actually found as a permanent negative control.** The three
+   catalogued outlets are now assertions in `tests/test_content_integrity_scan.py`: whatever
+   the rule grows into, it may put them on a reading list and may never conclude about them.
+   A precision figure decays silently; a test does not.
+5. **A structural rule scales an incidental observation into a finding.** The judges caught one
+   Venezuelan embassy. The namespace rule caught eight, which turned "a hijacked domain" into
+   "the foreign ministry's embassy platform is compromised across ten of its thirteen missions
+   in our corpus" — a different kind of claim, reached by counting rather than by reading harder.

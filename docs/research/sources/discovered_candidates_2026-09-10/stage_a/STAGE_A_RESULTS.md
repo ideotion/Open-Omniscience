@@ -74,3 +74,20 @@ same flag to retry those too.
 
 Fail-closed is unchanged throughout: every one of these still refuses the fetch. The cause
 exists so the catalogue can stop spending an absence like a verdict.
+
+---
+
+## The two fleet runs (8 VMs each), and where their results live
+
+| run | worklist | candidates | verified | artifacts |
+| --- | --- | ---: | ---: | --- |
+| first pass | `w3` institutions | 37,079 | 2,373 (6.40%) | [`fleet_w3_2026-09-11/`](fleet_w3_2026-09-11/) |
+| second pass | `w5` retry of the deferrals | 23,237 | 267 (1.15%) | [`fleet_w5_retry_2026-09-11/`](fleet_w5_retry_2026-09-11/) |
+
+The second pass is the one that turned the first pass's 62:1 robots figure into something
+that can be read: **a fifth of the `robots_unavailable` bucket was dead hosts**, not shy
+publishers, and only 29 of the 15,875 turned out to be an actual `Disallow` once the file
+could be read. It also recovered `bmi.bund.de` and 36 other national and state bodies across
+53 countries, each of which had been excluded by a single robots.txt fetch that failed once.
+Its `RESULTS.md` carries the transition matrix, and a content-integrity scan over all 6,036
+verified rows to date.

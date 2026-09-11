@@ -13068,6 +13068,23 @@ Stage A cannot see it — the feed parses and is fresh, which is all Stage A che
 of the CONTENT catches it, and today that is a model's incidental observation rather than a rule.
 **This is also the strongest argument that Stage B earns its cost**, independent of the
 `primary_source` question.
+**C6 IS NOW PARTLY ANSWERED (2026-09-11, from the second Stage A pass).**
+`scripts/analysis/scan_content_integrity.py` reads the titles Stage A already fetched — no
+tokens, no socket — and tiers what it finds. Over 6,036 verified rows it flags 46. The tier
+that is trustworthy is `restricted_namespace`: gambling copy on a namespace no private party
+can REGISTER (`.gov.*`, `.gob.*`, `.go.id`, `.gouv.*`, `.mil`), which cannot be a lapsed
+domain and must therefore be a compromised live delegation. 10 for 10, and it turned one
+incidental judge observation into a structural finding — **eight of them are subdomains of
+`embajada.gob.ve`; of the 13 Venezuelan missions in the corpus, ten are compromised or serve
+`test` posts.** The `lexicon` tier is ~0.6 precise and is named so nobody mistakes it: its 29
+include a national gambling REGULATOR tendering casino licences and three outlets already in
+`configs/sources.yml` doing their jobs, so **a rule that acted on this signal would have
+deleted them**, and `tests/test_content_integrity_scan.py` pins those three as a permanent
+negative control. STILL OPEN: recall is unmeasured and partial (it misses every takeover on
+an ordinary namespace whose copy avoids the lexicon — `gartzambia.org`, `sedlecko.cz`,
+`ordnancerta.com` are three the judges caught and this does not), and NOTHING of this is
+wired into the app: whether a content-integrity signal belongs anywhere near ingest is a
+behaviour change, and it is B4 below rather than something the analysis kit may decide.
 
 **C7. A country field can contradict its own domain.** `cityofvancouver.us` — a US city — carries
 `country: ca`. Found incidentally; the export's country attribution has not been audited, and a
@@ -13075,13 +13092,82 @@ naive ccTLD check is NOT the audit (`.uk` vs `gb` and `.eu` for EU bodies are bo
 
 ### D. WORK NOT YET RUN
 
-**D1. The 8-VM retry run** over the 23,237 deferred rows (15,875 robots + 7,357 unreachable),
-using the cause attribution that shipped 2026-09-11 — so the flat `robots_unavailable` splits
-into `robots_refused` / `robots_server_error` / `robots_unreachable` and the measured 62:1 finally
-says WHICH. Kit `oo-candidate-kit-2026-09-11-96d80b01`. In the maintainer's hands.
+**D1. ~~The 8-VM retry run~~ — RUN AND ANALYSED 2026-09-11.** Result in
+`docs/research/sources/discovered_candidates_2026-09-10/stage_a/fleet_w5_retry_2026-09-11/`.
+23,237 rows, 8 disjoint shards (union = sum, zero overlapping pairs, and the judged set is
+exactly the worklist), **267 verified (1.15%)** against the first pass's 6.40%. What it bought
+is the TRANSITION MATRIX, not the 267: a fifth of the `robots_unavailable` bucket (3,237 of
+15,875) came back `homepage_unreachable`, so the host is simply gone and the robots failure was
+a symptom — **the 62:1 numerator is not 15,875 live publishers we decline to read**, and the
+figure should be quoted with that subtraction shown. Of the 15,875, only 829 got a readable
+robots.txt on the second ask and 29 of those said Disallow, so failing closed is not concealing
+a mass of refusals. A dead host stays dead: 88.3% of `homepage_unreachable` was still
+unreachable days later from eight vantages, 0.60% recovered. NO third-pass yield is projected —
+that population failed TWICE and the two points available describe different populations.
+**The recovery is not marginal:** `bmi.bund.de` (German Federal Ministry of the Interior),
+Brazil's Ministry of Transport, three Bhutanese national bodies, three Cameroonian ministries,
+Burundi's National Assembly — 37 national/state bodies across 53 countries, each excluded until
+now by one robots.txt fetch that failed once.
 
 **D2. Three worklists have never been run at all:** shortlist (3,031), remainder (16,214),
 religious (22,842). Only institutions (37,079) has been through Stage A.
 
 **D3. The Stage B splice itself.** Nothing from the institutions pass has been admitted to any
 catalogue, and the reason is recorded in the artifact's README, not just here.
+
+### 2026-09-11 — THE SECOND STAGE A PASS: what it settled, and the four things it opened
+
+The maintainer ran the retry worklist across 8 VMs and returned the results. D1 above carries
+the measurement; C6 carries the detection rule it produced. These are the items that are NEW,
+and none of them is decided.
+
+**B4. DOES A CONTENT-INTEGRITY SIGNAL BELONG ANYWHERE NEAR THE APP, or does it stay in the
+analysis kit?** Today it is a script over finished run output — read-only, no socket, no effect
+on anything shipped. Making it act would be a behaviour change of exactly the kind this project
+does not let code decide for itself, and there are three honest positions:
+*(a) leave it in the kit* — a reading list a human works through before a splice. This is what
+shipped, and it costs nothing but attention.
+*(b) flag at admission* — a candidate that trips `restricted_namespace` cannot be spliced
+without a written override. Cheap, and the tier is 10-for-10.
+*(c) flag in the running catalogue* — re-check admitted sources periodically, because a domain
+that was clean when admitted can be taken over afterwards, and today nothing would ever notice.
+(c) is the one with a real cost: it is a recurring fetch of admitted sources for a reason the
+user did not ask for, which needs its own consent story and cannot be smuggled in beside
+collection. **Recommendation: (b) now, (c) written up as a design before any code.** Never a
+silent drop, in any of the three — the `lexicon` tier would have deleted three legitimate news
+outlets, and that is not a hypothetical about some future looser rule.
+
+**B5. THE VENEZUELAN EMBASSY PLATFORM IS COMPROMISED AND NOBODY HAS BEEN TOLD.** Ten of the 13
+`embajada.gob.ve` missions in the corpus serve gambling affiliate copy or `test` posts, on a
+restricted government namespace. We found it; we are not the affected party. There is no
+practice in this project for what to do when a scrape incidentally discovers that a third
+party's infrastructure is compromised — and the same question already applies to
+`pn-ende.go.id` and `pn-nunukan.go.id` (two Indonesian district courts) and `usf.gov.jm`.
+The options are: say nothing and simply exclude them; publish the list as research; or attempt
+responsible disclosure to each body. **This is a ruling, not a technical choice**, and it is
+the maintainer's: disclosure means initiating contact with foreign government bodies, which is
+outside anything the app's ethics section contemplates. Recorded so the finding does not
+quietly become a list in a CSV nobody acts on. Note the list IS committed either way — the
+evidence is in `content_integrity_flags.csv` and is a fact about public web content.
+
+**C8. 26 of the 267 (9.7%) carry a bare Wikidata Q-id as their NAME** — the export never
+resolved a label, so the row would be spliced as `Q133293483`. Same family as C7 (identity
+fields are evidence, not fact); distinct in that this one is mechanically detectable and
+mechanically fixable, by re-querying the label or by declining to admit an unlabelled row.
+
+**C9. 43% OF THE SECOND PASS'S YIELD IS ONE COUNTRY.** 116 of the 267 are Czech municipalities
+publishing their statutory *úřední deska*; 42 share the path `/uredni-deska?action=atom`, so
+they are almost certainly one CMS vendor's product. They are legitimate, distinct institutions
+and this is not a reason to exclude them — but admitting them makes a supplier outage a
+correlated failure across dozens of catalogue rows, and it moves the corpus's geographic
+balance by a visible amount in a single splice. Worth a decision made deliberately rather than
+one made by not noticing.
+
+**D4. A THIRD PASS is possible and is NOT recommended on the strength of these numbers.**
+**22,199** rows are still DEFERRED and would be re-asked; the other 771 the second pass
+RESOLVED into rejections — 474 no feed, 200 unparseable, 42 stale, and **32 explicit
+`Disallow`** — and those must never be re-asked, which is the whole reason the retry builder
+reads `DEFERRED_REASONS` rather than "everything that is not verified". The measured decay is
+6.40% → 1.15%, and within that, re-asking an unreachable homepage returned 0.60%. A third pass
+runs against rows that failed TWICE. Nobody should quote a projected yield for it, including
+this entry.
