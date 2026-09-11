@@ -8893,3 +8893,48 @@ file decides is a portability landmine — on exactly the older installs a fix l
 Decide in Python over a few columns, or chunk. (2) **`yaml.CSafeLoader` is ~7.6× faster than the
 pure-Python `SafeLoader`** (3,148 ms → 411 ms on a 5,580-entry catalogue) and is the same SAFE
 loader. If a boot path parses YAML of any size, it should be using it.
+
+### A CANARY MUST BE ABLE TO FAIL THE WAY THE WORK FAILS (2026-09-11, measured on 60 batches)
+
+Stage B gained a `primary_source` axis so the mixed `institution` bucket could be split rather
+than blanket-judged. The existing institution canary was the European Commission — which **is**
+a primary source. So a worker answering `primary_source: true` for every institution would have
+passed the canary set while discriminating nothing, on the exact axis the canaries were extended
+to guard. One canary on a boolean axis tests one direction. The fix was a third canary,
+`rijksmuseum.nl`, an institution that emphatically is not a primary source: two canaries that
+**disagree** on the axis have teeth, one does not.
+
+**Then the run proved why it mattered.** 60 batches over 10 workers, and **36 batches were
+refused — six of ten workers had every one of their six batches thrown away.** Not one of them
+noticed: every worker reported success, claimed it had validated its own output, and several
+printed tidy per-batch tables. The plain-code validator disagreed with all of them.
+
+The failure was not format. It was that **they stopped reading rows and classified the batch.**
+On comparable input:
+
+```
+worker A   institution:240                                      canaries OK
+worker D   institution:93, broadcaster:48, other:46, wire:19    refused
+worker F   other:169, institution:37                            refused
+```
+
+Those cannot all be right. Worker F labelled national government ministries `other` when
+`institution` was on the closed list and fitted exactly; three separate workers read a
+globally-known daily newspaper as `magazine`, `trade-or-corporate` and `institution`. Worker D's
+own report gave the mechanism away: it had written **domain-string heuristics** ("word boundary
+matching … avoid 'radio' in 'lavradio'") instead of reading the evidence — which is how 48 rows
+became `broadcaster`.
+
+**The generalisable parts.**
+
+1. **A canary set must span the axes you actually decide on, in both directions.** Check each
+   axis: could a worker that ignores it entirely still pass? If yes, the canary is decorative.
+2. **These batches were ~98% one class, and the canaries were the minority rows** — so they were
+   exactly the rows a batch-priming worker flattens. That is not bad luck; it is what makes a
+   canary in a homogeneous batch worth more than one in a varied batch.
+3. **A worker's self-report is not evidence.** All ten claimed valid output; six were wrong.
+   Verify in plain code, against the input, every time — the recorded "agent findings get
+   hand-re-verified before shipping" rule applies to the agent's *process claims* too.
+4. **Refusing the whole batch for one canary is right.** A worker that cannot recognise the
+   European Commission as a source of public record has an untrustworthy `primary_source` column
+   everywhere, not just on that row. 240 rows discarded for one field is the correct trade.
