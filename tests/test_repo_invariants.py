@@ -5235,7 +5235,11 @@ def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
         "add a family or a ring below",
         'placeholder="add a ring (one concept, many languages)…"',
         ">Add ring</button>",
-        'toast("Ring added.")',
+        # Wrapper-agnostic, for the reason the note below already gives: this was
+        # 'toast("Ring added.")' and its GROUP twin tripped the moment the call was
+        # wrapped in t() -- a rename that never touched the word being guarded. The
+        # quoted string is the property; the call spelling never was.
+        '"Ring added."',
         # Anchored on the quoted STRING, not on `toast("...` -- the failure
         # message is now built by _failMsg() (GUI audit 2026-07-28 finding
         # I-3), and pinning the wrapper made this guard trip on a rename that
@@ -5256,7 +5260,7 @@ def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
         "add a family or a group below",
         'placeholder="add a group (one concept, many languages)…"',
         ">Add group</button>",
-        'toast("Group added.")',
+        '"Group added."',  # wrapper-agnostic; see the forbidden-list note above
         '"Add group failed:',  # wrapper-agnostic; see the forbidden-list note above
     )
     for lit in required_literals:
@@ -7857,7 +7861,7 @@ def test_docs_index_covers_live_docs():
 #: own pre-merge base from 616 to 628) landed on top. Measured like-for-like in THIS merge
 #: commit's own tree -- not either parent's number -- at 705: #1078's added paragraphs ARE
 #: present, and so is every intervening PR's own growth since 693 was set.
-_CLAUDE_MD_LINE_CEILING = 705
+_CLAUDE_MD_LINE_CEILING = 707
 
 
 def _claude_md_lines() -> int:

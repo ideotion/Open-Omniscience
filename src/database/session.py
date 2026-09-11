@@ -288,6 +288,7 @@ def init_db() -> None:
         ensure_keyword_mention_source_column,
         ensure_article_quarantine_columns,
         ensure_article_source_revision_column,
+        ensure_article_newsletter_list_id_column,
         ensure_article_top_keyword_columns,
         ensure_law_document_language_columns,
         ensure_law_text_columns,
@@ -334,6 +335,10 @@ def init_db() -> None:
     # The version anchor on articles (S4; self-heal, no backfill) -- which upstream
     # revision an article's stored TEXT came from, for versioned sources.
     ensure_article_source_revision_column(engine)
+
+    # The newsletter List-Id on articles (ingest provenance; self-heal, no backfill) --
+    # the ruled stable key for a platform sender whose host names no publication.
+    ensure_article_newsletter_list_id_column(engine)
 
     ensure_hot_indexes(engine)
 

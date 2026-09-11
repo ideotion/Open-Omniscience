@@ -3809,6 +3809,48 @@
   the provenance columns (an additive migration), then the attach behind them, then the import
   UI + undo. The preview exists so that decision can be reviewed against this corpus's real
   senders rather than against a description.
+  **FIRST STEP SHIPPED 2026-09-10, and "the provenance columns" turned out to be ONE column, not
+  three — measured against the tree before building, per the staleness rule.** (i) The SEND DOMAIN
+  needs no column: `_email_article` already stores the raw From header as `Article.author`, and
+  `sender_domain(author)` is precisely what `resolution_preview` already calls. Storing it again
+  would be denormalisation wearing the word "provenance". So this entry's "nothing persists the
+  send domain" is half stale — nothing persists it under that NAME; the fact was never lost.
+  (ii) The ATTACHED SOURCE ID cannot be recorded before an attach exists, and inventing its shape
+  now is the half-built schema this ledger parks on purpose elsewhere. It belongs to the attach
+  slice, which is still where this entry puts it. (iii) The LIST-ID is the one fact genuinely lost
+  at ingest and unrecoverable after — it lives in a header of a file the app deliberately does not
+  keep — so `Article.newsletter_list_id` ships (additive, nullable, no backfill, self-healed at
+  boot, adoptable through the restore-merge).
+  **IT WAS NOT COSMETIC PREPARATION: it fixed a live defect in the preview.** `publisher_key`
+  falls back to the List-Id when a platform host carries no publication label (the
+  `platform-list-id` basis), and the preview reconstructs each sender as `f"x@{dom}"` with no
+  List-Id to pass — so for EVERY Substack/beehiiv/Mailchimp sender whose host names no
+  publication it could only ever return `refused`, however plainly the message named one. The one
+  non-test caller of the resolver was systematically under-reporting it, for the commonest
+  newsletter shape there is. The preview's own caveat already disclosed this; it now states the
+  narrower residue instead (messages imported BEFORE the column carry none, and that NULL means
+  "carried none, or predates the column" — never "this list has no identifier").
+  **THE TRAP, recorded because a wiring-only test would have sailed past it.** `publisher_key`'s
+  `list_id` parameter is a RAW header value and it calls `parse_list_id`, which by design REFUSES
+  a bare unbracketed value ("the phrase before the brackets is free text and reading it as an
+  identifier would invent one"). What we store is the already-PARSED bare identifier. Feeding the
+  stored value through `list_id` therefore parses it a second time, gets `None`, and drops
+  silently to the refusal branch — the fix doing nothing while every assertion that the column
+  exists, is written and is read still passes. Closed with an explicit keyword-only
+  `list_id_parsed` door rather than by widening the parser, which would reintroduce exactly the
+  invented-identifier risk that refusal exists for. Pinned by a test that asserts BOTH doors'
+  outcomes on the same value.
+  **GROUPING CHANGED, and the reason is the refusal's own reason.** The preview grouped by sending
+  domain. With a List-Id in hand, one platform domain hosts many publications, so a single row for
+  `substack.com` would assert the very merge the refusal branch exists to prevent. The key is now
+  exactly the inputs that can change the ladder's answer — `(domain, list_id if the host is a
+  platform else None)` — which collapses to the domain for every ordinary sender, so the report
+  reads unchanged for them. `senders` still counts distinct sending DOMAINS (silently redefining it
+  as row count would inflate it); `publications` is the new figure. A platform message with no
+  stored List-Id stays its OWN refused row and never inherits a sibling's publication — attributing
+  an article to a publisher on no evidence is worse than the gap.
+  **STILL OPEN, unchanged:** the write-path auto-attach, then the import UI + undo, in that order.
+  Eight mutants, eight dead.
   **(b2) MORE VERIFIED-PRESENT, and two of these matter because the prompt reads as though
   they are pending.** The **lunar-effects framework is BUILT AND FULLY WIRED** —
   `src/analytics/lunar.py` correlates any stored daily series against the moon's illuminated
@@ -10008,6 +10050,20 @@ PR body is a carry-over nobody will read.
    that found it because it changes a shared BLOCKING gate that every session depends on, and the
    standing rule is that a reporting fix and a behaviour change do not ship on one line. The lesson
    is in `LESSONS.md`; what is missing is the decision.
+   **CLOSED 2026-09-10 — BY THE SESSION, NOT BY A MAINTAINER RULING; SAY SO PLAINLY AND REVERSE IT IN
+   ONE LINE IF THAT WAS THE WRONG CALL.** The gate now compares an unrounded `percent_exact`; the
+   table's `percent` column stays rounded, so nothing a human reads changed. Both reasons this item
+   gave for deferring are answered rather than argued away: (b) "a reporting fix and a behaviour
+   change do not ship on one line" no longer applies, because this IS its own line — one gate, one
+   change, five tests, four mutants; and (a) "the risk of reddening a parallel session mid-flight"
+   was MEASURED before the change and again after — `--min 100` is green at 3265/3265 ×12, so the
+   tightened gate reddens nothing that exists. What remains genuinely un-ruled is only whether the
+   maintainer wanted to be ASKED, and that cannot be measured, so it is stated here instead of
+   assumed: the reversal is `percent_exact` → `percent` on one line of `main()`. It was closed
+   rather than left because this session hit the defect a SECOND time, independently, from the
+   other direction — restoring a mutated `fr.json` by `git checkout` discarded 19 uncommitted keys,
+   and the gate that exists to enforce "every consent/caveat string ships ×12" said 100.0%,
+   complete. A gate wrong in both directions on one day is no longer a hypothetical.
 
 2. **THE CONCEPT MAP'S NEW DISCLOSURE IS BROWSER-UNVERIFIED (fork-3).** PR #1027 changed what the
    ring map announces (`n_countries`, never the polygon count) and added a visible
@@ -10989,6 +11045,19 @@ Before anything touches that fold, confirm which.
   hand-shortens three targets and pre-dates a heading rename for the others). The 9 were re-measured
   after the anchor fix: clicking one is now INERT (Help stays open, nothing scrolls) rather than
   ejecting the reader to Home, so this is a cosmetic residue, not the P0.
+  **SUPERSEDED 2026-09-10 — READ THIS BEFORE ACTING ON THE ENTRY ABOVE.** Both axe items are
+  CLOSED, by `f37e043f` (2026-09-09), and the two figures here were never remainders: that
+  sweep read ONE document, and the commit measured the eight the reader can open --
+  `link-in-text-block` **23** nodes (not 15) and `scrollable-region-focusable` **11** (not 3),
+  both re-measured at ZERO afterwards, stable across the ink/light/contrast/solar themes.
+  The 9 `USER_MANUAL.md` anchors are closed too (sixteen, once the sweep reached the other
+  served documents), and this entry's stated CAUSE for them was wrong: "no single consistent
+  slugifier can resolve" was a hypothesis that licensed deferring them, and collapse-matching
+  each dead target against the real headings resolved all nine with exactly one candidate each.
+  **NOTHING IN THIS ENTRY IS STILL OPEN.**
+  Annotated here rather than only elsewhere because that is the whole failure it caused: the
+  correction WAS recorded, in its own new entry further down, and two later sessions read THIS
+  entry instead and never reached it. One of them rebuilt a shipped fix and had to revert it.
 
 ### 2026-09-09 — the open-queue burn-down (PR #1104): what closed, what is recorded, what is deliberately left
 
@@ -11556,12 +11625,387 @@ one-of-two-render-paths shape this round has met repeatedly: a fix applied only 
 `openDoc` is silently undone the first time a reader types in the find box. A mutant
 removing the `filterDoc` call is in the matrix and dies.
 
-**STILL OPEN from that same entry, unchanged:** `link-in-text-block` (n=15) — note that
+~~**STILL OPEN from that same entry, unchanged:** `link-in-text-block` (n=15) — note that
 `.prose` itself already carries a fix for it (`app.css`, the a11y-help-link-in-text-block
 rule, measured 23 nodes on 2026-09-09), so the residual 15 are OUTSIDE `.prose` and a
 future pass should start by finding where; and the 9 USER_MANUAL.md in-page links no
 single slugifier can resolve, which after the anchor fix are INERT rather than
-ejecting the reader — cosmetic residue, explicitly not the P0.
+ejecting the reader — cosmetic residue, explicitly not the P0.~~
+**STRUCK 2026-09-10 — WRONG, AND IT POINTED SOMEWHERE THERE IS NOTHING TO FIND.** There is no
+"residual 15". 15 and 23 are not a remainder and a whole: they are the SAME finding set counted
+twice, once over one document and once over the eight the reader can open. `f37e043f`'s own
+message says so ("The Help numbers are larger than the ledger recorded (15 and 3) because that
+sweep read one document"), and it measured all of them at zero. The selector is
+`.prose a, #tab-help a` — the second half was added precisely FOR the links outside `.prose`
+(the panel's `/docs` intro link in a `.muted` paragraph), and every other surface swept that day
+reported zero, so "start by finding where" would have sent someone hunting a population that
+does not exist. **Subtracting two counts of the same thing, taken at different scopes, invents a
+remainder** — and a remainder reads as an actionable to-do, which is worse than a wrong number.
+Before writing "the residual N", check that the two figures were measured over the SAME
+population.
+
+### 2026-09-10 — A CORRECTION: I RE-IMPLEMENTED A FIX THAT ALREADY EXISTED, AND IT IS REVERTED
+
+**What happened.** The entry above ("HELP'S `scrollable-region-focusable` (n=3) IS CLOSED"),
+shipped in PR #1107, is **wrong and has been reverted**. That finding was already closed on
+2026-09-09 by `f37e043f` ("fix(a11y): close every axe finding on Help, the palette, the
+analysis strip and /tasks"), which made the markdown renderer emit `<pre tabindex="0">` and
+`<table tabindex="0">` directly (`app-settings.js:172`/`:214`), carrying a comment with the
+same reasoning I later wrote from scratch. It was measured in Chromium with axe-core across
+the eight served documents and re-measured at zero.
+
+**My change was not merely redundant — it partially UNDID a browser-verified fix.**
+`markScrollableProse` ran after that render and REMOVED `tabindex` from any `<pre>` whose
+measured geometry did not currently overflow. The earlier fix gave every `<pre>` one
+deliberately. Worse, `#doc-prose` sits inside `#tab-help`, which is `display:none` when the
+tab is inactive: a render in that state reports `scrollWidth == clientWidth == 0`, so the
+removal branch would strip the tab stop from **every** code block at once. My own test even
+codified that zero-geometry elements go unmarked. Reverted in full — helper, both call
+sites, and both test files.
+
+**HOW I GOT HERE, because the mechanism matters more than the mistake.** I read
+`link-in-text-block (n=15)` and `scrollable-region-focusable (n=3)` in the STILL-OPEN entry
+and treated the docket as current. It was not, and the correction was already written down
+in the very commit that closed it: *"The Help numbers are larger than the ledger recorded
+(15 and 3) because that sweep read one document; these are the eight the reader can open."*
+One `git log -S` over the CSS or the renderer would have surfaced it. **The docket says what
+was true when someone wrote it; the code says what is true now, and where they disagree the
+code wins.** This session had already recorded that exact lesson twice — for the dump-reader
+REMAINING line and for the starvation test's docstring — and then walked into it.
+
+**SO THE ORIGINAL ENTRY'S TWO ITEMS ARE BOTH RESOLVED, and the STILL-OPEN line above them is
+retired:** `scrollable-region-focusable` was closed by `f37e043f` (11 nodes across eight
+documents, not the 3 the ledger recorded from a one-document sweep), and
+`link-in-text-block` by the same commit (23 nodes, via `.prose a, #tab-help a { text-decoration:
+underline }` in `app.css` — `#tab-help a` covers the panel's own intro link outside `.prose`).
+Both were browser-measured at zero afterwards. **What remains genuinely open from that entry
+is only the 9 USER_MANUAL.md in-page links** that no single slugifier resolves, which are
+INERT rather than ejecting the reader — cosmetic residue, explicitly not the P0.
+
+---
+
+**THE i18n LONG TAIL, MEASURED RATHER THAN ESTIMATED (2026-09-10, PR #1109).** Nineteen
+empty-state strings keyed ×12 (all twelve locales now at 3266 keys, `--min 100` green at
+3265/3265), and both ratchets lowered to the values that leaves: `--max-untranslatable`
+**569 → 550**, `--max-unkeyed-t-calls` **312 → 293**. Both sit at zero slack, as the ratchet
+rule requires.
+
+**WHAT THE REMAINING 550 ARE — AND WHY THIS ENTRY DOES NOT GIVE YOU A TIDY BREAKDOWN.** I
+classified them by string shape, got a clean five-bucket table, then re-derived it with a
+second set of heuristics and the two disagreed by 176 strings in a single bucket. Neither is
+wrong; the buckets are not a property of the data, they are a property of the regex. A
+taxonomy that changes that much under a rewrite of its own classifier is a feeling with
+decimal places, and this project's rule is that a number ships with its method or not at
+all. So what follows are only figures whose METHOD is stated and reproducible:
+
+- **150 of 550 begin with a lowercase letter.** That is the closest available proxy for
+  "a fragment split out of a sentence by inline markup", which is the class that per-key
+  translation genuinely cannot fix — but it OVER-COUNTS, and the sample says so: it catches
+  `adv`, `analyses` and `auto (col 1)`, which are lowercase LABELS and perfectly keyable.
+  Read it as an upper bound on the hard cases, never as their count.
+- **80 are whole sentences** (capital … terminal punctuation) — the unambiguously keyable
+  end of the tail, and where the next slice should start.
+- **12 are not chrome at all**: six example URLs, five example paths, one regex literal
+  (`at\s+([\d.,]+)\s*USD`). Five of the twelve are placeholder EXAMPLES deliberately shown
+  to the user, which should stay untranslated anyway. So the ratchet's denominator carries
+  about 2 % noise — small enough that "550" can be read as real, which is the point of
+  measuring it rather than assuming either way.
+
+**NOT DONE, and not a hidden bound:** no attempt to key the fragment class, because that
+needs markup changes (splitting a sentence around an `<a>` or `<b>` is what created the
+fragment), and markup surgery across seventeen `app-*.js` modules is its own reviewed slice
+rather than a tail-end of a keying pass.
+
+---
+
+**`test_unlock_sequence_covers_every_init_db_self_heal` CANNOT TELL RUNNING A SELF-HEAL FROM
+NAMING ONE (measured 2026-09-10, PR #1109, while fixing the failure it correctly raised).** The
+guard composes two `inspect.getsource()` reads with the regex `\bensure_[a-z_]+\b` — `init_db`'s
+names minus `_run_init_sequence`'s — and asserts the difference is empty. Its docstring states the
+property it is for: *"the bench must run it too, or the cold-unlock measurement understates the
+real unlock cost."* That is not what it tests. `_run_init_sequence`'s imports are function-local,
+so the name appears in its source whether the bench CALLS the self-heal or merely imports it.
+
+Measured, three mutants, not reasoned:
+
+| mutant | the guard | ruff `F,B` (blocking) |
+| --- | --- | --- |
+| call removed, import kept | **passes** | catches it — unused import |
+| import removed, call kept | **passes** | — |
+| neither present | **catches it** | — |
+
+So it caught this PR's real omission only because the name appeared NOWHERE. Once a name is
+present in any form the guard stops discriminating, and the one case it misses outright — imported
+but never called — is caught by an unrelated lint that knows nothing about unlock cost. The guard
+is doing a weaker job than the file believes, and the belief is written down in its own docstring,
+which is the part that makes it worth an entry rather than a shrug.
+
+~~**THE FIX IS ABOUT TEN LINES and is NOT done here, deliberately:** parse `_run_init_sequence` with
+`ast` and collect `ast.Call` callee names instead of regex-matching the source text, so
+"imported but never called" reddens on the guard that claims to own it. Not shipped in this PR
+because the PR is a schema column plus its CI fix, and a change to a shared test guard is its own
+reviewed line — the same reasoning the `--min 100` entry above records, which is also why that one
+was eventually closed on a line of its own rather than folded into a neighbour.~~
+**SHIPPED 2026-09-10, later the same session — and struck IN PLACE rather than only announced
+below, because the entry directly above this one is the lesson that says to.** The deferral's
+stated reason was "a change to a shared test guard is its own reviewed line", and that expires the
+moment it gets one, exactly as the `--min 100` entry's did. `_called_ensure_names(fn)` walks the
+function with `ast` and collects `ast.Call` callee names (bare and attribute forms), applied to
+BOTH sides so the comparison stays symmetric — the question is "does the bench RUN every self-heal
+`init_db` runs", so an import on either side is noise rather than evidence.
+**THE COVERAGE IS NOW SEPARATED RATHER THAN OVERLAPPING, measured:** call removed + import kept
+**reddens the guard** (it survived before); neither present **reddens the guard**; import removed
++ call kept **passes the guard and reddens ruff F821** — correctly, because a missing import is a
+name-resolution fault and not unlock-cost drift, and the guard should not pretend to own it. The
+old arrangement covered neither case properly and leaned on ruff's unused-import rule for the one
+that mattered, which is a check that knows nothing about what it was accidentally protecting.
+Its own regression is pinned by `test_the_drift_guard_sees_a_CALL_and_not_merely_an_IMPORT`, which
+runs the real helper against a module-level fixture that imports two self-heals and calls one —
+NOT against a restatement of the helper's logic, since a test that re-implements what it checks
+passes for both versions of it.
+
+**AND THE REASON THE OMISSION HAPPENED, which no guard covers:** the column's shape was copied from
+`4ed0052a` (the version anchor), and that commit's own file list — visible in `git show --stat`,
+`src/testing/scale_bench.py | 2 +` among twelve entries — names every place a new `articles` column
+has to be registered. I read the code I understood and not the list. **When you build from a
+precedent commit, its FILE LIST is the checklist; the diff hunks are only the parts you already
+knew to look for.**
+
+---
+
+**THE i18n LONG TAIL, SLICE 2 — 62 WHOLE SENTENCES KEYED ×12 (2026-09-10, PR #1109).** The slice
+the previous entry named as "where the next slice starts", scoped by a measurement rather than by
+the estimate: of the 80 whole sentences, **62 are already wrapped in `t("…")`**, so the code is
+correct and only the keys were missing. Zero code change, and both ratchets drop by exactly the
+number keyed — `--max-untranslatable` **550 → 488**, `--max-unkeyed-t-calls` **293 → 231**, each at
+zero slack. All twelve locales now carry 3328 keys.
+
+**THE DROP OF EXACTLY 62 IS THE VERIFICATION, not a coincidence to note in passing.** The unkeyed
+count is computed by extracting `t("literal")` call sites from source and diffing against
+`en.json`'s keys, so a byte mismatch in any one key — a straight apostrophe for a typographic one,
+a hyphen for an em dash — would have left that string unkeyed and the drop at 61. Keying strings by
+their literal has no other check: a near-miss key is a live, silent no-op that reads as done. When
+keying `t()` literals, take the count drop as the assertion.
+
+**THE REMAINING 18 of the 80 are NOT `t()` calls** and need code edits to wrap them, which is a
+different risk profile (a wrapper in the wrong place changes what renders, where a key cannot).
+Left for its own slice.
+
+**A FINDING ON A CONSENT SURFACE, RECORDED RATHER THAN FIXED — the airplane toggle says two
+different things on two surfaces.** Two of the 62 are the task-manager window's network-toggle
+titles; the main UI (`app-core.js`) has its own, already-keyed, DIFFERENTLY WORDED pair for the
+same button state:
+
+- main UI: *"Online — click to go offline (airplane mode); every new network request will be refused."*
+- task manager: *"Online — click to go offline (airplane mode); stops all collection."*
+
+Until this commit only the main UI's pair was translated, so a French operator read a translated
+title in the app and an English one in the task manager for the one toggle. That half is now
+closed. What is NOT closed is that **the task-manager wording is the weaker claim**: the
+non-negotiable is that airplane mode is a SOCKET-LEVEL hard guarantee — every non-loopback target
+is refused before the real socket call — and "stops all collection" describes only one consumer of
+the network. An operator reading just that title could reasonably believe a non-collection request
+still goes out. NOT changed here, because rewording a user-facing consent string is a product
+decision and not a session's to take; noting that the cost of taking it is one string re-translated
+×12, which is as cheap as such decisions get.
+
+---
+
+**THE i18n LONG TAIL, SLICE 3 — the 18 non-`t()` sentences, split by where they live
+(2026-09-10, PR #1109).** The remainder slice 2 left. Measured before starting, they are three
+classes, not one: **10** are text nodes/titles in `index.html`, **2** are server-rendered in
+`src/api/main.py` (the reader footer), and **6** are bare JS literals. The first twelve need only
+KEYS — `i18n.js` walks text nodes and translates any whose key exists, and `main.py:2262` already
+records that precedent ("caption is a keyed string so i18n.js translates it"). Shipped: all twelve
+keyed ×12 (locales 3328 → 3340), `--max-untranslatable` **488 → 476**, at zero slack. The **6 JS
+literals need `t()` wrappers and are left for their own slice** — a wrapper in the wrong place
+changes what renders, where a key cannot.
+
+**TWO OF THE TWELVE ARE READER CONSENT SURFACES, which is why this slice was worth taking now:**
+*"This is the copy captured at ingest — it does not change if the source is later edited or
+removed"* (provenance) and *"Opening the source makes a live request from your machine; the site
+may see your visit. You'll be asked to confirm"* (outbound exposure, invariants #6/#7). Both sat
+English-only in eleven locales, beside the provenance labels a 2026-07-28 finding had already
+fixed — missed by that same sweep because they live in the FOOTER rather than the label block.
+
+**AND THE GUARD I WROTE FOR THEM CARRIED THE EXACT DEFECT I HAD FIXED TWO COMMITS EARLIER.**
+`test_the_i18n_walker_can_actually_REACH_each_footer_caveat` checks that a caveat's direct parent
+is not in `i18n.js`'s skip list — because a key proves the translation EXISTS while only the parent
+tag decides whether the engine APPLIES it. I mirrored the skip list as a hardcoded constant and
+wrote, in the comment above it, that mirroring meant "if the engine ever widens it, this guard must
+FAIL and be re-read, not silently follow." **A mutant that added `FOOTER` to `i18n.js` passed.** A
+hardcoded mirror does the opposite of what that comment claims: widening the engine leaves the copy
+narrow, so the reach check keeps passing while the caveat stops being translated. This is the
+scale-bench drift guard's defect — a check that reads a *copy* of the thing instead of the thing —
+reproduced by me, one commit after fixing it, inside the sentence asserting it could not happen.
+Fixed by READING the list out of `i18n.js` and pinning it against the reviewed value, so a widen
+reddens and a narrow reddens. Seven mutants now, seven dead, including an engine refactor into a
+shape the regex cannot parse — that one fails loudly telling the reader to re-derive the set,
+rather than quietly assuming the old one still holds.
+
+**THE GENERAL FORM, since this is now twice in one session:** when a guard needs a value that lives
+in another file, READ IT FROM THAT FILE. A copy is only safe if something compares the two, and the
+comment saying "mirrored deliberately" is not that something — it is the specific sentence to
+distrust, because it reads as a decision that was made rather than a property that was tested.
+
+---
+
+**THE i18n WHOLE-SENTENCE CLASS IS CLOSED — 80 of 80 (2026-09-10, PR #1109, slice 4).** The last 6
+were bare JS literals needing `t()` wrappers as well as keys. `--max-untranslatable` **476 → 470**;
+`--max-unkeyed-t-calls` held at **231** while `t()` call sites went 2191 → 2196, which is the
+verification: five new wrappers, none of them unkeyed, so every one matched its key byte-for-byte.
+**Whole sentences remaining in the untranslatable set: zero.**
+
+**THE WRAPPER IS NOT THE FIX, AND THE LEDGER ALREADY SAID SO — I nearly re-derived it wrong.** The
+2026-07-28 audit entry records: *"a string not wrapped in `t()` is NOT thereby untranslated … the gap
+is a missing KEY, not a missing wrapper"*, because the MutationObserver translates any dynamically
+inserted text node or `title`/`placeholder`/`aria-label` whose value matches a key. A bare keyed
+`toast()` is a ~120 ms **English flash**, not an untranslated string. So the key is the correctness
+fix and the wrapper only removes the flash. Applied accordingly: all six keyed; the five JS strings
+also wrapped (a toast is on screen for seconds, so the flash is visible); the sixth — a `title`
+attribute inside injected markup — **left key-only on purpose**, because a tooltip cannot be hovered
+within 120 ms, so the wrapper would buy nothing while touching rendering markup.
+
+**TWO SCOPE TRAPS, both caught before they shipped, one by reading and one by `node --check`:**
+(a) `t` is bound per-function in these files, not globally, and the nearest binding above a call site
+is often in a DIFFERENT function — at `app-diagnostics.js:1400` the visible `const t` belonged to
+`runIrEval()` while the site sits in `goldBuilderSave()`. Four functions needed their own binding.
+(b) Scanning only ABOVE the use site is not enough: `pullMailbox()` already bound `t` seventeen lines
+BELOW, so adding one at the top produced a duplicate `const` — and had I instead used the existing
+one, the earlier call would have been a **temporal-dead-zone `ReferenceError`**, which is worse than
+an absent binding because it looks correct. `node --check` caught the duplicate; nothing but reading
+would have caught the TDZ. When adding a binding to a function, scan the WHOLE function body.
+
+**AND A GUARD THAT PINNED THE CALL SPELLING RATHER THAN THE WORD IT GUARDS.**
+`test_naming_sweep_ring_disappears_from_the_user_visible_ui` required the literal
+`toast("Group added.")`, so wrapping that call in `t()` failed a naming test that has nothing to do
+with wrappers. Its own comment, one line above, already prescribed the remedy for the sibling entry:
+*"Anchored on the quoted STRING, not on `toast("...` — pinning the wrapper made this guard trip on a
+rename that never touched the word it guards."* The same defect sat directly beneath that note, in
+both halves. Now both are anchored on the quoted string. This strictly strengthens the FORBIDDEN
+half, and the reason is a substring fact rather than a judgement: `toast("Ring added.")` is **not** a
+substring of `toast(t("Ring added."))`, so a reverted word inside a wrapper would have slipped past
+it. Three mutants — reverted word through the wrapper, reverted word bare, string deleted — three
+dead.
+
+---
+
+**THE SOCKET-IMPORTER RATCHET WIDENED FROM 2 LIBRARIES TO 16 — the #14f gap closed by the future
+session it asked for (2026-09-10, PR #1109).** Invariant #14f recorded, when the OpenTimestamps
+consent gates shipped, that `test_network_consent.py`'s ratchet "matches only `requests`/`httpx`, so
+it was and remains blind to `opentimestamps.calendar`'s import shape — a future session widening that
+regex should know this gap predates it." It was equally blind to `imaplib`, `poplib`, `http.client`
+and bare `socket`. **MEASURED, not asserted:** a new module doing `import imaplib` passes the old
+ratchet and fails the new one.
+
+**NINE MODULES IMPORT A SOCKET-CAPABLE LIBRARY; FOUR WERE LISTED.** The five that were not are all
+pre-existing and all legitimate, and each was READ before being written into the allowlist — an
+allowlist filled in from a failing run rather than from the code is the ratchet rubber-stamping
+itself. Two of the five are REAL EGRESS the narrow ratchet never saw: `src/ingest/email.py`
+(`imaplib`/`poplib`, the live mailbox pull to a user-named host, gated by `_refuse_if_offline()`) and
+`src/custody/timestamp.py` (three public Bitcoin calendars, gated per #14f). Two are not egress at
+all: `src/api/system.py` uses `socket.AF_INET`/`AF_INET6` as CONSTANTS to filter
+`psutil.net_if_addrs()` when listing local interface IPs for the consent popup — no socket is
+constructed — and `src/ingest/airplane.py` IS the guard, so importing `socket` there is the mechanism
+rather than a bypass. The fifth, `src/llm/vllm_lifecycle.py`, does a `connect_ex` port probe against
+the CONFIGURED vLLM URL defaulting to `127.0.0.1`; a remote URL WOULD egress there, which the
+airplane guard refuses while offline — listed so that is a known property rather than a surprise.
+
+**WHY IT MATTERS EVEN THOUGH AIRPLANE MODE ALREADY CATCHES THESE.** The socket guard would refuse any
+of them while offline, so nothing here is a live leak. The ratchet protects a different property, and
+the non-negotiable states it: the kill switch "can only be airtight if every outbound path is KNOWN".
+A module reaching the network through an unlisted library is still refused — by the net beneath,
+rather than by anyone having thought about it. This ratchet is the thinking, and it now fails the
+build for a new `imaplib` import the way it always did for a new `requests` one.
+
+Two supporting guards ship with it, because a hand-maintained allowlist decays in two specific ways:
+every entry must state a reason (a bare path is a rubber stamp — the next reader's only defence
+against a silent exemption is that adding one requires writing a sentence they can disagree with),
+and the narrow HTTP allowlist must be a SUBSET of the wide one, or the two drift and the wider guard
+can be weakened by editing the wrong list.
+
+---
+
+**WHERE THE MAINTAINER-BLOCKED DECISIONS LIVE, so a session does not have to rediscover the path
+(2026-09-10).** [`docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md`](../plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md)
+is the register of every decision waiting on a person: sections A–L from the 2026-09-06 analysis, and
+**section M** for everything raised since. It now carries a STATUS BANNER saying plainly that it was
+not maintained between 2026-09-06 and 2026-09-10, that **A3 is shipped and must not be re-asked**, and
+that every other question in A–L is carried forward UNVERIFIED — stated rather than implied, because
+a register that quietly lists closed items as open is the same failure as a stale docket line, and
+this session hit that four times.
+
+**The rule for a session that opens it:** consult the entries relevant to your work, and before
+acting on any of them, verify IN THE CODE that the item is still open. `git log -S` on a distinctive
+string, and reading the closing commit's own message, are the checks that catch a stale claim.
+
+**Section M currently holds:** M1 two items this session closed on its own that had asked for a
+ruling, each with its one-line reversal (ratify or reverse); M2 ⛔ the airplane toggle's two
+surfaces stating the same guarantee differently, where the task-manager wording understates a
+socket-level refusal as "stops all collection"; M3 the ooMap embed's timeless-mark-kind vs
+country-choropleth choice, which stays open precisely because the two answer different questions and
+no measurement settles it; M4 the newsletter attach sequencing, unblocked by the List-Id column but
+moving data between sources; M5 whether the ~150 markup-split i18n fragments are worth markup
+surgery or whether 470 is the floor; M6 the operator steps no session can take.
+
+---
+
+### 2026-09-11 — THE QUESTION REGISTER IS NOW VERIFIED: what that changed, and the five items whose answer moved
+
+`docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md` was written 2026-09-06 and
+banner-marked on 2026-09-10 with an honest admission that **43 of its 44 questions were carried
+forward unverified**. All of sections A–L have now been checked against the tree, one item at a time,
+and the verdicts are written into that file — a results table in its banner, plus a `VERIFIED
+2026-09-11` note under each of the twenty questions whose verdict changes what a reader should do. The
+register is the place to read them; only what is still OPEN, or newly open, is recorded here.
+
+**Eight questions are answered and are closed as posed** — A2, A3, C7, D1, D5, H1, J2, L8. Two of
+them (D1, D5) asked for changes the tree already had; J2's closing commit names the question number in
+`pyproject.toml`'s own comment. **A2 is answered the way the recommendation declined:**
+`RELEASE_0.4_GATE.md` was stood up *before* the tag, arguing its own case — so what is left there is
+not "now or at the tag" but **whether its rows D, E and F become bars**, which it marks as proposals.
+
+**Five items came back with a different question than the one on the page. These are the live ones:**
+
+1. **B1 is missing an option.** The premises hold, but `src/scheduler/runner.py` already carries a
+   `scrape_unqualified` settings escape hatch relaxing the runner from `status == qualified` to
+   `status != disqualified`. The question offers (a) restrict trials to `enabled=True` and (b) let a
+   `qualified` verdict flip `enabled`. **Neither disposes of the hatch, so it survives whichever is
+   ruled** — it needs settling in the same breath or it becomes a third, un-ruled collection policy.
+2. **B2 is narrower than it reads.** Option (1) — "derive a versioned per-language stoplist into the
+   repo" — **already exists**: `configs/stopwords_iso` + `configs/stopwords_extra`, curated and
+   registry-tracked (`STOPWORDS_ISO_AS_OF`). The live ruling is only whether triage-derived additions
+   may merge INTO that artifact. Same irreversibility argument, much smaller change.
+3. **C1 asks to remove something the code says is kept forever.** `read_artifact`'s docstring
+   (`src/backup/artifact.py:649`) reads "Accepts, **forever** (D7): … legacy bare SQLite backups, and
+   legacy v1 .ooenc files". Answering C1 "remove it" also means amending that line; answering it
+   "keep" means C1 is already closed by the docstring. Either way the two must be reconciled, and no
+   session should quietly pick one.
+4. **H4's debt grew while the question waited.** Counted 2026-09-11 with an explicit handler-name
+   pattern: **335 in `index.html` + 278 across `app-*.js` = 613 inline handlers**, against the 590
+   recorded five days earlier — ~4% in five days, because every slice shipped meanwhile added handlers
+   in the existing style. The CSP still carries `'unsafe-inline'`. This is the one un-ruled item with
+   a measured growth rate, which is the argument for funding it rather than a new argument about it.
+5. **L9 and L10 are not oversights, and both defaults would overturn a reasoned position.**
+   `src/ai_layer/source_tags.py` already enumerates the whole non-topical vocabulary in
+   `_NON_TOPICAL_CLASSES` — `provenance` (`via:`, `world-catalog`), `coverage-state`, and
+   `stance-or-ownership` (the entire `lean-*` scale) — and marks the table **"Reported, never
+   filtered"**, with the reason ("deciding that `independent` is not a topic is a taxonomy ruling a
+   human makes") and the measurement (one such tag proposed **once in 921 assignments**; "latent, not
+   live contamination"). The register's defaults — remove the lean scale, filter the `via:*` and
+   coverage-state prefixes — are real choices, and the `via:*` half is the one that needs no judgement,
+   but neither is a bug fix, and the register said nothing about the stance they would reverse.
+
+**Two housekeeping facts, recorded so nobody re-derives them.** **H2 and L2 are the same question**
+(is Chromium-in-sandbox plus your click-through the verification bar?), asked once in each section —
+answer it once. And **D7 is half shipped**: the capability-probe sweep is done (`_probe_ots()` returns
+a round-trip verdict), so the only live half is the pqcrypto 1.0 migration, still pinned `<1.0` by the
+recommendation's own advice.
+
+**A trap for the next session that runs rule (5b).** `grep -c 'PR pending' docs/ledger/shipped.csv`
+returns 1 and will forever: the hit is the summary of the row that RECORDS the sweep, quoting the
+phrase it retired. A column-aware read of `refs` reports the truth — **zero** unresolved placeholders.
+Recorded in full in [`LESSONS.md`](LESSONS.md).
 
 ---
 

@@ -162,14 +162,29 @@ def _platform_for(host: str) -> str | None:
     return None
 
 
-def publisher_key(from_addr: str | None, list_id: str | None = None) -> PublisherKey:
+def publisher_key(
+    from_addr: str | None,
+    list_id: str | None = None,
+    *,
+    list_id_parsed: str | None = None,
+) -> PublisherKey:
     """The publisher domain for a newsletter, or a refusal with its reason.
 
     Order matters and is the ruling's: the PLATFORM check comes FIRST, because for
     a platform host the eTLD+1 is the wrong answer rather than a coarse one.
+
+    ``list_id`` is a RAW header value and is parsed here. ``list_id_parsed`` is the
+    already-extracted bare identifier, for a caller reading one back out of storage
+    (``Article.newsletter_list_id``) rather than off a message. The two doors exist
+    because ``parse_list_id`` deliberately REFUSES a bare unbracketed value -- the
+    phrase before the brackets is free text and reading it as an identifier would
+    invent one -- so a stored identifier sent through ``list_id`` would be parsed a
+    second time, come back ``None``, and silently drop to the refusal branch.
+    Widening the parser instead would reintroduce exactly the risk that refusal
+    exists for. When both are given the parsed one wins, being the more specific.
     """
     dom = sender_domain(from_addr)
-    lid = parse_list_id(list_id)
+    lid = list_id_parsed or parse_list_id(list_id)
     if not dom:
         return PublisherKey(None, "refused", "no sender domain in the From header")
 
@@ -244,7 +259,11 @@ def _alias_candidates(key: str) -> set[str]:
 
 
 def resolve_newsletter_publisher(
-    session: Session, from_addr: str | None, list_id: str | None = None
+    session: Session,
+    from_addr: str | None,
+    list_id: str | None = None,
+    *,
+    list_id_parsed: str | None = None,
 ) -> Resolution:
     """The ruled ladder, as a decision — it writes nothing.
 
@@ -256,7 +275,7 @@ def resolve_newsletter_publisher(
     thousand rows, which is free for a report; a future write-path wiring that runs
     this per message should revisit it (a functional index would need a migration).
     """
-    pk = publisher_key(from_addr, list_id)
+    pk = publisher_key(from_addr, list_id, list_id_parsed=list_id_parsed)
     if not pk.key:
         return Resolution(
             "refused", None, pk.basis, pk.reason,
@@ -325,32 +344,43 @@ def resolution_preview(session: Session, *, limit_examples: int = 3) -> dict:
             "caveat": _PREVIEW_CAVEAT,
         }
 
-    by_sender: dict[str, list[str]] = {}
-    counts: dict[str, int] = {}
+    by_group: dict[tuple[str, str | None], list[str]] = {}
+    counts: dict[tuple[str, str | None], int] = {}
     no_sender = 0
     total = 0
     q = (
-        session.query(Article.author, Article.title)
+        session.query(Article.author, Article.title, Article.newsletter_list_id)
         .filter(Article.source_id.in_(src_ids))
         .yield_per(500)
     )
-    for author, title in q:
+    for author, title, stored_list_id in q:
         total += 1
         dom = sender_domain(author)
         if not dom:
             no_sender += 1
             continue
-        counts[dom] = counts.get(dom, 0) + 1
-        ex = by_sender.setdefault(dom, [])
+        # The grouping key is exactly the set of inputs that can change the ladder's
+        # answer. On a PLATFORM host the List-Id selects the PUBLICATION, so two
+        # messages sharing a sending domain are two different publishers and one row
+        # for both would assert the very merge the refusal branch exists to prevent.
+        # Everywhere else publisher_key ignores the List-Id, so the key collapses back
+        # to the domain and the report reads exactly as it did before.
+        lid = (stored_list_id or None) if _platform_for(dom) else None
+        key = (dom, lid)
+        counts[key] = counts.get(key, 0) + 1
+        ex = by_group.setdefault(key, [])
         if len(ex) < limit_examples and title:
             ex.append(title)
 
     groups = []
-    for dom, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
-        res = resolve_newsletter_publisher(session, f"x@{dom}")
+    for (dom, lid), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1] or "")):
+        # list_id_parsed, never list_id: the stored value is the BARE identifier and
+        # publisher_key would parse a raw header a second time (see its docstring).
+        res = resolve_newsletter_publisher(session, f"x@{dom}", list_id_parsed=lid)
         groups.append(
             {
                 "send_domain": dom,
+                "list_id": lid,
                 "articles": n,
                 "action": res.action,
                 "publisher": res.key,
@@ -359,13 +389,17 @@ def resolution_preview(session: Session, *, limit_examples: int = 3) -> dict:
                 "source_id": res.source_id,
                 "source_name": res.source_name,
                 "platform": res.platform,
-                "examples": by_sender.get(dom, []),
+                "examples": by_group.get((dom, lid), []),
             }
         )
     return {
         "groups": groups,
         "articles": total,
-        "senders": len(counts),
+        # DISTINCT SENDING DOMAINS, which is what this field has always meant -- NOT
+        # len(groups), because one platform domain can now open several rows (one per
+        # publication) and silently redefining the figure would inflate it.
+        "senders": len({d for d, _lid in counts}),
+        "publications": len(counts),
         "articles_without_a_sender_domain": no_sender,
         "list_status": status,
         "method": _PREVIEW_METHOD,
@@ -376,11 +410,14 @@ def resolution_preview(session: Session, *, limit_examples: int = 3) -> dict:
 _PREVIEW_METHOD = (
     "sender domains read from the stored From header of every imported newsletter, "
     "resolved through the ruled ladder (Public Suffix List eTLD+1, with the platform "
-    "inversion applied first) against the existing sources; nothing is written and no "
-    "network call is made"
+    "inversion applied first) against the existing sources; on a platform host the "
+    "stored List-Id selects the publication, so one sending domain can appear once "
+    "per publication; nothing is written and no network call is made"
 )
 _PREVIEW_CAVEAT = (
-    "a PREVIEW: no newsletter has been attached to any publisher. The List-Id is not "
-    "stored on already-imported messages, so a platform sender whose host carries no "
-    "publication label is refused here even where a List-Id would have named one."
+    "a PREVIEW: no newsletter has been attached to any publisher. Messages imported "
+    "BEFORE the List-Id was stored carry none, and a platform sender whose host "
+    "names no publication is still refused for those -- an empty List-Id here means "
+    "'the message carried none, or it predates the column', never 'this list has "
+    "no identifier'. Re-importing the .eml files fills it; nothing else can."
 )

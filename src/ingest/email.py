@@ -414,6 +414,10 @@ def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canon
             if parsed.sender_ip
             else (parsed.sender_ip_reason or "no sender IP in the .eml")
         ),
+        # The List-Id, kept as provenance (see the column's note in models.py). Absent
+        # header -> NULL: an absence, never an invented identifier, exactly as
+        # ``parse_list_id`` already refuses to read the free-text phrase as one.
+        newsletter_list_id=parsed.list_id,
         created_at=now,
         updated_at=now,
     )
