@@ -50,6 +50,7 @@ import yaml
 
 from src.catalog.qualification import (
     CRITERIA_VERSION,
+    CURATED_CRITERIA_VERSION,
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
@@ -158,16 +159,28 @@ def apply_overlay(
 
     adopted: list[Source] = []
     kept_local = 0
+    replaced_curated = 0
     counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     for source in rows:
         record = overlay.get((source.domain or "").strip().lower())
         if record is None:
             continue
-        if (source.status or STATUS_UNQUALIFIED) != STATUS_UNQUALIFIED:
+        local_status = source.status or STATUS_UNQUALIFIED
+        # A stamp the curated catalogue carries BY RULING (2026-09-10) is not a local
+        # verdict: nothing was measured here, so a shipped verdict that WAS measured
+        # outranks it in either direction -- a shipped `disqualified` in particular must
+        # not be declined as "local wins" on the strength of a curation stamp.
+        curated_stamp = (
+            local_status == STATUS_QUALIFIED
+            and source.qualification_criteria_version == CURATED_CRITERIA_VERSION
+        )
+        if local_status != STATUS_UNQUALIFIED and not curated_stamp:
             # This instance reached its own verdict. Local wins -- the same rule the restore
             # merge applies to the same kind of evidence.
             kept_local += 1
             continue
+        if curated_stamp:
+            replaced_curated += 1
         source.status = record["status"]
         if record["status"] == STATUS_QUALIFIED:
             source.qualified_at = record["qualified_at"]
@@ -193,5 +206,9 @@ def apply_overlay(
         "qualified": counts[STATUS_QUALIFIED],
         "disqualified": counts[STATUS_DISQUALIFIED],
         "kept_local": kept_local,
+        # Curated stamps a measured shipped verdict replaced -- reported apart from
+        # `adopted` onto never-judged rows, because "we had no verdict" and "we had a
+        # ruling's stamp and a measurement outranked it" are different facts.
+        "replaced_curated": replaced_curated,
         "in_overlay": len(overlay),
     }

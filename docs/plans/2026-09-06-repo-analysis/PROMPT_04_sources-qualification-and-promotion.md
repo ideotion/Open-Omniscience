@@ -16,6 +16,13 @@ nothing moves a candidate through trial into collection.
 
 ## 1. State of the tree
 
+> **Read first (2026-09-10):** [`../2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md`](../2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md) supersedes this prompt's S1/S2/S4 framing with measured
+> throughput arithmetic — why ~1,000 of ~3,600 catalog sources qualified in three weeks, the parked-catalog
+> mechanism in `select_unqualified`, the per-pass whole-corpus cohort freeze the ride-along still pays, and the
+> seven rulings (R1–R7) it records in `docs/ledger/OPEN_QUEUE.md`. B1/B6/B7/B11 stay the rulings; that plan
+> adds the no-ruling efficiency slices (attempt reasons, two queues, a cohort cache, parallel trials, a
+> self-resuming drain, pre-trial screening) that this prompt did not have.
+
 > **Re-verified 2026-09-07 against `main`, and most of the "not built" list was stale.** The corrections
 > are inline below; the inventory rows carry the same. Read them before planning: four of the seven slices
 > turned out to be already shipped in whole or in part.

@@ -61,7 +61,10 @@ one that matches what you need.
   [`00_INDEX.md`](plans/2026-09-06-repo-analysis/00_INDEX.md) maps every open item to one of
   twenty-three session prompts, and
   [`QUESTIONS_FOR_THE_MAINTAINER.md`](plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md)
-  collects the decisions those prompts are gated on.
+  collects the decisions those prompts are gated on. The 2026-09-10 plan
+  ([`2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md`](plans/2026-09-10_SOURCE_QUALIFICATION_THROUGHPUT.md))
+  is the source-qualification throughput analysis — why the curated catalog qualifies slowly, why junk
+  articles still enter, and the rulings and slices that follow.
 - **[process/](process/)** — the standing recursive-improvement-cycle protocol
   ([`IMPROVEMENT_CYCLE.md`](process/IMPROVEMENT_CYCLE.md)) plus sequencing drafts awaiting a
   maintainer decision (never executed on their own say-so).

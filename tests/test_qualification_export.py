@@ -146,7 +146,12 @@ def test_the_pending_list_is_a_first_class_figure(db):
     for i in range(3):
         _src(db, f"pending{i}.example", STATUS_UNQUALIFIED)
     out = build_overlay_export(db, now=NOW)
-    assert out["split"] == {"qualified": 1, "disqualified": 0, "pending": 3, "total": 4}
+    # `qualified_by_curation` joined the split on 2026-09-10 (the curated catalogue is
+    # qualified by ruling): of the qualified, how many carry the catalogue's stamp rather
+    # than a measurement. Zero here because this fixture measured its one verdict.
+    assert out["split"] == {
+        "qualified": 1, "qualified_by_curation": 0, "disqualified": 0, "pending": 3, "total": 4,
+    }
     assert len(out["pending_sample"]) == 3
 
 

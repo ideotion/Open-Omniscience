@@ -8598,3 +8598,177 @@
   `method`, `reason` or `caveat` is documentation for a reader, so it is prose, so it is
   subject to i18n. Passing it through to the UI is the easy path and the wrong one; the
   mutant that puts it back belongs in the matrix.**
+- **ON A `merge=union` FILE, REPLAYING A COMMIT THAT EDITS A LINE YOU ADDED EARLIER KEEPS BOTH
+  VERSIONS — a rebase turns the sweep of a placeholder into a duplicate row (2026-09-10, the
+  planning row in `shipped.csv`).** The recorded 2026-09-07 twin is about two BRANCHES each
+  carrying a legitimate copy of one row. This is the same driver one level down, on ONE branch:
+  commit A appended a row reading `PR pending`, commit B rewrote that line to `PR #1108`, and
+  rebasing both onto a moved `main` replayed B as a three-way merge in which the union driver saw
+  "one side deleted a line, the other kept it" and kept both — so the ledger came out with the
+  placeholder AND the swept row, and the numstat read `+2/0` on a branch that added one row.
+  Nothing in `git rebase` said so; the duplicate-key scan against the base branch did, exactly
+  the check the 2026-09-07 entry prescribes. **GENERAL FORM: a union-merged file cannot express
+  an EDIT, only additions — so any commit that changes a line already added on the same branch
+  must be squashed into the commit that added it BEFORE the branch is rebased or merged, or the
+  duplicate-key scan must run after every replay.** The rule (5b) placeholder sweep is the
+  common case: sweep it in the same commit, or expect two rows.
+
+- **A SCRIPT THAT MUST RUN WITHOUT THE APP CANNOT CALL THE APP'S FETCHER FACTORY — `make_fetcher`
+  READS THE OPERATOR'S SETTINGS FROM THE ENCRYPTED KEY-VALUE STORE, WHICH IS THE DATABASE STACK
+  (2026-09-10, the candidate kit).** The candidate pipeline was written to fetch "through the ONE
+  guarded factory", which is right inside the repository, where the settings store exists.
+  Packaged for a session with no clone, its first `make_fetcher()` would have imported
+  `src.config.kv_store` and reached for the app database — in the one place nothing can be
+  fixed. The import closure measured at build time hid this: `src.safety.settings` imports the
+  store LAZILY, inside `_read_raw()`, so `import src.safety.fetcher` succeeds and the failure
+  waits for the first call. The fix that keeps the invariant is to build the SAME
+  `EthicalFetcher` directly, in transparent mode with the honest bot UA, only where a marker says
+  there are no operator settings (`KIT_MANIFEST.json`), and to have the run log say which mode
+  built it. **GENERAL FORM: an import closure is a lower bound — grep the closure's modules for
+  `from src.` INSIDE function bodies before believing a package runs standalone, and prove it
+  with a self-check that CALLS the entry points in a fresh interpreter, not one that imports
+  them.** The same self-check found the second fact: the repository's locked `numpy` needs
+  Python 3.12+, so a "3.11 or newer" floor written from the syntax the scripts use was wrong.
+  A floor is measured by installing the pins, never inferred.
+- **A POLITENESS SLEEP HONOURED BEFORE EVERY REQUEST MULTIPLIES BY THE REQUEST COUNT, AND A POOL
+  ENDS WHEN ITS SLOWEST MEMBER DOES (2026-09-10, the candidate kit's first live run):** the
+  maintainer reported the run "frozen" at 3587 of 3588 shortlist rows for over an hour. The snapshot
+  explained it offline: the slowest judged hosts took exactly six times their robots `Crawl-delay`
+  (5409 s, 3621 s, 1829 s -- six probes each), because `EthicalFetcher` sleeps the declared delay
+  before every request and the stage makes up to six feed probes per host; the unjudged row was the
+  same pattern with a longer delay, and `run()` waited on the pool's last future before the worklist
+  could end. Nothing was wrong in the sense of a bug: every sleep was one the host asked for. What was
+  wrong was the ARITHMETIC nobody had done -- per-request politeness x requests per host = the cost
+  of one host, uncapped -- and the SHAPE of the wait: `as_completed` over every future makes the
+  worklist's completion the slowest host's completion. **GENERAL FORM: whenever a per-request wait is
+  honoured, bound the requests a host may cost by the host's OWN declaration (read the delay, divide
+  the budget by it, plan that many requests, record the rest as not judged); and never let a batch
+  wait unbounded on stragglers -- wait with a stall window, record what is still in flight as not
+  judged, and exit without joining threads that are asleep inside a fetch.** The measurement that
+  made the fix safe came from the run's own per-row `elapsed_s`: p99 138 s, p95 35 s, median 16 s, so
+  a 600 s budget clips only the tail the Crawl-delay explains. The same review found the fetcher's
+  body read had no wall-clock bound at all (the socket timeout bounds each recv, not the read):
+  a tarpit that trickles a body holds a worker indefinitely -- now a deadline, checked between
+  16 KiB chunks. STILL OPEN, recorded in the queue: the collector itself sleeps a worker for the full
+  declared delay with no cap, and its per-pass fetcher forgets `_last_request`, so "refuse and retry
+  next pass" would fetch a Crawl-delay-3600 host every pass -- the honest fix needs a persisted
+  next-allowed-at per host, a ruling-shaped change.
+- **A ROUND-ROBIN GIVES YOU AN EQUAL RATE AND A FIXED PHASE, AND THE PHASE IS WHAT PEOPLE SEE
+  (2026-09-10):** the collection order was stratified round-robin — one source per live language per
+  round — which is genuinely fair (no language over-represented by having more sources) and was
+  genuinely randomised (unseeded rng, reshuffled per call). It still opened every pass on the same
+  sources, on every machine, because a stratum holding ONE member can only be represented in round
+  1: 21 of the catalogue's 74 languages hold one source, so those 21 led every pass with
+  probability 1. The maintainer spotted it by running blank instances side by side; no test could
+  have, because every test asserted the RATE and the rate was correct. **GENERAL FORM: when a
+  rotation must serve unequal strata equally, separate the two properties — the RATE (how often a
+  stratum is served) from the PHASE (when its turn falls). Round-robin fixes both; drawing uniformly
+  among the live strata at each step keeps the rate and frees the phase.** THE SECOND HALF OF THE
+  LESSON, which the measurement forced: freeing the phase did NOT make two fresh instances look
+  different (head overlap 33 % → 39.5 %), because prefix-balance across 74 languages means the head
+  must be drawn from the languages that have almost no sources — ~80 of 3,429. A property that
+  looks like randomness can be bounded by the SIZE OF THE POOL the fairness rule leaves you, and no
+  amount of shuffling enlarges it. Measure the pool before promising variety.
+- **A BATCH MODEL THAT ANSWERS MOST OF A BATCH IS THE FAILURE MODE TO DESIGN FOR, NOT A WRONG
+  ANSWER (2026-09-11, the candidate pipeline's first real triage run):** across 17 Haiku batches of
+  42 rows, the classifications were sound — every one of the 34 hand-known canaries was read
+  correctly, and 16 batches passed code re-validation on the first attempt. The one failure was not
+  a misjudgement at all: batch 11 silently returned 35 rows instead of 42, having simply stopped.
+  Nothing in the answer itself looked wrong, and a merger that trusted per-row answers would have
+  taken the 35 and never noticed the 7. **GENERAL FORM: when a model returns a COLLECTION, the
+  count is a first-class check and belongs beside the enum and vocabulary checks — validate that
+  every input is echoed exactly once BEFORE looking at any answer's content, and treat a short
+  answer as an untrusted BATCH rather than a partial success.** The re-run fixed it by naming
+  completeness as the hard requirement and telling the model what to do with a row it could not
+  judge (answer it with low confidence, which the merge drops) — a model skips a hard row when the
+  prompt gives it no honest way to keep it. The canaries were worth their cost for a different
+  reason than expected: they proved the reading was trustworthy, which is what let a single
+  structural failure be re-run rather than casting doubt on the whole run.
+
+- **A HARVESTED NAME CAN MAKE A CLAIM THE ROW DENIES, AND ONLY THE FILE'S OWN CONVENTION KNOWS
+  (2026-09-11, candidate pipeline, remainder chunk).** `configs/sources.yml` uses a trailing
+  parenthetical as a human-authored ORIGIN marker — `Name (Country)` — and `country_from_title`
+  reads it that way. The pipeline takes names from site titles, so a title that merely ENDS in a
+  parenthetical drops into that slot: `3CatInfo (tv)`, the Catalan public broadcaster with
+  `country: es`, asserted TUVALU. Nothing in the row was wrong except the name, and the name was
+  not wrong anywhere else — only inside this file, where that slot means something. The general
+  shape: **when a file gives a position a meaning, data imported into that position inherits the
+  meaning whether or not it meant it.** Two things follow. (1) The catch came from the repo's own
+  invariant test, not from review — 1,657 rows went past a careful reading and one line of plain
+  code found the one that lied; a convention worth having is worth a test that knows it. (2) The
+  fix goes where each tool's contract puts it: the ENTRY BUILDER normalises (it composes the name,
+  so it owns it), and the SPLICE refuses (its contract is refuse-never-rewrite; rewriting there
+  would make the appended text stop matching the reviewed batch). Splitting it that way costs one
+  extra guard and keeps both contracts true; putting both halves in one place would have broken
+  one of them.
+- **THE FIX FOR ONE BATCH FAILURE TRAVELS; THE NEXT FAILURE IS A DIFFERENT ONE (2026-09-11).**
+  The shortlist chunk lost a batch to a SHORT answer (35 of 42 rows), and naming completeness as
+  the hard requirement in every subsequent prompt held: all 69 remainder batches answered in full,
+  first pass. The two that still failed failed on something else entirely — a `kind` outside the
+  closed enum (`corporate` for `trade-or-corporate`; `tabloid`, which is a TOPIC in this
+  vocabulary and never a kind). Worth writing down because the temptation after a hardening that
+  works is to treat the failure mode as closed: **a batch model's ways of not answering your
+  schema are plural, and the code validator is what finds the next one.** Both failures were the
+  same size on the ledger — one out-of-enum cell costs all 42 rows of its batch — and both were
+  recovered by the single escalation the runbook already prescribes, so the design held; only the
+  prompt needed a sentence it did not have.
+
+- **A FLEET CANNOT KEEP A PROMISE ONE PROCESS MAKES (2026-09-11, Stage A sharding).** Politeness
+  here is a per-host lock held inside one process, so it does not span machines: eight VMs each
+  waiting their own `--min-interval` on the same host means the host sees eight times the agreed
+  rate, and no single machine's log shows anything wrong. The fix is not more coordination, it is
+  a SPLIT KEY that makes the situation impossible — shard on the same domain key the fetcher and
+  the resume cursor already use, so rows the run treats as one host land on one machine and the
+  per-host guarantee holds unchanged across the fleet. Two sub-lessons worth as much as the rule:
+  (a) **never `hash()` for a cross-machine partition** — it is salted per process, so each machine
+  computes a DIFFERENT partition of the same worklist, and the failure mode is rows judged twice
+  and rows judged never with nothing in any single run's output to show it; sha256, always.
+  (b) **name the output for its shard** — eight files called `results_<date>.zip` is how seven
+  slices get silently overwritten on the way into one folder.
+- **"DEDUPED" IS ALWAYS DEDUPED AGAINST A SNAPSHOT, AND THE SNAPSHOT AGES (2026-09-11).** The
+  worklist builder deduped candidates against the catalogue rows IN THE EXPORT — correct the day
+  the export was taken, and quietly wrong a day later, because the same pipeline had since added
+  2,800 rows to the shipped catalogue. A freshly built kit therefore re-offered them: 557 in one
+  worklist, 2,243 in another, measured. Nothing was broken, no test failed, and the cost would have
+  landed on other people's servers. When a filter's reference set can itself change, filter against
+  the LIVE set as well as the snapshot, and pin it with a test that reads the real catalogue.
+- **A TEST FIXTURE MADE OF REAL NAMES IS A TIME BOMB (2026-09-11, same change).** `test_candidate_kit`
+  used `ladepeche.fr` and `ouest-france.fr` as stand-in candidates. The moment the catalogue actually
+  shipped them, the new — correct — dedupe deleted the fixture's own rows and reddened two tests that
+  had nothing to do with the change. A synthetic fixture must be synthetic all the way down
+  (`.example`), or it eventually collides with the real data the code under test consults.
+
+- **THE `merge=union` DUPLICATE TRAP IS CHEAPER TO PREVENT THAN TO REPAIR, AND PREVENTION MEANS
+  MAKING THE LINES IDENTICAL (2026-09-11, PR #1108 against the #1111 sweep).** The trap had fired
+  three times and was about to fire a fourth: a sweep branch was correcting five `PR pending`
+  placeholders that this branch had inherited from `main` in their stale form, and union keeps both
+  copies of a row the other side EDITED. Every previous instance was caught AFTER the merge, by the
+  prescribed duplicate-key scan, and repaired by deleting rows — which the record itself calls the
+  dangerous step, because deleting rows is how a real one disappears. **The cheaper move is
+  available to whichever branch notices first: union keeps an IDENTICAL line once, so applying the
+  other side's correction verbatim makes the collision impossible rather than detectable.** Verified
+  by simulating the union of the two files and asserting zero new duplicate keys, before pushing.
+  Two conditions make it safe, and both matter. **(1) Adopt the other side's value verbatim; do not
+  derive your own.** Two sessions resolving one row to different-but-defensible numbers produces a
+  duplicate AND a wrong number in the permanent record — strictly worse than doing nothing.
+  **(2) Corroborate it anyway before adopting** — here the merge commit named the PR and the branch,
+  and the rows' `key_paths` were that branch's own files. Rule (5b)'s binary-search archaeology was
+  neither used nor usable: this clone is SHALLOW, the exact condition (5b) warns produces ten
+  identical wrong numbers, so the answer had to come from evidence in hand instead. Read together
+  with (5b): the sweep is still owed, and a branch that can see the answer should sweep its own copy
+  rather than leave it for the merge to discover.
+
+- **A PIPELINE SPLIT ACROSS TWO FILES NEEDS A TEST THAT SPANS BOTH, OR IT SHIPS HALF-WIRED
+  (2026-09-11, the candidate kit).** `build_candidate_kit.py` WRITES the worklist CSVs;
+  `run_stage_a.py` NAMES them in a `WORKLISTS` map that also supplies `--only`'s choices. Two
+  new worklists went into the builder alone, and the kit shipped with a runner that could not
+  run two of its own four worklists — the maintainer hit it on the first command of an
+  eight-machine run: `error: argument --only: invalid choice: 'institutions'`. Every test
+  exercised one half or the other, and **the kit's own self-check passed**, because it proves
+  the modules import and the pipeline runs end to end on a fixture — not that the runner can
+  reach the files the builder emitted. **The check that works derives BOTH sides from their
+  sources and compares them** (the CSV names regexed out of the builder against the basenames
+  in `WORKLISTS`), so the next addition cannot ship half-wired either. The general form:
+  when a producer and a consumer live in different files and agree only by convention, the
+  convention is the thing to assert — and a green self-check on the artifact is not evidence
+  that its two halves agree.

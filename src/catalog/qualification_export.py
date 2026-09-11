@@ -49,11 +49,13 @@ from sqlalchemy import func
 from src.catalog.provenance_scope import app_provided_filter
 from src.catalog.qualification import (
     CRITERIA_VERSION,
+    CURATED_CRITERIA_VERSION,
     JUDGING_VERDICTS,
     QUALIFIED_RECHECK_MONTHS,
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
+    VERDICT_CURATED,
     qualified_recheck_due_at,
 )
 
@@ -67,6 +69,10 @@ PENDING_SAMPLE = 50
 
 BASIS_MEASURED = "measured"
 BASIS_INHERITED = "inherited"
+# A stamp the curated catalogue carries BY RULING (2026-09-10). Counted, never exported as a
+# verdict: every install stamps its own catalogue, and a curation stamp that travelled
+# through the overlay would come back reading `inherited` -- an earned verdict it never was.
+BASIS_CURATED = "curated"
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -89,6 +95,20 @@ def _locally_measured_ids(session: Session) -> set[int]:
     }
 
 
+def _curated_stamp_ids(session: Session) -> set[int]:
+    """Sources whose stamp came from the curated catalogue by ruling (2026-09-10) -- an
+    attempt row reading ``curated``. A later real judgement outranks it (``measured`` is
+    tested first by the caller), so this only labels rows nothing has measured yet."""
+    from src.database.models import SourceQualificationAttempt as A
+
+    return {
+        int(sid)
+        for (sid,) in session.query(A.source_id)
+        .filter(A.verdict == VERDICT_CURATED)
+        .distinct()
+    }
+
+
 def build_overlay_export(session: Session, *, now: datetime | None = None) -> dict:
     """The exportable record of what this instance knows about its shipped sources."""
     from src.database.models import Source
@@ -104,15 +124,24 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
         .all()
     )
 
+    curated_ids = _curated_stamp_ids(session)
     verdicts = []
     stamp_dates: list[datetime] = []
     past_recheck = 0
-    basis_counts = {BASIS_MEASURED: 0, BASIS_INHERITED: 0}
+    basis_counts = {BASIS_MEASURED: 0, BASIS_INHERITED: 0, BASIS_CURATED: 0}
     status_counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     for s in judged:
-        basis = BASIS_MEASURED if s.id in measured else BASIS_INHERITED
+        if s.id in measured:
+            basis = BASIS_MEASURED
+        elif s.id in curated_ids or s.qualification_criteria_version == CURATED_CRITERIA_VERSION:
+            basis = BASIS_CURATED
+        else:
+            basis = BASIS_INHERITED
         basis_counts[basis] += 1
         status_counts[s.status] += 1
+        if basis == BASIS_CURATED:
+            # Counted above, never shipped: see BASIS_CURATED.
+            continue
         if s.qualified_at is not None:
             stamped = s.qualified_at
             if stamped.tzinfo is None:
@@ -163,6 +192,10 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
         # rather than an absence the reader has to infer from the verdict list's length.
         "split": {
             "qualified": status_counts[STATUS_QUALIFIED],
+            # Of the qualified, how many carry the catalogue's stamp rather than a
+            # measurement (2026-09-10 ruling). "3,400 qualified" and "3,400 qualified, 2,400
+            # of them by curation and not yet re-verified" are different states of the world.
+            "qualified_by_curation": basis_counts[BASIS_CURATED],
             "disqualified": status_counts[STATUS_DISQUALIFIED],
             "pending": int(pending_total),
             "total": int(app_total),
@@ -191,8 +224,11 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             **basis_counts,
             "note": (
                 "'measured' means this instance judged the source itself; 'inherited' means "
-                "it adopted the verdict from a backup or an earlier overlay. Two instances "
-                "agreeing about an inherited verdict is one measurement seen twice, not two."
+                "it adopted the verdict from a backup or an earlier overlay; 'curated' means "
+                "the row is stamped qualified because it ships in the curated catalogue "
+                "(ruling 2026-09-10) and nothing has measured it yet -- counted here, never "
+                "exported as a verdict. Two instances agreeing about an inherited verdict "
+                "is one measurement seen twice, not two."
             ),
         },
         "pending_sample": [s.domain for s in pending_q.limit(PENDING_SAMPLE).all()],

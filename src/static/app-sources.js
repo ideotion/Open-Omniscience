@@ -460,7 +460,19 @@
       const qs = prov.qualification_status || "unqualified";
       const qsLabel = qs === "unqualified" ? t("pending") : t(qs);
       const qsClass = qs === "qualified" ? "ok" : (qs === "disqualified" ? "err" : "");
-      let html = `<div><span class="pill ${qsClass}">${esc(qsLabel)}</span></div>`;
+      // The BASIS rides beside the verdict (informed consent by layering, invariant #17):
+      // a catalogue stamp (ruling 2026-09-10) reads "qualified · by catalogue" with the
+      // long form on hover; an adopted verdict says so too. A measured verdict needs no
+      // qualifier -- it is the thing the pill was built to show.
+      const basis = prov.qualification_basis || "";
+      const basisSuffix = basis === "curated" ? " · " + t("by catalogue") : "";
+      const basisTitle = basis === "curated"
+        ? t("Qualified because it ships in the curated catalogue (maintainer ruling 2026-09-10). It is re-checked on the same six-month clock as every qualified source, and a failed re-check disqualifies it like any other.")
+        : (basis === "inherited"
+          ? t("Verdict adopted from a backup or the shipped overlay, not measured on this instance. It is re-checked on the six-month clock.")
+          : "");
+      const basisAttr = basisTitle ? ` title="${esc(basisTitle)}"` : "";
+      let html = `<div><span class="pill ${qsClass}"${basisAttr}>${esc(qsLabel)}${esc(basisSuffix)}</span></div>`;
       html += `<div style="margin-top:6px"><strong>${esc(t("Discovery"))}:</strong> `
         + `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span></div>`;
       if (prov.citing_trail) {

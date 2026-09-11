@@ -1,0 +1,29 @@
+{
+ "candidates": 18457,
+ "verified": 2753,
+ "by_reason": {
+  "crawl_delay_too_long": 1,
+  "error": 1,
+  "feed_stale": 565,
+  "feed_too_few_entries": 219,
+  "feed_undated": 93,
+  "feed_unparseable": 2117,
+  "homepage_unreachable": 3102,
+  "no_feed_found": 2748,
+  "robots_disallowed": 225,
+  "robots_unavailable": 6633,
+  "verified": 2753
+ },
+ "feed_kind": {
+  "link": 2009,
+  "conventional": 744
+ },
+ "language_basis": {
+  "detected": 2515,
+  "export": 152,
+  "unknown": 86
+ },
+ "feed_probes_total": 38022,
+ "verified_at": "2026-09-10",
+ "note": "verified means: the feed was fetched and parsed in THIS run, had >= 3 entries with a title and a link, and its newest dated entry was within 120 days. Nothing here judges what the outlet IS -- that is the triage stage's question."
+}

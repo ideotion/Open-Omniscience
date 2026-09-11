@@ -216,5 +216,9 @@ def make_fetcher(**overrides) -> EthicalFetcher:
         "max_retries": int(os.getenv("OO_FETCH_MAX_RETRIES", "2")),
         "retry_backoff_s": float(os.getenv("OO_FETCH_RETRY_BACKOFF", "0.5")),
     }
+    # The wall-clock bound on one body read (a tarpit refusal); the class default is ten
+    # timeouts and never under two minutes, so only an operator who wants otherwise sets it.
+    if os.getenv("OO_FETCH_BODY_DEADLINE"):
+        params["body_deadline_s"] = float(os.environ["OO_FETCH_BODY_DEADLINE"])
     params.update(overrides)
     return EthicalFetcher(**params)

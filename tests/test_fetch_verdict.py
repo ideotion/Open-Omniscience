@@ -37,6 +37,7 @@ from src.ingest.fetch_verdict import (
         ("non-HTML content ('application/pdf') for https://x", "not_html"),
         ("response exceeds 5000000 bytes for https://x", "too_large"),
         ("declared length 9000000 exceeds 5000000 bytes for https://x", "too_large"),
+        ("body read exceeded 300s for https://x (a slow or trickling response)", "slow_body"),
         ("unsupported or malformed URL: 'javascript:void'", "bad_url"),
         ("too many redirects for https://x", "bad_url"),
         ("missing host", "bad_url"),
