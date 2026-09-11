@@ -1,0 +1,457 @@
+{
+ "rows": [
+  {
+   "domain": "afa.ad",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "financial"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "austria.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "salzburg-verkehr.at",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "tiwilandcouncil.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ea.aw",
+   "journalism": false,
+   "kind": "institution",
+   "language": "unknown",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ier.az",
+   "journalism": false,
+   "kind": "other",
+   "language": "az",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "azerbaiyan.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "arhivbih.gov.ba",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sr",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "nub.rs",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sr",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "vlaamsbrabantwest.be",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "opek.be",
+   "journalism": false,
+   "kind": "other",
+   "language": "nl",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "borovan.bg",
+   "journalism": false,
+   "kind": "institution",
+   "language": "bg",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "kostenetz.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "bg",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "minsalud.gob.bo",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "fapeal.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "limeira.sp.leg.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "camaracampos.rj.gov.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rnp.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "technology"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "sasc.pi.gov.br",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "human-rights"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "mfa.gov.bz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "bnlsis.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "csp.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "nfb.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "rbe.sk.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "wrps.on.ca",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "www4.ti.ch",
+   "journalism": false,
+   "kind": "institution",
+   "language": "it",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cnra.ci",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "educacionpublica.gob.cl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "subturismo.gob.cl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "minesup.gov.cm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "apn.cm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "inm.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "archivogeneral.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "soachaeducativa.edu.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "lcm.go.cr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "insp.gov.cv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "kyreniamunicipality.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "resecfund.org.cy",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "energy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "balkovalhota.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "biskupice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  }
+ ]
+}

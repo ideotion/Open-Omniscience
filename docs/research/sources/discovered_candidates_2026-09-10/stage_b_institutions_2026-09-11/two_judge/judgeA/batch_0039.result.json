@@ -1,0 +1,476 @@
+{
+ "rows": [
+  {
+   "domain": "borovnice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "bilina.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "obecbrezina.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "brezovauzlina.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "dlouhopolsko.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "cisarov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "doubravice.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecdrhovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "doubravnik.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "obec-dvory.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "drenice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "drazuvky.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "horepnik.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "hornilodenice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "hustopece.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "jankov.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecklokoci.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "klenova.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obeckrasna.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mestokyjov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "kvitkov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lipi.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "litovel.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "luhacovice.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mackov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mecichov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mladec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "obec-moravany.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "obecmoravec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mestomseno.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "nechvalin.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "olesnice-obec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "olsi.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "osvetimany.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "otradov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pohnani.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "potstejn.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "psary.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "praha1.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rusava.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  }
+ ]
+}

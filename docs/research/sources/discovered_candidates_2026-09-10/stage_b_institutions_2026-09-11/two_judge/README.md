@@ -50,12 +50,16 @@ question the rerun exists to answer.
 
 | | | |
 | --- | --- | --- |
-| batches with both judges | **30** | |
-| canary failures | **0 and 0** | on 60 batch-judgements |
-| paired rows compared | **1,200** | |
-| agree on `kind` | **1,166** | **97.2%** |
-| both said `institution` | 1,134 | |
-| agree on `primary_source` | **961** | **84.7%** |
+| batches with both judges | **34** | |
+| canary failures | **0 and 0** | on 68 batch-judgements |
+| paired rows compared | **1,360** | |
+| agree on `kind` | | **97.4%** |
+| both said `institution` | 1,279 | |
+| agree on `primary_source` | | **85.1%** |
+
+**The figures are stable.** At 30 batches they read 97.2% and 84.7%; four more batches — 13% more
+data — moved them to 97.4% and 85.1%. A measurement that does not move as the sample grows is
+one worth trusting.
 
 ## This corrects the earlier reading, and the error was mine
 
@@ -100,3 +104,25 @@ It does NOT retire the case for rewriting the axis as an observable — a 15.3% 
 boolean is still substantial, and the equity argument (a model calibrated on Western
 administrative norms judging 84 countries) is untouched by two judges sharing that calibration.
 Two judges agreeing measures consistency, never correctness.
+
+
+## Addendum — the hijacked-domain list grew, and one entry is worse than the rest
+
+Judges kept finding institutional domains whose CONTENT is no longer the institution's. Named
+across the run, each spotted independently from the evidence rather than by any rule:
+
+`lancashireprobation.co.uk` · `ffw-ungelstetten.de` · `peru.embajada.gob.ve` ·
+`embajada-alemana.org.pe` · `lesotholondon.org.uk` · `sedlecko.cz` · `gartzambia.org` ·
+`adach.ae` — gambling spam or content farms under the name of a probation service, a fire
+brigade, three diplomatic missions, a Czech village and an Abu Dhabi cultural authority.
+`ambassade-du-burundi.fr` is a Thailand travel blog. `nogradarchiv.hu` is a lifestyle content
+farm. `tullikamari.net` is a private event venue.
+
+**`pn-nunukan.go.id` is the one to look at.** That is an Indonesian district court on a
+restricted `.go.id` government domain, and a judge reported it serving WordPress blog content —
+a compromised government host, not an expired registration.
+
+Stage A verified every one of these, correctly: the feed parses and is fresh. Only a reader of
+the content catches it. There is still **no detection rule** (open queue C6), and the count here
+is deliberately a NAMED LIST rather than a total, because an automated proxy over the judges'
+own labels mixes real takeovers with ordinary disagreement.
