@@ -277,4 +277,165 @@ def test_the_preview_carries_its_method_and_its_caveat():
     out = NS.resolution_preview(_db())
     assert "no network call" in out["method"]
     assert "no newsletter has been attached" in out["caveat"]
-    assert "List-Id is not stored" in out["caveat"]
+    # The caveat used to read "the List-Id is not stored on already-imported
+    # messages". It IS stored now (Article.newsletter_list_id), so that sentence
+    # would be a false disclosure -- but the residue is real and narrower: a message
+    # imported BEFORE the column existed still carries none, and a NULL there means
+    # "carried none, or predates the column", never "this list has no identifier".
+    # The caveat has to keep naming that, and has to keep naming the only cure.
+    assert "predates the column" in out["caveat"]
+    assert "Re-importing the .eml files fills it" in out["caveat"]
+    assert "List-Id is not stored" not in out["caveat"], (
+        "the preview still disclaims a limitation it no longer has -- a stale caveat "
+        "is a false statement about the software, not a harmless leftover"
+    )
+    # The method must say why one sending domain can now open several rows.
+    assert "once per publication" in out["method"]
+
+
+# --------------------------------------------------------------------------- #
+# The stored List-Id — what the preview could not reach without it
+# --------------------------------------------------------------------------- #
+
+def _seed_with_list_ids(s, rows: list[tuple[str, str, str | None]]):
+    """rows = (author, title, stored bare List-Id or None)."""
+    from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
+
+    bucket = Source(name="Imported newsletters", domain=NEWSLETTER_SOURCE_DOMAINS[0])
+    s.add(bucket)
+    s.commit()
+    for i, (author, title, lid) in enumerate(rows):
+        s.add(
+            Article(
+                url=f"eml://L{i}", canonical_url=f"eml://L{i}", source_id=bucket.id,
+                title=title, content="body", hash=f"L{i}", author=author,
+                newsletter_list_id=lid,
+            )
+        )
+    s.commit()
+
+
+def test_ingest_persists_the_list_id_and_an_absent_header_stays_absent():
+    """The header is read at parse and was dropped at persist, which is why the
+    preview had nothing to resolve with. NULL must stay NULL -- an invented
+    identifier is exactly what parse_list_id refuses to produce."""
+    from src.ingest.email import _email_article, parse_email
+
+    src = Source(name="Imported newsletters", domain="newsletters.local")
+    src.id = 1
+    raw = (
+        b"From: The Weekly <hello@substack.com>\r\n"
+        b'List-Id: "The Weekly" <theweekly.substack.com>\r\n'
+        b"Subject: Hello\r\n\r\nbody\r\n"
+    )
+    art = _email_article(src, parse_email(raw), "h", "eml://1")
+    assert art.newsletter_list_id == "theweekly.substack.com"
+
+    bare = raw.replace(b'List-Id: "The Weekly" <theweekly.substack.com>\r\n', b"")
+    assert _email_article(src, parse_email(bare), "h", "eml://2").newsletter_list_id is None
+
+
+def test_the_stored_identifier_is_NOT_parsed_a_second_time():
+    """THE TRAP. publisher_key's `list_id` is a RAW header and it calls
+    parse_list_id, which by design refuses a bare unbracketed value. What we store
+    is the already-parsed bare identifier, so routing it through `list_id` returns
+    None and drops silently to the refusal branch -- with every wiring assertion
+    still passing. `list_id_parsed` is the door that does not re-parse."""
+    stored = "theweekly.substack.com"  # what Article.newsletter_list_id holds
+    assert NS.parse_list_id(stored) is None, "premise: a bare value is refused"
+
+    through_raw_door = NS.publisher_key("hello@substack.com", stored)
+    assert through_raw_door.basis == "refused"
+
+    through_parsed_door = NS.publisher_key("hello@substack.com", list_id_parsed=stored)
+    assert through_parsed_door.basis == "platform-list-id"
+    assert through_parsed_door.key == "theweekly.substack.com"
+
+
+def test_the_preview_reaches_platform_list_id_from_the_stored_column():
+    """The whole point. resolution_preview is the resolver's one non-test caller,
+    and before the column it could ONLY refuse a platform sender whose host names
+    no publication -- however clearly the message named one."""
+    s = _db()
+    _seed_with_list_ids(
+        s,
+        [("a@substack.com", "Weekly 1", "theweekly.substack.com"),
+         ("b@substack.com", "Weekly 2", "theweekly.substack.com")],
+    )
+    out = NS.resolution_preview(s)
+    assert len(out["groups"]) == 1
+    g = out["groups"][0]
+    assert g["basis"] == "platform-list-id"
+    assert g["publisher"] == "theweekly.substack.com"
+    assert g["action"] == "new-email-source"
+    assert g["list_id"] == "theweekly.substack.com"
+    assert g["articles"] == 2
+
+
+def test_two_publications_on_one_platform_domain_are_two_rows_not_one():
+    """Merging them is the exact fabrication the refusal branch exists to prevent:
+    one row for substack.com would assert that two unrelated publishers are one
+    source. The counts stay true per publication, and `senders` keeps meaning
+    distinct sending DOMAINS rather than being silently redefined as rows."""
+    s = _db()
+    _seed_with_list_ids(
+        s,
+        [("a@substack.com", "W1", "weekly.substack.com"),
+         ("b@substack.com", "W2", "weekly.substack.com"),
+         ("c@substack.com", "D1", "daily.substack.com")],
+    )
+    out = NS.resolution_preview(s)
+    by_pub = {g["publisher"]: g for g in out["groups"]}
+    assert set(by_pub) == {"weekly.substack.com", "daily.substack.com"}
+    assert by_pub["weekly.substack.com"]["articles"] == 2
+    assert by_pub["daily.substack.com"]["articles"] == 1
+    assert out["senders"] == 1, "one sending domain, however many publications"
+    assert out["publications"] == 2
+    assert out["articles"] == 3
+
+
+def test_a_platform_message_with_no_stored_list_id_is_still_refused_not_folded_in():
+    """The honest residue: a message imported before the column existed carries
+    NULL. It must NOT inherit a sibling's publication -- that would attribute an
+    article to a publisher on no evidence, which is worse than the refusal."""
+    s = _db()
+    _seed_with_list_ids(
+        s,
+        [("a@substack.com", "W1", "weekly.substack.com"),
+         ("b@substack.com", "Legacy", None)],
+    )
+    out = NS.resolution_preview(s)
+    by_lid = {g["list_id"]: g for g in out["groups"]}
+    assert by_lid["weekly.substack.com"]["basis"] == "platform-list-id"
+    assert by_lid[None]["action"] == "refused"
+    assert by_lid[None]["articles"] == 1
+
+
+def test_a_NON_platform_sender_never_splits_on_its_list_id():
+    """publisher_key ignores the List-Id off a platform, so splitting there would
+    scatter one publisher across rows for a field that cannot change the answer.
+    The report reads exactly as it did before for every ordinary sender."""
+    s = _db([("BBC News", "bbc.com")])
+    _seed_with_list_ids(
+        s,
+        [("x@email.bbc.com", "One", "news.bbc.co.uk"),
+         ("y@email.bbc.com", "Two", "sport.bbc.co.uk"),
+         ("z@email.bbc.com", "Three", None)],
+    )
+    out = NS.resolution_preview(s)
+    assert len(out["groups"]) == 1
+    assert out["groups"][0]["articles"] == 3
+    assert out["groups"][0]["list_id"] is None
+    assert out["groups"][0]["action"] == "attach-exact"
+
+
+def test_the_list_id_column_is_classified_by_the_restore_merge():
+    """A column in neither set is silently dropped by the merge's allowlist and
+    arrives as a plausible NULL nothing reports (the 2026-08-03 defect). This one
+    is ADOPTABLE: duplicates match on HASH, so the incoming row is the same message
+    body, and a List-Id is a property of that message, not of the reader."""
+    from src.backup.merge import _ADOPTABLE_ARTICLE_COLUMNS, _NOT_ADOPTABLE_ARTICLE_COLUMNS
+
+    adoptable = {c for _a, cols in _ADOPTABLE_ARTICLE_COLUMNS for c in cols}
+    assert "newsletter_list_id" in adoptable
+    assert "newsletter_list_id" not in _NOT_ADOPTABLE_ARTICLE_COLUMNS

@@ -158,6 +158,31 @@ def record_pass(
     condition a busy machine can essentially never meet again. With it, RARE pressure
     relaxes and SUSTAINED pressure still pins. An absent ``samples`` keeps the old
     strict behaviour rather than guessing a denominator.
+
+    THE INEFFECTIVE DESCENT (P4, 2026-09-10) -- the escape this record was missing.
+    ``mem_low`` is a reading about the WHOLE MACHINE: available memory under a fixed
+    512 MB, which on a box also running a local model can sit true no matter what the
+    collector does. Under the rule above that is a trap with no exit: every pass is
+    sustained, the floor walks to 1, ``min(current, floor)`` re-pins it at 1, and the
+    relax branch needs a pass below ``_RELAX_SHARE`` that can never arrive. Measured
+    over a 1.5 s/fetch transport, that is 1.91 -> 0.45 articles/s -- a 4.2x slowdown
+    with no code change, no visible cause, and it survives restarts because this file
+    does.
+
+    So: a pass that ALREADY RAN AT A CEILING OF 1 and still saw sustained pressure has
+    demonstrated that concurrency is not the lever. Its evidence is about the machine,
+    not about the worker count, and re-recording 1 would only pin a box on a condition
+    it cannot influence. Such a pass takes the RELAX branch instead -- one geometric
+    step, not a jump to the top -- so a machine whose pressure really is ours simply
+    trips again next pass and settles into a 1<->2 oscillation rather than a permanent
+    pin.
+
+    This does NOT weaken the protection, and the separation is the whole reason it is
+    safe: the ceiling is a CONCURRENCY TUNING hint, while the thing that protects the
+    machine is ``scheduler.memguard`` -- a different mechanism, with its own thresholds
+    (RSS >= 85% of total, or available <= 256 MB, three consecutive samples), which
+    PAUSES collection outright and is not a permit count at all. Nothing here changes
+    it, and it remains in force at every worker count.
     """
     w_max = max(1, int(w_max))
     path = state_path or _default_state_path()
@@ -179,6 +204,17 @@ def record_pass(
         # only about whether the ramp stays capped next pass.
         sustained = False
 
+    ineffective_descent = sustained and current == 1
+    if ineffective_descent:
+        # The pass ran the whole way at one worker and the pressure did not clear, so
+        # this pass says nothing about our concurrency — see the docstring. Relax.
+        sustained = False
+        _LOG.info(
+            "collect capacity: a pass at 1 worker still saw sustained memory pressure "
+            "(%s of %s ticks); the ceiling is not the lever, relaxing it",
+            mem_low_ticks, samples if samples is not None else "?",
+        )
+
     if sustained:
         if not isinstance(mem_low_min_permits, int) or mem_low_min_permits < 1:
             # Pressure was seen but the floor was not recorded: refuse to invent one.
@@ -190,7 +226,17 @@ def record_pass(
         if current is None:
             return None  # healthy and unrecorded -- nothing to write.
         new = min(w_max, max(1, current) * _RELAX_FACTOR)
-        reason = "a pass with no memory pressure"
+        # The two ways to reach this branch are DIFFERENT FACTS and the stored record
+        # must not blur them: one pass saw no pressure worth the name, the other saw
+        # plenty and proved the worker count was not what caused it. Writing "no
+        # memory pressure" for the second would be a false statement in the very file
+        # an operator opens to find out why their collector is slow.
+        reason = (
+            "sustained memory pressure that one worker did not relieve, so the "
+            "worker count is not what is causing it"
+            if ineffective_descent
+            else "a pass with no memory pressure"
+        )
 
     if new >= w_max:
         _save(path, None)
@@ -257,6 +303,69 @@ def from_summary(summary: dict | None) -> tuple[int | None, int | None]:
         ticks if isinstance(ticks, int) and not isinstance(ticks, bool) else None,
         floor if isinstance(floor, int) and not isinstance(floor, bool) else None,
     )
+
+
+def concurrency_report(w_max: int, state_path: Path | None = None) -> dict:
+    """Why a pass may be running fewer workers than the operator configured.
+
+    P5 (2026-09-10). Every input to this already existed and NONE of it reached the
+    place an operator watches collection: ``state_report`` is rendered only inside the
+    diagnostics report payload, and the machine-floor worker cap was reported to a log
+    line at most. So a pass running one worker of a configured fifty — measured at
+    1.91 -> 0.45 articles/s over a slow transport, and persisting across restarts — was
+    indistinguishable, from the task manager, from "the app got slow".
+
+    THE TWO CAPS ARE KEPT APART because they are different facts with different
+    remedies. ``learned_ceiling`` is a MEASUREMENT: what this machine sustained under
+    memory pressure, recorded by the collector's own back-off, and it heals on its own
+    (delete ``collect_capacity.json`` to forget it immediately -- it is a cache of a
+    measurement, never operator state). ``floor_cap`` is a POLICY: a machine below the
+    RAM floor is held to ``FLOOR_MAX_WORKERS`` until the operator overrides it. Folding
+    them into one "effective" number would leave a reader unable to tell which lever
+    they are looking at.
+
+    ``effective_max`` is the smaller of the two, i.e. what a pass may actually reach --
+    NOT a prediction of the permit count it will run at. Where a pass STARTS is the
+    governor's own rate-mode default, which this module does not know and will not
+    guess (see ``seed_for``).
+
+    THE MACHINE-FLOOR READ degrades on its own (``floor_read: False``, never a quiet
+    absence of a cap). The rest is not separately wrapped, and that is deliberate rather
+    than an omission: ``load_ceiling`` already swallows everything it can hit, and the
+    ONE guarantee that matters -- that a panel reading can never break the polled status
+    -- belongs at the caller, in ``runner._concurrency_block``, where it exists and is
+    tested. A second try/except here would be an unfalsifiable guard over a function
+    that already cannot fail that way.
+    """
+    configured = max(1, int(w_max))
+    out = dict(state_report(configured, state_path))
+    floor_cap: int | None = None
+    floor_reason: str | None = None
+    override_env: str | None = None
+    try:
+        from src.config.machine_floor import capped_workers
+
+        capped, verdict = capped_workers(configured)
+        override_env = verdict.get("override_env")
+        if capped < configured:
+            floor_cap, floor_reason = capped, verdict.get("reason")
+    except Exception as exc:  # noqa: BLE001 - a panel reading never breaks a poll
+        _LOG.debug("collect capacity: machine-floor cap unreadable: %s", exc)
+        out["floor_read"] = False
+    ceiling = out.get("ramp_capped_at") or configured
+    out.update(
+        {
+            "configured": configured,
+            "learned_ceiling": out.get("learned_ceiling"),
+            "floor_cap": floor_cap,
+            "floor_reason": floor_reason,
+            "override_env": override_env,
+            "effective_max": min(ceiling, floor_cap) if floor_cap else ceiling,
+            # The one thing a reader wants first: is anything holding this back?
+            "capped": bool(floor_cap) or out.get("learned_ceiling") is not None,
+        }
+    )
+    return out
 
 
 def state_report(w_max: int, state_path: Path | None = None) -> dict:

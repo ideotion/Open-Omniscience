@@ -38,42 +38,6 @@
     // wastes the one thing the search just worked out. mdToHtml emits heading ids (the
     // doc-heading-anchors fix), so the id resolves; a stale or unknown anchor simply does
     // not scroll -- it must never swallow the document itself.
-    // A HORIZONTALLY SCROLLING CODE BLOCK MUST BE REACHABLE BY KEYBOARD.
-    // `.prose pre` carries `overflow-x:auto`, so a wide code sample in a Help
-    // document scrolls sideways -- with a mouse. With no `tabindex` the element
-    // cannot take focus, so a keyboard-only reader cannot scroll it at all and
-    // simply never sees the right-hand side of the line. That is axe-core's
-    // `scrollable-region-focusable` (WCAG 2.1.1), measured n=3 on the Help
-    // surface and recorded in the docket as still open.
-    //
-    // ONLY the blocks that ACTUALLY overflow are made focusable. Marking every
-    // <pre> would trade one defect for another: a tab stop on a block that does
-    // not scroll is a keystroke that does nothing, and a document full of short
-    // samples would become a corridor of dead stops. So the test is the real
-    // measured geometry, not the presence of the CSS rule.
-    //
-    // And the mark is REMOVED when a block stops overflowing -- the Help filter
-    // re-renders the prose with narrower content, and a tab stop left behind
-    // there is the same dead keystroke arriving by a different route.
-    //
-    // No `role="region"` on purpose: it would demand an accessible name
-    // (`aria-label`), and inventing one per code block ("code sample 3") is
-    // noise for a screen reader. `tabindex="0"` alone satisfies the rule.
-    function markScrollableProse(host) {
-      const root = host || document.getElementById("doc-prose");
-      if (!root || !root.querySelectorAll) return 0;
-      let marked = 0;
-      root.querySelectorAll("pre").forEach((el) => {
-        const scrolls = (el.scrollWidth || 0) > (el.clientWidth || 0);
-        if (scrolls) {
-          el.setAttribute("tabindex", "0");
-          marked++;
-        } else if (el.getAttribute("tabindex") === "0") {
-          el.removeAttribute("tabindex");
-        }
-      });
-      return marked;
-    }
     async function openDoc(slug, anchor) {
       if (!slug) return;
       _docSlug = slug;
@@ -93,7 +57,6 @@
             `<span>Machine-drafted translation — the English original is authoritative. Found a better wording? Improve it on the project page.</span></div>`
           : "";
         prose.innerHTML = banner + mdToHtml(_docRaw);
-        markScrollableProse(prose);
         const at = anchor ? prose.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(anchor) : anchor)) : null;
         (at || prose).scrollIntoView({block: at ? "start" : "nearest"});
       }
@@ -103,10 +66,6 @@
     function filterDoc() {
       if (!_docRaw) return;
       $("doc-prose").innerHTML = mdToHtml(_docRaw);
-      // The SECOND render path. A fix applied only in openDoc would be silently
-      // undone the first time a reader typed in the find box -- the same
-      // one-of-two-paths shape this round has found repeatedly.
-      markScrollableProse($("doc-prose"));
       highlightProse($("doc-find").value);
     }
     function highlightProse(q) {
@@ -1557,11 +1516,12 @@
     // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only; the anonymise +
     // kill-switch guarantees live in the (tested) backend.
     async function pullMailbox() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("mbox-result"), btn = $("mbox-btn");
       const host = ($("mbox-host").value || "").trim();
       const user = ($("mbox-user").value || "").trim();
       const password = $("mbox-pass").value || "";
-      if (!host || !user) { if (out) out.textContent = "Enter at least a host and user."; return; }
+      if (!host || !user) { if (out) out.textContent = t("Enter at least a host and user."); return; }
       // A network action -> the ONE consent popup (invariant #14).
       if (typeof ensureOnline === "function" && !await ensureOnline("Pull newsletters from your mailbox")) return;
       const body = {
@@ -1571,7 +1531,6 @@
         limit: parseInt($("mbox-limit").value || "50", 10),
       };
       if (btn) btn.disabled = true;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       if (out) out.textContent = t("Pulling from your mailbox…");
       try {
         // The pull is a BACKGROUND JOB now (it is a network fetch plus a full

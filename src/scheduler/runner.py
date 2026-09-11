@@ -1183,6 +1183,20 @@ _LANE_LADDER = KindLadder(rates=_LANE_RATES, floors=_LANE_FLOORS)
 _CALENDAR_VERIFY_PER_PASS = 5
 
 
+def _concurrency_block(settings: SchedulerSettings) -> dict:
+    """The concurrency caps for the status payload (P5). Never raises, and never
+    reports a quiet value it could not read: a failure says so, because "no cap" and
+    "we could not check for a cap" are opposite answers for a reader trying to find
+    out why their collector is slow."""
+    try:
+        from src.scheduler.capacity import concurrency_report
+
+        return concurrency_report(int(getattr(settings, "collect_parallelism", 1) or 1))
+    except Exception as exc:  # noqa: BLE001 - a panel reading never breaks the status
+        _LOG.debug("concurrency block unreadable", exc_info=True)
+        return {"read": False, "reason": str(exc)[:160]}
+
+
 def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
     """Which housekeeping kinds are DUE this lane invocation, per each
     ride-along's OWN settings toggle/budget -- "budget 0 / toggle off" is a
@@ -2193,6 +2207,12 @@ class BackgroundScheduler:
                 # tally (reconcile + cleanup), so its complete:false disclosure is
                 # visible in the scheduler status. None until it first runs.
                 "last_maintenance": self._last_maintenance,
+                # P5 (2026-09-10): why a pass may be running fewer workers than the
+                # operator configured. Both caps existed and neither reached the task
+                # manager, so a pass at one worker of a configured fifty read as "the
+                # app got slow". Rides the payload that window ALREADY polls, for the
+                # reason memory_guard and machine_floor do.
+                "concurrency": _concurrency_block(s),
             }
 
     def activity(self, session) -> dict:

@@ -771,6 +771,31 @@ class Article(Base):
     # unknown", which the UI must never render as a version.
     source_revision: Mapped[str | None] = mapped_column(String(64))
 
+    # THE NEWSLETTER'S RFC 2919 List-Id, kept as ingest provenance. RECIPIENT-SAFE by
+    # construction and that is why the 2026-06-15 anonymisation ruling KEEPS it while
+    # dropping List-Unsubscribe: List-Id names the LIST, never a subscriber (the
+    # unsubscribe header carries a per-recipient token; this one cannot).
+    #
+    # It is stored because it is the only input to `publisher_key` that ingest cannot
+    # recover later. The SEND DOMAIN deliberately gets no column of its own: `author`
+    # already holds the raw From header and `sender_domain(author)` is exactly what the
+    # resolver reads, so a second copy would be denormalisation rather than provenance.
+    # The List-Id lives in a header of a file this app does not keep, so once the import
+    # is done nothing but the user's own .eml can produce it again.
+    #
+    # WHAT IT UNLOCKS: for a platform sender (Substack, beehiiv, Mailchimp) whose
+    # sending host carries no publication label, the List-Id is the ruled stable key --
+    # the `platform-list-id` basis. Without it the ladder can only refuse, because
+    # attaching to the platform itself would merge every publisher on it into one
+    # source.
+    #
+    # Additive + NULLABLE, no backfill, on the detected_language / source_revision
+    # pattern. NULL means "the message carried no List-Id, or it was imported before
+    # this column existed" -- two different facts that a re-import distinguishes and
+    # nothing else can, which is why the preview keeps naming the older corpus in its
+    # caveat instead of claiming the gap is shut.
+    newsletter_list_id: Mapped[str | None] = mapped_column(String(255))
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
 

@@ -730,11 +730,12 @@
     }
 
     async function sgAddRing(input) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sg = input.dataset.sg, ring = input.value.trim();
       if (!ring) return;
       try {
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({rings: [ring]})});
-        toast("Group added."); loadSupergroupCuration();
+        toast(t("Group added.")); loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();
       } catch (e) { toast(_failMsg("Add group failed: {error}", e), "err"); }
     }

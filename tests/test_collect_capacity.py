@@ -463,3 +463,93 @@ def test_the_runner_records_each_finished_pass():
     assert recorded, "nothing feeds the pass outcome back — the ceiling never learns"
     passed = {kw.arg for call in recorded for kw in call.keywords}
     assert {"w_max", "mem_low_ticks", "mem_low_min_permits"} <= passed, passed
+
+
+# --------------------------------------------------------------------------- #
+#  P4 (2026-09-10): the ceiling must not be pinned by pressure the collector
+#  cannot relieve.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_ceiling_of_one_can_never_survive_two_passes_in_a_row(state):
+    """The unescapable state, and the property that now forbids it.
+
+    ``mem_low`` is a reading about the WHOLE MACHINE — available memory under a fixed
+    512 MB — which a box also running a local model can sit under no matter what the
+    collector does. Under the old rule that was a trap with no exit: every pass counted
+    as sustained, the floor walked to 1, ``min(current, floor)`` re-pinned 1, and the
+    relax branch needed a quiet pass that could never arrive. Measured over a
+    1.5 s/fetch transport that is 1.91 -> 0.45 articles/s, and it survives restarts
+    because the file does.
+
+    The guarantee asserted here is deliberately narrow and checkable: a stored ceiling
+    of 1 cannot still be 1 after the next pass. It does NOT claim the machine climbs
+    back to w_max while the pressure lasts — with pressure that really is external the
+    record oscillates 1<->2, which is the honest outcome, because nothing has shown
+    that more workers are safe.
+    """
+    state.write_text(
+        json.dumps({"schema": capacity.SCHEMA, "ceiling": 1, "w_max_at_record": 50}),
+        "utf-8",
+    )
+    assert capacity.load_ceiling(state) == 1
+    after = capacity.record_pass(
+        w_max=50, mem_low_ticks=900, mem_low_min_permits=1, samples=1000, state_path=state
+    )
+    assert after != 1, "a ceiling of 1 survived a pass that proved 1 does not help"
+    assert after == 2  # one geometric step, never a jump back to the top
+
+    # ...and it stays escapable rather than settling back into the pin.
+    seen = {after}
+    for _ in range(6):
+        seen.add(
+            capacity.record_pass(
+                w_max=50, mem_low_ticks=900, mem_low_min_permits=1,
+                samples=1000, state_path=state,
+            )
+        )
+    assert seen != {1}, "the ceiling collapsed back into the permanent pin"
+
+
+def test_the_relaxed_record_says_pressure_was_seen_rather_than_absent(state):
+    """The two ways to reach the relax branch are different facts.
+
+    One pass saw no pressure worth the name; the other saw plenty and proved the worker
+    count was not causing it. Writing "a pass with no memory pressure" for the second
+    would be a false statement in the very file an operator opens to find out why their
+    collector is slow.
+    """
+    state.write_text(
+        json.dumps({"schema": capacity.SCHEMA, "ceiling": 1, "w_max_at_record": 50}),
+        "utf-8",
+    )
+    capacity.record_pass(
+        w_max=50, mem_low_ticks=900, mem_low_min_permits=1, samples=1000, state_path=state
+    )
+    reason = json.loads(state.read_text("utf-8"))["reason"]
+    assert "did not relieve" in reason
+    assert "no memory pressure" not in reason
+
+
+def test_pressure_a_lower_worker_count_DID_relieve_still_pins(state):
+    """The mirror, and the reason this is not a blanket weakening.
+
+    A machine whose pressure really is its own fan-out reaches a floor ABOVE one — the
+    descent worked — and that measurement is exactly what the ceiling is for. It must
+    still be recorded and must still hold across passes.
+    """
+    for _ in range(3):
+        got = capacity.record_pass(
+            w_max=50, mem_low_ticks=900, mem_low_min_permits=4,
+            samples=1000, state_path=state,
+        )
+        assert got == 4
+    assert capacity.load_ceiling(state) == 4
+
+
+def test_an_unrecorded_machine_under_pressure_still_records_its_floor(state):
+    """``current is None`` is not ``current == 1``: a first pressured pass on a machine
+    with no record yet must still learn from its descent."""
+    assert capacity.record_pass(
+        w_max=50, mem_low_ticks=900, mem_low_min_permits=1, samples=1000, state_path=state
+    ) == 1

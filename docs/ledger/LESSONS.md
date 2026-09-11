@@ -6217,6 +6217,143 @@
     it changes a shared blocking gate and belongs to its own reviewed change — but measure the
     cost of tightening before deferring it, because all 11 non-English locales are currently at the
     full count, so today it would redden nothing.
+    **FIXED 2026-09-10, and the second finding is the part worth keeping.** The fix is the general
+    form above, applied: compute the ratio ONCE, keep `round(..., 1)` for the human table and add
+    an unrounded `percent_exact` for the COMPARISON — the display resolution and the decision
+    threshold are two different requirements, and a single variable serving both is what created
+    the slack. The failure line now names the missing COUNT beside the percentage, because at
+    n = 3265 the percentage alone prints "100.0%" for the very locale it is failing, which tells an
+    operator nothing about what to fix. What earned the change over a third deferral was hitting
+    the same defect from the OPPOSITE direction on the same day: restoring a deliberately-mutated
+    `fr.json` with `git checkout` discarded 19 uncommitted keys (the recorded restore-by-copy
+    hazard, hit again), and the gate whose whole job is "every consent/caveat string ships ×12"
+    reported `fr … complete … 100.0%`. GENERAL: a rounded gate does not only fail to catch a
+    regression you introduce on purpose — it fails to catch the one you introduce by accident,
+    which is the case it was actually built for. And when a deferral's stated reasons are
+    (a) a measurable risk and (b) a slicing rule, re-read them before deferring a third time:
+    (b) expires the moment the fix gets its own slice, and (a) is a measurement, not a verdict —
+    run it (`--min 100` was green at 3265/3265 ×12) rather than inheriting the caution.
+  - **A GUARD THAT PINS A CALL SPELLING IS NOT GUARDING THE THING IT NAMES (2026-09-10):**
+    `test_naming_sweep_ring_disappears_from_the_user_visible_ui` exists to prove a user-visible
+    "ring" became "group". It did that by requiring the literal `toast("Group added.")` and
+    forbidding `toast("Ring added.")` — so wrapping that call in `t()`, a change that touches no
+    user-visible word, failed a naming test. Worse in the other direction: `toast("Ring added.")`
+    is **not a substring of** `toast(t("Ring added."))`, so the FORBIDDEN half was blind to the
+    exact regression it exists for, as soon as anyone wrapped the call. Anchor on the quoted
+    STRING, never on the call around it. The file's own comment already said this for a sibling
+    entry — *"pinning the wrapper made this guard trip on a rename that never touched the word it
+    guards"* — and the same defect sat directly beneath that note in both halves, which is the
+    ordinary way a lesson fails to spread: it gets written where it was learned rather than
+    applied to its neighbours.
+  - **`t()` IS BOUND PER-FUNCTION IN THE UI MODULES, AND A `const` LATER IN THE SAME FUNCTION IS
+    WORSE THAN NO BINDING AT ALL (2026-09-10):** the nearest `const t = (window.OOI18N && …)`
+    ABOVE a call site is frequently in a DIFFERENT function — at `app-diagnostics.js:1400` the
+    visible one belonged to `runIrEval()` while the site sat in `goldBuilderSave()`. So a scope
+    scan that walks upward to the first binding it sees will happily conclude "in scope" and ship
+    a `ReferenceError`. And scanning only ABOVE is itself insufficient: `pullMailbox()` bound `t`
+    seventeen lines BELOW the site, where a `const` in the same block puts every earlier use in
+    the **temporal dead zone** — which fails at runtime while reading as perfectly correct, and
+    which `node --check` cannot see (it caught only the duplicate declaration I introduced).
+    RULE: resolve the binding against the WHOLE enclosing function body, both directions, and
+    treat "there is a `const t` somewhere above" as no evidence at all.
+  - **THE MISSING KEY IS THE BUG; THE MISSING `t()` WRAPPER IS A ~120 ms FLASH (recorded
+    2026-07-28, re-derived and nearly got wrong 2026-09-10 — read it before any i18n sweep):**
+    `i18n.js`'s MutationObserver translates dynamically-inserted text nodes and
+    `title`/`placeholder`/`aria-label` attributes whose value matches a locale key, so a bare
+    `toast("Preferences saved.")` whose key exists renders English for one frame and then
+    switches. Filing such sites as "never translated" is a fabricated finding. The practical
+    consequence when fixing them: KEY everything, and add the wrapper only where the flash is
+    observable. A toast lives on screen for seconds, so wrap it; a `title` attribute cannot be
+    hovered within 120 ms, so keying it is the whole fix and a wrapper there is churn in
+    rendering markup for no user-visible gain.
+
+  - **A GUARD THAT NEEDS A VALUE FROM ANOTHER FILE MUST READ IT FROM THAT FILE — A MIRRORED COPY
+    FAILS IN THE SAFE-LOOKING DIRECTION, AND THE COMMENT SAYING "MIRRORED DELIBERATELY" IS THE
+    SENTENCE TO DISTRUST (2026-09-10, hit twice in one session, the second time one commit after
+    fixing the first):** the reader's consent caveats are server-rendered, and `i18n.js` translates
+    a text node only when its DIRECT parent is outside the engine's skip list — so a key proves the
+    translation EXISTS while only the parent tag decides whether it is APPLIED. The guard I wrote
+    mirrored that skip list as a hardcoded constant, with a comment stating that mirroring meant
+    "if the engine ever widens it, this guard must FAIL and be re-read, not silently follow." A
+    mutant adding `FOOTER` to `i18n.js` passed. **A hardcoded mirror does the exact opposite of
+    that claim**: widening the engine leaves the copy narrow, so the check keeps passing while the
+    string stops being translated — it fails toward "everything is fine", which is the only
+    direction that never gets investigated. The same defect, in the same session, had just been
+    fixed in `test_unlock_sequence_covers_every_init_db_self_heal` (a regex over source that could
+    not tell a CALL from an IMPORT): both are a check reading a COPY of the thing rather than the
+    thing. RULE: read the value from its source of truth, and separately PIN it against the value
+    you reviewed, so a change reddens instead of drifting. Two assertions, not one — the pin catches
+    the change, the read keeps the check honest in the meantime. And when the source of truth is
+    refactored into a shape your parser cannot read, FAIL LOUDLY and say to re-derive it; falling
+    back to the last known value is the mirror bug with extra steps.
+    **THE TELL, and it is a comment rather than code:** "mirrored deliberately", "kept in sync
+    manually", "duplicated on purpose" all describe a DECISION someone made, and read as though the
+    hazard was considered and handled. None of them is a property anything tests. Treat that phrasing
+    as an unproven claim and write the mutant that checks it — here the mutant took two minutes and
+    the comment had been wrong the moment it was written.
+
+  - **A CORRECTION FILED AS A NEW ENTRY DOES NOT NEUTRALISE THE ENTRY IT CORRECTS — ANNOTATE
+    THE STALE ONE IN PLACE, WHERE THE NEXT READER ACTUALLY LANDS (2026-09-10, after it cost a
+    build and a revert):** the docket said `link-in-text-block (n=15)` and
+    `scrollable-region-focusable (n=3)` were STILL OPEN. Both were closed the next day, and the
+    closure WAS recorded — as a new entry further down, ending "Read those two as closed." Two
+    later sessions read the ORIGINAL entry, never reached the correction, and one of them rebuilt
+    a shipped, browser-measured fix and had to revert it. The correction was not missing; it was
+    merely somewhere else, in a file nobody reads front-to-back by design (rule (1) makes the
+    queue consulted, not memorised). A ledger appended in strict chronological order has this
+    failure built in: the OLDEST statement about a topic is the one a search hits first, and it
+    is the one most likely to be wrong. RULE: when you close or correct a docket item, edit the
+    entry that ASSERTS the stale thing — a `SUPERSEDED`/`STRUCK` line right under it, pointing
+    forward — as well as recording the new finding. Two lines in the old place beat two pages in
+    the new one.
+    **AND THE ARITHMETIC TRAP IT PRODUCED, which is reusable on its own:** the re-assertion
+    reasoned "the fix measured 23 nodes, the ledger says 15 are open, so 15 are OUTSIDE the fixed
+    selector — a future pass should start by finding where." 15 and 23 were never a remainder and
+    a whole; they are the SAME finding set counted over one document and over eight. SUBTRACTING
+    TWO COUNTS OF THE SAME THING TAKEN AT DIFFERENT SCOPES INVENTS A REMAINDER, and a remainder
+    reads as an actionable to-do, so the invention survives as work. Before writing "the residual
+    N", confirm both figures were measured over the same population — here the closing commit's
+    own message said outright that they were not.
+
+  - **A PARSER THAT REFUSES A BARE VALUE BECOMES A SILENT NO-OP THE MOMENT YOU STORE ITS OUTPUT
+    AND FEED IT BACK IN (2026-09-10, caught while drafting, before a line shipped):**
+    `parse_list_id` extracts `weekly.substack.com` from `List-Id: "Weekly" <weekly.substack.com>`
+    and deliberately REFUSES a bare unbracketed value — the phrase before the brackets is free
+    text, so reading it as an identifier would invent one. Correct, and it is the safety property.
+    But `publisher_key(from_addr, list_id)` calls that parser on its argument, and the new column
+    stores the already-PARSED bare identifier. Passing the stored value back through the same
+    parameter parses it a SECOND time, gets `None`, and drops to the refusal branch — the whole
+    feature doing nothing, while every assertion that the column exists, is written, is read, and
+    is handed to the resolver still passes green. The tell was reading the parser's docstring
+    rather than trusting the parameter's name; the empirical check that settles it in one line is
+    `assert parse(store(x)) is None`. THE RULE: when you begin persisting a parser's OUTPUT,
+    check every existing consumer of that field for whether it re-parses, because the field's
+    name does not change and nothing else will tell you. THE FIX SHAPE: give the caller a
+    SECOND, explicitly-named door (`list_id_parsed=`) rather than widening the parser to accept
+    both forms — widening restores exactly the ambiguity the refusal exists to prevent, and it
+    does so at the one place that was written to be strict. Pin it with a test that asserts BOTH
+    doors' outcomes on the SAME value, so the two paths cannot silently converge later.
+    Same family as the recorded "checking the wiring never proves the output": here the wiring
+    was flawless end to end and the output was still the refusal it had always been.
+  - **`Path.read_text()` APPLIES UNIVERSAL NEWLINES, SO ROUND-TRIPPING A LEDGER FILE THROUGH IT
+    SILENTLY REWRITES EVERY CRLF LINE — and the result is precisely the diff signature the
+    union-merge lesson teaches you to fear (2026-09-10, caught by that rule, twice in one edit):**
+    appending one row to `shipped.csv` produced a numstat of **54 added / 53 deleted** on an edit
+    that adds one line. First attempt: I had rebuilt the file through the `csv` module, which
+    re-quotes every field — obvious in hindsight, reverted, redone as a surgical line edit.
+    Second attempt still showed **13 / 12**, and the eleven "changed" lines were byte-identical in
+    every visible column. `od -c` on one of them gave the answer: those rows end `\r\n`, and
+    `read_text()` (newline=None) translates `\r\n` and lone `\r` to `\n` on READ, so writing the
+    string back normalises them. Fixed with `read_bytes()` / `write_bytes()` and byte-literal
+    splitting: 2 / 1, which is one row swept plus one row appended. WHY THIS MATTERS MORE THAN THE
+    keystrokes: `shipped.csv` is `merge=union`, so it never conflicts — eleven silently-rewritten
+    rows would have been kept ALONGSIDE main's originals as eleven duplicate entries in the
+    project's permanent shipped record, invisible to a marker grep and to a clean `git merge`.
+    RULES: (a) edit a ledger file with byte-level I/O, never `read_text`/`write_text`, and never by
+    round-tripping it through a parser that reformats; (b) `git diff --numstat` after EVERY ledger
+    edit and treat any deletion on an additive edit as a defect until explained — it fired twice
+    here and was right twice; (c) when `-` and `+` lines look identical, the difference is a byte
+    you cannot see, so go to `od -c` immediately instead of re-reading the text.
   - **`grep --include` IS A WHOLE-INVOCATION FILTER, NOT A POSITIONAL ONE — naming files of another
     type beside it searches NONE of them, and reports a confident nothing (2026-09-07):**
     `grep -rn "<needle>" src/static/*.js src/static/*.html src/ --include=*.py` looks like "search
@@ -8155,7 +8292,8 @@
   its docstring in the same commit — the words are part of the test's output, and they are
   read hardest at the worst moment.**
 
-- **AN ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
+- **[WITHDRAWN 2026-09-10, and the withdrawal is the lesson — see the entry below.] AN
+  ACCESSIBILITY FIX APPLIED TO EVERY CANDIDATE IS USUALLY A SECOND DEFECT
   (2026-09-10).** `scrollable-region-focusable` is satisfied by putting `tabindex="0"`
   on the scrollable element, and the tempting fix is to mark every `<pre>`. But a tab
   stop on a block that does not scroll is a keystroke that does nothing, and a Help
@@ -8179,6 +8317,287 @@
   check, invisible when wrong, and a mutant that deletes the second call is worth having
   in the matrix.
 
+  **WITHDRAWN.** The reasoning above is not wrong in general, but I applied it to a fix
+  that was already shipped, deliberate and browser-verified: `f37e043f` gives every Help
+  `<pre>` and `<table>` a `tabindex` in the markdown renderer, having measured 11 nodes
+  with axe across the eight served documents. Second-guessing that from source, without a
+  browser, produced a change that REMOVED tab stops the verified fix had added — and would
+  have removed all of them at once whenever the Help tab rendered while hidden
+  (`display:none` → zero geometry). **The narrower, load-bearing form: an existing fix that
+  looks over-broad may be over-broad ON PURPOSE, by someone who measured. Before refining
+  it, find out whether it was measured, and if it was, refine it with the same instrument
+  or not at all.**
+
+- **A DOCKET SAYS WHAT WAS TRUE WHEN SOMEONE WROTE IT; THE CODE SAYS WHAT IS TRUE NOW
+  (2026-09-10).** I picked up an item because the queue listed it under STILL OPEN, built
+  it, tested it, mutated it, shipped it — and it had been closed the previous day. The
+  correction was not hidden: the closing commit's own message said *"The Help numbers are
+  larger than the ledger recorded (15 and 3) because that sweep read one document"*. One
+  `git log -S` over the relevant CSS or renderer would have surfaced it before any code was
+  written. **GENERAL FORM: for any docket item, the first action is to check whether the
+  thing is still true, in the code, not in the entry — `git log -S` on a distinctive string
+  from the area costs seconds and is the only check that can catch a CLOSED item still
+  listed as open.** The sharpest part is that this session had already recorded this exact
+  lesson twice, for a stale REMAINING line and a stale test docstring, and then was caught
+  by a third instance: recognising a failure mode in other people's work does not
+  immunise you against it, and the moment of greatest risk is when the stale entry tells
+  you something you are pleased to hear — that there is a small, well-defined job available.
+
+- **A GREP FOR A PLACEHOLDER MATCHES THE ROW THAT RECORDS ITS OWN REMOVAL (2026-09-11).**
+  Protocol rule (5b) tells each session to sweep `PR pending` out of `shipped.csv`, and the
+  obvious check is `grep -c 'PR pending' docs/ledger/shipped.csv`. It returns **1**, and has
+  ever since the sweep SUCCEEDED — the hit is the *summary prose of the row that documents
+  the sweep*, which quotes the phrase it retired, including the words "now returns 0". A
+  future session running the prescribed check finds a hit, goes looking for a placeholder
+  that does not exist, and either wastes the search or "fixes" the historical record. The
+  check that works is **column-aware** — the placeholder lives in `refs`, so read `refs`:
+  `python -c "import csv;print([r for r in csv.DictReader(open('docs/ledger/shipped.csv',newline='')) if 'pending' in (r['refs'] or '').lower()])"`
+  (0 rows on 2026-09-11, against 1 line-grep hit). **GENERAL FORM: in a ledger that records
+  its own maintenance, any check phrased as "does this file still contain X" will eventually
+  match the entry announcing that X was removed — a self-referential false positive that
+  grows more likely the better the ledger is kept. Scope the check to the FIELD the defect
+  lives in, never to the file.** Same family as the `merge=union` lesson above: the file
+  looks clean to the tool you reach for first, and the tool that sees it is the one that
+  knows the file's *structure*.
+
+- **"CARRIED FORWARD UNVERIFIED" IS A LOAN, AND THE INTEREST IS PAID BY THE READER
+  (2026-09-11).** A question register written 2026-09-06 was banner-marked five days later
+  with an honest admission that only 1 of its 44 items had been re-checked. Checking all 44
+  took one session and found that **eight were already answered by shipped code** — one of
+  them (J2) closed by a commit whose `pyproject.toml` comment *names the question number*,
+  and two (D1, D5) asking for changes the tree already had. Three more were not stale but
+  **wrong in a way that changes the answer**: B1 offers (a) or (b) while the runner carries a
+  third path neither mentions; B2 asks whether to build an artifact that already exists; C1
+  proposes removing a path whose own docstring says it is kept "forever". And two (L9, L10)
+  read as oversights when the code had already enumerated the case and declined, on the
+  record, with a measurement. **GENERAL FORM: an unverified premise does not decay into
+  "slightly out of date" — it decays into a question whose ANSWER WOULD BE WRONG, because
+  the option set itself has moved. Marking a register unverified is honest but is not a
+  substitute for verifying it, and the cost of the pass is bounded and one-time while the
+  cost of the loan falls on whoever answers.** The tell worth generalising: every one of the
+  eight answered items was findable by reading a single named path from the question itself.
+
+- **A "SLOW DOWNLOAD" COMPLAINT IS NOT NECESSARILY ABOUT THE DOWNLOAD (2026-09-10, the
+  collect-throughput investigation).** The field report was "the rate of article download
+  is now abnormally slow", and every instrument the app owns for that question — the
+  bandwidth governor, `collect_target_kbps`, the per-job rate sampler — measures bytes
+  over the wire. Measured with a harness that served every fetch from memory, throughput
+  was **flat at ~2.3 articles/s from 1 worker to 50**: the transport was never the
+  constraint, ~400 ms of pure-Python CPU per article was, and N worker threads simply took
+  turns under the GIL. **GENERAL FORM: before tuning the thing the complaint names,
+  measure the pipeline with that thing removed. If the number does not move, the name in
+  the complaint is a symptom.** The corollary is uncomfortable and worth stating: a
+  control loop that varies concurrency to hit a byte-rate target is inert on a CPU-bound
+  pipeline, and it will still produce confident-looking permit adjustments the whole time.
+
+- **A LARGE `re` ALTERNATION IS O(alternatives) AT EVERY POSITION, AND `re.I` REMOVES THE
+  ESCAPE HATCH (2026-09-10, `dateextract._MONTH_ALT`).** 555 multilingual month names,
+  4,159 characters, embedded in ten patterns scanned over a 60,000-character window.
+  Measured cost of two patterns that match the SAME dates: `_DMY_RE` (`11 September
+  2001`) **1.24 ms**, `_MDY_RE` (`September 11, 2001`) **43.73 ms** — a 35× spread whose
+  only cause is which end the alternation sits on. `_DMY_RE` begins `\b(\d{1,2})`, so
+  CPython fast-skips to positions that can match; `_MDY_RE` begins with the alternation,
+  so the engine tries up to 555 branches at every word boundary. CPython's `re` has no
+  trie/Aho–Corasick optimisation for alternations (the `regex` module and Rust's engine
+  do), and `re.IGNORECASE` disables the literal-prefix scan that would otherwise help.
+  **GENERAL FORM: when a hand-built alternation grows past a few dozen literals, its cost
+  stops being "a bigger pattern" and becomes a linear scan per input position. Put the
+  cheap discriminating token FIRST where the grammar allows, and otherwise pre-scan for
+  the literals actually present and rebuild the alternation from those — measured here at
+  33× on typical news prose, with identical matches by construction, since a literal
+  absent from the text could never have matched.** The trap in that fix, found before it
+  was written: 55 of the 555 names are not a single `\w+` run (four Arabic two-word names,
+  plus Devanagari and Bengali forms), so a naive tokenised pre-scan silently loses recall
+  in exactly the languages the multilingual tables were added for.
+
+- **A COST THAT GREW 10× OVER A MONTH LOOKS LIKE A SUDDEN REGRESSION TO THE PERSON
+  LIVING WITH IT (2026-09-10).** `extract_dates` went 14 ms → 62 ms → 142 ms per article
+  across 2026-06-15 / 07-01 / 07-15 and has been flat ever since. The report arrived on
+  09-10 and named "the past few days". Bisecting the last few days would have found
+  nothing and concluded there was no problem. **GENERAL FORM: when a complaint says
+  "recently" and the recent window is clean, widen the window before declaring the report
+  wrong — a plateau that everyone has stopped noticing is still the ceiling, and the
+  operator's sense of "recent" is calibrated to when it started hurting, not to when it
+  changed.** Measuring seven trees cost one afternoon and turned "no regression" from a
+  dismissal into a date.
+
+- **AN ENVIRONMENT-VARIABLE FEATURE FLAG READ INSIDE A PER-TOKEN LOOP IS A REAL COST
+  (2026-09-10, `extract._is_code_token`).** The flag read is the first line of a predicate
+  called once per unigram and once per token of every bigram and trigram window — ~8,150
+  `os.getenv` calls per article, 130,497 over a 16-article profile, and `os.getenv` is not
+  free (`os.environ.__getitem__` → `encodekey`). **GENERAL FORM: a reversibility flag is
+  cheap at a function boundary and expensive inside the loop that function is part of.
+  Read it once per call site that can afford it, and cache it.** Same profile, same
+  function: `_alnum_transitions` recomputes the identical answer for the identical token
+  up to six times, because the unigram pass and the two n-gram passes each ask
+  independently.
+
+- **A LEARNED CEILING THAT PERSISTS TO DISK IS A PERFORMANCE BUG WITH A LONG HALF-LIFE
+  (2026-09-10, `scheduler/capacity.py` + `bandwidth.py`).** `mem_low` (system-wide
+  available memory under a fixed 512 MB) triggers a MULTIPLICATIVE permit cut — measured
+  50 → 1 in five 1.5 s ticks — and that floor is then written to
+  `data/collect_capacity.json` and used as both the seed and the `ramp_ceiling` of every
+  later pass, across restarts. Over a slow transport that is 1.91 → 0.45 articles/s, a
+  4.2× slowdown with no code change and no visible cause. Recovery is ×2 per clean pass,
+  but only fires if the pass stops tripping a threshold that is about the whole MACHINE,
+  not about the collector — so a box also running a local model can sit under it forever.
+  **GENERAL FORM: when a self-tuning mechanism persists its worst observation, the
+  recovery path is the load-bearing half, and it must be driven by something the
+  mechanism itself can influence. And it must be VISIBLE where the operator watches the
+  work** — here `capacity.state_report` is rendered only inside the diagnostics report
+  payload, so the task manager shows a pass running 1 worker of a configured 50 and says
+  nothing about why. The neighbouring case is worse in kind: `cpu_saturated` fires at
+  92 % system-wide CPU, which a healthy CPU-bound collector produces BY ITSELF, so the
+  governor throttles the collector for doing its job well.
+
+- **A DIFFERENTIAL THAT GENERATES ITS OWN INPUTS MUST GENERATE THEM DETERMINISTICALLY —
+  `str.hash` IS RANDOMISED PER PROCESS (2026-09-10, the month-narrowing proof).** The
+  harness picked each test case's letter-casing with `hash(name + shape) % 4`, ran the two
+  trees in two interpreters, and reported **4,372 differences**. Every one was the harness:
+  `PYTHONHASHSEED` randomises `str.__hash__`, so the two sides were comparing *different
+  texts*. The failure is nasty because it looks exactly like a real regression — the dates
+  matched and only the provenance snippets differed, which reads as a subtle casing bug in
+  the code under test. **GENERAL FORM: in a cross-process differential, every input must be
+  a pure function of a declared seed. `random.Random(n)` is safe, `zlib.crc32` is safe,
+  `hash()` and set/dict iteration order are not.** The tell is a diff that is enormous and
+  uniform rather than sparse and specific.
+
+- **A GUARD THAT SURVIVES EVERY MUTATION IS NOT PROVEN CAUTIOUS, IT IS UNPROVEN — AND MAY
+  BE DOING HARM (2026-09-10, same work).** The month-presence scan shipped with two extra
+  safety nets: an "always keep the case-unsafe names" set and a second scan over
+  `casefold()`. Both survived the whole mutation matrix. The tempting reading is "cheap
+  insurance, keep them"; the correct one was to go find the REAL argument, which turned out
+  to be stronger — the scan lowers the same token with the same method as `_month_of`, the
+  one function every month loop resolves through and which skips on a miss, so a token the
+  scan cannot key is a token the old path refused too (verified exhaustively: 555 names × 5
+  casings × every language hint, zero violations). And the keep-set was **actively
+  harmful**: its predicate `n.casefold() != n` matched all ~26 Greek month names, silently
+  pinning 30 extra branches into the alternation of every article in every language —
+  eroding the very win it was guarding. **GENERAL FORM: when a mutation cannot kill a
+  guard, that is a question, not a reassurance. Either find the input that makes it
+  load-bearing, or find the invariant that makes it unnecessary and pin THAT as the test.
+  Do not keep it "just in case" — an unfalsifiable guard is one nobody can safely change
+  later, and this one was quietly paying its own cost.**
+
+- **`rx is SOME_MODULE_PATTERN` BREAKS THE MOMENT PATTERNS ARE BUILT PER DOCUMENT
+  (2026-09-10, same work).** The year-less date loop iterated
+  `((_DM_NOYEAR_RE, …), (_MD_NOYEAR_RE, …))` and re-derived which member it was on with
+  `if rx is _MD_NOYEAR_RE`, to apply the homograph guard that stops `"Marta 30 godina"`
+  becoming 30 March. Narrowing rebuilds those patterns per document, so `rx` is never the
+  module-level object again: the guard would have stopped firing **silently**, and the
+  extractor would have resumed a fabrication it had a verifier finding for. Caught by
+  reading the loop before editing it, and the mutation that puts the identity test back is
+  in the matrix. **GENERAL FORM: identity comparison against a module global is a hidden
+  coupling to "this object is a singleton". Any change that makes an object per-request,
+  per-document or per-tenant breaks every such test at once, and breaks them by silently
+  taking the other branch rather than by raising. Carry the discriminating FACT in the
+  loop's own tuple instead of re-deriving it from identity.**
+
+- **PUT THE CHEAP DISCRIMINATING TOKEN FIRST, OR THE ENGINE SCANS EVERY POSITION
+  (2026-09-10).** Two patterns in the same module, matching the same dates, over the same
+  22 KB: `_DMY_RE` ("11 September 2001") **1.24 ms**, `_MDY_RE` ("September 11, 2001")
+  **43.73 ms**. The only difference is which end the 555-name alternation sits on —
+  `_DMY_RE` opens `\b(\d{1,2})` so CPython fast-skips to digit positions, `_MDY_RE` opens
+  on the alternation so the engine tries branches at every word boundary. **GENERAL FORM:
+  a regex's cost is set by what its FIRST element lets the engine skip. When a pattern must
+  begin with a large literal set, the fix is to shrink that set to what the input can
+  actually contain — measured here at ~10x, with matches identical by construction because
+  a literal absent from the text could never have matched.**
+
+- **A CONTROL LOOP THAT READS A MACHINE-WIDE SIGNAL WILL THROTTLE ITSELF WHEN IT IS THE
+  LOAD (2026-09-10, P4).** The bandwidth governor cut a fetch permit every 1.5 s tick
+  whenever system CPU was ≥ 92% — and the collector is CPU-bound in pure Python, so a
+  perfectly healthy pass on a small box produces exactly that reading BY ITSELF. Measured:
+  50 permits to 1 in 73 seconds, for doing its job well, freeing nothing, because the CPU
+  it "gave back" was its own. The module's own comment already said CPU saturation "costs
+  throughput, not the machine"; nobody noticed the response to it still cost throughput.
+  **GENERAL FORM: when a self-protective control reads a whole-machine gauge, ask what
+  that gauge reads while the thing it governs is working normally. If the answer is
+  "saturated", the control is wired to fight itself.** The reading that separated the
+  cases — `cpu_proc_pct` — was already sampled, already written to the perf log, and
+  consulted by no decision at all: the fix was a comparison, not an instrument. Watch the
+  scale when making it: `psutil.cpu_percent()` is normalised 0-100 across the machine
+  while `Process.cpu_percent()` SUMS across cores, so 380% of 4 cores is 95% of the box,
+  and conflating them inverts the answer.
+
+- **A SELF-TUNING MECHANISM THAT PERSISTS ITS WORST OBSERVATION NEEDS A RECOVERY PATH IT
+  CAN ACTUALLY REACH (2026-09-10, P4b).** `capacity.py` records the worker floor a machine
+  reached under memory pressure and uses it as the next pass's seed AND ramp ceiling,
+  across restarts. Its relax branch needed a pass below a pressure share — but `mem_low`
+  is a WHOLE-MACHINE reading (available memory under a fixed 512 MB), so on a box also
+  running a local model every pass qualified as pressured, the floor walked to 1,
+  `min(current, floor)` re-pinned it, and the quiet pass could never arrive. Result:
+  1.91 → 0.45 articles/s, no code change, no visible cause, surviving restarts.
+  **GENERAL FORM: the recovery half of a learned limit is the load-bearing half, and it
+  must be driven by something the mechanism itself can influence. A limit learned from a
+  condition the subject cannot change is not a measurement of the subject — it is a
+  permanent sentence.** The fix that worked was narrow and checkable ("a ceiling of 1
+  cannot survive two passes") rather than a claim of full recovery, because nothing had
+  shown more workers were safe. And it was only safe because a DIFFERENT mechanism
+  (`memguard`, which pauses collection outright) is what actually protects the machine —
+  worth confirming before relaxing anything, since the tempting alternative is to raise
+  the threshold, which is regressing a safety number the measurement says works.
+
+- **WRITING THE RELAXED CASE THROUGH THE EXISTING BRANCH ALSO INHERITS ITS LABEL
+  (2026-09-10).** Routing the new "pressure the worker count did not cause" case into the
+  existing relax branch was right for the arithmetic and wrong for the record: that branch
+  stamps `reason: "a pass with no memory pressure"`, which is a false statement in the very
+  file an operator opens to find out why their collector is slow. **GENERAL FORM: when you
+  reuse a branch for a second cause, check what it WRITES as well as what it computes.
+  Shared code paths quietly share their explanations, and a stored reason is read long
+  after the arithmetic stops mattering.**
+
+- **A PAYLOAD NOBODY DRAWS IS THE SAME DEAD END AS A FEATURE NOBODY CAN REACH
+  (2026-09-10, P5).** Both concurrency caps were correct, measured, and exposed —
+  `state_report` inside the diagnostics report payload, the machine-floor cap into a log
+  line. Neither reached the task manager, which is where an operator watches collection.
+  So a pass running one worker of a configured fifty was, from the only window anyone
+  looks at, indistinguishable from "the app got slow". **GENERAL FORM: "the number is
+  available" and "the number is where the question is asked" are different claims. When
+  shipping a diagnostic, name the surface the question actually gets asked on — a
+  diagnostics export is where you look once you already suspect something.**
+
+- **"ABSENT" AND "MEASURED ZERO" ARE ONE CHARACTER APART IN SOURCE AND OPPOSITE ON SCREEN
+  (2026-09-10, P5).** The permit count must not draw when no pass is in flight (0 workers
+  and no pass are different facts, and a "0" there is a number where there is no
+  measurement) but MUST draw when a running pass really is at zero. The whole distinction
+  lives in `pg.permits != null` versus a truthiness test, and no source-level assertion
+  can tell the two apart — both are "the function mentions permits". **GENERAL FORM: any
+  honesty rule of the shape "absent means absent" needs a test that EXECUTES the renderer
+  with both inputs; grep-level guards pass on the mutant.** Six mutants, six dead, and the
+  measured-zero case is the one that would otherwise have been fixed into a bug.
+
+- **A NODE HARNESS PROVES THE HTML AND CANNOT SEE THE PAGE (2026-09-10, P5).** The
+  Workers panel passed 7 mutation-killed behavioural checks on its rendered HTML, and the
+  first real click-through showed the reason truncated to *"this machine backed o…"*
+  running off the panel edge — because `.vitals-pop .vr b` clamps a row's VALUE to 160px
+  with an ellipsis. That is correct for a figure and destroys a sentence, and it silently
+  destroyed the one thing the whole section exists to let an operator read. The HTML the
+  tests asserted on was right the entire time. **GENERAL FORM: a DOM-level test verifies
+  what you built; only a rendered page verifies what is legible. When a slice's value is
+  that someone can READ something, the click-through is part of the slice, not a follow-up
+  — and "browser-unverified, a click-through is owed" is a debt that hides exactly this
+  class of defect.** The corollary is the cheerful one: the click-through also let the
+  ×12 claim be verified by switching the locale live, instead of asserted from the fact
+  that the keys exist.
+
+- **PUTTING PROSE WHERE A FIGURE GOES INHERITS THE FIGURE'S TRUNCATION (2026-09-10).**
+  The row helper was built for `label → number`, so its value slot is `max-width:160px;
+  white-space:nowrap; text-overflow:ellipsis`. Reusing it for a sentence looked natural in
+  source and was wrong on screen. **GENERAL FORM: before reusing a layout helper, read its
+  CSS, not just its signature — a helper named `row` encodes assumptions about what its
+  value IS, and prose and figures want opposite treatments.**
+
+- **THE BACKEND'S OWN `method`/`reason` STRINGS ARE ENGLISH, AND A HOVER IS A CAVEAT
+  SURFACE (2026-09-10).** The first cut piped `capacity.state_report()`'s `method` and the
+  machine floor's `reason` straight into `title=`, which renders untranslated English to
+  every non-English operator — and this project's informed-consent non-negotiable puts
+  every caveat in 12 locales. `renderMachineFloor` had already set the right precedent for
+  the very same payload: translate the prose, keep only the measured NUMBERS and literal
+  tokens (an env var to type) from the backend. **GENERAL FORM: a payload field named
+  `method`, `reason` or `caveat` is documentation for a reader, so it is prose, so it is
+  subject to i18n. Passing it through to the UI is the easy path and the wrong one; the
+  mutant that puts it back belongs in the matrix.**
 - **ON A `merge=union` FILE, REPLAYING A COMMIT THAT EDITS A LINE YOU ADDED EARLIER KEEPS BOTH
   VERSIONS — a rebase turns the sweep of a placeholder into a duplicate row (2026-09-10, the
   planning row in `shipped.csv`).** The recorded 2026-09-07 twin is about two BRANCHES each

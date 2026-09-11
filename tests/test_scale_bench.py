@@ -17,8 +17,9 @@ the shared data dir.
 
 from __future__ import annotations
 
+import ast
 import inspect
-import re
+import textwrap
 
 import pytest
 
@@ -197,22 +198,74 @@ def test_run_full_missing_corpus_raises(tmp_path):
 # --------------------------------------------------------------------------- #
 # drift guard -- the unlock sequence stays in lock-step with the real init_db
 # --------------------------------------------------------------------------- #
+def _called_ensure_names(fn) -> set[str]:
+    """The ``ensure_*`` self-heals this function actually CALLS.
+
+    It used to be a regex over ``inspect.getsource``, which cannot tell a CALL from
+    an IMPORT -- and BOTH functions compared here import their self-heals LOCALLY,
+    so a name imported and never called satisfied the guard while the bench quietly
+    skipped that self-heal's cost. Measured 2026-09-10, three mutants: removing only
+    the CALL left the old guard green (ruff's unused-import rule caught that one,
+    knowing nothing about unlock cost); removing only the IMPORT left it green too;
+    only a name absent from the source ENTIRELY was caught -- which is the single
+    case it detected, and happens to be the omission that exposed this.
+
+    Reading CALLS on BOTH sides keeps the comparison symmetric: the question is
+    "does the bench run every self-heal init_db runs", so an import on either side
+    is noise, not evidence.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        # a bare `ensure_x(engine)` and a qualified `mod.ensure_x(engine)` both count
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+        if name and name.startswith("ensure_"):
+            names.add(name)
+    return names
+
+
 def test_unlock_sequence_covers_every_init_db_self_heal():
     """If init_db gains a new ensure_* self-heal, the bench must run it too, or the
     cold-unlock measurement understates the real unlock cost. This composes the two
     sources rather than asserting a hand-copied list."""
     from src.database.session import init_db
 
-    ensure_re = re.compile(r"\bensure_[a-z_]+\b")
-    init_names = set(ensure_re.findall(inspect.getsource(init_db)))
-    bench_names = set(ensure_re.findall(inspect.getsource(sb._run_init_sequence)))
+    init_names = _called_ensure_names(init_db)
+    bench_names = _called_ensure_names(sb._run_init_sequence)
 
     # Every self-heal init_db runs is also run by the bench (bench may run more,
     # e.g. optimize_at_boot, which is not an ensure_*).
     missing = init_names - bench_names
     assert missing == set(), f"bench unlock sequence is missing init_db self-heals: {missing}"
-    # Sanity: the sequence is non-trivial (guards against both regexes matching {}).
+    # Sanity: the sequence is non-trivial (guards against both sides parsing to {}).
     assert "ensure_hot_indexes" in bench_names
+    assert "ensure_hot_indexes" in init_names
+
+
+def _fixture_imports_two_self_heals_and_calls_one(engine):
+    """Fixture for the guard's own guard. The unused import is the WHOLE POINT --
+    it is exactly the shape that used to satisfy the drift check."""
+    from src.database.maintenance import (  # noqa: F401
+        ensure_article_ip_columns,
+        ensure_hot_indexes,
+    )
+
+    ensure_hot_indexes(engine)
+
+
+def test_the_drift_guard_sees_a_CALL_and_not_merely_an_IMPORT():
+    """The defect the guard was carrying, pinned so it cannot come back: a self-heal
+    that is imported and never called must NOT count as run. Exercises the real
+    helper on a real function, rather than restating its logic -- a test that
+    re-implements the thing it checks passes for both versions of it."""
+    seen = _called_ensure_names(_fixture_imports_two_self_heals_and_calls_one)
+    assert seen == {"ensure_hot_indexes"}, (
+        "an imported-but-uncalled self-heal is counted as run -- that is the exact "
+        f"blindness this helper replaced (saw {sorted(seen)})"
+    )
 
 
 def test_plaintext_report_carries_the_loud_acceptance_caveat(tmp_path):

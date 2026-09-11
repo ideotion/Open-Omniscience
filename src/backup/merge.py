@@ -2288,6 +2288,15 @@ _ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # is exactly what the column claims -- "the revision this stored text came from" --
     # never "when this instance fetched it".
     ("source_revision", ("source_revision",)),
+    # THE NEWSLETTER List-Id. Adoptable on the same argument as the version anchor, and
+    # here the argument is even tighter: a duplicate matches on HASH, so the incoming
+    # row is the SAME message body, and a List-Id is a property of the message that
+    # produced it -- not of the machine that read it. A local NULL means "carried no
+    # List-Id, or imported before the column existed", so filling it is pure
+    # information gain and can never overwrite a local recording. Unrecoverable any
+    # other way: the header lives in a .eml this app does not keep, so an instance that
+    # lost it cannot re-derive it from anything it stored.
+    ("newsletter_list_id", ("newsletter_list_id",)),
 )
 
 #: Every other Article column, and why it is NOT adoptable. This exists because the
@@ -2503,7 +2512,7 @@ def _merge_articles(con, batch_id, results) -> None:
         # so a re-fetch reads a LATER revision and can never rebuild which one this
         # body is, and the recorded 2026-08-03 lesson is exactly that a dropped column
         # arrives as a plausible NULL nothing reports.
-        " source_revision)"
+        " source_revision, newsletter_list_id)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
@@ -2511,7 +2520,7 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.detected_language, i.server_ip, i.ip_observed_at, i.server_ip_reason,"
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
-        " i.source_revision"
+        " i.source_revision, i.newsletter_list_id"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"
         + _WINDOW_MARK,
