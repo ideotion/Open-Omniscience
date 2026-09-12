@@ -291,3 +291,73 @@ def test_the_download_is_a_dated_plain_text_attachment():
     cd = r.headers.get("content-disposition") or ""
     assert cd.startswith("attachment;") and cd.endswith('.txt"')
     assert r.body.startswith(b"# Open Omniscience")
+
+
+# --------------------------------------------------------------------------- #
+#  C2 (field diagnostics 2026-09-11): pre-restore snapshots are accounted for
+# --------------------------------------------------------------------------- #
+
+
+def test_pre_restore_snapshots_are_itemised_and_never_called_orphans(tmp_path, monkeypatch):
+    """The export said "orphaned backup/restore staging: none found" and then listed two
+    25.8 GB `pre-restore-*.db` files -- 51.6 GB of an 80.8 GB folder, silently folded
+    into `other_bytes`.
+
+    The scanner was RIGHT not to call them orphans (they are a retained safety net with a
+    real keep-3 / 168h policy behind them, and inviting an operator to delete a working
+    safety net would be dishonest in the other direction) and WRONG to say nothing."""
+    from src.monitoring import forensics
+
+    monkeypatch.setattr(forensics, "data_dir", lambda: tmp_path)
+    (tmp_path / "open_omniscience.db").write_bytes(b"x" * 1000)
+    (tmp_path / "pre-restore-20260906T065744Z.db").write_bytes(b"y" * 500)
+    (tmp_path / "pre-restore-20260906T222535Z.db").write_bytes(b"z" * 400)
+    (tmp_path / "something-else.bin").write_bytes(b"w" * 50)
+
+    inv = forensics.data_dir_inventory()
+    tot = inv["totals"]
+
+    # Itemised, newest first, with the timestamp the file carries in its own name.
+    snaps = inv["pre_restore_snapshots"]
+    assert [s["name"] for s in snaps] == [
+        "pre-restore-20260906T222535Z.db",
+        "pre-restore-20260906T065744Z.db",
+    ]
+    assert snaps[0]["taken_at"] == "20260906T222535Z"
+
+    # Counted in their OWN total...
+    assert tot["pre_restore_snapshot_bytes"] == 900
+    # ...never as orphaned staging (they are retained on purpose)...
+    assert tot["orphaned_staging_bytes"] == 0
+    assert inv["suspect_staging"] == []
+    # ...and never left in the everything-else bucket, which is what hid 51.6 GB.
+    assert tot["other_bytes"] == 50
+
+    # The totals still reconcile exactly -- no double-counting, no gap.
+    assert (
+        tot["db_bytes"] + tot["wal_bytes"] + tot["shm_bytes"]
+        + tot["orphaned_staging_bytes"] + tot["pre_restore_snapshot_bytes"]
+        + tot["other_bytes"]
+    ) == tot["total_bytes"]
+
+    # The policy is stated, and it points AWAY from deleting them.
+    policy = inv["pre_restore_policy"]
+    assert "RETAINED ON PURPOSE" in policy and "never to suggest deleting them" in policy
+
+
+def test_a_real_orphan_is_still_reported_as_one(tmp_path, monkeypatch):
+    """The other half: naming pre-restore snapshots separately must not blunt the actual
+    orphan finding, which is an at-rest-encryption issue rather than a housekeeping one."""
+    from src.monitoring import forensics
+
+    monkeypatch.setattr(forensics, "data_dir", lambda: tmp_path)
+    stale = tmp_path / ".restore-abc123"
+    stale.mkdir()
+    (stale / "corpus.db").write_bytes(b"q" * 300)
+    (tmp_path / "pre-restore-20260906T065744Z.db").write_bytes(b"y" * 500)
+
+    inv = forensics.data_dir_inventory()
+    assert inv["totals"]["orphaned_staging_bytes"] == 300
+    assert len(inv["suspect_staging"]) == 1
+    assert inv["suspect_staging"][0]["plaintext_snapshot"] is True
+    assert inv["totals"]["pre_restore_snapshot_bytes"] == 500
