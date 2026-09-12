@@ -57,6 +57,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from src.config.memory_budget import nominal_ram_mb
+
 # The floor, both halves. A machine is below it on EITHER count.
 MIN_TOTAL_MB = 4096.0
 """Total RAM under 4 GB — machine A (3,924 MiB) sits here."""
@@ -119,13 +121,30 @@ def machine_floor(
             "so the floor was not applied — an unmeasured machine is never refused"
         )
     else:
-        low_total = total is not None and total < MIN_TOTAL_MB
+        # TOTAL is compared on the machine's NOMINAL size, not its raw MemTotal
+        # (field diagnostics 2026-09-11, D1): this floor carries the identical 4,096 MiB
+        # boundary `memory_budget` does, and a 4 GB Qubes VM reading 4,093.8 MiB was
+        # declared "under the 4096 MB floor" by 2.2 MiB. `nominal_ram_mb` only ever
+        # recognises a reading as the whole GiB it is JUST below (3% -- the field's
+        # machine A at 3,924 MiB is genuinely a 3.83 GiB box and stays below), so this
+        # never hands the floor to a machine that is actually smaller.
+        #
+        # AVAILABLE is deliberately NOT adjusted. It is a live reading of free memory,
+        # not a provisioned size -- there is no nominal "1 GB available" a machine was
+        # built with, so rounding it toward a boundary would invent headroom.
+        nominal_total = nominal_ram_mb(total)
+        low_total = nominal_total is not None and nominal_total < MIN_TOTAL_MB
         low_avail = avail is not None and avail < MIN_AVAILABLE_MB
         below = bool(low_total or low_avail)
         # The three numbers the reason must carry: what this machine has, what is
         # free on it right now, and the floor it is being judged against.
+        nominal_note = ""
+        if total is not None and nominal_total is not None and abs(nominal_total - total) >= 0.05:
+            nominal_note = f" (a nominal {nominal_total:,.0f} MB machine)"
         shape = (
-            f"{total:.0f} MB of RAM" if total is not None else "an unreadable RAM total",
+            f"{total:.0f} MB of RAM{nominal_note}"
+            if total is not None
+            else "an unreadable RAM total",
             f"{avail:.0f} MB available" if avail is not None else "an unreadable available reading",
         )
         if below:

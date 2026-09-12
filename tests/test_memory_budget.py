@@ -427,3 +427,80 @@ def test_the_block_is_actually_wired_into_the_written_summary(monkeypatch):
     assert summary is not None
     assert summary["db_memory"]["page_cache_ceiling_mb"] == mb.worker_cache_ceiling_mb(12)
     assert written and written[0]["db_memory"] == summary["db_memory"]
+
+
+# --------------------------------------------------------------------------- #
+# D1 (field diagnostics 2026-09-11): the tier boundary had no tolerance
+# --------------------------------------------------------------------------- #
+
+
+def test_nominal_ram_recognises_a_whole_gib_a_reading_sits_just_below():
+    """A 4 GB Qubes VM measured `mem_total_mb 4093.8` and was classified sub-4 GB BY
+    2.2 MiB. No machine provisioned at N GB reports N x 1024 MiB -- firmware, the kernel
+    and (on a VM) the hypervisor take their cut before MemTotal."""
+    from src.config import memory_budget as mb
+
+    assert mb.nominal_ram_mb(4093.8) == 4096.0
+    assert mb.nominal_ram_mb(4096) == 4096.0
+    assert mb.nominal_ram_mb(7950) == 8192.0     # a nominal 8 GB box
+    assert mb.nominal_ram_mb(16000) == 16384.0   # a nominal 16 GB box
+
+
+def test_nominal_ram_never_rounds_a_genuinely_smaller_machine_up():
+    """The half that makes the tolerance safe, and the reason it is NOT round-to-nearest.
+
+    Round-to-nearest would promote a real 3.5 GB machine (3,584 MiB) into the 4 GB tier
+    and hand it memory it does not have -- the same error in the more dangerous
+    direction. Only a reading JUST BELOW a whole GiB is recognised as that size."""
+    from src.config import memory_budget as mb
+
+    assert mb.nominal_ram_mb(3584) == 3584       # a genuine 3.5 GB machine
+    assert mb.nominal_ram_mb(3296) == 3296       # field machine C
+    assert mb.nominal_ram_mb(3924) == 3924       # field machine A -- a 3.83 GiB box
+    assert mb.nominal_ram_mb(7880) == 7880       # genuinely under 8 GiB
+    assert mb.nominal_ram_mb(None) is None       # unmeasurable stays unmeasurable
+
+
+def test_the_bundle_machine_lands_in_the_medium_tier_and_says_which_size_it_inferred():
+    """The end-to-end case, and the honesty half: the reason must quote BOTH the raw
+    reading and the nominal size it was decided on -- they are different facts."""
+    from src.config import memory_budget as mb
+
+    got = mb.resolve_for(4093.8)
+    assert got["tier"] == "medium"
+    assert got["total_ram_mb"] == 4093.8          # the raw reading survives, unrounded
+    assert got["nominal_ram_mb"] == 4096.0
+    assert "4,094 MiB" in got["reason"]           # what was measured
+    assert "nominal 4,096 MiB" in got["reason"]   # what it was judged as
+    # ...and a machine that IS its own nominal carries no note to explain.
+    assert "nominal" not in mb.resolve_for(3296)["reason"]
+
+
+def test_the_smaller_field_machines_are_unmoved_by_the_tolerance():
+    """The tolerance must not quietly re-tier the machines the small tier exists for."""
+    from src.config import memory_budget as mb
+
+    for total in (3296, 3924, 2048):
+        got = mb.resolve_for(total)
+        assert got["tier"] == "small", f"{total} MiB should still be the small tier"
+        assert got["db_pool_size"] == 6 and got["db_max_overflow"] == 2
+
+
+def test_machine_floor_shares_the_same_tolerance():
+    """machine_floor carries the IDENTICAL 4,096 MB boundary. One of the two left
+    unfixed would be the same defect surviving in the path the fix did not touch."""
+    from src.config.machine_floor import machine_floor
+
+    tight = machine_floor(total_mb=4093.8, available_mb=2048, override=False)
+    assert tight["below"] is False
+    assert "nominal 4,096 MB" in tight["reason"]
+
+    # A genuinely smaller machine is still below, and says so plainly.
+    small = machine_floor(total_mb=3924, available_mb=2048, override=False)
+    assert small["below"] is True
+    assert "nominal" not in small["reason"]
+
+    # AVAILABLE is a live reading, not a provisioned size: it is never rounded toward
+    # the boundary, because that would invent headroom the machine does not have.
+    starved = machine_floor(total_mb=8192, available_mb=1020, override=False)
+    assert starved["below"] is True
