@@ -9301,3 +9301,21 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   would otherwise be re-imported by the next session from the same message. SIBLING TRAP from the same
   hour: `grep pyproj pyproject.toml requirements.lock` matches the word "pyproject" on every line — a
   dependency scan that reports a library present must show the matching line, not the count.
+- **A SCALE CLAIM INHERITS THE FETCH GRANULARITY IT SILENTLY ASSUMED — CHECK THE API'S BATCH LIMIT
+  BEFORE QUOTING A DURATION; AND WHEN THE ANSWERS WILL ARRIVE AFTER A COMPACTION, MAKE THE QUESTION
+  FILE PROCESS ITSELF (2026-09-12, the answer sheet):** the intake document told the maintainer that
+  a whole-edition Wikipedia baseline through the API is "months per edition" and "a load pattern the
+  API policy discourages" — arithmetic done at one page per request. The Action API returns the
+  latest revision of up to 50 titles per request (search-verified the same day), so the twelve
+  editions' ~24 M articles are ~480 k serial requests, about a week per pass, and the honest
+  constraint is disk. A 50× error in a number that shaped a ⛔ question (whether to accept "no
+  dumps") — caught only because the follow-up sheet forced the arithmetic to be redone with the
+  batch limit in hand. RULE: before a duration or a request count enters a plan, name the
+  per-request unit (titles, rows, bytes) and cite where the limit was read; a figure with no unit
+  attached is a guess wearing a number. SECOND HALF, from the same file: the maintainer said the
+  returning session's "memory will become quite untrustworthy". The sheet therefore carries its own
+  processing protocol (§0.2): parse the ANSWER lines mechanically, treat a blank on a ⛔ question as
+  pending and every other blank as a labelled ASSUMPTION, list contradictions instead of resolving
+  them, and record the answered file itself as the primary record. A question round that will be
+  answered across a compaction is a message to a stranger — write the instructions for the stranger
+  into the artifact, not into the chat.

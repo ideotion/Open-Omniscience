@@ -21,6 +21,50 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **ROADMAP ANSWER SHEET 2026-09-12 — THE SECOND MESSAGE'S RULINGS + 278 QUESTIONS ANSWERABLE IN
+  PLACE (maintainer message 2 of 2026-09-12; PLANS ONLY, nothing built; draft PR #1131; the sheet =
+  [`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
+  which SUPERSEDES §6 of the intake document — its Q1–Q70 are folded in under new IDs, each cited as
+  "was Qn"):** RULINGS RECEIVED in the second message, recorded as R15–R19 of the sheet's §1: (R15)
+  **law eligibility = written, or formally translated, into any of the 12 UI languages** (ar bn de
+  en es fr hi id ja pt ru zh), from as many countries as possible; (R16) **the OSM content that
+  matters is the METADATA attached to places** — name, opening hours, website, contact, email — and
+  **tracking global trends and changes in those metadata types is the feature "never seen anywhere
+  before"**; street names are secondary; (R17) **every address and GPS datum found on Wikipedia, and
+  in any other indexed content, is linked onto the map**; (R18) **0.9 as beta accepted in
+  principle** ("could be"; the original intent was v1 = Beta 1) — the final shape is the sheet's
+  Q101 ⛔; (R19) **the answer-sheet process**: one extensive markdown, answered in place (a letter
+  after `ANSWER Qnnn:` or at the start of the heading line), returned into a compressed session;
+  everything decided now counts and is never restated. THE SHEET: 278 questions in themed ID blocks
+  (100s train · 200s import/export · 300s alpha-3 · 400s keyword translation · 500s cross-language
+  search · 600s advanced search · 700s Wikipedia · 800s maps/OSM · 900s laws · 1000s cross-cutting ·
+  1100s the standing docket · 1200s process), each with the verified context, options carrying a
+  one-line impact (effort / risk / what it unlocks), a default-if-blank, and an ANSWER line; 15 ⛔
+  (never defaulted), 8 🔒. Its §0.2 is a PROCESSING PROTOCOL for the returning session (parse the
+  ANSWER lines mechanically; a blank ⛔ stays pending, any other blank is a labelled ASSUMPTION; list
+  contradictions rather than resolve them; record the answered file as the primary record + ONE
+  indexing entry here + `CLAUDE.md` amendments only where a question is marked `Amends:`; then write
+  the gate files 0.4–0.9 and the slice briefs FROM THE ANSWERS). IT FOLDS IN EVERY STILL-OPEN DOCKET
+  RULING so that one answered file closes the queue: the 2026-09-06 register (B1, B11, C1, C2, C4,
+  F1, M2 ⛔; B2–B7, D3, D6, D8–D10, E3, E4, G4, G5, G7–G9, G11, H2/L2, H4, I1, I3/I4, J1, J3, L4, L7,
+  L9, L10, M3–M5, A4), the 2026-09-08 visual audit (Q-VIS-1..7), the 2026-09-11 institutions docket
+  (B1–B5, C3, C7–C9, D2, D3), the storage round-2 rows 3–6, the 2026-09-10 Crawl-delay ruling, and
+  invariant #20's bandwidth-cap omission. ONE CORRECTION TO THE INTAKE DOCUMENT, recorded there too:
+  §3.6 said a whole-edition API baseline is "months per edition"; with the Action API's
+  50-titles-per-request batching (SEARCH-VERIFIED this session) the ~24 M articles of the twelve
+  editions are ~480 k requests ≈ 5.6 days serial at 1 req/s — the never-edited tail is reachable in
+  about a week per pass on clearnet, so the constraint is disk, not the API (the sheet's Q701 offers
+  the walk as the recommended option). NEW SEARCH-VERIFIED FACTS carried in the sheet: edition sizes
+  (en 7.24 M … bn 0.19 M; ≈ 24 M in total), EventStreams replay bounded (Kafka, `Last-Event-ID`, up
+  to 31 days), Geofabrik public extracts strip user/uid/changeset since 2018-05-03, OSM replication
+  diffs kept ~3 months, `opening_hours` on ~5.3 M objects, the ohsome API public, LEGI/KALI/JORF
+  free under Licence Ouverte, Japan's e-Gov Law API keyless XML under the Government Standard Terms,
+  legislation.gov.uk OGL with bulk use welcomed, EUR-Lex's "acts in force" bulk dump behind an EU
+  Login (the sheet asks whether that counts as key-gated under V1-2), EuroVoc in 24 languages. STILL
+  FROM MEMORY (proj.org and Geofabrik's technical page egress-blocked): the Equal Earth
+  coefficients, whether Geofabrik keeps `version`/`timestamp`, per-edition edit rates. PENDING:
+  every question in the sheet until the maintainer returns it; the processing session records the
+  answers HERE in the same turn, per rule (2).
 - **ROADMAP INTAKE 2026-09-12 — EIGHT FIELD IMPRESSIONS + THE ALPHA TRAIN TO BETA (maintainer
   message 2026-09-12: "We're only making plans, I'd like a robust, detailed roadmap towards the beta
   release, with all detailed plans and stages for all remaining alpha releases"; INTAKE + PLAN ONLY,

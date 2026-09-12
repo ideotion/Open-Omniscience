@@ -404,6 +404,13 @@ says how far it has got (Q39 asks the maintainer to confirm this trade knowingly
 bandwidth over Tor, disk, or staleness — because a one-time dump baseline for the 12 editions remains the
 cheapest route to the tail if the objection is only staleness).
 
+**CORRECTED 2026-09-12 (the answer sheet, §8):** the "months per edition" above assumed one page per
+request. The Action API returns the latest revision of up to **50 titles per request** (SEARCH-VERIFIED 2026-09-12),
+so the ~24 M articles of the twelve editions are ~480,000 serial requests ≈ **5.6 days at one request per second**
+on clearnet, moving 150–250 GB of wikitext (FROM MEMORY). The never-edited tail is reachable in about a week per
+pass; the constraint is disk, not the API. Q39 is superseded by the sheet's Q701, which offers the background walk as
+the recommended option.
+
 **Proposal — the living-Wikipedia architecture (stream-forward, tiered, budgeted).**
 1. *Identity.* `WikiPage` keyed `(wiki, pageid)` with `qid`; the Article carries `wiki_pageid`, `qid`,
    `source_revision` (exists), `source_type="wikipedia"`, categories, page length, revision count,
@@ -748,6 +755,10 @@ Each release below lists: theme · contents (S = slice) · entry gate · exit ga
 ---
 
 ## 6. Questions for the maintainer
+
+> **SUPERSEDED 2026-09-12 by [`ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md).**
+> Every question below is folded into the sheet under a new ID (cited there as "was Qn") with its options,
+> impacts and a default; answer the sheet, not this list. Kept for the record.
 
 Answer by number and letter ("Q13: a"). Each question carries the recommended default the executing
 session would take under the 2026-06-15 autonomy ruling **unless marked ⛔** (irreversible, outward-facing
