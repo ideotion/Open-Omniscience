@@ -237,6 +237,98 @@ def _keyword_zip_families_cap() -> int:
         return 1000
 
 
+def _quantiles(values: list[int]) -> dict:
+    """Min / p25 / median / p75 / p95 / max over an ALREADY-SORTED list, plus n and sum.
+
+    Nearest-rank, no interpolation: these are counts of real things, and an interpolated
+    "2.5 mentions" would be a number no keyword has. Empty input reports nulls with n=0
+    rather than zeros -- "no families" and "families that all scored 0" are different
+    facts (the same rule finding C5 is about).
+    """
+    n = len(values)
+    if not n:
+        return {"n": 0, "sum": 0, "min": None, "p25": None,
+                "median": None, "p75": None, "p95": None, "max": None}
+
+    def at(frac: float) -> int:
+        return values[min(n - 1, max(0, int(round(frac * (n - 1)))))]
+
+    return {
+        "n": n,
+        "sum": sum(values),
+        "min": values[0],
+        "p25": at(0.25),
+        "median": at(0.50),
+        "p75": at(0.75),
+        "p95": at(0.95),
+        "max": values[-1],
+    }
+
+
+def _families_summary(families: list[dict]) -> dict:
+    """Facts about EVERY family, so capping the printed list costs no aggregate answer.
+
+    The maintainer's objection to the 2026-09-11 families cap was that capping biases
+    future diagnostics, and it was correct: a global top-N by mentions is the same
+    mentions-ranked cut this file already records as having "structurally anglicised the
+    export", and it hides `conflated_by` (a possible bad merge) preferentially, because a
+    wrong merge is likelier among rare terms than famous ones.
+
+    This is the answer to that: the printed list shrinks, the RECORD does not. Everything
+    here is computed over the full list before any cap is applied, so "how long is the
+    tail", "what is the mention distribution", "how many families are of kind X" and
+    "which families did the lemma merge join" all stay answerable from the digest alone.
+    """
+    mentions = sorted(int(f.get("mentions") or 0) for f in families)
+    variants = sorted(int(f.get("variants") or 0) for f in families)
+    by_kind: dict[str, int] = {}
+    conflated: list[dict] = []
+    manual = 0
+    for f in families:
+        by_kind[str(f.get("kind") or "unknown")] = by_kind.get(str(f.get("kind") or "unknown"), 0) + 1
+        if f.get("manual"):
+            manual += 1
+        if f.get("conflated_by"):
+            conflated.append(
+                {
+                    "term": f.get("term"),
+                    "normalized": f.get("normalized"),
+                    "kind": f.get("kind"),
+                    "mentions": f.get("mentions"),
+                    "variants": f.get("variants"),
+                    "conflated_by": f.get("conflated_by"),
+                }
+            )
+    # Rarest first: the whole point is that the tail is where a bad merge hides, so the
+    # ordering must not re-create the popularity bias this block exists to remove.
+    conflated.sort(key=lambda c: (int(c.get("mentions") or 0), str(c.get("normalized") or "")))
+    return {
+        "total_families": len(families),
+        "by_kind": dict(sorted(by_kind.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "manual_overrides": manual,
+        "mentions": _quantiles(mentions),
+        "variants": _quantiles(variants),
+        "single_member_families": sum(1 for v in variants if v <= 1),
+        # SELECTED ON THE SIGNAL, NEVER ON RANK: a conflated family is a possible bad
+        # merge, so every one is listed however rare it is. Ordered rarest-first for the
+        # same reason.
+        "conflated": {
+            "count": len(conflated),
+            "families": conflated,
+            "method": (
+                "Every family carrying conflated_by (the lemma merge joined it), listed "
+                "in full and ordered rarest-first -- selected by the signal, never by "
+                "mentions, because a wrong merge is likelier among rare terms."
+            ),
+        },
+        "method": (
+            "Computed over ALL families before the print cap is applied, so the capped "
+            "`families` list costs no aggregate answer about the tail. Counts only; no "
+            "scores."
+        ),
+    }
+
+
 def _safe_lang_filename(lang: str) -> str:
     """A filesystem/zip-safe stem for a language code ('?' -> 'unknown')."""
     safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in (lang or ""))
@@ -831,7 +923,83 @@ def keyword_log(
                     json.dumps(_entry(s), separators=(",", ":")) for s in chunk
                 )
             yield "]"
-        yield ', "families": ' + json.dumps(families, separators=(",", ":"))
+        # Field diagnostics 2026-09-11 (B2): the DIGEST embedded the families dump in
+        # FULL, and that is where `keyword-log-digest.json` got its 73.2 MB -- 84x the
+        # next-largest archive member, ~96% of the whole bundle, and +3.4 GB of RSS on a
+        # 4,093.8 MB machine whose previous session had already ended unclean at peak
+        # 4158 MB. The cap this needed was already written, one path over:
+        # `_keyword_zip_families_cap` caps exactly this block for the ZIP path, and its
+        # own docstring records that the full 700k-family tail "was also why the byte cap
+        # never held" -- the same lesson, and the digest path had never been given it.
+        #
+        # Reused rather than re-invented: same helper, same env override, same
+        # sorted-by-mentions order, same honest omission record. A cap without the record
+        # beside it would be a silent truncation, which is the defect this batch is full
+        # of elsewhere.
+        #
+        # SCOPED TO `digest` ON PURPOSE: the non-digest single-file export is a contract
+        # ("byte-for-byte unchanged", asserted by its own test), so `families` itself is
+        # never mutated here -- only what this branch emits.
+        if digest:
+            # THE TAIL IS SUMMARISED, NOT SELECTED AWAY (maintainer's bias objection,
+            # 2026-09-11). The first version of this cap simply took the top N by
+            # mentions -- and that is a GLOBAL mentions-ranked cut, which is precisely
+            # the shape this same file records at line 54 as having "structurally
+            # anglicised the export", and which `method` (a few lines below) warns
+            # against in its own words: "a global cap would anglicise the export". The
+            # per-language keyword quota exists to avoid exactly that, and a global
+            # families cut on top of it hands the bias straight back.
+            #
+            # Worse, popularity is the wrong axis for the thing most worth finding here:
+            # `conflated_by` marks a family the lemma merge joined, i.e. a POSSIBLE
+            # MISTAKE, and a wrong merge is likelier among rare terms than famous ones.
+            # Ranking by mentions hides defects preferentially.
+            #
+            # So the cap no longer decides WHICH FACTS SURVIVE, only which rows are
+            # printed in full:
+            #   * every family is counted in `families_summary`, computed over ALL of
+            #     them -- totals, per-kind counts, and the mention/variant distributions
+            #     -- so no AGGREGATE question about the tail becomes unanswerable;
+            #   * every conflated family is listed, selected ON THE SIGNAL rather than on
+            #     popularity, so the defect-bearing subset is never rank-filtered;
+            #   * the popularity sample is still there for a human glance, and is now
+            #     LABELLED as unrepresentative instead of being left to look complete.
+            # The full per-family record remains one endpoint away, and that export is
+            # per-language fair by construction.
+            _fam_cap = _keyword_zip_families_cap()
+            _fam_shown = (
+                families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
+            )
+            yield ', "families": ' + json.dumps(_fam_shown, separators=(",", ":"))
+            yield ', "families_summary": ' + json.dumps(
+                _families_summary(families), separators=(",", ":")
+            )
+            yield ', "families_provenance": ' + json.dumps(
+                {
+                    "shown": len(_fam_shown),
+                    "total": len(families),
+                    "omitted": len(families) - len(_fam_shown),
+                    "sorted_by": "mentions (desc)",
+                    "sample_is_representative": False,
+                    "selection_bias": (
+                        "This list is the top families BY MENTIONS, which is a global "
+                        "mentions-ranked cut and therefore skews English and skews "
+                        "popular. Do NOT reason about the tail from it. Every family is "
+                        "still counted in families_summary, and every conflated family "
+                        "is listed there in full regardless of rank."
+                    ),
+                    "note": (
+                        "Only the top families are printed in full here (the complete "
+                        "per-family dump is large and is redundant with the per-language "
+                        "shards). Nothing is DROPPED: the tail is summarised in "
+                        "families_summary. Set OO_KEYWORD_LOG_FAMILIES=0 to print all, "
+                        "or use the full keyword export, which is per-language fair."
+                    ),
+                },
+                separators=(",", ":"),
+            )
+        else:
+            yield ', "families": ' + json.dumps(families, separators=(",", ":"))
         yield ', "overrides": ' + json.dumps(
             [{"normalized_term": term, **data} for term, data in sorted(overrides.items())],
             separators=(",", ":"),
@@ -3659,6 +3827,122 @@ def _member_bytes(value) -> bytes:
     return bytes(getattr(value, "body", b""))  # JSONResponse / Response
 
 
+# D5 (field diagnostics 2026-09-11, maintainer request): a PER-MEMBER byte cap, so no
+# single member can make the whole archive unsendable again. The manifest already
+# recorded `bytes` per member, so the builder always knew every size -- it just never
+# acted on one. 12 MB by default: comfortably above every healthy member measured in the
+# field (the largest after B2's cap is under 1 MB) while staying under the common 25 MB
+# attachment limit even if two members ran large at once. 0 disables the cap entirely.
+def _all_diag_member_max_bytes() -> int:
+    try:
+        mb = float(os.environ.get("OO_DIAG_MEMBER_MAX_MB", "12"))
+    except ValueError:
+        mb = 12.0
+    return 0 if mb <= 0 else int(mb * 1024 * 1024)
+
+
+# How much of a streamed member is held in RAM before it spills to disk. Deliberately far
+# below the cap: the point is that RAM stays bounded no matter how big the member gets.
+_MEMBER_SPOOL_MAX = 4 * 1024 * 1024
+
+
+def _write_member(zf, name: str, value) -> int:
+    """Write one archive member, STREAMING a streamed body instead of materialising it.
+
+    Field diagnostics 2026-09-11 (B2). The old path was
+    ``zf.writestr(name, _member_bytes(value))``, and on the 73.2 MB keyword-log digest
+    that held three copies of the member at once: the list of chunks ``_drain``
+    accumulates, the joined ``bytes`` it returns, and whatever ``writestr`` buffers --
+    on a machine with 4,093.8 MB of RAM, beside a member whose own construction had
+    already pushed RSS up by 3.4 GB. Capping that member (above) is the real fix; this
+    is the net beneath it, so the NEXT large member does not repeat the shape.
+
+    Returns the number of UNCOMPRESSED bytes written, which is what the manifest's
+    ``bytes`` field has always meant -- counted as they go past rather than by
+    measuring a buffer, so the figure stays honest without a buffer existing.
+    """
+    cap = _all_diag_member_max_bytes()
+
+    body_iter = getattr(value, "body_iterator", None)
+    if body_iter is None:
+        payload = _member_bytes(value)
+        if cap and len(payload) > cap:
+            return _write_member_omission(zf, name, len(payload), cap)
+        zf.writestr(name, payload)
+        return len(payload)
+
+    # A streamed response (the keyword log digest). This sync handler runs in a worker
+    # thread with no running loop, so a private loop is safe -- the same pattern
+    # ``_member_bytes`` itself uses, kept identical on purpose.
+    import asyncio
+    import shutil
+    import tempfile
+
+    # SPOOLED, not buffered: a member's final size is unknown until its last chunk, and
+    # the cap cannot be enforced by truncating mid-write -- half a JSON document is
+    # invalid, which is strictly worse than an honest omission. So it is spilled to a
+    # SpooledTemporaryFile, which keeps the common (small) member entirely in RAM and
+    # sends only a large one to disk. That bounds RAM at _MEMBER_SPOOL_MAX rather than at
+    # the member's size, which is the property B2 bought and this must not give back.
+    with tempfile.SpooledTemporaryFile(max_size=_MEMBER_SPOOL_MAX, suffix=".oodiag") as spool:
+        async def _pump() -> int:
+            total = 0
+            async for chunk in body_iter:
+                buf = chunk.encode("utf-8") if isinstance(chunk, str) else chunk
+                spool.write(buf)
+                total += len(buf)
+            return total
+
+        written = asyncio.run(_pump())
+        if cap and written > cap:
+            return _write_member_omission(zf, name, written, cap)
+        spool.seek(0)
+        # force_zip64: a member that grows past 4 GB must fail on its own terms rather
+        # than silently corrupt the archive.
+        with zf.open(name, "w", force_zip64=True) as fh:
+            shutil.copyfileobj(spool, fh, length=1024 * 1024)
+    return written
+
+
+def _write_member_omission(zf, name: str, actual: int, cap: int) -> int:
+    """Replace an over-cap member with a RECORD of what was omitted, and why.
+
+    Field diagnostics 2026-09-11 (D5, the generalising half). The maintainer could not
+    upload the bundle because ONE member reached 73.2 MB. B2 fixed that member; this
+    stops the NEXT one doing it again, whichever member it turns out to be.
+
+    THE OMISSION IS NEVER SILENT AND THE MEMBER IS NEVER TRUNCATED. A truncated JSON
+    document is invalid, so it would cost the operator the member AND the ability to tell
+    that anything was lost -- the exact silent-truncation failure several other findings
+    in this batch are about. What lands instead is a small JSON naming the member, its
+    real size, the cap that excluded it, the env var that raises the cap, and the fact
+    that the member's own endpoint still serves it in full. The manifest's ``bytes`` then
+    reports what was actually written, so the archive's own accounting stays true.
+    """
+    payload = json.dumps(
+        {
+            "omitted": True,
+            "member": name,
+            "bytes_uncompressed": actual,
+            "cap_bytes": cap,
+            "reason": (
+                f"this member is {actual:,} bytes, over the {cap:,}-byte per-member cap "
+                "for the diagnostics archive, so it was left out rather than truncated "
+                "(a truncated JSON member would be invalid and would hide its own loss)"
+            ),
+            "how_to_get_it": (
+                "raise or disable the cap with OO_DIAG_MEMBER_MAX_MB (0 disables it), or "
+                "call this member's own endpoint directly -- the archive is a convenience "
+                "bundle of endpoints that each still serve their full output"
+            ),
+        },
+        ensure_ascii=False,
+        indent=2,
+    ).encode("utf-8")
+    zf.writestr(name + ".omitted.json", payload)
+    return len(payload)
+
+
 def _fixity_bundle_member(db: Session) -> dict:
     """The BOUNDED fixity-audit bundle member (transversal audit 09, C2). Calls the
     real ``GET /api/integrity/fixity`` endpoint function directly (its own
@@ -4658,9 +4942,11 @@ def _write_all_diagnostics_zip(
                     if value is _ALL_DIAG_DEADLINE_SENTINEL:
                         outcome = "skipped-deadline"
                 if outcome in ("ok", "partial-deadline"):
-                    payload = _member_bytes(value)
-                    zf.writestr(name, payload)
-                    nbytes = len(payload)
+                    # Streamed straight into the archive rather than materialised
+                    # (field diagnostics 2026-09-11, B2 second half) -- see
+                    # _write_member for why the old `writestr(_member_bytes(...))`
+                    # cost three copies of the largest member.
+                    nbytes = _write_member(zf, name, value)
                 else:
                     marker = (
                         f"member exceeded its {_all_diag_nondb_member_deadline_s():.0f}s "
