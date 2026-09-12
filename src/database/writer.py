@@ -46,7 +46,25 @@ How it is wired (zero call-site churn for ORM writes):
   collided with a long-held writer under the parallel collector → 149+
   ``database is locked`` failures, dropping keyword/link/who indexing). The
   ``do_orm_execute`` listener closes that hole: it acquires the gate for any
-  ORM-issued DML write too, so EVERY write — flush or bulk — serialises.
+  ORM-issued DML write too, so both the unit of work and ORM-issued DML serialise.
+
+  THE ONE THING THESE TWO HOOKS CANNOT SEE, stated because this docstring used to
+  claim they saw everything (found 2026-09-11, finding C8): the LEGACY BULK
+  operations — ``bulk_update_mappings``, ``bulk_insert_mappings``,
+  ``bulk_save_objects`` — write through ``session_transaction.connection(...)``
+  directly (``sqlalchemy.orm.bulk_persistence._bulk_update`` →
+  ``persistence._emit_update_statements``) and fire NEITHER ``before_flush`` NOR
+  ``do_orm_execute``. They reach the file with this gate NOT held. Reproduced: two
+  threads, one holding the gate and the SQLite write lock past ``busy_timeout``, the
+  other issuing a ``bulk_update_mappings``, raised a raw ``sqlite3.OperationalError:
+  database is locked`` every run — the exact data-loss class this module exists to
+  prevent.
+
+  SQLAlchemy emits no event for them, so the gate cannot be extended to cover them
+  from inside: every such call site must take :func:`write_lock` EXPLICITLY, and
+  ``tests/test_bulk_write_gate_ratchet.py`` is the source-level guard that stops the
+  next one being added without it (the same shape as the socket-importer ratchet,
+  and for the same reason — no runtime hook exists to catch it).
 
 Scope & guards:
   * SQLite only — a server PostgreSQL backend has MVCC + row locks and must not
