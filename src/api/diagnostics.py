@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import pathlib
+import threading
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -4477,6 +4478,11 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
     "/all": "the bundle itself",
     "/all-job/status": "job control", "/all-job/download": "job control",
+    "/all-job/volumes": (
+        "the bundle itself, re-packed — the SAME published archive split into "
+        "attachment-sized zips, never a separate report that could disagree with it"
+    ),
+    "/all-job/volumes/{name}": "job control — one volume of the split bundle",
     "/p0-validation/status": "job control", "/p0-validation/download": "job control",
     "/discover-world/status": "job control",
     "/enrich-source-types/status": "job control",
@@ -5279,6 +5285,143 @@ def all_diagnostics_job_download() -> FileResponse:
         status_code=404,
         detail="no all-diagnostics archive is ready — start one with POST /api/diagnostics/all-job",
     )
+
+
+# --------------------------------------------------------------------------- #
+# THE ARCHIVE IN PIECES THAT FIT THE CHANNEL (field session 2026-09-11).
+#
+# The bundle exists to get evidence from the maintainer to the developer, and it had
+# outgrown the channel: neither the archive nor keyword-log-digest.json extracted and
+# re-zipped on its own would upload. A cap on that member is one half; this is the
+# other. src/api/diagnostics_volumes.py splits the FINISHED archive into plain zips
+# that each fit an attachment limit and each open on their own.
+#
+# ADDITIVE BY CONSTRUCTION: the single-file download is untouched and stays the default
+# path. These routes only ever READ the published archive, so an operator who can send
+# one file is never made to collect several.
+# --------------------------------------------------------------------------- #
+
+
+def _all_diagnostics_volumes_dir():
+    """Volumes live in a SUBDIRECTORY of the archive dir.
+
+    Load-bearing, not tidiness: the worker sweeps old archives with a non-recursive
+    ``glob("oo-all-diagnostics-*.zip")`` over the parent, and volume files are named
+    ``oo-all-diagnostics.001of003.zip``. Beside the archives they would match that glob
+    and be deleted by the next build -- or, worse, be picked up by
+    ``_newest_all_diagnostics_archive`` and served as if one volume were the bundle.
+    """
+    d = _all_diagnostics_dir() / "volumes"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+# ONE splitter at a time. Two clicks (or a click and a scripted call) would otherwise
+# race on one directory: the second call's staleness sweep deletes the first call's
+# volumes WHILE it is still writing them, and whichever finishes last publishes a
+# manifest naming files the other already removed. Cheap to hold -- the split is bounded
+# file work on an archive that is already final, and a second caller simply waits and
+# then finds the finished set rather than rebuilding it.
+_ALL_DIAG_VOLUMES_LOCK = threading.Lock()
+
+
+def _ensure_volume_set(src: pathlib.Path) -> dict:
+    """The volume set for ``src``, built only if it is not already the current one.
+
+    Idempotent on the SOURCE ARCHIVE NAME: a second click re-serves the set instead of
+    re-splitting, and an archive newer than the set replaces it. The stale set is
+    removed rather than left to accumulate volumes of two different bundles in one
+    directory, where an operator collecting files by glob would mix them.
+    """
+    from src.api import diagnostics_volumes as dvol
+
+    out = _all_diagnostics_volumes_dir()
+    with _ALL_DIAG_VOLUMES_LOCK:
+        with contextlib.suppress(Exception):
+            current = dvol.load_manifest(out)
+            if current.get("source") == src.name and dvol.verify_volume_set(out)["ok"]:
+                return current
+        for stale in out.iterdir():
+            with contextlib.suppress(OSError):
+                stale.unlink()
+        return dvol.write_volume_set(src, out)
+
+
+@router.get("/all-job/volumes")
+def all_diagnostics_volumes() -> JSONResponse:
+    """The finished archive split into size-bounded, independently-openable ZIP volumes.
+
+    Returns the manifest: every volume's name, byte count and SHA-256, which volume
+    carries each member, and -- when a member was too large to fit one volume at all --
+    which members are split and how to rejoin them. Download each volume from
+    ``/all-job/volumes/{name}``.
+
+    404 until a build has finished, and it NEVER splits a ``.part`` file: the source is
+    the same published archive the single-file download serves, so the two can never
+    disagree about what the bundle contains.
+
+    TWO COSTS, STATED RATHER THAN DISCOVERED. It holds a request thread while it reads
+    and re-compresses the archive once (seconds for a typical bundle; the sibling ``/all``
+    route already runs for far longer on the same machine, so this is not a new kind of
+    load). And it roughly DOUBLES the archive's footprint on disk while both exist, which
+    on a machine already short of space is a real cost -- the volumes are removed and
+    rebuilt when a newer archive replaces them, never accumulated across builds.
+    """
+    # NEVER serve a stale archive while a build is RUNNING -- the same refusal the
+    # single-file download already makes, for the same reason. The operator asked the
+    # NEW run a question and the previous run's bundle cannot answer it; splitting it up
+    # and handing over the pieces would be a fabricated result wearing a fresh timestamp,
+    # which is the one thing a diagnostic must not produce. Checked HERE rather than
+    # inherited: _newest_all_diagnostics_archive only skips `.part` files, so on its own
+    # it would cheerfully return the previous archive mid-build.
+    if _ALL_DIAG_JOB.status().get("state") == "running":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "a build is running — its archive is not ready to split, and the previous "
+                "one cannot answer what this run was started to ask"
+            ),
+        )
+    src = _newest_all_diagnostics_archive()
+    if src is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "no all-diagnostics archive is ready to split — start one with "
+                "POST /api/diagnostics/all-job"
+            ),
+        )
+    try:
+        manifest = _ensure_volume_set(src)
+    except Exception as exc:  # noqa: BLE001 - the reason must reach the operator, not a 500
+        raise HTTPException(status_code=500, detail=f"could not split the archive: {exc}") from exc
+    return JSONResponse(manifest)
+
+
+@router.get("/all-job/volumes/{name}")
+def all_diagnostics_volume_download(name: str) -> FileResponse:
+    """Serve ONE volume of the current set by name.
+
+    The name is resolved against the MANIFEST's volume list rather than against the
+    filesystem, so a caller cannot reach a path the set does not name -- no traversal,
+    and no serving of a leftover file that happens to sit in the directory.
+    """
+    from src.api import diagnostics_volumes as dvol
+
+    out = _all_diagnostics_volumes_dir()
+    try:
+        manifest = dvol.load_manifest(out)
+    except dvol.VolumeError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="no volume set is ready — call GET /api/diagnostics/all-job/volumes first",
+        ) from exc
+    if name not in {v["name"] for v in manifest["volumes"]}:
+        raise HTTPException(status_code=404, detail=f"{name!r} is not a volume of this set")
+    path = out / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"{name!r} is missing from the volume set")
+    return FileResponse(str(path), media_type="application/zip", filename=name)
 
 
 # --------------------------------------------------------------------------- #

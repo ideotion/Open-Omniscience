@@ -3368,5 +3368,15 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "Ihre Einstellung für die Sammel-Parallelität. Sie wird nie überschrieben — die Grenzen oben begrenzen nur, was ein Durchlauf verbraucht.",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "Die gemessene Obergrenze lockert sich nach Durchläufen ohne Druck und verschwindet, sobald sie Ihr konfiguriertes Maximum erreicht. Sie ist der Zwischenspeicher einer Messung, nie eine Einstellung — das Löschen von data/collect_capacity.json vergisst sie sofort.",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Diese Maschine hat ihre Arbeiterzahl unter Speicherdruck selbst verringert. Der Sammler startet im nächsten Durchlauf dort, statt denselben Abstieg erneut zu gehen.",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Eine Maschine unter der Speicheruntergrenze wird auf geringere Parallelität gehalten, bis Sie sie wieder einschalten."
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Eine Maschine unter der Speicheruntergrenze wird auf geringere Parallelität gehalten, bis Sie sie wieder einschalten.",
+  "All diagnostics (split)": "Alle Diagnosen (aufgeteilt)",
+  "Splitting the archive…": "Archiv wird aufgeteilt…",
+  "No archive to split yet — build one with the All diagnostics button first.": "Noch kein Archiv zum Aufteilen — erstellen Sie zuerst eins mit „Alle Diagnosen“.",
+  "Could not split the archive: {why}": "Archiv konnte nicht aufgeteilt werden: {why}",
+  "the archive produced no volumes": "das Archiv ergab keine Teile",
+  "Downloading {n} pieces…": "{n} Teile werden heruntergeladen…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "ein oder mehrere Protokolle sind in nummerierte Teile zerlegt — volumes.json nennt welche und wie man sie wieder zusammenfügt",
+  "Sent {n} pieces — send them all together.": "{n} Teile bereitgestellt — schicken Sie alle zusammen.",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "DASSELBE fertige Archiv, aufgeteilt in mehrere kleinere .zip-Dateien, damit es dort angehängt werden kann, wo eine große Datei nicht durchgeht. Jedes Teil lässt sich einzeln mit jedem Entpacker öffnen. War ein Protokoll zu groß für ein einzelnes Teil, wird es in nummerierte Teile zerlegt; der Satz nennt welche und wie man sie wieder zusammenfügt. Teilt das bereits erstellte Archiv — es startet nie eine neue Erstellung.",
+  "A build is running — wait for it, then split the archive it produces.": "Es läuft gerade eine Erstellung — warten Sie sie ab und teilen Sie dann das entstandene Archiv."
 }

@@ -523,6 +523,70 @@
     // reports one, and the advice is true at that moment: the job is still registered and
     // RUNNING, so /api/jobs lists it and the task manager shows its live progress.
     const _ALL_DIAG_POLL_CEILING_MS = 6 * 60 * 60 * 1000;
+    // THE ARCHIVE IN PIECES (field session 2026-09-11). The bundle exists to carry
+    // evidence from the operator to whoever is diagnosing, and it had outgrown the
+    // channel: neither the archive nor its largest single log would upload. This splits
+    // the ALREADY-BUILT archive into attachment-sized zips that each open on their own.
+    //
+    // It deliberately does NOT start a build. "Split" and "spend the next few hours
+    // rebuilding" are different asks, and a button that quietly did the second when the
+    // operator meant the first would be the worst moment to surprise them -- they are
+    // already trying to report a problem. With no archive built, it says so and names
+    // the button that builds one.
+    async function downloadDiagnosticsVolumes(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // TEMPLATES, not concatenated fragments. "Downloading " + n + " pieces" bakes
+      // English word order into a string no translator can fix; the frame translates
+      // and the count substitutes into it (the same discipline as everywhere else).
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      const el = $("all-diag-status");
+      const set = (msg) => { if (el) el.textContent = msg; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      if (btn) btn.disabled = true;
+      set(t("Splitting the archive…"));
+      try {
+        let m;
+        try {
+          m = await api("/api/diagnostics/all-job/volumes");
+        } catch (e) {
+          // Three DIFFERENT facts, and only one of them is fixed by pressing the other
+          // button: nothing built yet (404), a build in flight whose archive is not the
+          // one on disk (409), and an actual failure. Read from the STRUCTURED
+          // `e.status` that api() attaches, never by pattern-matching the message --
+          // a message is prose and will be reworded.
+          const status = e && e.status;
+          const why = (e && (e.detail || e.message)) || t("unknown error");
+          if (status === 404) {
+            set(t("No archive to split yet — build one with the All diagnostics button first."));
+          } else if (status === 409) {
+            set(t("A build is running — wait for it, then split the archive it produces."));
+          } else {
+            set(tf("Could not split the archive: {why}", { why }));
+          }
+          return;
+        }
+        const vols = (m && m.volumes) || [];
+        if (!vols.length) {
+          set(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
+          return;
+        }
+        const split = ((m && m.split_members) || []).length;
+        set(tf("Downloading {n} pieces…", { n: vols.length })
+            + (split ? " · " + t("one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them") : ""));
+        for (const v of vols) {
+          window.open("/api/diagnostics/all-job/volumes/" + encodeURIComponent(v.name), "_blank");
+          // Staggered: a browser drops concurrent downloads opened in one tick, and a
+          // silently missing volume is exactly the incomplete set this feature exists
+          // to avoid handing someone.
+          await sleep(400);
+        }
+        set(tf("Sent {n} pieces — send them all together.", { n: vols.length }));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     async function runAllDiagnostics(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("all-diag-status");

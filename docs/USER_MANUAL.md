@@ -1315,6 +1315,7 @@ Official **figures** are not here at all — they are data, so they live under
   | Export | What it is |
   |---|---|
   | **All diagnostics (.zip)** | every log below in one archive |
+  | **All diagnostics (split)** | the same finished archive, cut into several smaller .zip files so it can be attached where one big file cannot. Each piece opens on its own in any unzip tool. If a single log is too large to fit one piece, it is cut into numbered parts and `volumes.json` says which, and how to rejoin them (`cat <name>.part* > <name>`). It only splits an archive you have already built — it never starts a new build |
   | **Keyword log (.zip)** | the top keywords per language with real counts, families, your corrections and super-groups |
   | **All keywords (.zip)** | every keyword in the corpus (not just the top per language) |
   | **Keyword self-test (.json)** | a golden-case check that keyword pre-selection still behaves (e.g. *WHO* ≠ *who*) |

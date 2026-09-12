@@ -3368,5 +3368,15 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "A sua definição de paralelismo de recolha. Nunca é reescrita — os limites acima apenas delimitam o que uma passagem gasta.",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "O tecto medido afrouxa após passagens sem pressão e desaparece assim que atinge o seu máximo configurado. É a cache de uma medição, nunca uma definição — apagar data/collect_capacity.json esquece-a de imediato.",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "Esta máquina reduziu por si o seu número de trabalhadores sob pressão de memória. O recolector parte daí na passagem seguinte em vez de repetir a mesma descida.",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Uma máquina abaixo do piso de memória é mantida com menor concorrência até que a volte a ligar."
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "Uma máquina abaixo do piso de memória é mantida com menor concorrência até que a volte a ligar.",
+  "All diagnostics (split)": "Todos os diagnósticos (divididos)",
+  "Splitting the archive…": "A dividir o arquivo…",
+  "No archive to split yet — build one with the All diagnostics button first.": "Ainda não há arquivo para dividir — crie um com o botão Todos os diagnósticos.",
+  "Could not split the archive: {why}": "Não foi possível dividir o arquivo: {why}",
+  "the archive produced no volumes": "o arquivo não produziu volumes",
+  "Downloading {n} pieces…": "A transferir {n} partes…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "um ou mais registos estão cortados em partes numeradas — volumes.json diz quais e como voltar a juntá-los",
+  "Sent {n} pieces — send them all together.": "{n} partes enviadas — envie-as todas juntas.",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "O MESMO arquivo terminado, dividido em vários .zip mais pequenos para poder ser anexado onde um ficheiro grande não passa. Cada parte abre sozinha em qualquer descompressor. Se um registo era grande demais para caber numa parte, é cortado em partes numeradas e o conjunto diz quais e como voltar a juntá-las. Divide o arquivo já construído — nunca inicia uma nova construção.",
+  "A build is running — wait for it, then split the archive it produces.": "Há uma construção em curso — aguarde-a e depois divida o arquivo que produzir."
 }

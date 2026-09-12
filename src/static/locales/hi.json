@@ -3368,5 +3368,15 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "आपकी संग्रह-समानांतरता सेटिंग। यह कभी नहीं बदली जाती — ऊपर की सीमाएँ केवल एक चक्र के खर्च को बाँधती हैं।",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "मापी गई सीमा बिना दबाव वाले चक्रों के बाद ढीली पड़ती है और आपके निर्धारित अधिकतम तक पहुँचते ही हट जाती है। यह एक माप का कैश है, सेटिंग नहीं — data/collect_capacity.json हटाते ही यह तुरंत भुला दी जाती है।",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "इस मशीन ने मेमोरी दबाव में अपने वर्कर की संख्या खुद घटाई। संग्राहक अगला चक्र वहीं से शुरू करता है, वही उतार दोबारा नहीं चलता।",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "मेमोरी की न्यूनतम सीमा से नीचे की मशीन को कम समानांतरता पर रखा जाता है, जब तक आप इसे फिर चालू न करें।"
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "मेमोरी की न्यूनतम सीमा से नीचे की मशीन को कम समानांतरता पर रखा जाता है, जब तक आप इसे फिर चालू न करें।",
+  "All diagnostics (split)": "सभी डायग्नोस्टिक्स (विभाजित)",
+  "Splitting the archive…": "संग्रह विभाजित किया जा रहा है…",
+  "No archive to split yet — build one with the All diagnostics button first.": "विभाजित करने के लिए अभी कोई संग्रह नहीं — पहले सभी डायग्नोस्टिक्स बटन से एक बनाएँ।",
+  "Could not split the archive: {why}": "संग्रह विभाजित नहीं हो सका: {why}",
+  "the archive produced no volumes": "संग्रह से कोई खंड नहीं बना",
+  "Downloading {n} pieces…": "{n} भाग डाउनलोड हो रहे हैं…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "एक या अधिक लॉग क्रमांकित भागों में कटे हैं — volumes.json बताता है कौन-से, और उन्हें कैसे जोड़ें",
+  "Sent {n} pieces — send them all together.": "{n} भाग भेजे गए — इन सबको एक साथ भेजें।",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "वही पूर्ण संग्रह, कई छोटी .zip फ़ाइलों में बाँटा गया, ताकि जहाँ एक बड़ी फ़ाइल संलग्न न हो सके वहाँ भी भेजा जा सके। हर हिस्सा किसी भी अनज़िप टूल में अपने आप खुलता है। यदि कोई लॉग इतना बड़ा था कि एक हिस्से में नहीं समाया, तो उसे क्रमांकित भागों में काटा जाता है और सेट बताता है कौन-से और उन्हें कैसे जोड़ें। यह पहले से बने संग्रह को ही बाँटता है — कभी नई बिल्ड शुरू नहीं करता।",
+  "A build is running — wait for it, then split the archive it produces.": "एक बिल्ड चल रही है — इसकी प्रतीक्षा करें, फिर इससे बने संग्रह को विभाजित करें।"
 }

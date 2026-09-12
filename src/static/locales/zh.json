@@ -3368,5 +3368,15 @@
   "Your collection-parallelism setting. It is never rewritten — the limits above only bound what one pass spends.": "您的采集并发设置。它永远不会被改写——上面的上限只限制单轮的用量。",
   "The measured ceiling relaxes after passes that see no pressure and is removed once it reaches your configured maximum. It is a cache of a measurement, never a setting — deleting data/collect_capacity.json forgets it immediately.": "实测上限会在没有压力的轮次后放宽，达到您配置的最大值后即被移除。它是一次测量的缓存，而非设置——删除 data/collect_capacity.json 会立即忘记它。",
   "This machine reduced its own worker count under memory pressure. The collector starts there next pass instead of walking the same descent again.": "本机在内存压力下自行减少了工作线程数。采集器下一轮将从该值开始，而不是再走一遍同样的下降过程。",
-  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "低于内存下限的机器会被限制在较小的并发，直到您重新开启为止。"
+  "A machine below the memory floor is held to a smaller fan-out until you turn it back on.": "低于内存下限的机器会被限制在较小的并发，直到您重新开启为止。",
+  "All diagnostics (split)": "全部诊断（分卷）",
+  "Splitting the archive…": "正在分卷…",
+  "No archive to split yet — build one with the All diagnostics button first.": "尚无可分卷的存档 — 请先用“全部诊断”按钮生成一个。",
+  "Could not split the archive: {why}": "无法分卷：{why}",
+  "the archive produced no volumes": "存档未生成任何分卷",
+  "Downloading {n} pieces…": "正在下载 {n} 个分卷…",
+  "one or more logs are cut into numbered parts — volumes.json says which, and how to rejoin them": "有一个或多个日志被切成编号分片 — volumes.json 说明是哪些以及如何重新拼接",
+  "Sent {n} pieces — send them all together.": "已发送 {n} 个分卷 — 请将它们一并发送。",
+  "The SAME finished archive, split into several smaller .zip files so it can be attached where one big file cannot. Every piece opens on its own in any unzip tool. If one log was too large to fit a piece at all, it is cut into numbered parts and the set says which ones and how to rejoin them. Splits whatever archive is already built — it never starts a new build.": "同一个已完成的存档，切分为多个较小的 .zip 文件，以便在单个大文件无法上传的地方作为附件发送。每个分卷都可用任意解压工具单独打开。如果某个日志过大、单个分卷装不下，它会被切成编号分片，整套文件会说明是哪些以及如何重新拼接。只切分已经生成的存档 — 绝不会启动新的构建。",
+  "A build is running — wait for it, then split the archive it produces.": "正在构建中 — 请等待完成，然后分卷它生成的存档。"
 }
