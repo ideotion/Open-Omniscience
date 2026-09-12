@@ -1,0 +1,450 @@
+{
+  "rows": [
+    {
+      "domain": "bradlec.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "obecbosice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "obec-budyne.estranky.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "brtov-jenec.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "divaky.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "mesto-frydlant.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "obechartmanice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "hlincovahora.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "habrina.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "hlubokemasuvky.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "hartvikovice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "heraltice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "honbice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "hornidvoriste.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "hornijiretin.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "hvozdec.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "jankovice.net",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "jestrebi.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "jh.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "kojetin.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "korytna.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "obeclysovice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "malabystrice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "malaupa.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "obecmalonty.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "mackovice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "mesto-modrice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "obecmystice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "nezamyslice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "obecokna.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ouolesna.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "obecpastviny.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pavlovice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "obec-pisek.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "prebuz.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pnov-predhradi.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "rohatsko.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rozna.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "sazovice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "obecskryje.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    }
+  ]
+}

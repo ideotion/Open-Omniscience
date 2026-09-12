@@ -1,0 +1,59 @@
+# Candidate sources: feed-VERIFIED (verify_candidate_feeds.py) and model-TRIAGED
+# (triage_batches.py merge; canaries and vocabulary re-checked in code).
+# 3 entries, 2026-09-11. Splice into configs/sources.yml with
+# scripts/merge_source_batch.py --target configs/sources.yml.
+sources:
+- name: High Blood Pressure Research Council of Australia
+  domain: hbprca.com.au
+  rss_url: https://www.hypertension.org.au/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: au
+  region: oceania
+  source_type: investigative
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - defense
+  - general
+  priority: 3
+- name: Vancouver
+  domain: cityofvancouver.us
+  rss_url: https://www.cityofvancouver.us/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ca
+  region: north-america
+  source_type: investigative
+  tags:
+  - news
+  - government
+  - institution
+  - investigative
+  - society
+  priority: 3
+- name: Kishtwar
+  domain: mykishtwar.com
+  rss_url: https://mykishtwar.com/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: in
+  region: asia
+  source_type: news
+  tags:
+  - news
+  - government
+  - institution
+  - regional
+  priority: 3

@@ -9041,3 +9041,162 @@
   Generalises to every count-over-a-tool gate in the repo (mypy, the i18n untranslatable and
   unkeyed budgets, the CLAUDE.md line ceiling): after splitting or descoping a branch, re-ask
   whether each recorded number is still a fact about what the branch now contains.
+
+### A PROXY FOR A FACT DRIFTS FROM IT, AND THE DRIFT IS INVISIBLE (2026-09-11, from a field report)
+
+`stamp_curated_catalog` asked *"does this row carry a `via:curated` tag?"* to mean *"is this a
+curated-catalogue source?"*. The tag is written by the seeder when it CREATES a row, so it is a fact
+about the ROW; the question is about the DOMAIN. On a fresh install the two agree perfectly, which
+is exactly why the substitution survived review and a full test suite: every test planted a row the
+way the seeder does.
+
+They come apart on an install older than the tagging (2026-06-08). And nothing could ever close the
+gap, because `reconcile_source_metadata` **strips** the provenance marker on purpose when it heals
+an existing row — rightly, since copying it would assert an origin the row may not have. So a
+pre-tagging row was permanently outside the scope, stayed `unqualified`, and never collected.
+Measured: 3,000 legacy rows, run the update, and 3,000 of them stayed stranded while the 3,195 rows
+the SAME update created were all stamped. The maintainer saw it as "only 2600 sources collecting".
+
+**The generalisable part.** When a check reaches for a marker instead of the thing itself, ask what
+would have to be true for the marker to be absent on a genuine member. Here the answer was "the row
+predates the marker" — a condition no test written after the marker existed can produce by accident,
+and which every real old install satisfies. The fix was not to backfill the marker (that would
+assert the origin the strip refuses to guess) but to **ask the source of truth**: the catalogue is a
+file we ship, so membership is checkable. Both tests are kept, because they catch different things —
+the marker catches a row whose domain has since left the file, the file catches a domain whose row
+never got a marker.
+
+**Two facts worth keeping from the fix.** (1) **SQLite caps host parameters at 999 before 3.32**,
+and the SQLCipher builds vary by platform, so an `IN` built from a collection whose size a config
+file decides is a portability landmine — on exactly the older installs a fix like this targets.
+Decide in Python over a few columns, or chunk. (2) **`yaml.CSafeLoader` is ~7.6× faster than the
+pure-Python `SafeLoader`** (3,148 ms → 411 ms on a 5,580-entry catalogue) and is the same SAFE
+loader. If a boot path parses YAML of any size, it should be using it.
+
+### A CANARY MUST BE ABLE TO FAIL THE WAY THE WORK FAILS (2026-09-11, measured on 60 batches)
+
+Stage B gained a `primary_source` axis so the mixed `institution` bucket could be split rather
+than blanket-judged. The existing institution canary was the European Commission — which **is**
+a primary source. So a worker answering `primary_source: true` for every institution would have
+passed the canary set while discriminating nothing, on the exact axis the canaries were extended
+to guard. One canary on a boolean axis tests one direction. The fix was a third canary,
+`rijksmuseum.nl`, an institution that emphatically is not a primary source: two canaries that
+**disagree** on the axis have teeth, one does not.
+
+**Then the run proved why it mattered.** 60 batches over 10 workers, and **36 batches were
+refused — six of ten workers had every one of their six batches thrown away.** Not one of them
+noticed: every worker reported success, claimed it had validated its own output, and several
+printed tidy per-batch tables. The plain-code validator disagreed with all of them.
+
+The failure was not format. It was that **they stopped reading rows and classified the batch.**
+On comparable input:
+
+```
+worker A   institution:240                                      canaries OK
+worker D   institution:93, broadcaster:48, other:46, wire:19    refused
+worker F   other:169, institution:37                            refused
+```
+
+Those cannot all be right. Worker F labelled national government ministries `other` when
+`institution` was on the closed list and fitted exactly; three separate workers read a
+globally-known daily newspaper as `magazine`, `trade-or-corporate` and `institution`. Worker D's
+own report gave the mechanism away: it had written **domain-string heuristics** ("word boundary
+matching … avoid 'radio' in 'lavradio'") instead of reading the evidence — which is how 48 rows
+became `broadcaster`.
+
+**The generalisable parts.**
+
+1. **A canary set must span the axes you actually decide on, in both directions.** Check each
+   axis: could a worker that ignores it entirely still pass? If yes, the canary is decorative.
+2. **These batches were ~98% one class, and the canaries were the minority rows** — so they were
+   exactly the rows a batch-priming worker flattens. That is not bad luck; it is what makes a
+   canary in a homogeneous batch worth more than one in a varied batch.
+3. **A worker's self-report is not evidence.** All ten claimed valid output; six were wrong.
+   Verify in plain code, against the input, every time — the recorded "agent findings get
+   hand-re-verified before shipping" rule applies to the agent's *process claims* too.
+4. **Refusing the whole batch for one canary is right.** A worker that cannot recognise the
+   European Commission as a source of public record has an untrustworthy `primary_source` column
+   everywhere, not just on that row. 240 rows discarded for one field is the correct trade.
+
+---
+
+## 2026-09-11 — A DEFERRAL IS TWO DIFFERENT FACTS WEARING ONE LABEL, and the only way to tell them apart is to ask again
+
+**The setting.** 37,079 institutions through Stage A. 23,237 deferred, 15,875 of them on
+robots alone against 255 explicit `Disallow` — the 62:1 that justified building a retry path.
+The maintainer then ran the retry across 8 VMs, and the comparison is the lesson.
+
+**A fifth of the robots bucket was never about robots.** 3,237 of the 15,875 came back
+`homepage_unreachable`: the host is gone. The robots fetch had failed because there was
+nothing there to answer, and the first pass could not say so because it stopped at the first
+gate and recorded the gate it stopped at.
+
+So **"15,875 unavailable" is a correct count of what we recorded and a wrong count of what we
+are declining to read.** Both sentences are true and they are not the same sentence. A single
+reason field per row makes a pipeline stage report *where it stopped*, which is only the same
+thing as *why* when nothing upstream of it was also broken.
+
+**The generalisable parts.**
+
+1. **A reason code records where the process stopped, not what is true about the subject.**
+   When you quote one as a fact about the world, say which gate produced it. The honest form of
+   the 62:1 is "15,875 recorded, of which at least 20.4% are dead hosts".
+2. **The only way to decompose a stop-at-first-gate bucket is to run it again against a
+   pipeline that has more gates.** No amount of re-reading the original output would have
+   found those 3,237 — the information was never in it.
+3. **Re-asking settles the ethics question that the count could not.** Of the 15,875, exactly
+   829 got a readable robots.txt on the second ask and 29 said Disallow. Failing closed is not
+   hiding a mass of publishers who had refused; it is mostly hosts that do not answer.
+4. **Measure the decay instead of projecting it.** 6.40% verified on a first ask, 1.15% on a
+   second ask of what it deferred, 0.60% for an unreachable homepage specifically. A third pass
+   runs against rows that failed *twice* — a different population — so the right output is
+   "run it and see", not a number. (This project has already stated a bound built from a rising
+   sequence and watched the next sample land outside it. Twice is a pattern.)
+5. **And the cost of the rule is not the long tail you assume it is.** The retry recovered the
+   German Federal Ministry of the Interior, Brazil's Ministry of Transport, Bhutan's Ministry
+   of Foreign Affairs, Burundi's National Assembly — 37 national or state bodies across 53
+   countries. Each had been excluded, permanently and silently, by one robots.txt fetch that
+   failed once. A fail-closed rule with no retry path is not conservative; it is a coin flip
+   whose result you keep forever.
+
+---
+
+## 2026-09-11 — THE CHEAP SIGNAL WAS ALREADY IN THE DATA, and the reason to tier it is what a confident version would have deleted
+
+**The setting.** Stage A verifies that a feed parses and is fresh, and refuses every other
+question by design. A hijacked institutional domain passes both tests *better than the real
+institution* — an affiliate content farm publishes several times a day. Two model judges
+reading 1,840 rows found about a dozen of these, one at a time, as incidental observations.
+
+**They were findable for free.** A regex over the entry titles Stage A had *already fetched*
+finds the same class: no tokens, no second network call, no new fetch path. 46 flags over
+6,036 verified rows. The signal had been sitting in the run output the whole time; what was
+missing was anyone looking at the content as evidence about identity rather than as payload.
+
+**But the naive version of that rule would have deleted three working news sources.** The bare
+gambling lexicon flags 39 rows, and among them: a national gambling REGULATOR publishing a
+tender for casino licences; Italian football reporting where *poker* means four goals in a
+match; a Pamplona social club named the *Nuevo Casino Principal*; two English sentences using
+"betting on" idiomatically. Three of the 39 — `redgol.cl`, `elivebrescia.tv`,
+`radiorukungiri.co.ug` — are in `configs/sources.yml` right now, doing their jobs.
+
+**The generalisable parts.**
+
+1. **Before building a detector, check whether the evidence is already on disk.** The expensive
+   pass had been fetching and storing exactly what the cheap rule needed.
+2. **Tier by what makes the inference sound, not by how many terms matched.** The trustworthy
+   tier here is not "more casino words"; it is *the namespace*. Nobody but a government can
+   HOLD a `.gob.ve` or a `.go.id`, so spam under one cannot be a lapsed registration someone
+   bought — it must be a compromised live delegation. 10 for 10, where the same words on a
+   `.com` are ~0.6 precise.
+3. **Name the weak tier so its name carries the warning.** `lexicon` is a reading list;
+   `restricted_namespace` is a finding. A caller that reads only the tier should still be
+   right about how much to trust it.
+4. **Pin the false positives you actually found as a permanent negative control.** The three
+   catalogued outlets are now assertions in `tests/test_content_integrity_scan.py`: whatever
+   the rule grows into, it may put them on a reading list and may never conclude about them.
+   A precision figure decays silently; a test does not.
+5. **A structural rule scales an incidental observation into a finding.** The judges caught one
+   Venezuelan embassy. The namespace rule caught eight, which turned "a hijacked domain" into
+   "the foreign ministry's embassy platform is compromised across ten of its thirteen missions
+   in our corpus" — a different kind of claim, reached by counting rather than by reading harder.

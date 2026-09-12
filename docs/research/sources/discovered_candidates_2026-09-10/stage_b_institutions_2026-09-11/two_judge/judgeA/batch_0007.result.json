@@ -1,0 +1,466 @@
+{
+ "rows": [
+  {
+   "domain": "minseg.gob.pa",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "peru.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "embajada-alemana.org.pe",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "es",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "low"
+  },
+  {
+   "domain": "amp.gob.pa",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dof.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "fpa.da.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nta.da.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "bulacandeped.com.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "depedmandaluyong.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "deped-sdocagayan.com.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "suresasur.net",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "depedscm.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "embaixadadecaboverde.pt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ptspace.pt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "space"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "just.ro",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ro",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "anif.ro",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ro",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "cnpp.ro",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ro",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rowater.ro",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ro",
+   "topics": [
+    "water"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nbleskovac.rs",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sr",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "slemb.org.sa",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mohe.gov.sd",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rsipf.gov.sb",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mi.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "statenskonstrad.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "fiskeriverket.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mcf.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mtm.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "idsplus.sk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sk",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "sbb.sr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mined.gob.sv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "seguridad.gob.sv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "elsalvador.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "securite.gouv.tg",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "devbase.gouv.tg",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "courdescomptes.tg",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "natt.gov.tt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ttparliament.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mincult.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "horodok-rada.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "geo.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  }
+ ]
+}

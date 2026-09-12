@@ -1,0 +1,477 @@
+{
+ "rows": [
+  {
+   "domain": "datenschutz-bayern.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "privacy",
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "schaumburgerlandschaft.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "history",
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vrminfo.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vg-neukirchen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "policy",
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "wtl-wasser.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "water"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "cfcs.dk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "da",
+   "topics": [
+    "cybersecurity",
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "tet.dk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "da",
+   "topics": [
+    "legal",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dkma.dk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "republicadominicana.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "argelia.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "corteconstitucional.gob.ec",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "ccq.ec",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "es",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "cairo.mofa.go.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "aranjuez.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "bizkaiatalent.eus",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "es",
+   "topics": [
+    "business"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "cerca.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "tarragones.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "education",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "riberaebre.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "errenteria.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "eu",
+   "topics": [
+    "history",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "getafe.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "economy",
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "jafre.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "palol.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "santjoanlesfonts.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "sett.gob.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "technology",
+    "business"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "efda.gov.et",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nbe.gov.et",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "oulainen.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "presidentti.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "turvallisuustutkinta.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "korkeinoikeus.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "caaf.org.fj",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "france.ambassadetogo.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "france-education-international.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "jesuites.com",
+   "journalism": false,
+   "kind": "religious",
+   "language": "fr",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "anses.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "agriculture",
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "bnl.bm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "colwyn-tc.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "cambsfire.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "judiciary.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ddfire.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  }
+ ]
+}

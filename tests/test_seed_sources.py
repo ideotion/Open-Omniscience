@@ -176,3 +176,34 @@ def test_seed_defaults_endpoint(client):
     # idempotent
     r2 = client.post("/api/sources/seed-defaults")
     assert r2.json()["seeded"]["created"] == 0
+
+
+# --------------------------------------------------------------------------- #
+#  the catalogue parser stays SAFE while it got fast
+# --------------------------------------------------------------------------- #
+def test_the_catalogue_loader_is_a_safe_loader_and_refuses_a_python_object_tag():
+    """``load_sources_from_yaml`` stopped calling ``yaml.safe_load`` on 2026-09-11, to pick
+    up libyaml (3,148 ms -> 411 ms on configs/sources.yml; boot parses seven catalogues).
+    That swap is only acceptable while the loader is still a SAFE one, and
+    ``test_no_dangerous_eval_or_deserialization_sinks`` cannot see it -- the loader is a
+    module constant now, not a ``Loader=`` argument on the call line.
+
+    So this asserts both halves: the class IS one of PyYAML's two safe loaders, and it
+    really does refuse the payload the guard exists for. The second half is the one that
+    matters -- a name can be changed, a refusal has to be demonstrated."""
+    import yaml
+
+    from src.ingest.seed_sources import _SAFE_YAML_LOADERS, _YAML_LOADER, _load_safe_yaml
+
+    assert _YAML_LOADER in _SAFE_YAML_LOADERS
+    assert {c.__name__ for c in _SAFE_YAML_LOADERS} <= {"CSafeLoader", "SafeLoader"}, (
+        f"an unsafe loader entered the set: {[c.__name__ for c in _SAFE_YAML_LOADERS]}"
+    )
+
+    with pytest.raises(yaml.YAMLError):
+        _load_safe_yaml('!!python/object/apply:os.system ["echo pwned"]')
+
+    # and it still parses an ordinary catalogue document
+    assert _load_safe_yaml("sources:\n  - name: A\n    domain: a.example\n") == {
+        "sources": [{"name": "A", "domain": "a.example"}]
+    }

@@ -1,0 +1,652 @@
+# Candidate sources: feed-VERIFIED (verify_candidate_feeds.py) and model-TRIAGED
+# (triage_batches.py merge; canaries and vocabulary re-checked in code).
+# 36 entries, 2026-09-11. Splice into configs/academic_sources.yml with
+# scripts/merge_source_batch.py --target configs/academic_sources.yml.
+sources:
+- name: Instituto de Estudios Avanzados
+  domain: idea.gob.ve
+  rss_url: https://idea.gob.ve/index.php/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: ve
+  region: south-america
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: Australian Institute of Nuclear Science and Engineering
+  domain: ainse.edu.au
+  rss_url: https://www.ainse.edu.au/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: au
+  region: oceania
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: Royal Belgian Institute for Space Aeronomy
+  domain: aeronomie.be
+  rss_url: https://aeronomie.be/en/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: be
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - space
+  - science
+  priority: 3
+- name: Institute for Bulgarian Language
+  domain: ibl.bas.bg
+  rss_url: https://ibl.bas.bg/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: bg
+  country: bg
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+- name: Max Planck Institute for the Physics of Complex Systems
+  domain: pks.mpg.de
+  rss_url: https://www.pks.mpg.de/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: de
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: CERCA Institute
+  domain: cerca.cat
+  rss_url: https://cerca.cat/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ca
+  country: es
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: Educational Research Organisation
+  domain: erc.ie
+  rss_url: https://www.erc.ie/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: ie
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  priority: 3
+  language: en
+- name: Tuvan Institute of Humanities and Applied Social and Economic Research
+  domain: tigpi.ru
+  rss_url: https://tigpi.ru/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: ru
+  country: ru
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - history
+  priority: 3
+- name: Institute of the Ukrainian Language of the National Academy of Sciences of
+    Ukraine
+  domain: iul-nasu.org.ua
+  rss_url: https://iul-nasu.org.ua/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: uk
+  country: ua
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  priority: 3
+- name: Institut de Recherche pour le Développement
+  domain: tunisie.ird.fr
+  rss_url: https://tunisie.ird.fr/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fr
+  country: tn
+  region: africa
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: Technical Centre of the National Academy of Sciences of Ukraine (Ukraine)
+  domain: techcenter.kyiv.ua
+  rss_url: https://techcenter.kyiv.ua/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: uk
+  country: ua
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: Rede Nacional de Ensino e Pesquisa
+  domain: rnp.br
+  rss_url: https://www.rnp.br/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: pt
+  country: br
+  region: south-america
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - technology
+  - science
+  priority: 3
+- name: Centre National de Recherche Agronomique
+  domain: cnra.ci
+  rss_url: https://cnra.ci/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fr
+  country: ci
+  region: africa
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  - science
+  priority: 3
+- name: Research Institute for Telecommunication Cooperation
+  domain: ftk.de
+  rss_url: https://www.ftk.de/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: de
+  country: de
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - technology
+  - ai
+  priority: 3
+- name: Royal Spanish Academy
+  domain: rae.es
+  rss_url: https://www.rae.es/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: es
+  country: es
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - culture
+  - education
+  priority: 3
+- name: Institute for the Languages of Finland
+  domain: kotus.fi
+  rss_url: https://kotus.fi/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: fi
+  country: fi
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - culture
+  - education
+  priority: 3
+- name: NIHR Bristol Biomedical Research Centre
+  domain: bristolbrc.nihr.ac.uk
+  rss_url: https://www.bristolbrc.nihr.ac.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - healthcare
+  - science
+  priority: 3
+- name: Swansea Bay University Health Board
+  domain: swanseabay.nhs.wales
+  rss_url: https://sbuhb.nhs.wales/index.cfm/_api/feed/v1/ABMUhb/?feedID=39B4D864-AFA7-4289-B7064B67D4B0DCEC
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - education
+  - healthcare
+  priority: 3
+- name: Associazione Italiana dei Paleografi e Diplomatisti
+  domain: paleografidiplomatisti.org
+  rss_url: https://www.paleografidiplomatisti.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: it
+  country: it
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - culture
+  - education
+  priority: 3
+- name: Management Institute for National Development
+  domain: mind.edu.jm
+  rss_url: https://mind.edu.jm/sitemap.rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: jm
+  region: north-america
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - culture
+  - politics
+  priority: 3
+- name: Ministry of Education and Science (Mongolia)
+  domain: en.moe.gov.mn
+  rss_url: https://en.moe.gov.mn/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: mn
+  region: asia
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - applied-science
+  - defense
+  priority: 3
+- name: National Information Technology Development Agency
+  domain: nitda.gov.ng
+  rss_url: https://nitda.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ng
+  region: africa
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - applied-science
+  - education
+  priority: 3
+- name: Projects Development Institute
+  domain: proda.gov.ng
+  rss_url: https://proda.gov.ng/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ng
+  region: africa
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - applied-science
+  - education
+  priority: 3
+- name: Schools Division Office of Pasay City
+  domain: depedpasay.ph
+  rss_url: https://www.depedpasay.ph/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ph
+  region: asia
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - education
+  priority: 3
+- name: University of Borås
+  domain: hb.se
+  rss_url: https://www.hb.se/rss
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: sv
+  country: se
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  - society
+  - technology
+  priority: 3
+- name: Ninh Binh Department of Education and Training
+  domain: ninhbinh.edu.vn
+  rss_url: https://ninhbinh.edu.vn/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: vi
+  country: vn
+  region: asia
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - education
+  priority: 3
+- name: Motor Accident Insurance Commission
+  domain: maic.qld.gov.au
+  rss_url: https://maic.qld.gov.au/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: au
+  region: oceania
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - ai
+  - defense
+  - education
+  priority: 3
+- name: Philippine Consulate General, Vancouver, Canada
+  domain: vancouverpcg.org
+  rss_url: https://www.vancouverpcg.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: ca
+  region: north-america
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - culture
+  - economy
+  - education
+  priority: 3
+- name: Max Weber Forum für Südasienstudien Delhi
+  domain: mwfdelhi.hypotheses.org
+  rss_url: https://mwfdelhi.hypotheses.org/feed
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: in
+  region: asia
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - history
+  priority: 3
+- name: Umeå University
+  domain: umu.se
+  rss_url: https://www.umu.se/nyheter/alla-nyheter/rssnews/?id=10421080
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: sv
+  country: se
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  priority: 3
+- name: European Union Institute for Security Studies
+  domain: iss.europa.eu
+  rss_url: https://www.iss.europa.eu/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: fr
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - geopolitical
+  - defense
+  - analysis
+  priority: 3
+- name: British Geological Survey
+  domain: bgs.ac.uk
+  rss_url: https://www.bgs.ac.uk/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: gb
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - science
+  - applied-science
+  priority: 3
+- name: Directorate of Agricultural Research
+  domain: ijarmoa.gov.iq
+  rss_url: https://ijarmoa.gov.iq/index.php/ijar/en/gateway/plugin/WebFeedGatewayPlugin/atom
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  country: iq
+  region: asia
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  - science
+  priority: 3
+  language: en
+- name: Supreme Court of Pakistan
+  domain: pakistanpressfoundation.org
+  rss_url: https://pakistanpressfoundation.org/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: en
+  country: pk
+  region: asia
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - human-rights
+  - legal
+  priority: 3
+- name: Karlstad University
+  domain: kau.se
+  rss_url: https://www.kau.se/rss.xml
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: sv
+  country: se
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - education
+  - science
+  priority: 3
+- name: Institute of Climate-Smart Agriculture of the National Academy of Agrarian
+    Sciences of Ukraine
+  domain: icsanaas.com.ua
+  rss_url: https://icsanaas.com.ua/feed/
+  rate_limit_ms: 2000
+  enabled: true
+  verified: true
+  last_verified: '2026-09-11'
+  language: uk
+  country: ua
+  region: europe
+  source_type: scientific-journal
+  tags:
+  - news
+  - government
+  - institution
+  - agriculture
+  - science
+  priority: 3

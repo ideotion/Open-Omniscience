@@ -1,0 +1,427 @@
+{
+ "rows": [
+  {
+   "domain": "sedlecko.cz",
+   "journalism": false,
+   "kind": "other",
+   "language": "cs",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "mesto-slavicin.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "sokolec.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "strazkovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "obecsulice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "strazovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obec-uzenicky.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obec-uzenice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vlkanov.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "obecvolenice.eud.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "water"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vrato.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "zvikovulisova.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ujezduprelouce.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "celakovice.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ceska.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "zitkova.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "zenklava.cz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "cs",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "dv-bl.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "water"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-freiburg.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-obertiefenbach.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "landkreis-hof.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ihk-nuernberg.de",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "de",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "ingolstadt.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "landkreis-kelheim.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "lgrb-bw.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "science"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "landkreis-karlsruhe.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nordfriesland.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ortenaukreis.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ostfriesischelandschaft.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-schalkhausen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-neckarzimmern.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-eltmann.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-kuemmersbruck.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "feuerwehr-martinlamitz.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ff-grossgruendlach.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-oberleichtersbach.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rhanwalting.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ffwmuenchshofen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ffwsachsen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "feuerwehr-schonungen.de",
+   "journalism": false,
+   "kind": "institution",
+   "language": "de",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  }
+ ]
+}

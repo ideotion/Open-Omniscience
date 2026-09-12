@@ -1,0 +1,58 @@
+{
+ "worklist": "w3_institutions",
+ "run_date": "2026-09-11",
+ "shards": 8,
+ "candidates": 37079,
+ "verified": 2373,
+ "feed_probes_total": 70824,
+ "by_reason": {
+  "robots_unavailable": 15875,
+  "no_feed_found": 7381,
+  "homepage_unreachable": 7357,
+  "feed_unparseable": 3139,
+  "verified": 2373,
+  "feed_stale": 453,
+  "robots_disallowed": 255,
+  "feed_too_few_entries": 195,
+  "feed_undated": 44,
+  "host_timeout": 3,
+  "crawl_delay_too_long": 2,
+  "error": 2
+ },
+ "per_shard": {
+  "1": {
+   "candidates": 4518,
+   "verified": 291
+  },
+  "2": {
+   "candidates": 4750,
+   "verified": 278
+  },
+  "3": {
+   "candidates": 4549,
+   "verified": 291
+  },
+  "4": {
+   "candidates": 4575,
+   "verified": 313
+  },
+  "5": {
+   "candidates": 4665,
+   "verified": 307
+  },
+  "6": {
+   "candidates": 4724,
+   "verified": 324
+  },
+  "7": {
+   "candidates": 4676,
+   "verified": 287
+  },
+  "8": {
+   "candidates": 4622,
+   "verified": 282
+  }
+ },
+ "disjoint": true,
+ "union_equals_sum": true
+}

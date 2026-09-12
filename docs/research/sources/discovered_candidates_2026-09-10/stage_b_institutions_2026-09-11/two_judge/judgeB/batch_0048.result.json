@@ -1,0 +1,437 @@
+{
+  "rows": [
+    {
+      "domain": "slatinanz.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "srbice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "strojetice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "svaty-jiri.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "telc.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "velkajesenice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "vestec.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "verovice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "vysoke-myto.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "vselibice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "vezkyobec.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "zdikov.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "zabori.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "zalezly.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal",
+        "water"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "zadubzavisin.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "zajecice.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "ceperka.cz",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "zelesice.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "zernov.info",
+      "journalism": false,
+      "kind": "institution",
+      "language": "cs",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "amh.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "botschaft-senegal.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "srilanka-botschaft.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "berlin.mofa.go.ug",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "business"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "bundesarbeitsgericht.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "kreis-guetersloh.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "healthcare",
+        "climate"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "landschaftsverband-hameln-pyrmont.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-renchen.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "mags.nrw",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "policy",
+        "society"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "feuerwehr-haslach.net",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "landgericht-bueckeburg.niedersachsen.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-eichenbuehl.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-bernlohe.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-doehlau.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-esselbach.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-frauenaurach.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-heroldsberg.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ff-johannisthal.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ff-kirchenreinbach.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-kollnburg.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ff-obersunzing-niedersunzing.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    }
+  ]
+}

@@ -1,0 +1,473 @@
+{
+  "rows": [
+    {
+      "domain": "n-somerset.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "number10.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "politics",
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "riponcity.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rma.scot",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "somerset.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "swanseabay.nhs.wales",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "gosarchive.apsny.land",
+      "journalism": false,
+      "kind": "other",
+      "language": "ja",
+      "topics": [],
+      "confidence": "high"
+    },
+    {
+      "domain": "sda.gov.ge",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ka",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "ghana.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "business"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ahpc.gov.gh",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "petrocom.gov.gh",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "energy"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "oqaasileriffik.gl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "kl",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "moh.gov.gm",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "motc.gov.gm",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "eea.gr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "el",
+      "topics": [
+        "business",
+        "economy"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "nao.gm",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "financial"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "migration.gov.gr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "el",
+      "topics": [
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "atk.hun-ren.hu",
+      "journalism": false,
+      "kind": "academic",
+      "language": "hu",
+      "topics": [
+        "science",
+        "agriculture"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "nka.hu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "hu",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-batusangkar.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-jantho.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-larantuka.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-lubuksikaping.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-marisa.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-lamongan.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-padangpanjang.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-singaraja.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "dispuspan.tarakankota.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "education",
+        "culture"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "dppireland.ie",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "che.org.il",
+      "journalism": false,
+      "kind": "institution",
+      "language": "he",
+      "topics": [
+        "education"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "idrc.ca",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "science",
+        "agriculture"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "atmaancona.it",
+      "journalism": false,
+      "kind": "institution",
+      "language": "it",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "paleografidiplomatisti.org",
+      "journalism": false,
+      "kind": "academic",
+      "language": "it",
+      "topics": [
+        "history",
+        "culture"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "psy.it",
+      "journalism": false,
+      "kind": "institution",
+      "language": "it",
+      "topics": [
+        "healthcare",
+        "society"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "salute.regione.emilia-romagna.it",
+      "journalism": false,
+      "kind": "institution",
+      "language": "it",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "rome.mofa.go.ug",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "odg.it",
+      "journalism": false,
+      "kind": "institution",
+      "language": "it",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "mof.gov.jm",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "financial",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "miic.gov.jm",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "business",
+        "economy"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "mind.edu.jm",
+      "journalism": false,
+      "kind": "academic",
+      "language": "en",
+      "topics": [
+        "education"
+      ],
+      "confidence": "high"
+    }
+  ]
+}

@@ -1,0 +1,497 @@
+{
+  "rows": [
+    {
+      "domain": "akaigawa.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ja",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "city.chichibu.lg.jp",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ja",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "ambamali-jp.org",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "town.isen.kagoshima.jp",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ja",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "www2.police.pref.ishikawa.lg.jp",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ja",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "nis.gov.kh",
+      "journalism": false,
+      "kind": "institution",
+      "language": "km",
+      "topics": [
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "moe.gov.kh",
+      "journalism": false,
+      "kind": "institution",
+      "language": "km",
+      "topics": [
+        "environment",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "libano.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "waterboard.lk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "water",
+        "environment"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "tauragesmuziejus.lt",
+      "journalism": false,
+      "kind": "institution",
+      "language": "lt",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "enim.ac.ma",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "education"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "general-news",
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "onca.gov.ma",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "agriculture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "odco.gov.ma",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "mofa.gov.mm",
+      "journalism": false,
+      "kind": "institution",
+      "language": "my",
+      "topics": [
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "en.moe.gov.mn",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "education",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "mrt.gov.mn",
+      "journalism": false,
+      "kind": "institution",
+      "language": "mn",
+      "topics": [
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "trade.gov.mv",
+      "journalism": false,
+      "kind": "institution",
+      "language": "dv",
+      "topics": [
+        "economy",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "statisticsmaldives.gov.mv",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "economy",
+        "finance"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "health.govmu.org",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "conahcyt.mx",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "science",
+        "policy"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy",
+        "science"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "nigerianembmexico.org",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "khazanah.com.my",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "finance",
+        "business"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "ansi.ne",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "technology"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "notap.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "technology",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "nema.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "environment"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "nimasa.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "sec.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "finance",
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "nitda.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "technology",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "noruega.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "naqs.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "agriculture",
+        "business"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "proda.gov.ng",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "science"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "trygderetten.no",
+      "journalism": false,
+      "kind": "institution",
+      "language": "no",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "riksadvokaten.no",
+      "journalism": false,
+      "kind": "institution",
+      "language": "no",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "skrivesenteret.no",
+      "journalism": false,
+      "kind": "institution",
+      "language": "no",
+      "topics": [
+        "education",
+        "science"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "camaradeancash.org.pe",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "business",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "depedcaloocan.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "education",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "depedpanabocity.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "education",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "spda.gov.ph",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "economy",
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "depedpasay.ph",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "education"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "kpese.gov.pk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ur",
+      "topics": [
+        "education",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    }
+  ]
+}

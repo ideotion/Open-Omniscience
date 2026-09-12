@@ -1,0 +1,464 @@
+{
+  "rows": [
+    {
+      "domain": "oqai.fr",
+      "journalism": false,
+      "kind": "academic",
+      "language": "fr",
+      "topics": [
+        "science",
+        "environment"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "audit.scot",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "financial"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "biofair.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "science",
+        "biotech"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "bolton.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "cardiffharbour.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "cowesharbourcommission.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "catribunal.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "legal",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "healthwatchbolton.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchbracknellforest.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchcityoflondon.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "gbe.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "energy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "healthwatchcroydon.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchdarlington.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchdevon.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchgreenwich.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchlambeth.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchnewham.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchredcarandcleveland.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchsouthwark.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "healthwatchstocktonontees.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "lincolnshire.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "agriculture"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "londonderryport.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "medway.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "newalresford-tc.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "nifrs.org",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "oldstmellonscommunitycouncil.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "plymouthscb.co.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "human-rights"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "sheffield.gov.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "politics"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "royalparks.org.uk",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "sciencelib.ge",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ka",
+      "topics": [
+        "science",
+        "culture"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "efeteioathinon.gr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "el",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rae.gr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "el",
+      "topics": [
+        "energy",
+        "environment"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "mindev.gov.gr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "el",
+      "topics": [
+        "economy",
+        "business"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "nogradarchiv.hu",
+      "journalism": false,
+      "kind": "other",
+      "language": "hu",
+      "topics": [],
+      "confidence": "high"
+    },
+    {
+      "domain": "telekialapitvany.hu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "hu",
+      "topics": [
+        "culture",
+        "history"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "pn-bangkalan.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pt-bengkulu.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-payakumbuh.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "pn-sampang.go.id",
+      "journalism": false,
+      "kind": "institution",
+      "language": "id",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "indonesia.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "geopolitical",
+        "culture"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    }
+  ]
+}
