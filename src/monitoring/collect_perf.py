@@ -672,8 +672,15 @@ class CollectionMonitor:
         ``latency._LAG`` is process-global over ten seconds of wall clock, so a pass
         starting shortly after an unrelated synchronous burst read that burst as its own
         contention and cut workers for it. It was found where such things are found --
-        two collect-monitor tests failing only when an app-starting suite ran before
-        them, which under CI's random ordering is a coin flip rather than a curiosity.
+        two collect-monitor tests failing only when an app-starting suite ran IMMEDIATELY
+        before them. That adjacency IS the reproduction, and the severity claim that first
+        rode with it was wrong: ``pytest-randomly`` is not a dependency here, CI runs plain
+        ``pytest -q`` in deterministic collection order, and with other files between the
+        two suites the ten-second window ages the stale samples out. So this is a LATENT
+        product bug, never "a red ``main`` waiting for an unlucky seed" -- worth fixing
+        because a pass really was reading stalls recorded before it began, which is wrong
+        about the product whatever the test order does. (LESSONS.md keeps the correction as
+        its own rider; this line is the fifth place the inflated claim had reached.)
         """
         try:
             from src.monitoring import latency
