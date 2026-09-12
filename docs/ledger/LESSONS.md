@@ -8977,6 +8977,70 @@
   vocabulary *worse* — a reader filtering for one would silently miss the other. The same pass
   that splits an overloaded value should merge its duplicates, and `error` narrowed to the one
   thing it should always have meant: something went wrong in our own code for this row.
+- **A KEYSTONE MECHANISM'S DOCSTRING IS NOT EVIDENCE THAT IT COVERS WHAT IT CLAIMS (2026-09-11,
+  field diagnostics C8).** `src/database/writer.py` stated that the single-writer gate covers
+  "EVERY write — flush or bulk". It did not, and had not for as long as the call sites existed.
+  The gate hangs off exactly two SQLAlchemy events — `before_flush` (the unit of work) and
+  `do_orm_execute` (ORM-issued DML) — and the LEGACY BULK operations (`bulk_update_mappings`,
+  `bulk_insert_mappings`, `bulk_save_objects`) write through `session_transaction.connection(...)`
+  directly and fire NEITHER. Five call sites were reaching SQLite with the gate not held.
+  Reproduced rather than reasoned about: two threads, one holding the gate and the SQLite write
+  lock past `busy_timeout`, the other issuing a `bulk_update_mappings`, raised a raw
+  `sqlite3.OperationalError: database is locked` on every run — the exact data-loss class the gate
+  exists to prevent. **The generalisable part: a mechanism that enumerates its own coverage in
+  prose will be trusted by every reader downstream instead of being checked, so the prose must
+  state the NARROWER truth and NAME the gap.** And when no runtime hook can close a hole — here
+  SQLAlchemy emits no event at all — the honest mechanism is a source-level ratchet over the tree
+  (the same shape as the socket-importer guard), not a comment asking future authors to remember.
+  Two of the five sites were worse than a bare missing gate: a GATED `Query.update()` zeroed every
+  counter in a slice and an UNGATED `bulk_update_mappings` restored the real values, so one
+  logical repair straddled the gate and a reader landing between its halves saw every row at zero.
+  **When two statements are one operation, gate the pair, not each statement.**
+- **"REUSE THE EXISTING MECHANISM" CAN BE THE SOURCE OF THE DEFECT (2026-09-11, maintainer's bias
+  objection to the keyword-log cap).** Capping an oversized diagnostics member by reusing the
+  neighbouring helper looked like the disciplined move — same helper, same env var, same omission
+  record. But the helper applied a GLOBAL top-N by mentions, and the very same file records at
+  line 54 that "a mentions-ranked cap structurally anglicised the export", which is why the
+  keyword quota beside it is PER LANGUAGE. The reuse handed back the exact bias its sibling exists
+  to prevent. Worse, popularity was the wrong axis for the block's most valuable field:
+  `conflated_by` marks a possible bad merge, and a wrong merge is likelier among rare terms than
+  famous ones — so ranking by mentions hid defects *preferentially*. **Reuse still beats
+  reinvention, but a borrowed mechanism needs the same adversarial read as new code: ask what it
+  selects ON, and whether that axis correlates with the thing you are trying to find.**
+  **The repair generalises beyond this case: a cap should shrink what is PRINTED, never what is
+  COUNTED.** Compute the aggregates over the full population before capping, list any
+  defect-bearing subset by its SIGNAL rather than by rank (ordered rarest-first, so the ordering
+  cannot smuggle the bias back), and make the truncated sample declare itself unrepresentative
+  instead of leaving it to look complete.
+- **A PROXY ASSERTION STOPS TRACKING THE PROPERTY IT STOOD FOR, AND THE TEST GOES ON PASSING
+  (2026-09-11, findings B2 then D5).** B2 stopped an archive member being held whole in RAM by
+  streaming it into the zip, and asserted the fix by checking that reads and writes INTERLEAVE —
+  a fine proxy at the time. D5 then added a per-member byte cap, which cannot work on a stream
+  (a member's size is unknown until its last chunk, and truncating JSON produces an invalid
+  document that hides its own loss), so the writer had to spool. The interleaving vanished; the
+  real property — RAM bounded by a CONSTANT rather than by the member's size — was still intact.
+  The test failed, which was the system working: **when a proxy assertion fails while the property
+  holds, fix the assertion to test the property directly rather than relaxing it** — and check the
+  new assertion still discriminates against the original defect (here the old shape used no spool
+  at all, so it trips the new check from the other side).
+- **A RATCHET CEILING MUST BE CALIBRATED AGAINST THE TREE THAT WILL CARRY IT, NOT THE TREE IT WAS
+  EARNED ON (2026-09-11, PR #1115's own red CI; the ci.yml comment holds the local record).** The
+  field-diagnostics batch measured the advisory-ruff lane at 445 on the COMBINED tree and lowered
+  the ceiling 446 -> 445 — true of the work as a whole. The batch was then split into twelve topic
+  PRs and this branch rewritten to carry only the brief and the ledger, so the CODE that removed
+  the finding LEFT the branch while the tightened ceiling stayed. CI measures the merge into
+  `main`, found 446, and reddened a docs-only PR over a finding it had no way to fix. **The
+  restructuring invalidated a number nobody thought of as depending on it** — which is the part
+  worth carrying: a ceiling silently encodes an assumption about its own tree, and splitting,
+  rebasing or descoping a branch can falsify that assumption while every line of the change still
+  looks right. The drop was not lost, only unclaimed: a ratchet may always be lowered, so whichever
+  topic PR genuinely removes the finding can take 445 and prove it on its own tree. **Slack is safe
+  by construction here** — growth-only, and the script prints the new floor whenever the count
+  drops, so the next PR to touch the lane is handed the number. The script's docstring already
+  records why zero slack is undesirable: at zero slack a tool bump reddens everything at once.
+  Generalises to every count-over-a-tool gate in the repo (mypy, the i18n untranslatable and
+  unkeyed budgets, the CLAUDE.md line ceiling): after splitting or descoping a branch, re-ask
+  whether each recorded number is still a fact about what the branch now contains.
 
 - **A WINDOW BOUNDS HOW OLD A MEASUREMENT MAY BE; ONLY A `since` BOUNDS WHAT IT IS ABOUT
   (2026-09-11, the P6 defect, found one day after shipping it).** `latency._LAG` is

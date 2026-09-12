@@ -21,6 +21,45 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **TWO 2026-09-11 FIELD FINDINGS INVESTIGATED AND NOT CONFIRMED AS DEFECTS (recorded 2026-09-11,
+  PR #1115, so the next session does not re-open them).** Both were in the field brief's own
+  finding list; both were traced to code and came back clean. A finding that survives triage and
+  dies on inspection is a RESULT, and recording it is what stops it being re-investigated every
+  time the same bundle is read.
+  • **C7 — "two readers of the WAL series disagree" is NOT a defect.** `soak-window.wal` reported
+    `series_points_read: 0, measured: false, read_days: 2` while
+    `storage_composition.wal_history.series` was populated from `2026-08-24T21:00:00`, which reads
+    as a contradiction. It is not: BOTH call the same helper, `metric_history(session,
+    metric="wal_bytes", days=N)` (`src/database/snapshots.py`), which filters on a plain
+    wall-clock lookback with nothing process-specific in it. The two differ only in the WINDOW
+    they ask for — `soak_window._wal()` derives `days` from THIS PROCESS's uptime (deliberate: it
+    is the instrument for the 72-hour soak bar, so a point from before this process started is not
+    evidence about this run), while `storage._wal_history()` asks for a fixed 30-day cross-boot
+    window. Both are documented in their own module docstrings, and the exact shape here — a stale
+    point outside the narrow window and inside the wide one — is already covered by a passing test.
+    NOT CHANGED. The only defensible improvement is cosmetic: a one-line cross-reference in each
+    block so a bundle reader seeing both side by side is not left to infer it. Deliberately not
+    taken here, because adding prose to two honest instruments to make a non-contradiction look
+    less like one is not obviously an improvement.
+  • **C4 — "89.6% of the keyword table is orphaned" is real, but its SUGGESTED MECHANISMS ARE
+    DISPROVEN.** `orphan_keywords 9,863,504` of `11,003,661` stands as a measurement. The brief
+    proposed "the extractor creating rows it never mentions, or a mention path deleting mentions
+    without their keywords". Neither is in the code: `Keyword(` is instantiated in EXACTLY ONE
+    place in the whole tree (`src/analytics/store.py`'s `_get_or_create_keyword`), reached from
+    exactly one per-term loop, and keyword and mention are created 1:1 in the SAME transaction.
+    So the orphans are not created by a leak in the write path.
+    **WHAT THIS LEAVES, and why nothing was tuned:** the remaining candidate is re-index churn —
+    a full-corpus re-index deleting and rebuilding mentions while the keyword rows persist. That
+    is a hypothesis, and the brief's own instruction was to find the mechanism BEFORE tuning the
+    prune, precisely so a faster prune is not shipped against a cause nobody established. Pruning
+    harder without knowing would treat the symptom and hide the evidence.
+    **THE NEXT STEP IS A MEASUREMENT, NOT A FIX:** count orphans immediately before and after a
+    full re-index (`reindex_all_batch` / `ReindexJobManager`) and record both in the job's tally,
+    so the next field capture CONFIRMS or kills re-index churn instead of inferring it. Only then
+    is it worth deciding whether the prune's `budget_s 30.0` (~79k/run against +10,737,591 growth
+    in the window) is the right budget, or whether the orphans should not exist at all.
+
+
 - **WIKIPEDIA AS A LIVING SOURCE — THE 2026-09-07 PASS (prompt 18): TWO SLICES SHIPPED, THE
   WHOLE-EDITION HALF STOPPED AT THE SEAM WITH ITS GATE MEASURED, AND G10 IS SMALLER THAN IT
   LOOKS.** Read with the FUTURE_DEVELOPMENTS Wikipedia pair (the 2026-07-10 section and the
@@ -225,6 +264,37 @@
   (how many concurrent handlers a small field machine actually reaches) does not exist yet —
   guessing a cap would be the fabricated-number failure. **PENDING: the maintainer's call on
   whether to build the polled-GET cap, and on which measurement should size it.**
+  **THE MISSING MEASUREMENT NOW EXISTS (recorded 2026-09-11 from the operator's
+  `oo-all-diagnostics-20260911-154750` field bundle, PR #1115). THE CAP IS STILL NOT BUILT — this
+  entry supplies the number the ruling was waiting on, and nothing else.** The entry above says the
+  sizing measurement "does not exist yet"; this is it, taken on a real field machine under a real
+  stall rather than on a bench:
+  • `GET /api/scheduler/activity` — **p50 26.6 ms against p95 30,044.7 ms over n=234**. The p95 is
+    `pool_timeout` (30 s, `src/database/session.py`) plus change: a clean SINGLE pool timeout, so
+    the endpoint's own work is ~27 ms and everything above that is waiting for a connection.
+  • **160 of 187 recorded stalls were that one endpoint at status 500**, with 732 frontend errors,
+    all `fetch-5xx`.
+  • **Observed concurrency: five deep.** The watchdog caught five concurrent
+    `/api/scheduler/activity` requests spaced 6.0 s apart — exactly the closed-panel vitals
+    cadence. So the answer to "how many concurrent handlers a small field machine actually
+    reaches" on THIS polled GET is 5, not the theoretical 40 anyio threadpool tokens.
+  • The pool it faced: `_SMALL` = 6 + 2 = 8 connections (`src/config/memory_budget.py`), and
+    `FLOOR_MAX_WORKERS = 8` (`src/config/machine_floor.py`) was set EQUAL to that bound by its own
+    docstring, so at full fan-out the collector was entitled to every connection.
+  **TWO CAVEATS THE RULING SHOULD HAVE, because they change what the number means.** (1) The
+  five-deep pile-up was PARTLY THE CLIENT'S OWN DOING: `app-core.js`'s vitals tick armed the next
+  poll without awaiting the previous one, so a slow server turned a 6 s cadence into a 6 s issue
+  RATE. That is fixed in this same PR (finding A4, commit `699cd6fe`), which means a re-measurement
+  after A4 would likely show a shallower pile — size the cap against the post-A4 world, not this
+  number. (2) The depth was a SYMPTOM of the stall, not its cause: the root was a 26-minute
+  write-gate hold (finding A1) draining the pool. A cap sized against a stalled machine may be
+  tighter than a healthy one needs.
+  **WHAT IS ALREADY BUILT, so the ruling is only about the server half:** the CLIENT half exists —
+  `api()` already honours 429/503 + `Retry-After` and feeds `_noteServerBusy()`. Only the
+  server-side admission cap is missing.
+  **STILL PENDING, unchanged and deliberately not guessed:** whether to build the narrow
+  polled-GET cap at all, and if so at what depth and over which routes. This session did NOT build
+  it.
   **THE CLASS-B DECISION TAKEN (recorded so it is not re-litigated, and so it can be reversed
   knowingly):** PRH-23 moved the first-run preflight onto the background-job registry, which
   means the pass tail no longer BLOCKS on it — so it now overlaps the housekeeping lane, and
