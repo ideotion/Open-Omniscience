@@ -159,3 +159,92 @@ def test_network_mode_toggle_endpoints():
         r = c.post("/api/system/network", json={"online": True})
         assert r.json()["online"] is True and kill_switch_active() is False
     clear_kill_switch()
+
+
+# --------------------------------------------------------------------------- #
+# A5 (field diagnostics 2026-09-11): the plan preview's total must be a direct
+# COUNT, not a count over a sorted entity subquery
+# --------------------------------------------------------------------------- #
+
+
+def _plan_preview_sources_session(n: int, *, enabled_qualified: int | None = None):
+    """n sources, the first `enabled_qualified` of them selectable by the scheduler."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, Source
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    keep = n if enabled_qualified is None else enabled_qualified
+    for i in range(n):
+        s.add(
+            Source(
+                name=f"S{i}",
+                domain=f"s{i}.test",
+                rss_url=f"https://s{i}.test/feed.xml",
+                enabled=i < keep,
+                status="qualified" if i < keep else "unqualified",
+                rate_limit_ms=2000,
+                priority=i,
+            )
+        )
+    s.commit()
+    return s
+
+
+def test_plan_preview_total_matches_the_selected_set_uncapped(monkeypatch, tmp_path):
+    """`max_sources_per_run=0` means UNBOUNDED (LIMIT 0 returns no rows, so `capped()`
+    returns the query untouched). The total must therefore be the whole selected set —
+    this is the default, and the case A5 measured."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    s = _plan_preview_sources_session(12, enabled_qualified=7)
+    settings = SchedulerSettings(mode="rss", max_sources_per_run=0)
+    plan = plan_preview(s, settings, last_result=None)
+    # 7 enabled+qualified out of 12 rows: the filters still apply, only the ORDER BY and
+    # the entity subquery are gone.
+    assert plan["planned_total"] == 7
+
+
+def test_plan_preview_total_still_honours_the_per_run_cap(monkeypatch, tmp_path):
+    """The cap moved from SQL (`capped(...).count()` = `min(n, total)`) to arithmetic.
+    It must still answer `min(n, total)` in BOTH directions — a naive `func.count()`
+    would have silently dropped it."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    s = _plan_preview_sources_session(10)
+    # cap BELOW the available set -> the cap wins
+    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=4), last_result=None)
+    assert plan["planned_total"] == 4
+    # cap ABOVE the available set -> the real total wins (never the cap)
+    plan = plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=99), last_result=None)
+    assert plan["planned_total"] == 10
+
+
+def test_plan_preview_count_emits_no_order_by_and_no_entity_subquery(monkeypatch, tmp_path):
+    """The DEFECT, pinned at the SQL level rather than by timing (a timing assertion on
+    a 4-core CI box is the flaky-test shape the ledger already records).
+
+    Before: `SELECT count(*) FROM (SELECT <22 sources columns> ... ORDER BY priority, id)`,
+    whose EXPLAIN QUERY PLAN shows USE TEMP B-TREE FOR ORDER BY. After: a single
+    `SELECT count(sources.id) FROM sources WHERE ...`."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from sqlalchemy import event
+
+    s = _plan_preview_sources_session(5)
+    seen: list[str] = []
+
+    @event.listens_for(s.get_bind(), "before_cursor_execute")
+    def _record(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+        seen.append(statement)
+
+    plan_preview(s, SchedulerSettings(mode="rss", max_sources_per_run=0), last_result=None)
+    counts = [q for q in seen if "count(" in q.lower()]
+    assert counts, f"plan_preview issued no COUNT at all; statements seen: {seen}"
+    for q in counts:
+        low = " ".join(q.lower().split())
+        assert "order by" not in low, f"the plan-preview COUNT still sorts: {q}"
+        # The entity subquery is what carried all 22 columns; a direct count has none.
+        assert "from (select" not in low, f"the plan-preview COUNT still wraps a subquery: {q}"

@@ -566,6 +566,10 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     strata: dict[str, object] = {"languages": [], "tags": []}
     total = 0
     if settings.mode in ("rss", "crawl"):
+        from sqlalchemy import func
+
+        from src.database.models import Source
+
         base = select_sources(session, settings)
         # Field perf 2026-06-17: /api/scheduler/activity was the #1 endpoint by
         # server time (4244 polls × ~119 ms), because this preview materialised
@@ -574,7 +578,28 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
         # a representative politeness delay, so: a cheap COUNT for the total, then
         # a BOUNDED sample (never more than the pass will actually run) for the
         # rest. total still drives the estimate, so it stays the true count.
-        total = capped(base, settings.max_sources_per_run).count()
+        # Field diagnostics 2026-09-11 (A5): the "cheap COUNT" above was not cheap.
+        # `max_sources_per_run` defaults to 0, so `capped()` returns the query UNTOUCHED
+        # (src/database/query.py: 0 means unbounded, because LIMIT 0 returns no rows) --
+        # and `base` is an ENTITY query carrying `ORDER BY priority, id`. Query.count()
+        # wraps that whole thing in a subquery, so SQLite was asked for all 22 `sources`
+        # columns SORTED, and `EXPLAIN QUERY PLAN` duly shows USE TEMP B-TREE FOR ORDER
+        # BY -- to produce one integer, on the endpoint that carried 160 of the 187
+        # recorded stalls. Reproduced at 45k rows: 24.4 ms against 8.8 ms for a direct
+        # count, identical answer. (That measurement is plaintext in-memory SQLite: it
+        # proves the SHAPE, not the field magnitude on an encrypted 86k-source store.)
+        #
+        # `with_entities` rewrites the SELECT list of THE SAME query object, so the
+        # WHERE clauses can never drift from select_sources' -- which is why the count
+        # is derived here rather than rebuilt from a second copy of the filters. The
+        # ORDER BY is dropped because a count does not depend on order.
+        #
+        # The cap is applied as arithmetic rather than SQL: `capped(base, n).count()`
+        # answered `min(n, total)`, and min() answers the same thing without asking the
+        # database to run a LIMIT it would only count the rows of.
+        total = base.order_by(None).with_entities(func.count(Source.id)).scalar() or 0
+        if settings.max_sources_per_run and settings.max_sources_per_run > 0:
+            total = min(total, settings.max_sources_per_run)
         sample_n = min(total, _PLAN_PREVIEW_SAMPLE)
         rows = base.limit(sample_n).all() if sample_n else []
         # Same stratified (language + tag, true-random) ordering the pass uses.

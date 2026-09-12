@@ -1071,15 +1071,34 @@
     // airplane/network state stays fresh on its OWN _adaptivePoll, so this never dulls
     // it, and opening the panel snaps back to 2 s with an immediate refresh.
     function _vitalsCadence() { return _vitalsOpen ? 2000 : 6000; }
+    // Field diagnostics 2026-09-11 (A4): the previous shape called _pollVitals()
+    // WITHOUT awaiting it and armed the next timer regardless, so when the server was
+    // slow the polls STACKED -- the watchdog caught five concurrent
+    // /api/scheduler/activity requests spaced 6.0 s apart, exactly _vitalsCadence()'s
+    // closed-panel value. Five in flight against a pool that grants 8 connections is
+    // the client amplifying a server stall into a server outage. _adaptivePoll above
+    // already had the right shape (await fn(), THEN schedule); this matches it, so the
+    // cadence is now a GAP BETWEEN POLLS rather than a rate polls are issued at.
+    //
+    // The generation token is the other half: _ensureVitalsPoll is called again on
+    // every panel open/close and scrape transition, and an in-flight poll from the
+    // previous call would otherwise arm a second chain after this one cleared the
+    // timer -- the same stacking through a different door. A superseded chain retires
+    // itself instead.
+    let _vitalsGen = 0;
     function _ensureVitalsPoll() {
       if (_vitalsTimer) { clearTimeout(_vitalsTimer); _vitalsTimer = null; }
+      const gen = ++_vitalsGen;                       // retires any in-flight chain
       if (!_vitalsShouldRun()) { _vitalsPrev = null; return; }
-      const tick = () => {
-        if (!document.hidden) _pollVitals();
+      const tick = async () => {
+        if (gen !== _vitalsGen) return;               // superseded before this tick ran
+        if (!document.hidden) {
+          try { await _pollVitals(); } catch (_e) { /* transient -- keep polling */ }
+        }
+        if (gen !== _vitalsGen) return;               // superseded while in flight
         _vitalsTimer = _vitalsShouldRun() ? setTimeout(tick, _vitalsCadence()) : null;
       };
-      _pollVitals();                                  // immediate refresh on (re)start / panel open
-      _vitalsTimer = setTimeout(tick, _vitalsCadence());
+      tick();                                         // immediate refresh, then self-schedules
     }
     async function _pollVitals() {
       let v; try { v = await api("/api/system/vitals"); } catch { return; }
