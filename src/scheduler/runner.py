@@ -1070,10 +1070,26 @@ def run_scrape_once(
                     # pass that reported nothing.
                     try:
                         _ticks, _floor = _capacity.from_summary(summary)
+                        # D2 (2026-09-11): the SECOND pressure source, and the line that
+                        # makes the rest of D2 do anything at all. The learner read only
+                        # mem_low -- the governor's fixed 512 MB check -- while the memory
+                        # guard trips at its own, RSS-relative threshold, which on any
+                        # machine above ~3.4 GB is crossed FIRST. So on the field's 4 GB
+                        # box mem_low never fired, the learner saw no pressure across
+                        # seven armed runs, and `learned_ceiling` stayed null while the
+                        # machine sat at 85% RSS. Reading the guard's pressure here is
+                        # what feeds it. Without this call site the mechanism is inert:
+                        # `guard_pressure_from_summary` mirrors `from_summary`'s own
+                        # nesting trap (the numbers live under "bottleneck"; reading them
+                        # from the top level yields None for both, silently
+                        # indistinguishable from a pass that reported nothing).
+                        _gticks, _gfloor = _capacity.guard_pressure_from_summary(summary)
                         _capacity.record_pass(
                             w_max=w_max,
                             mem_low_ticks=_ticks,
                             mem_low_min_permits=_floor,
+                            guard_pressure_ticks=_gticks,
+                            guard_pressure_min_permits=_gfloor,
                             # S1.4: the denominator that tells RARE pressure from
                             # SUSTAINED. Without it one brushed tick pins the ceiling
                             # for the machine's whole life.

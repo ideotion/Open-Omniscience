@@ -385,6 +385,19 @@ class CollectionMonitor:
         # floor the machine hit.
         self._mem_low_ticks = 0
         self._mem_low_min_permits: int | None = None
+        # D2 (2026-09-11): the memory GUARD's own thresholds (RSS-relative, and an
+        # absolute available-memory floor) structurally precede the governor's fixed
+        # 512 MB mem_low floor on any machine above ~3.4 GB total RAM -- so on those
+        # machines mem_low can go an entire pass (or many) without ever firing, and
+        # scheduler.capacity's learner, which reads ONLY mem_low_ticks, never sees a
+        # signal to learn from. Tracked as its OWN pair, deliberately never folded
+        # into _mem_low_ticks above: they are different facts (one is the governor's
+        # own check, the other is the guard's, at a different threshold, and the
+        # guard does not itself reduce permits) and blurring them would make
+        # memory_headroom_note's "mem-low back-off tick(s)" wording false on a pass
+        # where no mem-low back-off actually happened. See MemoryGuard.raw_pressure.
+        self._guard_pressure_ticks = 0
+        self._guard_pressure_min_permits: int | None = None
         # P6: the loop-lag back-off, and the evidence that it is or is not working.
         # ``_loop_lag_streak`` counts CONSECUTIVE cuts made for loop lag; if the lag has
         # not eased after _LOOP_LAG_PATIENCE of them, the collector is not the cause and
@@ -491,10 +504,22 @@ class CollectionMonitor:
         # fire. Module-attribute access so tests can swap the singleton;
         # best-effort (a guard fault must never break a tick).
         guard_engaged = None
+        guard_pressure = None
         try:
             from src.scheduler import memguard
 
-            guard_engaged = memguard.memory_guard.observe(
+            guard = memguard.memory_guard
+            guard_engaged = guard.observe(
+                rss_mb=vit.get("rss_mb"),
+                mem_avail_mb=mem_avail,
+                mem_total_mb=vit.get("mem_total_mb"),
+            )
+            # D2: the unlatched reading, taken from the SAME sample. ``engaged`` is
+            # the guard's own pause decision (needs trip_after consecutive samples);
+            # this is whether this one sample alone crosses the guard's thresholds,
+            # which is what lets a machine hovering AT the line register as pressure
+            # even while it never holds long enough to fully engage.
+            guard_pressure = guard.raw_pressure(
                 rss_mb=vit.get("rss_mb"),
                 mem_avail_mb=mem_avail,
                 mem_total_mb=vit.get("mem_total_mb"),
@@ -572,6 +597,13 @@ class CollectionMonitor:
                 if self._mem_low_min_permits is None
                 else min(self._mem_low_min_permits, new_permits)
             )
+        if guard_pressure:
+            self._guard_pressure_ticks += 1
+            self._guard_pressure_min_permits = (
+                new_permits
+                if self._guard_pressure_min_permits is None
+                else min(self._guard_pressure_min_permits, new_permits)
+            )
         self._max_inflight = max(self._max_inflight, inflight)
         if cpu_sys is not None:
             self._max_cpu_sys = max(self._max_cpu_sys, cpu_sys)
@@ -637,6 +669,8 @@ class CollectionMonitor:
             "mem_total_mb": vit.get("mem_total_mb"),
             "rss_mb": vit.get("rss_mb"),
             "memory_guard_engaged": guard_engaged,
+            # D2: the unlatched reading beside the latched one -- see raw_pressure.
+            "memory_guard_pressure": guard_pressure,
             # S4.3: the WAL and its candidate pinner, in EVERY sample. The hourly
             # wal_bytes gauge runs inside idle maintenance, and the scheduler returns
             # early from that whenever the memory guard is engaged (runner.py) -- so
@@ -856,6 +890,22 @@ class CollectionMonitor:
                 "never assume a bigger box will hit the same ceiling."
             )
 
+        # D2: an honest, MEASURED note about the memory GUARD's own thresholds --
+        # kept separate from memory_headroom_note above because it is a different
+        # fact: the guard's thresholds, not the governor's, and the guard does not
+        # itself cut permits (so `permits` below is only whatever OTHER back-offs
+        # happened to leave in force, never a demonstrated-safe number by itself).
+        guard_pressure_note = None
+        if self._guard_pressure_ticks:
+            guard_pressure_note = (
+                f"the memory guard's own thresholds were crossed on "
+                f"{self._guard_pressure_ticks} sample(s) this pass, with permits as "
+                f"low as {self._guard_pressure_min_permits} while that held -- "
+                "distinct from the governor's own mem-low check above, which reads a "
+                "different (and on this box, harder to reach) threshold and may not "
+                "have fired at all."
+            )
+
         # P6: what the event loop did this pass, said in the same place the memory
         # headroom is said. Absent when the loop was never blocked, because a line
         # reporting "0 loop-lag ticks" on every healthy pass is noise that trains a
@@ -901,6 +951,11 @@ class CollectionMonitor:
             "mem_low_ticks": self._mem_low_ticks,
             "mem_low_min_permits": self._mem_low_min_permits,
             "memory_headroom_note": memory_headroom_note,
+            # D2: the guard's own signal, kept apart from mem_low above -- see
+            # MemoryGuard.raw_pressure and the __init__ comment on these fields.
+            "guard_pressure_ticks": self._guard_pressure_ticks,
+            "guard_pressure_min_permits": self._guard_pressure_min_permits,
+            "guard_pressure_note": guard_pressure_note,
             "loop_lag_ticks": self._loop_lag_ticks,
             "loop_lag_max_fraction": self._loop_lag_max_fraction,
             "loop_lag_backoff_abandoned": self._loop_lag_abandoned,

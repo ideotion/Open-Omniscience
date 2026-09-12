@@ -94,6 +94,62 @@ def test_mem_low_min_permits_tracks_the_worst_observed_floor(tmp_path, monkeypat
     assert b["mem_low_min_permits"] == min(permits_seen)
 
 
+def test_guard_pressure_is_tracked_even_while_mem_low_never_fires(tmp_path, monkeypatch):
+    """D2: on a machine above ~3.4 GB total RAM, the memory guard's own RSS-relative
+    trip point (85% of total, by default) is reached at a LOWER RSS than the
+    governor's fixed 512 MB available-memory floor -- so a pass can run entirely
+    under real memory pressure while mem_low_ticks stays 0 and
+    scheduler.capacity's learner never sees a signal. guard_pressure_ticks is the
+    signal it was missing: RSS 850/1000 MB (85%) with available comfortably above
+    the 512 MB floor."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.scheduler import memguard
+
+    guard = memguard.MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0, trip_after=3, resume_after=2)
+    monkeypatch.setattr(memguard, "memory_guard", guard)
+
+    g = BandwidthGovernor(mode="maximum", w_max=10)
+    vit = {
+        "cpu_sys_pct": 20.0,
+        "cpu_proc_pct": 10.0,
+        "mem_avail_mb": 600.0,  # well above the governor's 512 MB mem_low floor
+        "mem_total_mb": 1000.0,
+        "rss_mb": 850.0,  # 85% of total -- crosses the GUARD's own threshold
+    }
+    mon = _monitor(governor=g, rate=200.0, vitals=vit, writer=_IDLE_WRITER)
+    for _ in range(3):
+        mon._tick()
+    summary = mon._write_summary(None)
+    b = summary["bottleneck"]
+    assert b["mem_low_ticks"] == 0, "the governor's own floor never fires in this scenario"
+    assert b["mem_low_min_permits"] is None
+    assert b["guard_pressure_ticks"] == 3, "the guard's raw per-sample reading must still see it"
+    assert b["guard_pressure_min_permits"] is not None
+    assert "memory guard" in b["guard_pressure_note"]
+    assert str(b["guard_pressure_ticks"]) in b["guard_pressure_note"]
+
+
+def test_guard_pressure_note_absent_when_healthy(tmp_path, monkeypatch):
+    """Negative space, mirroring memory_headroom_note's own absence test: a
+    healthy pass must report guard_pressure_ticks == 0 and no note."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.scheduler import memguard
+
+    guard = memguard.MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0)
+    monkeypatch.setattr(memguard, "memory_guard", guard)
+
+    g = BandwidthGovernor(mode="maximum", w_max=4)
+    vit = {**_HEALTHY_VITALS, "mem_total_mb": 8000.0}
+    mon = _monitor(governor=g, rate=200.0, vitals=vit, writer=_IDLE_WRITER)
+    for _ in range(3):
+        mon._tick()
+    summary = mon._write_summary(None)
+    b = summary["bottleneck"]
+    assert b["guard_pressure_ticks"] == 0
+    assert b["guard_pressure_min_permits"] is None
+    assert b["guard_pressure_note"] is None
+
+
 def test_classifier_writer_bound(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     g = BandwidthGovernor(mode="maximum", w_max=12)

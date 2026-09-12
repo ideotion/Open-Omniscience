@@ -254,6 +254,46 @@ class MemoryGuard:
             _LOG.warning("memory guard released (memory recovered) — collection resumes")
         return engaged
 
+    def raw_pressure(
+        self,
+        *,
+        rss_mb: float | None,
+        mem_avail_mb: float | None,
+        mem_total_mb: float | None,
+    ) -> bool | None:
+        """Whether THIS ONE sample, alone, crosses the guard's trip thresholds.
+
+        D2 (2026-09-11). :meth:`observe` answers a different question -- "should
+        collection be PAUSED right now" -- and deliberately needs ``trip_after``
+        CONSECUTIVE over-threshold samples before it says yes, so a single brushed
+        tick can never false-fire a pause. That hysteresis is correct for the pause
+        decision and wrong for anything that wants to COUNT pressure across a pass
+        the way ``CollectionMonitor`` already counts ``mem_low`` ticks: a machine
+        that hovers right at the line reads as ``engagements: 0`` for its entire
+        life (RSS repeatedly touching 85% without ever holding it for three
+        straight samples), which is indistinguishable, to a caller reading only
+        ``observe``'s return, from a machine with no pressure at all.
+
+        This is the unlatched reading underneath that latch -- same thresholds
+        (``self.rss_pct`` / ``self.avail_floor_mb``, so a caller never re-embeds
+        the numbers), same formula, NO state, NO hysteresis, and no memory of any
+        earlier sample: it neither trips nor clears anything and is safe to call
+        every tick from anywhere, including tests, without disturbing
+        :meth:`observe`'s own latch. ``None`` when neither reading is available --
+        the same "no information" refusal :meth:`observe` makes, because an absent
+        reading must never be read as a healthy one.
+        """
+        if not self.enabled():
+            return None
+        rss_frac_pct = (
+            100.0 * rss_mb / mem_total_mb if rss_mb is not None and mem_total_mb else None
+        )
+        if rss_frac_pct is None and mem_avail_mb is None:
+            return None
+        over_rss = rss_frac_pct is not None and rss_frac_pct >= self.rss_pct
+        over_avail = mem_avail_mb is not None and mem_avail_mb <= self.avail_floor_mb
+        return over_rss or over_avail
+
     def _run_release(self) -> None:
         """Release residents on engage. Never raises — the pause must stand even
         if the release fails, and this runs when the machine is already in

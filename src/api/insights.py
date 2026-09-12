@@ -91,6 +91,11 @@ class SourceTypeFacetsResponse(_CacheEnvelopeFields):
     total: int
     method: str
     caveat: str
+    # D3 (2026-09-11): present only when served from the off-peak in-memory rollup
+    # (src.analytics.source_type_rollup) rather than computed live -- discloses the
+    # staleness rather than hiding it (the informed-consent rule every rollup here
+    # follows). ``None`` on the live-compute path, exactly like ``cached`` above.
+    basis: dict | None = None
 
 
 class KeywordStatsResolved(BaseModel):
@@ -1342,7 +1347,19 @@ def insights_source_types(db: Session = Depends(get_db)) -> dict:
     """Article counts per raw source CHANNEL (content-provenance S2 facet), so the
     corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
     discovery). An asserted descriptive fact, NO score. The `source_type=` param on
-    /api/articles applies the actual filter."""
+    /api/articles applies the actual filter.
+
+    D3 (2026-09-11): the underlying aggregate measured 48.5 s worst-case / 7.2 s p50
+    -- the single slowest query in the field perf bundle -- so a warm request is
+    served from the off-peak in-memory rollup (src.analytics.source_type_rollup)
+    rather than recomputed here; a cold/foreign-bind/stale-epoch rollup falls back
+    to the identical TTL/deadline/heavy-guarded live path unchanged below.
+    """
+    from src.analytics import source_type_rollup
+
+    served = source_type_rollup.served(db)
+    if served is not None:
+        return served
     return _deadlined(db, _ckey("source-types"), lambda: q.source_type_facets(db))
 
 
