@@ -7337,3 +7337,39 @@ hosts are `host_timeout` and the process exits without joining their threads; `-
 with a last-line-wins cursor; the kit's self-check re-runs for an updated kit; and, in the fetcher,
 a wall-clock deadline on one body read (a tarpit refusal, bucket `slow_body`). Lesson copied to
 LESSONS.md; the collector's own uncapped inline sleep is recorded in the open queue for a ruling.
+
+## 2026-09-12 — Roadmap intake: eight field impressions verified against the tree, seventy questions, the alpha train to beta
+
+Docs-only. The maintainer's 2026-09-12 message carried eight impressions from use (import/export UX;
+ISO alpha-3 everywhere; keywords and cards in the UI language tagged "translated from X";
+cross-language search in every result tab; an advanced search with visual operators; Wikipedia whole,
+automatic, in twelve languages, without dumps; Equal Earth and OSM as a tracked source; laws for every
+country with change analysis) and asked for numbered questions and a roadmap to beta. Seven read-only
+recon agents inventoried the tree at `main`@`bebcef4`; every load-bearing anchor was re-verified by
+hand before it entered `docs/design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md`, which records per item
+the verified state, the gap, the proposal and its questions (70 in all, six ⛔), one versioned-source
+substrate for Wikipedia/laws/OSM, and the alpha train with beta at 0.9.0. Four findings: the projection
+is equirectangular, not Mercator; the UN General Assembly vote of 2026-09-04 is real (search-verified);
+`docs/SECURITY.md`'s endpoint list omits the default-on Wikidata discovery ride-along, the Wikipedia API,
+ORES, the dumps host and the OSM mirrors; the post-import re-index job has no frontend caller. The
+intake and the rulings received are in `OPEN_QUEUE.md`; the lesson (verify a premise in both
+directions) is in `LESSONS.md`. Nothing was built, per "we're only making plans".
+
+## 2026-09-12 — Roadmap answer sheet: 278 questions with per-option impact, answerable in place, carrying their own processing protocol
+
+The maintainer's second message of the day added three scope clarifications (law eligibility =
+written or formally translated into any UI language; OSM's value = place metadata and its change
+trends; Wikipedia coordinates and every other located datum linked onto the map), accepted 0.9 as
+beta in principle, and asked for a longer, more detailed question list with a tiny impact analysis
+per choice, in one markdown file to be answered in place and returned into a compressed session.
+`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md` (3,115 lines) is that file: §0 the
+conventions and the processing protocol for the returning session; §1 the nineteen recorded rulings,
+pre-filled; §2–§13 278 questions in themed ID blocks with verified context, options carrying
+effort/risk/unlocks, a default-if-blank and an ANSWER line; §14 the index. It supersedes §6 of the
+intake document and folds in every still-open docket ruling (the 2026-09-06 register, the visual
+audit, the institutions docket, the storage round-2 rows). Lesson (in LESSONS.md): a scale claim
+inherits the fetch granularity it assumed — the intake's "months per edition" became "about a week
+per pass" once the API's 50-title batch limit was read; and a question file answered across a
+compaction must carry its own processing instructions. Fourteen web searches moved the Wikimedia,
+OSM and legal open-data facts from memory to search-verified; proj.org and Geofabrik's technical
+page stayed egress-blocked. Nothing built.
