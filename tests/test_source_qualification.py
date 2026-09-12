@@ -177,6 +177,200 @@ def test_ensure_source_qualification_columns_idempotent(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# The 2026-09-11 field finding: a recorded verdict must survive the self-heal,
+# even when the source has zero LOCAL articles for the has-articles guess to see.
+# --------------------------------------------------------------------------- #
+
+def _make_legacy_sqlite_db_with_attempts(path: str) -> None:
+    """The same pre-qualification schema as ``_make_legacy_sqlite_db``, PLUS
+    ``source_qualification_attempts`` (create_all's own missing-table heal would
+    normally have already materialised this -- a hand-built legacy DB has to do it
+    itself) carrying real judging history for four sources:
+
+      1. already-scraped.example  -- has a local article, NO attempt at all
+                                      (the original has-articles heuristic's target)
+      2. never-scraped.example    -- no local article, NO attempt at all
+                                      (must stay unqualified)
+      3. wire-service.example     -- judged QUALIFIED on 2026-07-22, ZERO local
+                                      articles (exactly the field bundle's signature:
+                                      reuters.com/apnews.com/afp.com/efe.com)
+      4. known-bad.example        -- judged DISQUALIFIED on 2026-07-22, but DOES
+                                      have a local article (proves the recorded
+                                      verdict wins over the has-articles guess, not
+                                      merely alongside a source the guess ignores)
+    """
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE sources (id INTEGER PRIMARY KEY, name TEXT, domain TEXT UNIQUE)"
+    )
+    conn.execute(
+        "CREATE TABLE articles (id INTEGER PRIMARY KEY, source_id INTEGER, "
+        "url TEXT, canonical_url TEXT, hash TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE source_qualification_attempts (id INTEGER PRIMARY KEY, "
+        "source_id INTEGER, attempted_at TEXT, verdict TEXT, criteria_version TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO sources (id, name, domain) VALUES "
+        "(1, 'Already Scraped', 'already-scraped.example'), "
+        "(2, 'Never Scraped', 'never-scraped.example'), "
+        "(3, 'Wire Service', 'wire-service.example'), "
+        "(4, 'Known Bad', 'known-bad.example')"
+    )
+    conn.execute(
+        "INSERT INTO articles (id, source_id, url, canonical_url, hash) VALUES "
+        "(1, 1, 'http://a/1', 'http://a/1', 'h1'), "
+        "(2, 4, 'http://d/1', 'http://d/1', 'h4')"
+    )
+    conn.execute(
+        "INSERT INTO source_qualification_attempts "
+        "(id, source_id, attempted_at, verdict, criteria_version) VALUES "
+        "(1, 3, '2026-07-22 10:42:25', 'qualified', 'oo-source-qualification-1'), "
+        "(2, 4, '2026-07-22 10:42:25', 'disqualified', 'oo-source-qualification-1')"
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_a_dropped_status_column_launders_a_judged_source_BEFORE_THE_FIX(tmp_path):
+    """Reproduces the P0 defect directly, bypassing ``ensure_source_qualification_columns``
+    entirely, so this test's own correctness never depends on the fix under test: it
+    performs EXACTLY the pre-fix single-statement backfill (status/qualified_at/
+    qualification_criteria_version rebuilt from ``articles`` alone) against a store that
+    already carries real judging history, and shows the July verdict is destroyed --
+    the wire-service source (qualified, zero local articles) comes back 'unqualified'
+    with no trace of ever having been judged qualified.
+
+    This is what the FIXED ``ensure_source_qualification_columns`` must no longer do --
+    see ``test_ensure_source_qualification_columns_restores_a_judged_qualified_source_with_no_local_articles``
+    below, which runs the real (fixed) function against the identical fixture.
+    """
+    db_path = str(tmp_path / "prefix.db")
+    _make_legacy_sqlite_db_with_attempts(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE sources ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'unqualified'"
+        )
+        conn.exec_driver_sql("ALTER TABLE sources ADD COLUMN qualified_at DATETIME")
+        conn.exec_driver_sql(
+            "ALTER TABLE sources ADD COLUMN qualification_criteria_version VARCHAR(40)"
+        )
+        conn.exec_driver_sql(
+            "UPDATE sources SET status = 'qualified', qualified_at = CURRENT_TIMESTAMP, "
+            "qualification_criteria_version = 'oo-source-qualification-2' "
+            "WHERE status = 'unqualified' "
+            "AND (SELECT COUNT(*) FROM articles WHERE articles.source_id = sources.id) > 0"
+        )
+    with engine.connect() as conn:
+        status = conn.exec_driver_sql(
+            "SELECT status FROM sources WHERE domain = 'wire-service.example'"
+        ).scalar()
+    # THE DEFECT: a source judged 'qualified' in its own attempt history, with zero
+    # locally-collected articles, comes back 'unqualified' -- its verdict silently lost.
+    assert status == STATUS_UNQUALIFIED, (
+        "if this fails, the pre-fix backfill statement no longer reproduces the defect "
+        "and this test needs to be revisited, not deleted"
+    )
+
+
+def test_ensure_source_qualification_columns_restores_a_judged_qualified_source_with_no_local_articles(tmp_path):
+    """THE FIX: a source judged 'qualified' whose attempt history is on record must come
+    back 'qualified' even with zero local articles -- and dated to the ATTEMPT's own
+    ``attempted_at`` (2026-07-22), never CURRENT_TIMESTAMP, so a July verdict cannot read
+    as freshly re-checked today."""
+    db_path = str(tmp_path / "wire.db")
+    _make_legacy_sqlite_db_with_attempts(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+
+    ensure_source_qualification_columns(engine)
+
+    with engine.connect() as conn:
+        status, qualified_at, version = conn.exec_driver_sql(
+            "SELECT status, qualified_at, qualification_criteria_version FROM sources "
+            "WHERE domain = 'wire-service.example'"
+        ).fetchone()
+    assert status == STATUS_QUALIFIED
+    assert qualified_at is not None and str(qualified_at).startswith("2026-07-22"), (
+        f"expected the ATTEMPT's own date, got {qualified_at!r}"
+    )
+    assert version == "oo-source-qualification-1", "the attempt's own criteria_version, not today's"
+
+
+def test_ensure_source_qualification_columns_restores_a_judged_disqualified_source_even_with_local_articles(tmp_path):
+    """The other direction, and the harder case: a source judged 'disqualified' that DOES
+    have a local article must stay disqualified -- the recorded verdict wins over the
+    has-articles guess, not merely alongside a source the guess would have ignored anyway.
+    No qualified_at/criteria_version stamp survives (evaluate_and_stamp's own rule)."""
+    db_path = str(tmp_path / "bad.db")
+    _make_legacy_sqlite_db_with_attempts(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+
+    ensure_source_qualification_columns(engine)
+
+    with engine.connect() as conn:
+        status, qualified_at, version = conn.exec_driver_sql(
+            "SELECT status, qualified_at, qualification_criteria_version FROM sources "
+            "WHERE domain = 'known-bad.example'"
+        ).fetchone()
+    assert status == STATUS_DISQUALIFIED
+    assert qualified_at is None
+    assert version is None
+
+
+def test_ensure_source_qualification_columns_never_judged_with_articles_still_promoted(tmp_path):
+    """The original ruling is preserved: a source with NO judging attempt but an
+    already-collected article is still promoted -- "the first collect pass IS its
+    qualification pass"."""
+    db_path = str(tmp_path / "guess.db")
+    _make_legacy_sqlite_db_with_attempts(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+
+    ensure_source_qualification_columns(engine)
+
+    with engine.connect() as conn:
+        status, version = conn.exec_driver_sql(
+            "SELECT status, qualification_criteria_version FROM sources "
+            "WHERE domain = 'already-scraped.example'"
+        ).fetchone()
+    assert status == STATUS_QUALIFIED
+    assert version == CRITERIA_VERSION, "the CURRENT criteria version -- a guess, not a recorded attempt"
+
+
+def test_ensure_source_qualification_columns_never_judged_no_articles_stays_unqualified(tmp_path):
+    """No judging attempt AND no local article: stays honestly unqualified, unchanged."""
+    db_path = str(tmp_path / "neither.db")
+    _make_legacy_sqlite_db_with_attempts(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+
+    ensure_source_qualification_columns(engine)
+
+    with engine.connect() as conn:
+        status = conn.exec_driver_sql(
+            "SELECT status FROM sources WHERE domain = 'never-scraped.example'"
+        ).scalar()
+    assert status == STATUS_UNQUALIFIED
+
+
+def test_ensure_source_qualification_columns_history_restore_is_idempotent(tmp_path):
+    db_path = str(tmp_path / "idem.db")
+    _make_legacy_sqlite_db_with_attempts(db_path)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+
+    first = ensure_source_qualification_columns(engine)
+    assert first
+    second = ensure_source_qualification_columns(engine)
+    assert second == []
+
+    with engine.connect() as conn:
+        status = conn.exec_driver_sql(
+            "SELECT status FROM sources WHERE domain = 'wire-service.example'"
+        ).scalar()
+    assert status == STATUS_QUALIFIED, "re-running the self-heal must not disturb the restored verdict"
+
+
+# --------------------------------------------------------------------------- #
 # Admission gate: only a QUALIFIED (+ enabled) source feeds regular collection
 # --------------------------------------------------------------------------- #
 
@@ -571,3 +765,43 @@ def test_qualification_attempts_are_append_only_never_overwritten():
     )
     assert len(attempts) == 2  # both attempts recorded, neither overwritten
     assert [a.verdict for a in attempts] == [STATUS_DISQUALIFIED, STATUS_DISQUALIFIED]
+
+
+def test_the_history_restore_sql_verdict_list_cannot_drift_from_JUDGING_VERDICTS():
+    """The one duplication the B1 fix could not avoid, pinned so it cannot rot.
+
+    `_source_qualification_history_restore_sql` runs against a bare Engine during the
+    schema self-heal -- there is no ORM Session there to call
+    `qualification_integrity._newest_judging` through -- so the judging-verdict set is
+    written out as SQL literals instead of being imported. That is a second copy of a
+    definition, and a second copy is exactly how two surfaces come to disagree about one
+    fact. If a third judging verdict is ever added to JUDGING_VERDICTS, the self-heal
+    would silently ignore it and quietly resurrect the 2026-09-11 defect for that verdict.
+
+    So: every member of JUDGING_VERDICTS must appear in the SQL, and the SQL must name no
+    verdict that is NOT one -- in particular never `no_evidence`, `inherited` or
+    `curated`, none of which is a judgement (restoring from an `inherited` stamp would
+    make a shipped verdict outrank a local one, inverting the overlay's own rule)."""
+    from src.catalog.qualification import (
+        CLOCK_VERDICTS,
+        JUDGING_VERDICTS,
+        VERDICT_CURATED,
+        VERDICT_INHERITED,
+        VERDICT_NO_EVIDENCE,
+    )
+    from src.database.maintenance import _source_qualification_history_restore_sql
+
+    sql = _source_qualification_history_restore_sql()
+    for verdict in JUDGING_VERDICTS:
+        assert f"'{verdict}'" in sql, (
+            f"JUDGING_VERDICTS has {verdict!r} but the self-heal's restore SQL does not "
+            "name it -- that verdict would be silently ignored on a column re-add"
+        )
+    for non_judging in (VERDICT_NO_EVIDENCE, VERDICT_INHERITED, VERDICT_CURATED):
+        assert f"'{non_judging}'" not in sql, (
+            f"the restore SQL names {non_judging!r}, which is NOT a judgement"
+        )
+    # ...and the distinction itself is real: CLOCK_VERDICTS is deliberately WIDER than
+    # JUDGING_VERDICTS, so "verdicts that reset the clock" must never be confused for
+    # "verdicts that decide status".
+    assert set(JUDGING_VERDICTS) < set(CLOCK_VERDICTS)
