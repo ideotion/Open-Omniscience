@@ -24,7 +24,7 @@
 - **ROADMAP INTAKE 2026-09-12 — EIGHT FIELD IMPRESSIONS + THE ALPHA TRAIN TO BETA (maintainer
   message 2026-09-12: "We're only making plans, I'd like a robust, detailed roadmap towards the beta
   release, with all detailed plans and stages for all remaining alpha releases"; INTAKE + PLAN ONLY,
-  nothing built; design of record =
+  nothing built; draft PR #1131; design of record =
   [`docs/design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md);
   **70 numbered questions PENDING in its §6**, six of them ⛔):** the eight impressions (import/export
   UX · ISO alpha-3 everywhere · keywords shown in the UI language with "translated from X" ·
