@@ -90,6 +90,55 @@ def test_reclaims_pages_on_an_incremental_mode_store_and_persists_a_marker(tmp_p
     assert state["last_tally"]["pages_reclaimed"] == out["pages_reclaimed"]
 
 
+def test_reclaims_the_full_requested_budget_not_just_one_page(tmp_path, monkeypatch):
+    """C3 (field diagnostics 2026-09-09): with a freelist bigger than the
+    requested budget, the pass must drain the ENTIRE budget it asked for --
+    not stop after freeing the first page. ``PRAGMA incremental_vacuum(N)``
+    yields one result row per page freed; on current main the pragma is run
+    via ``Connection.execute(text(...))`` and its result discarded, and
+    because pysqlite reports no ``cursor.description`` for it, SQLAlchemy's
+    CursorResult treats that as "no rows" and closes the cursor after the
+    single execute() step -- which is the same step that frees page #1. That
+    makes ``pages_reclaimed`` exactly 1 on every call, regardless of the
+    requested budget or the freelist size. This test sets a requested budget
+    (50) comfortably smaller than the freelist it builds, so a correct pass
+    reclaims exactly the requested budget, not 1."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_INCREMENTAL_VACUUM_PAGES", "50")
+    from src.database.connect import connect
+    from src.database.maintenance import maybe_incremental_vacuum
+
+    db = tmp_path / "corpus.db"
+    seed = connect(db, key=None, create_encrypted=False)
+    seed.execute("CREATE TABLE t(x TEXT)")
+    pad = "a" * 500
+    seed.executemany("INSERT INTO t VALUES (?)", [(pad,) for _ in range(4000)])
+    seed.commit()
+    # Contiguous tail delete so whole pages empty out (page-granularity freeing).
+    seed.execute("DELETE FROM t WHERE rowid > 1500")
+    seed.commit()
+    freelist_before_close = int(seed.execute("PRAGMA freelist_count").fetchone()[0])
+    seed.close()
+    assert freelist_before_close > 50, (
+        "fixture must produce more free pages than the requested budget, or "
+        "this test can't distinguish 'reclaimed everything available' from "
+        "'reclaimed the requested budget'"
+    )
+
+    engine = _engine_at(db)
+    try:
+        out = maybe_incremental_vacuum(engine)
+    finally:
+        engine.dispose()
+
+    assert out["requested_pages"] == 50
+    assert out["pages_reclaimed"] == 50, (
+        f"asked for 50 pages with {freelist_before_close} free -- got "
+        f"{out['pages_reclaimed']} (a value of 1 is the discarded-cursor defect)"
+    )
+    assert out["freelist_pages_after"] == out["freelist_pages_before"] - 50
+
+
 def test_is_freshness_gated(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_INCREMENTAL_VACUUM_HOURS", "6")

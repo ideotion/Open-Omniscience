@@ -1770,15 +1770,114 @@ def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
 
             pages = _incremental_vacuum_pages()
             freelist_before = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
-            conn.execute(text(f"PRAGMA incremental_vacuum({pages})"))
+            # C3 (field diagnostics 2026-09-09): PRAGMA incremental_vacuum(N) frees
+            # pages ONE AT A TIME, yielding one result row per page freed, and only
+            # runs its VDBE program as far as the caller steps it. pysqlite reports
+            # no column `description` for this pragma, so SQLAlchemy's CursorResult
+            # reads `description is None` as "this statement returns no rows" and
+            # closes/finalizes the cursor right after the single execute() step --
+            # which is exactly the step that frees page #1. So `conn.execute(text(...))`
+            # reclaimed exactly 1 page on every call, independent of `pages`, of the
+            # freelist size, and of whether the store predates auto_vacuum=INCREMENTAL
+            # (reproduced live and on a from-creation-INCREMENTAL store, ruling that
+            # hypothesis out). Fix: drive the DBAPI cursor directly, bypassing
+            # SQLAlchemy's CursorResult, and drain every yielded row so the VDBE
+            # program actually runs to completion. fetchmany() in bounded chunks
+            # rather than fetchall() so a large/unbounded `pages` never holds the
+            # whole freed-page count as buffered rows at once.
+            # SQLAlchemy types this Optional, and it really is None for an invalidated
+            # or detached connection. REFUSED BY NAME rather than fallen back on: the
+            # only fallback available is conn.execute(), which is precisely the path
+            # that silently reclaims 1 page of the N requested. A quiet degradation to
+            # the bug this comment describes would be worse than a logged failure, so
+            # the raise lands in the enclosing handler and is recorded with a reason.
+            dbapi_conn = conn.connection.dbapi_connection
+            if dbapi_conn is None:
+                raise RuntimeError(
+                    "no DBAPI connection to drive PRAGMA incremental_vacuum on; "
+                    "refusing rather than falling back to the single-page path"
+                )
+            raw_cur = dbapi_conn.cursor()
+            try:
+                raw_cur.execute(f"PRAGMA incremental_vacuum({pages})")
+                while raw_cur.fetchmany(1000):
+                    pass
+            finally:
+                raw_cur.close()
             freelist_after = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
+            reclaimed = max(freelist_before - freelist_after, 0)
+            page_size = int(conn.execute(text("PRAGMA page_size")).scalar() or 0)
             report = {
                 "freelist_pages_before": freelist_before,
                 "freelist_pages_after": freelist_after,
-                "pages_reclaimed": max(freelist_before - freelist_after, 0),
+                "pages_reclaimed": reclaimed,
                 "requested_pages": pages,
+                "page_size": page_size,
+                "freelist_bytes_after": freelist_after * page_size,
                 "at": now.isoformat(timespec="seconds"),
             }
+            # C3 (field diagnostics 2026-09-11), REVISED once the mechanism was known.
+            # The field reported `pages_reclaimed: 1` against `requested_pages: 2000`
+            # with 141,679 pages still free -- about 2.22 GB stranded in a 27.7 GB
+            # database -- and said nothing about it. The first version of this block
+            # treated that as an unexplained partial reclaim and raised an alarm on
+            # "asked for N, got fewer, and more than N are still free".
+            #
+            # THAT CONDITION WAS MEASURING THE BUG, NOT THE STORE. The drain above is
+            # why every run returned 1: the pragma was never stepped past its first
+            # page. With it fixed, the three reachable outcomes were measured directly
+            # on a real store (freelist 445, page_size 4096):
+            #
+            #   * budget-bound  -- requested 5  -> reclaimed exactly 5, 440 still free.
+            #   * unobstructed  -- requested 100,000 -> freelist drained to ZERO.
+            #   * reader-blocked-- a second connection holding a read snapshot makes the
+            #     pragma RAISE `database is locked`; it does not silently under-reclaim.
+            #     That path therefore lands in the `except` below and reports
+            #     `skipped: error`, which is where it belongs.
+            #
+            # So "asked for N and got fewer" is not the shape a healthy store produces,
+            # and an alarm hung on it would now fire approximately never while the thing
+            # an operator actually needs to know -- that pages remain -- went unsaid.
+            #
+            # WHAT IS REPORTED IS THEREFORE A BUDGET STATEMENT, NOT A FAULT. A residual
+            # after a full-budget run means the freelist is larger than one pass's
+            # allowance, which is the design working: bounded work in an idle window.
+            # It is named, with its real numbers and the knob that changes it, so the
+            # operator can tell "this needs more passes" from "this is stuck" -- and it
+            # deliberately carries no reader-snapshot or pointer-map "candidates", which
+            # were written for the partial-reclaim shape that the measurements above show
+            # does not occur. Inventing a cause for a healthy run is the same defect as
+            # staying silent about an unhealthy one, pointed the other way.
+            if freelist_after > 0 and page_size > 0:
+                budget_bound = pages > 0 and reclaimed >= pages
+                report["residual"] = {
+                    "still_free_pages": freelist_after,
+                    "still_free_bytes": freelist_after * page_size,
+                    "reclaimed": reclaimed,
+                    "requested": pages,
+                    "budget_bound": budget_bound,
+                    "detail": (
+                        f"reclaimed {reclaimed:,} of the {pages:,} pages this pass was "
+                        f"allowed, leaving {freelist_after:,} free "
+                        f"({freelist_after * page_size:,} bytes). The per-pass budget was "
+                        "the limit, not the store: later passes continue from here, and "
+                        "OO_INCREMENTAL_VACUUM_PAGES raises it."
+                        if budget_bound
+                        else
+                        f"reclaimed {reclaimed:,} of {pages:,} requested pages while "
+                        f"{freelist_after:,} remain free. The budget was NOT the limit, so "
+                        "something stopped the pragma short -- check "
+                        "storage_composition.last_checkpoint.readers for a long-lived "
+                        "reader holding a snapshot those pages belong to."
+                    ),
+                    "full_vacuum_note": (
+                        "A full VACUUM is the only operation that always compacts, and it "
+                        "is deliberately NOT run here: it blocks writes for its whole "
+                        "duration and needs free disk roughly equal to the database size, "
+                        "which on a large corpus is a real constraint rather than a "
+                        "footnote. It stays the operator's button in Settings."
+                    ),
+                }
     except Exception:  # noqa: BLE001 - a background safety net must never break the pass
         _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
         return {"skipped": "error"}
