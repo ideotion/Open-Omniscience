@@ -20,6 +20,7 @@ from datetime import datetime
 
 import trafilatura
 from dateutil import parser as date_parser
+from trafilatura.settings import Document, set_date_params
 
 
 @dataclass
@@ -84,6 +85,86 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
     if not html or not html.strip():
         return None
 
+    # ONE parse, not two. ``extract`` and ``extract_metadata`` each called ``load_html``
+    # on the same string, so every article was parsed twice; ``bare_extraction`` does the
+    # metadata pass and the body pass off a single tree, in that order -- metadata first,
+    # before the body extraction prunes it -- which is why sharing the parse is safe here
+    # and would NOT have been safe by handing our own tree to the two public calls.
+    #
+    # ``date_extraction_params`` is not optional. ``Extractor`` defaults it to
+    # ``set_date_params(extensive_search=True)``, and ``extract_metadata`` prefers a
+    # supplied ``date_config`` over its own ``extensive`` argument -- so a switch to
+    # ``bare_extraction`` that left this out would silently restore the unbounded date
+    # hunt P3 removed, with no test failing and no line in the diff to see it in. The
+    # flag is read ONCE per article, never per candidate date expression (the P2 shape).
+    try:
+        doc = trafilatura.bare_extraction(
+            html,
+            url=url,
+            favor_recall=False,
+            include_comments=False,
+            include_tables=False,
+            no_fallback=False,
+            with_metadata=True,
+            date_extraction_params=set_date_params(extensive_date_search_enabled()),
+        )
+    except Exception:
+        # A RAISE is a fault, not a verdict. ``bare_extraction`` RETURNS None for every
+        # legitimate rejection it makes (no tree, too short, wrong language, duplicate)
+        # and catches only TypeError/ValueError internally, so anything else escaping it
+        # came from the metadata pass -- which, folded into one call, would now take the
+        # article BODY with it. That is a worse failure than the one this saves: the
+        # contract says None means "no article here", never "the byline parser threw".
+        # So a fault falls back to the previous two-call path, which survives a metadata
+        # fault with the body intact. It costs a second parse on a page that was already
+        # exceptional, and never on the normal path -- a legitimate None returns straight
+        # away rather than re-extracting every non-article page in a crawl.
+        return _extract_resiliently(html, url=url)
+
+    if doc is None:
+        return None
+    if not isinstance(doc, Document):
+        # ``bare_extraction`` is typed ``Document | dict | None`` because of a DEPRECATED
+        # ``as_dict`` parameter this call never passes, so today this branch cannot be
+        # reached -- and it is a narrowing rather than a ``cast`` because the two differ
+        # exactly when it matters. A cast asserts the union away and would turn an
+        # upstream change into an AttributeError on a live collect pass; this lands on
+        # the path that still works. The test that forces it is what keeps it from being
+        # an unfalsifiable guard.
+        return _extract_resiliently(html, url=url)
+    text = doc.text
+    if not text or len(text.strip()) < _MIN_BODY_CHARS:
+        return None
+
+    title = author = language = canonical = None
+    published_at: datetime | None = None
+    meta = doc
+    if meta is not None:
+        title = _clean(meta.title)
+        author = _clean(meta.author)
+        canonical = _clean(getattr(meta, "url", None))
+        # trafilatura exposes language only when its detector is enabled; guard it.
+        language = _clean(getattr(meta, "language", None))
+        published_at = _parse_date(getattr(meta, "date", None))
+
+    return ExtractedDoc(
+        title=title,
+        text=text.strip(),
+        published_at=published_at,
+        language=language,
+        author=author,
+        canonical_url=canonical,
+    )
+
+
+def _extract_resiliently(html: str, *, url: str | None = None) -> ExtractedDoc | None:
+    """The two-parse path, kept for the case the one-parse path cannot serve.
+
+    This is what ``extract_article`` did before the parse was shared, unchanged: the body
+    comes from its own call, and a metadata fault costs the metadata rather than the
+    article. It is reached only when ``bare_extraction`` RAISES -- never on a legitimate
+    ``None`` -- so the double parse is paid on an exceptional page and nowhere else.
+    """
     text = trafilatura.extract(
         html,
         url=url,
@@ -94,11 +175,8 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
     )
     if not text or len(text.strip()) < _MIN_BODY_CHARS:
         return None
-
     title = author = language = canonical = None
     published_at: datetime | None = None
-    # One read of the flag per article, never per candidate date expression -- the P2
-    # shape (a settings read that had migrated into a hot inner loop).
     try:
         meta = trafilatura.extract_metadata(
             html, default_url=url, extensive=extensive_date_search_enabled()
@@ -109,10 +187,8 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
         title = _clean(meta.title)
         author = _clean(meta.author)
         canonical = _clean(getattr(meta, "url", None))
-        # trafilatura exposes language only when its detector is enabled; guard it.
         language = _clean(getattr(meta, "language", None))
         published_at = _parse_date(getattr(meta, "date", None))
-
     return ExtractedDoc(
         title=title,
         text=text.strip(),

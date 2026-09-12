@@ -9042,6 +9042,90 @@
   unkeyed budgets, the CLAUDE.md line ceiling): after splitting or descoping a branch, re-ask
   whether each recorded number is still a fact about what the branch now contains.
 
+- **A WINDOW BOUNDS HOW OLD A MEASUREMENT MAY BE; ONLY A `since` BOUNDS WHAT IT IS ABOUT
+  (2026-09-11, the P6 defect, found one day after shipping it).** `latency._LAG` is
+  process-global over ten seconds of wall clock, and `CollectionMonitor` read it unscoped —
+  so a collect pass starting shortly after an unrelated synchronous burst read that burst
+  as **its own** contention and cut workers for it. The bounded window made the reading
+  *current*; nothing made it *this pass's*. It surfaced as two collect-monitor tests that
+  failed only when an app-starting suite ran immediately before them. **A RIDER THAT IS
+  ITSELF A LESSON: the first write-up of this called that "a red `main` waiting for an
+  unlucky random-order seed", and that was wrong.** `pytest-randomly` is not a dependency
+  here — CI runs plain `pytest -q` in deterministic order — and the full suite did not
+  surface the defect even with it present, because the ten-second window ages the stale
+  samples out once other files run in between. Reaching for "this could go red in CI"
+  inflates a latent product bug into an incident; the bug was worth fixing on its own
+  terms, and the severity claim was worth checking before it reached four files. **GENERAL FORM: when
+  a control reads process-global instrumentation, ask which piece of work the reading
+  belongs to, and pass a `since` mark from that work's own start.** Two riders. (1) Scoping
+  to the work makes the first seconds of every window thin, so the same function needs the
+  matching refusal at the other end — below a floor, report ABSENT with a reason rather
+  than a fraction computed from three readings. (2) Take the mark from the **real** clock,
+  not from an injectable test clock the class already accepts: the two agree by default, so
+  a mutant swapping them survives every test until one is written that puts them on
+  different timelines.
+
+- **A "RELATED AND CHEAPER" PARENTHESIS CAN BE THE RIGHT CALL TO DEFER, AND THE REASON IS
+  WORTH WRITING DOWN WITH IT (2026-09-11, the double HTML parse).** `extract_article`
+  parsed every page twice, and the obvious fix — hand one parsed tree to both public calls
+  — is unsafe, because `trafilatura.extract` PRUNES the tree it is given and the second
+  call would read a mutated document. Deferring it twice with that reason recorded is what
+  made it cheap to do properly later: the public API already exposes
+  `bare_extraction(with_metadata=True)`, which parses once and runs the metadata pass
+  BEFORE the body pass that prunes. **GENERAL FORM: when you defer a small optimisation,
+  record the mechanism that makes the obvious version wrong, not just "risky" — that
+  sentence is what lets the next session recognise the safe variant when upstream already
+  provides it.** And the payoff is honest either way: 11–15 % of the extraction step, ~1 %
+  of per-article cost. Worth doing as a removal of duplicated work; not worth doing blind.
+
+- **SWITCHING TO A HIGHER-LEVEL API INHERITS ITS DEFAULTS, INCLUDING THE ONE YOU SPENT THE
+  MORNING REMOVING (2026-09-11).** `Extractor` defaults `date_params` to
+  `set_date_params(extensive_search=True)`, and `extract_metadata` prefers a supplied
+  `date_config` over its own `extensive` argument — so moving from
+  `extract` + `extract_metadata(extensive=...)` to `bare_extraction(...)` without passing
+  `date_extraction_params` would have **silently restored the unbounded date search
+  removed hours earlier**, with no signature change and nothing in the diff to see it in.
+  **GENERAL FORM: when replacing two calls with one wrapper, enumerate every argument the
+  old calls passed EXPLICITLY and find where the wrapper gets each — a default is not a
+  carry-over, and the parameters that vanish from the diff are the ones to check.**
+
+- **A DIFFERENTIAL'S ZERO MEANS NOTHING UNTIL YOU HAVE MADE IT NON-ZERO (2026-09-11, the
+  one-parse proof; the same discipline the `str.hash` incident taught, applied the other
+  way round).** 12,600 cases came back identical, which is the answer you want and
+  therefore the answer to distrust. Four deliberate breaks of the new implementation,
+  run through the same harness: dropping `date_extraction_params` → 894 differences,
+  dropping `with_metadata` → 7,380, flipping `include_tables` → 720, and
+  `include_comments` → **0**. That last one is not a failed probe but a fact the
+  investigation produced: comments land in `document.comments`, a field the caller never
+  reads, so the flag genuinely cannot reach the output. **GENERAL FORM: a probe that
+  produces no difference is either a hole in the matrix or a property of the code, and the
+  work is deciding which — reporting it as a passing check without deciding is how a
+  vacuous differential gets believed.** Drive the SHIPPED function, too: a re-typed copy
+  would agree with the old path while the real one was broken.
+
+- **`load_html` IS CALLED TWICE PER ARTICLE EVEN AFTER THE DOUBLE PARSE IS GONE
+  (2026-09-11).** `bare_extraction` parses the string, then hands the TREE to
+  `extract_metadata`, which calls `load_html` again and gets it straight back. A test
+  counting CALLS and asserting 1 therefore fails against correct code — as the first draft
+  of it did. Count the calls that actually build a tree (`not isinstance(arg, HtmlElement)`).
+  **GENERAL FORM: "how many times is the parser invoked" and "how many times is the
+  document parsed" are different questions, and an idempotent loader makes the first a bad
+  proxy for the second.**
+
+- **A WRAPPER INHERITS A WIDER RETURN TYPE FROM A PARAMETER YOU DO NOT USE — AND ONLY THE
+  TYPE CHECKER SEES IT (2026-09-11).** Replacing `extract` + `extract_metadata` with
+  `bare_extraction` shipped with **10,454 tests passing** and CI red: `bare_extraction` is
+  annotated `Document | dict[str, Any] | None`, where the dict arm exists solely for a
+  DEPRECATED `as_dict` parameter the call never passes. At runtime it is always a
+  `Document`, so no test could have caught it; `mypy` did, in three lines.
+  **GENERAL FORM: when swapping two narrow calls for one wrapper, run the type checker
+  before pushing — the behaviour is identical and the SIGNATURE is not.** And fix it by
+  NARROWING rather than `cast`: the two are equivalent today and differ exactly when it
+  matters, because a cast asserts the union away and turns an upstream change into an
+  `AttributeError` in production, where an `isinstance` check lands on the fallback that
+  still works. Give that branch a test which forces it, or it is the unfalsifiable guard
+  this ledger already removed once.
+
 ### A PROXY FOR A FACT DRIFTS FROM IT, AND THE DRIFT IS INVISIBLE (2026-09-11, from a field report)
 
 `stamp_curated_catalog` asked *"does this row carry a `via:curated` tag?"* to mean *"is this a

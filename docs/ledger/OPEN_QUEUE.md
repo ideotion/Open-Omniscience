@@ -12142,11 +12142,34 @@ where en is 1.4x), and it is **not a flat per-article tail** — `try_date_expr`
 `@lru_cache(8192)` over expressions, process-wide, so a warm repeat costs ~10 ms and a long
 run moves toward the cold figure only as the corpus's distinct date expressions exceed
 8,192. Report §12; `tests/test_extract_date_bound.py`, 4 mutants dead.
-**STILL OPEN, deliberately untouched:** `extract_article` parses the same HTML twice
-(`extract` then `extract_metadata`). It was left alone because `trafilatura.extract`
-PRUNES the tree it is given, so handing one parse to both risks the second reading a
-mutated document — a correctness risk for ~1 ms, and one that would need its own
-differential to retire.
+**THE DOUBLE PARSE: SHIPPED 2026-09-11 (maintainer: "do the double HTML parse fix"), and
+the recorded reason for deferring it is what made it cheap to do right.** The obvious fix
+really is unsafe — `trafilatura.extract` PRUNES the tree it is given — but the public API
+already offers `bare_extraction(with_metadata=True)`, which parses ONCE and runs the
+metadata pass BEFORE the body pass that prunes: upstream's own order, not an arrangement of
+ours. Saves 0.28–1.30 ms per article (11–15 % of the extraction step, ~1 % of per-article
+cost) as a removal of duplicated work rather than a trade. Two things the diff cannot show
+are now pinned: `Extractor` defaults `date_params` to `set_date_params(extensive_search=True)`
+and `extract_metadata` prefers a supplied `date_config` over its own `extensive` argument,
+so omitting `date_extraction_params` would have silently restored the unbounded date hunt
+P3 removed that morning; and folding two calls into one puts the BODY behind the metadata
+pass, so a RAISE falls back to the old two-call path while a returned `None` does not — that
+is a verdict, and re-extracting on it would parse every non-article page in a crawl twice.
+Proven by differential (12,600 cases, every field, ZERO differences, driving the shipped
+function; the harness discriminates at 894 / 7,380 / 720 on three deliberate breaks).
+Report §14; `tests/test_extract_single_parse.py`, 7 mutants dead.
+
+**AND IT FOUND A P6 DEFECT THAT WAS ALREADY ON `main`.** Running the new suite beside the
+existing ones turned two collect-monitor tests red — tests the change does not touch,
+failing only when an app-starting suite ran first, and failing the same way on clean `main`.
+`latency._LAG` is process-global over ten seconds of WALL CLOCK and `CollectionMonitor` read
+it unscoped, so a pass starting shortly after an unrelated synchronous burst read that burst
+as its own contention and cut workers for it. Under CI's random ordering that is a red `main`
+waiting for an unlucky seed. Fixed at the source rather than in the fixtures: `loop_pressure`
+takes a `since` mark, the monitor passes its own pass start from the REAL clock (not the
+injectable `now_fn` — the two agree by default, which is why that mutant survived until a
+test put them on different timelines), and the same function gained the matching low-n
+refusal at the other end. Report §14.5; 5 further mutants dead.
 
 **P4 — the two self-inflicted throttles. SHIPPED 2026-09-10 (same session).**
 (a) `cpu_saturated` fired at 92% SYSTEM-WIDE CPU, which a healthy CPU-bound collector

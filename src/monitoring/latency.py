@@ -247,7 +247,15 @@ def loop_lag() -> dict[str, Any]:
     }
 
 
-def loop_pressure(threshold_ms: float) -> dict[str, Any]:
+_LOOP_MIN_SAMPLES = 10  # 2 s at the watchdog's 0.2 s cadence
+
+
+def loop_pressure(
+    threshold_ms: float,
+    *,
+    since: float | None = None,
+    min_samples: int = _LOOP_MIN_SAMPLES,
+) -> dict[str, Any]:
     """How much of the watchdog's recent window sat AT OR ABOVE ``threshold_ms``.
 
     P6 (2026-09-11). ``loop_lag()`` publishes ``latest`` and ``peak``, and neither can
@@ -270,21 +278,43 @@ def loop_pressure(threshold_ms: float) -> dict[str, Any]:
     no running loop, or it was never started. The fraction is then ABSENT, never 0.0:
     "the loop is fine" and "nobody looked" are opposite claims and a control must not act
     on the second while believing the first.
+
+    ``since`` (a ``time.monotonic`` stamp) drops samples taken BEFORE it, and it is not
+    optional for a caller deciding something about a bounded piece of work. ``_LAG`` is
+    process-global and the window is ten seconds of wall clock, so without it a reading
+    can be about a stall that happened before the work being judged even began --
+    measured, not theorised: a collect pass starting seconds after an unrelated
+    synchronous burst read that burst as its own contention and cut workers for it.
+
+    ``min_samples`` is the same refusal at the other end. A fraction over three readings
+    is not a fraction, and the first seconds of any ``since``-scoped window hold only a
+    few -- so below the floor this reports ABSENT with a reason rather than a number
+    computed from too little. ``latency``'s own snappy verdict already draws that line
+    ("low-n"); this is the same line in the same module.
     """
     now = time.monotonic()
     with _LOCK:
-        vals = [v for (t, v) in _LAG if (now - t) <= _LAG_WINDOW_S]
-    if not vals:
+        vals = [
+            v
+            for (t, v) in _LAG
+            if (now - t) <= _LAG_WINDOW_S and (since is None or t >= since)
+        ]
+    if len(vals) < max(1, int(min_samples)):
         return {
             "measured": False,
             "over": None,
-            "samples": 0,
+            "samples": len(vals),
             "fraction": None,
             "peak_ms": None,
             "p50_ms": None,
             "threshold_ms": round(float(threshold_ms), 1),
             "window_s": _LAG_WINDOW_S,
-            "reason": "the event-loop watchdog has no sample in the window",
+            "reason": (
+                "the event-loop watchdog has no sample in the window"
+                if not vals
+                else f"only {len(vals)} watchdog sample(s) in the window, below the "
+                f"{int(min_samples)} a fraction needs to mean anything"
+            ),
         }
     over = sum(1 for v in vals if v >= threshold_ms)
     return {
