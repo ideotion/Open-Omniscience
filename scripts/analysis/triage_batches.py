@@ -59,6 +59,20 @@ MERGEABLE_CONFIDENCE = frozenset({"high", "medium"})
 _SOURCE_TYPE_OF_KIND = {
     "news": "news", "magazine": "magazine", "broadcaster": "broadcaster",
     "wire-agency": "wire-agency", "investigative": "investigative", "fact-checker": "fact-checker",
+    # The 2026-09-11 ruling's two admitted non-journalism classes, each keeping its own
+    # source_type so every surface can lens them apart from reporting.
+    "academic": "scientific-journal", "institution": "institution",
+}
+
+# WHERE AN ADMITTED ROW LANDS (2026-09-11 ruling). Journalism goes to the hand-maintained
+# catalogue; the two classes the ruling admits go to THEIR OWN files, "so the briefing and
+# trend surfaces can lens them separately and a corpus statistic keeps meaning what it says".
+# Everything absent from this map is refused ON THE MERITS, which is the same ruling's other
+# half: broadcaster, religious, personal-blog and aggregator stay out.
+TARGETS = {
+    "journalism": "configs/sources.yml",
+    "academic": "configs/academic_sources.yml",
+    "official": "configs/official_sources.yml",
 }
 
 # Two hand-known rows. Fixed, never corpus-derived (the triage-run canary convention), so a
@@ -81,9 +95,52 @@ CANARIES = [
                    "Press release: State aid decision on regional airports",
                    "Call for proposals: Horizon Europe cluster 5"],
         "country": "be", "language": "en", "wikidata_type": "institution",
-        "expected": {"journalism": False, "kind": "institution", "language": "en"},
+        "expected": {"journalism": False, "kind": "institution", "language": "en",
+                     "primary_source": True},
+    },
+    # THE THIRD CANARY EXISTS BECAUSE THE SECOND CANNOT FAIL THE RIGHT WAY (2026-09-11). Once
+    # `primary_source` decides whether an institution is admitted, a model that answers `true`
+    # for every institution passes a set whose only institution IS primary -- so the leash has
+    # no teeth on the one axis it was added for. This is an institution that is emphatically
+    # NOT a primary source: a museum publishes its exhibitions, not authoritative records about
+    # the world, and the maintainer's own example of the mixed bucket was "a museum's events
+    # page" beside the UN Association of Sweden.
+    {
+        "domain": "rijksmuseum.nl", "name": "Rijksmuseum",
+        "site_title": "Rijksmuseum: Home of the Dutch Masters",
+        "description": "The Rijksmuseum in Amsterdam is the museum of the Netherlands. "
+                       "Visit to see masterpieces by Rembrandt, Vermeer and Van Gogh.",
+        "titles": ["New exhibition: Dutch landscapes of the Golden Age opens in March",
+                   "Late-night opening every Friday this summer",
+                   "The museum shop's spring collection is now online"],
+        "country": "nl", "language": "nl", "wikidata_type": "institution",
+        "expected": {"journalism": False, "kind": "institution", "language": "nl",
+                     "primary_source": False},
     },
 ]
+
+
+def route(answer: dict) -> str | None:
+    """Which catalogue an ANSWERED row belongs in, or ``None`` to refuse it. PURE.
+
+    One function because the decision is made twice -- once to write the entry, once to
+    explain the refusal -- and two copies of a routing rule drift.
+
+    The `institution` bucket is MIXED and the 2026-09-11 ruling refused a blanket verdict on
+    it: the UN Association of Sweden and a museum's events page are both `institution`, and
+    only one of them publishes authoritative records. So an institution is admitted only when
+    the model also says it is a PRIMARY SOURCE, and a missing or false answer refuses the row
+    rather than admitting it -- the safe direction, since a wrongly-admitted row starts
+    collecting a museum's shop announcements as if they were public records.
+    """
+    kind = answer.get("kind")
+    if answer.get("journalism"):
+        return "journalism" if kind in JOURNALISM_KINDS else None
+    if kind == "academic":
+        return "academic"
+    if kind == "institution":
+        return "official" if answer.get("primary_source") is True else None
+    return None
 
 
 def _vocabulary() -> list[str]:
@@ -127,6 +184,20 @@ def _triage_row(v: dict) -> dict:
     }
 
 
+def _mix_canaries(chunk: list[dict], canaries: list[dict]) -> list[dict]:
+    """Canaries at evenly-spread INTERIOR positions. Deterministic: the same chunk always
+    yields the same order, so a re-run is comparable to the run before it."""
+    if len(chunk) < 2:
+        return chunk + canaries      # no interior to hide them in; honest rather than pretended
+    out = list(chunk)
+    for i, canary in enumerate(canaries):
+        # Computed against the GROWING list and clamped to the interior, so a batch smaller than
+        # the canary set still never puts one first or last -- the property this exists for.
+        pos = min(max(1 + ((i + 1) * len(out)) // (len(canaries) + 1), 1), len(out) - 1)
+        out.insert(pos, canary)
+    return out
+
+
 def prepare(verified_path: Path, out_dir: Path, *, batch_size: int = BATCH_SIZE) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = [_triage_row(v) for v in _load_verified(verified_path)]
@@ -136,8 +207,11 @@ def prepare(verified_path: Path, out_dir: Path, *, batch_size: int = BATCH_SIZE)
     batches = []
     for i in range(0, len(rows), batch_size):
         chunk = rows[i:i + batch_size]
-        # canaries at two fixed positions, never first or last (a model attends to the edges)
-        mixed = chunk[:1] + [canary_rows[0]] + chunk[1:-1] + [canary_rows[1]] + chunk[-1:] if len(chunk) > 2 else chunk + canary_rows
+        # Canaries at fixed INTERIOR positions, never first or last, because a model attends to
+        # the edges of a list and a canary it treats specially is not a canary. Spread evenly
+        # rather than clustered, and written for however many canaries there are -- the two-
+        # canary version broke silently when a third was added for the primary_source axis.
+        mixed = _mix_canaries(chunk, canary_rows)
         p = out_dir / f"batch_{len(batches) + 1:04d}.json"
         p.write_text(json.dumps(mixed, indent=1, ensure_ascii=False), encoding="utf-8")
         batches.append(str(p))
@@ -172,6 +246,12 @@ def validate_result(batch_rows: list[dict], result: dict, vocabulary: set[str]) 
         if r.get("kind") not in KINDS or r.get("confidence") not in CONFIDENCES or not isinstance(r.get("journalism"), bool):
             problems.append(f"out-of-enum answer for {d}")
             continue
+        # `primary_source` is only meaningful for an institution, and only there is it
+        # required -- it is the field that decides admission for that kind. A non-bool is an
+        # out-of-enum answer like any other: the batch is refused rather than merged around.
+        if r.get("kind") == "institution" and not isinstance(r.get("primary_source"), bool):
+            problems.append(f"institution without a primary_source boolean: {d}")
+            continue
         topics = [t for t in (r.get("topics") or []) if isinstance(t, str) and t in vocabulary]
         r = dict(r, topics=topics[:3])
         by_domain[d] = r
@@ -183,6 +263,10 @@ def validate_result(batch_rows: list[dict], result: dict, vocabulary: set[str]) 
         exp = c["expected"]
         if not a or a["journalism"] != exp["journalism"] or a["kind"] != exp["kind"]:
             problems.append(f"canary failed: {c['domain']}")
+        elif "primary_source" in exp and a.get("primary_source") is not exp["primary_source"]:
+            # The axis the third canary exists for: one canary that is a primary source cannot
+            # catch a model answering `true` for every institution. Two, disagreeing, can.
+            problems.append(f"canary failed on primary_source: {c['domain']}")
     return by_domain, problems
 
 
@@ -203,7 +287,7 @@ def merge(verified_path: Path, triage_dir: Path, out_path: Path, *, today: str) 
     verified = {v["domain"]: v for v in _load_verified(verified_path)}
     canary_domains = {c["domain"] for c in CANARIES}
 
-    entries: list[dict] = []
+    by_target: dict[str, list[dict]] = {}
     rejections: list[tuple[str, str]] = []
     untrusted_batches: list[str] = []
     for b in manifest["batches"]:
@@ -234,8 +318,16 @@ def merge(verified_path: Path, triage_dir: Path, out_path: Path, *, today: str) 
             if v is None:
                 rejections.append((d, "not_in_verified"))
                 continue
-            if not a["journalism"]:
-                rejections.append((d, f"not_journalism:{a['kind']}"))
+            target = route(a)
+            if target is None:
+                # Named precisely, because the refusal counts are how the maintainer decides
+                # whether a class should be admitted next time. An institution refused for not
+                # being a primary source is a DIFFERENT fact from a broadcaster refused on the
+                # merits, and collapsing them would hide the split the ruling asked for.
+                if a["kind"] == "institution":
+                    rejections.append((d, "institution_not_primary_source"))
+                else:
+                    rejections.append((d, f"not_admitted:{a['kind']}"))
                 continue
             if a["confidence"] not in MERGEABLE_CONFIDENCE:
                 rejections.append((d, "low_confidence"))
@@ -249,19 +341,35 @@ def merge(verified_path: Path, triage_dir: Path, out_path: Path, *, today: str) 
             for t in a.get("topics", []):
                 if t not in entry["tags"]:
                     entry["tags"].append(t)
-            entries.append(entry)
-    header = (
-        "# Candidate sources: feed-VERIFIED (verify_candidate_feeds.py) and model-TRIAGED as\n"
-        "# journalism (triage_batches.py merge; canaries and vocabulary re-checked in code).\n"
-        f"# {len(entries)} entries, {today}. Review, then merge with scripts/merge_source_batch.py.\n"
-    )
-    out_path.write_text(header + yaml.safe_dump({"sources": entries}, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            by_target.setdefault(target, []).append(entry)
+    # ONE FILE PER TARGET CATALOGUE, and the journalism one keeps ``out_path`` so every caller
+    # and runbook that predates the split still names the file it always named. A target with
+    # no rows is written EMPTY rather than skipped: an absent file reads as "the stage did not
+    # run", and a zero is a result.
+    written: dict[str, str] = {}
+    for target, catalogue in TARGETS.items():
+        entries = by_target.get(target, [])
+        path = out_path if target == "journalism" else out_path.with_name(
+            f"{out_path.stem}_{target}{out_path.suffix}")
+        header = (
+            "# Candidate sources: feed-VERIFIED (verify_candidate_feeds.py) and model-TRIAGED\n"
+            f"# (triage_batches.py merge; canaries and vocabulary re-checked in code).\n"
+            f"# {len(entries)} entries, {today}. Splice into {catalogue} with\n"
+            f"# scripts/merge_source_batch.py --target {catalogue}.\n"
+        )
+        path.write_text(
+            header + yaml.safe_dump({"sources": entries}, sort_keys=False, allow_unicode=True),
+            encoding="utf-8")
+        written[target] = str(path)
     with out_path.with_name("triage_rejections.csv").open("w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["domain", "reason"])
         w.writerows(rejections)
     summary = {
-        "entries": len(entries), "rejected": len(rejections),
+        "entries": sum(len(v) for v in by_target.values()),
+        "by_target": {t: len(by_target.get(t, [])) for t in TARGETS},
+        "targets": TARGETS, "written": written,
+        "rejected": len(rejections),
         "by_reason": dict(Counter(r for _, r in rejections)),
         "untrusted_batches": untrusted_batches,
     }

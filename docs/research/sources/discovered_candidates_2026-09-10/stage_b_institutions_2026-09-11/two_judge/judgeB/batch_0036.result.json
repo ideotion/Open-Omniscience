@@ -1,0 +1,479 @@
+{
+ "rows": [
+  {
+   "domain": "unesco.go.ke",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education",
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "mptc.gov.kh",
+   "journalism": false,
+   "kind": "institution",
+   "language": "km",
+   "topics": [
+    "technology",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "nchads.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "km",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "dyoe.kr",
+   "journalism": false,
+   "kind": "other",
+   "language": "ko",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "biosafety.kz",
+   "journalism": false,
+   "kind": "academic",
+   "language": "ru",
+   "topics": [
+    "biotech",
+    "science"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "security.gov.vc",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "komisija.lt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "lt",
+   "topics": [
+    "history",
+    "human-rights"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "groupeiscae.ma",
+   "journalism": false,
+   "kind": "academic",
+   "language": "fr",
+   "topics": [
+    "education",
+    "business"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "creditagricole.ma",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "fr",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "ausettat.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "anda.gov.ma",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "agriculture"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy",
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "aek.mk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "mk",
+   "topics": [
+    "technology",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "national-library.govmu.org",
+   "journalism": false,
+   "kind": "other",
+   "language": "fr",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "muftiselangor.gov.my",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ms",
+   "topics": [
+    "society"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "intic.gov.mz",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "technology",
+    "cybersecurity"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "agriculture.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "agriculture",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "fmiti.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "business",
+    "economy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "icpc.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "nesrea.gov.ng",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vetinst.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "healthcare",
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "psykiskhelse.no",
+   "journalism": false,
+   "kind": "institution",
+   "language": "no",
+   "topics": [
+    "healthcare",
+    "society"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "regionhuancavelica.gob.pe",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "construction.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "business"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "depedcalabarzon.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mciaa.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "nwpc.dole.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "economy",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "doftaxacademy.gov.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education",
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "depedangelescity.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "depedcebucity.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "deped-isabela.com.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "deped-ne.net.ph",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lodz.ap.gov.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "nuncjatura.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "azembassy.pl",
+   "journalism": false,
+   "kind": "other",
+   "language": "pl",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "polonia.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "palestine.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "policja.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rckik-katowice.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "wetgiw.gov.pl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pl",
+   "topics": [
+    "agriculture",
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "osp-ozarow.pl",
+   "journalism": false,
+   "kind": "other",
+   "language": "pl",
+   "topics": [],
+   "confidence": "low"
+  }
+ ]
+}

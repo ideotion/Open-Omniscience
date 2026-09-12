@@ -140,12 +140,20 @@ def step_pipeline() -> str:
         for r in batch:
             c = next((x for x in tb.CANARIES if x["domain"] == r["domain"]), None)
             if c:
-                out.append({"domain": r["domain"], "journalism": c["expected"]["journalism"], "kind": c["expected"]["kind"],
-                            "language": c["expected"]["language"], "topics": [], "confidence": "high"})
+                # Echo EVERY expected field, including primary_source where the canary carries
+                # one -- a canary answered short is a canary failed, which is the point of it.
+                out.append({"domain": r["domain"], "topics": [], "confidence": "high",
+                            **c["expected"]})
             else:
                 k = kinds[r["domain"]]
-                out.append({"domain": r["domain"], "journalism": k == "news", "kind": k, "language": "fr",
-                            "topics": [vocab[0]], "confidence": "high"})
+                row = {"domain": r["domain"], "journalism": k == "news", "kind": k, "language": "fr",
+                       "topics": [vocab[0]], "confidence": "high"}
+                if k == "institution":
+                    # The 2026-09-11 split: an institution is admitted only as a PRIMARY SOURCE.
+                    # False here keeps this fixture's one merged entry the news row, so the
+                    # assertion below still measures what it always measured.
+                    row["primary_source"] = False
+                out.append(row)
         Path(manifest["batches"][0].replace(".json", ".result.json")).write_text(json.dumps({"rows": out}), encoding="utf-8")
         summary = tb.merge(verified, d / "triage", d / "triaged.yml", today="2026-09-10")
         if summary["entries"] != 1 or summary["untrusted_batches"]:

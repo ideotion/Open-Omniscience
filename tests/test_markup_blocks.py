@@ -195,10 +195,28 @@ def test_retirement_survives_openers_that_are_all_TEXTUALLY_DIFFERENT():
 # --------------------------------------------------------------------------- #
 
 
+# Repeats, and the MINIMUM of them, because the thing being timed is small enough
+# that the runner can dominate it. Measured 2026-09-11 on a 4-core container: this
+# module's 400,000-char case runs ~3 ms, so ONE scheduler preemption lands on one of
+# the two measurements and moves the ratio by however long the preemption was. With
+# four busy cores alongside, a single timing produced a median ratio of 5.31 and a MAX
+# of 17.53 -- above the bar, and above the 15.9x this file cites as the signature of
+# the quadratic scan itself, on code that is provably linear. That is the worst thing a
+# guard test can do: present, as evidence for its own alarm, a number indistinguishable
+# from the real defect. Best-of-3 under the same contention: median 4.15, max 4.61, zero
+# failures in 15. The minimum is the run least disturbed by anything else on the box, and
+# it changes nothing about WHAT is measured -- an algorithm that really is quadratic is
+# quadratic on its best run too, so the guard keeps its teeth.
+_TIMING_REPEATS = 3
+
+
 def _time(fn, *a):
-    t0 = time.perf_counter()
-    fn(*a)
-    return time.perf_counter() - t0
+    best = float("inf")
+    for _ in range(_TIMING_REPEATS):
+        t0 = time.perf_counter()
+        fn(*a)
+        best = min(best, time.perf_counter() - t0)
+    return best
 
 
 def _scaling(fn, unit: str, small: int = 100_000, factor: int = 4) -> float:
@@ -360,3 +378,44 @@ def test_the_wiki_strip_contains_no_lazy_block_regex_at_all():
         if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "strip_one_block"
     )
     assert calls == 3, f"expected the three block families to go through the scanner, found {calls}"
+
+
+# --------------------------------------------------------------------------- #
+# the guard on the guard
+# --------------------------------------------------------------------------- #
+def test_the_scaling_harness_still_catches_a_genuinely_quadratic_scan():
+    """ANTI-VACUITY for ``_time``'s repeats, which are otherwise free to delete.
+
+    ``_time`` takes the MINIMUM of ``_TIMING_REPEATS`` runs rather than timing once,
+    because the timed work is ~3 ms and a single scheduler preemption on a busy runner
+    moved the ratio past the bar -- to a measured max of 17.53 on provably linear code,
+    which is ABOVE the 15.9x this file cites as the quadratic signature (2026-09-11).
+
+    The obvious worry about a minimum is that it flatters: take enough runs and
+    everything looks fast. It does not, because the defect is not a slow CONSTANT, it is
+    a slow SHAPE -- an algorithm that re-scans the document per opener does so on its
+    best run too, and the ratio between two sizes is what this file asserts. Measured
+    both ways, quiet and under four busy cores: linear 0/9 over the bar in each
+    condition, quadratic 5/5 over it in each, minimum ratio 10.72.
+
+    So this test fails if the repeats are removed (they are the fix) OR if the harness
+    stops being able to see a quadratic (it would then be asserting nothing at all).
+    """
+    assert _TIMING_REPEATS >= 3, (
+        "_time takes the minimum of its repeats to survive a busy runner; dropping "
+        "below 3 restores the false 'the quadratic scan is back' this fixed"
+    )
+
+    opener, closer = re.compile(r"\{\|"), re.compile(r"\|\}")
+
+    def a_scan_per_opener(doc: str) -> int:
+        """Exactly the defect the module exists to remove: search to end-of-document
+        once per opener, instead of resuming the scan where the last one ended."""
+        return sum(1 for m in opener.finditer(doc) if closer.search(doc, m.end()))
+
+    ratio = _scaling(a_scan_per_opener, "Lorem ipsum dolor sit amet. {| class=wikitable ",
+                     small=20_000)
+    assert ratio >= 8, (
+        f"a deliberately quadratic scan measured {ratio:.1f}x for 4x the input and would "
+        "have PASSED the bar -- the scaling harness has stopped measuring anything"
+    )

@@ -398,3 +398,114 @@ def test_both_boot_paths_stamp_the_curated_catalogue_after_the_overlay():
         preceding = [o for o in overlays if o < stamp_line]
         assert preceding, f"stamp at line {stamp_line} is not preceded by apply_overlay"
         assert stamp_line - max(preceding) < 40, "the stamp must follow its site's overlay call"
+
+
+# ------------------------------------- the scope, on an install older than the tagging
+
+# FIELD REPORT, 2026-09-11: "I just reinstalled / updated the app on an older instance, and
+# notice that there are only 2600 sources collecting, which contradicts our recent pushes
+# qualifying over 5000 sources."
+#
+# It did. The stamp scoped on the ``via:`` provenance TAG, which is a fact about the ROW --
+# written by the seeder when it CREATES one. Three things then compose into a permanent
+# strand:
+#
+#   1. ``via:`` tagging entered the seeder on 2026-06-08, so every older row carries none;
+#   2. ``reconcile_source_metadata`` STRIPS the marker on purpose when healing an existing
+#      row (copying it "would assert an origin this row may not have" -- which is right);
+#   3. ``tags`` is deliberately outside the catalogue-corrections merge.
+#
+# So a pre-tagging row could never acquire one, stayed ``unqualified``, and
+# ``select_sources`` admits only ``qualified`` -- it never collected, however many times the
+# app was updated. Reproduced against the real 6,195-row catalogue: 3,000 planted legacy
+# rows, run the boot sequence, and "Sources (collecting)" read 3,195 -- exactly the rows the
+# update had CREATED. The same run with the one tag added read 6,195.
+#
+# The fix asks the CATALOGUE instead: is this domain one we ship? That is the question the
+# 2026-09-10 ruling actually poses ("the curated catalogue is qualified"), it is checkable
+# rather than inferred, and it asserts nothing about where the row came from.
+
+def _a_real_catalogue_domain() -> str:
+    """A domain the shipped curated catalogue really carries. Read, never hardcoded, so
+    this cannot rot into a test about a domain the project has since dropped."""
+    data = yaml.safe_load((_ROOT / "configs" / "sources.yml").read_text(encoding="utf-8"))
+    for entry in data["sources"]:
+        domain = str(entry.get("domain") or "").strip().lower()
+        if domain:
+            return domain
+    raise AssertionError("configs/sources.yml carries no usable domain")
+
+
+def test_a_row_predating_the_via_tagging_is_still_admitted_by_the_catalogue(db):
+    """THE REGRESSION. No provenance tag at all, because the row predates tagging -- and a
+    domain the curated catalogue ships. Before the fix this was out of scope and stayed
+    unqualified for the life of the install."""
+    legacy = _src(db, _a_real_catalogue_domain(), tags="news,politics")
+    out = stamp_curated_catalog(db, now=NOW)
+    db.refresh(legacy)
+    assert legacy.status == STATUS_QUALIFIED, (
+        "a catalogue domain whose row predates via: tagging is still stranded -- it will "
+        "never be collected, which is the field report this fixed"
+    )
+    assert out["stamped"] == 1
+    assert _attempts(db, legacy) == [VERDICT_CURATED], (
+        "the basis must still read as a RULING, never as a measurement"
+    )
+
+
+def test_an_untagged_row_the_catalogue_does_NOT_ship_is_still_untouched(db):
+    """THE BOUNDARY, and the reason the old scope was cautious. Widening from "the seeder
+    made this row" to "we ship this domain" must not widen to "anything untagged": a
+    hand-added source is the operator's, and the ruling says nothing about it."""
+    mine = _src(db, "my-private-wiki.example", tags="news,politics")
+    out = stamp_curated_catalog(db, now=NOW)
+    db.refresh(mine)
+    assert mine.status == STATUS_UNQUALIFIED, (
+        "a hand-added domain outside every shipped catalogue was admitted by ruling -- "
+        "the ruling admits the CATALOGUE, not whatever happens to carry no tag"
+    )
+    assert out["stamped"] == 0 and out["curated"] == 0
+
+
+def test_the_provenance_tag_still_admits_a_domain_the_catalogue_has_since_dropped(db):
+    """THE OTHER HALF, which is why the scope is an OR and not a replacement. A row the
+    seeder really did create keeps its admission even after the domain leaves the shipped
+    file -- otherwise a catalogue edit would silently un-qualify a running instance."""
+    retired = _src(db, "dropped-from-the-catalogue.example", tags="news,via:curated")
+    stamp_curated_catalog(db, now=NOW)
+    db.refresh(retired)
+    assert retired.status == STATUS_QUALIFIED
+
+
+def test_a_measured_refusal_on_a_catalogue_domain_is_still_never_laundered(db):
+    """The widened scope must not widen what the stamp OVERRIDES. A domain we ship, that
+    this instance measured and refused, keeps its verdict -- the ruling admits the
+    catalogue, it does not overturn a judgement."""
+    refused = _src(db, _a_real_catalogue_domain(), status=STATUS_DISQUALIFIED)
+    out = stamp_curated_catalog(db, now=NOW)
+    db.refresh(refused)
+    assert refused.status == STATUS_DISQUALIFIED
+    assert out["stamped"] == 0 and out["disqualified"] == 1
+
+
+def test_the_curated_domain_set_is_real_and_bounded():
+    """ANTI-VACUITY. An empty set would make the widened scope a no-op and every test above
+    would pass on the tag alone; a set containing everything would admit the world."""
+    from src.catalog.provenance_scope import (
+        CURATED_CATALOGUE_FILES,
+        curated_catalogue_domains,
+    )
+
+    domains = curated_catalogue_domains()
+    assert len(domains) > 1000, f"only {len(domains)} curated domains -- the read is broken"
+    assert _a_real_catalogue_domain() in domains
+    assert "my-private-wiki.example" not in domains
+    assert all(d == d.strip().lower() for d in domains), "domains must be comparable as stored"
+
+    # The GENERATED wikidata catalogue is app-provided but NOT curated (provenance_scope's
+    # own distinction), so widening the stamp must not have quietly swept it in.
+    assert "world_news_sources.yml" not in CURATED_CATALOGUE_FILES
+
+    # Read once per process: the files ship with the app and cannot change while it runs,
+    # and this sits on the boot path beside the seeder, which parses the same files.
+    assert curated_catalogue_domains() is domains

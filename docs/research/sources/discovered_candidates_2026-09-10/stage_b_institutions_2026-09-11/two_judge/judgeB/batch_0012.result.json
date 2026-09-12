@@ -1,0 +1,470 @@
+{
+ "rows": [
+  {
+   "domain": "guadeloupe.ars.sante.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "paris.mofa.go.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ads.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "crouchharbour.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "havering.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchcheshireeast.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchmedway.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchgloucestershire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchherefordshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchhertfordshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchluton.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "healthwatcholdham.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchsouthglos.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchsurrey.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchwarwickshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "investni.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "business",
+    "economy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "education.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "improvement.nhs.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "selondonics.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "oldham.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "old-bailey.com",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium"
+  },
+  {
+   "domain": "revenue.scot",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "londonhc.mission.gov.gy",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "thebank.scot",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance",
+    "economy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "sps.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "cyngorgwalchmai.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "unknown",
+   "topics": [],
+   "confidence": "low",
+   "primary_source": false
+  },
+  {
+   "domain": "tfw.wales",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mesrs.gov.gn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "education",
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "apdattikis.gov.gr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "efachagor.gr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "media.gov.gr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "politics"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "gak.gr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "el",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "forestry.gov.gy",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "atruroman.hu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "hu",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "pajak.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "finance",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-banyumas.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-bogor.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-curup.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "pn-balikpapan.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "pt-gorontalo.go.id",
+   "journalism": false,
+   "kind": "institution",
+   "language": "id",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  }
+ ]
+}

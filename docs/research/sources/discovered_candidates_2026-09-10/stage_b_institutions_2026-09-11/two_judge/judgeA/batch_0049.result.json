@@ -1,0 +1,488 @@
+{
+  "rows": [
+    {
+      "domain": "feuerwehr.neu-ulm.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "medium",
+      "primary_source": true
+    },
+    {
+      "domain": "feuerwehr-otterfing.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-pegnitz.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-ottobeuren.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-rederzhausen.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-rieden.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr-waldthurn.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "muenchhausenland.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "coburg.ihk.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "business",
+        "economy"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "feuerwehr.stadt-brandenburg.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "stadtentwicklung.berlin.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "policy"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "theguardian.com",
+      "journalism": true,
+      "kind": "news",
+      "language": "en",
+      "topics": [
+        "general-news",
+        "politics",
+        "economy"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "sihk.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "business"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "landkreis-stade.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "vg-monheim.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "feilitzsch.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "tittling.de",
+      "journalism": false,
+      "kind": "institution",
+      "language": "de",
+      "topics": [
+        "legal",
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "mived.gob.do",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "policy",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "egipto.embajada.gov.co",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "geopolitical"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "msit.gov.eg",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ar",
+      "topics": [
+        "economy",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "elche.es",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "regional",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "ec.europa.eu",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "policy",
+        "economy",
+        "science"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "sitges.cat",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ca",
+      "topics": [
+        "regional",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "bellcaire.cat",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ca",
+      "topics": [
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "ccapenedes.cat",
+      "journalism": false,
+      "kind": "institution",
+      "language": "ca",
+      "topics": [
+        "economy",
+        "policy"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "cesga.es",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "technology",
+        "science"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "guadalajara.es",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "culture",
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "mieres.es",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "culture",
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "martos.es",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "regional",
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "raspeig.es",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "legal",
+        "regional"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "camaravalencia.com",
+      "journalism": false,
+      "kind": "institution",
+      "language": "es",
+      "topics": [
+        "business",
+        "economy"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "sphi.gov.et",
+      "journalism": false,
+      "kind": "institution",
+      "language": "am",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "rijksmuseum.nl",
+      "journalism": false,
+      "kind": "institution",
+      "language": "en",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high",
+      "primary_source": false
+    },
+    {
+      "domain": "oikeusrekisterikeskus.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "ltky.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "education"
+      ],
+      "confidence": "medium",
+      "primary_source": false
+    },
+    {
+      "domain": "ostranyland.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "sv",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "tullikamari.net",
+      "journalism": false,
+      "kind": "trade-or-corporate",
+      "language": "fi",
+      "topics": [
+        "culture"
+      ],
+      "confidence": "high"
+    },
+    {
+      "domain": "satakunnanhyvinvointialue.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "siunsote.fi",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fi",
+      "topics": [
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "conseil-superieur-magistrature.fr",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "legal"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "ambassade-du-burundi.fr",
+      "journalism": false,
+      "kind": "other",
+      "language": "fr",
+      "topics": [],
+      "confidence": "high"
+    },
+    {
+      "domain": "ibisa.net",
+      "journalism": false,
+      "kind": "institution",
+      "language": "fr",
+      "topics": [
+        "science",
+        "healthcare"
+      ],
+      "confidence": "high",
+      "primary_source": true
+    },
+    {
+      "domain": "partnaire.fr",
+      "journalism": false,
+      "kind": "trade-or-corporate",
+      "language": "fr",
+      "topics": [],
+      "confidence": "high"
+    }
+  ]
+}

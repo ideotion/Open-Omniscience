@@ -1,0 +1,489 @@
+{
+ "rows": [
+  {
+   "domain": "patrimoniocultural.gov.pt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "pontosj.pt",
+   "journalism": false,
+   "kind": "religious",
+   "language": "pt",
+   "topics": [
+    "society"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "cm-barreiro.pt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "pt",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "nb.rs",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sr",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "natlibraryrm.ru",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ru",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "seychellescultureinstitute.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "curatelleoffice.sc",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cbsi.com.sb",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "statenssc.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "regionstockholm.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "vardanalys.se",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "healthcare",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "politics",
+    "economy",
+    "general-news"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "piaristi.sk",
+   "journalism": false,
+   "kind": "religious",
+   "language": "sk",
+   "topics": [
+    "education"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "nbs.gov.so",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "imprentanacional.gob.sv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "gobernacion.gob.sv",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "eas.sr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "energy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "tailandia.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "narathiwatpao.go.th",
+   "journalism": false,
+   "kind": "institution",
+   "language": "th",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "audit.go.th",
+   "journalism": false,
+   "kind": "institution",
+   "language": "th",
+   "topics": [
+    "finance",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "cmf.tn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "finance",
+    "financial"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "tunisie.ird.fr",
+   "journalism": false,
+   "kind": "academic",
+   "language": "fr",
+   "topics": [
+    "science"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "customs.gov.tm",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ru",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "culture.gov.tn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "turquia.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "cnrd.tn",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ar",
+   "topics": [
+    "politics",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ema.co.tt",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "khm.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "regional",
+    "war"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ccu.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "vin.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "regional",
+    "war"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "mcip.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "dubno-adm.rv.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "regional",
+    "war"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "skhidnytsia-rada.gov.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "techcenter.kyiv.ua",
+   "journalism": false,
+   "kind": "institution",
+   "language": "uk",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "mofa.go.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "finance.go.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "economy",
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "ucc.co.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "technology",
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "unche.or.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "education",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "nda.or.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "mia.go.ug",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "salto.gub.uy",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  }
+ ]
+}

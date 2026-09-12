@@ -1,0 +1,473 @@
+{
+ "rows": [
+  {
+   "domain": "espana.embajada.gob.ve",
+   "journalism": false,
+   "kind": "other",
+   "language": "unknown",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "elprat.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "orekan.es",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "environment"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "oñati.eus",
+   "journalism": false,
+   "kind": "institution",
+   "language": "eu",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "ezcaray.org",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "rupia.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "ullastret.cat",
+   "journalism": false,
+   "kind": "institution",
+   "language": "ca",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "finlandia.embajada.gov.co",
+   "journalism": false,
+   "kind": "institution",
+   "language": "es",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "oikeuspalveluvirasto.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "legal"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "keusote.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fi",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "osterbottensvalfard.fi",
+   "journalism": false,
+   "kind": "institution",
+   "language": "sv",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "theguardian.com",
+   "journalism": true,
+   "kind": "news",
+   "language": "en",
+   "topics": [
+    "general-news",
+    "politics",
+    "economy"
+   ],
+   "confidence": "high"
+  },
+  {
+   "domain": "foreignaffairs.gov.fj",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "malrad.fo",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fo",
+   "topics": [
+    "culture"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "iss.europa.eu",
+   "journalism": false,
+   "kind": "academic",
+   "language": "en",
+   "topics": [
+    "geopolitical"
+   ],
+   "confidence": "medium"
+  },
+  {
+   "domain": "cnil.fr",
+   "journalism": false,
+   "kind": "institution",
+   "language": "fr",
+   "topics": [
+    "legal",
+    "cybersecurity"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "audit-scotland.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "finance"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "avonandsomerset-pcc.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "bgs.ac.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "science"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "dsma.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "defense"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchharingey.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "ec.europa.eu",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "economy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchhillingdon.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchdudley.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchhalton.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchisleofwight.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "executiveoffice-ni.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy",
+    "politics"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchliverpool.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchhounslow.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "healthwatchnorthyorkshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchnorthamptonshire.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchrotherham.org.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "rijksmuseum.nl",
+   "journalism": false,
+   "kind": "institution",
+   "language": "nl",
+   "topics": [
+    "culture",
+    "history"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchsalford.co.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "high",
+   "primary_source": false
+  },
+  {
+   "domain": "healthwatchsunderland.com",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": false
+  },
+  {
+   "domain": "health-ni.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare",
+    "policy"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "lancashireprobation.co.uk",
+   "journalism": false,
+   "kind": "other",
+   "language": "unknown",
+   "topics": [],
+   "confidence": "low"
+  },
+  {
+   "domain": "notts.icb.nhs.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "healthcare"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "northallertontowncouncil.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "osr.statisticsauthority.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "policy"
+   ],
+   "confidence": "medium",
+   "primary_source": true
+  },
+  {
+   "domain": "pembreyburryport-tc.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "northantsfire.gov.uk",
+   "journalism": false,
+   "kind": "institution",
+   "language": "en",
+   "topics": [
+    "regional"
+   ],
+   "confidence": "high",
+   "primary_source": true
+  },
+  {
+   "domain": "portland-port.co.uk",
+   "journalism": false,
+   "kind": "trade-or-corporate",
+   "language": "en",
+   "topics": [],
+   "confidence": "medium"
+  }
+ ]
+}

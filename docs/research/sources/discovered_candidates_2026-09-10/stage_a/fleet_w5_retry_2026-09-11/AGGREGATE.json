@@ -1,0 +1,113 @@
+{
+ "worklist": "w5_retry",
+ "run_date": "2026-09-11",
+ "shards": 8,
+ "candidates": 23237,
+ "verified": 267,
+ "feed_probes_total": 4768,
+ "by_reason": {
+  "robots_unreachable": 10145,
+  "homepage_unreachable": 9734,
+  "robots_refused": 1956,
+  "no_feed_found": 474,
+  "robots_server_error": 361,
+  "verified": 267,
+  "feed_unparseable": 200,
+  "feed_stale": 42,
+  "robots_disallowed": 32,
+  "feed_too_few_entries": 16,
+  "feed_undated": 6,
+  "host_timeout": 2,
+  "crawl_delay_too_long": 1,
+  "error": 1
+ },
+ "feed_kind": {
+  "link": 225,
+  "conventional": 42
+ },
+ "per_shard": {
+  "1": {
+   "candidates": 2803,
+   "verified": 20
+  },
+  "2": {
+   "candidates": 2976,
+   "verified": 30
+  },
+  "3": {
+   "candidates": 2812,
+   "verified": 22
+  },
+  "4": {
+   "candidates": 2862,
+   "verified": 45
+  },
+  "5": {
+   "candidates": 2923,
+   "verified": 47
+  },
+  "6": {
+   "candidates": 2985,
+   "verified": 31
+  },
+  "7": {
+   "candidates": 2988,
+   "verified": 32
+  },
+  "8": {
+   "candidates": 2888,
+   "verified": 40
+  }
+ },
+ "disjoint": true,
+ "union_equals_sum": true,
+ "population": "the 23,237 rows the w3 fleet DEFERRED; identity fields carried forward, verdict re-taken fresh",
+ "pass1_reason_of_population": {
+  "robots_unavailable": 15875,
+  "homepage_unreachable": 7357,
+  "host_timeout": 3,
+  "crawl_delay_too_long": 2
+ },
+ "transition_matrix": {
+  "homepage_unreachable": {
+   "homepage_unreachable": 6495,
+   "robots_unreachable": 606,
+   "no_feed_found": 91,
+   "feed_unparseable": 64,
+   "verified": 44,
+   "robots_refused": 33,
+   "robots_server_error": 14,
+   "feed_stale": 4,
+   "robots_disallowed": 3,
+   "feed_too_few_entries": 3
+  },
+  "robots_unavailable": {
+   "robots_unreachable": 9539,
+   "homepage_unreachable": 3237,
+   "robots_refused": 1923,
+   "no_feed_found": 383,
+   "robots_server_error": 347,
+   "verified": 223,
+   "feed_unparseable": 136,
+   "feed_stale": 38,
+   "robots_disallowed": 29,
+   "feed_too_few_entries": 13,
+   "feed_undated": 6,
+   "error": 1
+  },
+  "crawl_delay_too_long": {
+   "crawl_delay_too_long": 1,
+   "homepage_unreachable": 1
+  },
+  "host_timeout": {
+   "host_timeout": 2,
+   "homepage_unreachable": 1
+  }
+ },
+ "recovery_rate": {
+  "homepage_unreachable": 0.6,
+  "robots_unavailable": 1.4,
+  "crawl_delay_too_long": 0.0,
+  "host_timeout": 0.0
+ }
+}
