@@ -7337,3 +7337,20 @@ hosts are `host_timeout` and the process exits without joining their threads; `-
 with a last-line-wins cursor; the kit's self-check re-runs for an updated kit; and, in the fetcher,
 a wall-clock deadline on one body read (a tarpit refusal, bucket `slow_body`). Lesson copied to
 LESSONS.md; the collector's own uncapped inline sleep is recorded in the open queue for a ruling.
+
+## 2026-09-12 — Roadmap intake: eight field impressions verified against the tree, seventy questions, the alpha train to beta
+
+Docs-only. The maintainer's 2026-09-12 message carried eight impressions from use (import/export UX;
+ISO alpha-3 everywhere; keywords and cards in the UI language tagged "translated from X";
+cross-language search in every result tab; an advanced search with visual operators; Wikipedia whole,
+automatic, in twelve languages, without dumps; Equal Earth and OSM as a tracked source; laws for every
+country with change analysis) and asked for numbered questions and a roadmap to beta. Seven read-only
+recon agents inventoried the tree at `main`@`bebcef4`; every load-bearing anchor was re-verified by
+hand before it entered `docs/design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md`, which records per item
+the verified state, the gap, the proposal and its questions (70 in all, six ⛔), one versioned-source
+substrate for Wikipedia/laws/OSM, and the alpha train with beta at 0.9.0. Four findings: the projection
+is equirectangular, not Mercator; the UN General Assembly vote of 2026-09-04 is real (search-verified);
+`docs/SECURITY.md`'s endpoint list omits the default-on Wikidata discovery ride-along, the Wikipedia API,
+ORES, the dumps host and the OSM mirrors; the post-import re-index job has no frontend caller. The
+intake and the rulings received are in `OPEN_QUEUE.md`; the lesson (verify a premise in both
+directions) is in `LESSONS.md`. Nothing was built, per "we're only making plans".

@@ -9284,3 +9284,20 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
    Venezuelan embassy. The namespace rule caught eight, which turned "a hijacked domain" into
    "the foreign ministry's embassy platform is compromised across ten of its thirteen missions
    in our corpus" — a different kind of claim, reached by counting rather than by reading harder.
+- **VERIFY A PREMISE IN BOTH DIRECTIONS — THE MAINTAINER'S CLAIM ABOUT THE WORLD WAS NEWER THAN MY
+  MEMORY, AND THEIR CLAIM ABOUT THE APP WAS WRONG; ONE SEARCH AND ONE GREP SETTLED BOTH (2026-09-12,
+  the roadmap intake):** the message said the UN had voted to replace Mercator with Equal Earth and
+  that the app defaults to Mercator. My memory held only the African Union's August-2025 endorsement, so
+  the pre-compaction summary had already written "likely the 2025 AU endorsement rather than a UN vote"
+  — one search away from correcting a maintainer who was right: the General Assembly adopted the
+  resolution on 2026-09-04, eight days before the message and after my cutoff. The app half was the
+  mirror: `app-map.js:21-24` is plate carrée, and a plan to "migrate off Mercator" would have been a
+  migration off a projection the app never used. RULES. (a) A claim about a RECENT EVENT that
+  contradicts training memory is more likely newer than wrong; search before contradicting, and record
+  the tier (the pages here were egress-blocked, so the fact stays SEARCH-VERIFIED). (b) A claim about
+  the APP is checked in the tree, never accepted because the person making it owns the app — the
+  maintainer reads their app through the UI, and a plate-carrée map and a Mercator map look alike at
+  the equator. (c) Record both corrections where the plan is made, not only in chat: the wrong premise
+  would otherwise be re-imported by the next session from the same message. SIBLING TRAP from the same
+  hour: `grep pyproj pyproject.toml requirements.lock` matches the word "pyproject" on every line — a
+  dependency scan that reports a library present must show the matching line, not the count.

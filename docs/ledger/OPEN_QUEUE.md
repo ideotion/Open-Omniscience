@@ -21,6 +21,47 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **ROADMAP INTAKE 2026-09-12 — EIGHT FIELD IMPRESSIONS + THE ALPHA TRAIN TO BETA (maintainer
+  message 2026-09-12: "We're only making plans, I'd like a robust, detailed roadmap towards the beta
+  release, with all detailed plans and stages for all remaining alpha releases"; INTAKE + PLAN ONLY,
+  nothing built; design of record =
+  [`docs/design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md);
+  **70 numbered questions PENDING in its §6**, six of them ⛔):** the eight impressions (import/export
+  UX · ISO alpha-3 everywhere · keywords shown in the UI language with "translated from X" ·
+  cross-language search in every tab · an advanced search · Wikipedia whole and automatic **without
+  dumps** · Equal Earth + OSM as a tracked source · laws for every country in the twelve languages)
+  were each verified against `main`@`bebcef4` by seven read-only recon agents whose load-bearing
+  anchors were re-checked by hand. RULINGS RECEIVED in the message itself (recorded, the *how* stays
+  a question): a fresh import page on reopen (this REVERSES the 2026-07-16 field-report behaviour
+  `_uxShowLastCompletedSummary` implements — Q5); "details" adds nothing; export completion must
+  enumerate contents; the export folder is `YYYYMMDDHHMM_OOS_Backup` + `_2` on collision; alpha-3
+  is wanted (Q13 ⛔ decides storage vs display); keywords + cards in the UI language tagged
+  "translated from X"; cross-language search across every result tab with a literal restriction;
+  an advanced search with visual operators; Wikipedia in all twelve UI languages, entire, automatic,
+  no dumps; Equal Earth; OSM tracked, ingested and indexed; laws worldwide with change analysis over
+  time and geography.
+  **FOUR FINDINGS THE INTAKE PRODUCED, each verified:** (1) **the app's projection is
+  EQUIRECTANGULAR, not Mercator** (`app-map.js:21-24`, the 2026-06-18 ruling kept it deliberately) —
+  the premise was wrong about the app, the instinct right; (2) **the UN vote is real**: the General
+  Assembly adopted the "Correct the Map" resolution on 2026-09-04 (164 for, US against, 6 abstentions,
+  non-binding, encourages equal-area projections such as Equal Earth — SEARCH-VERIFIED across CNN/NPR/
+  Newsweek; pages egress-blocked here); (3) **`docs/SECURITY.md`'s "full set of endpoints" list
+  (re-verified 2026-09-08) OMITS** the Wikidata Query Service reached by the default-on world-discovery
+  ride-along (`discover.py:36-41`, `world_discovery_per_pass=2`), the Wikipedia Action API, ORES, the
+  Wikimedia dumps host and the Geofabrik/planet.osm mirrors — a docs-only defect recorded, not fixed
+  (Q67); (4) the deferred article re-index after an import (`ReindexJobManager`, four endpoints) has
+  ZERO frontend callers, which is why the import UI cannot say "safe to close" (Q6).
+  **THE "NO DUMPS" CONSEQUENCE, stated so the trade is ruled knowingly (Q39 ⛔):** a dump is the only
+  way to reach the pages nobody edits; without it, whole-edition coverage is STREAM-FORWARD — every page
+  that changes enters on its first change, the never-edited tail is reached slowly or never, and the
+  report says how far coverage has got. **THE ALPHA TRAIN PROPOSED:** beta = 0.9.0 (feature-complete
+  + hardening, Q1); 0.4 living sources absorbs items 1/3/4/6/8 + the alpha-3 display boundary + Equal
+  Earth on ONE versioned-source substrate (Q68); 0.5 the investigator's desk absorbs the advanced
+  search + the Place entity + OSM artifacts; 0.6–0.8 keep the approved themes. **OBSERVATION:** the
+  rulings artifact recorded one answer (`A2: default`, 2026-09-12T07:37Z) of unknown provenance —
+  asked, not recorded as a ruling (Q69). OPERATOR STEPS (none guessable here): the egress allowlist
+  (five sessions, five tool surfaces, same wall — §4.4), the 0.3 row-5 run + tag, the 0.4 rows A–C runs,
+  a gazetteer build, one fetched CLML document, per-edition Wikipedia counts.
 - **TWO 2026-09-11 FIELD FINDINGS INVESTIGATED AND NOT CONFIRMED AS DEFECTS (recorded 2026-09-11,
   PR #1115, so the next session does not re-open them).** Both were in the field brief's own
   finding list; both were traced to code and came back clean. A finding that survives triage and
