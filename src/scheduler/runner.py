@@ -1578,6 +1578,15 @@ class BackgroundScheduler:
         self._maint_interval_s = _maint_interval_s()
         self._last_maint = 0.0
         self._last_maintenance: dict | None = None
+        # C6 (field diagnostics 2026-09-11): WHY a maintenance window was skipped.
+        # The hourly snapshot recorder rides this lane, and the field measured "31
+        # hourly samples" over a SIXTEEN-DAY window -- about 1.9 a day where hourly
+        # would be ~384, with a five-day hole in the middle. The recorder was never
+        # broken; it simply was not CALLED, because every early return below yielded
+        # the window in silence. A dropped sample that leaves no trace is
+        # indistinguishable from an hour in which nothing happened, so the gaps could
+        # not be explained by anything in the bundle. Counted by reason, so they can.
+        self._maint_skips: dict[str, int] = {}
         # S4.1 duty-cycle fix (field-feedback 2026-07-23): the whole-corpus
         # briefing recompute runs in its own background thread (see
         # _refresh_briefing_async); this lock makes overlapping refreshes
@@ -1826,6 +1835,18 @@ class BackgroundScheduler:
                 self._active = False
             self._run_lock.release()
 
+    def _note_maint_skip(self, reason: str) -> None:
+        """Count a yielded maintenance window BY REASON (C6).
+
+        Cheap and lock-free-ish on purpose: this runs on every scheduler loop
+        iteration, and the throttle case fires most of them, so it must not become an
+        instrument that costs more than the thing it measures (the 2026-08-06 lesson).
+        A plain dict increment under the state lock is enough -- these are counters
+        read by a human, never a control input.
+        """
+        with self._state_lock:
+            self._maint_skips[reason] = self._maint_skips.get(reason, 0) + 1
+
     def _run_off_peak_maintenance(self) -> None:
         """A10: run the budgeted keyword maintenance in the collector-idle window.
 
@@ -1842,18 +1863,25 @@ class BackgroundScheduler:
         import time as _t
 
         if self._stop.is_set():
+            self._note_maint_skip("stopping")
             return
         now = _t.monotonic()
         if self._last_maint and now - self._last_maint < self._maint_interval_s:
+            self._note_maint_skip("throttled")
             return  # off-peak throttle: not due yet
         try:
             from src.scheduler import memguard
 
             if memguard.memory_guard.engaged:  # property, not a call
+                self._note_maint_skip("memory_pressure")
                 return  # under memory pressure — do not add write-gate work now
         except Exception:  # noqa: BLE001 - guard read must never block maintenance
             pass
         if not self._run_lock.acquire(blocking=False):
+            # THE ONE THAT EXPLAINS THE FIELD GAP: a continuously-collecting machine
+            # holds this lock essentially always, so this window -- and the hourly
+            # snapshot riding it -- is yielded over and over with nothing recorded.
+            self._note_maint_skip("collect_pass_owns_lock")
             return  # a run-now pass owns the lock — yield this window
         # Mirror _do_run's busy signal: with the lock held but _active False, a
         # concurrent run_now would gate on _active, spawn a pass, fail the lock
@@ -2241,6 +2269,12 @@ class BackgroundScheduler:
                 # Pass recycling honesty (P0.3 E2): how many sources the last
                 # pass boundary deferred — they run FIRST next pass.
                 "deferred_carryover": deferred_carryover_count(),
+                # C6: why maintenance windows were yielded, by reason, since this
+                # process started. The hourly snapshot recorder rides that lane, so
+                # these counts are what turn an unexplained gap in the series into a
+                # stated one. Process-scoped and never persisted -- after a restart
+                # they honestly read empty rather than implying a quiet run.
+                "maintenance_skips": dict(self._maint_skips),
                 # RSS memory guard (P0.3 E3): the loud paused-low-memory state
                 # with the real numbers — never a silent stall.
                 "memory_guard": guard_state,
