@@ -21,6 +21,61 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+
+- **THE RC CONFIRMATION ROUND CAME BACK UNANSWERED — 0 OF 22 `ANSWER` LINES CARRY A LETTER (processed
+  2026-09-15; NOTHING RESOLVED BY THE SESSION; docs-only).** THE PRIMARY RECORD is the round itself, still
+  open and still answerable in place:
+  [`docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`](../design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md)
+  (a PROCESSING RECORD banner above its §0; every `ANSWER RCnn:` line untouched); the one-line index is
+  [`RULINGS_INDEX.md`](RULINGS_INDEX.md) rows `RC01`–`RC17`. **THIS ENTRY IS THE INDEX.**
+  **THE PARSE, run mechanically per the round's own §0** (letters matched with word boundaries, each letter
+  asserted to be an option OF THAT QUESTION, a note after the letter recorded verbatim and taken as the ruling
+  where it contradicts the letter): 22 `ANSWER` lines · **0 answered** · **4 PENDING** · **18 ASSUMPTIONS**.
+  The parser's first cut was WRONG about one of them and the correction is the reason the count is trustworthy:
+  its `Default if blank:` regex was line-anchored, `RC12` writes that clause mid-paragraph, and RC12 was about
+  to be recorded as an ASSUMPTION at a default it does not have. It has none — its own words are «Default if
+  blank: none — the note left it blank and a second blank keeps it pending» — so it is the fourth PENDING.
+  **THE 4 PENDING, nothing assumed, nothing moved:** `RC02` ⛔ (C1 vs Q215, the legacy single-file restore —
+  the restore half is untouched and `S04-04` still builds on Q215 = a) · `RC03` ⛔ (C4 = Q1009, the storage
+  round-2 rows 3–6 — unexecuted; 0.9 row F and `S05-06`'s seam stay shut) · `RC10` ⛔ (E2 vs F1,
+  `dumps.wikimedia.org` — NOT added to any allowlist; PROMPT_06 slices 4 and 6 stay operator-side) · `RC12`
+  (G6, the poll version — `docs/FUTURE_DEVELOPMENTS.md` §Poll analysis is still owed its rewrite, which waits
+  on the version).
+  **THE 18 ASSUMPTIONS, each labelled and reversed by writing the letter:** `RC01` = (b) 0.4 row G keeps
+  waiting on 0.3 row 5 · `RC04` = (a) no bench in 0.5; the one-model decision before 0.8 · `RC05` = (a) no
+  tool · `RC06` = (a) 90 days BESIDE the whole-history verdict · `RC07` = (b) article revision tracking as its
+  own 0.5 slice · `RC08.1`–`.6` = (a) each (0.5 row B · a 0.5 `bulletin-defaults` slice beside row H · 0.4 row
+  C · 0.6 row A · 0.5 row I · 0.4 row U) · `RC09` = (a) drop the live ollama.com browse · `RC11` = (a) the V1
+  round DETAILS the record · `RC13` = (b) a dedicated networked session researches the religious dates ·
+  `RC14` = (a) Tor-exit-resolve GOES, at 0.9 row E · `RC15` = (a) the loopback guard; Q1148's figures stand ·
+  `RC16` = (a) the `lean-*` scale leaves the offerable vocabulary · `RC17` = (a) `via:*` AND the coverage-state
+  prefixes filtered.
+  **EIGHT OF THOSE ARE CONFLICT QUESTIONS AND THE CONFLICT IS NOT RESOLVED BY THIS.** §0 makes the
+  default-if-blank the LATER channel (the register, 15:02–16:00Z), so `RC04`/D8, `RC05`/B4, `RC06`/B7,
+  `RC09`/D9, `RC13`/G8, `RC14`/I3, `RC16`/L9 and `RC17`/L10 now follow the register side AS AN ASSUMPTION
+  while BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. Taking §0's own stated default is not
+  a session resolving a contradiction; writing the letter is what resolves it.
+  **TWO RESIDUAL POINTS THE DEFAULTS DO NOT REACH, left open rather than guessed.** (1) `RC13` asks for
+  `+ eclipses` or `− eclipses` after the letter and nothing was written, so **the eclipse canon's fate is
+  UNSTATED even under (b)**: the religious-calendar half moves to a networked session, the eclipse half is
+  neither dropped nor funded, and 0.4 row U says so rather than inheriting Q1135 = b's «the religious calendars
+  AND the eclipse canon dropped» for a half the assumption does not cover. (2) `RC11`'s default fixes only the
+  SHAPE of the owed round, not its content — **the detailed V1-1..V1-9 round (G1) is still OWED and was not
+  written**, because the instruction for this session was to write it only on an answered `RC11`.
+  **WHAT THIS CHANGED IN THE PLAN FILES (docs-only; no gate row changed status, no brief's slices were
+  rewritten, `CLAUDE.md` untouched):** an ASSUMPTION line in the 0.4 gate's §3 and on rows G, K, S, T, U, V;
+  the 0.5 gate's §3 and rows B, F, H, I, J; the 0.6 gate's row A; the 0.7 exit clause; the 0.8 row C; the 0.9
+  row E; and the «Register round 2026-09-15» block of the twelve briefs (S03-01, S04-04, S04-06, S04-10,
+  S04-12, S04-13, S04-14, S05-08, S05-09, S05-10, S06-04, S09-01) gains the assumption it now carries.
+  **STILL OWED AFTER THIS ROUND:** `RC02`, `RC03`, `RC10`, `RC12`; the detailed V1-1..V1-9 round (G1); the
+  §Poll analysis rewrite (after `RC12`); section M1 of the register (the two self-closed items — the unrounded
+  i18n percentage and the calls-not-names drift guard — never in the artifact, still open); and the operator
+  steps, unchanged: the Q114/`RC10` allowlist hosts, A1's quarantine run, and 0.4 rows A–C.
+  **LESSON** (in `LESSONS.md`, 2026-09-15, «a round that comes back blank is a result»): a confirmation round
+  answered nowhere is not a failed round and not a reason to wait — its own §0 says what a blank means, so the
+  processing is identical and the deliverable is the labelled assumption set. The trap is the opposite one:
+  a session that reads «unanswered» as «nothing to record» leaves eighteen live assumptions unlabelled in the
+  plan files, which is exactly the state the protocol's ASSUMPTION rule exists to prevent.
 - **THE 2026-09-06 REGISTER ANSWERED — 65 OF 65 THROUGH THE RULINGS ARTIFACT (2026-09-15 15:02–16:00Z;
   recorded the same day; NOTHING RESOLVED BY THE SESSION; draft PR #1131).** THE PRIMARY RECORD is the
   register itself, answered in place:

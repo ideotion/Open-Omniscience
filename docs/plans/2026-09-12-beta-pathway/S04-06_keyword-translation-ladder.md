@@ -59,6 +59,11 @@ sections are §5 (R7–R9) and §12 (Q1103, Q1104); the `OPEN_QUEUE.md` 2026-09-
 B3 = `default`: a seeded STRATIFIED sample per batch, ship only furniture words, refuse open-class words — the
 method for Q1104 = a; it ships reviewed additions, the side of Q1103's NOTE. The Q1103/Q1104 CONFLICT stays.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** Nothing in this slice moved: `RC05`–`RC07` touch `S04-12`,
+not the ladder, and the Q1103 / Q1104 stoplist CONFLICT is NOT an RC question — it stays exactly as recorded
+and the stoplist merge stays HELD. B2 and B3 are unchanged, so B3's method (a seeded stratified sample per
+batch, furniture words only, open-class refused) is still what governs any reviewed addition.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §5 context (VERIFIED): 698 rings / 21,927 members; `equivalence.py`: `ring_of`, `translate_term` (no

@@ -38,6 +38,13 @@ register: L4, M2, D6, Q-VIS-7). Grep the tree before building anything — the s
 efficiency and performance in mind.» qualifies Q1148 = a; `RC15` asks whether it means this loopback guard or the
 egress politeness (Q1013). D6 = `default` = Q1132 (a), consistent.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC15` → **ASSUMPTION (a): L4's «most ethical» is the app's
+own loopback guard**, so Q1148's figures stand as this brief already has them (1,000 / hour for loopback UI
+calls, 100 for anything else) and the per-host egress politeness (Q1013 = a, also in this slice) is NOT
+re-opened. Nothing to change; recorded so that a later reading of L4 as the egress knob is a reversal rather
+than a discovery. Writing `b` at `ANSWER RC15` would move the change onto Crawl-delay and the per-host
+floor; `c` would reach both.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - `CLAUDE.md` invariant #20 already carries the amendment: "RULED 2026-09-15 (answer sheet Q1012 = a; Q222 =

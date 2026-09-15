@@ -58,6 +58,15 @@ per-vertical freshness), the AR6 and Open-Meteo lanes have registry entries and 
 directory's verified count is recorded beside the total. **Operator:** the networked directory build; the
 maintainer's own runs where the sandbox's egress refuses a host. Brief `S06-04`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC08.4` asked where register ruling
+**G3** (the bloc-roster networked session — the registry stays EMPTY until it runs, because a partial roster
+is more dangerous than none) lands. Blank, so its stated default is a labelled **ASSUMPTION: (a) — this row,
+beside the statistics directory of G5 / Q1147.** It places one networked session producing several hundred
+dated member rows under the external-artifact registry, on the same contract as this row's other networked
+acquisitions (G2's elections session, §5 step 1). The empty-until-it-runs clause is the ruling's own and is
+not weakened here. No new board row; the placement is what was assumed. Reversed by writing a letter at
+`ANSWER RC08.4`.
+
 ### Row B — OSM change tracking and the trend surfaces · ruled (Q106, Q812 🔒, Q813, Q815, Q816, Q824) · OPEN
 
 **What it must demonstrate.** Geofabrik daily diffs per selected extract applied to the ingested classes; if
@@ -125,6 +134,7 @@ with the translated-of-total figure on each document. Brief `S06-05`.
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 verticals carried with their 2026-09-07 amendments; rows B–D from Q106/Q107/Q108's release statements | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **Premise correction from the brief-writing pass (row E):** the Help documents are TEN, not eight (`_DOCS` in `src/api/main.py:2558`: user-manual, quickstart, ethics, governance, security, design, roadmap, architecture, contributing, changes). The 167,022-character figure is the 2026-09-08 visual audit's measurement of the RENDERED Help tab (`docs/audit/ui-visual-2026-09-08/findings.csv:127`); the documents' source is larger (`docs/USER_MANUAL.md` alone is 180,594 bytes), so the ~2 M-character ×12 estimate is a floor, to be re-measured per tranche. The serving seam exists (`docs/i18n/<lang>/<file>`, one translated draft: `docs/i18n/fr/QUICKSTART.md`). No ruling changed. | session (`S06-05` §2, hand-verified) |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z) — effects on this board:** row A — G2 `default` AUTHORISES the networked elections-acquisition session (§5 step 1 of `S06-04`) and G3 `default` the bloc-roster session (registry EMPTY until it runs; placement proposed here, `RC08.4`); G4 adds operator-curated prediction extraction from a suggested list; G7 adds the signal-keywords layer as toggleable and OFF; G5 consistent with Q1147. G6 re-states the poll idea (raw poll data, verbatim questions and results, orienting-question detection) with the version left blank — `RC12` asks it; V1-8's poll placement is in tension; not placed here by the session. | maintainer (the register, 2026-09-15) · reconciled by the session |
+| 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effect on this board: row A — `RC08.4` ASSUMPTION (a), register ruling G3's bloc-roster networked session is placed here beside the statistics directory, the registry staying EMPTY until it runs. Reversible by writing a letter. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 
 ---
 

@@ -29,6 +29,11 @@ the 2026-07-20 "THE 0.3 CLOSE GATE" entry (`grep -n "THE 0.3 CLOSE GATE" docs/le
 re-index → the count → the `v0.3.0` tag) is deferred by the maintainer, no date. This brief waits on it; `RC01`
 asks whether the version flip may proceed on the existing `v0.3.0` pre-release without row 5.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC01` → **ASSUMPTION (b): this brief keeps waiting on
+0.3 row 5.** The version stays `0.3.0` until the maintainer runs the quarantine; the existing `v0.3.0`
+pre-release is not taken as the flip's base. A1 stays `deferred`, with no date. Reversed by writing a letter
+at `ANSWER RC01` — `a` would let the flip proceed now and move row 5 into 0.4's operator rows.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §2 context (VERIFIED at `bebcef4`): "0.3 measured-and-verified (closing: one open row, the Tier-A
@@ -51,7 +56,7 @@ asks whether the version flip may proceed on the existing `v0.3.0` pre-release w
   grepped) pins `src.__version__` to the package metadata — the flip touches exactly these two files.
 - grep-verified: `docs/CHANGES.md:5` `## 0.3.0 — measured & verified (the `0.2` cycle, version set
   2026-07-18)`; `:431` the 0.2.0 section records "Tagged `v0.2.0`"; nothing records a 0.3.0 tag.
-- grep-verified: `docs/product/RELEASE_0.3_GATE.md:33` row 5 `**OPEN** — criteria **agreed 2026-08-23**; the
+- grep-verified: `docs/product/RELEASE_0.3_GATE.md:32` row 5 (**premise corrected 2026-09-15: this brief cited `:33`, which is row 6 — the quoted text below is row 5's, verbatim and unchanged; only the line number was wrong, and it was wrong when written, since row 5 sat at `:32` at `bebcef4` too**) `**OPEN** — criteria **agreed 2026-08-23**; the
   pass has not been run`; §7.1 (`:799–871`) is the four `curl` commands; §7.3 (`:882–918`) "Tag day" — its
   step 4 prescribes an ANNOTATED tag (`git tag -a v0.3.0 <sha>`), step 5 "push the tag, and nothing else"; the
   §3 amendment log's last entries are dated 2026-09-07 and record no tag.

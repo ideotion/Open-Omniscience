@@ -36,6 +36,13 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
 CONFLICTS with Q1129 = a (keep the stance) — `RC16`; this slice touches `lean-*` only as data it migrates, never
 as a vocabulary decision.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC16` → **ASSUMPTION (a): remove the `lean-*` political-lean
+scale from the offerable vocabulary.** The LLM may no longer propose a lean tag; human-asserted lean tags
+stay, and the stated position in `source_tags.py` changes with its reason recorded in the same diff. Note
+what the 2026-09-11 check measured before either answer existed — the code already classifies `lean-*` as
+non-topical and declines to filter it, twice in 921 assignments — so this changes what may be PROPOSED, not
+what is displayed. The CONFLICT with Q1129 = a stays recorded; Q1102 ⛔ = b (the feed key) is untouched.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - `Source.domain` is `String(255), nullable=False, unique=True`; `rss_url` is `String(500)` nullable;

@@ -61,6 +61,15 @@ editor stays). B6 = `default` (c): add `high_link_density` as the second, measur
 published BESIDE the whole-history verdict CONFLICTS with Q1108 = a (6 months instead; `RC06`); its note asks for
 article revision tracking (placement `RC07` — not this slice's to decide).
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** Three assumptions reach this slice. **`RC05` → (a): build no
+tool.** The 64,910 `kind_overrides` proposals stay a design-doc measurement — the worklist Q1105 = a funds is
+NOT built here, and the slice is smaller by exactly that. **`RC06` → (a): 90 days BESIDE the whole-history
+verdict**, so the re-check publishes TWO verdicts per source, each with its own n and neither replacing the
+other — not Q1108 = a's six months instead of the whole history. **`RC07` → (b):** B7's article-revision-
+tracking note is placed as its own 0.5 slice on the finished 0.4 row O substrate, so it is still **not this
+slice's to build**. B1, B5 and B6 are unchanged. Both CONFLICTS stay recorded on their index rows; the
+embassy platforms (Q1113 ⛔) stay PENDING for their own reason.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - The hatch: `scrape_unqualified` at `src/scheduler/settings.py:125–132` (its comment: it "RELAXES a maintainer

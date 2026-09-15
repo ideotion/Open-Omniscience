@@ -80,6 +80,12 @@ Q107). Grep the tree before building anything — the sheet's anchors were verif
 (`pyproject.toml`); both venv profiles re-verified when deps change; the coverage report's «without [pdf]» wording
 is retired in the same PR.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** Nothing in this slice moved: L6 («Promote [pdf] into the
+default») is a NEW RULING with no CONFLICT and was never an RC question, so `[pdf]` still joins the default
+install, both venv profiles are still re-verified per the deps ritual, and the coverage report's «without
+[pdf]» wording is still retired in the same PR. The adapter ORDER (Q925 ⛔) remains PENDING for its own
+reason, unrelated to this round.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §10 (VERIFIED): 51 curated + 226 generated sources; 24 documents → 23 registrable `LawDocument` rows
