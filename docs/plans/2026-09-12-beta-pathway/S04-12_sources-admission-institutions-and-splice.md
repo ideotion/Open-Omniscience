@@ -54,6 +54,13 @@ at `main`@`bebcef4` on 2026-09-12 and may have moved; this brief re-checked them
 - **Q1156** — **(a)** «Keep the stratified round-robin (the ruled equilibrium lever) and randomise the order
   of the singleton strata across passes.»
 
+**Register round 2026-09-15 (B1, B4, B5, B6, B7):** B1 = `default` = Q1101 (a). B5: «automate the script run
+within the diagnostics» — the source-qualification export + merge run becomes a diagnostics action (Q1106's
+editor stays). B6 = `default` (c): add `high_link_density` as the second, measured criterion beside the kept 0.5
+(Q1107 = a). B4 = `default` (no tool) CONFLICTS with Q1105 = a (`RC05`). B7 = «yes, …»: window = 90 days
+published BESIDE the whole-history verdict CONFLICTS with Q1108 = a (6 months instead; `RC06`); its note asks for
+article revision tracking (placement `RC07` — not this slice's to decide).
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - The hatch: `scrape_unqualified` at `src/scheduler/settings.py:125–132` (its comment: it "RELAXES a maintainer

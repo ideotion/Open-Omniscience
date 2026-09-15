@@ -25,6 +25,10 @@ the 2026-07-20 "THE 0.3 CLOSE GATE" entry (`grep -n "THE 0.3 CLOSE GATE" docs/le
 - **Q109** — **(a)** «Yes: row 5 (the Tier-A quarantine run, 8 articles) + the `v0.3.0` tag from your
   machine; then the version flips to `0.4.0`.» [placement note from the JSON: operator step]
 
+**Register round 2026-09-15 (`RULINGS_INDEX.md` A1):** A1 = `deferred` — the operator step (the quarantine run →
+re-index → the count → the `v0.3.0` tag) is deferred by the maintainer, no date. This brief waits on it; `RC01`
+asks whether the version flip may proceed on the existing `v0.3.0` pre-release without row 5.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §2 context (VERIFIED at `bebcef4`): "0.3 measured-and-verified (closing: one open row, the Tier-A

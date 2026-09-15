@@ -32,6 +32,10 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   75 are language services (BBC Arabic, DW Español …) that differ only by feed path; 192 carry `lean-*`
   tags the survivor lacks.
 
+**Register round 2026-09-15 (L9):** L9 = `default` (remove the `lean-*` scale from the offerable vocabulary)
+CONFLICTS with Q1129 = a (keep the stance) — `RC16`; this slice touches `lean-*` only as data it migrates, never
+as a vocabulary decision.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - `Source.domain` is `String(255), nullable=False, unique=True`; `rss_url` is `String(500)` nullable;

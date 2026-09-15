@@ -33,6 +33,13 @@ verified at `main`@`bebcef4` on 2026-09-12 and may have moved; this brief re-che
 - **Q1151** — **(a)** «Go»
 - **Q1152** — **(a)** «Fund it in 0.4.»
 
+**Register round 2026-09-15 (A4, G8, J1, L1, L3, L5, L7, L10):** A4 = `default` (b): banner + archive, never merge
+— the actions for Q1141 = a's depth. G8: «I won't provide the dates. Let's create a dedicated internet connected
+session to search for all religious dates and implement them in the app» CONFLICTS with Q1135 = b (`RC13`): build
+nothing for the feature until confirmed. L10 = `default` (filter `via:*` AND the coverage-state prefixes)
+CONFLICTS with Q1130 = a (`RC17`). J1 = Q1139, L7 = Q1149 — consistent; L1 (keep) and L3 (leave) — no change.
+L5 (extend `_SPARSE_BAR_MAX` to the commodity overlay only) is proposed for this slice (`RC08.6`).
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - The ratchets: `.github/workflows/ci.yml:167` `--min 100`, `:191` `--max-untranslatable 470`, `:209`

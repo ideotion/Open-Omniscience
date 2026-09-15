@@ -34,6 +34,10 @@ register: L4, M2, D6, Q-VIS-7). Grep the tree before building anything — the s
 - **Q1132** — **(a)** «Pin digests in the external-artifact registry; the pull verifies them.»
 - **Q1148** — **(a)** «Raise it for loopback UI calls (1,000/hour), keep 100 for anything else.»
 
+**Register round 2026-09-15 (L4):** «Adapt the rate limit to what's most ethical while keeping the app's
+efficiency and performance in mind.» qualifies Q1148 = a; `RC15` asks whether it means this loopback guard or the
+egress politeness (Q1013). D6 = `default` = Q1132 (a), consistent.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - `CLAUDE.md` invariant #20 already carries the amendment: "RULED 2026-09-15 (answer sheet Q1012 = a; Q222 =

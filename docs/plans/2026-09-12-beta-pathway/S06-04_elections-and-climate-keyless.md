@@ -40,6 +40,13 @@ The carried V1 content (no sheet IDs; ruled 2026-09-07 — `V1_PATHWAY_2026-07-1
   `window` / `projected` rendered distinctly, caveat visible, ×12; never fabricate, never roll forward.
 - Consumed from the sheet: Q912 = a (the same floor file); Q1001 / Q1002 / Q1014; Q1017 = a (K13 measured).
 
+**Register round 2026-09-15 (G2, G3, G4, G5, G6, G7):** G2 = `default`: the networked acquisition session is
+AUTHORISED (§5 step 1; the law-batches contract as the template). G3 = `default`: the bloc-roster session
+authorised, the registry EMPTY until it runs (placement `RC08.4`). G4 adds operator-curated prediction extraction
+from a suggested list (S3). G7 adds: the signal-keywords layer is toggleable and OFF by default (S4). G5 = Q1147.
+G6: the poll idea re-stated — raw poll data, verbatim questions and results, orienting-question detection — with
+the version blank (`RC12`); not this slice's to place.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - grep-verified in this brief: `src/civic/coverage_floor.py:59` `LANGUAGE_COUNTRIES_AS_OF = "2026-09-07"`

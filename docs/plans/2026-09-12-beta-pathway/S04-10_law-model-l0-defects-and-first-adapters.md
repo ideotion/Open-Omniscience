@@ -76,6 +76,10 @@ Q107). Grep the tree before building anything — the sheet's anchors were verif
   notice, US public domain, …), shown in the reader, and stated at every export point (Q1008); a source whose
   terms forbid redistribution is excluded under V1-3.»
 
+**Register round 2026-09-15 (L6):** «Promote [pdf] into the default» — `[pdf]` joins the default install
+(`pyproject.toml`); both venv profiles re-verified when deps change; the coverage report's «without [pdf]» wording
+is retired in the same PR.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §10 (VERIFIED): 51 curated + 226 generated sources; 24 documents → 23 registrable `LawDocument` rows

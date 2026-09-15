@@ -9341,3 +9341,24 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
     file has three layers — the letter, the label the letter names, and the words after it — and
     only the last one is the maintainer's; extract the first mechanically, quote the second
     verbatim, and treat the third as the ruling whenever they disagree.
+- **TWO OPEN CHANNELS FOR ONE QUESTION ROUND COME BACK ANSWERED TWICE — CLOSE THE OLD CHANNEL WHEN YOU
+  RE-ASK, AND PREFER THE CHANNEL THAT STAMPS EACH ANSWER (2026-09-15, the register round):** the 65-question register of the 2026-09-06 analysis had been published as a rulings artifact (a page
+  with its own `answers` store) on 2026-09-12; on 2026-09-12/13 the roadmap answer sheet RE-ASKED 40 of
+  those ids inside its §12, and the artifact was left open. The maintainer answered the sheet in the
+  morning of 2026-09-15 and the artifact between 15:02Z and 16:00Z the same afternoon — 65 of 65 —
+  and nine of the shared ids came back DIFFERENT (B4, B7, C1 ⛔, D8, D9, G8, I3, L9, L10), one ⛔ blank
+  on the sheet came back `default` on the artifact (C4 = Q1009), and one register answer («I don't know
+  yet», E2) sat one minute before a block answer («add them», F1) that included it. None of that is a
+  defect of the maintainer's: two forms asked the same thing with different option letters and
+  different recommended defaults (the sheet's ★ on Q1129 was the OPPOSITE of the register's default on
+  L9, because a verification pass between the two had changed the recommendation), so «default» meant
+  two different things on the two channels. What made the round recordable at all was the artifact's
+  per-answer `at` timestamp: it settled the ORDER (the register is the later channel on every shared
+  id) without settling the RULING, which is exactly the division the protocol wants — the session
+  records both, states which is later, and asks; a pasted list would have left even the order to guesswork.
+  GENERAL FORM: (1) when a question round is re-asked in a new format, retire the old channel in the
+  same commit (close the page, or stamp it «superseded by …») — or state on BOTH which one wins if they
+  disagree; (2) never re-ask with a different recommended default without saying so on the new form,
+  because «take the default» is then a different answer on each; (3) ask through channels that stamp
+  each answer, since sequence is the only fact a recording session may use about two answers, and it
+  may use it only to say which is later, never which is right.

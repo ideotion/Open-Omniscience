@@ -17,6 +17,28 @@ gated and the session builds everything else.
 
 ---
 
+> ## ✅ ANSWERED 2026-09-15 — 65 of 65, through the rulings artifact (read this before the 2026-09-11 banner)
+>
+> The maintainer answered every question of sections A–L on **2026-09-15 between 15:02Z and 16:00Z** in the
+> rulings artifact (its `answers` store carries one timestamped document per id: 51 `default`, 1 `deferred`,
+> 13 `answered` with a note). **The same afternoon, but AFTER the answer sheet of the roadmap round had been
+> returned** (`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`, whose §12 had re-asked 40 of
+> these ids as `Q11xx` questions that morning). So most questions now carry two answers; the recording session
+> compared them one by one and **resolved nothing**: where the two agree the ruling is recorded once, where the
+> register adds a new ruling it is recorded as such, and where they contradict each other BOTH stand and the
+> contradiction is put back to the maintainer in
+> [`docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`](../../design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md)
+> (`RCnn` ids). Each question below ends with a **`ANSWER (2026-09-15)`** block: the answer verbatim, what a
+> `default` resolves to (the recommendation written beside the question), the sheet's answer where one exists,
+> and the verdict. The one-line index is `docs/ledger/RULINGS_INDEX.md` rows `A1`–`L10`; the queue entry of
+> 2026-09-15 (register round) is the reconciliation in full. **Tally:** 27 consistent with the sheet · 7
+> ratify work already shipped · 15 new rulings (12 by taking the recommended default on a question the sheet
+> had not re-asked, 3 by note: B5, E1, L6) · 9 CONFLICTS (B4, B7 window, C1 ⛔, D8, D9, G8, I3, L9, L10) · 5
+> pending (A1 deferred, C4 ⛔ confirm, E2, G1, G6's version) · 1 qualifier (L4) · 1 superseded (G10). Section
+> M (M1–M6) was not in the artifact; M2–M5 were answered on the sheet (Q1126, Q1150–Q1152), M1 is still open.
+>
+> **Do not re-ask anything below as posed** — grep `RULINGS_INDEX.md` first (protocol rule (6)).
+
 > ## ⚠ STATUS — verification pass completed 2026-09-11 (read before answering anything below)
 >
 > **This file was written on 2026-09-06 and went unmaintained.** Its 2026-09-10 banner said only A3 had
@@ -128,6 +150,11 @@ release in the GitHub UI (that is the collision that shipped `v0.2.0` with no as
 `PROMPT_01`.)* → The only thing to say here is if you have **already** run it, or if
 you want to decline after all.
 
+> **ANSWER (2026-09-15, the rulings artifact): `deferred`**
+> — which resolves to: the operator step (quarantine run with include_prose_gate=false → re-index → the count under nav-soup-v2 → the v0.3.0 tag) is DEFERRED, no date.
+> Sheet: Q109 = a (close 0.3 now) — premise corrected 2026-09-15: v0.3.0 already exists as a pre-release. **Verdict: DEFERRED.** The maintainer defers the operator step (no date, Q110 = c). 0.4 row G (S03-01) waits on it; RC01 asks whether the version flip may proceed on the existing pre-release without row 5.
+> Where enforced: 0.4 · S03-01 · RELEASE_0.4_GATE.md row G — operator step DEFERRED 2026-09-15 (RC01).
+
 **A2 · Stand up `RELEASE_0.4_GATE.md` now or at the tag?** The 0.3 gate's §5 already writes the three
 carried rows (3-at-scale diagnostics on the ~1M instance, row 4 committed full import with the
 disqualified-source spot-check, row 7b the ≥72 h soak). → Create the 0.4 board in the same PR that closes
@@ -140,12 +167,22 @@ disqualified-source spot-check, row 7b the ≥72 h soak). → Create the 0.4 boa
 > A/B/C (carried by explicit rulings) from D/E/F (marked as this-session proposals). **What is left to
 > answer is not “now or at the tag” — it is whether rows D, E and F become bars.**
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: create the 0.4 board at the tag — MOOT: it was stood up 2026-09-09 (answered by action); the remainder is Q117.
+> Sheet: Q117 = a (rows D and E bars; F closed on Q1128 = a). **Verdict: CONSISTENT.** Moot as posed; Q117 = a stands.
+> Where enforced: 0.4 · S04-15 · rows D/E/F — done.
+
 **A3 · ⛔ The ledger restructure — four yes/no rulings** (`docs/design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md`
 §7; `CLAUDE.md` is now 1,339,174 bytes / 14,985 lines / 161 Open-queue bullets, up from 797 KB when the
 proposal was written): (1) move the Open queue verbatim to `docs/ledger/OPEN_QUEUE.md`? (2) amend
 protocol rule (1) as proposed in §4.2 (read the non-negotiables + invariants + lessons every session, the
 queue on demand)? (3) retire SHIPPED entries out of the queue (§4.4)? (4) add the size ratchet (§4.5)?
 *(gates: `PROMPT_03`.)* Recommendation on record: yes to all four.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: yes to all four (A3(1) queue moved, (2) rule (1) amended, (3) shipped entries retired, (4) the size ratchet).
+> Sheet: — (executed 2026-09-07). **Verdict: RATIFIED.** Ratifies the executed restructure.
+> Where enforced: shipped 2026-09-07 — CLAUDE.md protocol (1)/(5c), OPEN_QUEUE.md, LESSONS.md.
 
 **A4 · `docs/FUTURE_DEVELOPMENTS.md` — how far may the reality-check go?** 19 of 50 sections carry
 stale "designed-only" claims, four sections are embedded historical ledgers, three pairs are duplicates
@@ -158,6 +195,11 @@ default: (b), never (c) — rule 5 of the protocol forbids compressing away a ru
 > **VERIFIED 2026-09-11 — premise holds; one figure moved.** `docs/FUTURE_DEVELOPMENTS.md` now has
 > **51** `## ` sections, not 50. All three duplicate pairs are still present and none of the four
 > embedded ledgers has been archived. The (a)/(b)/(c) ruling is unchanged.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: (b) a status banner per stale section + archive the four embedded ledgers to docs/archive/, never (c) merging the duplicate pairs.
+> Sheet: Q1141 = a (full depth: every section re-checked, stale claims corrected). **Verdict: CONSISTENT.** Orthogonal axes: Q1141 fixes the depth, A4 the actions (banner + archive; never merge — protocol rule (5)).
+> Where enforced: 0.4 · S04-14 · row U (with Q1141).
 
 ---
 
@@ -183,6 +225,11 @@ the bandwidth bound and the audit view's undo as the safety valve.
 > whose relationship to both options should be settled in the same ruling, or it will quietly survive
 > whichever one you pick.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: (b) a `qualified` verdict flips `enabled=True` (qualification IS the admission gate), the hardware-aware per-pass budget as the bound, the audit view's undo as the valve; the `scrape_unqualified` hatch settled in the same ruling.
+> Sheet: Q1101 = a (the same content — the sheet's letters differ from the register's). **Verdict: CONSISTENT.** Same ruling in both channels.
+> Where enforced: 0.4 · S04-12 · row S.
+
 **B2 · The stoplist ruling, (1) vs (2)** (`CLAUDE.md` "KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING"):
 (1) derive a versioned per-language stoplist into the repo, once, reviewed; (2) an auto-updating stoplist
 derived from the live corpus. Recommendation on record and unchanged: (1) — a stoplist entry is a partially
@@ -195,11 +242,21 @@ irreversible corpus-wide deletion (index-time), a poisoning vector, and contradi
 > a build-or-not decision. The live question is whether **triage-derived additions may merge into that
 > existing file** — which is the same irreversibility argument, applied to a smaller change.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: (1) a versioned, reviewed, in-repo per-language stoplist — the artifact that already exists (configs/stopwords_iso + stopwords_extra).
+> Sheet: Q1103 = b + NOTE («but we will update the list as we update the app, there should be a stopword related diagnostic…»). **Verdict: CONSISTENT.** B2's default is the existing artifact; the narrowed question (may triage additions merge into it) is Q1103's, whose CONFLICT with Q1104 stays listed. B3's default leans to the NOTE's side.
+> Where enforced: 0.4 · S04-06 · row M (the Q1103/Q1104 CONFLICT stays).
+
 **B3 · The English (11,263) + French (881) triage proposals.** They can only enter the GLOBAL channel
 (`en`/`fr` never reach the scoped channel), so each word needs cross-language review. → Review them as one
 batch in a session (a 60-word seeded sample is already hand-classified in
 `docs/audit/keyword-triage-2026-09-05-sample.csv`), or leave them until the (1)/(2) ruling? Recommended
 default: review a seeded stratified sample per batch, ship only furniture, refuse open-class words.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: review a seeded STRATIFIED sample per batch, ship only furniture words, refuse open-class words.
+> Sheet: Q1104 = a (yes, through the review surface, batch by batch). **Verdict: CONSISTENT.** Adds the method to Q1104 = a. It ships reviewed additions — the side of Q1103's NOTE, not of its label (b).
+> Where enforced: 0.4 · S04-06 · row M.
 
 **B4 · The 64,910 `kind_overrides` proposals** (measured ~50% precision) — treat as a worklist for a
 future LLM-perception NER pass, or drop them? Recommended default: keep the file as evidence, build no
@@ -211,17 +268,31 @@ tool; revisit when the perception NER kinds exist.
 > evidence, build no tool — is therefore **already the state of the tree**, and answering “drop them”
 > would mean deleting a design-doc measurement rather than a worklist.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: keep the 64,910-proposal measurement as evidence, build no tool; revisit when the perception NER kinds exist.
+> Sheet: Q1105 = a (a worklist for a review surface; never auto-applied). **Verdict: CONFLICT.** The sheet (morning) funds a review-surface worklist; the register (15:06Z) builds no tool. Listed, not resolved — RC05.
+> Where enforced: 0.4 · S04-12 · row S — CONFLICT (RC05).
+
 **B5 · `configs/source_qualification.yml` — the operator loop.** The overlay loader, adoption, export
 endpoint and merge script shipped 2026-09-04; the file does not exist because a session must not write
 verdicts (fabricated-by-curation). → Will you run
 `GET /api/diagnostics/source-qualification-export?fmt=yaml` on each instance and
 `python scripts/merge_source_qualification.py …`, and commit the result? Operator step, no session can do it.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«automate the script run within the diagnostics»`**
+> Sheet: Q1106 = a (the overlay editor — adopt / export / revert — in Settings). **Verdict: NEW RULING.** Complements Q1106: the export + merge run (the `source-qualification-export` endpoint + `scripts/merge_source_qualification.py`) becomes an automated diagnostics action, not an operator script; the editor stays Q1106's.
+> Where enforced: 0.4 · S04-12 · row S.
+
 **B6 · `PATHOLOGY_ABS_FLOOR` (0.5) — the gate's decisive criterion is unreachable** (strongest field
 signal 0.211). Options recorded 2026-08-03: (a) keep 0.5 as a rare-catastrophe detector and say so in the
 panel; (b) lower it with a stated new meaning; (c) add `high_link_density` (415 of 675 label hits) as a
 second extraction-failure criterion. Recommendation: (c), keeping (a)'s wording. *(gates: the
 `PROMPT_04` prompt's criteria slice; the data-safety-adjacent one.)*
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: (c) add `high_link_density` as a second extraction-failure criterion, keeping (a)'s wording — 0.5 stays as the rare-catastrophe detector, said in the panel.
+> Sheet: Q1107 = a (keep 0.5, record it as unreachable, let the measured criteria decide). **Verdict: CONSISTENT.** Complementary: keep 0.5 AND add the measured second criterion.
+> Where enforced: 0.4 · S04-12 · row S.
 
 **B11 · ⛔ What identifies a source — a domain, or a feed?** (New, raised 2026-09-07 by measuring the
 catalogue rather than reading it; **recommendation corrected the same day after a skeptic pass refuted its
@@ -266,6 +337,11 @@ cannot see a source that degraded recently. Adding a window touches `collect_art
 audit report shares. → Build it as its own reviewed slice? Recommended default: yes, window = the last
 90 days, published beside the whole-history verdict, never replacing it.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«yes, but remember I'd like to see track changes in articles too, to allow user to see if, when and how an article was modified accross time, the same way the app allows for law, wikipedia and OSM data»`**
+> — which resolves to: yes = the recommended default: window = the last 90 days, published BESIDE the whole-history verdict, never replacing it.
+> Sheet: Q1108 = a (the 6-month re-verification reads the last 6 months, not the whole history). **Verdict: CONFLICT + NEW RULING.** Window CONFLICT: 90 days beside the whole-history verdict (register) vs 6 months instead of it (sheet) — RC06. NEW: article revision tracking (if, when and how an article was modified across time, as the app does for law, Wikipedia and OSM) — no release named; RC07 asks the placement.
+> Where enforced: 0.4 · S04-12 · row S (window CONFLICT, RC06) · article revision tracking: placement PENDING (RC07).
+
 ---
 
 ## C. Data, backup and import
@@ -283,16 +359,31 @@ legacy backup you hold having been merged and (b) the unified import surfacing l
 > **Reconcile the two before ruling** — either the docstring's “forever” is the ruling and this question
 > is closed, or answering it also means amending that line.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«a, but wait for version 0.7»`**
+> — which resolves to: (a) confirmed — every legacy backup merged; the removal of the legacy single-file restore is authorised, but not before 0.7.
+> Sheet: Q215 = a (keep the restore half forever, as the docstring commits; close C1). **Verdict: CONFLICT ⛔.** The register authorises the removal for 0.7; the sheet keeps the restore half forever. Listed, not resolved — RC02 (⛔). Until confirmed S04-04 builds on Q215 = a and nothing is removed.
+> Where enforced: 0.4 · S04-04 · row K (Q215) — CONFLICT ⛔ (RC02); if confirmed, a 0.7 row.
+
 **C2 · ⛔ The import checkpoint interval K** (2026-08-08 entry): verify+swap once per K backups instead
 of per backup saves ~17 × (verify + snapshot + swap) on an 18-backup queue, but nothing is durable until
 a swap — a kill at item 12 today keeps eleven; at K=18 it loses twelve merges. You have killed this import
 twice. → Pick K (1 = today's behaviour). Recommendation: K = 3, with the verify sub-timings the first
 completed backup now reports used to re-derive it.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: K = 3, re-derived from the first completed backup's verify sub-timings.
+> Sheet: Q216 = a (K = 3). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-02 · row I.
+
 **C3 · Import prefetch (staging the next backup while the current one merges).** Three blockers were
 recorded (singleton manager, plaintext staging ownership, the digest check must run first). → Build it
 after C2, or not at all? Recommended default: build only if the first real `verify_copy` number shows
 prepare still dominating (the 2026-08-08 entry's own sequencing).
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: build prefetch only if the first real `verify_copy` timing shows prepare still dominating.
+> Sheet: Q217 = a. **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-02 · row I.
 
 **C4 · ⛔ Storage plan §8 rulings 3–6** (`docs/design/STORAGE_5TB_PLAN.md`; 1 and 2 are ruled): (3)
 blob-store dedup ON? (4) OOENC2 vs `age` for pack AEAD? (5) keyed-HMAC blob addressing + opaque pack
@@ -300,15 +391,30 @@ names? (6) authorise the sqlite3mc benchmark trial (benchmark only, no migration
 record: yes / OOENC2 / yes / yes. *(gates: `PROMPT_22` — deliberately NOT written as a
 build prompt in this plan; a design-refresh prompt only, until these are ruled.)*
 
+> **ANSWER (2026-09-15, the rulings artifact): `default (⛔)`**
+> — which resolves to: the four recommendations on record: (3) blob-store dedup ON — yes; (4) OOENC2 for pack AEAD; (5) keyed-HMAC blob addressing + opaque pack names — yes; (6) the sqlite3mc benchmark trial — yes.
+> Sheet: Q1009 ⛔ — left BLANK on the sheet the same morning. **Verdict: ANSWERED LATER — CONFIRM ⛔.** The artifact's explicit `default` at 15:12Z answers the ⛔ question the sheet left blank; because it is ⛔ and the channels disagree on the same day, RC03 asks for the four values written out before any of rows 3–6 is executed. 0.9 row F and S05-06's seam stay pending until then.
+> Where enforced: 0.5 · S05-06 · 0.9 row F — pending confirmation (RC03).
+
 **C5 · The DB-10 migrate-op for corpora born before the 16384/INCREMENTAL rulings.** The bench proved the
 rebuild mechanism; a user-facing "rebuild this store at the ruled pragmas" op (app-stopped, hours + one
 spare drive, cp-class cost) is unbuilt. → Build it, or document the manual rebuild only? Recommended
 default: build it as a Settings → Advanced action with the honest cost estimate from `rebuild.seconds`.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: build the DB-10 migrate-op (rebuild the store at the ruled pragmas) as a Settings → Advanced action with the honest cost estimate from `rebuild.seconds`.
+> Sheet: — (not re-asked by the sheet). **Verdict: NEW RULING (default).** Placement not ruled — RC08.1 (proposal: 0.5 row B, the storage half).
+> Where enforced: placement PENDING (RC08.1); lineage PROMPT_22.
+
 **C6 · The per-OS `httpfs` binaries (D1).** The loader, pins table and CI lane exist; the binaries are
 your networked build (`docs/maintenance/EXTERNAL_DEPENDENCIES.md`), and `extensions.duckdb.org` is
 egress-blocked in the sandbox. → Still wanted for 0.4, or park D1/D2/D3 persisted-columnar until a
 measured need? Recommended default: park; the in-memory serve already covers the windowed queries.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: park the per-OS `httpfs` binaries (D1/D2/D3 persisted-columnar) until a measured need; the in-memory serve covers the windowed queries.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** No build; recorded.
+> Where enforced: no build — parked; recorded.
 
 **C7 · The data-location chooser (fix-session 2026-07-14 slice 2).** Default = the app data folder, or
 "choose a folder" creating an `OOS data` subfolder, decided at first launch after language + legal
@@ -320,6 +426,11 @@ default: yes, it is small and the seam exists.
 > passphrase**, exactly as specified, against `GET /api/system/data-location`, `POST …/check` and
 > `POST …`, and it is skipped silently when there is nothing to choose. The recommended default was
 > taken.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: yes — shipped (the data-location chooser in unlock.html).
+> Sheet: — (answered + shipped). **Verdict: RATIFIED.** Ratifies the shipped chooser.
+> Where enforced: shipped (src/static/unlock.html data-location step).
 
 ---
 
@@ -335,6 +446,11 @@ flip to `False` (the gate then applies to narration only).
 > LAYER_A_REQUIRES_CAPABLE_HARDWARE`) is the single read the question describes. A GPU-less operator is
 > no longer denied the deterministic document. **Do not re-ask.**
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: flip to False — shipped (gate.py:41).
+> Sheet: — (answered + shipped). **Verdict: RATIFIED.** Ratifies the shipped flip.
+> Where enforced: shipped (src/bulletin/gate.py:41).
+
 **D2 · Bulletin Q2 — an introduction: none, templated from edition facts, or narrated?** Recommended
 default: templated (no model), ×12.
 
@@ -344,11 +460,26 @@ default: templated (no model), ×12.
 > option “none” is off the table and both others exist; what is left to rule is **which one an edition
 > opens on by default**.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: the templated introduction (no model) ×12 — editions open on `deterministic_introduction()`; the narrated path stays opt-in with its `fallback_reason`.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** Settles the half the 2026-09-11 check left open (which introduction an edition opens on). Placement: RC08.2.
+> Where enforced: PROMPT_12 (bulletin completion) — placement PENDING (RC08.2).
+
 **D3 · Bulletin Q3 — mail sending.** Never / opt-in later? Sending is real egress off Tor with stored
 credentials. Recommended default: never in the app; download + paste digest stays the exit.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: never in the app; download + paste stays the exit.
+> Sheet: Q1131 = a (never). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: no build — never.
+
 **D4 · Bulletin Q1/Q5** — ratify the eight shipped sections as the section list, and the checkbox-per-
 section review screen as the ruled design? Recommended default: ratify both as-is.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: ratify the eight shipped sections as the section list and the checkbox-per-section review screen as the ruled design, as-is.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** Ratified as-is.
+> Where enforced: PROMPT_12 — ratified; no change.
 
 **D5 · The refused-field list in the AI check** is uncapped (30 caveat lines on the 08-12 shape) — the
 shipping session asked "say the word if you'd rather it collapsed behind a count". → Collapse? Recommended
@@ -359,10 +490,20 @@ default: collapse behind a count with expand.
 > shape** (`field ×n · field ×n`), expanding to the full per-language lines. That is the recommended
 > collapse-behind-a-count-with-expand, built. **Do not re-ask.**
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: collapse the refused-field list behind a count with expand — shipped.
+> Sheet: — (answered + shipped). **Verdict: RATIFIED.** Ratifies the shipped collapse.
+> Where enforced: shipped (app-diagnostics.js:1733).
+
 **D6 · Model-weights pin.** Weights are the one downloaded artifact with no pin (the DuckDB extension and
 the Ollama installer both verify digests; weights download at whatever `main` points to). → Add a
 per-roster-model revision pin in `configs/external_artifacts.yml` and REFUSE a mismatch (re-pin
 deliberately)? Recommended default: yes — this is house doctrine, not a new idea.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: a per-roster-model revision pin in configs/external_artifacts.yml; a mismatch is REFUSED (re-pin deliberately).
+> Sheet: Q1132 = a (pin digests in the registry; the pull verifies them). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-13 · row T.
 
 **D7 · The `X_AVAILABLE` capability-probe class.** `PQC_AVAILABLE` (`src/custody/signing.py:61`) and
 `OTS_AVAILABLE` (`src/custody/timestamp.py:62`) are set from bare imports, so a library that imports but
@@ -379,6 +520,11 @@ custody-path session with the full skeptic matrix.
 > `pqcrypto>=0.3.4,<1.0`, per the recommendation to stay there until a custody-path session with the
 > full skeptic matrix.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: the round-trip probe sweep (shipped) + stay on pqcrypto <1.0 until a custody-path session with the full skeptic matrix.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** The migration half stays parked, by ruling now.
+> Where enforced: 0.9 · S09-01 · row E — the pqcrypto 1.0 migration parked.
+
 **D8 · The multi-model specialisation bench** (`docs/design/MULTI_MODEL_SPECIALISATION_2026-08-10.md`,
 design of record, nothing built) — still wanted now that one model (Ministral 3 3B) is ruled app-wide?
 Recommended default: no build; keep the design as the record of why one model won.
@@ -388,14 +534,29 @@ Recommended default: no build; keep the design as the record of why one model wo
 > so the module is exercised but never reached by the app, which is the precise shape of “design of
 > record, nothing built”.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«wait for the app wide one model ruling, new models might come up and change what's best for the user. Wait. Mark that we need the decision to be made before version 0.8 r»`**
+> — which resolves to: wait; the app-wide one-model decision is owed BEFORE 0.8.
+> Sheet: Q1142 = a (run the bench when the AI-coordinator translation sweep (Q405) lands in 0.5). **Verdict: CONFLICT + DEADLINE.** The sheet schedules the bench for 0.5; the register (15:17Z) says wait and decide before 0.8. Listed, not resolved — RC04. The «before 0.8» marker is recorded in the 0.7 exit clause and as 0.8 row C regardless.
+> Where enforced: 0.5 · S05-08 · row H — CONFLICT (RC04) · 0.7 exit clause + 0.8 row C: the decision before 0.8.
+
 **D9 · Q8 — the live ollama.com library browse** (searchable, filterable by provider/date/size,
 consented). Still wanted, given the one-model ruling and the buried custom-model field? Recommended
 default: drop it; record the reason.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: drop the live ollama.com library browse; record the reason.
+> Sheet: Q1143 = a (consented, opt-in, egress named). **Verdict: CONFLICT.** Drop (register, 15:17Z) vs a consented opt-in browse (sheet). Listed, not resolved — RC09.
+> Where enforced: 0.5 · S05-08 · row H — CONFLICT (RC09).
 
 **D10 · Perception extraction — which languages/fields go live?** The gate refuses `who` in several
 languages (hallucination past the floor) and passes `where` broadly. → Enable the sweep in production on
 the cleared fields only, or keep it export-only until a graded gold set exists (operator step R6)?
 Recommended default: cleared fields only, sweep ON, with the per-field refusals rendered (already built).
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: cleared fields only, the production sweep ON, the per-field refusals rendered.
+> Sheet: Q1144 = a (enable per language only where the measured gate passes; `who` stays refused where it fails). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.5 · S05-08 · row H.
 
 ---
 
@@ -405,16 +566,34 @@ Recommended default: cleared fields only, sweep ON, with the per-field refusals 
 `month-occupancy.json` in any bundle taken after 2026-09-05) — slice 3 (the date-aware month block + a
 re-index) is gated on it. → Will you run it and send the file? Operator step.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«Automate this in the diagnostic bundle.»`**
+> Sheet: — (operator step; not re-asked). **Verdict: NEW RULING.** The month-occupancy measurement (`month-occupancy.json`, sample = 400) ships as a diagnostics-bundle member — no operator run; PROMPT_06 slice 3 (the date-aware month block + a re-index) reads it from the bundle. Placement: RC08.3.
+> Where enforced: PROMPT_06 slice 3 — the bundle member; placement PENDING (RC08.3).
+
 **E2 · `dumps.wikimedia.org` on the egress allowlist** — the single highest-value operator step for the
 ambiguity map (slice 4) and the sense inventory (slice 6); five sessions have hit the allowlist. Operator
 step (see F1).
 
+> **ANSWER (2026-09-15, the rulings artifact): `«I don't know yet»`**
+> Sheet: — (operator/infra; the host is on F1's list and Q114 = a). **Verdict: PENDING.** Undecided for `dumps.wikimedia.org` specifically, one minute before F1's «add them». Under Q701 (dumps are out) the host serves only PROMPT_06's sense inventory and ambiguity map. RC10 (⛔) asks whether «add them» includes it.
+> Where enforced: PENDING — RC10 ⛔.
+
 **E3 · Wiktextract share-alike** (CC BY-SA 3.0/4.0 revision mixture; only 4.0 is GPLv3-compatible, one
 way) — ruling still owed, gating nothing in slices 1–4. Recommended default: exclude Wiktextract.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: exclude Wiktextract (the CC BY-SA 3.0/4.0 revision mixture).
+> Sheet: Q1145 = a (exclude). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: no build — excluded.
 
 **E4 · The SKOS thesaurus family** (UNESCO Thesaurus ar/en/fr/ru/es, EuroVoc, AGROVOC, IPTC Media Topics)
 as the ru/ar synonym-tier source — "open access" is not a licence identifier. → Authorise a licence check
 in the next networked session? Recommended default: yes, IPTC Media Topics first (built for news).
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: authorise the licence check of the SKOS family in the next networked session, IPTC Media Topics first.
+> Sheet: Q1146 = a (adopt EuroVoc + UNESCO + AGROVOC + IPTC, tied to Q913). **Verdict: CONSISTENT.** The sheet goes further (adopt); the check is its first step.
+> Where enforced: 0.6 · S06-02 · row C.
 
 ---
 
@@ -438,6 +617,11 @@ adapters' live half) · `extensions.duckdb.org` (C6) · `www.afdb.org`, `data.un
 refresh). If none of these will be opened, say so once and the plan's operator lists become the only
 route — the prompts are written for both cases.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«add them»`**
+> — which resolves to: add the listed hosts to the build sandbox's egress allowlist.
+> Sheet: Q114 = a (add them to the session environment's allowlist). **Verdict: CONSISTENT.** Same ruling (operator/infra step). The E2 host is the one carve-out — RC10.
+> Where enforced: 0.4 · S04-15 · row V — operator/infra; E2's host: RC10 ⛔.
+
 ---
 
 ## G. Verticals and the V1 pathway
@@ -450,31 +634,70 @@ bars K1–K14 (tune the placeholders) · V1-8 elections required for 1.0 (recomm
 Wikipedia edition bar (recommended: ≥1 full edition + the machinery). *(gates: `PROMPT_23`, which is
 written as a design-and-scaffold prompt — no vertical is built until its ruling lands.)*
 
+> **ANSWER (2026-09-15, the rulings artifact): `«I can't answer these now. Not enough details. Mark them for future development as questions to ask me with more details and an overall impact evaluation.»`**
+> Sheet: — (V1-1..V1-9 were ruled 2026-09-07 — R-series — and refined by the sheet; not re-asked as G1). **Verdict: PENDING.** A detailed V1-1..V1-9 question round with an overall impact evaluation is OWED (answer-sheet format, protocol (6)). The 2026-09-07 rulings and the sheet's refinements STAND as recorded until that round; RC11 asks whether the round details the unruled remainder (V1-4, V1-7) or re-opens all nine.
+> Where enforced: PENDING — the detailed V1 round (owed); RC11.
+
 **G2 · Elections roster acquisition** — a parallel networked session per the 2026-07-14 §4.5 ruling
 (per-country recurrence rules + electoral-authority sources, three-tier scheduled/window/projected).
 → Authorise the acquisition session? Recommended default: yes, the law-batches contract as the template.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: authorise the networked elections-acquisition session (per-country recurrence rules + electoral-authority sources), the law-batches contract as the template.
+> Sheet: — (not re-asked; S06-04 §5 step 1 already lists it). **Verdict: NEW RULING (default).** Authorised.
+> Where enforced: 0.6 · S06-04 · row A (§5 step 1).
 
 **G3 · Bloc rosters (Task 4 of the governments prompt)** — "several hundred member-rows each wanting a
 dated source URL, and a partial roster is more dangerous than none". → Authorise its own networked
 session? The registry is deliberately EMPTY until then. Recommended default: yes.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: authorise the bloc-roster networked session; the registry stays EMPTY until it runs (a partial roster is more dangerous than none).
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** Authorised. Gate placement: RC08.4 (proposal: 0.6 row A, beside the statistics directory).
+> Where enforced: PROMPT_14 Task 4 — placement PENDING (RC08.4).
+
 **G4 · IPCC as a source** — which products first (AR6 SPMs? WG reports?), is `pypdf` acceptable (it is
 already an optional extra for the law PDFs), automatic vs curated prediction extraction? Recommended
 default: AR6 SPMs, `[pdf]` extra, operator-curated from a suggested list.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: AR6 SPMs first, the `[pdf]` extra, operator-curated prediction extraction from a suggested list.
+> Sheet: Q1133 = a (AR6 SPMs first; pypdf acceptable). **Verdict: CONSISTENT.** Adds the curated-extraction detail to S06-04 S3.
+> Where enforced: 0.6 · S06-04 · row A (S3).
+
 **G5 · Official-statistics breadth** — the agencies directory is 29 of ~152; `news_url` per agency is a
 networked research pass. → Authorise it (the law-batches pattern)? Recommended default: yes.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: authorise the networked research pass toward ~152 agencies (news_url verified live).
+> Sheet: Q1147 = a. **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.6 · S06-04 · row A (S5).
 
 **G6 · Poll analysis (a)(b)(c)** (FUTURE_DEVELOPMENTS §"Poll analysis"): (a) how hard to lean on Tier 4;
 (b) ever say "push poll" or only describe the mechanic; (c) answer "who's winning" more directly?
 Recommended defaults: Tier 2 only for now; describe the mechanic; never.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«the Poll analysis idea has not been properly interpreted. I initially wanted the app to ingest poll data information to allow users to see them and interpret them directly instead of hearing people talk and discuss about them. Let's empower users with raw poll results. Let them access to the poll's questions exact verbatim, let them detect questions that orient answers. That was the initial idea was. We should review everything regarding this for version . »`**
+> — which resolves to: the (a)(b)(c) framing (Tier-4 reliance · «push poll» wording · «who's winning») is superseded: ingest RAW poll data; verbatim questions and results; users interpret directly; orienting questions detectable.
+> Sheet: — (not re-asked); V1-8 places poll Tier-2 post-1.0. **Verdict: NEW RULING (direction) + PENDING version.** The version is blank in the note («for version .»). The feature is raw-data access, not Tier-2 analysis, so V1-8's poll placement is in tension — RC12 asks the version. docs/FUTURE_DEVELOPMENTS.md §Poll analysis is to be rewritten from the note.
+> Where enforced: PENDING version (RC12); FUTURE_DEVELOPMENTS §Poll analysis rewritten from the note.
+
 **G7 · Open-Meteo layer** — variables first (precipitation, temperature, soil moisture?), baseline period
 (1991–2020?), cache budget per place, signal-keywords as a toggleable layer or in trends by default?
 Recommended defaults: precipitation + temperature; 1991–2020; toggleable layer, off.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: precipitation + temperature; the 1991–2020 baseline; signal-keywords as a toggleable layer, OFF by default.
+> Sheet: Q1134 = a (temperature and precipitation first; 1991–2020; soil moisture later). **Verdict: CONSISTENT.** Adds the toggleable-layer-off detail to S06-04 S4.
+> Where enforced: 0.6 · S06-04 · row A (S4).
+
 **G8 · Religious calendars + the eclipse canon** — you said you would provide the dates (2026-06-17 ruling
 9). Still the plan? Nothing is fabricated meanwhile.
+
+> **ANSWER (2026-09-15, the rulings artifact): `«I won't provide the dates. Let's create a dedicated internet connected session to search for all religious dates and implement them in the app»`**
+> — which resolves to: a dedicated networked session researches the religious dates from published calendars/authorities and implements them (dated, sourced, method stated); the eclipse canon is not mentioned.
+> Sheet: Q1135 = b (drop the feature). **Verdict: CONFLICT.** Drop (sheet) vs research-and-implement (register, 15:27Z). Listed, not resolved — RC13. Nothing is fabricated meanwhile.
+> Where enforced: 0.4 · S04-14 · row U (Q1135) — CONFLICT (RC13).
 
 **G9 · App self-update (1)–(5)**: update channel (default branch / tags only / user choice) · signature
 trust root shipped in-tree? · auto-check cadence vs fully manual (ruled MANUAL 2026-06-17) · `curl|bash`
@@ -482,12 +705,22 @@ vs git-clone installs: re-run `install.sh` or in-place swap? · anchor each rele
 defaults: tags only; no key yet (checksums, stated); manual; re-run `install.sh` on a snapshot; no
 anchoring until a key exists. *(gates: `PROMPT_21` slice "self-update mechanics".)*
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: tags only; no key yet (checksums, stated); manual check; re-run `install.sh` on a snapshot; no anchoring until a key exists.
+> Sheet: Q1136 = a (tags only, signed releases, an opt-in consented check, never auto-install). **Verdict: CONSISTENT.** The mechanics (snapshot + install.sh re-run; checksums until a key; no anchoring) are recorded for S09-01 S5.
+> Where enforced: 0.9 · S09-01 · row E.
+
 **G10 · Wikipedia living source, questions 1–5** (FUTURE_DEVELOPMENTS §"Wikipedia as a first-class
 LIVING source"): scope of dump ingestion (all pages vs a subset) · analytics mixing (same pools vs a
 per-source-type layer) · version storage depth (ruled: full text per revision) · change feed (ruled: the
 tracker IS the feed) · backups (carry dump-derived articles fully, or reference the dump). Recommended
 defaults: subset first (watched + their categories + top-N), per-source-type layer with merge/split,
 reference the dump + carry revisions. *(gates: `PROMPT_18`, V1-9.)*
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: subset first (watched + their categories + top-N); a per-source-type analytics layer with merge/split; reference the dump + carry revisions.
+> Sheet: Q1157 = a (superseded by the sheet's §8). **Verdict: SUPERSEDED.** §8 (Q701 note: dumps are out) supersedes the dump clause; the rest matches §8's HOT/WARM tiering, the per-source-type layer and carried revisions. No action.
+> Where enforced: superseded by the 700s (S04-09, S05-06).
 
 **G11 · The default aggregation strategy for an intensive indicator with no exact weighting** (`S4` of
 `PROMPT_14`; `src/stats/aggregate.py::_default_strategy`). Today a bloc/region opens on the plain MEMBER
@@ -526,13 +759,28 @@ exists? Recommended default: build now; stamp "Chromium-verified · awaiting hum
 > `tests/test_observatory_ui.py`, `tests/oosky_node_test.js` and `test_ui_invariants` (#31). **What
 > remains is only your click-through**, which is H2/L2's question, not this one.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: build the Observatory now — shipped, Chromium-verified.
+> Sheet: — (answered by action). **Verdict: RATIFIED.** Ratifies; the click-through is Q1128's.
+> Where enforced: shipped (oosky.js, app-observatory.js; invariant #31).
+
 **H2 · The Gecko/AppVM bar (R3).** Every frontend stamp reads "Chromium-verified (remote sandbox) ·
 awaiting human UX pass". → Is the AppVM runner still wanted, or is your own click-through the bar?
 Recommended default: your click-through is the bar; retire the AppVM item from the plan.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: the maintainer's click-through is the bar; the AppVM runner retired from the plan.
+> Sheet: Q1128 = a. **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-15 · row V (Q1128).
+
 **H3 · The Insights search bar** (`#ins-term` + `exploreTerm`, still present) — removal is
 absorption-gated on the omnibar. → Confirm the omnibar → analysis window now absorbs term exploration
 (mind-map + trend for a term), so the bar may go? Recommended default: remove, behind the absorption test.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: remove `#ins-term` + `exploreTerm` behind the omnibar-absorption test.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** Placement: RC08.5 (proposal: 0.5 row I, the UI shell).
+> Where enforced: placement PENDING (RC08.5); proposal S05-09.
 
 **H4 · Inline-handler retirement** (590 `on*=` attributes: 331 in `index.html`, 259 in `app-*.js`; the
 CSP still carries `'unsafe-inline'`). It is the largest single UI debt and the prerequisite for a
@@ -546,8 +794,18 @@ module per slice, `app-boot.js` first.
 > CSP is future work”). Every slice shipped meanwhile added handlers in the existing style, which is
 > what an un-ruled retirement costs per week.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: fund the inline-handler retirement as its own sequence of browser-verified slices, one module per slice, `app-boot.js` first.
+> Sheet: Q1127 = a (fund a retirement slice in 0.5 with a ratchet; drop 'unsafe-inline' at zero). **Verdict: CONSISTENT.** Adds the method (one module per slice, app-boot.js first).
+> Where enforced: 0.5 · S05-09 · row I.
+
 **H5 · The 3D keyword explorer** — Q5a (2026-07-13) deprioritised it; the Observatory ruling (2026-07-18)
 supersedes it. → Confirm the explorer is retired in favour of the Observatory. Recommended default: yes.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: the 3D keyword explorer is retired in favour of the Observatory.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** Confirmed; nothing to remove (never built).
+> Where enforced: no build — retired.
 
 ---
 
@@ -557,17 +815,37 @@ supersedes it. → Confirm the explorer is retired in favour of the Observatory.
 → Keep never-store (re-enter each pull), or store in the encrypted settings? Recommended default:
 never-store; a task-manager job over a long pull still lands.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: never store mailbox credentials; re-enter each pull; a task-manager job over a long pull.
+> Sheet: Q1137 = a. **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: no build — never stored.
+
 **I2 · OSM data-source path** — the no-WebGL ruling is firm (Q1a). → Priority order: sub-national admin-1
 boundaries first, or the richer gazetteer first? Recommended default: gazetteer (it also feeds
 When×Where), then admin-1.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: the gazetteer first (it also feeds When×Where), then admin-1.
+> Sheet: — (superseded in detail by §9: S05-03 Place entity + S05-04 seed before S05-05 admin-1). **Verdict: CONSISTENT.** The 0.5 ordering already matches.
+> Where enforced: 0.5 · S05-03/S05-04 before S05-05.
 
 **I3 · Tor-exit-resolve (SOCKS RESOLVE 0xF0)** for the source-IP gap over Tor — assessed 2026-07-20,
 design of record pending your go; explicitly excluded from gate row 1. → Go / no-go? Recommended
 default: go, as its own skeptic-matrixed slice.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: GO — Tor-exit-resolve (SOCKS RESOLVE 0xF0) as its own skeptic-matrixed slice.
+> Sheet: Q1138 = a (parked until 0.9's security review — covers I3 and I4). **Verdict: CONFLICT.** Go (register, 15:53Z) vs parked (sheet). Listed, not resolved — RC14.
+> Where enforced: 0.9 · S09-01 · row E (Q1138) — CONFLICT (RC14).
+
 **I4 · `oo-netcut` (the privileged OS-level airplane layer) and the Stem/Tor integration** — both
 design-only for months. → Still wanted for 0.4, or park to 0.5+? Recommended default: park both;
 record.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: park `oo-netcut` and the Stem/Tor integration; record.
+> Sheet: Q1138 = a (parked until 0.9's security review). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.9 · S09-01 · row E.
 
 ---
 
@@ -580,6 +858,11 @@ proving nothing was lost? Recommended default: yes.
 > **VERIFIED 2026-09-11 — premise holds; both figures moved up.** `src/api/diagnostics.py` is now
 > **6,312 lines** carrying **129 routes**, against the 6,200 / 126 recorded on 2026-09-06.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: authorise the behaviour-neutral split of diagnostics.py into a package, the all-diagnostics ratchet proving nothing was lost.
+> Sheet: Q1139 = a. **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-14 · row U.
+
 **J2 · `structlog`** is declared in `pyproject.toml:79` with zero call sites (the codebase uses stdlib
 `logging`, ~612 sites). → Drop it (a dependency change: both venv profiles re-verified) or adopt it?
 Recommended default: drop.
@@ -589,8 +872,17 @@ Recommended default: drop.
 > REMOVED 2026-09-07 (J2, ruled on the recommended default ‘drop’)”. Zero `import structlog` anywhere in
 > `src/` or `tests/`. Two later removals (`jinja2`, 2026-09-08) cite it as the precedent shape.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: drop structlog — shipped 2026-09-07.
+> Sheet: — (answered + shipped). **Verdict: RATIFIED.** Ratifies.
+> Where enforced: shipped 2026-09-07 (pyproject.toml).
+
 **J3 · Postgres parity or honest SQLite-only** (PARKED ARCH-06). → Document SQLite-only and remove the
 implication of dual support? Recommended default: SQLite-only, documented.
+
+> **ANSWER (2026-09-15, the rulings artifact): `«Document SQLite-only and keep the implication of dual support»`**
+> Sheet: Q1140 = b + NOTE (keep parity as an aspiration; anticipate Postgres column limits in current work). **Verdict: CONSISTENT.** Synthesis of both channels: document SQLite-only as the state; keep the dual-support implication; the Q1140 NOTE's column-limit constraint binds every new table.
+> Where enforced: docs (SQLite-only documented) + the Q1140 NOTE on every new table (S04-08, S05-02).
 
 ---
 
@@ -604,29 +896,57 @@ the design-doc sweep) independently re-flagged that the Governments tab lands on
 which reads as the tab having no content. → Change the default landing subtab, or keep it? Default: keep,
 and add nothing — it is only a finding if you agree it is one.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: keep — Governments keeps opening on Countries; add nothing.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** No change.
+> Where enforced: no build.
+
 **L2 · The verification stamp.** Every browser-verified surface currently reads *"Chromium-verified
 (remote sandbox) · awaiting human UX pass"*. The Gecko/AppVM bar recorded in the fork-3 amendment has
 never been met. → Is Chromium-in-sandbox plus your own click-through the standing bar, or does the AppVM
 runner still gate a surface being called verified? Default: Chromium + your pass is the bar; the AppVM
 runner becomes an optional strengthening rather than a gate. *(gates: `PROMPT_15`.)*
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: Chromium in the sandbox + the maintainer's click-through is the bar; the AppVM runner an optional strengthening.
+> Sheet: Q1128 = a (= H2). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-15 · row V (Q1128).
+
 **L3 · Three `download=1` diagnostic exemptions.** The all-diagnostics ratchet lists three endpoints as
 exempt-with-reason. → Confirm the three reasons still hold, or fold them in? Default: leave them, the
 reasons are stated in the manifest's `excluded` block.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: leave the three `download=1` diagnostic exemptions; the reasons stand in the manifest's `excluded` block.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** No change.
+> Where enforced: no build.
 
 **L4 · The rate limit.** The API's default is 100 requests/hour on the guarded routes; the 2026-07-22 GUI
 run produced 384 console lines that were 100% rate-limit refusals under 14 concurrent agents. → Is 100/h
 the intended figure for a single-user local app, given that one browser tab plus a running walk can reach
 it? Default: leave it and note the artifact in any future harness.
 
+> **ANSWER (2026-09-15, the rulings artifact): `«Adapt the rate limit to what's most ethical while keeping the app's efficiency and performance in mind.»`**
+> Sheet: Q1148 = a (raise it for loopback UI calls — 1,000/hour; keep 100 for anything else). **Verdict: QUALIFIES.** A principle beside the sheet's figure. «Ethical» may point at the per-host egress politeness (Q1013 = a, a different knob) rather than this loopback guard — RC15 asks which.
+> Where enforced: 0.4 · S04-13 · row T (Q1148) — RC15.
+
 **L5 · `_SPARSE_BAR_MAX` reach.** The n<10 → bars rule reaches four of seven renderers;
 `ringDumbbellSvg`, `commodityOverlaySvg` and `ooDonut` do not carry it. The dumbbell plots discrete pairs
 so arguably needs no rule; the commodity overlay draws a real price line and probably does. → Extend to
 the overlay only, all three, or none? Default: the overlay only. *(gates: `PROMPT_15`.)*
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: extend `_SPARSE_BAR_MAX` (n < 10 → bars) to `commodityOverlaySvg` only.
+> Sheet: — (not re-asked). **Verdict: NEW RULING (default).** Placement: RC08.6 (proposal: 0.4 row U).
+> Where enforced: placement PENDING (RC08.6); proposal S04-14.
+
 **L6 · `[pdf]` in the default install.** The law vertical degrades loudly without it, so a default install
 cannot read a PDF statute. → Promote `[pdf]` into the default extras? Default: leave it optional and say
 so in the law coverage report. *(gates: `PROMPT_13`.)*
+
+> **ANSWER (2026-09-15, the rulings artifact): `«Promote [pdf] into the default»`**
+> Sheet: — (not re-asked; the register's default was «leave it optional»). **Verdict: NEW RULING.** Overrides the default: `[pdf]` joins the default install (pyproject); both venv profiles re-verified (the deps ritual); the law coverage report's «without [pdf]» wording is retired in the same PR.
+> Where enforced: 0.4 · S04-10 · row Q.
 
 **L7 · The synthetic corpus for the click-through runner.** It currently runs with `OO_DB_PLAINTEXT=1`.
 The encrypted path is the one every real user is on, and the codec is where the app's slow surfaces live.
@@ -639,6 +959,11 @@ encrypted run before a release. *(gates: `PROMPT_15`.)*
 > driven for the locked-boot surface, and the real question is narrower — whether the **seeded, walked**
 > states should be encrypted too.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: keep plaintext for speed and add one encrypted run before a release (the narrowed form: whether the seeded, walked states B/C should be encrypted too).
+> Sheet: Q1149 = a (add an encrypted variant to the runner). **Verdict: CONSISTENT.** Same ruling.
+> Where enforced: 0.4 · S04-14 · row U.
+
 **L8 · `PR pending` in the shipped ledger.** Nine rows carry a bare `PR pending` in `refs` although all
 nine merged. → Sweep them to real PR numbers, or rule that `PR pending` is an acceptable permanent value?
 Default: sweep them once, then record the convention. *(gates: `PROMPT_02`.)*
@@ -650,6 +975,11 @@ Default: sweep them once, then record the convention. *(gates: `PROMPT_02`.)*
 > `git fetch --unshallow` gave twelve distinct numbers, each corroborated by its merge's branch name. A
 > column-aware check on 2026-09-11 confirms **zero** unresolved placeholders in `refs`. **Do not
 > re-ask** — but see the grep trap recorded in the status banner above before running the obvious check.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: sweep the placeholders once, then record the convention — shipped 2026-09-07 (CLAUDE.md 5b).
+> Sheet: — (answered + shipped). **Verdict: RATIFIED.** Ratifies.
+> Where enforced: shipped (CLAUDE.md protocol 5b).
 
 **L9 · A political-lean tag deduced from keyword evidence.** The source-tag vocabulary currently offers
 `lean-*` entries, so the LLM can propose one from keyword evidence — which is a fabricated editorial
@@ -667,6 +997,11 @@ vocabulary? Default: remove it, and keep human-asserted lean tags. *(gates: `PRO
 > never filtered”**, which is the propose-never-auto-apply rule applied to itself. Answering “remove
 > it” is a real choice — just not a bug fix.
 
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: remove the `lean-*` scale from the offerable vocabulary; keep human-asserted lean tags.
+> Sheet: Q1129 = a (keep the stance: reported, never filtered). **Verdict: CONFLICT.** Remove (register, 15:59Z) vs keep the stance (sheet). Listed, not resolved — RC16.
+> Where enforced: 0.5 · S05-10 · row J (lean-* as migrated data) — CONFLICT (RC16).
+
 **L10 · ~30 non-topical vocabulary entries** (`via:*`, thin-coverage, data-gap, legal formats) are
 offerable as topical tags because the vocabulary is resolved live from `Source.tags`. → Filter them by a
 recorded rule ("deciding `independent` is not a topic is a taxonomy ruling a human makes")? Default:
@@ -682,6 +1017,11 @@ filter the `via:*` and coverage-state prefixes, leave the judgement words to you
 > makes”. Your default (filter the `via:*` and coverage-state prefixes) is compatible with that stance
 > — it is exactly the half that needs no judgement — but it is a **change to a stated position**, not
 > the closing of a gap.
+
+> **ANSWER (2026-09-15, the rulings artifact): `default`**
+> — which resolves to: filter the `via:*` AND the coverage-state prefixes from the topical vocabulary; leave the judgement words.
+> Sheet: Q1130 = a (filter only the `via:*` provenance prefixes; keep the rest reported). **Verdict: CONFLICT.** The coverage-state prefixes: filtered (register, 16:00Z) or reported (sheet). Listed, not resolved — RC17.
+> Where enforced: 0.4 · S04-14 · row U (Q1130) — CONFLICT (RC17).
 
 ---
 

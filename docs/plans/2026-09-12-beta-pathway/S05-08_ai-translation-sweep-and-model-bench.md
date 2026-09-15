@@ -35,6 +35,11 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
   lang, target lang, text, model, prompt version, created) — never the trusted index, always ≈, rides the
   backup.»
 
+**Register round 2026-09-15 (D8, D9, D10):** D8: «wait for the app wide one model ruling, new models might come
+up and change what's best for the user. Wait. Mark that we need the decision to be made before version 0.8 r»
+CONFLICTS with Q1142 = a (`RC04`) — the bench part of this brief is contested; the decision itself is 0.8 row C.
+D9 = `default` (drop the live browse) CONFLICTS with Q1143 = a (`RC09`). D10 consistent.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - `src/ai_layer/translate.py` is "Local loopback only (Ollama); airplane mode (the kill switch) …

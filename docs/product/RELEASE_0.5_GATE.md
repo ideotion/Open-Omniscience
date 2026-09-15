@@ -249,6 +249,7 @@ carries none of them; corrected 2026-09-15 from brief `S05-11`'s grep), not re-a
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a, Q1204 = a): rows A–K, each citing its question IDs; the entry precondition (0.4 row K before row B) recorded from Q301 = c | maintainer (answer sheet) · rows written by the session |
+| 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z) — effects on this board, nothing resolved by the session:** row H — D8 «wait for the app wide one model ruling … before version 0.8» CONFLICTS with Q1142 = a (run the bench in 0.5; `RC04`) and D9 `default` (drop the live ollama.com browse) CONFLICTS with Q1143 = a (`RC09`); D10 consistent; row I — H4's method (one module per slice, `app-boot.js` first) recorded; H3 (remove `#ins-term` behind the absorption test) proposed here (`RC08.5`); row J — L9 `default` (remove the lean scale) CONFLICTS with Q1129 = a (`RC16`); row B — C5 (the DB-10 migrate-op as a Settings → Advanced action) proposed here (`RC08.1`); row F — C4 came back `default` (yes / OOENC2 / yes / yes) at 15:12Z where Q1009 was blank that morning: ⛔, `RC03` asks for the four values; the seam stays. A `bulletin-defaults` slice (D2 + D4) is proposed beside row H (`RC08.2`). | maintainer (the register, 2026-09-15) · reconciled by the session |
 
 ---
 

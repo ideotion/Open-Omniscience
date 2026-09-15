@@ -44,6 +44,11 @@ Named by the rows (consumed, never re-decided): **Q111** = (a) «Tag + GitHub re
 Q613 = a, Q718 = a; its backlog items — Q902's note (bills and drafts post-beta), Q903 / Q928 as confirmed
 in 0.7 §3; Q814 (c) NOT chosen (declined, not backlog). Labels for these stand in the sheet.
 
+**Register round 2026-09-15 (D7, G9, I3, I4):** I3 = `default` (go, as its own skeptic-matrixed slice) CONFLICTS
+with Q1138 = a (`RC14`); I4 = `default` (park) — consistent. G9's mechanics recorded for row E: re-run `install.sh`
+on a snapshot; checksums stated until a key exists; no anchoring until then. D7 = `default`: pqcrypto stays `<1.0`
+until a custody-path session with the full skeptic matrix.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - grep-verified in this brief: `.github/workflows/ci.yml:366–379` — the `portability` job, matrix

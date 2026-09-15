@@ -28,6 +28,11 @@ the maintainer's click-through (Q1128 = a).
 |---|---|---|---|---|
 | A | Conflict monitoring (keyless) and the 360° dossier over one entity | session | V1 §3/§4.4 + the dossier (ruled 2026-09-07) · brief `S08-01` | **OPEN** |
 | B | Lane completion: the wiki / OSM / law lanes at their 0.8 breadth; KPI bars set from recorded values; Help ×12 finished | session + operator (the runs that record the values) | ruled (Q106, Q107, Q108, Q1017, Q1122) · `S08-02` | **OPEN** |
+| C | The app-wide one-model decision (keep one model, or the specialisation bench's answer) — taken BEFORE this release opens | maintainer | ruled 2026-09-15 (register D8) — a decision, not work; the 0.7 exit clause names it | **PENDING — before 0.8 opens** |
+
+**The entry (ruled 2026-09-15, register D8).** 0.8 opens only once row C's decision exists — the maintainer's
+word on the app-wide model (one model stays, or the bench's answer), taken with whatever models exist by then
+(«new models might come up and change what's best for the user»). Not a session's call.
 
 **The exit.** `v0.8.0` is tagged when rows A–B are CLOSED on named artifacts, the i18n gates and whole-tree
 guards are green, the release notes carry the no-telemetry re-check (Q111), **and the schema is in the shape
@@ -66,6 +71,14 @@ member — no static file reads it, grep-verified; WHERE the bar renders is a pl
 tables and the migrations after which only additive ones follow. **Operator:** the runs whose values set the
 bars. Brief `S08-02`.
 
+### Row C — The app-wide one-model decision · ruled 2026-09-15 (register D8) · PENDING before 0.8 opens
+
+**What it must demonstrate.** Nothing built: a decision recorded in `RULINGS_INDEX.md` and `OPEN_QUEUE.md` — whether
+the one ruled app-wide model stays, or the multi-model specialisation bench's answer replaces it — taken by the
+maintainer before 0.8 opens, with the models available at that time. Whether the bench RUNS before it (0.5, as
+Q1142 = a said) or is skipped (as D8's «Wait» says) is `RC04`'s question; the decision is owed either way.
+**Closes when** the ruling is recorded with its date. **Owner: the maintainer.**
+
 ---
 
 ## 3. Amendment log
@@ -74,6 +87,7 @@ bars. Brief `S08-02`.
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 vertical carried; the OSM seed recorded as pulled forward to 0.5/0.6; the schema-freeze clause written from Q102 = a | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **Premise correction from the brief-writing pass (row B):** `grep -rn kpi src/static/` finds nothing — the KPI board is `src/monitoring/kpi.py`'s snapshot served at `/api/diagnostics/kpi` and the diagnostics bundle member; the row's "shows each lane's bar … on hover" presupposes a rendering surface that does not exist at `bebcef4`. The row now says so; the surface's placement is listed in `S08-02` §6 as a NOTE the maintainer owes, never decided by the session. No ruling changed. | session (`S08-02` §2, hand-verified) |
+| 2026-09-15 | **Row C ADDED — the app-wide one-model decision, owner: the maintainer** (register D8, 2026-09-15 15:17Z: «wait for the app wide one model ruling, new models might come up and change what's best for the user. Wait. Mark that we need the decision to be made before version 0.8 r»). A decision, not work; the 0.7 exit clause names it. Its CONFLICT with Q1142 = a (the bench in 0.5) is `RC04`'s. | maintainer (the register, 2026-09-15) |
 
 ---
 

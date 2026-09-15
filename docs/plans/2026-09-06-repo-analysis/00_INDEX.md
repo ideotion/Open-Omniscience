@@ -13,7 +13,7 @@ own. Nothing was coded or fixed while producing it.
 |---|---|
 | `_WORKING_MODE.md` | The rules every prompt shares — ledger-first, the staleness guard, the verbatim CI gates, the sandbox's real capabilities, the honesty rules, the closeout rituals. **Part of every prompt.** |
 | `INVENTORY.md` | Every open item found, with a verdict, the tree anchor that proves it, where the stale claim lives, and the owning prompt. Plus the operator-gated, ruling-gated, browser-gated and stale-claim lists. |
-| `QUESTIONS_FOR_THE_MAINTAINER.md` | 65 decisions, each with its context, its options and a recommended default. ⛔ marks the ones a session may not decide for you. |
+| `QUESTIONS_FOR_THE_MAINTAINER.md` | 65 decisions, each with its context, its options and a recommended default. ⛔ marks the ones a session may not decide for you. **ANSWERED 2026-09-15 (65 of 65, in place); the reconciliation with the roadmap sheet is in each question's `ANSWER` block and in `docs/ledger/RULINGS_INDEX.md` rows A1–L10; nine contradictions await `docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`.** |
 | `PROMPT_01` … `PROMPT_23` | The sessions. |
 
 ## How the analysis was done, and what that means for trust

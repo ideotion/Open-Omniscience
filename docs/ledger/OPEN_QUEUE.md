@@ -21,6 +21,85 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **THE 2026-09-06 REGISTER ANSWERED — 65 OF 65 THROUGH THE RULINGS ARTIFACT (2026-09-15 15:02–16:00Z;
+  recorded the same day; NOTHING RESOLVED BY THE SESSION; draft PR #1131).** THE PRIMARY RECORD is the
+  register itself, answered in place:
+  [`docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md`](../plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md)
+  (a banner + an `ANSWER (2026-09-15)` block under every question of sections A–L); the one-line index is
+  [`RULINGS_INDEX.md`](RULINGS_INDEX.md) rows `A1`–`L10`; the contradictions are put back to the maintainer in
+  [`docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`](../design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md)
+  (17 questions, `RC01`–`RC17`, in the answer-sheet format of protocol rule (6)).
+  **PROVENANCE, and why it matters:** the artifact's `answers` store stamps every answer (`at`); all 65 fall
+  between 15:02:55Z and 16:00:03Z — AFTER the answer sheet was returned and processed that morning (commit
+  `7ca142e`), whose §12 had re-asked 40 of these ids as `Q11xx`. The register is therefore the LATER channel
+  on every id both channels carry. Where the two disagree the later one is NOT taken as the ruling here: both
+  are recorded, and the round's §0 states that the default-if-blank for a CONFLICT question is the later
+  answer — a labelled ASSUMPTION, reversible, never a resolution by the recording session.
+  **THE TALLY:** 27 CONSISTENT (A2 moot, A4, B1, B2, B3, B6, C2, C3, D3, D6, D10, E3, E4, F1, G4, G5, G7, G9,
+  H2, H4, I1, I2, I4, J1, J3, L2, L7) · 7 RATIFY shipped work (A3, C7, D1, D5, H1, J2, L8) · 15 NEW RULINGS —
+  twelve by an explicit `default` on a question the sheet had not re-asked (**C5** the DB-10 migrate-op as a
+  Settings → Advanced action with the honest cost from `rebuild.seconds` · **C6** park the persisted-columnar
+  `httpfs` binaries until a measured need · **D2** editions open on the deterministic introduction, the
+  narrated path opt-in · **D4** the eight bulletin sections and the checkbox review screen ratified as-is ·
+  **D7** pqcrypto stays `<1.0` until a custody-path session with the full skeptic matrix · **G2** the networked
+  elections-acquisition session authorised · **G3** the bloc-roster networked session authorised, the registry
+  EMPTY until it runs · **H3** remove `#ins-term` + `exploreTerm` behind the omnibar-absorption test · **H5**
+  the 3D keyword explorer retired for the Observatory · **L1** Governments keeps opening on Countries · **L3**
+  the three `download=1` exemptions stay · **L5** `_SPARSE_BAR_MAX` extended to the commodity overlay only) and
+  three by NOTE, verbatim: **B5** «automate the script run within the diagnostics» (the source-qualification
+  export + merge run becomes a diagnostics action; Q1106's editor stays) · **E1** «Automate this in the
+  diagnostic bundle.» (`month-occupancy.json` becomes a bundle member; PROMPT_06 slice 3 reads it there) ·
+  **L6** «Promote [pdf] into the default» (pyproject; both venv profiles re-verified) · 9 CONFLICTS with the
+  sheet, listed not resolved: **B4** (`default` = build no tool vs Q1105 = a's worklist for a review surface;
+  RC05) · **B7** (the window: 90 days published BESIDE the whole-history verdict vs Q1108 = a's 6 months
+  instead of it; RC06 — and B7's note, verbatim: «yes, but remember I'd like to see track changes in articles
+  too, to allow user to see if, when and how an article was modified accross time, the same way the app
+  allows for law, wikipedia and OSM data» — article revision tracking, a new capability with no release named;
+  RC07 asks its placement) · **C1 ⛔** («a, but wait for version 0.7» — read as the legacy single-file restore's
+  removal authorised for 0.7, vs Q215 = a keep the restore half forever; RC02 ⛔; nothing is removed
+  meanwhile) · **D8** («wait for the app wide one model ruling, new models might come up and change what's
+  best for the user. Wait. Mark that we need the decision to be made before version 0.8 r» vs Q1142 = a run
+  the bench in 0.5; RC04 — the «before 0.8» marker is recorded in the 0.7 exit clause and as 0.8 row C
+  regardless of RC04) · **D9** (`default` = drop the live ollama.com library browse vs Q1143 = a consented
+  opt-in; RC09) · **G8** («I won't provide the dates. Let's create a dedicated internet connected session to
+  search for all religious dates and implement them in the app» vs Q1135 = b drop the feature; RC13; nothing
+  fabricated meanwhile, the eclipse canon unmentioned) · **I3** (`default` = go, Tor-exit-resolve as its own
+  skeptic-matrixed slice vs Q1138 = a parked until 0.9's security review; RC14) · **L9** (`default` = remove
+  the `lean-*` scale from the offerable vocabulary vs Q1129 = a keep the stance «reported, never filtered»;
+  RC16) · **L10** (`default` = filter the coverage-state prefixes too vs Q1130 = a `via:*` only; RC17) · 5
+  PENDING: **A1** `deferred` (the quarantine run + `v0.3.0` tag operator step; RC01 asks whether 0.4 row G's
+  version flip may proceed on the existing pre-release) · **C4 ⛔** answered `default` (yes / OOENC2 / yes /
+  yes) at 15:12Z where Q1009 was left blank that morning — a ⛔ question answered through the second channel
+  only: RC03 asks for the four values written out before any of rows 3–6 is executed; 0.9 row F and S05-06's
+  seam stay · **E2** «I don't know yet» (`dumps.wikimedia.org`, one minute before F1's «add them»; RC10 ⛔) ·
+  **G1** «I can't answer these now. Not enough details. Mark them for future development as questions to ask
+  me with more details and an overall impact evaluation.» — a detailed V1-1..V1-9 round with an overall
+  impact evaluation is OWED; the 2026-09-07 rulings (the R-series) and the sheet's refinements STAND as
+  recorded until it is answered (RC11 asks whether it re-opens them or details the unruled remainder) ·
+  **G6** — the poll-analysis idea re-stated, verbatim: «the Poll analysis idea has not been properly
+  interpreted. I initially wanted the app to ingest poll data information to allow users to see them and
+  interpret them directly instead of hearing people talk and discuss about them. Let's empower users with raw
+  poll results. Let them access to the poll's questions exact verbatim, let them detect questions that orient
+  answers. That was the initial idea was. We should review everything regarding this for version . » — the
+  version is blank (RC12); V1-8's «poll Tier-2 post-1.0» is in tension with a raw-data feature;
+  `docs/FUTURE_DEVELOPMENTS.md` §Poll analysis is to be rewritten from the note once RC12 is answered · 1
+  QUALIFIER: **L4** «Adapt the rate limit to what's most ethical while keeping the app's efficiency and
+  performance in mind.» beside Q1148 = a (RC15 asks whether it means the loopback guard or the egress
+  politeness) · 1 SUPERSEDED: **G10** (by the sheet's §8; its dump clause is moot under Q701). **J3**
+  «Document SQLite-only and keep the implication of dual support» = Q1140 = b with its NOTE — consistent.
+  **WHAT THIS CHANGED IN THE PLAN FILES (docs-only):** the 0.4 gate's amendment log (rows G, K, M, Q, S, T, U,
+  V), the 0.5 gate's (rows B, F, H, I, J), the 0.6 gate's (row A), the 0.7 gate's exit clause («before 0.8
+  opens: the one-model decision, D8») and the 0.8 gate's new row C (that decision — owner: the maintainer,
+  PENDING before 0.8 opens), the 0.9 gate's (row E); twelve briefs carry a «Register round 2026-09-15» block
+  at the end of §1 (S03-01, S04-04, S04-06, S04-10, S04-12, S04-13, S04-14, S05-08, S05-09, S05-10, S06-04,
+  S09-01) saying what is contested and stopping there. No gate row changed status; no brief's slices were
+  rewritten; `CLAUDE.md` is untouched (no non-negotiable or UI invariant is touched by the 65).
+  **PENDING:** `RC01`–`RC17`; the detailed V1-1..V1-9 round (G1); the six placements of `RC08`; the §Poll
+  analysis rewrite (after `RC12`); section M1 of the register (ratify or reverse the two self-closed items:
+  the unrounded i18n percentage and the calls-not-names drift guard) — never in the artifact, still open.
+  **LESSON** (in `LESSONS.md`, 2026-09-15, «two open channels for one question round»): a round re-asked in
+  a new format while the old channel stays open comes back answered twice, and only a channel that stamps each
+  answer lets the recorder say which of two answers is later without deciding which is right.
 - **ROADMAP ANSWER SHEET — THE 278 ANSWERS RECORDED (the maintainer returned the sheet 2026-09-15;
   processed per its own §0.2 protocol; PLANS ONLY, nothing built; draft PR #1131). THE PRIMARY
   RECORD is the answered file itself, overwritten in place (Q1201):
@@ -10516,6 +10595,12 @@
   unmarked ones and explicitly does not apply to the marked ones. **PENDING:** the maintainer's answers, and
   then the prompts' execution.
   **RULED 2026-09-15 — the register's open rulings were re-asked as the answer sheet's §12 (with the ⛔ ones never defaulted) and are recorded at the head of this section:** B1 = Q1101 (a) · B11 = Q1102 (b) · C1 = Q215 (a) · C2 = Q216 (a: K = 3) · C3 = Q217 (a) · C4 = Q1009 ⛔ LEFT BLANK, STILL PENDING · F1 = Q114 (a) · M2 = Q1126 (a) · B2 = Q1103 (b) and B3 = Q1104 (a) — a CONFLICT, listed there · B4 = Q1105 (a) · B5 = Q1106 (a) · B6 = Q1107 (a) · B7 = Q1108 (a) · D3 = Q1131 (a) · D6 = Q1132 (a) · D8 = Q1142 (a) · D9 = Q1143 (a) · D10 = Q1144 (a) · E3 = Q1145 (a) · E4 = Q1146 (a) · G4 = Q1133 (a) · G5 = Q1147 (a) · G7 = Q1134 (a) · G8 = Q1135 (b: drop) · G9 = Q1136 (a) · G10 = Q1157 (superseded by the sheet's §8) · G11 = Q1153 (a) · H2/L2 = Q1128 (a) · H4 = Q1127 (a) · I1 = Q1137 (a) · I3/I4 = Q1138 (a) · J1 = Q1139 (a) · J3 = Q1140 (b) · L4 = Q1148 (a) · L7 = Q1149 (a) · L9 = Q1129 (a) · L10 = Q1130 (a) · M3 = Q1150 (a) · M4 = Q1151 (a) · M5 = Q1152 (a) · A4 = Q1141 (a) · A2's remainder = Q117 (a). The eight lesson-shaped entries (the entry directly below) were NOT in the sheet and stay pending.
+  **ANSWERED AGAIN 2026-09-15 15:02–16:00Z THROUGH THE RULINGS ARTIFACT — all 65 of sections A–L (the ids
+  the artifact carried; B11, G11 and section M were not in it):** reconciled in the head entry of this
+  section («THE 2026-09-06 REGISTER ANSWERED») and in `RULINGS_INDEX.md` rows `A1`–`L10`; the answers stand
+  in the register file itself under every question. Nine contradict the §12 answers above (B4, B7, C1 ⛔,
+  D8, D9, G8, I3, L9, L10) and are put to `docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md`,
+  never resolved here; C4 (= Q1009 ⛔, blank above) came back `default` and is confirmed there too (RC03).
 - **EIGHT LESSON-SHAPED ENTRIES ARE MISFILED IN THIS QUEUE — a ruling is owed on relocating
   them (found 2026-09-07 while executing A3(3); NOTHING MOVED, recorded per rule (2)):** the
   A3(3) sweep of all 165 entries found eight that are LESSONS by content and by house style —

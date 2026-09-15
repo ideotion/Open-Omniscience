@@ -33,6 +33,10 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
 - **Q1127** — **(a)** «(a) Fund a retirement slice in 0.5 with a ratchet that fails on any new inline
   handler; drop `'unsafe-inline'` when it reaches zero.»
 
+**Register round 2026-09-15 (H3, H4, H5):** H4 = `default`: one module per slice, `app-boot.js` first — the method
+for Q1127 = a. H3 = `default`: remove `#ins-term` + `exploreTerm` behind the omnibar-absorption test — proposed for
+this slice (`RC08.5`). H5: the 3D explorer is retired in favour of the Observatory (no build).
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Inline handlers: 335 in `index.html` + 278 across `app-*.js` = 613 on 2026-09-11 "with an explicit

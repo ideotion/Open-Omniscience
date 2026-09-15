@@ -41,6 +41,10 @@ matrix applies to every slice here.
   and at install and import, users should be given the choice to trust or not the history with a "trust the
   backup scrapping history" toggle» [NEW RULING IN NOTE]
 
+**Register round 2026-09-15 (C1):** «a, but wait for version 0.7» — read as the removal of the legacy single-file
+restore authorised for 0.7; it CONFLICTS with Q215 = a (keep the restore half forever). ⛔ `RC02`. Until
+confirmed: build on Q215 = a and remove nothing.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §4 context (VERIFIED): "The restore merge keys on the **value** (`merge.py:3280`; `country` adoptable

@@ -32,7 +32,10 @@ coverage report (0.6 row C) in the bundle.
 
 **The exit.** `v0.7.0` is tagged when rows A–C are CLOSED on named artifacts (row A's patents half closed OR
 recorded as declined on its precondition, with the measurement), the i18n gates and whole-tree guards are
-green, and the release notes carry the no-telemetry re-check (Q111).
+green, and the release notes carry the no-telemetry re-check (Q111). **Before 0.8 opens (ruled 2026-09-15,
+register D8): the app-wide one-model decision is taken by the maintainer — «Mark that we need the decision to be
+made before version 0.8» — a decision, not work, recorded as 0.8 row C; this exit does not wait for it, the 0.8
+entry does.**
 
 ---
 
@@ -82,6 +85,7 @@ licence line. **Operator:** live verification per source. Brief `S07-03`.
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 verticals carried with amendment 3; row C placed at 0.7 with the Q903 CONFLICT recorded for confirmation | maintainer (answer sheet) · rows written by the session |
+| 2026-09-15 | **The 2026-09-06 register's 65 answers — effects on this board:** the exit clause gains «before 0.8 opens: the app-wide one-model decision (register D8: «Mark that we need the decision to be made before version 0.8»)», recorded as 0.8 row C; if `RC02` confirms C1's «a, but wait for version 0.7», a row «retire the legacy single-file restore» enters this board (not added by the session — a ⛔ contradiction with Q215 = a). | maintainer (the register, 2026-09-15) · reconciled by the session |
 
 ---
 

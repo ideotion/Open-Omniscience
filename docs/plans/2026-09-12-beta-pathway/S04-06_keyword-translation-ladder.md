@@ -55,6 +55,10 @@ sections are §5 (R7–R9) and §12 (Q1103, Q1104); the `OPEN_QUEUE.md` 2026-09-
   enlarge it when possible» [CONFLICT with Q1104] [TENSION: the note is the ruling]
 - **Q1104** — **(a)** «Yes, through the review surface, batch by batch.» [CONFLICT with Q1103]
 
+**Register round 2026-09-15 (B2, B3):** B2 = `default` (the versioned in-repo stoplist — the artifact that exists).
+B3 = `default`: a seeded STRATIFIED sample per batch, ship only furniture words, refuse open-class words — the
+method for Q1104 = a; it ships reviewed additions, the side of Q1103's NOTE. The Q1103/Q1104 CONFLICT stays.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §5 context (VERIFIED): 698 rings / 21,927 members; `equivalence.py`: `ring_of`, `translate_term` (no
