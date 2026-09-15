@@ -55,12 +55,27 @@ jobs:
       contents: write  # create the GitHub Release + upload assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The notes are "shipped.csv since the PREVIOUS tag" (Q111 = a), so the
+          # generator has to resolve that tag -- and the default depth-1 checkout is
+          # SHALLOW, which CLAUDE.md rule (5b) records as answering every archaeology
+          # question with its own truncation point. scripts/release_notes.py REFUSES a
+          # shallow clone rather than answering from the boundary; this is the half
+          # that makes that refusal never fire here.
+          fetch-depth: 0
       - name: Set up Python 3.13
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Install build tooling
         run: python -m pip install --upgrade build
+      - name: Install (core + analysis + dev) for the no-telemetry re-check
+        # CLAUDE.md's per-release ritual re-confirms the no-telemetry claim BEFORE a
+        # tag. The `test` job above already ran the whole suite at this SHA, but the
+        # notes must state a run this step can SEE -- a sentence written from another
+        # job's green is a template, and the ritual exists precisely because a claim
+        # nobody re-reads is one the code can silently outgrow.
+        run: python -m pip install -e ".[analysis,dev]"
       - name: Verify the tag matches the package version
         # The version is single-sourced from pyproject; a tag that disagrees is a
         # mistake -- fail loudly rather than publish a mislabelled release.
@@ -89,11 +104,19 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # Q111 = a: the notes are GENERATED from docs/ledger/shipped.csv since the
+          # previous tag, and carry the no-telemetry re-check. Every line in this block
+          # traces to a ledger row; the generator refuses rather than inventing one (an
+          # unswept `PR pending`, a shallow clone, a ratchet it could not run). The
+          # fixed install + SHA-256 block below is unchanged and still the tail.
+          python scripts/release_notes.py --tag "${TAG}" -o generated_notes.md
           {
             echo "## Open Omniscience ${TAG}"
             echo ""
             echo "Local-first, offline-first investigative-intelligence platform."
             echo "Debian is the supported install target for this release."
+            echo ""
+            cat generated_notes.md
             echo ""
             echo "### Install"
             echo '```'

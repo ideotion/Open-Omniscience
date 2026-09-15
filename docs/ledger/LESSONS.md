@@ -9362,3 +9362,77 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   because «take the default» is then a different answer on each; (3) ask through channels that stamp
   each answer, since sequence is the only fact a recording session may use about two answers, and it
   may use it only to say which is later, never which is right.
+
+- **A HONESTY DISCLOSURE THAT NAMES ITS OWN MARKER MAKES THAT MARKER A NON-UNIQUE NEEDLE IN
+  THE ARTIFACT IT DESCRIBES (2026-09-15, the release-notes generator's truncation mark):**
+  the ledger records three times that a "must be gone / must be present" SOURCE guard is
+  satisfied by the comment explaining the rule, and each time the fix is to strip comments
+  (`//` in JS, the docstring in Python, `/* */` in CSS) or to go behavioural. This is the
+  same defect one layer out, in a RENDERED DOCUMENT, where there is no comment syntax to
+  strip. The generator clips an over-long `item`/`status` and marks the clip with `…`, and
+  it discloses that in its accounting: *"Truncated for length and marked `…`: 1 `item`
+  field(s) over 200 …"*. The guard asserted `"…" in body` — and the mutation that DELETES
+  the mark from `_clip` **survived**, because the disclosure sentence eight lines below
+  quotes the very character it is describing. So the marker a document uses to be honest
+  about a truncation is guaranteed to appear in that document whether or not any truncation
+  was marked. **GENERAL FORM: whenever a guard's needle is a symbol the artifact also NAMES
+  in prose — a mark, a sentinel, a placeholder, a status word — the needle is non-unique by
+  construction, and the direction of failure is the bad one (it fails OPEN, so nothing ever
+  draws attention to it). Assert the exact produced VALUE instead** (`"I" * (cap - 1) + "…"`,
+  which only the clip can emit), not the symbol. Only the mutation said so; re-reading the
+  test would not have, because the assertion looks exactly right.
+- **NEUTERING AN ARM OF AN `if/elif` CHAIN DOES NOT MODEL "MISROUTED", IT MODELS "DROPPED" —
+  and the two are different defects with different guards (2026-09-15, the same matrix):**
+  the row-selection rule is a four-arm chain (undated / after the tag / on the previous tag's
+  day / in range). To model "the ambiguous boundary row is folded into the body" I mutated
+  that arm's CONDITION to `elif False:` — and the guard survived. It survived correctly: with
+  the arm disabled the row does not fall into the NEXT arm either (`day == prev_day` is not
+  `day > prev_day`), so it lands in no bucket at all and simply vanishes. That is a third
+  outcome, caught by a different test (the partition assertion), and my mutant was a finding
+  about the MUTANT rather than about the guard. **GENERAL FORM: in a dispatch chain, disabling
+  a branch produces FALL-THROUGH, whose destination depends on every later condition — so it
+  models a DROP or a MIS-ROUTE depending on the data, and usually neither on purpose. To model
+  a mis-route, change the arm's BODY (`sel.boundary.append` → `sel.in_range.append`); to model
+  a drop, disable the arm. Both are worth having, and they point at different tests.** The
+  standing rule that a surviving mutant is a finding is right about the finding and silent
+  about its subject; here the subject was the mutant, and the cheap check is to ask which
+  branch the mutated code actually took before writing a better fixture.
+- **`scripts/` IS OUTSIDE ALL THREE OF THIS REPO'S LINT / TYPE / SAST LANES — MEASURED, AND A
+  BRIEF ASSERTED THE OPPOSITE (2026-09-15):** brief `S04-15` §4 said of a new generator that
+  *"the generator is Python under `scripts/`, so `ruff`, `mypy` and `bandit` see it"*. They do
+  not. `ci.yml` runs `ruff check --select=F,B … src/ tests/` and `ruff check src/ tests/`,
+  `python -m mypy src/`, and `bandit -r src/ -ll -q`; `scripts/ruff_ratchet.py`'s own
+  `TARGETS` is `("src/", "tests/")` by design, so it cannot see the directory either. Measured
+  on this tree: **67 Python files under `scripts/`, carrying 23 findings in the BLOCKING `F,B`
+  selection and 81 in the advisory lane**, none of which any gate reports. Many scripts are
+  driven behaviourally by tests (`test_ruff_ratchet.py`, `test_kpi_diff.py`,
+  `test_candidate_kit.py` and others load them by path), so they are not unguarded — they are
+  un-LINTED, which is a different gap and an invisible one, because every session that adds a
+  script runs "the gates" and gets a green that says nothing about the file it just wrote.
+  **GENERAL FORM: a gate's NAME is not its SCOPE. Before trusting that a gate covers a file
+  you just added, read the gate's own target paths out of `ci.yml` rather than out of a brief
+  or a working-mode summary** — the recorded rule that `ci.yml` is the gate and everything else
+  is commentary about it, applied to WHICH TREE rather than to which number. Recorded, not
+  fixed: adding `scripts/` to the lanes changes the population a max-gate ratchet measures,
+  which is exactly the shape that makes a shrinking population and an improving codebase
+  indistinguishable, so it wants its own reviewed slice with a re-baselined ceiling. Run the
+  three tools on the file by hand meanwhile (all three are clean on the new generator).
+- **A SERVER LAUNCHED IN A DETACHED SUBSHELL HAS NO `$!` TO KILL, WHICH IS WHY `pkill -f` GETS
+  REACHED FOR — WRITE A PIDFILE AT LAUNCH (2026-09-15, the fourth recurrence in this ledger):**
+  the recorded entry already says never to match a process by a string your own command line
+  contains, and lists an order of preference whose first item is *"capture `$!` when you launch
+  and poll or wait on that PID"*. That item does not cover the case that produced this
+  recurrence: a uvicorn started as `( … & )` inside a subshell so the harness's own task could
+  return, which leaves the caller no `$!` at all. With nothing to wait on, the reflex is
+  `pkill -f "uvicorn … --port 8137"` — and that string is in the killing shell's own command
+  line, so it killed the shell (**exit 144**) as the entry says it will, having read that entry
+  in the same session. **THE RIDER THAT CLOSES THE CASE: write the pid down at launch** —
+  `( cmd > log 2>&1 & echo $! > /tmp/x.pid )` — and tear down with `kill "$(cat /tmp/x.pid)"`,
+  which cannot match anything but the process you started. Where a pidfile is not possible,
+  match on a field the matcher's own line cannot occupy (`ps -eo pid,args | awk '…'`, excluding
+  `$$`), never `pkill -f` with a substring of the command you are about to run. And note the
+  second-order trap this produced: after the self-kill the server was ALREADY dead, so the
+  careful `awk`-based retry reported `kill: No such process` and read like a failure to stop a
+  running server — a teardown that has already succeeded looks identical to one that cannot
+  find its target, so confirm with the PORT (`curl` returning `000`) rather than with the
+  kill's own exit code.

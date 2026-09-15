@@ -47,10 +47,10 @@ tag → flip). Nothing on this board touches the version.
 | A | A committed full import that re-checks **all** sources | operator | ruled 2026-08-13, moved from 0.3 row 4 | **OPEN** |
 | B | A multi-day (≥72 h) collector soak | operator | ruled 2026-08-23, moved from 0.3 row 7b | **OPEN** |
 | C | Diagnostics on the ~1M-article instance | operator | ruled 2026-08-23, moved from 0.3 row 3's earlier bar | **OPEN** |
-| D | Row B's evidence is readable from one artifact | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **BUILT — awaiting a run to read** |
-| E | Row A's demonstration has tooling that can state its own result | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **PARTIAL** — the check is built and rides the bundle; the RUN is Row A's |
-| F | The browser bar reaches a human, a second engine, or is closed as-is | shared | *proposed* → **closed as-is, ruled 2026-09-15 (Q117 = a on Q1128 = a)** | **CLOSED 2026-09-15** — the bar is Chromium-in-sandbox + the maintainer's click-through; Gecko best-effort |
-| G | `0.3` closed and the version flipped | operator | ruled 2026-09-15 (Q109 = a) · brief `S03-01` | **OPEN** |
+| D | Row B's evidence is readable from one artifact | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **BUILT, and DRIVEN end to end at fixture scale 2026-09-15** — four of six blocks measured, the other two `measured: false` with a reason; still awaiting a ≥ 72 h run to read |
+| E | Row A's demonstration has tooling that can state its own result | session | *proposed* → **BAR, ruled 2026-09-15 (Q117 = a)** | **PARTIAL** — built, riding the bundle, and driven end to end 2026-09-15 in BOTH directions (clean → `consistent`; seeded laundering → `inversions-found`, named); the RUN is Row A's |
+| F | The browser bar reaches a human, a second engine, or is closed as-is | shared | *proposed* → **closed as-is, ruled 2026-09-15 (Q117 = a on Q1128 = a)** | **CLOSED 2026-09-15** — the bar is Chromium-in-sandbox + the maintainer's click-through; Gecko best-effort. The citable sentence lives in §2 row F behind `<!-- release-notes: verification-bar -->`, and the release notes quote it from there |
+| G | `0.3` closed and the version flipped | operator | ruled 2026-09-15 (Q109 = a) · brief `S03-01` | **OPEN — waiting on the operator**; `RC01` blank ⇒ ASSUMPTION (b), so the version stays `0.3.0` until 0.3 row 5 is run (re-checked 2026-09-15, not flipped) |
 | H | `docs/SECURITY.md` enumerates every host; the consent hover lists them per lane | session | ruled (Q1001, Q1002) · `S04-01` | **OPEN** |
 | I | The import lifecycle: fresh page, four visible stages, one poll chain, K = 3, one API path | session | ruled (R1–R3; Q201–Q207, Q214, Q216, Q217, Q221, Q222) · `S04-02` | **OPEN** |
 | J | The export: dated `OpenOmniscience_Backup` folder, completion panel, `BACKUP_SUMMARY.md`, verify-after-write | session | ruled (R4, R5; Q208–Q213, Q218–Q220, Q1008) · `S04-03` | **OPEN** |
@@ -65,7 +65,7 @@ tag → flip). Nothing on this board touches the version.
 | S | Sources: `qualified` ⇒ `enabled`, the hatch retired, the overlay editor, the institutions moves, the Stage B splice, the stratified round-robin | session + operator (the shortlist run) | ruled (Q1101, Q1105–Q1112, Q1114–Q1119, Q1156) · `S04-12` | **OPEN** — the embassy platforms (Q1113 ⛔) are PENDING |
 | T | Network budgets and politeness: the per-process bandwidth budget, the persisted Crawl-delay cap, the loopback rate limit, the airplane titles, the net-coach weights, weight digests | session | ruled (Q1012, Q1013, Q1125, Q1126, Q1132, Q1148) · `S04-13` | **OPEN** |
 | U | UI, i18n and the small rulings: the 470-string remainder, the religious-calendar feature dropped, the encrypted click-through variant, the `diagnostics.py` split, the FUTURE_DEVELOPMENTS reality check, newsletter attach | session | ruled (Q1124, Q1130, Q1135, Q1139, Q1141, Q1149, Q1151, Q1152) · `S04-14` | **OPEN** |
-| V | The release ritual and the allowlist: release notes from `shipped.csv` + the no-telemetry re-check; the session environment's egress allowlist | operator | ruled (Q111, Q114 ⛔ = a, Q116) · `S04-15` | **OPEN** |
+| V | The release ritual and the allowlist: release notes from `shipped.csv` + the no-telemetry re-check; the session environment's egress allowlist | operator | ruled (Q111, Q114 ⛔ = a, Q116) · `S04-15` | **OPEN — the generator half SHIPPED 2026-09-15** (`scripts/release_notes.py`, wired into `release.yml`); the allowlist and the per-surface click-through records are the operator's |
 
 Rows A–C are the substance. D and E exist because A and B are both **operator** rows whose
 closing clauses ask for a number nobody currently has a single place to read — and a row whose
@@ -217,6 +217,26 @@ RSS verdict — that stays P0's — and it publishes no composite.
 P0.3 report. Until a real soak happens, this row is *built, unread* — the honest state, and
 not the same as closed.
 
+**DRIVEN END TO END AT FIXTURE SCALE (2026-09-15).** A synthetic corpus seeded through the real
+`index_article` (`scripts/ui_clickthrough_seed.py`, 440 articles), the app served on loopback,
+and the report read twice — once from `GET /api/diagnostics/soak-window` and once as
+`soak-window.json` out of the 73-member `GET /api/diagnostics/all` archive, which is the "ONE
+artifact" this row is named for. Per block, what fixture scale could and could not reach:
+
+| Block | At fixture scale | What it needs from row B |
+|---|---|---|
+| `window` | **measured** — 0.01 h, `reaches_bar: false` | the 72 h itself: only a real soak can make that `true` |
+| `write_gate` | **measured** — 1 grant, `busy_share` 0.0098, 0 contended | nothing; the counters are process-cumulative and already live |
+| `interrupted` | **measured** — 0 this session, 9 log records, `at_capacity: false` | nothing; a long run is what makes `at_capacity` meaningful |
+| `database_stats_latency` | **measured after one call** — p95 12.8 ms at `window_n: 1` | volume: it reads a 512-request reservoir, so its `window_n` is what makes a p95 readable, and the payload already says the window is not the soak |
+| `memory_guard` | **unmeasured** — "uptime is 77.9 s, under the 300 s floor a per-day rate needs to mean anything" | any run over five minutes clears the floor |
+| `wal` | **unmeasured** — "`wal_bytes` has never been recorded on this install" | the hourly, off-peak recorder has to have run, i.e. a scheduler up for hours against a real corpus |
+
+So **the mechanism is proven and the window is not**: nothing in the tree can make
+`reaches_bar` true, and `memory_guard` / `wal` leave `unmeasured` for the same reason —
+elapsed time on the operator's machine. The two blocks that report `measured: false` do so with
+a reason and are listed in `unmeasured`, which is the honest shape and not a reading of zero.
+
 ---
 
 ### Row E — row A's demonstration has tooling that can state its own result · *proposed*
@@ -267,9 +287,52 @@ denominator is for.
 does — read `qualification-integrity.json` out of an all-diagnostics bundle taken after the
 committed import, and the clause is answered by a number naming the sources.
 
+**DRIVEN END TO END AT FIXTURE SCALE, IN BOTH DIRECTIONS (2026-09-15).** On the same seeded
+instance as row D, read through `GET /api/diagnostics/qualification-integrity` and out of the
+`GET /api/diagnostics/all` archive:
+
+- **Clean corpus** → `verdict: "consistent"`, *"Every one of the 14 judged sources still carries
+  the verdict its own attempt history last recorded"*, with `checked.with_judging_attempt: 14`
+  against `sources_total: 18` and the one currently-disqualified source NAMED
+  (`verified_disqualified_sample: ["prefcentre.example"]`). The denominator is the point: it is
+  what separates *nothing wrong* from *nothing to look at*.
+- **Seeded inversion** (that source's live status flipped to `qualified` while its newest
+  judging attempt still reads `disqualified` — the exact 2026-07-24 shape) → `verdict:
+  "inversions-found"`, `laundered_total: 1`, `demoted_total: 0`, and the row named in full:
+  `{domain: prefcentre.example, live_status: qualified, last_judged: disqualified, judged_at:
+  2026-08-11T17:54:21+00:00, criteria_version: v1}`. The finding arrives intact in the archive
+  member, not only from the function — `test_the_bundle_member_carries_the_finding_not_a_stub`
+  pins that layer, and this run confirms the HTTP layer above it.
+
+So **"tooling that can state its own result" is true today**: it states a verdict, both
+directions apart, names the sources, and refuses to read a corpus with no judgements as a clean
+bill of health. **What it needs from row A is the IMPORT** — this check cannot supply one, and
+a `consistent` verdict on a corpus that has not been imported into says nothing about the
+merge. Row A's operator step is: take an all-diagnostics bundle AFTER the committed import and
+read this member; the clause is answered by `inversions_total` with the sources named beside
+it, whichever way it goes.
+
 ---
 
-### Row F — the browser bar reaches a human, a second engine, or is closed as-is · *proposed*
+### Row F — the browser bar reaches a human, a second engine, or is closed as-is · *proposed* · CLOSED as-is 2026-09-15
+
+**THE VERIFICATION BAR — the sentence every surface cites, and the one place it lives.** Ruled
+2026-09-15, **Q1128 = a** (`RULINGS_INDEX.md`), which **Q117 = a** used to close this row as-is:
+
+<!-- release-notes: verification-bar -->
+> Chromium in the sandbox + the maintainer's click-through = verified; Gecko best-effort.
+
+It is quoted from HERE and nowhere else — `scripts/release_notes.py` reads it out of this file
+behind the marker above rather than carrying a copy, because a mirrored copy fails in the
+safe-looking direction: reword the gate and a copy goes on quoting the old wording while every
+check still passes. `docs/plans/2026-09-12-beta-pathway/_WORKING_MODE.md` §3 carries the same
+sentence verbatim as the instruction to a building session; this block is the citable form.
+
+**Both halves, or neither.** A surface that a session drove in Chromium and no human has opened
+is stamped *"Chromium-verified (remote sandbox) · awaiting human UX pass"* — that is not
+*verified*, and the stamp may not be shortened to it. A Gecko run is a strengthening nobody is
+owed: its absence never blocks a row, and its presence is recorded as *"Gecko-verified (VM)"*
+beside the Chromium record, never instead of the click-through.
 
 **Where it stands.** `0.3`'s row 8 closed against its literal bar, and the stretch matrix was
 executed on 2026-08-20 (`docs/audit/UI_CLICKTHROUGH_2026-08-20.md`): all 17 themes, the Reader
@@ -712,6 +775,10 @@ The `0.3` gate's own log is the format.
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z; recorded in `QUESTIONS_FOR_THE_MAINTAINER.md` in place, `OPEN_QUEUE.md` head entry, `RULINGS_INDEX.md` rows A1–L10) — effects on this board, nothing resolved by the session:** row G — A1 `deferred` (the operator step; `RC01` asks whether the version flip may proceed on the existing pre-release); row K — C1 «a, but wait for version 0.7» CONFLICTS with Q215 = a (⛔, `RC02`; nothing removed meanwhile); row M — B3's method (a seeded stratified sample per batch, furniture words only, open-class refused) recorded; the Q1103/Q1104 CONFLICT stays; row Q — L6 «Promote [pdf] into the default» (pyproject; both venv profiles re-verified; the coverage report's «without [pdf]» wording retired); row S — B5 (the source-qualification export + merge run automated inside the diagnostics), B6 (`high_link_density` as the second, measured criterion beside the kept 0.5), B4 CONFLICT (no tool vs Q1105's worklist surface, `RC05`), B7 window CONFLICT (90 days beside the whole-history verdict vs Q1108's 6 months instead, `RC06`; B7's article-revision-tracking note placed by `RC07`); row T — L4 qualifies Q1148 (`RC15`); row U — G8 CONFLICTS with Q1135 = b (drop vs a dedicated networked session, `RC13`), L10 CONFLICTS with Q1130 on the coverage-state prefixes (`RC17`), L5 proposed here (`RC08.6`), A4's actions (banner + archive, never merge) beside Q1141's depth, L1/L3/L7 consistent; row V — F1 «add them» confirms Q114 = a; E2's host undecided (`RC10` ⛔). | maintainer (the register, 2026-09-15) · reconciled by the session; the confirmation round is `docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md` |
 | 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0; nothing resolved by the session.** Effects on this board, all reversible by writing a letter: row G — `RC01` ASSUMPTION (b), the flip keeps waiting on 0.3 row 5; row K — `RC02` ⛔ PENDING, the legacy restore half untouched; row S — `RC05` ASSUMPTION (a) no tool, `RC06` ASSUMPTION (a) 90 days beside the whole-history verdict, `RC07` ASSUMPTION (b) article revision tracking to its own 0.5 slice; row T — `RC15` ASSUMPTION (a), Q1148's figures stand; row U — `RC13` ASSUMPTION (b) the religious dates get a networked session **and the ECLIPSE CANON is left UNSTATED** (the `± eclipses` suffix was not written, so this row no longer reads it as dropped), `RC17` ASSUMPTION (a) the coverage-state prefixes filtered too, `RC08.6` ASSUMPTION (a) L5 placed here; row V — `RC10` ⛔ PENDING, `dumps.wikimedia.org` carved out of the Q114 allowlist. Eight of the assumptions sit on CONFLICT questions and follow the later channel exactly as §0 directs; BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 | 2026-09-15 | **The 0.4 board re-verified against the tree at today's `main` (`0d6e4708`): rows G–V, every §2 staleness anchor of all sixteen briefs re-run by grep, never from memory. 127 anchors; 126 live; ONE wrong.** The one: brief `S03-01` (row G) cites `docs/product/RELEASE_0.3_GATE.md:33` for the 0.3 board's row 5 — `:33` is row **6** (the DB-10 page-size bench, CLOSED 2026-08-13); row 5 is at **`:32`**. The text the brief quotes («**OPEN** — criteria **agreed 2026-08-23**; the pass has not been run») is row 5's, verbatim and still exact, and the 0.3 gate has not changed since the briefs were written — `git diff bebcef4..origin/main` on that file is EMPTY and row 5 sat at `:32` at `bebcef4` too, so **the anchor did not drift: it was mis-cited when written**. Corrected in the brief in this PR. **No ruling changes and no row changes status** — row G still waits on row 5 (`RC01`'s assumption), and row G's own 2026-09-15 premise check about the existing `v0.3.0` pre-release is re-confirmed unchanged. The other 126 anchors were checked against the claim each brief quotes beside them rather than against the nearest identifier: an earlier, looser pass flagged eleven and **nine of those were the checker's own false positives** (it matched a neighbouring backticked name instead of the brief's claim), hand-re-verified one by one before anything was recorded — `folder_backup.py:48`, `artifact.py:48`/`:650`, `main.py:1450–1455`, `source_tags.py:441`, `models.py:786`, `runner.py:744–761`, `fts.py:254`, `qualification.py:230` and `calendar_feeds.yml:3288` are all exact. | session (grep-verified at `0d6e4708`) |
+| 2026-09-15 | **Row G re-checked and NOT flipped — the version stays `0.3.0`.** The session that shipped row V's generator re-read the two rulings row G turns on rather than inheriting them from a brief: `A1` reads `deferred` (the operator step — the Tier-A quarantine run with `include_prose_gate=false`, the re-index, the count under `nav-soup-v2`, the `v0.3.0` tag — deferred by the maintainer, no date, Q110 = c), and `RC01` came back BLANK on a round whose §0 turns a blank non-⛔ into a labelled ASSUMPTION at the stated default, which here is **(b): keep waiting on 0.3 row 5**. So the flip's precondition is unmet and nothing of `S03-01` was built — not `pyproject.toml`, not the README `**Version:**` line or its stale "latest tagged release: `v0.2.0`" note, not `docs/CHANGES.md`, not the 0.3 gate's §1/§3 tag record. **What this row waits on is the operator, in this order:** (1) their word on whether the 2026-08-23 `v0.3.0` pre-release at `917e8095` IS the 0.3 close (it is a LIGHTWEIGHT tag where §7.3 prescribed annotated, and it was cut BEFORE row 5 was run — a session never moves, deletes or re-cuts a tag); (2) 0.3 row 5's four `curl` calls from their machine; (3) the flip PR. Reversed the moment a letter is written at `ANSWER RC01` — `a` would let the flip proceed on the existing pre-release. | session (rulings re-read at `338dc868`, nothing decided) |
+| 2026-09-15 | **Row V PART-SHIPPED: the release-notes generator exists and the workflow calls it.** `scripts/release_notes.py` (Q111 = a) reads `docs/ledger/shipped.csv` in BINARY, resolves the previous `v*` tag, groups the rows and emits Markdown in which every line traces to a row. It REFUSES rather than degrading on: a dirty tree, a clone still shallow after one `--unshallow` (rule 5b), an unswept `PR pending` in a row it would CITE (column-aware, because a whole-file grep matches the ledger row that records the phrase's own removal), an `_ALLOWED_SOCKET_IMPORTERS` shape its AST reader cannot parse, and a missing verification-bar marker. `.github/workflows/release.yml` gains `fetch-depth: 0` on the release checkout, a dev install, and a `python scripts/release_notes.py` call before the fixed install / SHA-256 heredoc — the `v*` trigger, the 0.x pre-release rule, the tag-vs-`pyproject` refusal and the idempotent create/upload/edit path are untouched and pinned by test. 37 guards in `tests/test_release_notes_generator.py`; 21 mutations, 21 killed (two survived the first matrix: one was a finding about the MUTANT, one about a test whose `…` needle was satisfied by the disclosure sentence that quotes it). **Remaining on row V:** the allowlist (operator, Q114 = a with `dumps.wikimedia.org` carved out by `RC10` ⛔), and the per-surface click-through records the notes cite — the generator has none to read and says so rather than listing any. | session |
+| 2026-09-15 | **Rows D and E driven END TO END at fixture scale; both stay OPEN on their operator runs.** A 440-article synthetic corpus seeded through the real `index_article`, served on loopback, and both reports read from their endpoints AND out of the one 73-member `/api/diagnostics/all` archive. **Row D:** four of six blocks measured (`window`, `write_gate`, `interrupted`, and `database_stats_latency` once the route is called); `memory_guard` and `wal` report `measured: false` WITH a reason and appear in `unmeasured`. What they need is elapsed time on the operator's machine — the 300 s rate floor and the at-most-hourly `wal_bytes` recorder — and only row B's ≥ 72 h run can make `window.reaches_bar` true. **Row E:** driven in BOTH directions — a clean corpus answers `consistent` over `with_judging_attempt: 14` of 18 sources with the one disqualified source named, and a seeded 2026-07-24-shaped laundering answers `inversions-found` naming `prefcentre.example` with its live status, its last judged verdict and the date, arriving intact in the archive member. So the TOOLING states its own result today; what it needs from row A is the committed IMPORT, which it cannot supply. Neither row's status changes: *built and exercised* is not *read from a run*. | session (fixture-scale drive, Chromium not required — JSON artifacts) |
+| 2026-09-15 | **The verification bar (Q1128 = a) now has ONE citable home** — a marked block in row F's section, which `scripts/release_notes.py` READS rather than mirrors, so a reword reaches the release notes with no second edit and a deleted marker is a loud refusal. `_WORKING_MODE.md` §3 already carried the same sentence verbatim and is unchanged; a test pins the two against each other, because a drift between what a BUILDING session is told and what a RELEASE claims is how a surface gets stamped against a bar the release does not make. Row F's status is unchanged: CLOSED as-is. | session |
 
 ---
 
