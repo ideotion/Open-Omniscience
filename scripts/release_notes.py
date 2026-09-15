@@ -104,7 +104,7 @@ _STATUS_CAP = 60
 #: reachable here were measured rather than guessed: 46 characters for
 #: ``/usr/local/bin/python3: No module named pytest`` and 48 for ``ERROR: file or
 #: directory not found: ...``. 300 holds either with a long CI toolcache interpreter
-#: path in front of it, and bounds a runaway line with the ``...`` mark ``_clip``
+#: path in front of it, and bounds a runaway line with the ``…`` mark ``_clip``
 #: already discloses -- a diagnosis is worth publishing, a traceback is not.
 _REASON_CAP = 300
 
