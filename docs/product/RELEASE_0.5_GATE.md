@@ -214,7 +214,9 @@ to ≥ 10 named themes with invariant #12's pin lowered in the same PR** (Q1123 
 that fails on any new inline handler, `'unsafe-inline'` dropped from the CSP when the count reaches zero**
 (Q1127). **Closes when** the handler ratchet exists at the measured count and the count reaches zero (or the
 row records the measured residue and why), the CSP change is Chromium-verified across the 17-then-≥10 themes at
-three widths (the 2026-09-09 axe sweep shape), and the culled themes are named with their nearest survivor.
+the widths of the 2026-09-09 axe sweep (the 0.4 gate's log names 1440×900, 768×1024 and 390×844; the
+audit's own viewport table lists five — the session reads the sweep record for the set it drives), and the
+culled themes are named with their nearest survivor.
 Brief `S05-09`.
 
 ### Row J — A source is keyed on its FEED · ruled (Q1102 ⛔ = b) · *proposed placement* 0.5 · OPEN
@@ -234,7 +236,9 @@ is proven stable across the migration by a fixture. Brief `S05-10`.
 **What it must demonstrate.** The V1 §3 contents of 0.5 the sheet did not touch: the claim workspace A1 with
 evidence trails, the cross-vertical entity / topic dossier seed on the spine of row C, the Conjunction Lens
 across verticals, the onboarding tour, signed-evidence export polish. They are carried as ruled 2026-09-07;
-their own open design questions are in the V1 pathway and the 23-prompt plan (PROMPT_17), not re-asked here.
+their own open design questions are in the V1 pathway, `docs/FUTURE_DEVELOPMENTS.md` §"User-centric
+reflections" A1–A9 and the 23-prompt plan (PROMPT_23 §S5; `INVENTORY.md` row V1-E — not PROMPT_17, which
+carries none of them; corrected 2026-09-15 from brief `S05-11`'s grep), not re-asked here.
 **Closes when** each ships with its own tests and click-through record; the dossier's 1.0 bar (V1 §8 item 4:
 ≥ 6 rails) is not owed here — 0.8 row A owes it. Brief `S05-11`.
 
