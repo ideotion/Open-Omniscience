@@ -116,7 +116,8 @@ def _accounting(*, returncode: int) -> dict:
         "tag": "v9.9.9", "tag_day": _TAG_DAY, "previous_tag": "v9.9.8",
         "previous_day": _PREV_DAY, "unshallowed": False, "in_range": 3, "boundary": 1,
         "after_tag": 0, "undated": 0, "telemetry_mode": "run",
-        "telemetry_returncode": returncode, "outbound_call_sites": 9, "body_bytes": 5,
+        "telemetry_returncode": returncode, "telemetry_summary": "7 passed in 9.25s",
+        "outbound_call_sites": 9, "body_bytes": 5,
     }
 
 
@@ -126,8 +127,21 @@ def test_the_accounting_double_matches_what_build_really_returns():
     import inspect
 
     src = inspect.getsource(rn.build)
-    for key in _accounting(returncode=0):
+    double = _accounting(returncode=0)
+    for key in double:
         assert f'"{key}"' in src, f"the double invents a key build never sets: {key}"
+    # AND THE OTHER DIRECTION, which is the half that was missing. One-way pinning
+    # catches a double that over-claims but is blind to a double that has fallen
+    # BEHIND production -- and that blindness has a cost this file already names:
+    # with the double short a key, the honest repair (index it in `main`) reddens the
+    # suite, so the path of least resistance is the `.get()` this helper's own
+    # docstring rules out. Adding `telemetry_summary` to `build` walked straight into
+    # it. Now a key added to `build` must be added here too.
+    for key in re.findall(r'^\s{8}"([a-z_]+)":', src, re.M):
+        assert key in double, (
+            f"build sets {key!r} and the double does not -- add it here rather than "
+            f"reaching for .get() in main"
+        )
 
 
 def _selection(tag="v9.9.9", prev="v9.9.8", prev_day=_PREV_DAY, tag_day=_TAG_DAY):
@@ -997,3 +1011,170 @@ def test_a_FAILING_run_keeps_BOTH_the_verdict_and_the_reason():
     assert got.returncode != 0
     assert "no tests ran" in (got.summary or "")
     assert "file or directory not found" in (got.summary or "")
+
+
+# --------------------------------------------------------------------------- #
+# 12. the reason when pytest never reached a verdict.
+#
+# The generator's refusal was always correct here — non-zero exit, "FAILED", no
+# false green. What was wrong was the DIAGNOSIS: `_last_match` only recognises
+# pytest's own vocabulary (passed/failed/error/no tests ran), and the most common
+# real reason carries none of it, so the reason was discarded for a placeholder
+# that told the operator nothing. Found by running the generator against its own
+# merge commit with an interpreter that had no pytest.
+#
+# This is the family invariant #14e's corollary names — a refusal reported as
+# something other than what it is — so the guards below are about the TEXT the
+# operator reads, not about whether the refusal happened.
+# --------------------------------------------------------------------------- #
+def _no_verdict(stderr: str, *, stdout: str = "", rc: int = 1):
+    """A run where pytest never printed a verdict. Driven through the shipped
+    function, never through the nested helper, so these test the WIRING — the
+    recorded lesson that a test proving the mechanism is not a test of the wiring."""
+    import unittest.mock as _m
+
+    with _m.patch.object(rn.subprocess, "run", lambda *a, **k: _Proc(stdout, stderr, rc)):
+        return rn.run_telemetry_check("run", "x")
+
+
+def test_a_stderr_reason_OUTSIDE_pytests_vocabulary_still_reaches_the_notes():
+    """THE DEFECT, verbatim: a bare interpreter says `No module named pytest`, which
+    carries none of passed/failed/error/no tests ran. The old code fell through to the
+    placeholder and published it OVER the one line that said what was wrong."""
+    got = _no_verdict("/usr/local/bin/python3: No module named pytest\n")
+    assert "No module named pytest" in (got.summary or "")
+    assert "no summary line" not in (got.summary or "")
+
+
+def test_the_stream_is_named_so_a_reader_knows_no_verdict_was_reached():
+    """`stderr:` is the load-bearing prefix, not decoration. Without it the line reads
+    as pytest's own verdict, when in fact pytest never produced one — the file's own
+    comment claimed the stream was 'NAMED either way' while this branch named nothing."""
+    assert (_no_verdict("boom\n").summary or "").startswith("stderr: ")
+
+
+def test_pytests_own_vocabulary_still_WINS_over_a_merely_later_line():
+    """Widening the fallback must not demote the better answer. When stderr carries a
+    real pytest line AND trailing noise after it, the pytest line is the reason — the
+    last non-empty line is the fallback for when there is no such line, not a
+    replacement for it."""
+    got = _no_verdict("ERROR: file or directory not found: x\nlibfoo: some trailing noise\n")
+    assert "file or directory not found" in (got.summary or "")
+    assert "trailing noise" not in (got.summary or "")
+
+
+def test_nothing_on_either_stream_says_EXACTLY_that():
+    """The placeholder still exists and is still honest — it just no longer fires over
+    a stderr line that had something to say. Its wording names both streams, because
+    'no summary line' described only one of them."""
+    got = _no_verdict("")
+    assert got.summary == "(pytest produced no output on either stream)"
+
+
+def test_a_runaway_stderr_line_is_clipped_and_the_clip_is_DISCLOSED():
+    """Subprocess text has no length budget and this lands in a published release body.
+    Clipped at _REASON_CAP through the same `_clip` every other field uses, so the
+    clip carries its own mark rather than silently truncating a diagnosis."""
+    got = _no_verdict("x" * 5000 + "\n")
+    body = got.summary or ""
+    assert len(body) < 400, f"unbounded subprocess text reached the notes: {len(body)}"
+    assert body.endswith("…"), "a clip that does not mark itself is a silent truncation"
+
+
+def test_a_PASSING_run_still_cannot_pick_up_a_stderr_line():
+    """The widened fallback is gated on stdout having NO verdict, so it can never
+    reach a run that passed. Re-pinned here because this change is exactly the kind
+    that would reopen the concatenation defect the section above exists for."""
+    got = _no_verdict("noise on stderr\n", stdout="1 passed in 0.04s\n", rc=0)
+    assert got.summary == "1 passed in 0.04s"
+
+
+def _ratchet_body(summary: str, command=("python", "-m", "pytest", "-q", "x")) -> str:
+    return rn.render(
+        _selection(),
+        group_by="segment",
+        telemetry=rn.TelemetryCheck(
+            mode="run", command=list(command), returncode=1, summary=summary
+        ),
+        sites={"src/x.py": "a reason long enough to be a reason"},
+        covered=("socket",),
+        bar="a bar",
+        head_sha="deadbeef",
+    )
+
+
+def _code_spans(text: str) -> list[str]:
+    """Every CommonMark code span in ``text``, by the real rule: a backtick run of
+    length N opens a span closed by the next run of EXACTLY length N, and an opener
+    with no match is literal text. Content has one leading+trailing space stripped
+    when both are present, as CommonMark specifies.
+
+    Hand-rolled ON PURPOSE. `markdown-it-py` is importable here, but only because
+    `rich` happens to depend on it — it is declared nowhere in `pyproject.toml`, and a
+    guard that silently depends on somebody else's transitive dependency fails for a
+    reason that has nothing to do with the thing it guards. This scanner was
+    cross-checked against `markdown-it-py`'s CommonMark parser on nine shapes,
+    including the two the renderer actually produces, and agreed on all nine.
+    """
+    runs = [(m.start(), m.end(), m.end() - m.start()) for m in re.finditer(r"`+", text)]
+    spans: list[str] = []
+    i = 0
+    while i < len(runs):
+        _, end, n = runs[i]
+        j = next((k for k in range(i + 1, len(runs)) if runs[k][2] == n), None)
+        if j is None:
+            i += 1
+            continue
+        content = text[end : runs[j][0]]
+        if len(content) > 2 and content[0] == " " and content[-1] == " " and content.strip():
+            content = content[1:-1]
+        spans.append(content)
+        i = j + 1
+    return spans
+
+
+#: The bullet rendered immediately after the ratchet line. If a stray backtick opens a
+#: span that never closes where it should, THIS is the text that gets swallowed — so
+#: it is the honest canary, rather than counting backticks (a count is not the rule:
+#: ``a ` b`` is a valid span with an ODD number of them, which is how the first cut of
+#: these guards passed one case by coincidence and failed another that was correct).
+_CANARY = "The ratchet covers"
+
+
+def test_a_BACKTICK_in_the_ratchet_summary_cannot_break_the_code_span():
+    """Defect 3 of this file's own adversarial round, in the one field that round never
+    looked at. It was latent while `summary` could only be a pytest summary line; the
+    stderr fallback makes it arbitrary subprocess text, so the raw-backtick render
+    became a live path and now goes through `_code_span` like every other field.
+
+    Driven against the real shape: an interpreter reporting a quoted module name."""
+    text = "stderr: ModuleNotFoundError: No module named `pytest`"
+    body = _ratchet_body(text)
+    assert text in "".join(_code_spans(body)), "the text must survive, not be dropped"
+    assert not any(_CANARY in s for s in _code_spans(body)), (
+        "a stray backtick swallowed the following bullet into a code span"
+    )
+
+
+def test_a_BACKTICK_in_the_COMMAND_cannot_break_it_either():
+    """`shown` is built from a caller-supplied --telemetry-node path and was rendered
+    with bare backticks too. Neither interpolation is ours to trust."""
+    body = _ratchet_body("1 failed", command=("python", "-m", "pytest", "-q", "tests/w`ird.py"))
+    assert any("w`ird.py" in s for s in _code_spans(body))
+    assert not any(_CANARY in s for s in _code_spans(body))
+
+
+def test_the_TERMINAL_refusal_names_the_reason_not_just_FAILED(monkeypatch, tmp_path, capsys):
+    """The same defect one layer out. The notes file carries the reason, but the person
+    running this is looking at a terminal, and `main` printed only "the ratchet FAILED"
+    — so the operator's next move was to go read the generator rather than the one line
+    saying pytest was not installed. The reason is INDEXED out of the accounting, not
+    `.get()`-ed: the `_accounting` helper's own docstring rules that out, because a
+    `.get()` in production is how a double that has fallen behind stops reddening."""
+    acc = _accounting(returncode=1)
+    acc["telemetry_summary"] = "stderr: /usr/bin/python3: No module named pytest"
+    monkeypatch.setattr(rn, "build", lambda args: ("body\n", acc))
+    assert rn.main(["--tag", "v9.9.9", "-o", str(tmp_path / "n.md")]) == 1
+    err = capsys.readouterr().err
+    assert "No module named pytest" in err, "the terminal refusal still says nothing useful"
+    assert "ratchet FAILED" in err, "and it must still say the ratchet failed"

@@ -99,6 +99,14 @@ _ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: LISTED and is disclosed in the accounting — it never bounds a reported COUNT.
 _ITEM_CAP = 200
 _STATUS_CAP = 60
+#: A stderr reason has no author and no length budget -- it is whatever the OS or
+#: the interpreter said, not a ledger field somebody wrote. The two shapes actually
+#: reachable here were measured rather than guessed: 46 characters for
+#: ``/usr/local/bin/python3: No module named pytest`` and 48 for ``ERROR: file or
+#: directory not found: ...``. 300 holds either with a long CI toolcache interpreter
+#: path in front of it, and bounds a runaway line with the ``...`` mark ``_clip``
+#: already discloses -- a diagnosis is worth publishing, a traceback is not.
+_REASON_CAP = 300
 
 
 class ReleaseNotesError(Exception):
@@ -412,11 +420,39 @@ def run_telemetry_check(mode: str, node: str) -> TelemetryCheck:
                 return line.strip().strip("= ")
         return ""
 
+    def _last_line(blob: str) -> str:
+        """The last non-empty line, whatever it says. The reason when there is no verdict."""
+        for line in reversed(blob.splitlines()):
+            if line.strip():
+                return line.strip()
+        return ""
+
     summary = _last_match(proc.stdout or "")
     err = _last_match(proc.stderr or "")
     if not summary:
-        # pytest never got as far as a verdict (a missing node, an import error).
-        summary = err or "(pytest produced no summary line)"
+        # pytest never got as far as a verdict (a missing node, an import error), so
+        # the reason is on stderr -- but it is frequently NOT in pytest's vocabulary,
+        # and the first cut only ever looked for that vocabulary. A bare interpreter
+        # answers `No module named pytest`, which carries none of
+        # passed/failed/error/no tests ran, so `_last_match` returned nothing and the
+        # placeholder won: a release body reading "(pytest produced no summary line)"
+        # printed over a stderr line that said exactly what was wrong. Measured, not
+        # imagined -- it is what this generator did on its own merge commit when run
+        # with an interpreter that had no pytest.
+        #
+        # That is the shape invariant #14e's corollary names: a refusal reported as
+        # something other than what it is, pointing the operator at the wrong thing.
+        # There it was airplane mode reported as "size check failed", sending an
+        # operator to someone else's server for their own setting; here it is an
+        # uninstalled pytest reported as a phantom pytest defect. So fall back to the
+        # LAST NON-EMPTY stderr line whatever its wording, and NAME the stream, so a
+        # reader can tell which stream answered and that no verdict was reached.
+        reason = _clip(err or _last_line(proc.stderr or ""), _REASON_CAP)[0]
+        summary = (
+            f"stderr: {reason}"
+            if reason
+            else "(pytest produced no output on either stream)"
+        )
     elif proc.returncode != 0 and err and err != summary:
         # A FAILED run keeps both: stdout carries the verdict ("no tests ran in 0.10s")
         # and stderr usually carries the REASON ("ERROR: file or directory not found").
@@ -730,9 +766,16 @@ def render(
         # what ran — not a shortening that claims anything the run did not do.
         cmd = list(telemetry.command or [])
         shown = " ".join([Path(cmd[0]).name, *cmd[1:]]) if cmd else "(no command)"
+        # BOTH interpolations go through _code_span rather than bare backticks.
+        # `summary` is subprocess text now that an unmatched stderr line can reach it,
+        # and `shown` carries a caller-supplied node path -- neither is ours to trust.
+        # A single backtick in either opens a span that closes at the next backtick run
+        # ANYWHERE later in the document, which is defect 3 of this file's own
+        # adversarial round in a field that round never looked at.
         add(
-            f"- Socket-importer ratchet: `{shown}` → exit "
-            f"**{telemetry.returncode}** ({verdict}) — `{telemetry.summary}`."
+            f"- Socket-importer ratchet: {_code_span(shown)} → exit "
+            f"**{telemetry.returncode}** ({verdict}) — "
+            f"{_code_span(telemetry.summary or '')}."
         )
     else:
         add(
@@ -820,6 +863,7 @@ def build(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
         "undated": len(sel.undated),
         "telemetry_mode": telemetry.mode,
         "telemetry_returncode": telemetry.returncode,
+        "telemetry_summary": telemetry.summary,
         "outbound_call_sites": len(sites),
         # Published because a GitHub release body has a maximum length and this one
         # grows with the ledger: 106,197 bytes for v0.2.0 -> v0.3.0. No threshold is
@@ -881,9 +925,15 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(accounting, indent=2, sort_keys=True), file=sys.stderr)
     # A ratchet that RAN and FAILED must not publish as though it had not.
     if accounting["telemetry_returncode"] not in (None, 0):
+        # NAME THE REASON HERE TOO. The notes file carries it, but the operator is
+        # looking at a terminal, and "FAILED" with no reason is the same unhelpful
+        # refusal one layer out -- they would go read the generator before reading the
+        # one line that says pytest is not installed.
+        reason = accounting["telemetry_summary"] or "(no reason captured)"
         print(
             "release_notes: the no-telemetry ratchet FAILED; the notes say so and this "
-            "exits non-zero so a release cannot publish past it.",
+            "exits non-zero so a release cannot publish past it. "
+            f"The run reported: {reason}",
             file=sys.stderr,
         )
         return 1

@@ -9545,3 +9545,61 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   Reporting only the verdict is true and useless; letting the reason override it is the
   hijack. Keep both, and gate the append on a non-zero exit so a passing run's stray
   warning can never reach the notes at all.
+- **A VOCABULARY FILTER DISCARDS THE ONE FAILURE THAT MATTERS MOST — THE TOOL THAT NEVER
+  RAN (2026-09-15, the no-telemetry reason line):** the fix for the stderr/stdout hijack
+  above scraped each stream for pytest's own vocabulary (`passed|failed|error|no tests
+  ran`). That is right for a run that produced a verdict and exactly wrong for one that
+  did not: **a tool that never started does not speak its own language.** A bare
+  interpreter answers `No module named pytest`, which carries none of those words, so the
+  matcher returned nothing and a placeholder — *"(pytest produced no summary line)"* —
+  was published OVER the line that said precisely what was wrong. The refusal itself was
+  correct throughout (non-zero exit, `FAILED`, no false green); only the DIAGNOSIS was
+  destroyed, which is the shape invariant #14e's corollary names: a refusal reported as
+  something other than what it is, pointing the operator at the wrong thing — there at
+  someone else's server for their own setting, here at a phantom pytest defect for an
+  uninstalled pytest. When a known vocabulary finds nothing, fall back to the raw last
+  non-empty line WHATEVER it says, and NAME the stream so the reader knows no verdict was
+  reached. Found by running the generator against its own merge commit.
+- **A COMMENT THAT DESCRIBES A GUARANTEE IS A CLAIM TO CHECK, NOT DOCUMENTATION TO TRUST
+  (2026-09-15):** the same function's comment read *"the stream is NAMED either way so a
+  reader can tell which one answered."* It was true of one branch and false of the other
+  — the branch that mattered, since it is the one that fires when there is no verdict.
+  The prose was written describing the intent of both branches while only one implemented
+  it. Grep a comment's promise against every branch it claims to cover; a guarantee stated
+  once in prose and implemented once in code is not the same as implemented twice.
+- **CHANGING AN INPUT'S PROVENANCE RE-OPENS EVERY ESCAPING DEFECT DOWNSTREAM OF IT THAT
+  WAS ONLY LATENT (2026-09-15):** the ratchet summary was rendered with BARE backticks,
+  and that was safe — but safe only because `summary` could contain nothing but a pytest
+  summary line. Widening it to arbitrary stderr text made the same line a live instance of
+  defect 3 of this file's own adversarial round (*a stray backtick opens a code span that
+  closes at the next backtick run anywhere later in the document*), in the one field that
+  round never looked at because it was not a ledger field. The audit question is not
+  "which sinks did I change" but **"which sinks now receive text from somewhere new"** —
+  and the answer includes sinks whose code is untouched.
+- **BACKTICK PARITY IS NOT THE COMMONMARK RULE, AND A PARITY ORACLE PASSES BY COINCIDENCE
+  (2026-09-15):** the first cut of the guard above asserted an even backtick count. A
+  valid code span can have an ODD count — ``` ``a ` b`` ``` is a two-backtick fence around
+  content containing one — so the oracle passed one correct case and FAILED another that
+  was equally correct, accusing the fix of a defect it did not have. The real rule is
+  run-length matching: a run of length N opens a span closed by the next run of exactly
+  length N. The honest oracle is a CANARY rather than a count — render the following
+  bullet and assert it did NOT end up inside a span, since being swallowed is the actual
+  harm. A cheap oracle that models the harm beats a cheap oracle that models a proxy.
+- **ONE-WAY PINNING OF A TEST DOUBLE IS HALF A PIN, AND THE MISSING HALF HAS A KNOWN COST
+  (2026-09-15):** `test_the_accounting_double_matches_what_build_really_returns` asserted
+  that every key in the double exists in production. That catches a double which
+  over-claims and is structurally blind to one that has fallen BEHIND. The cost is not
+  abstract: with the double short a key, the honest repair — indexing it in `main` —
+  reddens the suite, so the path of least resistance becomes the `.get()` that the
+  helper's OWN docstring rules out as papering over the gap. Adding one key to `build`
+  walked straight into it in this session. Pin BOTH directions, so a key added to
+  production must be added to the double.
+- **A GUARD BUILT ON AN UNDECLARED TRANSITIVE DEPENDENCY FAILS FOR REASONS THAT HAVE
+  NOTHING TO DO WITH WHAT IT GUARDS (2026-09-15):** `markdown-it-py` is importable in this
+  venv and is a real CommonMark parser — the obvious oracle for the code-span guard. It is
+  declared NOWHERE in `pyproject.toml`; it is present only because `rich` depends on it, so
+  the guard would have broken the day `rich` changed its dependencies, reporting a
+  Markdown-escaping regression that had not happened. Hand-roll the scanner and CROSS-CHECK
+  it against the real parser once, outside the committed test: the shipped guard then has no
+  dependency, and the cross-check (9 shapes, 9 agreements, including the two the renderer
+  actually produces) is what makes the hand-rolled rule trustworthy.
