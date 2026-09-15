@@ -109,8 +109,9 @@ Brief `S06-03`.
 ### Row E — Help's body ×12, the first tranche · ruled (Q1122 = b); *proposed staging* · OPEN
 
 **What it must demonstrate.** The 167,022-character Help body translated ×12 (~2 M characters), AI-drafted
-and flagged for native review like the GUI-gallery precedent, staged across 0.6 → 0.8 (*proposed*: the eight
-Help documents in three tranches, the most-visited first, each tranche's coverage stated in the document's own
+and flagged for native review like the GUI-gallery precedent, staged across 0.6 → 0.8 (*proposed*: the TEN
+Help documents — `_DOCS` in `src/api/main.py:2558` lists ten slugs, grep-verified 2026-09-15; this row said
+"eight" until then — in three tranches, the most-visited first, each tranche's coverage stated in the document's own
 banner per the recorded mixed-language-document lesson). **Closes when** the tranche's documents pass the
 three i18n gates run separately and a live locale switch shows them (the recorded "keys exist ≠ ×12" lesson),
 with the translated-of-total figure on each document. Brief `S06-05`.
@@ -122,6 +123,7 @@ with the translated-of-total figure on each document. Brief `S06-05`.
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 verticals carried with their 2026-09-07 amendments; rows B–D from Q106/Q107/Q108's release statements | maintainer (answer sheet) · rows written by the session |
+| 2026-09-15 | **Premise correction from the brief-writing pass (row E):** the Help documents are TEN, not eight (`_DOCS` in `src/api/main.py:2558`: user-manual, quickstart, ethics, governance, security, design, roadmap, architecture, contributing, changes). The 167,022-character figure is the 2026-09-08 visual audit's measurement of the RENDERED Help tab (`docs/audit/ui-visual-2026-09-08/findings.csv:127`); the documents' source is larger (`docs/USER_MANUAL.md` alone is 180,594 bytes), so the ~2 M-character ×12 estimate is a floor, to be re-measured per tranche. The serving seam exists (`docs/i18n/<lang>/<file>`, one translated draft: `docs/i18n/fr/QUICKSTART.md`). No ruling changed. | session (`S06-05` §2, hand-verified) |
 
 ---
 

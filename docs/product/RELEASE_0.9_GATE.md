@@ -125,7 +125,9 @@ store and this row records what that means for the wiki tail walk's depth (0.5 r
 BLOCKING (V1-5), with the wiki, OSM and law lanes in the Windows matrix from the release each landed in (Q1019
 = a — `pyosmium` wheels for Windows are FROM MEMORY in the sheet and must be verified when the `[geo]` extra
 enters the matrix). **Closes when** `ci.yml` carries the lane without `continue-on-error` and it is green on
-the tagged tree (the recorded CI facts: the push lane on `main` has rarely completed — the artifact is a green
+the tagged tree (premise, 2026-09-15: the Windows leg HANGS — PRH-29 in `ci.yml:380–386`, 3 h 21 m to failure,
+capped at `timeout-minutes: 45` — and the bisect the cap defers is owed BEFORE the lane can block honestly;
+`sqlcipher-smoke` at `ci.yml:411–416` already runs `windows-latest` blocking) (the recorded CI facts: the push lane on `main` has rarely completed — the artifact is a green
 run on THIS tag's SHA, not "CI will catch it"). Brief `S09-01`.
 
 ### Row H — `POST_1.0_BACKLOG.md` · ruled (Q118 = a) · OPEN
@@ -148,6 +150,7 @@ resolves to a ruling id in `RULINGS_INDEX.md`. Brief `S09-01`.
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a): 0.9.0 = Beta 1 (Q101 = a), the freeze (Q102), public pre-release (Q103 = b), exit = V1 §8 only (Q104 = b), no dates (Q110 = c), the security and Windows rows, the backlog file; row F recorded PENDING on Q1009 | maintainer (answer sheet) · rows written by the session |
+| 2026-09-15 | **Premise corrections from the brief-writing pass:** (row G) the `portability` job (`ci.yml:371–387`) is `continue-on-error: true` with `timeout-minutes: 45` and the PRH-29 note that the Windows leg hangs (3 h 21 m to failure) — the cap does not fix the hang, a bisect against the suite is owed first, so "graduate to blocking" is bisect → green → blocking, in that order; `sqlcipher-smoke` (`ci.yml:411–416`) already runs `windows-latest` blocking. No `pyosmium` and no `[geo]` extra exist in `pyproject.toml` at `bebcef4` (Q1019's wheels stay FROM MEMORY). (row D) the "three widths of the 2026-09-09 sweep" are the 0.4 gate's §3 entry of that date (1440×900, 768×1024, 390×844); no audit DOCUMENT carries that date (the visual audit is `docs/audit/11_VISUAL_UI_AUDIT_2026-09-08.md`). (row B) the session clone is shallow (`git rev-parse --is-shallow-repository` = true), so release notes "from `shipped.csv` since the previous tag" need `git fetch --unshallow` first (CLAUDE.md protocol 5b's trap). No ruling changed. | session (`S09-01` §2, hand-verified) |
 
 ---
 

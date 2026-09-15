@@ -60,7 +60,9 @@ values** (Q1017 = a — V1-6: measured first); Help's body ×12 finished (Q1122 
 schema audited for what the beta freezes (Q102 = a: features + schema, only additive migrations after 0.9.0,
 the backup format, the consent model) — every column or table the lanes still expect to add lands here or is
 declared additive. **Closes when** the KPI board shows each lane's bar beside its recorded values with the
-method on hover, the Help coverage reads 12/12 on every document, and a written schema-freeze audit lists the
+method on hover (premise, 2026-09-15: today the "board" is the JSON snapshot `/api/diagnostics/kpi` plus the bundle
+member — no static file reads it, grep-verified; WHERE the bar renders is a placement NOTE for the maintainer,
+`S08-02` §6, not a ruling), the Help coverage reads 12/12 on every document, and a written schema-freeze audit lists the
 tables and the migrations after which only additive ones follow. **Operator:** the runs whose values set the
 bars. Brief `S08-02`.
 
@@ -71,6 +73,7 @@ bars. Brief `S08-02`.
 | Date | Change | Source |
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 vertical carried; the OSM seed recorded as pulled forward to 0.5/0.6; the schema-freeze clause written from Q102 = a | maintainer (answer sheet) · rows written by the session |
+| 2026-09-15 | **Premise correction from the brief-writing pass (row B):** `grep -rn kpi src/static/` finds nothing — the KPI board is `src/monitoring/kpi.py`'s snapshot served at `/api/diagnostics/kpi` and the diagnostics bundle member; the row's "shows each lane's bar … on hover" presupposes a rendering surface that does not exist at `bebcef4`. The row now says so; the surface's placement is listed in `S08-02` §6 as a NOTE the maintainer owes, never decided by the session. No ruling changed. | session (`S08-02` §2, hand-verified) |
 
 ---
 
