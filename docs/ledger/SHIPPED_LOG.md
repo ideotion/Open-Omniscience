@@ -7525,3 +7525,112 @@ D8). Docs-only; `CLAUDE.md` untouched.
   running server — a teardown that has already succeeded looks identical to one that cannot
   find its target, so confirm with the PORT (`curl` returning `000`) rather than with the
   kill's own exit code.
+
+- **THE MARKER A MECHANISM READS IS NAMED IN PROSE BY THE FILE THAT DEFINES IT, AND
+  `str.find` TAKES THE PROSE (2026-09-15, the release-notes verification bar — live on
+  the branch within the hour):** the generator reads the Q1128 bar out of
+  `RELEASE_0.4_GATE.md` behind `<!-- release-notes: verification-bar -->`, deliberately
+  rather than mirroring it. The same session then wrote a board-row status line saying
+  *"the citable sentence lives in §2 row F behind `<!-- release-notes:
+  verification-bar -->`"* — the most natural sentence in the world to write in the file
+  that defines the mechanism — and `text.find(_BAR_MARKER)` locked onto that mention
+  **270 lines above the real marker**, found no blockquote after it, and REFUSED. In
+  `release.yml`, under `set -euo pipefail`, that refusal blocks the entire
+  release-publish step, so the cost is not a bad document but no release at all.
+  **THE CLASS IS ALREADY IN THIS FILE FOUR TIMES** — a guard satisfied by the comment
+  that explains it, in JS, in Python, in CSS, in Markdown — and the recorded repair
+  transfers unchanged: **never reword the prose** (it is what a future reader needs),
+  **scope the match to the syntactic form the real thing takes.** Here that is a WHOLE
+  LINE: a marker alone on its line cannot be a mid-sentence mention. And require
+  EXACTLY ONE, so a second real marker is a loud refusal rather than a silent pick.
+  **WHAT MAKES THIS WORTH ITS OWN ENTRY IS THE ORDER OF EVENTS.** The guard for it
+  already existed and was GREEN when written; the prose that broke it was added an hour
+  LATER, by me, in a different file, and I did not re-run the test for the file I had
+  just made a claim about. The full suite caught it — 2 failed of 10,612, both of them
+  exactly the two tests that should fail — which is the argument for running the whole
+  suite after the LAST edit rather than after the last edit to `src/`. General form: a
+  reader that keys on a literal has a blast radius the size of every file that may
+  legitimately QUOTE that literal, and the file most likely to quote it is the one the
+  reader points at.
+- **A MUTATION THAT BREAKS THE MODULE'S SYNTAX IS A COLLECTION ERROR, WHICH A MATRIX
+  READS AS A KILL (2026-09-15, the same matrix):** the ledger records that naming a
+  non-existent test file makes every mutation "redden" and the matrix look perfect. The
+  same false verdict arrives from the other end: replacing `try:` with `if True:` leaves
+  the following `except` clause dangling, the module does not import, pytest exits
+  non-zero with *"found no collectors"*, and an exit-code-only harness prints KILLED.
+  The precheck the recorded lesson prescribes — run every selector unmutated first —
+  does **not** catch it, because unmutated the module imports fine; the breakage is
+  created by the mutation itself. So a matrix needs a THIRD verdict beside killed and
+  survived: **VOID**, for a run where nothing was collected, reported separately and
+  never counted as evidence about the guard. Re-targeted at a syntactically valid edit
+  (`except (...)` → `except ()`, which catches nothing) the same mutation killed
+  honestly, naming all three parametrised shapes.
+- **A TEST THAT PROVES THE MECHANISM IS NOT A TEST OF THE WIRING — AND THE `git` FAMILY
+  INVITES EXACTLY THAT SHAPE (2026-09-15, `previous_tag`'s `--first-parent`):** the
+  guard built a throwaway repository where a tag exists only on a merged side branch,
+  ran `git describe` with and without `--first-parent`, and asserted the two differ. It
+  passes, it is true, and it **SURVIVED** the mutation that drops `--first-parent` from
+  the shipped function — because it never called the shipped function. This is the
+  recorded helper-versus-wiring defect, and the reason the `git` case is worth naming
+  separately is that reproducing the underlying tool's behaviour feels like the whole
+  test: the fixture is the expensive part, the assertion writes itself, and the
+  production call is the easy line to leave out. Drive the real function against the
+  fixture (`monkeypatch.setattr(mod, "_ROOT", repo)` here), keep the direct `git`
+  invocation as an ANTI-VACUITY assertion that the fixture genuinely reproduces the
+  defect, and the mutation then fails by name.
+- **A GENERATOR THAT REFUSES ON A DIRTY TREE MUST NOT WRITE ITS OUTPUT INTO THAT TREE
+  (2026-09-15):** `release_notes.py` refuses a dirty tree, correctly — the notes name a
+  SHA and must describe it. Its own default output landed in the repository root, so a
+  maintainer running the documented local dry run twice got a refusal on the second
+  attempt, caused by the first. CI never sees it (a fresh checkout, and the generator
+  runs before anything else writes), which is exactly the shape that reaches a human
+  and not a lane. General form: when a tool asserts a precondition about its
+  environment, check whether the tool's own output violates it — and prefer ignoring
+  the artifact to relaxing the precondition, because the precondition is the feature.
+- **A FIELD FROM A LEDGER IS PROSE, AND THREE SHAPES IN IT RESTRUCTURE THE DOCUMENT IT
+  IS PRINTED IN (2026-09-15, found by an adversarial pass over the real 997 rows):**
+  interpolating `shipped.csv` fields into Markdown, three characters are structural and
+  none was handled. (a) A **backtick** opens a code span that closes at the next
+  backtick run *anywhere later in the document* — so one stray backtick pairs with the
+  following bullet's opening one and swallows that bullet's own `- ` list marker, which
+  stops it being a list item at all. (b) A **newline** in a field that is not clipped
+  (`area`, `refs` — the flattening lived inside `_clip`, so only the two clipped fields
+  had it) ends the list item, and the next line at column 0 beginning `# ` is a real ATX
+  heading in the published release body. (c) **Angle brackets** are inline raw HTML, and
+  ten real rows carry them today including one whose `item` names `<style>`/`<script>` —
+  raw-text elements that swallow everything up to a closing tag the document does not
+  contain. All three were latent rather than live, and the reason is worth stating: all
+  997 rows happen to carry EVEN backtick counts and no newlines, so the document is safe
+  **by coincidence in the data, not by anything in the code**. THREE RULES. Backslash-
+  escaping is the repair that keeps the text (`\\``, `\\<`, `\\>` render as the literal
+  characters and carry no structure), so nothing is dropped and the reader still sees
+  what the ledger says. A code span ignores backslash escapes, so a field rendered AS
+  one needs the CommonMark fence construction instead (one backtick longer than the
+  longest run inside, space-padded at the edges). And measure a length cap on the SOURCE
+  text, never the escaped form: escaping is invisible to a reader, so charging it
+  against a budget clips two fields of the same real length differently by their
+  punctuation alone. COROLLARY on which fields get handled: the first cut sanitised the
+  two fields that happened to pass through `_clip`. Handle a field by what it IS, never
+  by whether some other function touched it on the way past.
+- **A NUMBER IN A COMMENT CARRIES ITS POPULATION OR IT IS A GUESS (2026-09-15):** the
+  generator's cap constants were justified by a comment reading *"`item` runs to 2,523
+  characters in the real ledger and `status` to 372"*. Both are wrong about the ledger:
+  the real maxima are **3,970** and **490**. They are right about the 244 rows in one
+  tag's range, which is what I had measured, written as though it described the file.
+  Nothing depended on the figures, which is precisely why nobody would ever re-derive
+  them — the recorded rule that a comment stating a number derived from something in the
+  tree wants a guard, with the cheaper half available always: say WHICH population you
+  measured, in the sentence.
+- **STDERR ALWAYS SORTS AFTER STDOUT IN A CONCATENATION, WHATEVER THE CLOCK SAID
+  (2026-09-15, the no-telemetry summary line):** the ratchet's result was scraped by
+  concatenating `proc.stdout + proc.stderr` and scanning BACKWARD for the last line
+  matching pytest's vocabulary. Since stderr text is always positioned last regardless
+  of when it was written, an unrelated interpreter-shutdown `ResourceWarning` becomes
+  "the result" of a re-check of a legally-binding claim — reported beside a green exit
+  code, so it reads as a pass with an odd summary rather than as a broken instrument.
+  Read the streams SEPARATELY and give each the question it can answer: stdout carries
+  the VERDICT, stderr usually carries the REASON (`ERROR: file or directory not found`,
+  which a case-sensitive pattern also misses because pytest writes it in capitals).
+  Reporting only the verdict is true and useless; letting the reason override it is the
+  hijack. Keep both, and gate the append on a non-zero exit so a passing run's stray
+  warning can never reach the notes at all.

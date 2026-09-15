@@ -75,6 +75,7 @@ import re
 import subprocess
 import sys
 from collections import OrderedDict
+from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -90,9 +91,12 @@ _BAR_MARKER = "<!-- release-notes: verification-bar -->"
 #: A row's ``date`` is only usable as a range key in this exact shape.
 _ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-#: ``item`` runs to 2,523 characters in the real ledger and ``status`` to 372; printing
-#: either whole turns the notes into the CSV. The cap bounds what is LISTED and is
-#: disclosed in the accounting — it never bounds a reported COUNT (the anti-capping rule).
+#: Measured over ALL 997 rows of the real ledger on 2026-09-15: ``item`` runs to 3,970
+#: characters, ``status`` to 490, ``refs`` to 365 and ``area`` to 145. (An earlier
+#: comment here said 2,523 / 372 — true of the 244 rows in one tag's range, written as
+#: though it described the file. A measurement carries its population or it is a guess.)
+#: Printing any of them whole turns the notes into the CSV. The cap bounds what is
+#: LISTED and is disclosed in the accounting — it never bounds a reported COUNT.
 _ITEM_CAP = 200
 _STATUS_CAP = 60
 
@@ -163,23 +167,60 @@ def resolve_tag(tag: str | None) -> str:
 
 
 def previous_tag(tag: str) -> str | None:
-    """The nearest ``v*`` tag reachable from the tag's first parent, excluding itself.
+    """The nearest ``v*`` tag on the tag's FIRST-PARENT history, excluding itself.
 
-    ``None`` means this is the first tagged release in the reachable history — a real
-    state, reported as such rather than silently treated as "everything".
+    ``--first-parent`` is the ruling, not a detail: without it, ``git describe`` walks
+    into merged side branches, and a ``v*`` tag that only ever existed on one of them
+    is named as "the previous release". Demonstrated on a constructed history — a tag
+    cut on a side branch and merged in is what the plain form returns, while the
+    first-parent form correctly finds nothing there. CLAUDE.md rule (5b)'s own
+    archaeology is first-parent for the same reason: the mainline is what released.
+    Re-checked against this repo's real tags, where both forms answer ``v0.2.0``.
+
+    ``None`` means this is the first tagged release on that history — a real state,
+    reported as such rather than silently treated as "everything".
     """
     prev = _git(
-        "describe", "--tags", "--abbrev=0", "--match", "v*", f"{tag}^", check=False
+        "describe", "--tags", "--abbrev=0", "--first-parent", "--match", "v*",
+        f"{tag}^", check=False,
     )
     return prev or None
 
 
+def utc_day(iso: str) -> str:
+    """One ISO-8601 timestamp WITH an offset -> its UTC calendar day.
+
+    Split out so the conversion is one pure, testable step rather than an argument to
+    ``git log``. A timestamp with no offset is REFUSED: reading it as local time is
+    exactly the defect below, wearing a default.
+    """
+    try:
+        stamp = datetime.fromisoformat(iso.strip())
+    except ValueError as exc:
+        raise ReleaseNotesError(f"not an ISO-8601 committer date: {iso!r}") from exc
+    if stamp.tzinfo is None:
+        raise ReleaseNotesError(
+            f"committer date carries no timezone: {iso!r} — refusing rather than "
+            "assuming the local one, which is the whole defect this guards"
+        )
+    return stamp.astimezone(UTC).date().isoformat()
+
+
 def commit_day(ref: str) -> str:
-    """The committer date of the commit a ref points at, UTC, ``YYYY-MM-DD``."""
-    iso = _git("log", "-1", "--format=%cd", "--date=format-local:%Y-%m-%d", ref)
-    if not _ISO_DAY.match(iso):
-        raise ReleaseNotesError(f"could not read a committer date for {ref!r}: {iso!r}")
-    return iso
+    """The committer date of the commit a ref points at, as a **UTC** calendar day.
+
+    UTC EXPLICITLY, and the reason is a defect live-reproduced through this very
+    function rather than reasoned about: ``git log --date=format-local`` renders in the
+    PROCESS's timezone, so `v0.3.0` — committed ``2026-08-23T14:39:48+02:00``, i.e.
+    12:39 UTC — reads **2026-08-23** under ``TZ=UTC0`` and **2026-08-24** under
+    ``TZ=Pacific/Auckland``. That is a different cutoff day, and therefore a different
+    set of ledger rows claimed by the same release, decided by whichever machine
+    happened to generate the notes. A CI runner is UTC and would never have shown it.
+
+    ``%cI`` carries the commit's own offset, so the conversion happens here, once, and
+    gives the same answer everywhere.
+    """
+    return utc_day(_git("log", "-1", "--format=%cI", ref))
 
 
 # --------------------------------------------------------------------------- #
@@ -280,17 +321,33 @@ def outbound_call_sites(path: Path = _CONSENT_TEST) -> tuple[dict[str, str], tup
     sites: dict[str, str] | None = None
     covered: tuple[str, ...] | None = None
     for node in tree.body:
-        target = None
+        target, value = None, None
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             target, value = node.target.id, node.value
         elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             target, value = node.targets[0].id, node.value
         if target is None or value is None:
             continue
+        if target not in ("_ALLOWED_SOCKET_IMPORTERS", "_SOCKET_CAPABLE_MODULES"):
+            continue
+        try:
+            literal = ast.literal_eval(value)
+        except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError) as exc:
+            # A dict() call, a comprehension or an f-string value is a shape this
+            # reader cannot evaluate. The docstring promises a REFUSAL; letting
+            # literal_eval's own ValueError escape gives a traceback and an exit code
+            # this tool never chose, which in a CI log reads as a crash rather than as
+            # the actionable "go re-derive the reader" it is.
+            raise ReleaseNotesError(
+                f"{path}: `{target}` is not a literal this reader can evaluate "
+                f"({type(exc).__name__}: {exc}). It is the list of outbound call sites "
+                "the notes must state; re-derive the reader against the file's new "
+                "shape rather than letting this generator guess."
+            ) from exc
         if target == "_ALLOWED_SOCKET_IMPORTERS":
-            sites = ast.literal_eval(value)
-        elif target == "_SOCKET_CAPABLE_MODULES":
-            covered = tuple(ast.literal_eval(value))
+            sites = literal
+        else:
+            covered = tuple(literal)
     if not isinstance(sites, dict) or not sites:
         raise ReleaseNotesError(
             f"could not read `_ALLOWED_SOCKET_IMPORTERS` out of {path}. It is the list "
@@ -319,7 +376,10 @@ class TelemetryCheck:
         return self.returncode is not None
 
 
-_SUMMARY_LINE = re.compile(r"^.*\b(passed|failed|error|no tests ran)\b.*$", re.M)
+#: pytest's own summary vocabulary. CASE-INSENSITIVE on purpose: pytest writes
+#: ``ERROR: file or directory not found: ...`` in capitals, on STDERR, and a
+#: case-sensitive pattern reads straight past the one line that says what went wrong.
+_SUMMARY_LINE = re.compile(r"^.*\b(passed|failed|error|errors|no tests ran)\b.*$", re.M | re.I)
 
 
 def run_telemetry_check(mode: str, node: str) -> TelemetryCheck:
@@ -338,15 +398,32 @@ def run_telemetry_check(mode: str, node: str) -> TelemetryCheck:
             "will not state it without a run. Use --telemetry-check skip to say "
             "plainly that it was not re-checked."
         ) from exc
-    out = (proc.stdout or "") + (proc.stderr or "")
-    hits = _SUMMARY_LINE.findall(out)
-    summary = ""
-    for line in reversed(out.splitlines()):
-        if _SUMMARY_LINE.match(line):
-            summary = line.strip().strip("= ")
-            break
-    if not hits:
-        summary = summary or "(pytest produced no summary line)"
+    # STDOUT FIRST, as its own stream. The first cut concatenated stdout + stderr and
+    # scanned BACKWARD for the last keyword match -- and since stderr text always lands
+    # after stdout text in that concatenation regardless of when it was actually
+    # written, an unrelated interpreter-shutdown ResourceWarning on stderr silently
+    # became "the result" of a legally-binding no-telemetry re-check. pytest writes its
+    # verdict to stdout; stderr is the fallback for the case where it never got that
+    # far (a missing node, an import error), and the stream is NAMED either way so a
+    # reader can tell which one answered.
+    def _last_match(blob: str) -> str:
+        for line in reversed(blob.splitlines()):
+            if _SUMMARY_LINE.match(line):
+                return line.strip().strip("= ")
+        return ""
+
+    summary = _last_match(proc.stdout or "")
+    err = _last_match(proc.stderr or "")
+    if not summary:
+        # pytest never got as far as a verdict (a missing node, an import error).
+        summary = err or "(pytest produced no summary line)"
+    elif proc.returncode != 0 and err and err != summary:
+        # A FAILED run keeps both: stdout carries the verdict ("no tests ran in 0.10s")
+        # and stderr usually carries the REASON ("ERROR: file or directory not found").
+        # Reporting only the first is true and useless; only the second lets an
+        # unrelated warning stand in for the result. Gated on a non-zero exit, so a
+        # passing run's stray warning can never reach the notes at all.
+        summary = f"{summary} — stderr: {err}"
     return TelemetryCheck(
         mode=mode, command=cmd, returncode=proc.returncode, summary=summary
     )
@@ -356,18 +433,43 @@ def run_telemetry_check(mode: str, node: str) -> TelemetryCheck:
 # the verification bar (read from the gate, never mirrored)
 # --------------------------------------------------------------------------- #
 def verification_bar(path: Path = _GATE) -> str:
-    """The one sentence every surface cites, read from the gate file behind its marker."""
+    """The one sentence every surface cites, read from the gate file behind its marker.
+
+    THE MARKER IS MATCHED AS A WHOLE LINE, and this is the load-bearing part rather
+    than a tidy-up. The first cut used ``text.find(_BAR_MARKER)`` and broke the SAME
+    DAY it was written: the gate's own board table gained a row-status line saying
+    *"the citable sentence lives in §2 row F behind `<!-- release-notes:
+    verification-bar -->`"* — an entirely natural sentence to write in the file that
+    DEFINES the mechanism — and ``find`` locked onto that prose mention 270 lines above
+    the real marker, found no blockquote after it, and refused. In ``release.yml``,
+    under ``set -euo pipefail``, that refusal blocks the whole release-publish step.
+
+    It is the recorded trap of a guard satisfied by its own explanation, and the
+    recorded repair applies unchanged: **never reword the prose** — that sentence is
+    what a future reader needs — scope the match to the syntactic form the real thing
+    takes. A marker on its own line cannot be a mid-sentence mention, and requiring
+    EXACTLY ONE means a second real marker is a loud refusal rather than a silent pick.
+    """
     text = path.read_text(encoding="utf-8")
-    idx = text.find(_BAR_MARKER)
-    if idx < 0:
+    lines_all = text.splitlines()
+    hits = [i for i, line in enumerate(lines_all) if line.strip() == _BAR_MARKER]
+    if not hits:
         raise ReleaseNotesError(
-            f"{path} carries no {_BAR_MARKER!r}. The verification bar (Q1128 = a) lives "
-            "in the gate and is quoted from there; this generator will not mirror it."
+            f"{path} carries no line that is exactly {_BAR_MARKER!r}. The verification "
+            "bar (Q1128 = a) lives in the gate and is quoted from there; this generator "
+            "will not mirror it. (A mention of the marker inside a sentence is "
+            "deliberately NOT a match.)"
+        )
+    if len(hits) > 1:
+        raise ReleaseNotesError(
+            f"{path} carries {len(hits)} lines that are exactly {_BAR_MARKER!r} "
+            f"(lines {', '.join(str(i + 1) for i in hits)}). The bar has ONE home; "
+            "refusing rather than silently picking one of them."
         )
     # The contiguous blockquote that immediately follows the marker, blank lines
     # between the two tolerated. Anything else ends the quote.
     lines: list[str] = []
-    for line in text[idx + len(_BAR_MARKER):].splitlines():
+    for line in lines_all[hits[0] + 1:]:
         if not line.strip() and not lines:
             continue
         if line.startswith(">"):
@@ -386,8 +488,71 @@ def verification_bar(path: Path = _GATE) -> str:
 # --------------------------------------------------------------------------- #
 # rendering
 # --------------------------------------------------------------------------- #
+#: Every line ending CommonMark recognises — including a LONE ``\r``, which is a valid
+#: line ending there and which a ``\r\n``-then-``\n`` pair of replacements walks past.
+_LINE_ENDINGS = re.compile(r"\r\n|\r|\n")
+
+#: The characters that let a ledger field restructure the document it is printed in.
+#: ``\`` first, so the escapes added below are not themselves re-escaped.
+_MD_STRUCTURAL = ("\\", "`", "<", ">")
+
+
+def _flatten(value: str) -> str:
+    """One field's raw text as ONE line, still verbatim."""
+    return _LINE_ENDINGS.sub(" ", value or "").strip()
+
+
+def _md_text(value: str) -> str:
+    """A ledger field, safe to interpolate into Markdown, with its text preserved.
+
+    Ledger fields are PROSE written by sessions, not markup, and three shapes in them
+    can restructure the release body. All three were verified against the real ledger
+    rather than imagined:
+
+    * a **backtick** opens a code span that closes at the next backtick run *anywhere
+      later in the document* — so one stray backtick swallows the following bullet's
+      own ``- `` list marker and that row stops being a list item. Today's 997 rows all
+      carry even counts, so this is latent by luck, not by any guard.
+    * a **newline** in ``area`` or ``refs`` (which are not clipped, so nothing was
+      flattening them) ends the list item, and the next line at column 0 starting ``# ``
+      is a real ATX heading in the release body.
+    * **angle brackets** are inline raw HTML. Ten real rows carry them today, including
+      one whose ``item`` names ``<style>``/``<script>`` — raw-text elements that swallow
+      everything up to a closing tag this document does not contain.
+
+    Backslash-escaping is the repair that keeps the text: ``\\```, ``\\<`` and ``\\>``
+    render as the literal characters and carry no structure. Nothing is dropped, so a
+    reader sees what the ledger says.
+    """
+    out = _flatten(value)
+    for ch in _MD_STRUCTURAL:
+        out = out.replace(ch, "\\" + ch)
+    return out
+
+
+def _code_span(value: str) -> str:
+    """``value`` as a Markdown code span, fenced long enough to contain it.
+
+    A code span ignores backslash escapes, so ``_md_text`` cannot be used here. The
+    CommonMark construction instead: a fence one backtick longer than the longest run
+    inside, padded with spaces when the content starts or ends with one. ``area`` has
+    never contained a backtick in 997 rows — this is so that the day one does, the
+    field renders rather than breaking the line.
+    """
+    runs = max((len(m) for m in re.findall(r"`+", value)), default=0)
+    fence = "`" * (runs + 1)
+    pad = " " if value.startswith("`") or value.endswith("`") else ""
+    return f"{fence}{pad}{value}{pad}{fence}"
+
+
 def _clip(value: str, cap: int) -> tuple[str, bool]:
-    value = (value or "").strip().replace("\r\n", " ").replace("\n", " ")
+    """Flatten, then clip to ``cap`` and mark the clip. Escaping happens AFTER.
+
+    The cap is measured on the SOURCE text, never on the escaped form: escaping is
+    invisible to a reader, so charging it against a length budget would silently clip
+    two fields of the same real length differently depending on their punctuation.
+    """
+    value = _flatten(value)
     if len(value) <= cap:
         return value, False
     return value[: cap - 1].rstrip() + "…", True
@@ -422,16 +587,26 @@ def group_rows(
 
 
 def _bullet(row: dict[str, str], clipped: dict[str, int]) -> str:
-    area = (row.get("area") or "").strip()
+    """One row as one bullet. EVERY interpolated field goes through a sanitiser.
+
+    The first cut flattened only ``item`` and ``status`` — because those are the two
+    that are clipped, and the flattening happened to live inside ``_clip``. ``area``
+    and ``refs`` were interpolated raw, which is how a newline in either one escaped
+    the bullet entirely. Fields are handled by what they ARE, never by whether some
+    other function happened to touch them on the way past.
+    """
+    raw_area = _flatten(row.get("area") or "")
     item, item_clipped = _clip(row.get("item") or "", _ITEM_CAP)
     status, status_clipped = _clip(row.get("status") or "", _STATUS_CAP)
-    refs = (row.get("refs") or "").strip()
+    refs = _md_text(row.get("refs") or "")
+    date = _flatten(row.get("date") or "")
     if item_clipped:
         clipped["item"] += 1
     if status_clipped:
         clipped["status"] += 1
-    parts = [f"`{area}` — {item}" if area else item]
-    tail = [p for p in ((row.get("date") or "").strip(), status, refs) if p]
+    item, status = _md_text(item), _md_text(status)
+    parts = [f"{_code_span(raw_area)} — {item}" if raw_area else item]
+    tail = [p for p in (date, status, refs) if p]
     if tail:
         parts.append(" · ".join(tail))
     return "- " + " — ".join(parts)
@@ -646,6 +821,12 @@ def build(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
         "telemetry_mode": telemetry.mode,
         "telemetry_returncode": telemetry.returncode,
         "outbound_call_sites": len(sites),
+        # Published because a GitHub release body has a maximum length and this one
+        # grows with the ledger: 106,197 bytes for v0.2.0 -> v0.3.0. No threshold is
+        # hard-coded — the limit was not verifiable from here, and a guessed ceiling
+        # would be the fabricated constant this project refuses. The NUMBER is the
+        # honest thing to publish, so whoever prepares a tag can see it.
+        "body_bytes": len(body.encode("utf-8")),
     }
     return body, accounting
 
@@ -691,6 +872,11 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.output).write_text(body, encoding="utf-8")
     else:
         sys.stdout.write(body)
+    print(
+        f"release_notes: {accounting['in_range']} row(s) in range, "
+        f"{accounting['body_bytes']} bytes",
+        file=sys.stderr,
+    )
     if args.json:
         print(json.dumps(accounting, indent=2, sort_keys=True), file=sys.stderr)
     # A ratchet that RAN and FAILED must not publish as though it had not.

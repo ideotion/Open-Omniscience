@@ -34,6 +34,8 @@ from __future__ import annotations
 import csv
 import importlib.util
 import io
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -100,6 +102,32 @@ def _write_csv(path: Path, rows, *, crlf: bool = False, extra=()) -> Path:
         w.writerow(r)
     path.write_bytes(buf.getvalue().encode("utf-8"))
     return path
+
+
+def _accounting(*, returncode: int) -> dict:
+    """An accounting dict shaped like the one ``build`` really returns.
+
+    Deliberately not a two-key stub: a double that omits a field production always
+    supplies sends the code under test down a path production never takes, and the
+    repair for that belongs in the double rather than in a `.get()` that papers over
+    it in `main`. Keys here mirror `build`'s own return.
+    """
+    return {
+        "tag": "v9.9.9", "tag_day": _TAG_DAY, "previous_tag": "v9.9.8",
+        "previous_day": _PREV_DAY, "unshallowed": False, "in_range": 3, "boundary": 1,
+        "after_tag": 0, "undated": 0, "telemetry_mode": "run",
+        "telemetry_returncode": returncode, "outbound_call_sites": 9, "body_bytes": 5,
+    }
+
+
+def test_the_accounting_double_matches_what_build_really_returns():
+    """Pins the double to production's own key set, so it cannot drift into describing
+    an accounting `build` could never produce."""
+    import inspect
+
+    src = inspect.getsource(rn.build)
+    for key in _accounting(returncode=0):
+        assert f'"{key}"' in src, f"the double invents a key build never sets: {key}"
 
 
 def _selection(tag="v9.9.9", prev="v9.9.8", prev_day=_PREV_DAY, tag_day=_TAG_DAY):
@@ -453,18 +481,14 @@ def test_a_failing_ratchet_is_reported_as_FAILED_and_exits_non_zero(monkeypatch,
     )
     assert "exit **1** (FAILED)" in body and "1 failed" in body
 
-    monkeypatch.setattr(
-        rn,
-        "build",
-        lambda args: ("body\n", {"telemetry_returncode": 1}),
-    )
+    monkeypatch.setattr(rn, "build", lambda args: ("body\n", _accounting(returncode=1)))
     out = tmp_path / "n.md"
     assert rn.main(["--tag", "v9.9.9", "-o", str(out)]) == 1
 
 
 def test_a_passing_ratchet_exits_zero(monkeypatch, tmp_path):
     """The twin: an exit code that is always non-zero blocks every release."""
-    monkeypatch.setattr(rn, "build", lambda args: ("body\n", {"telemetry_returncode": 0}))
+    monkeypatch.setattr(rn, "build", lambda args: ("body\n", _accounting(returncode=0)))
     out = tmp_path / "n.md"
     assert rn.main(["--tag", "v9.9.9", "-o", str(out)]) == 0
     assert out.read_text(encoding="utf-8") == "body\n"
@@ -487,19 +511,30 @@ def test_the_ratchet_run_captures_the_REAL_exit_code_and_summary(tmp_path):
 def test_the_notes_name_every_outbound_call_site_with_its_reason(tmp_path):
     """A count with no names is not an enumeration. The notes carry each path AND the
     sentence recorded beside it, because the reason is what a reader checks."""
-    sites = {"src/a.py": "reason A, long enough to say something", "src/b.py": "reason B, also long enough"}
+    sites = {
+        "src/a.py": "reason A, long enough to say something",
+        "src/b.py": "reason B, also long enough",
+        "src/c.py": "reason C, so the two counts differ",
+    }
+    covered = ("socket", "requests")
     body = rn.render(
         _selection(),
         group_by="segment",
         telemetry=rn.TelemetryCheck(mode="skip"),
         sites=sites,
-        covered=("socket", "requests"),
+        covered=covered,
         bar="a bar",
         head_sha="deadbeef",
     )
     for path, reason in sites.items():
         assert f"`{path}` — {reason}" in body
-    assert "**2**" in body and "2 socket-capable libraries" in body
+    # The two counts are DIFFERENT lengths on purpose. With both at 2 the assertion
+    # `"**2**" in body` reads as a claim about `sites` and is in fact ambiguous between
+    # them — it survives today only because one count is bolded and the other is not,
+    # which is a rendering detail an edit could flip without turning anything red.
+    assert len(sites) != len(covered), "the fixture must be able to tell the two apart"
+    assert f"**{len(sites)}**" in body
+    assert f"{len(covered)} socket-capable libraries" in body
 
 
 # --------------------------------------------------------------------------- #
@@ -669,3 +704,296 @@ def test_the_release_checkout_fetches_enough_history_for_the_previous_tag():
         s for s in _release_steps() if "actions/checkout" in (s.get("uses") or "")
     )
     assert str(checkout.get("with", {}).get("fetch-depth")) == "0"
+
+
+# --------------------------------------------------------------------------- #
+# 8. the adversarial round — nine findings, each with the guard it earned
+#
+# Every test below exists because a defect was REPRODUCED, not imagined. Finding 1
+# was live on this branch when it was found: the generator refused, and in
+# `release.yml` under `set -euo pipefail` that refusal blocks the whole
+# release-publish step.
+# --------------------------------------------------------------------------- #
+def test_a_PROSE_MENTION_of_the_marker_does_not_hijack_the_bar(tmp_path):
+    """The regression that was live. `str.find` takes the FIRST textual occurrence, and
+    the gate's own board table names the marker in a sentence 270 lines above the real
+    one — which is exactly the sentence a reader needs. The repair is never to reword
+    that prose; it is to match the marker as a whole LINE, which a mid-sentence mention
+    can never be."""
+    fake = tmp_path / "gate.md"
+    fake.write_text(
+        f"| F | row | the citable sentence lives behind `{rn._BAR_MARKER}` |\n"
+        "\nsome other section\n\n"
+        f"{rn._BAR_MARKER}\n> the real bar.\n",
+        encoding="utf-8",
+    )
+    assert rn.verification_bar(fake) == "the real bar."
+
+
+def test_TWO_real_markers_are_a_refusal_not_a_silent_pick(tmp_path):
+    """The bar has one home. Two line-anchored markers mean somebody split it, and
+    picking the first silently would publish whichever happened to sort earlier."""
+    fake = tmp_path / "gate.md"
+    fake.write_text(
+        f"{rn._BAR_MARKER}\n> bar one.\n\n{rn._BAR_MARKER}\n> bar two.\n", encoding="utf-8"
+    )
+    with pytest.raises(rn.ReleaseNotesError, match="2 lines"):
+        rn.verification_bar(fake)
+
+
+def test_the_real_gate_carries_exactly_one_line_anchored_marker():
+    """The property the fix rests on, asserted against the real file rather than a
+    fixture — this is what was false when the defect was live."""
+    lines = _GATE.read_text(encoding="utf-8").splitlines()
+    exact = [line for line in lines if line.strip() == rn._BAR_MARKER]
+    mentions = [line for line in lines if rn._BAR_MARKER in line]
+    assert len(exact) == 1, "the bar has one home"
+    assert len(mentions) > len(exact), (
+        "the gate is expected to also MENTION the marker in prose — that mention is "
+        "what broke the first reader, and this guard exists to keep it harmless"
+    )
+    assert rn.verification_bar() == (
+        "Chromium in the sandbox + the maintainer's click-through = verified; "
+        "Gecko best-effort."
+    )
+
+
+@pytest.mark.parametrize(
+    ("iso", "want"),
+    [
+        ("2026-08-23T14:39:48+02:00", "2026-08-23"),  # the real v0.3.0 commit
+        ("2026-08-24T00:39:48+12:00", "2026-08-23"),  # past midnight east -> previous
+        ("2026-08-23T20:10:00-05:00", "2026-08-24"),  # evening west -> next
+        ("2026-08-23T12:00:00Z", "2026-08-23"),
+    ],
+)
+def test_utc_day_crosses_midnight_in_both_directions(iso, want):
+    """Both directions, because a conversion that is right in one is a sign flip away
+    from being wrong in the other."""
+    assert rn.utc_day(iso) == want
+
+
+def test_a_timestamp_with_no_offset_is_refused_not_assumed_local():
+    """Assuming the local zone is the whole defect, wearing a default."""
+    with pytest.raises(rn.ReleaseNotesError, match="no timezone"):
+        rn.utc_day("2026-08-23T12:00:00")
+
+
+def test_commit_day_is_the_SAME_under_two_process_timezones():
+    """The discriminating test, and the one the old code fails.
+
+    `git log --date=format-local` renders in the PROCESS's timezone, so the same tag
+    gave `2026-08-23` under TZ=UTC0 and `2026-08-24` under TZ=Pacific/Auckland — a
+    different cutoff day, a different set of ledger rows claimed by the same release,
+    decided by whichever machine generated the notes. A CI runner is UTC and would
+    never have shown it; the script's own docstring recommends a local dry run, which
+    is exactly where it bites. Driven in SUBPROCESSES because the timezone is process
+    state that `time.tzset()` cannot un-see for an already-imported module.
+    """
+    prog = (
+        "import importlib.util, sys;"
+        f"spec=importlib.util.spec_from_file_location('rn', {str(_SCRIPT)!r});"
+        "m=importlib.util.module_from_spec(spec);sys.modules['rn']=m;"
+        "spec.loader.exec_module(m);print(m.commit_day('v0.3.0'))"
+    )
+    out = {}
+    for tz in ("UTC0", "Pacific/Auckland", "America/Los_Angeles"):
+        proc = subprocess.run(
+            [sys.executable, "-c", prog],
+            cwd=_ROOT, capture_output=True, text=True, env={**os.environ, "TZ": tz},
+        )
+        assert proc.returncode == 0, proc.stderr
+        out[tz] = proc.stdout.strip()
+    assert len(set(out.values())) == 1, f"the cutoff day moved with the timezone: {out}"
+    assert out["UTC0"] == "2026-08-23"
+
+
+# --------------------------------------------------------------------------- #
+# A ledger field is PROSE, and three shapes in it can restructure the document.
+# --------------------------------------------------------------------------- #
+def _one_bullet(**row) -> str:
+    base = {"date": "2026-08-10", "area": "x/one", "item": "i", "status": "s", "refs": "r"}
+    return rn._bullet({**base, **row}, {"item": 0, "status": 0})
+
+
+def test_a_stray_backtick_cannot_open_a_span_that_swallows_the_next_row():
+    """A code span closes at the next backtick run ANYWHERE later in the document, so
+    one stray backtick pairs with the following bullet's opening one and everything
+    between them — including that bullet's own `- ` list marker — becomes code. The
+    real ledger's 997 rows all carry even counts, so this is latent by luck."""
+    line = _one_bullet(item="a stray backtick right here ` never closed")
+    assert "\\`" in line, "the backtick must be escaped, not emitted raw"
+    unescaped = re.findall(r"(?<!\\)`+", line)
+    assert len(unescaped) % 2 == 0, f"unbalanced code span in: {line}"
+
+
+def test_a_newline_in_area_or_refs_cannot_inject_a_block():
+    """`area` and `refs` are not clipped, so nothing was flattening them — a blank line
+    plus `# ` at column 0 is a real ATX heading in the release body. Fields are handled
+    by what they ARE, not by whether some other function touched them on the way past."""
+    for field_name in ("area", "refs"):
+        line = _one_bullet(**{field_name: "PR #1\n\n# Forged heading injected\n\nmore"})
+        assert "\n" not in line, f"{field_name} escaped its bullet: {line!r}"
+        assert line.startswith("- ")
+
+
+def test_a_lone_CR_is_flattened_too():
+    """A lone `\\r` is a valid CommonMark line ending, and a `\\r\\n`-then-`\\n` pair of
+    replacements walks straight past it."""
+    line = _one_bullet(item="before\rafter")
+    assert "\r" not in line and "before after" in line
+
+
+def test_angle_brackets_are_escaped_rather_than_passed_through_as_raw_html():
+    """Inline `<style>`/`<script>` are raw-text elements: an unclosed one swallows
+    everything up to a closing tag this document does not contain. This is not
+    hypothetical — the row below is in the real ledger."""
+    line = _one_bullet(item="The <style>/<script> strip was quadratic")
+    assert "\\<style\\>" in line and "<style>" not in line.replace("\\<", "").replace("\\>", "<")
+    assert not re.search(r"(?<!\\)<", line)
+
+
+def test_an_area_containing_a_backtick_still_renders_as_a_code_span():
+    """A code span ignores backslash escapes, so `area` needs the CommonMark fence
+    construction instead. No real area has ever contained a backtick — this is so the
+    day one does, the field renders rather than breaking the line."""
+    line = _one_bullet(area="odd/`tick`")
+    assert "`` odd/`tick` ``" in line
+
+
+def test_the_cap_is_measured_on_the_SOURCE_text_not_the_escaped_form():
+    """Escaping is invisible to a reader, so charging it against a length budget would
+    clip two fields of the same real length differently by their punctuation alone."""
+    plain, clipped_plain = rn._clip("a" * rn._ITEM_CAP, rn._ITEM_CAP)
+    ticky, clipped_ticky = rn._clip("`" * rn._ITEM_CAP, rn._ITEM_CAP)
+    assert clipped_plain is False and clipped_ticky is False
+    assert len(plain) == len(ticky) == rn._ITEM_CAP
+
+
+def test_the_real_ledger_renders_with_balanced_spans_and_no_raw_html():
+    """The property over the REAL data, not a fixture: every code span in a real
+    release body closes, and no field reaches the reader as raw HTML."""
+    sel = rn.select(
+        rn.read_rows(_REAL_CSV),
+        rn.Selection(tag="v0.3.0", tag_day="2026-08-23", prev_tag="v0.2.0", prev_day="2026-07-18"),
+    )
+    body = rn.render(
+        sel, group_by="segment", telemetry=rn.TelemetryCheck(mode="skip"),
+        sites={"src/x.py": "a reason long enough to be a reason"}, covered=("socket",),
+        bar="a bar", head_sha="deadbeef",
+    )
+    bullets = "\n".join(ln for ln in body.splitlines() if ln.startswith("- `"))
+    assert len(re.findall(r"(?<!\\)`+", bullets)) % 2 == 0, "an unterminated code span"
+    assert not re.search(r"(?<!\\)<", bullets), "raw HTML reached a bullet"
+    assert "\r" not in body
+
+
+# --------------------------------------------------------------------------- #
+# The refusals that were raw crashes, and the history walk that was not first-parent.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "shape",
+    [
+        '_ALLOWED_SOCKET_IMPORTERS: dict[str, str] = dict([("a", "b")])',
+        '_ALLOWED_SOCKET_IMPORTERS: dict[str, str] = {k: v for k, v in []}',
+        '_ALLOWED_SOCKET_IMPORTERS: dict[str, str] = {"a": f"because {1}"}',
+    ],
+)
+def test_an_unevaluable_allowlist_shape_REFUSES_in_the_documented_way(tmp_path, shape):
+    """The docstring promises a refusal. Letting `ast.literal_eval`'s own ValueError
+    escape gives a traceback and an exit code this tool never chose — in a CI log that
+    reads as a crash rather than as the actionable "go re-derive the reader" it is."""
+    fake = tmp_path / "t.py"
+    fake.write_text(f'_SOCKET_CAPABLE_MODULES = ("socket",)\n{shape}\n', encoding="utf-8")
+    with pytest.raises(rn.ReleaseNotesError, match="not a literal this reader can evaluate"):
+        rn.outbound_call_sites(fake)
+
+
+def test_previous_tag_walks_FIRST_PARENT_only(tmp_path, monkeypatch):
+    """Without `--first-parent`, `git describe` walks into merged side branches and
+    names a tag that only ever existed on one of them as "the previous release".
+    Constructed rather than asserted: this repo's two real tags are first-parent
+    ancestors of each other, so no fixture drawn from it can tell the two forms apart."""
+    repo = tmp_path / "hist"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@e.com")
+    git("config", "user.name", "T")
+    (repo / "a").write_text("a", encoding="utf-8")
+    git("add", "a")
+    git("commit", "-qm", "A")
+    git("checkout", "-q", "-b", "side")
+    (repo / "s").write_text("s", encoding="utf-8")
+    git("add", "s")
+    git("commit", "-qm", "S")
+    git("tag", "v-side-0.5.0")
+    git("checkout", "-q", "main")
+    (repo / "b").write_text("b", encoding="utf-8")
+    git("add", "b")
+    git("commit", "-qm", "B")
+    git("merge", "-q", "--no-ff", "side", "-m", "M")
+    (repo / "c").write_text("c", encoding="utf-8")
+    git("add", "c")
+    git("commit", "-qm", "C")
+    git("tag", "v-main-1.0.0")
+
+    # THE PRODUCTION FUNCTION, not a hand-rolled `git describe` beside it. A first
+    # draft of this test asserted the two git invocations directly and SURVIVED the
+    # mutation that drops `--first-parent` from the shipped code — because it never
+    # called it. A test of the mechanism is not a test of the wiring.
+    monkeypatch.setattr(rn, "_ROOT", repo)
+
+    plain = subprocess.run(
+        ["git", "describe", "--tags", "--abbrev=0", "--match", "v*", "v-main-1.0.0^"],
+        cwd=repo, capture_output=True, text=True,
+    ).stdout.strip()
+    assert plain == "v-side-0.5.0", "the fixture must genuinely reproduce the defect"
+
+    assert rn.previous_tag("v-main-1.0.0") is None, (
+        "a tag that exists only on a merged side branch is not a previous RELEASE"
+    )
+
+
+def test_previous_tag_still_finds_the_real_previous_release():
+    """The twin. A walk that finds nothing is not a fix — it is the same defect
+    pointing the other way, and it would make every release claim the whole ledger."""
+    assert rn.previous_tag("v0.3.0") == "v0.2.0"
+
+
+# --------------------------------------------------------------------------- #
+# The summary scraper: the verdict and the reason are different facts.
+# --------------------------------------------------------------------------- #
+class _Proc:
+    def __init__(self, stdout, stderr, returncode):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
+
+
+def test_a_PASSING_runs_stderr_warning_never_becomes_the_result(monkeypatch):
+    """The first cut concatenated stdout + stderr and scanned backward, and stderr text
+    always lands after stdout text in that concatenation regardless of when it was
+    written — so an interpreter-shutdown ResourceWarning became "the result" of a
+    legally-binding no-telemetry re-check."""
+    monkeypatch.setattr(
+        rn.subprocess, "run",
+        lambda *a, **k: _Proc(
+            "tests/x.py .   [100%]\n\n1 passed in 0.04s\n",
+            "ResourceWarning: unclosed socket -- ignoring an error during shutdown\n",
+            0,
+        ),
+    )
+    assert rn.run_telemetry_check("run", "x").summary == "1 passed in 0.04s"
+
+
+def test_a_FAILING_run_keeps_BOTH_the_verdict_and_the_reason():
+    """Real pytest against a node that does not exist: stdout says `no tests ran`
+    (true and useless on its own) while stderr carries `ERROR: file or directory not
+    found`. Reporting only the first hides why; only the second lets a warning stand in
+    for a result. Also pins the case-insensitivity — pytest writes ERROR in capitals."""
+    got = rn.run_telemetry_check("run", "/tmp/oo-does-not-exist.py")
+    assert got.returncode != 0
+    assert "no tests ran" in (got.summary or "")
+    assert "file or directory not found" in (got.summary or "")
