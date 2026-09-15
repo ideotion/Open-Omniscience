@@ -670,6 +670,15 @@ published**, never silent.
 
 ## 5. The alpha train to beta (proposal)
 
+> **SUPERSEDED 2026-09-15 by the gate files.** The maintainer accepted this train's amended contents (answer
+> sheet Q105 = a, theme names kept) and ruled 0.9.0 = Beta 1 (Q101 ⛔ = a); the per-release boards are now
+> [`docs/product/RELEASE_0.4_GATE.md`](../product/RELEASE_0.4_GATE.md) (amended) and
+> [`RELEASE_0.5_GATE.md`](../product/RELEASE_0.5_GATE.md) … [`RELEASE_0.9_GATE.md`](../product/RELEASE_0.9_GATE.md),
+> with one brief per slice under [`docs/plans/2026-09-12-beta-pathway/`](../plans/2026-09-12-beta-pathway/00_INDEX.md).
+> Where this section and a gate file differ, the gate file is the plan of record; the "Rulings: Qn…" pointers
+> below refer to the intake's own §6 numbering, superseded by the sheet's IDs (each cited there as "was Qn").
+> Nothing below is deleted, so the proposal's reasoning stays readable beside what was ruled.
+
 **Where beta sits.** The approved train has 0.9 as the hardening RC. This plan proposes **beta = 0.9.0**:
 feature-complete for the 1.0 scope, no new verticals after it, external testers invited, the 1.0 RC gate
 (V1 §8) built and run. Every release before it is an alpha: 0.3 (closing), 0.4, 0.5, 0.6, 0.7, 0.8 (Q1).

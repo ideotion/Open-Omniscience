@@ -16,6 +16,7 @@ see the 2026-07-10/11 rows in the ledger).
 > | **Deep scale/stability detail** (P0/P1 acceptance, session territories) | **`docs/product/SCALE_ROADMAP.md`** |
 > | **Per-feature design-of-record specs** | **`docs/design/*.md`** |
 > | **The long-horizon V1 pathway** (version train 0.2→1.0 · the recursive self-improvement strategy · the new verticals) | [`docs/design/V1_PATHWAY_2026-07-14.md`](design/V1_PATHWAY_2026-07-14.md) |
+> | **The release gates to the beta** (per-release boards 0.4 → 0.9, every row citing the maintainer ruling it implements) + **the rulings index** | [`docs/product/RELEASE_0.4_GATE.md`](product/RELEASE_0.4_GATE.md) … [`RELEASE_0.9_GATE.md`](product/RELEASE_0.9_GATE.md) · [`docs/ledger/RULINGS_INDEX.md`](ledger/RULINGS_INDEX.md) · the slice briefs in [`docs/plans/2026-09-12-beta-pathway/`](plans/2026-09-12-beta-pathway/00_INDEX.md) |
 > | **The improvement-cycle protocol** (how one measure→compare→plan→build→verify→record cycle is run) | [`docs/process/IMPROVEMENT_CYCLE.md`](process/IMPROVEMENT_CYCLE.md) |
 > | **What already shipped** (index + verbatim log with lessons) | **`docs/ledger/shipped.csv`** + **`docs/ledger/SHIPPED_LOG.md`** |
 > | **Release notes / history** | **`docs/CHANGES.md`** (changelog) · **`docs/HISTORY.md`** (narrative history) |
