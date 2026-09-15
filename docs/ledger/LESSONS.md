@@ -9284,3 +9284,81 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
    Venezuelan embassy. The namespace rule caught eight, which turned "a hijacked domain" into
    "the foreign ministry's embassy platform is compromised across ten of its thirteen missions
    in our corpus" — a different kind of claim, reached by counting rather than by reading harder.
+- **VERIFY A PREMISE IN BOTH DIRECTIONS — THE MAINTAINER'S CLAIM ABOUT THE WORLD WAS NEWER THAN MY
+  MEMORY, AND THEIR CLAIM ABOUT THE APP WAS WRONG; ONE SEARCH AND ONE GREP SETTLED BOTH (2026-09-12,
+  the roadmap intake):** the message said the UN had voted to replace Mercator with Equal Earth and
+  that the app defaults to Mercator. My memory held only the African Union's August-2025 endorsement, so
+  the pre-compaction summary had already written "likely the 2025 AU endorsement rather than a UN vote"
+  — one search away from correcting a maintainer who was right: the General Assembly adopted the
+  resolution on 2026-09-04, eight days before the message and after my cutoff. The app half was the
+  mirror: `app-map.js:21-24` is plate carrée, and a plan to "migrate off Mercator" would have been a
+  migration off a projection the app never used. RULES. (a) A claim about a RECENT EVENT that
+  contradicts training memory is more likely newer than wrong; search before contradicting, and record
+  the tier (the pages here were egress-blocked, so the fact stays SEARCH-VERIFIED). (b) A claim about
+  the APP is checked in the tree, never accepted because the person making it owns the app — the
+  maintainer reads their app through the UI, and a plate-carrée map and a Mercator map look alike at
+  the equator. (c) Record both corrections where the plan is made, not only in chat: the wrong premise
+  would otherwise be re-imported by the next session from the same message. SIBLING TRAP from the same
+  hour: `grep pyproj pyproject.toml requirements.lock` matches the word "pyproject" on every line — a
+  dependency scan that reports a library present must show the matching line, not the count.
+- **A SCALE CLAIM INHERITS THE FETCH GRANULARITY IT SILENTLY ASSUMED — CHECK THE API'S BATCH LIMIT
+  BEFORE QUOTING A DURATION; AND WHEN THE ANSWERS WILL ARRIVE AFTER A COMPACTION, MAKE THE QUESTION
+  FILE PROCESS ITSELF (2026-09-12, the answer sheet):** the intake document told the maintainer that
+  a whole-edition Wikipedia baseline through the API is "months per edition" and "a load pattern the
+  API policy discourages" — arithmetic done at one page per request. The Action API returns the
+  latest revision of up to 50 titles per request (search-verified the same day), so the twelve
+  editions' ~24 M articles are ~480 k serial requests, about a week per pass, and the honest
+  constraint is disk. A 50× error in a number that shaped a ⛔ question (whether to accept "no
+  dumps") — caught only because the follow-up sheet forced the arithmetic to be redone with the
+  batch limit in hand. RULE: before a duration or a request count enters a plan, name the
+  per-request unit (titles, rows, bytes) and cite where the limit was read; a figure with no unit
+  attached is a guess wearing a number. SECOND HALF, from the same file: the maintainer said the
+  returning session's "memory will become quite untrustworthy". The sheet therefore carries its own
+  processing protocol (§0.2): parse the ANSWER lines mechanically, treat a blank on a ⛔ question as
+  pending and every other blank as a labelled ASSUMPTION, list contradictions instead of resolving
+  them, and record the answered file itself as the primary record. A question round that will be
+  answered across a compaction is a message to a stranger — write the instructions for the stranger
+  into the artifact, not into the chat.
+  - **A MAINTAINER'S NOTE CAN INVERT THE OPTION IT IS ATTACHED TO, AND A LETTER PARSER THAT SCANS
+    FOR `[a-z]` READS "b and c" AS FIVE ANSWERS (2026-09-15, processing the 278-answer roadmap
+    sheet):** two answers chose a letter and then said the opposite of its label in the parenthesis
+    — Q302 "(c) name only, the code in the hover" was answered "c but in the opposite way (the code
+    is displayed and the full country name is shown in the hover bubble)", and Q702 "(b) a dedicated
+    toggle, default off" was answered "b (but make it default on …)". Recording the LABEL as the
+    ruling would have shipped the reverse of what was asked, twice, from a file whose whole design
+    was "the letter is the answer". RULE: the note is the ruling and the label is context; record
+    both verbatim, flag the tension in the index, and never let the mechanical extraction step
+    decide which one wins — it cannot see the inversion. SECOND HALF, from the same pass: the
+    extractor's `re.findall(r'[a-z]', "b and c")` returned b, a, n, d, c — three letters out of the
+    word "and", each a valid option letter on most questions — so the generated table printed "(a)
+    Keywords only + (n) ?? + (d) ??" beside the two real choices and read like a maintainer who had
+    chosen everything. Caught by eye on the second read; fixed with word boundaries AND an assertion
+    that every extracted letter is an option OF THAT QUESTION (a "(n) ??" label is the tell, and a
+    parser that can print "??" for a ruling should refuse instead of printing). The third shape is
+    not a parse error: a multi-letter answer on a SINGLE-select question (Q903 "a and b", whose two
+    options contradict each other on timing) is a contradiction the coupling check owes a CONFLICT
+    flag, recorded with both options as given and neither picked. GENERAL FORM: a structured answer
+    file has three layers — the letter, the label the letter names, and the words after it — and
+    only the last one is the maintainer's; extract the first mechanically, quote the second
+    verbatim, and treat the third as the ruling whenever they disagree.
+- **TWO OPEN CHANNELS FOR ONE QUESTION ROUND COME BACK ANSWERED TWICE — CLOSE THE OLD CHANNEL WHEN YOU
+  RE-ASK, AND PREFER THE CHANNEL THAT STAMPS EACH ANSWER (2026-09-15, the register round):** the 65-question register of the 2026-09-06 analysis had been published as a rulings artifact (a page
+  with its own `answers` store) on 2026-09-12; on 2026-09-12/13 the roadmap answer sheet RE-ASKED 40 of
+  those ids inside its §12, and the artifact was left open. The maintainer answered the sheet in the
+  morning of 2026-09-15 and the artifact between 15:02Z and 16:00Z the same afternoon — 65 of 65 —
+  and nine of the shared ids came back DIFFERENT (B4, B7, C1 ⛔, D8, D9, G8, I3, L9, L10), one ⛔ blank
+  on the sheet came back `default` on the artifact (C4 = Q1009), and one register answer («I don't know
+  yet», E2) sat one minute before a block answer («add them», F1) that included it. None of that is a
+  defect of the maintainer's: two forms asked the same thing with different option letters and
+  different recommended defaults (the sheet's ★ on Q1129 was the OPPOSITE of the register's default on
+  L9, because a verification pass between the two had changed the recommendation), so «default» meant
+  two different things on the two channels. What made the round recordable at all was the artifact's
+  per-answer `at` timestamp: it settled the ORDER (the register is the later channel on every shared
+  id) without settling the RULING, which is exactly the division the protocol wants — the session
+  records both, states which is later, and asks; a pasted list would have left even the order to guesswork.
+  GENERAL FORM: (1) when a question round is re-asked in a new format, retire the old channel in the
+  same commit (close the page, or stamp it «superseded by …») — or state on BOTH which one wins if they
+  disagree; (2) never re-ask with a different recommended default without saying so on the new form,
+  because «take the default» is then a different answer on each; (3) ask through channels that stamp
+  each answer, since sequence is the only fact a recording session may use about two answers, and it
+  may use it only to say which is later, never which is right.

@@ -7337,3 +7337,117 @@ hosts are `host_timeout` and the process exits without joining their threads; `-
 with a last-line-wins cursor; the kit's self-check re-runs for an updated kit; and, in the fetcher,
 a wall-clock deadline on one body read (a tarpit refusal, bucket `slow_body`). Lesson copied to
 LESSONS.md; the collector's own uncapped inline sleep is recorded in the open queue for a ruling.
+
+## 2026-09-12 — Roadmap intake: eight field impressions verified against the tree, seventy questions, the alpha train to beta
+
+Docs-only. The maintainer's 2026-09-12 message carried eight impressions from use (import/export UX;
+ISO alpha-3 everywhere; keywords and cards in the UI language tagged "translated from X";
+cross-language search in every result tab; an advanced search with visual operators; Wikipedia whole,
+automatic, in twelve languages, without dumps; Equal Earth and OSM as a tracked source; laws for every
+country with change analysis) and asked for numbered questions and a roadmap to beta. Seven read-only
+recon agents inventoried the tree at `main`@`bebcef4`; every load-bearing anchor was re-verified by
+hand before it entered `docs/design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md`, which records per item
+the verified state, the gap, the proposal and its questions (70 in all, six ⛔), one versioned-source
+substrate for Wikipedia/laws/OSM, and the alpha train with beta at 0.9.0. Four findings: the projection
+is equirectangular, not Mercator; the UN General Assembly vote of 2026-09-04 is real (search-verified);
+`docs/SECURITY.md`'s endpoint list omits the default-on Wikidata discovery ride-along, the Wikipedia API,
+ORES, the dumps host and the OSM mirrors; the post-import re-index job has no frontend caller. The
+intake and the rulings received are in `OPEN_QUEUE.md`; the lesson (verify a premise in both
+directions) is in `LESSONS.md`. Nothing was built, per "we're only making plans".
+
+## 2026-09-12 — Roadmap answer sheet: 278 questions with per-option impact, answerable in place, carrying their own processing protocol
+
+The maintainer's second message of the day added three scope clarifications (law eligibility =
+written or formally translated into any UI language; OSM's value = place metadata and its change
+trends; Wikipedia coordinates and every other located datum linked onto the map), accepted 0.9 as
+beta in principle, and asked for a longer, more detailed question list with a tiny impact analysis
+per choice, in one markdown file to be answered in place and returned into a compressed session.
+`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md` (3,115 lines) is that file: §0 the
+conventions and the processing protocol for the returning session; §1 the nineteen recorded rulings,
+pre-filled; §2–§13 278 questions in themed ID blocks with verified context, options carrying
+effort/risk/unlocks, a default-if-blank and an ANSWER line; §14 the index. It supersedes §6 of the
+intake document and folds in every still-open docket ruling (the 2026-09-06 register, the visual
+audit, the institutions docket, the storage round-2 rows). Lesson (in LESSONS.md): a scale claim
+inherits the fetch granularity it assumed — the intake's "months per edition" became "about a week
+per pass" once the API's 50-title batch limit was read; and a question file answered across a
+compaction must carry its own processing instructions. Fourteen web searches moved the Wikimedia,
+OSM and legal open-data facts from memory to search-verified; proj.org and Geofabrik's technical
+page stayed egress-blocked. Nothing built.
+
+## 2026-09-15 — Roadmap answer sheet: the 278 answers recorded, the rulings index created
+
+The maintainer returned the 2026-09-12 answer sheet on 2026-09-15 with 270 of its 278 questions
+answered inline; the session processed it per the sheet's own §0.2 protocol — answers extracted
+mechanically, the four blank non-⛔ questions (Q001, Q207, Q804, Q1208) recorded as ASSUMPTIONS at
+their stated default, the four blank ⛔ ones (Q823 ODbL, Q925 the law adapter order, Q1009 the
+storage round-2 rows 3–6, Q1113 the compromised embassy platforms) left PENDING, two contradictions
+listed and not resolved (Q903 a+b on subnational timing; Q1103 vs Q1104 on stoplist merges), three
+note-over-label tensions recorded with the note as the ruling (Q302, Q702, Q1103) and one cross-
+cutting ruling carried by a note (Q701: the fetch/scrape history of everything the app downloads
+rides every backup, with a trust toggle at install and import). The answered file is the primary
+record (Q1201); ONE `OPEN_QUEUE.md` entry indexes every ID with its label verbatim (Q1202);
+`docs/ledger/RULINGS_INDEX.md` was created with R1–R19 and all 278 rows (Q1206) and is pinned by
+`test_rulings_index_covers_every_answer_sheet_question`; `CLAUDE.md` gained protocol rule (6)
+(Q1206/Q1207), the invariant #12 amendment (Q1123 = b) and the invariant #20 resolution (Q1012 = a,
+Q222 = b), with the line ratchet raised in the same commit; seven older docket entries carry in-
+place RULED/RECORDED pointers. Nothing built. Lesson (in LESSONS.md), verbatim below.
+
+  - **A MAINTAINER'S NOTE CAN INVERT THE OPTION IT IS ATTACHED TO, AND A LETTER PARSER THAT SCANS
+    FOR `[a-z]` READS "b and c" AS FIVE ANSWERS (2026-09-15, processing the 278-answer roadmap
+    sheet):** two answers chose a letter and then said the opposite of its label in the parenthesis
+    — Q302 "(c) name only, the code in the hover" was answered "c but in the opposite way (the code
+    is displayed and the full country name is shown in the hover bubble)", and Q702 "(b) a dedicated
+    toggle, default off" was answered "b (but make it default on …)". Recording the LABEL as the
+    ruling would have shipped the reverse of what was asked, twice, from a file whose whole design
+    was "the letter is the answer". RULE: the note is the ruling and the label is context; record
+    both verbatim, flag the tension in the index, and never let the mechanical extraction step
+    decide which one wins — it cannot see the inversion. SECOND HALF, from the same pass: the
+    extractor's `re.findall(r'[a-z]', "b and c")` returned b, a, n, d, c — three letters out of the
+    word "and", each a valid option letter on most questions — so the generated table printed "(a)
+    Keywords only + (n) ?? + (d) ??" beside the two real choices and read like a maintainer who had
+    chosen everything. Caught by eye on the second read; fixed with word boundaries AND an assertion
+    that every extracted letter is an option OF THAT QUESTION (a "(n) ??" label is the tell, and a
+    parser that can print "??" for a ruling should refuse instead of printing). The third shape is
+    not a parse error: a multi-letter answer on a SINGLE-select question (Q903 "a and b", whose two
+    options contradict each other on timing) is a contradiction the coupling check owes a CONFLICT
+    flag, recorded with both options as given and neither picked. GENERAL FORM: a structured answer
+    file has three layers — the letter, the label the letter names, and the words after it — and
+    only the last one is the maintainer's; extract the first mechanically, quote the second
+    verbatim, and treat the third as the ruling whenever they disagree.
+
+## 2026-09-15 — The 2026-09-06 register answered: 65 of 65 through the rulings artifact, reconciled with the sheet
+
+The maintainer answered every question of sections A–L of `docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md`
+through the rulings artifact on 2026-09-15 (15:02–16:00Z; 51 `default`, 1 `deferred`, 13 with a note) — after the
+roadmap answer sheet, which had re-asked 40 of those ids, had been returned that morning. Recorded in the register
+file in place (an `ANSWER (2026-09-15)` block under every question), in `OPEN_QUEUE.md` (one head entry) and in
+`RULINGS_INDEX.md` (rows A1–L10); reconciled id by id with the sheet: 27 consistent, 7 ratifying shipped work, 15 new
+rulings (12 by an explicit default the sheet had not re-asked, 3 by note: B5, E1, L6), 9 CONFLICTS listed and never
+resolved, 5 pending, 1 qualifier, 1 superseded. The contradictions and the six placements go back to the maintainer in
+`docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md` (RC01–RC17, answer-sheet format). Gate logs and twelve
+briefs carry the effects; the 0.8 gate gained row C (the app-wide one-model decision, owed before 0.8 opens — register
+D8). Docs-only; `CLAUDE.md` untouched.
+
+**Lesson (verbatim, as recorded in `LESSONS.md`):**
+
+- **TWO OPEN CHANNELS FOR ONE QUESTION ROUND COME BACK ANSWERED TWICE — CLOSE THE OLD CHANNEL WHEN YOU
+  RE-ASK, AND PREFER THE CHANNEL THAT STAMPS EACH ANSWER (2026-09-15, the register round):** the 65-question register of the 2026-09-06 analysis had been published as a rulings artifact (a page
+  with its own `answers` store) on 2026-09-12; on 2026-09-12/13 the roadmap answer sheet RE-ASKED 40 of
+  those ids inside its §12, and the artifact was left open. The maintainer answered the sheet in the
+  morning of 2026-09-15 and the artifact between 15:02Z and 16:00Z the same afternoon — 65 of 65 —
+  and nine of the shared ids came back DIFFERENT (B4, B7, C1 ⛔, D8, D9, G8, I3, L9, L10), one ⛔ blank
+  on the sheet came back `default` on the artifact (C4 = Q1009), and one register answer («I don't know
+  yet», E2) sat one minute before a block answer («add them», F1) that included it. None of that is a
+  defect of the maintainer's: two forms asked the same thing with different option letters and
+  different recommended defaults (the sheet's ★ on Q1129 was the OPPOSITE of the register's default on
+  L9, because a verification pass between the two had changed the recommendation), so «default» meant
+  two different things on the two channels. What made the round recordable at all was the artifact's
+  per-answer `at` timestamp: it settled the ORDER (the register is the later channel on every shared
+  id) without settling the RULING, which is exactly the division the protocol wants — the session
+  records both, states which is later, and asks; a pasted list would have left even the order to guesswork.
+  GENERAL FORM: (1) when a question round is re-asked in a new format, retire the old channel in the
+  same commit (close the page, or stamp it «superseded by …») — or state on BOTH which one wins if they
+  disagree; (2) never re-ask with a different recommended default without saying so on the new form,
+  because «take the default» is then a different answer on each; (3) ask through channels that stamp
+  each answer, since sequence is the only fact a recording session may use about two answers, and it
+  may use it only to say which is later, never which is right.
