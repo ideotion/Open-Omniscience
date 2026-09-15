@@ -7861,7 +7861,14 @@ def test_docs_index_covers_live_docs():
 #: own pre-merge base from 616 to 628) landed on top. Measured like-for-like in THIS merge
 #: commit's own tree -- not either parent's number -- at 705: #1078's added paragraphs ARE
 #: present, and so is every intervening PR's own growth since 693 was set.
-_CLAUDE_MD_LINE_CEILING = 707
+#:
+#: RAISED 2026-09-15 (the roadmap answer sheet's rulings, PR #1131): three additions the ratchet
+#: exists to see -- a protocol amendment (rule (6): docs/ledger/RULINGS_INDEX.md as the fourth
+#: ledger file + the answer-sheet format), UI invariant #12 amended (the theme catalogue may be
+#: culled to >= 10, Q1123) and UI invariant #20's recorded bandwidth-cap omission resolved
+#: (Q1012, Q222). Measured on this branch's own tree; a docs-only PR, so re-measure at the merge
+#: point if main grows CLAUDE.md first (the recorded 2026-09-08 precedent).
+_CLAUDE_MD_LINE_CEILING = 728
 
 
 def _claude_md_lines() -> int:
@@ -7901,6 +7908,21 @@ def test_the_claude_md_ceiling_is_not_left_above_the_real_count():
     assert n == _CLAUDE_MD_LINE_CEILING, (
         f"lower _CLAUDE_MD_LINE_CEILING to {n}"
     )
+
+
+def test_rulings_index_covers_every_answer_sheet_question():
+    """THE PROTOCOL rule (6) (ruled 2026-09-15, Q1206): docs/ledger/RULINGS_INDEX.md carries one
+    line per ruling. The 2026-09-12 answer sheet is the first round it indexes, so every one of
+    its `#### Qnnn` questions must have a `| Qnnn` row -- a question the index forgot is a ruling
+    the next session will re-ask the maintainer, which is the cost the index exists to prevent.
+    Anti-vacuity: the sheet must actually be found and parsed (278 questions as shipped)."""
+    sheet = (_ROOT / "docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md").read_text(encoding="utf-8")
+    index = (_ROOT / "docs/ledger/RULINGS_INDEX.md").read_text(encoding="utf-8")
+    qids = re.findall(r"^#### (Q\d{3,4})\b", sheet, flags=re.M)
+    assert len(qids) >= 278, f"the answer sheet should carry 278 questions, found {len(qids)}"
+    indexed = set(re.findall(r"^\| (Q\d{3,4})\b", index, flags=re.M))
+    missing = [q for q in qids if q not in indexed]
+    assert not missing, f"rulings index is missing {len(missing)} answer-sheet questions: {missing[:10]}"
 
 
 #: Accepted duplicate-key count for docs/ledger/shipped.csv, measured 2026-09-08 immediately

@@ -64,6 +64,17 @@ reaches for in its best moments. Raising the ceiling is normal for a PR that add
 a non-negotiable, a UI invariant, or an amendment to the protocol itself — and is
 never the way to make room for something rules (5)/(5a) would have sent to
 `docs/ledger/`.
+(6) **A FOURTH LEDGER FILE AND THE QUESTION-ROUND FORMAT (ruled 2026-09-15, answer sheet
+Q1206 = a and Q1207 = a):** [`docs/ledger/RULINGS_INDEX.md`](docs/ledger/RULINGS_INDEX.md)
+carries ONE LINE PER RULING (id · date · ruling · source · where enforced) from the 2026-09-12
+roadmap round onward, so nothing is restated: record a new ruling THERE in the same turn as
+its `OPEN_QUEUE.md` entry (rule (2) now names both), and grep it before asking the maintainer
+anything. Rulings older than 2026-09-12 are not back-filled (they stay in `OPEN_QUEUE.md`).
+Question rounds to the maintainer use the answer-sheet format (IDs, options each with a
+one-line impact, a default-if-blank, ⛔/🔒 markers, `ANSWER Qnnn:` lines, and a processing
+protocol for the session that receives the file back) — the 2026-09-12 sheet is the
+reference; a blank non-⛔ question takes its default as an ASSUMPTION, a blank ⛔ stays
+pending, contradictions are listed and never resolved by the recording session.
 
 ## Non-negotiables (project §0.5 + maintainer rulings)
 - Local-first, loopback-only; every external call is consented, disclosed, and
@@ -253,6 +264,11 @@ never the way to make room for something rules (5)/(5a) would have sent to
    `#dr-faces` must be present, and the theme catalog is pinned at ≥16
    `html[data-theme="..."]` CSS blocks (17 named themes; Ink lives in
    `:root`, System is JS-only). Enforced in test_ui_invariants (#12).
+   **AMENDED 2026-09-15 (answer sheet Q1123 = b, the 2026-09-08 visual audit's Q-VIS-4):** the
+   catalogue MAY be culled — near-duplicate themes go and the floor becomes ≥ 10 named themes.
+   The ≥ 16 pin in test_ui_invariants (#12) is lowered IN THE SAME PR AS THE CULL (0.5 slice
+   S05-09), never before it; the Typeface picker, the `:root` Ink theme and the JS-only System
+   theme stay.
 13. **The agenda shows DATA, never plumbing** (maintainer principle
    2026-06-11): the calendar-feed directory (`#agenda-feeds`) never appears
    inside the Agenda tab itself; it lives in Settings (`#set-agenda`).
@@ -451,6 +467,11 @@ never the way to make room for something rules (5)/(5a) would have sent to
    the collection-speed governor (`#rate-toggle`, invariant #4), which already owns
    a global rate target. A second, unrelated rate authority beside it is how two
    surfaces come to disagree about one quantity.
+   **RULED 2026-09-15 (answer sheet Q1012 = a; Q222 = b):** the bandwidth budget is PER PROCESS,
+   composed with the collection-speed governor (`#rate-toggle`, invariant #4) — one rate
+   authority, never a second beside it; per-job caps STAY omitted (0.4 slice S04-13). And
+   import/export HISTORY lives in Settings → Backup, not in a task-manager History subtab (a
+   History subtab for other job kinds is unruled).
 21. **INSIGHTS auto-indexes; no "Index corpus" button (UI_SHELL §6, SHIPPED
    #132):** indexing follows ingest (the index_article hook) + a SILENT
    background top-up (`autoIndexInsights`) clears any legacy backlog when

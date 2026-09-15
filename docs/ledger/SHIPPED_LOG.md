@@ -7373,3 +7373,44 @@ per pass" once the API's 50-title batch limit was read; and a question file answ
 compaction must carry its own processing instructions. Fourteen web searches moved the Wikimedia,
 OSM and legal open-data facts from memory to search-verified; proj.org and Geofabrik's technical
 page stayed egress-blocked. Nothing built.
+
+## 2026-09-15 — Roadmap answer sheet: the 278 answers recorded, the rulings index created
+
+The maintainer returned the 2026-09-12 answer sheet on 2026-09-15 with 270 of its 278 questions
+answered inline; the session processed it per the sheet's own §0.2 protocol — answers extracted
+mechanically, the four blank non-⛔ questions (Q001, Q207, Q804, Q1208) recorded as ASSUMPTIONS at
+their stated default, the four blank ⛔ ones (Q823 ODbL, Q925 the law adapter order, Q1009 the
+storage round-2 rows 3–6, Q1113 the compromised embassy platforms) left PENDING, two contradictions
+listed and not resolved (Q903 a+b on subnational timing; Q1103 vs Q1104 on stoplist merges), three
+note-over-label tensions recorded with the note as the ruling (Q302, Q702, Q1103) and one cross-
+cutting ruling carried by a note (Q701: the fetch/scrape history of everything the app downloads
+rides every backup, with a trust toggle at install and import). The answered file is the primary
+record (Q1201); ONE `OPEN_QUEUE.md` entry indexes every ID with its label verbatim (Q1202);
+`docs/ledger/RULINGS_INDEX.md` was created with R1–R19 and all 278 rows (Q1206) and is pinned by
+`test_rulings_index_covers_every_answer_sheet_question`; `CLAUDE.md` gained protocol rule (6)
+(Q1206/Q1207), the invariant #12 amendment (Q1123 = b) and the invariant #20 resolution (Q1012 = a,
+Q222 = b), with the line ratchet raised in the same commit; seven older docket entries carry in-
+place RULED/RECORDED pointers. Nothing built. Lesson (in LESSONS.md), verbatim below.
+
+  - **A MAINTAINER'S NOTE CAN INVERT THE OPTION IT IS ATTACHED TO, AND A LETTER PARSER THAT SCANS
+    FOR `[a-z]` READS "b and c" AS FIVE ANSWERS (2026-09-15, processing the 278-answer roadmap
+    sheet):** two answers chose a letter and then said the opposite of its label in the parenthesis
+    — Q302 "(c) name only, the code in the hover" was answered "c but in the opposite way (the code
+    is displayed and the full country name is shown in the hover bubble)", and Q702 "(b) a dedicated
+    toggle, default off" was answered "b (but make it default on …)". Recording the LABEL as the
+    ruling would have shipped the reverse of what was asked, twice, from a file whose whole design
+    was "the letter is the answer". RULE: the note is the ruling and the label is context; record
+    both verbatim, flag the tension in the index, and never let the mechanical extraction step
+    decide which one wins — it cannot see the inversion. SECOND HALF, from the same pass: the
+    extractor's `re.findall(r'[a-z]', "b and c")` returned b, a, n, d, c — three letters out of the
+    word "and", each a valid option letter on most questions — so the generated table printed "(a)
+    Keywords only + (n) ?? + (d) ??" beside the two real choices and read like a maintainer who had
+    chosen everything. Caught by eye on the second read; fixed with word boundaries AND an assertion
+    that every extracted letter is an option OF THAT QUESTION (a "(n) ??" label is the tell, and a
+    parser that can print "??" for a ruling should refuse instead of printing). The third shape is
+    not a parse error: a multi-letter answer on a SINGLE-select question (Q903 "a and b", whose two
+    options contradict each other on timing) is a contradiction the coupling check owes a CONFLICT
+    flag, recorded with both options as given and neither picked. GENERAL FORM: a structured answer
+    file has three layers — the letter, the label the letter names, and the words after it — and
+    only the last one is the maintainer's; extract the first mechanically, quote the second
+    verbatim, and treat the third as the ruling whenever they disagree.

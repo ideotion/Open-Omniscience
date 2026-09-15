@@ -150,7 +150,7 @@ Your original intent was *v1 = Beta 1*. Three coherent shapes:
 
 Default if blank: none (⛔ — stays pending).
 
-ANSWER Q101:
+ANSWER Q101: a
 
 #### Q102 · What the beta freezes
 - (a) ★ **Features + schema (only additive migrations after 0.9.0) + backup format (every backup made
@@ -164,7 +164,7 @@ ANSWER Q101:
 
 Default if blank: (a). Depends on: Q101.
 
-ANSWER Q102:
+ANSWER Q102: a
 
 #### Q103 · Who tests the beta, and how they get it
 - (a) ★ **GitHub pre-release tags (`v0.9.0-beta.1` …) + a `docs/BETA_TESTERS.md` with the freeze list, the
@@ -176,7 +176,7 @@ ANSWER Q102:
 
 Default if blank: (a).
 
-ANSWER Q103:
+ANSWER Q103: b
 
 #### Q104 · The beta exit bar (what lets 1.0.0 ship)
 - (a) ★ **The V1 §8 acceptance checklist (already ruled) + a field bar: at least N external testers ran
@@ -187,7 +187,7 @@ ANSWER Q103:
 
 Default if blank: (a). Write `NOTE: N = …` to change the tester count.
 
-ANSWER Q104:
+ANSWER Q104: b
 
 #### Q105 · Accept the amended contents of 0.4 and 0.5 (was Q2)
 The intake §5 absorbs items 1, 3, 4, 6, 8 + the alpha-3 boundary + Equal Earth into **0.4** on one
@@ -202,7 +202,7 @@ versioned-source substrate, and the advanced search + the Place entity + the OSM
 
 Default if blank: (a). Depends on: Q106–Q108.
 
-ANSWER Q105:
+ANSWER Q105: a
 
 #### Q106 · Where the OSM place-metadata tracking (R16) lands
 - (a) ★ **0.5 seeds it (the Place entity + the first country's POIs + the tag-completeness view); 0.6
@@ -214,7 +214,7 @@ ANSWER Q105:
 
 Default if blank: (a).
 
-ANSWER Q106:
+ANSWER Q106: a
 
 #### Q107 · The law breadth cadence
 - (a) ★ **0.4: the metadata model + the L0 defects + the first bulk adapters; 0.5: the evolution surface;
@@ -225,7 +225,7 @@ ANSWER Q106:
 
 Default if blank: (a).
 
-ANSWER Q107:
+ANSWER Q107: a
 
 #### Q108 · The Wikipedia timing
 - (a) ★ **0.4: the stream (metadata for every edit, all twelve editions) + HOT full text; 0.5: WARM +
@@ -236,7 +236,7 @@ ANSWER Q107:
 
 Default if blank: (a).
 
-ANSWER Q108:
+ANSWER Q108: a
 
 #### Q109 · Close 0.3 now (was Q3)
 - (a) ★ **Yes: row 5 (the Tier-A quarantine run, 8 articles) + the `v0.3.0` tag from your machine; then the
@@ -245,7 +245,7 @@ ANSWER Q108:
 
 Default if blank: (a).
 
-ANSWER Q109:
+ANSWER Q109: a
 
 #### Q110 · Dates
 - (a) ★ **Gate-driven with target dates, as the V1 train already says** ("if it takes one more year, it's
@@ -256,7 +256,7 @@ ANSWER Q109:
 
 Default if blank: (a).
 
-ANSWER Q110:
+ANSWER Q110: c
 
 #### Q111 · What every alpha tag ships with
 - (a) ★ **Tag + GitHub release notes generated from `shipped.csv` since the previous tag + the
@@ -266,7 +266,7 @@ ANSWER Q110:
 
 Default if blank: (a).
 
-ANSWER Q111:
+ANSWER Q111: a
 
 #### Q112 · The per-release gate files
 - (a) ★ **Write `RELEASE_0.5_GATE.md` … `RELEASE_0.9_GATE.md` now, from this sheet's answers, and amend
@@ -277,7 +277,7 @@ ANSWER Q111:
 
 Default if blank: (a).
 
-ANSWER Q112:
+ANSWER Q112: a
 
 #### Q113 · The per-slice session briefs
 - (a) ★ **One prompt file per slice under `docs/plans/2026-09-12-beta-pathway/` — the shape of the 23-prompt
@@ -290,7 +290,7 @@ ANSWER Q112:
 
 Default if blank: (a).
 
-ANSWER Q113:
+ANSWER Q113: a
 
 #### Q114 ⛔ · The egress allowlist (was Q4; register F1)
 Seven sessions could not reach a named publisher through the sandbox proxy; the variable was never the
@@ -309,7 +309,7 @@ prompt. Hosts by the work they unblock: `www.legislation.gov.uk`, `eur-lex.europ
 
 Default if blank: none (⛔).
 
-ANSWER Q114:
+ANSWER Q114: a
 
 #### Q115 · Your operator-time budget per release
 - (a) ★ **≤ 4 hours** (the V1 train's own assumption: "a few hours of maintainer time"). _Impact: every
@@ -319,7 +319,7 @@ ANSWER Q114:
 
 Default if blank: (a).
 
-ANSWER Q115:
+ANSWER Q115: c
 
 #### Q116 · Parallel lanes
 - (a) ★ **Planning (web) + build (CLI) + verification (AppVM/Chromium), as today.** _Impact: none._
@@ -329,7 +329,7 @@ ANSWER Q115:
 
 Default if blank: (a).
 
-ANSWER Q116:
+ANSWER Q116: a
 
 #### Q117 · The 0.4 board's proposed rows D, E, F (register A2's remainder)
 - (a) ★ **D and E become bars; F ("the browser bar reaches a human, a second engine, or is closed as-is")
@@ -339,7 +339,7 @@ ANSWER Q116:
 
 Default if blank: (a). Depends on: Q1128.
 
-ANSWER Q117:
+ANSWER Q117: a
 
 #### Q118 · Post-1.0 ambitions — where they are written down
 All-twelve-edition full text, rosters + poll tier-2, street-level maps, subnational laws, case law:
@@ -349,7 +349,7 @@ All-twelve-edition full text, rosters + poll tier-2, street-level maps, subnatio
 
 Default if blank: (a).
 
-ANSWER Q118:
+ANSWER Q118: a
 
 ---
 
@@ -383,7 +383,7 @@ reuse pool that saved 8.15 GB on the 2026-08-12 run scans the **destination** fo
 
 Default if blank: (a). Amends: the 2026-07-16 behaviour (recorded as superseded either way).
 
-ANSWER Q201:
+ANSWER Q201: a
 
 #### Q202 · The visible import lifecycle
 | Stage | What runs | Afterwards the user may… |
@@ -401,7 +401,7 @@ ANSWER Q201:
 
 Default if blank: (a).
 
-ANSWER Q202:
+ANSWER Q202: a
 
 #### Q203 · When each safety statement is shown
 "Files may be removed" is honest **after the swap** in every case; it is honest **after staging** only
@@ -414,7 +414,7 @@ if no crash occurs before the swap (a resumed import would need the files again)
 
 Default if blank: (a).
 
-ANSWER Q203:
+ANSWER Q203: a
 
 #### Q204 · The deferred re-index (was Q6)
 - (a) ★ **Stage 4 lives inside the import experience as its own row (progress from
@@ -427,7 +427,7 @@ ANSWER Q203:
 
 Default if blank: (a).
 
-ANSWER Q204:
+ANSWER Q204: a
 
 #### Q205 · Re-index resumability across restarts and updates
 - (a) ★ **The existing durable cursor (`reindex-resume`) auto-resumes on boot; the UI shows "resuming
@@ -437,7 +437,7 @@ ANSWER Q204:
 
 Default if blank: (a).
 
-ANSWER Q205:
+ANSWER Q205: a
 
 #### Q206 · The blinking and overlap (R2)
 - (a) ★ **One poll chain, one bar owner, rows patched in place (keyed by item id), the two `_uxImQueuePoll`
@@ -445,7 +445,7 @@ ANSWER Q205:
 
 Default if blank: (a). (Confirm-only; write a NOTE if you saw other overlapping surfaces.)
 
-ANSWER Q206:
+ANSWER Q206: a
 
 #### Q207 · "Details" (was Q8)
 - (a) ★ **Remove it.** _Impact: effort S._
@@ -464,7 +464,7 @@ ANSWER Q207:
 
 Default if blank: (a).
 
-ANSWER Q208:
+ANSWER Q208: a
 
 #### Q209 · A human-readable summary inside the folder (was Q11)
 - (a) ★ **Write `BACKUP_SUMMARY.md` beside `volumes.json` with the same facts, so the folder explains
@@ -473,7 +473,7 @@ ANSWER Q208:
 
 Default if blank: (a).
 
-ANSWER Q209:
+ANSWER Q209: a
 
 #### Q210 · The timestamp in `YYYYMMDDHHMM_OOS_Backup` (was Q9)
 - (a) ★ **Local time** (what the user sees on their clock when they look at the drive). _Impact: two
@@ -482,7 +482,7 @@ ANSWER Q209:
 
 Default if blank: (a).
 
-ANSWER Q210:
+ANSWER Q210: a
 
 #### Q211 · The collision suffix
 - (a) ★ **`_2`, `_3` … appended: `202609121045_OOS_Backup_2`.** _Impact: sorts beside its sibling._
@@ -491,7 +491,7 @@ ANSWER Q210:
 
 Default if blank: (a).
 
-ANSWER Q211:
+ANSWER Q211: a
 
 #### Q212 · The "OOS" token
 - (a) ★ **Keep `OOS` as ONE constant** (`BACKUP_FOLDER_TOKEN`), so the expected rename later is one edit.
@@ -502,7 +502,7 @@ ANSWER Q211:
 
 Default if blank: (a).
 
-ANSWER Q212:
+ANSWER Q212: c
 
 #### Q213 · Dated folders versus incremental reuse (was Q10)
 - (a) ★ **Always a new dated folder; the reuse pool is widened to sibling `*_OOS_Backup*` folders in the
@@ -514,7 +514,7 @@ ANSWER Q212:
 
 Default if blank: (a).
 
-ANSWER Q213:
+ANSWER Q213: c
 
 #### Q214 · The two parallel backup-restore APIs (was Q12; Q-VIS-5)
 `import-queue/*` is what the UI drives; `v2/restore/preview→commit→discard`, `legacy/restore` and
@@ -526,7 +526,7 @@ ANSWER Q213:
 
 Default if blank: (a).
 
-ANSWER Q214:
+ANSWER Q214: a
 
 #### Q215 ⛔ · Legacy single-file restore (register C1)
 `read_artifact`'s docstring says it accepts legacy bare SQLite backups and v1 `.ooenc` files **"forever
@@ -537,7 +537,7 @@ ANSWER Q214:
 
 Default if blank: none (⛔).
 
-ANSWER Q215:
+ANSWER Q215: a
 
 #### Q216 ⛔ · The import checkpoint interval K (register C2)
 Verify + swap once per K backups; nothing is durable until a swap. K = 1 is today's behaviour.
@@ -548,7 +548,7 @@ Verify + swap once per K backups; nothing is durable until a swap. K = 1 is toda
 
 Default if blank: none (⛔).
 
-ANSWER Q216:
+ANSWER Q216: a
 
 #### Q217 · Import prefetch (register C3)
 - (a) ★ **Build only if the first real `verify_copy` timing shows "prepare" still dominating.** _Impact:
@@ -558,7 +558,7 @@ ANSWER Q216:
 
 Default if blank: (a).
 
-ANSWER Q217:
+ANSWER Q217: a
 
 #### Q218 · Removable-drive exports — verify after write
 - (a) ★ **Re-read every volume after writing and check its checksum; default ON; the panel says
@@ -567,7 +567,7 @@ ANSWER Q217:
 
 Default if blank: (a).
 
-ANSWER Q218:
+ANSWER Q218: a
 
 #### Q219 · What an export contains when the new lanes exist
 - (a) ★ **The corpus always; the Wikipedia, OSM and law lanes as opt-in members with their sizes shown
@@ -577,7 +577,7 @@ ANSWER Q218:
 
 Default if blank: (a). Depends on: Q1004.
 
-ANSWER Q219:
+ANSWER Q219: a
 
 #### Q220 · Scheduled automatic exports
 - (a) ★ **Record as a 0.6+ backlog item (a scheduled export to a chosen folder, dated folders, the reuse
@@ -587,7 +587,7 @@ ANSWER Q219:
 
 Default if blank: (a).
 
-ANSWER Q220:
+ANSWER Q220: c
 
 #### Q221 · Importing the new lanes
 - (a) ★ **The same import dialog and lifecycle; each lane is a row with the same four stages.** _Impact:
@@ -596,7 +596,7 @@ ANSWER Q220:
 
 Default if blank: (a).
 
-ANSWER Q221:
+ANSWER Q221: a
 
 #### Q222 · Where import history lives
 - (a) ★ **A History subtab in the task-manager window (invariant #20's recorded "REMAINING: History"),
@@ -605,7 +605,7 @@ ANSWER Q221:
 
 Default if blank: (a).
 
-ANSWER Q222:
+ANSWER Q222: b
 
 ---
 
@@ -647,7 +647,7 @@ as the app's inner filenames." The honest cost of each reading:
 
 Default if blank: none (⛔). Depends on: Q304, Q305, Q310, Q312.
 
-ANSWER Q301:
+ANSWER Q301: c
 
 #### Q302 · How a country reads on screen (was Q14)
 - (a) ★ **Uppercase code beside the localised name: "France · FRA".** _Impact: the code is learnable; the
@@ -657,7 +657,7 @@ ANSWER Q301:
 
 Default if blank: (a).
 
-ANSWER Q302:
+ANSWER Q302: c but in the opposite way (the code is displayed and the full conutry name is shown in the hover bubble in the UI language)
 
 #### Q303 · Codes for non-countries and special cases (was Q15)
 Alpha-3 has no official code for the EU or "international"; the ISO **user-assigned** range is
@@ -671,7 +671,7 @@ AAA–AAZ, QMA–QZZ, XAA–XZZ, ZZA–ZZZ (FROM MEMORY; confirm). The World Ban
 
 Default if blank: (a).
 
-ANSWER Q303:
+ANSWER Q303: a
 
 #### Q304 · The API and payload shape (was Q16)
 - (a) **If Q301 = FULL: `country` becomes alpha-3 everywhere; every parameter accepts both forms through
@@ -682,7 +682,7 @@ ANSWER Q303:
 
 Default if blank: follows Q301.
 
-ANSWER Q304:
+ANSWER Q304: a
 
 #### Q305 · The 5,803 config lines (was Q17)
 - (a) **Rewrite them all in one scripted pass, with a test that no lowercase alpha-2 `country:` value
@@ -693,7 +693,7 @@ ANSWER Q304:
 
 Default if blank: follows Q301.
 
-ANSWER Q305:
+ANSWER Q305: follows Q301
 
 #### Q306 · Language codes (was Q18)
 "Clearer and easier to understand" could be read as applying to languages too (`eng`, `fra`).
@@ -705,7 +705,7 @@ ANSWER Q305:
 
 Default if blank: (a).
 
-ANSWER Q306:
+ANSWER Q306: b
 
 #### Q307 · Flags
 - (a) ★ **Keep the flag emoji, derived internally from alpha-3 → alpha-2** (invariant #15's "flag is a
@@ -714,7 +714,7 @@ ANSWER Q306:
 
 Default if blank: (a).
 
-ANSWER Q307:
+ANSWER Q307: a
 
 #### Q308 · Ordering in pickers and lists
 - (a) ★ **By localised name, the code as a secondary column.** _Impact: none._
@@ -722,7 +722,7 @@ ANSWER Q307:
 
 Default if blank: (a).
 
-ANSWER Q308:
+ANSWER Q308: a
 
 #### Q309 · The filename rule (the ruling's "inner filenames")
 No file today carries a country code, so this is a rule for future files (OSM extracts, law bundles,
@@ -733,7 +733,7 @@ per-country reports).
 
 Default if blank: (a).
 
-ANSWER Q309:
+ANSWER Q309: a
 
 #### Q310 · Old backups after a storage migration
 - (a) ★ **The restore path normalises alpha-2 → alpha-3 while importing (old backups restorable
@@ -743,7 +743,7 @@ ANSWER Q309:
 
 Default if blank: (a). Applies if Q301 ∈ {a, c}.
 
-ANSWER Q310:
+ANSWER Q310: a
 
 #### Q311 · External contracts stay alpha-2 behind converters
 FRED/OECD ids, the OSM `ISO3166-1:alpha2` tag, DB-IP, `Intl.DisplayNames`, Wikidata `P297` (alpha-2;
@@ -753,7 +753,7 @@ FRED/OECD ids, the OSM `ISO3166-1:alpha2` tag, DB-IP, `Intl.DisplayNames`, Wikid
 
 Default if blank: (a).
 
-ANSWER Q311:
+ANSWER Q311: a
 
 #### Q312 · Timing
 - (a) ★ **0.4** (before more data accumulates; alongside the substrate, whose new tables are born alpha-3).
@@ -761,7 +761,7 @@ ANSWER Q311:
 
 Default if blank: (a).
 
-ANSWER Q312:
+ANSWER Q312: a
 
 #### Q313 · Exports and diagnostics during the transition
 - (a) ★ **CSV/JSON exports carry both `country` (old form) and `country_iso3` for one release, then the
@@ -771,7 +771,7 @@ ANSWER Q312:
 
 Default if blank: (a).
 
-ANSWER Q313:
+ANSWER Q313: a
 
 #### Q314 · Subnational identity (for the admin-1 maps of §9)
 - (a) ★ **ISO 3166-2 (`FR-75`, `US-CA`) where OSM carries the `ISO3166-2` tag; the OSM relation id as the
@@ -780,7 +780,7 @@ ANSWER Q313:
 
 Default if blank: (a).
 
-ANSWER Q314:
+ANSWER Q314: a
 
 ---
 
@@ -812,7 +812,7 @@ Coverage of surfaces: six render a translation today, eleven render the raw term
 
 Default if blank: (a).
 
-ANSWER Q401:
+ANSWER Q401: a
 
 #### Q402 · How the source language is named in the tag
 - (a) ★ **The language's name in the UI language ("traduit de l'anglais", "translated from Arabic").**
@@ -822,7 +822,7 @@ ANSWER Q401:
 
 Default if blank: (a).
 
-ANSWER Q402:
+ANSWER Q402: a
 
 #### Q403 · The three-tier ladder
 Tier 1 verified = ring translation · Tier 2 tentative = LLM, always ≈ · Tier 3 = untranslated, tagged with
@@ -834,7 +834,7 @@ silent surfaces gain it; the seven endpoints gain `target_lang`; `_annotate_tran
 
 Default if blank: (a).
 
-ANSWER Q403:
+ANSWER Q403: a
 
 #### Q404 🔒 · Persist tentative (LLM) translations (was Q21)
 - (a) ★ **A `keyword_translations` table (term, source lang, target lang, text, model, prompt version,
@@ -844,7 +844,7 @@ ANSWER Q403:
 
 Default if blank: (a).
 
-ANSWER Q404:
+ANSWER Q404: a
 
 #### Q405 · Tentative translations in lists (was Q20)
 - (a) ★ **Shown by default once persisted, ≈-marked, when the AI coordinator is on; filled by a
@@ -854,7 +854,7 @@ ANSWER Q404:
 
 Default if blank: (a). Depends on: Q404.
 
-ANSWER Q405:
+ANSWER Q405: a
 
 #### Q406 ⛔ · The in-app Wikidata ring refresh (was Q22)
 - (a) ★ **A consented, task-manager-visible job: the gap digest → `wbgetentities` at ≤ 1 request / 10 s,
@@ -868,7 +868,7 @@ ANSWER Q405:
 
 Default if blank: none (⛔). The generator's 0.2 s spacing changes to 10 s in every case.
 
-ANSWER Q406:
+ANSWER Q406: b
 
 #### Q407 · What triggers ring growth
 - (a) ★ **The gap digest: the most frequent untranslated keywords per language first** (the
@@ -878,7 +878,7 @@ ANSWER Q406:
 
 Default if blank: (a).
 
-ANSWER Q407:
+ANSWER Q407: a
 
 #### Q408 · The Wikidata call pattern
 - (a) ★ **`wbsearchentities` in the term's language, then `wbgetentities` for labels in all twelve
@@ -889,7 +889,7 @@ ANSWER Q407:
 
 Default if blank: (a).
 
-ANSWER Q408:
+ANSWER Q408: a
 
 #### Q409 · Rings in backups (was Q23; R9)
 - (a) ★ **Locally accepted rings and the tentative table ride the corpus backup; the shipped ring files
@@ -899,7 +899,7 @@ ANSWER Q408:
 
 Default if blank: (a).
 
-ANSWER Q409:
+ANSWER Q409: b
 
 #### Q410 · Refreshing the shipped rings per release
 - (a) ★ **Regenerate `keyword_rings_generated.yml` on your machine before each tag at the polite rate,
@@ -909,7 +909,7 @@ ANSWER Q409:
 
 Default if blank: (a).
 
-ANSWER Q410:
+ANSWER Q410: a
 
 #### Q411 · Cards translate the term (was Q24)
 - (a) ★ **Yes, as a ruled exception to the "data never translates" design: `title_vars` gains
@@ -919,7 +919,7 @@ ANSWER Q410:
 
 Default if blank: (a). Amends: the i18n design note at `i18n.js:162`.
 
-ANSWER Q411:
+ANSWER Q411: a
 
 #### Q412 · The 91 collision terms (was Q25)
 - (a) ★ **No single translation: "several senses" + a sense picker; `translate_term` gains the refusal
@@ -928,7 +928,7 @@ ANSWER Q411:
 
 Default if blank: (a).
 
-ANSWER Q412:
+ANSWER Q412: a
 
 #### Q413 · The source language is the ring member's effective language (was Q26)
 - (a) ★ **Confirm; the `reconcile_keyword_language` pass runs in the 0.4 gate.**
@@ -936,7 +936,7 @@ ANSWER Q412:
 
 Default if blank: (a).
 
-ANSWER Q413:
+ANSWER Q413: a
 
 #### Q414 · Fixing `Keyword.language` for good
 - (a) ★ **Store the language per mention (= the article's language) and derive the keyword's language as
@@ -946,7 +946,7 @@ ANSWER Q413:
 
 Default if blank: (a).
 
-ANSWER Q414:
+ANSWER Q414: a
 
 #### Q415 · Entities (people, organisations, places) by QID
 - (a) ★ **The same ladder for entities, keyed by Wikidata QID — this is the 0.5 entity spine's first
@@ -955,7 +955,7 @@ ANSWER Q414:
 
 Default if blank: (a).
 
-ANSWER Q415:
+ANSWER Q415: a
 
 #### Q416 · Lemmatisation across the twelve languages
 Keyword normalisation today is per-language ad hoc; `simplemma` (MIT, pure Python, 40+ languages) would
@@ -966,7 +966,7 @@ make "élections"/"élection" one keyword in every UI language.
 
 Default if blank: (a).
 
-ANSWER Q416:
+ANSWER Q416: a
 
 #### Q417 · Trends and rising keywords computed per concept
 - (a) ★ **Aggregates (rising, trends, top) are computed per RING when the term is in one, with a
@@ -977,7 +977,7 @@ ANSWER Q416:
 
 Default if blank: (a). Depends on: Q501.
 
-ANSWER Q417:
+ANSWER Q417: a
 
 #### Q418 · The hover bubble on a translated keyword
 - (a) ★ **Original term · source language · ring members with per-language counts · the QID with a LOCAL
@@ -986,7 +986,7 @@ ANSWER Q417:
 
 Default if blank: (a).
 
-ANSWER Q418:
+ANSWER Q418: a
 
 ---
 
@@ -1012,7 +1012,7 @@ does not segment Chinese or Japanese.
 
 Default if blank: (a).
 
-ANSWER Q501:
+ANSWER Q501: a
 
 #### Q502 · Series for a concept with several languages (was Q28)
 - (a) ★ **Stacked per language with a legend.** _Impact: the reader sees which languages carry the concept
@@ -1022,7 +1022,7 @@ ANSWER Q501:
 
 Default if blank: (a).
 
-ANSWER Q502:
+ANSWER Q502: a
 
 #### Q503 · A member cap per expansion (was Q29)
 - (a) ★ **Cap at 40 literals, the most frequent first, disclosed as "expanded to 40 of 63 forms".**
@@ -1031,14 +1031,14 @@ ANSWER Q502:
 
 Default if blank: (a).
 
-ANSWER Q503:
+ANSWER Q503: a (but give users the option to deactivate the cap with a toggle / switch, activate the cap by default)
 
 #### Q504 · Sense pins and the literal toggle persist in the tab seed and URL (was Q30)
 - (a) ★ **Confirm (`?expand=0`, `?sense=`).**
 
 Default if blank: (a).
 
-ANSWER Q504:
+ANSWER Q504: a
 
 #### Q505 · Restricting to some languages
 - (a) ★ **A multi-select on the expansion chip ("searching: en, fr, de — change") in the search bar and
@@ -1047,7 +1047,7 @@ ANSWER Q504:
 
 Default if blank: (a).
 
-ANSWER Q505:
+ANSWER Q505: b
 
 #### Q506 🔒 · Chinese and Japanese tokenisation
 `unicode61` treats a Chinese sentence as one token; today `zh`/`ja` articles are effectively not searchable
@@ -1061,7 +1061,7 @@ by word.
 
 Default if blank: (a).
 
-ANSWER Q506:
+ANSWER Q506: b
 
 #### Q507 · Arabic and diacritic normalisation
 - (a) ★ **`remove_diacritics=2` + alef/teh-marbuta/yeh folding at index and query time.** _Impact:
@@ -1070,7 +1070,7 @@ ANSWER Q506:
 
 Default if blank: (a).
 
-ANSWER Q507:
+ANSWER Q507: a
 
 #### Q508 · How concatenated results are ordered
 - (a) ★ **Interleaved by date, a language chip on every row.** _Impact: none._
@@ -1078,7 +1078,7 @@ ANSWER Q507:
 
 Default if blank: (a).
 
-ANSWER Q508:
+ANSWER Q508: a (but it should be possible to group results by language)
 
 #### Q509 · Per-language counts on the expansion chip
 - (a) ★ **"climate 120 · climat 45 · Klima 30 · …" — the honest picture of where the concept lives.**
@@ -1086,7 +1086,7 @@ ANSWER Q508:
 
 Default if blank: (a).
 
-ANSWER Q509:
+ANSWER Q509: a (but add the single total also)
 
 #### Q510 · Watches and alerts
 - (a) ★ **A watch on "climate" watches the ring** (disclosed on the watch row). _Impact: effort S._
@@ -1094,7 +1094,7 @@ ANSWER Q509:
 
 Default if blank: (a).
 
-ANSWER Q510:
+ANSWER Q510: a
 
 #### Q511 · The bulletin
 - (a) ★ **Bulletin sections built from keywords use the ring** (and label the concept in the edition's
@@ -1103,7 +1103,7 @@ ANSWER Q510:
 
 Default if blank: (a).
 
-ANSWER Q511:
+ANSWER Q511: a (add all ring analytics and details into a new bulletin annexe)
 
 #### Q512 · The mind map
 - (a) ★ **The ring is the centre node; each language is an arm; associations hang off the arms.**
@@ -1112,7 +1112,7 @@ ANSWER Q511:
 
 Default if blank: (a).
 
-ANSWER Q512:
+ANSWER Q512: a
 
 #### Q513 · Beyond keywords — the vision question
 "To allow users to analyze worldwide content outside of their current capability." Keywords are ruled.
@@ -1127,7 +1127,7 @@ The next steps up the ladder:
 
 Default if blank: (b) — multi-select allowed (b, c).
 
-ANSWER Q513:
+ANSWER Q513: b and c
 
 #### Q514 · Tentative translations never expand a search
 - (a) ★ **Confirm: expansion is ring-verified only; a ≈ translation may display but expands a query only
@@ -1135,7 +1135,7 @@ ANSWER Q513:
 
 Default if blank: (a).
 
-ANSWER Q514:
+ANSWER Q514: a
 
 #### Q515 · Totals on ring-size extremes
 - (a) ★ **`search_total` is capped (e.g. 10,000) and shows "≥ 10,000".** _Impact: effort S._
@@ -1143,14 +1143,14 @@ ANSWER Q514:
 
 Default if blank: (a).
 
-ANSWER Q515:
+ANSWER Q515: b
 
 #### Q516 · The Observatory, the map and the sources tab read the same resolution
 - (a) ★ **Confirm.**
 
 Default if blank: (a).
 
-ANSWER Q516:
+ANSWER Q516: a
 
 ---
 
@@ -1180,7 +1180,7 @@ coalesced with "published") · word-count bands (script-aware; zh/ja/th excluded
 
 Default if blank: (a).
 
-ANSWER Q601:
+ANSWER Q601: a
 
 #### Q602 · The builder (was Q32)
 - (a) ★ **Rows of `field · operator · value` rendered as chips above the query box; the box stays editable
@@ -1191,7 +1191,7 @@ ANSWER Q601:
 
 Default if blank: (a).
 
-ANSWER Q602:
+ANSWER Q602: a
 
 #### Q603 · Grammar extension (was Q33)
 - (a) ★ **Add prefix `word*`, `NEAR(a b, N)`, and column filters `title:`, `author:` — three FTS5-native
@@ -1200,7 +1200,7 @@ ANSWER Q602:
 
 Default if blank: (a).
 
-ANSWER Q603:
+ANSWER Q603: a
 
 #### Q604 · Operator words (was Q34)
 - (a) ★ **English tokens stay canonical; the builder is the localised layer (buttons say "ET/OU/SAUF" in
@@ -1211,7 +1211,7 @@ ANSWER Q603:
 
 Default if blank: (a).
 
-ANSWER Q604:
+ANSWER Q604: a
 
 #### Q605 · Typo tolerance (was Q35)
 - (a) **Unbuilt** (the ledger's current default).
@@ -1222,7 +1222,7 @@ ANSWER Q604:
 
 Default if blank: (b).
 
-ANSWER Q605:
+ANSWER Q605: b
 
 #### Q606 · Saved searches (was Q36)
 - (a) ★ **The Watch model gains the full filter set; a saved search is a watch with threshold zero.**
@@ -1231,7 +1231,7 @@ ANSWER Q605:
 
 Default if blank: (a).
 
-ANSWER Q606:
+ANSWER Q606: a
 
 #### Q607 · Export parity (was Q37)
 - (a) ★ **`/api/articles/export` takes the full parameter set, so an export reproduces the filtered
@@ -1239,7 +1239,7 @@ ANSWER Q606:
 
 Default if blank: (a).
 
-ANSWER Q607:
+ANSWER Q607: a
 
 #### Q608 · The omnibar's Enter (was Q38)
 - (a) ★ **Enter always opens the analysis window on the typed query; static commands need an explicit
@@ -1248,7 +1248,7 @@ ANSWER Q607:
 
 Default if blank: (a).
 
-ANSWER Q608:
+ANSWER Q608: a 
 
 #### Q609 · The time component
 - (a) ★ **`ooTimeScope` gains the timescale selector and becomes the one begin/end/scale component for
@@ -1257,7 +1257,7 @@ ANSWER Q608:
 
 Default if blank: (a).
 
-ANSWER Q609:
+ANSWER Q609: a
 
 #### Q610 · Diacritics and case
 - (a) ★ **Fold by default (`é` = `e`, case-insensitive) with an "exact" toggle per query.** _Impact: the
@@ -1266,7 +1266,7 @@ ANSWER Q609:
 
 Default if blank: (a).
 
-ANSWER Q610:
+ANSWER Q610: a (but keep an on/off toggle for user in advanced search with an explanation in a hover)
 
 #### Q611 · Field search
 - (a) ★ **`title:`, `author:`, `source:` (name) — body is the default field.** _Impact: effort S._
@@ -1274,7 +1274,7 @@ ANSWER Q610:
 
 Default if blank: (a).
 
-ANSWER Q611:
+ANSWER Q611: b (we need to be precise for user clarity : would the url/title/author/source 'contain' or 'start with' or else? give user choice while keeping the UI fresh and simple)
 
 #### Q612 · Proximity default
 - (a) ★ **`NEAR` defaults to 10 tokens; the builder's row has a distance stepper.**
@@ -1282,7 +1282,7 @@ ANSWER Q611:
 
 Default if blank: (a).
 
-ANSWER Q612:
+ANSWER Q612: a (however, the user should be able to change the default number)
 
 #### Q613 · Regular expressions
 - (a) ★ **A deliberate omission** (FTS5 has no regex; a `LIKE` fallback scans every row). Recorded so
@@ -1291,7 +1291,7 @@ ANSWER Q612:
 
 Default if blank: (a).
 
-ANSWER Q613:
+ANSWER Q613: a
 
 #### Q614 · Search history
 - (a) ★ **Local, private, opt-in (default off), clearable, never exported.** _Impact: effort S._
@@ -1299,7 +1299,7 @@ ANSWER Q613:
 
 Default if blank: (a).
 
-ANSWER Q614:
+ANSWER Q614: a (add the option during the installation process, after the legal screen, to activate local search history)
 
 #### Q615 · Result views
 - (a) ★ **List (cards) + a table view toggle (sortable columns: date, source, language, words,
@@ -1308,7 +1308,7 @@ ANSWER Q614:
 
 Default if blank: (a).
 
-ANSWER Q615:
+ANSWER Q615: a
 
 #### Q616 · Permalinks
 - (a) ★ **The full query + every filter is URL-addressable (`?q=…&lang=…&from=…`), so a search can be
@@ -1317,7 +1317,7 @@ ANSWER Q615:
 
 Default if blank: (a).
 
-ANSWER Q616:
+ANSWER Q616: a
 
 #### Q617 · Quarantined articles
 - (a) ★ **Excluded by default; "include quarantined" is an advanced-only control with the quarantine
@@ -1326,7 +1326,7 @@ ANSWER Q616:
 
 Default if blank: (a).
 
-ANSWER Q617:
+ANSWER Q617: a
 
 #### Q618 · Default sort
 - (a) ★ **Date descending** (news). _Impact: none._
@@ -1334,7 +1334,7 @@ ANSWER Q617:
 
 Default if blank: (a).
 
-ANSWER Q618:
+ANSWER Q618: b
 
 ---
 
@@ -1388,7 +1388,7 @@ trade is recorded and never re-litigated.
 
 Default if blank: none (⛔).
 
-ANSWER Q701:
+ANSWER Q701: c (!!!IMPORTANT NOTE!!!: we need to incorporate EVERY page request and download and history in backups so that a fresh install with an old backup doesn't re-downloads the same pages over and prioritizes other downloads / fetches, THIS IS TRUE NOT ONLY FOR WIKIPEDIA BUT FOR EVERYTHING DOWNLOADED WITH THE APP, web fetch/web scrapping history should be backed-up, and at install and import, users should be given the choice to trust or not the history with a "trust the backup scrapping history" toggle)
 
 #### Q702 ⛔ · Automatic egress, default on, under the one online consent (was Q40)
 EventStreams (a persistent SSE connection), the Action API, the pageviews API (Q706), ORES/Lift Wing
@@ -1403,7 +1403,7 @@ EventStreams (a persistent SSE connection), the Action API, the pageviews API (Q
 
 Default if blank: none (⛔).
 
-ANSWER Q702:
+ANSWER Q702: b (but make it default on, and add a toggle on the taskbar -like the AI toggle, with a nice and consistent animation- , to allow users to stop / start / halt / resume wikipedia streaming) 
 
 #### Q703 · What "the entire Wikipedia" includes
 - (a) ★ **Namespace 0 (articles), excluding redirects, including disambiguation and list pages.**
@@ -1415,7 +1415,7 @@ ANSWER Q702:
 
 Default if blank: (a).
 
-ANSWER Q703:
+ANSWER Q703: a
 
 #### Q704 · The text form stored
 - (a) ★ **Wikitext (the source of truth: infoboxes, `{{coord}}`, categories and templates are extractable
@@ -1426,7 +1426,7 @@ ANSWER Q703:
 
 Default if blank: (a).
 
-ANSWER Q704:
+ANSWER Q704: a
 
 #### Q705 · Metadata captured per page ("as much metadata as possible")
 Proposed: `pageid` · QID (`pageprops.wikibase_item`) · sitelink count · categories · length · revision
@@ -1439,7 +1439,7 @@ count · protection level · last editor class (bot / anonymous / registered) ·
 
 Default if blank: (a).
 
-ANSWER Q705:
+ANSWER Q705: a
 
 #### Q706 · Pageviews (the Wikimedia Analytics API — attention as a signal)
 - (a) ★ **The daily top-1,000 per edition (12 requests a day) + per-article daily views for HOT pages.**
@@ -1449,7 +1449,7 @@ ANSWER Q705:
 
 Default if blank: (a).
 
-ANSWER Q706:
+ANSWER Q706: a
 
 #### Q707 · Tiers and the storage budget (was Q41)
 - (a) ★ **Three tiers under a per-edition daily budget the first-run wizard sets (default proposed: 20 GB
@@ -1464,7 +1464,7 @@ ANSWER Q706:
 
 Default if blank: (a). Write `NOTE: budget = … GB` to change the default.
 
-ANSWER Q707:
+ANSWER Q707: a
 
 #### Q708 · Per-edit rows versus per-page counters
 Metadata for every edit in twelve editions is roughly 250–300 k rows/day (FROM MEMORY) — on the order of
@@ -1476,7 +1476,7 @@ Metadata for every edit in twelve editions is roughly 250–300 k rows/day (FROM
 
 Default if blank: (a).
 
-ANSWER Q708:
+ANSWER Q708: b
 
 #### Q709 · Noise
 - (a) ★ **Reverted pairs collapse (the `mw-reverted` tag); bursts by one editor within 10 minutes
@@ -1486,7 +1486,7 @@ ANSWER Q708:
 
 Default if blank: (a).
 
-ANSWER Q709:
+ANSWER Q709: b
 
 #### Q710 🔒 · Retention (was Q42)
 - (a) ★ **HOT: every ingested version's text; WARM: latest + previous; counters and metadata forever.**
@@ -1495,7 +1495,7 @@ ANSWER Q709:
 
 Default if blank: (a).
 
-ANSWER Q710:
+ANSWER Q710: a
 
 #### Q711 · The diff primitive
 - (a) ★ **Against the previous ingested version, section-aware (which section changed), per-mention
@@ -1504,7 +1504,7 @@ ANSWER Q710:
 
 Default if blank: (a).
 
-ANSWER Q711:
+ANSWER Q711: a
 
 #### Q712 · The analytics that ship first, in order
 1 edit velocity per topic / country / language · 2 contested pages (revert rate) · 3 newly created pages
@@ -1515,7 +1515,7 @@ as emerging topics · 4 cross-edition divergence for one QID (size, edit rate, e
 
 Default if blank: (a).
 
-ANSWER Q712:
+ANSWER Q712: a
 
 #### Q713 · Page creation, deletion and move events
 - (a) ★ **Tracked from the stream's log events; a deleted page keeps its last text and is marked deleted.**
@@ -1523,7 +1523,7 @@ ANSWER Q712:
 
 Default if blank: (a).
 
-ANSWER Q713:
+ANSWER Q713: a
 
 #### Q714 · Wikipedia rows next to press counts
 ~24 M wiki pages beside ~40 k press articles would swamp every count and KPI.
@@ -1534,7 +1534,7 @@ ANSWER Q713:
 
 Default if blank: (a).
 
-ANSWER Q714:
+ANSWER Q714: a
 
 #### Q715 · Identity (was Q46)
 - (a) ★ **`WikiPage` keyed `(wiki, pageid)` with `qid`; the Article carries `wiki_pageid`, `qid`,
@@ -1542,7 +1542,7 @@ ANSWER Q714:
 
 Default if blank: (a).
 
-ANSWER Q715:
+ANSWER Q715: a
 
 #### Q716 · Lane, not mode (was Q45)
 - (a) ★ **Wikipedia becomes a lane beside RSS collection; `mode="wiki"` is retired; `POST /api/wiki/pages`
@@ -1551,7 +1551,7 @@ ANSWER Q715:
 
 Default if blank: (a).
 
-ANSWER Q716:
+ANSWER Q716: a
 
 #### Q717 · ORES / Lift Wing (was Q44)
 - (a) ★ **Verify Wikimedia's current scoring endpoint (the ORES → Lift Wing migration, FROM MEMORY), keep
@@ -1560,14 +1560,14 @@ ANSWER Q716:
 
 Default if blank: (a).
 
-ANSWER Q717:
+ANSWER Q717: a
 
 #### Q718 · Wikimedia Enterprise and other keyed APIs (was Q48)
 - (a) ★ **Excluded under V1-2 (no key-gated source), confirm.**
 
 Default if blank: (a).
 
-ANSWER Q718:
+ANSWER Q718: a
 
 #### Q719 🔒 · A separate database file per lane
 - (a) ★ **`wiki.db` (and `osm.db`, `law.db`) beside the corpus, linked by ids; backups per lane; a 100 GB
@@ -1578,7 +1578,7 @@ ANSWER Q718:
 
 Default if blank: (a). Depends on: Q1004 (the general rule).
 
-ANSWER Q719:
+ANSWER Q719: a
 
 #### Q720 🔒 · Encryption at rest for the public-data lanes
 The data is public; the **selection** (which pages, which countries) reveals the user's interests.
@@ -1587,7 +1587,7 @@ The data is public; the **selection** (which pages, which countries) reveals the
 
 Default if blank: (a).
 
-ANSWER Q720:
+ANSWER Q720: a
 
 #### Q721 · Backups (was Q43)
 - (a) ★ **Lane backups are opt-in members with their size shown (Q219); HOT pages' Articles ride the corpus
@@ -1596,7 +1596,7 @@ ANSWER Q720:
 
 Default if blank: (a).
 
-ANSWER Q721:
+ANSWER Q721: a
 
 #### Q722 · Transport
 Wikimedia serves reads over Tor; the tail walk moves hundreds of GB.
@@ -1607,7 +1607,7 @@ Wikimedia serves reads over Tor; the tail walk moves hundreds of GB.
 
 Default if blank: (a).
 
-ANSWER Q722:
+ANSWER Q722: b
 
 #### Q723 · The coverage report
 - (a) ★ **Per edition: pages seen / edition total (from `siteinfo` statistics), full-text share, last
@@ -1615,7 +1615,7 @@ ANSWER Q722:
 
 Default if blank: (a).
 
-ANSWER Q723:
+ANSWER Q723: a
 
 #### Q724 · Wikidata items for entities
 - (a) ★ **In 0.5 (the entity spine): labels, descriptions and a claims subset (P31, P17, P625, P571…) per
@@ -1624,7 +1624,7 @@ ANSWER Q723:
 
 Default if blank: (a).
 
-ANSWER Q724:
+ANSWER Q724: a
 
 #### Q725 · The first-run wizard
 - (a) ★ **Edition choice (default: all twelve) + the storage budget (Q707) + the plain statement of what
@@ -1632,7 +1632,7 @@ ANSWER Q724:
 
 Default if blank: (a).
 
-ANSWER Q725:
+ANSWER Q725: a
 
 #### Q726 · Disclosure
 - (a) ★ **`docs/SECURITY.md` lists every Wikimedia host; the Wikipedia surface states the robots exemption
@@ -1641,7 +1641,7 @@ ANSWER Q725:
 
 Default if blank: (a).
 
-ANSWER Q726:
+ANSWER Q726: a
 
 #### Q727 · Long offline gaps
 - (a) ★ **If the gap exceeds the stream's retention, fall back to `list=recentchanges` per edition (bounded
@@ -1650,7 +1650,7 @@ ANSWER Q726:
 
 Default if blank: (a).
 
-ANSWER Q727:
+ANSWER Q727: a
 
 #### Q728 · Superseded surfaces
 The tracked-changes modal (`#wiki-tc`), the dump download manager, the offline dump reader, the dump→corpus
@@ -1661,7 +1661,7 @@ endpoint.
 
 Default if blank: (a).
 
-ANSWER Q728:
+ANSWER Q728: a
 
 ---
 
@@ -1705,7 +1705,7 @@ extracts.
 
 Default if blank: (a).
 
-ANSWER Q801:
+ANSWER Q801: a
 
 #### Q802 · The base boundaries (was Q50)
 - (a) ★ **Natural Earth 50m now (a few hundred KB more; the 110m polygons facet under the polar shear),
@@ -1715,7 +1715,7 @@ ANSWER Q801:
 
 Default if blank: (a).
 
-ANSWER Q802:
+ANSWER Q802: a
 
 #### Q803 · Whose borders
 OSM draws boundaries by its "on the ground" rule and keeps disputed claims as separate relations; Natural
@@ -1727,7 +1727,7 @@ Earth follows a de-facto policy of its own.
 
 Default if blank: (a) with (b) as the interim.
 
-ANSWER Q803:
+ANSWER Q803: a (but users should be able to see difference with toggles ; the app should start with OSM's convention as of `<date>` as default)
 
 #### Q804 · Admin-1
 - (a) ★ **OSM `admin_level=4` relations → shipped artifacts keyed ISO 3166-2 (Q314), rendered on all five
@@ -1745,7 +1745,7 @@ ANSWER Q804:
 
 Default if blank: (a).
 
-ANSWER Q805:
+ANSWER Q805: a
 
 #### Q806 · Extract granularity
 - (a) ★ **Country-level Geofabrik extracts keyed by alpha-3 (sub-country for the large ones: US states,
@@ -1755,7 +1755,7 @@ ANSWER Q805:
 
 Default if blank: (a).
 
-ANSWER Q806:
+ANSWER Q806: b
 
 #### Q807 · The OSM lane's default state
 - (a) ★ **Off until the user picks countries (sizes and the daily diff cost shown); the wizard suggests
@@ -1765,7 +1765,7 @@ ANSWER Q806:
 
 Default if blank: (a).
 
-ANSWER Q807:
+ANSWER Q807: a
 
 #### Q808 · Reading PBF (was Q53)
 Under R16 the lane reads every POI of a country and its daily diffs; a pure-Python PBF decoder manages on
@@ -1780,7 +1780,7 @@ Linux/macOS/Windows) does it in tens of minutes.
 
 Default if blank: (a).
 
-ANSWER Q808:
+ANSWER Q808: a
 
 #### Q809 · Feature classes ingested (was Q52; R16)
 - (a) ★ **Places with metadata: `amenity`, `shop`, `office`, `tourism`, `craft`, `healthcare`, `leisure`,
@@ -1792,7 +1792,7 @@ ANSWER Q808:
 
 Default if blank: (a).
 
-ANSWER Q809:
+ANSWER Q809: b
 
 #### Q810 · The tags kept per object
 - (a) ★ **A curated column set (`name`, `name:*`, `brand`, `brand:wikidata`, `operator`, `opening_hours`,
@@ -1804,7 +1804,7 @@ ANSWER Q809:
 
 Default if blank: (a).
 
-ANSWER Q810:
+ANSWER Q810: a (yes, but extend the list of columns to minimize the JSON blob)
 
 #### Q811 · Storage engine for the OSM rows and their history
 - (a) ★ **DuckDB (the columnar store the app already ships) for objects, tags and tag-change rows;
@@ -1814,7 +1814,7 @@ ANSWER Q810:
 
 Default if blank: (a).
 
-ANSWER Q811:
+ANSWER Q811: b
 
 #### Q812 🔒 · The change feed (was Q54)
 - (a) ★ **Geofabrik daily diffs per selected extract, applied to the ingested classes; if a diff older
@@ -1825,7 +1825,7 @@ ANSWER Q811:
 
 Default if blank: (a).
 
-ANSWER Q812:
+ANSWER Q812: a
 
 #### Q813 · What counts as a change
 - (a) ★ **Tag-level: for each object, each key added / removed / modified, with the diff's timestamp
@@ -1835,7 +1835,7 @@ ANSWER Q812:
 
 Default if blank: (a).
 
-ANSWER Q813:
+ANSWER Q813: a
 
 #### Q814 · History depth
 - (a) ★ **From the day tracking starts, plus each object's `version`/`timestamp` from the extract as a
@@ -1847,7 +1847,7 @@ ANSWER Q813:
 
 Default if blank: (a). Multi-select allowed (a, c).
 
-ANSWER Q814:
+ANSWER Q814: b
 
 #### Q815 · The analytics that ship first (R16)
 1 tag completeness per country / admin-1 (share of places with `opening_hours`, `website`, `email`,
@@ -1860,7 +1860,7 @@ last-edit age) by area.
 
 Default if blank: (a).
 
-ANSWER Q815:
+ANSWER Q815:a
 
 #### Q816 · The geography axis
 - (a) ★ **Choropleths by alpha-3 and admin-1 on Equal Earth + the ranked table in full (the Observatory
@@ -1869,7 +1869,7 @@ ANSWER Q815:
 
 Default if blank: (a).
 
-ANSWER Q816:
+ANSWER Q816: a
 
 #### Q817 · Which OSM objects become Articles (R13 "maps as articles")
 - (a) ★ **Notable Places only — admin areas, `place=*` (cities, towns, villages), and any object carrying
@@ -1881,7 +1881,7 @@ ANSWER Q816:
 
 Default if blank: (a).
 
-ANSWER Q817:
+ANSWER Q817: a
 
 #### Q818 · The Place entity and its article body (was Q55, Q58)
 - (a) ★ **`Place(id = OSM type+id, qid, kind, admin path, names ×12, geometry ref, as_of)` with
@@ -1891,7 +1891,7 @@ ANSWER Q817:
 
 Default if blank: (a).
 
-ANSWER Q818:
+ANSWER Q818: a
 
 #### Q819 · Linking everything with a location onto the map (R17) — the order
 1 Wikipedia page coordinates (`prop=coordinates` / Wikidata P625) → a map layer of the wiki lane · 2 OSM
@@ -1903,7 +1903,7 @@ local OSM address index (Q820).
 
 Default if blank: (a).
 
-ANSWER Q819:
+ANSWER Q819: a
 
 #### Q820 · A local geocoder from the ingested addresses
 - (a) ★ **Yes, for the countries the user ingested, disclosed ("addresses outside your OSM countries are
@@ -1912,7 +1912,7 @@ ANSWER Q819:
 
 Default if blank: (a).
 
-ANSWER Q820:
+ANSWER Q820: a
 
 #### Q821 · A street-level base map
 - (a) ★ **None at beta: data views on Equal Earth, zoomable admin polygons, clustered points and heat;
@@ -1923,7 +1923,7 @@ ANSWER Q820:
 
 Default if blank: (a).
 
-ANSWER Q821:
+ANSWER Q821: b
 
 #### Q822 · Rendering budgets under no-WebGL
 - (a) ★ **Canvas 2D with published level-of-detail caps (points per view, polygon vertices per zoom),
@@ -1931,7 +1931,7 @@ ANSWER Q821:
 
 Default if blank: (a).
 
-ANSWER Q822:
+ANSWER Q822: a
 
 #### Q823 ⛔ · ODbL (was Q51)
 OSM-derived rows inside the corpus make an exported corpus, an evidence ZIP or a bulletin an
@@ -1950,7 +1950,7 @@ ANSWER Q823:
 
 Default if blank: (a).
 
-ANSWER Q824:
+ANSWER Q824: a
 
 #### Q825 · The OSM lane's database file and encryption
 - (a) ★ **Same answers as the Wikipedia lane (Q719, Q720).**
@@ -1958,14 +1958,14 @@ ANSWER Q824:
 
 Default if blank: (a).
 
-ANSWER Q825:
+ANSWER Q825: a
 
 #### Q826 · Contested borders (was Q57)
 - (a) ★ **Rendered CONTESTED with both claims, never a silent pick; confirm.**
 
 Default if blank: (a).
 
-ANSWER Q826:
+ANSWER Q826: a
 
 #### Q827 · Place names in the twelve languages
 - (a) ★ **OSM `name:xx` first, Wikidata labels as the fallback, the source shown in the hover.**
@@ -1973,7 +1973,7 @@ ANSWER Q826:
 
 Default if blank: (a).
 
-ANSWER Q827:
+ANSWER Q827: a
 
 #### Q828 · Where the country picker lives
 - (a) ★ **Settings → Data sources → Maps (invariant #8: data tabs show data, acquisition lives in
@@ -1982,7 +1982,7 @@ ANSWER Q827:
 
 Default if blank: (a).
 
-ANSWER Q828:
+ANSWER Q828: a
 
 ---
 
@@ -2025,7 +2025,7 @@ XML/SKOS, one result says CC0 (confirm).
 
 Default if blank: (b). Multi-select allowed.
 
-ANSWER Q901:
+ANSWER Q901: a, b and c (all of it, each translation should be accessible with their own rich metadata and individually tracked for changes, same as the official laws, with links to the other existing translations and to the original untranslated text)
 
 #### Q902 · Document types in scope — *multi-select*
 - (a) ★ **Constitutions, statutes and codes (consolidated).**
@@ -2037,7 +2037,7 @@ ANSWER Q901:
 
 Default if blank: (a, b, d).
 
-ANSWER Q902:
+ANSWER Q902: a, b and d (include to add c (bills and drafts) to the post beta) 
 
 #### Q903 · Levels
 - (a) ★ **National + supranational (EU, OHADA's uniform acts for its 17 member states) through beta;
@@ -2048,7 +2048,7 @@ ANSWER Q902:
 
 Default if blank: (a).
 
-ANSWER Q903:
+ANSWER Q903: a and b
 
 #### Q904 · Granularity (A3 stands)
 - (a) ★ **Act / code level by default; per-provision rows for sources that arrive pre-split (LEGI, CLML,
@@ -2058,7 +2058,7 @@ ANSWER Q903:
 
 Default if blank: (a).
 
-ANSWER Q904:
+ANSWER Q904: a
 
 #### Q905 · The versioning primitive
 - (a) ★ **Point-in-time consolidated versions with `valid_from` / `valid_to` (the legislation.gov.uk and
@@ -2068,7 +2068,7 @@ ANSWER Q904:
 
 Default if blank: (a).
 
-ANSWER Q905:
+ANSWER Q905: a
 
 #### Q906 · The internal model
 - (a) ★ **Akoma-Ntoso-lite: document → versions → provisions with stable addresses, plus a metadata block
@@ -2081,7 +2081,7 @@ ANSWER Q905:
 
 Default if blank: (a).
 
-ANSWER Q906:
+ANSWER Q906: a
 
 #### Q907 · The metadata fields (was Q60)
 Proposed: official identifiers (ELI, CELEX, ECLI, act number, gazette reference) · title ×languages ·
@@ -2094,7 +2094,7 @@ provenance (original / official translation by X) · licence · source authority
 
 Default if blank: (a).
 
-ANSWER Q907:
+ANSWER Q907: a
 
 #### Q908 · One law in several languages
 EU acts exist in 24 languages; Swiss, Canadian, Belgian, Hong Kong and Finnish law in two or more.
@@ -2104,7 +2104,7 @@ EU acts exist in 24 languages; Swiss, Canadian, Belgian, Hong Kong and Finnish l
 
 Default if blank: (a).
 
-ANSWER Q908:
+ANSWER Q908: a
 
 #### Q909 · Source strategy
 - (a) ★ **Bulk open data first wherever it exists (LEGI, legislation.gov.uk, gesetze-im-internet XML,
@@ -2116,7 +2116,7 @@ ANSWER Q908:
 
 Default if blank: (a).
 
-ANSWER Q909:
+ANSWER Q909: a
 
 #### Q910 · Account-gated bulk data (the EUR-Lex "acts in force" dump behind EU Login)
 - (a) ★ **Treated as key-gated → excluded under V1-2; EU law comes through the open per-document API,
@@ -2126,7 +2126,7 @@ ANSWER Q909:
 
 Default if blank: (a).
 
-ANSWER Q910:
+ANSWER Q910: a
 
 #### Q911 · The per-language seed list (FROM MEMORY — every row to be verified live before it enters a catalogue)
 | UI lang | Candidate authoritative sources (open data / bulk noted) |
@@ -2150,7 +2150,7 @@ ANSWER Q910:
 
 Default if blank: (a).
 
-ANSWER Q911:
+ANSWER Q911: a (but are we enterly missing china ? Also in the UI language ? This must be a mistake I made. We should incororate china and chinese support throughout the app. This is important.)
 
 #### Q912 · The coverage floor and the order of work (was Q63)
 - (a) ★ **Floor = every country in `language_countries.yml` (official / de-facto / regional bases all
@@ -2161,7 +2161,7 @@ ANSWER Q911:
 
 Default if blank: (a).
 
-ANSWER Q912:
+ANSWER Q912: a
 
 #### Q913 · Topic classification for "evolution over geography"
 Comparing "asylum law" across countries needs a topic that is not a word.
@@ -2174,7 +2174,7 @@ Comparing "asylum law" across countries needs a topic that is not a word.
 
 Default if blank: (a).
 
-ANSWER Q913:
+ANSWER Q913: a
 
 #### Q914 · The evolution analytics that ship first (was Q62)
 1 per-provision diff timeline · 2 amendment velocity per jurisdiction over time · 3 cross-jurisdiction
@@ -2185,7 +2185,7 @@ activity with the vintage stated · 5 "what changed this week in the laws I foll
 
 Default if blank: (a).
 
-ANSWER Q914:
+ANSWER Q914: a
 
 #### Q915 · Change cadence per source class
 - (a) ★ **Daily for gazettes and bulk deltas; weekly for consolidated portals without deltas; on-demand
@@ -2193,7 +2193,7 @@ ANSWER Q914:
 
 Default if blank: (a).
 
-ANSWER Q915:
+ANSWER Q915: a
 
 #### Q916 · Point-in-time search (was Q61)
 - (a) ★ **FTS over versions with `valid_on`, so "what did this say in 2019" works without an Article per
@@ -2203,7 +2203,7 @@ ANSWER Q915:
 
 Default if blank: (a).
 
-ANSWER Q916:
+ANSWER Q916: a
 
 #### Q917 · The L0 defects first (was Q59)
 The reader shows `latest_text` with a version selector; diffs run against the previous revision (the
@@ -2212,7 +2212,7 @@ baseline diff kept as a derived view); the adapter's three dates are persisted.
 
 Default if blank: (a).
 
-ANSWER Q917:
+ANSWER Q917: a
 
 #### Q918 · The reader
 - (a) ★ **Version selector · side-by-side diff · provision navigation · an ELI/CELEX permalink · the
@@ -2221,7 +2221,7 @@ ANSWER Q917:
 
 Default if blank: (a).
 
-ANSWER Q918:
+ANSWER Q918: a (but the UI should be homogenous with other parts of the app's ability to track change, such as wikipedia articles, and so forth)
 
 #### Q919 · Authorities as Source rows
 - (a) ★ **Each law authority is a `Source` row with `source_type="law"`, so the Sources tab, coverage and
@@ -2230,7 +2230,7 @@ ANSWER Q918:
 
 Default if blank: (a).
 
-ANSWER Q919:
+ANSWER Q919: a
 
 #### Q920 · AI (was Q66)
 - (a) ★ **Summaries only, ≈, "AI-derived · unreliable"; dates, provisions and identifiers come from rules,
@@ -2238,7 +2238,7 @@ ANSWER Q919:
 
 Default if blank: (a).
 
-ANSWER Q920:
+ANSWER Q920: a
 
 #### Q921 · Q-LAW-1 `counts_documents`
 - (a) ★ **Declare `counts_documents` per official count so the coverage diagnostic can divide where units
@@ -2247,7 +2247,7 @@ ANSWER Q920:
 
 Default if blank: (a).
 
-ANSWER Q921:
+ANSWER Q921: a
 
 #### Q922 · Q-LAW-2 / L6 — `[pdf]` in the default install
 - (a) ★ **Yes: 63 of 275 sources are PDF-only.**
@@ -2255,7 +2255,7 @@ ANSWER Q921:
 
 Default if blank: (a).
 
-ANSWER Q922:
+ANSWER Q922: a
 
 #### Q923 · Q-LAW-3 — the 44-row vetting board
 - (a) ★ **Run it as the 0.4 law operator step.**
@@ -2263,7 +2263,7 @@ ANSWER Q922:
 
 Default if blank: (a).
 
-ANSWER Q923:
+ANSWER Q923: a
 
 #### Q924 · Q-LAW-4 — a verification tier for law endpoints
 - (a) ★ **Yes: each source carries `verified: live | fixture | unverified` with a date; the UI shows it.**
@@ -2271,7 +2271,7 @@ ANSWER Q923:
 
 Default if blank: (a).
 
-ANSWER Q924:
+ANSWER Q924: a
 
 #### Q925 ⛔ · Adapter order and the first managed dataset (was Q65)
 - (a) ★ **legislation.gov.uk (CLML, exists) → gesetze-im-internet (XML) → e-Gov (XML API) → EUR-Lex
@@ -2283,7 +2283,7 @@ ANSWER Q924:
 
 Default if blank: none (⛔).
 
-ANSWER Q925:
+ANSWER Q925: 
 
 #### Q926 · The law lane's database file and encryption
 - (a) ★ **Same answers as the Wikipedia lane (Q719, Q720).**
@@ -2291,7 +2291,7 @@ ANSWER Q925:
 
 Default if blank: (a).
 
-ANSWER Q926:
+ANSWER Q926: a
 
 #### Q927 · Licence per document
 - (a) ★ **Recorded per document (OGL, Licence Ouverte 2.0, Japan's Standard Terms, the EU reuse notice, US
@@ -2300,14 +2300,14 @@ ANSWER Q926:
 
 Default if blank: (a).
 
-ANSWER Q927:
+ANSWER Q927: a
 
 #### Q928 · Subnational law
 - (a) ★ **Post-beta backlog (Q118) unless Q903 = (b) or (c).**
 
 Default if blank: (a).
 
-ANSWER Q928:
+ANSWER Q928: a
 
 #### Q929 · Case law
 - (a) ★ **Post-beta backlog** (a different corpus shape).
@@ -2315,7 +2315,7 @@ ANSWER Q928:
 
 Default if blank: (a). Depends on: Q902 (e).
 
-ANSWER Q929:
+ANSWER Q929: a
 
 #### Q930 · Treaties and international instruments
 - (a) ★ **0.6, as jurisdiction `INT` — the UN Treaty Collection (six UI languages at once) and WIPO Lex are
@@ -2324,7 +2324,7 @@ ANSWER Q929:
 
 Default if blank: (a). Depends on: Q902 (d).
 
-ANSWER Q930:
+ANSWER Q930: a
 
 ---
 
@@ -2350,7 +2350,7 @@ collector indexes ~2.3 articles/s on one core (audit 12). Four storage round-2 r
 
 Default if blank: (a).
 
-ANSWER Q1001:
+ANSWER Q1001: a
 
 #### Q1002 · The consent popup and the lanes
 - (a) ★ **The one popup stays; its hover lists, per lane, the hosts it will contact (Wikimedia ×4, the OSM
@@ -2359,7 +2359,7 @@ ANSWER Q1001:
 
 Default if blank: (a).
 
-ANSWER Q1002:
+ANSWER Q1002: a
 
 #### Q1003 · One versioned-source substrate (was Q68)
 - (a) ★ **`src/versioned/` shared by the wiki, law and OSM lanes, the wiki adapter first.**
@@ -2367,7 +2367,7 @@ ANSWER Q1002:
 
 Default if blank: (a).
 
-ANSWER Q1003:
+ANSWER Q1003: a
 
 #### Q1004 🔒 · One database file per lane (the general rule)
 - (a) ★ **Yes: `corpus.db` (press, as today) + `wiki.db` + `osm.db` + `law.db`, each encrypted alike,
@@ -2376,7 +2376,7 @@ ANSWER Q1003:
 
 Default if blank: (a). (Q719/Q825/Q926 inherit this unless they say otherwise.)
 
-ANSWER Q1004:
+ANSWER Q1004: a
 
 #### Q1005 🔒 · Encryption of the public-data lanes (the general rule)
 - (a) ★ **Encrypted, same passphrase, same threat model, because the selection reveals interests.**
@@ -2384,7 +2384,7 @@ ANSWER Q1004:
 
 Default if blank: (a).
 
-ANSWER Q1005:
+ANSWER Q1005: a
 
 #### Q1006 · A data-budget surface
 - (a) ★ **Settings → Storage shows each lane's size, its budget, the honest arithmetic ("at your current
@@ -2394,7 +2394,7 @@ ANSWER Q1005:
 
 Default if blank: (a).
 
-ANSWER Q1006:
+ANSWER Q1006: a
 
 #### Q1007 · DuckDB for the high-volume lane tables
 - (a) ★ **Wiki per-edit rows, OSM objects/tags/changes, law provision versions in DuckDB; entities and
@@ -2403,7 +2403,7 @@ ANSWER Q1006:
 
 Default if blank: (a).
 
-ANSWER Q1007:
+ANSWER Q1007: b
 
 #### Q1008 · Licence statements where data leaves the machine
 - (a) ★ **Every export, bulletin and evidence ZIP carries the attribution lines that apply (CC BY-SA 4.0
@@ -2411,7 +2411,7 @@ ANSWER Q1007:
 
 Default if blank: (a).
 
-ANSWER Q1008:
+ANSWER Q1008: a
 
 #### Q1009 ⛔ · The storage round-2 rulings (register C4; rows 3–6) — answer each as `a/b` in order, e.g. `y, OOENC2, y, y`
 - **Row 3 — blob-store dedup ON?** (y ★ / n)
@@ -2429,7 +2429,7 @@ ANSWER Q1009:
 
 Default if blank: (a).
 
-ANSWER Q1010:
+ANSWER Q1010: a
 
 #### Q1011 · Hardware-profile detection
 - (a) ★ **The app reads cores, RAM and free disk at boot (no network), proposes budgets from a published
@@ -2438,7 +2438,7 @@ ANSWER Q1010:
 
 Default if blank: (a).
 
-ANSWER Q1011:
+ANSWER Q1011: a
 
 #### Q1012 · The per-job bandwidth cap (invariant #20's recorded omission)
 - (a) ★ **A per-PROCESS budget composed with the collection-speed governor (`#rate-toggle`), never a second
@@ -2448,7 +2448,7 @@ ANSWER Q1011:
 
 Default if blank: (a).
 
-ANSWER Q1012:
+ANSWER Q1012: a
 
 #### Q1013 · The Crawl-delay cap (the 2026-09-10 pending ruling)
 - (a) ★ **Persist a per-host next-allowed-at beside the robots cache; refuse an inline wait beyond a few
@@ -2457,7 +2457,7 @@ ANSWER Q1012:
 
 Default if blank: (a).
 
-ANSWER Q1013:
+ANSWER Q1013: a
 
 #### Q1014 · Transport per lane
 - (a) ★ **Each lane declares its transport in the consent hover; a lane never downgrades Tor → clearnet
@@ -2465,7 +2465,7 @@ ANSWER Q1013:
 
 Default if blank: (a).
 
-ANSWER Q1014:
+ANSWER Q1014: a
 
 #### Q1015 · New dependencies
 - (a) ★ **Compiled code only in optional extras (`[geo]` = pyosmium); pure Python in core (`simplemma`);
@@ -2475,7 +2475,7 @@ ANSWER Q1014:
 
 Default if blank: (a).
 
-ANSWER Q1015:
+ANSWER Q1015: a
 
 #### Q1016 · The Living sources view (was Q47)
 - (a) ★ **One view for wiki / law / OSM: timeline of changes, diff, coverage, freshness, budget; replaces
@@ -2484,7 +2484,7 @@ ANSWER Q1015:
 
 Default if blank: (a).
 
-ANSWER Q1016:
+ANSWER Q1016: a
 
 #### Q1017 · KPI bars for the lanes
 - (a) ★ **Measured first (V1-6): each lane ships its coverage/freshness resolver; bars are set only after a
@@ -2492,7 +2492,7 @@ ANSWER Q1016:
 
 Default if blank: (a).
 
-ANSWER Q1017:
+ANSWER Q1017: a
 
 #### Q1018 · CI fixtures for the lanes
 - (a) ★ **A synthetic wiki edition, a synthetic OSM extract and a synthetic jurisdiction in `tests/fixtures/`,
@@ -2500,7 +2500,7 @@ ANSWER Q1017:
 
 Default if blank: (a).
 
-ANSWER Q1018:
+ANSWER Q1018: a
 
 #### Q1019 · The Windows lane and the new lanes
 - (a) ★ **`pyosmium` wheels exist for Windows (FROM MEMORY); the lanes are in the Windows CI matrix from
@@ -2508,7 +2508,7 @@ ANSWER Q1018:
 
 Default if blank: (a).
 
-ANSWER Q1019:
+ANSWER Q1019: a
 
 #### Q1020 · The `mode` retirement and the scheduler shape
 - (a) ★ **The scheduler runs lanes (press, wiki, osm, law, hazards, discovery) under one online consent
@@ -2517,7 +2517,7 @@ ANSWER Q1019:
 
 Default if blank: (a).
 
-ANSWER Q1020:
+ANSWER Q1020: a
 
 ---
 
@@ -2537,7 +2537,7 @@ also carries a `scrape_unqualified` setting relaxing `status == qualified` to `s
 
 Default if blank: none (⛔).
 
-ANSWER Q1101:
+ANSWER Q1101: a
 
 #### Q1102 ⛔ · What identifies a source — a domain or a feed (register B11)
 475 of 3,870 seeded entries are shadowed by a same-domain sibling; 75 are language services (BBC Arabic,
@@ -2550,7 +2550,7 @@ DW Español…) that differ only by feed path, and 192 carry `lean-*` tags the s
 
 Default if blank: none (⛔).
 
-ANSWER Q1102:
+ANSWER Q1102: b
 
 #### Q1103 · Triage-derived stoplist additions (register B2, narrowed 2026-09-11)
 - (a) ★ **May merge into `configs/stopwords_extra` after a review, versioned and registry-tracked.**
@@ -2558,7 +2558,7 @@ ANSWER Q1102:
 
 Default if blank: (a).
 
-ANSWER Q1103:
+ANSWER Q1103: b (but we will update the list as we update the app, there should be a stopword related diagnostic to allow us to optimize the list, enlarge it when possible)
 
 #### Q1104 · The English (11,263) + French (881) triage proposals into the GLOBAL channel (B3)
 - (a) ★ **Yes, through the review surface, batch by batch.**
@@ -2566,7 +2566,7 @@ ANSWER Q1103:
 
 Default if blank: (a). Depends on: Q1103.
 
-ANSWER Q1104:
+ANSWER Q1104: a
 
 #### Q1105 · The 64,910 `kind_overrides` proposals (~50% precision) (B4)
 - (a) ★ **A worklist for a review surface; never auto-applied.**
@@ -2574,7 +2574,7 @@ ANSWER Q1104:
 
 Default if blank: (a).
 
-ANSWER Q1105:
+ANSWER Q1105: a
 
 #### Q1106 · `configs/source_qualification.yml` — the operator loop UI (B5)
 - (a) ★ **Ship the overlay editor (adopt / export / revert) in Settings.**
@@ -2582,7 +2582,7 @@ ANSWER Q1105:
 
 Default if blank: (a).
 
-ANSWER Q1106:
+ANSWER Q1106: a
 
 #### Q1107 · `PATHOLOGY_ABS_FLOOR` (0.5) unreachable in the field (B6)
 - (a) ★ **Keep 0.5, record it as unreachable, let the measured criteria decide.**
@@ -2590,7 +2590,7 @@ ANSWER Q1106:
 
 Default if blank: (a).
 
-ANSWER Q1107:
+ANSWER Q1107: a
 
 #### Q1108 · A recency-windowed re-check (B7)
 - (a) ★ **The 6-month re-verification reads the last 6 months, not the whole history.**
@@ -2598,7 +2598,7 @@ ANSWER Q1107:
 
 Default if blank: (a).
 
-ANSWER Q1108:
+ANSWER Q1108: a
 
 #### Q1109 · Where a research institute belongs (institutions B1)
 - (a) ★ **`official_sources.yml` with `source_type: academic-research`, tagged `research` /
@@ -2607,7 +2607,7 @@ ANSWER Q1108:
 
 Default if blank: (a).
 
-ANSWER Q1109:
+ANSWER Q1109: b (we should develop a strategy to comprehensively increase the list)
 
 #### Q1110 · The `primary_source` axis (institutions B2)
 - (a) ★ **Defer-not-reject now; rewrite the axis as an observable ("publishes dated official
@@ -2616,14 +2616,14 @@ ANSWER Q1109:
 
 Default if blank: (a).
 
-ANSWER Q1110:
+ANSWER Q1110: a
 
 #### Q1111 · The 16 mis-shelved journals (institutions B3)
 - (a) ★ **Move them to `academic_sources.yml`.**
 
 Default if blank: (a).
 
-ANSWER Q1111:
+ANSWER Q1111: a
 
 #### Q1112 · A content-integrity signal near the app (institutions B4)
 - (a) **Stay in the analysis kit.**
@@ -2634,7 +2634,7 @@ ANSWER Q1111:
 
 Default if blank: (b).
 
-ANSWER Q1112:
+ANSWER Q1112: b
 
 #### Q1113 ⛔ · The compromised embassy platforms (institutions B5)
 Ten of thirteen `embajada.gob.ve` missions, two Indonesian district courts and `usf.gov.jm` serve gambling
@@ -2655,21 +2655,21 @@ ANSWER Q1113:
 
 Default if blank: (a).
 
-ANSWER Q1114:
+ANSWER Q1114: a
 
 #### Q1115 · Country-vs-domain audit (institutions C7)
 - (a) ★ **A diagnostic proposes corrections for review; never an automatic ccTLD rule.**
 
 Default if blank: (a).
 
-ANSWER Q1115:
+ANSWER Q1115: a
 
 #### Q1116 · Bare QID names (institutions C8)
 - (a) ★ **Resolve the label at the polite rate or decline to admit the row.**
 
 Default if blank: (a).
 
-ANSWER Q1116:
+ANSWER Q1116: a
 
 #### Q1117 · The 116 Czech municipalities on one CMS (institutions C9)
 - (a) ★ **Admit them, tagged with the vendor path so a supplier outage is one visible cause; the balance
@@ -2679,7 +2679,7 @@ ANSWER Q1116:
 
 Default if blank: (a).
 
-ANSWER Q1117:
+ANSWER Q1117: a
 
 #### Q1118 · The three unrun worklists (institutions D2)
 - (a) ★ **Run the shortlist (3,031) next; the remainder and the religious lists after the splice is
@@ -2689,7 +2689,7 @@ ANSWER Q1117:
 
 Default if blank: (a).
 
-ANSWER Q1118:
+ANSWER Q1118: a
 
 #### Q1119 · The Stage B splice (institutions D3)
 - (a) ★ **Admit the rows where both judges agree; defer the ~15% contested band.**
@@ -2697,7 +2697,7 @@ ANSWER Q1118:
 
 Default if blank: (a).
 
-ANSWER Q1119:
+ANSWER Q1119: a
 
 #### Q1120 · The information architecture (Q-VIS-1)
 - (a) ★ **"Rings, not gates" as the spine (a Ring controls what is pinned, never what is reachable) with
@@ -2708,7 +2708,7 @@ ANSWER Q1119:
 
 Default if blank: (a).
 
-ANSWER Q1120:
+ANSWER Q1120: a
 
 #### Q1121 · The skipped-first-run default (Q-VIS-2)
 - (a) ★ **Standard (Ring 1) when the depth question is skipped; Essentials only by explicit choice.**
@@ -2716,7 +2716,7 @@ ANSWER Q1120:
 
 Default if blank: (a).
 
-ANSWER Q1121:
+ANSWER Q1121: a
 
 #### Q1122 · Help's body (Q-VIS-3)
 - (a) ★ **An explicit exception: the Help body is English-by-design with a translated banner saying so
@@ -2726,7 +2726,7 @@ ANSWER Q1121:
 
 Default if blank: (a).
 
-ANSWER Q1122:
+ANSWER Q1122: b
 
 #### Q1123 · The theme catalogue (Q-VIS-4)
 - (a) ★ **Keep 17; invariant #12 unchanged.**
@@ -2734,7 +2734,7 @@ ANSWER Q1122:
 
 Default if blank: (a).
 
-ANSWER Q1123:
+ANSWER Q1123: b
 
 #### Q1124 · The Patterns lens field-validation bar (Q-VIS-6)
 - (a) ★ **Flip on only when the corpus is ≥ 100 k articles and a labelled sample shows a false-positive
@@ -2744,7 +2744,7 @@ ANSWER Q1123:
 
 Default if blank: (a).
 
-ANSWER Q1124:
+ANSWER Q1124: a
 
 #### Q1125 · `#net-coach` emphasis (Q-VIS-7)
 - (a) ★ **Both actions carry equal visual weight; "Not now" is not quieter than "Go online".**
@@ -2752,7 +2752,7 @@ ANSWER Q1124:
 
 Default if blank: (a).
 
-ANSWER Q1125:
+ANSWER Q1125: a
 
 #### Q1126 ⛔ · The airplane toggle's two titles (register M2)
 - (a) ★ **Align the task-manager title to the stronger, true claim ("every new network request will be
@@ -2761,7 +2761,7 @@ ANSWER Q1125:
 
 Default if blank: none (⛔ — consent copy).
 
-ANSWER Q1126:
+ANSWER Q1126: a
 
 #### Q1127 · Inline handlers and the CSP (register H4: 613 handlers, growing ~4% in five days)
 - (a) ★ **Fund a retirement slice in 0.5 with a ratchet that fails on any new inline handler; drop
@@ -2770,7 +2770,7 @@ ANSWER Q1126:
 
 Default if blank: (a).
 
-ANSWER Q1127:
+ANSWER Q1127: a
 
 #### Q1128 · The verification bar (register H2 = L2)
 - (a) ★ **Chromium in the sandbox + your click-through = verified; Gecko stays best-effort.**
@@ -2778,7 +2778,7 @@ ANSWER Q1127:
 
 Default if blank: (a).
 
-ANSWER Q1128:
+ANSWER Q1128: a
 
 #### Q1129 · The political-lean scale (register L9)
 - (a) ★ **Keep the stance: reported, never filtered.**
@@ -2786,7 +2786,7 @@ ANSWER Q1128:
 
 Default if blank: (a).
 
-ANSWER Q1129:
+ANSWER Q1129: a
 
 #### Q1130 · Non-topical vocabulary (register L10)
 - (a) ★ **Filter only the `via:*` provenance prefixes from topical displays; keep the rest reported.**
@@ -2794,7 +2794,7 @@ ANSWER Q1129:
 
 Default if blank: (a).
 
-ANSWER Q1130:
+ANSWER Q1130: a
 
 #### Q1131 · Bulletin mail sending (register D3)
 - (a) ★ **Never.**
@@ -2802,7 +2802,7 @@ ANSWER Q1130:
 
 Default if blank: (a).
 
-ANSWER Q1131:
+ANSWER Q1131: a
 
 #### Q1132 · Model-weights pin (register D6)
 - (a) ★ **Pin digests in the external-artifact registry; the pull verifies them.**
@@ -2810,7 +2810,7 @@ ANSWER Q1131:
 
 Default if blank: (a).
 
-ANSWER Q1132:
+ANSWER Q1132: a
 
 #### Q1133 · IPCC as a source (register G4)
 - (a) ★ **AR6 Summaries for Policymakers first; `pypdf` acceptable.**
@@ -2818,7 +2818,7 @@ ANSWER Q1132:
 
 Default if blank: (a).
 
-ANSWER Q1133:
+ANSWER Q1133: a
 
 #### Q1134 · Open-Meteo layer (register G7)
 - (a) ★ **Temperature and precipitation first; 1991–2020 baseline; soil moisture later.**
@@ -2826,7 +2826,7 @@ ANSWER Q1133:
 
 Default if blank: (a).
 
-ANSWER Q1134:
+ANSWER Q1134: a
 
 #### Q1135 · Religious calendars and the eclipse canon (register G8)
 - (a) **You will provide the dates** (as ruled 2026-06-17).
@@ -2835,7 +2835,7 @@ ANSWER Q1134:
 
 Default if blank: (c).
 
-ANSWER Q1135:
+ANSWER Q1135: b
 
 #### Q1136 · App self-update (register G9)
 - (a) ★ **Tags only, signed releases, an opt-in check that is consented like any egress, never
@@ -2844,7 +2844,7 @@ ANSWER Q1135:
 
 Default if blank: (a).
 
-ANSWER Q1136:
+ANSWER Q1136: a
 
 #### Q1137 · Stored mailbox credentials (register I1)
 - (a) ★ **Never stored; each pull asks.**
@@ -2852,7 +2852,7 @@ ANSWER Q1136:
 
 Default if blank: (a).
 
-ANSWER Q1137:
+ANSWER Q1137: a
 
 #### Q1138 · Tor-exit-resolve and `oo-netcut` / Stem (register I3, I4)
 - (a) ★ **Parked until 0.9's security review.**
@@ -2860,7 +2860,7 @@ ANSWER Q1137:
 
 Default if blank: (a).
 
-ANSWER Q1138:
+ANSWER Q1138: a
 
 #### Q1139 · `src/api/diagnostics.py` (6,200 lines / 126 routes) (register J1)
 - (a) ★ **Authorise the mechanical split into a package, routes unchanged.**
@@ -2868,7 +2868,7 @@ ANSWER Q1138:
 
 Default if blank: (a).
 
-ANSWER Q1139:
+ANSWER Q1139: a
 
 #### Q1140 · SQLite-only, documented (register J3)
 - (a) ★ **Document SQLite-only and remove the Postgres parity stubs.**
@@ -2876,7 +2876,7 @@ ANSWER Q1139:
 
 Default if blank: (a).
 
-ANSWER Q1140:
+ANSWER Q1140: b (we might need to change database architecture in the future, SQLite has certain limitations that will cost increasingly as the database expands. PostgresSQL seems a good alternative at the cost of greater complexity. As PostgresSQL has column limitations SQLite doesn't have, we should anticipate this in our current work.)
 
 #### Q1141 · `docs/FUTURE_DEVELOPMENTS.md` reality-check depth (register A4)
 - (a) ★ **Full: every section re-checked against the tree, stale claims corrected.**
@@ -2884,7 +2884,7 @@ ANSWER Q1140:
 
 Default if blank: (a).
 
-ANSWER Q1141:
+ANSWER Q1141: a
 
 #### Q1142 · The multi-model specialisation bench (register D8)
 - (a) ★ **Run it when the AI-coordinator translation sweep (Q405) lands in 0.5.**
@@ -2892,7 +2892,7 @@ ANSWER Q1141:
 
 Default if blank: (a).
 
-ANSWER Q1142:
+ANSWER Q1142: a
 
 #### Q1143 · Live ollama.com library browse (register D9)
 - (a) ★ **Consented, opt-in, egress named.**
@@ -2900,14 +2900,14 @@ ANSWER Q1142:
 
 Default if blank: (a).
 
-ANSWER Q1143:
+ANSWER Q1143: a
 
 #### Q1144 · Perception extraction languages (register D10)
 - (a) ★ **Enable per language only where the measured gate passes; `who` stays refused where it fails.**
 
 Default if blank: (a).
 
-ANSWER Q1144:
+ANSWER Q1144: a
 
 #### Q1145 · Wiktextract (register E3)
 - (a) ★ **Exclude** (a CC BY-SA 3.0/4.0 revision mixture).
@@ -2915,7 +2915,7 @@ ANSWER Q1144:
 
 Default if blank: (a).
 
-ANSWER Q1145:
+ANSWER Q1145: a
 
 #### Q1146 · The SKOS thesaurus family (register E4)
 - (a) ★ **Adopt EuroVoc + the UNESCO Thesaurus (ar/en/fr/ru/es) + AGROVOC + IPTC Media Topics for topic
@@ -2924,7 +2924,7 @@ ANSWER Q1145:
 
 Default if blank: (a).
 
-ANSWER Q1146:
+ANSWER Q1146: a
 
 #### Q1147 · Official-statistics breadth, 29 of ~152 agencies (register G5)
 - (a) ★ **A networked session builds the directory; `news_url` per agency verified live.**
@@ -2932,7 +2932,7 @@ ANSWER Q1146:
 
 Default if blank: (a).
 
-ANSWER Q1147:
+ANSWER Q1147: a
 
 #### Q1148 · The guarded-route rate limit, 100/hour (register L4)
 - (a) ★ **Raise it for loopback UI calls (1,000/hour), keep 100 for anything else.**
@@ -2940,7 +2940,7 @@ ANSWER Q1147:
 
 Default if blank: (a).
 
-ANSWER Q1148:
+ANSWER Q1148: a
 
 #### Q1149 · The synthetic click-through corpus runs plaintext (register L7)
 - (a) ★ **Add an encrypted variant to the runner.**
@@ -2948,7 +2948,7 @@ ANSWER Q1148:
 
 Default if blank: (a).
 
-ANSWER Q1149:
+ANSWER Q1149: a
 
 #### Q1150 · The ooMap embed on When/Where (register M3)
 - (a) ★ **Keep.**
@@ -2956,7 +2956,7 @@ ANSWER Q1149:
 
 Default if blank: (a).
 
-ANSWER Q1150:
+ANSWER Q1150: a
 
 #### Q1151 · The newsletter attach go-ahead (register M4)
 - (a) ★ **Go** (ruled in principle; this is the go-ahead because it moves data).
@@ -2964,7 +2964,7 @@ ANSWER Q1150:
 
 Default if blank: (a).
 
-ANSWER Q1151:
+ANSWER Q1151: a
 
 #### Q1152 · The i18n remainder, 470 strings (register M5)
 - (a) ★ **Fund it in 0.4.**
@@ -2972,7 +2972,7 @@ ANSWER Q1151:
 
 Default if blank: (a).
 
-ANSWER Q1152:
+ANSWER Q1152: a
 
 #### Q1153 · Intensive indicators with no exact weighting (register G11)
 - (a) ★ **Population-weighted with the weighting disclosed on the figure.**
@@ -2980,7 +2980,7 @@ ANSWER Q1152:
 
 Default if blank: (a).
 
-ANSWER Q1153:
+ANSWER Q1153: a
 
 #### Q1154 · The rulings artifact's lone answer (was Q69)
 The "Open Omniscience Rulings" artifact recorded `A2: default` at 2026-09-12T07:37Z.
@@ -2989,7 +2989,7 @@ The "Open Omniscience Rulings" artifact recorded `A2: default` at 2026-09-12T07:
 
 Default if blank: (b).
 
-ANSWER Q1154:
+ANSWER Q1154: b
 
 #### Q1155 · Ratify the defaults taken autonomously since 2026-09-07
 PROMPT_20's four questions answered on their recommended defaults; M1's two items closed on their own.
@@ -2998,7 +2998,7 @@ PROMPT_20's four questions answered on their recommended defaults; M1's two item
 
 Default if blank: (a).
 
-ANSWER Q1155:
+ANSWER Q1155: a
 
 #### Q1156 · The airplane-mode field bar and the 2026-09-10 "shuffle" finding
 Singleton language strata put the same twelve sources at the head of every pass on every instance.
@@ -3008,14 +3008,14 @@ Singleton language strata put the same twelve sources at the head of every pass 
 
 Default if blank: (a).
 
-ANSWER Q1156:
+ANSWER Q1156: a
 
 #### Q1157 · G10 — the earlier Wikipedia questions 1–5
 - (a) ★ **Superseded by §8 of this sheet.**
 
 Default if blank: (a).
 
-ANSWER Q1157:
+ANSWER Q1157: a
 
 ---
 
@@ -3028,7 +3028,7 @@ ANSWER Q1157:
 
 Default if blank: (a).
 
-ANSWER Q1201:
+ANSWER Q1201: a
 
 #### Q1202 · How the rulings are recorded
 - (a) ★ **One OPEN_QUEUE entry indexing every question ID with the chosen option's label verbatim and your
@@ -3038,7 +3038,7 @@ ANSWER Q1201:
 
 Default if blank: (a).
 
-ANSWER Q1202:
+ANSWER Q1202: a
 
 #### Q1203 · Blanks
 - (a) ★ **A blank non-⛔ question takes its default, recorded as an ASSUMPTION you may reverse at any time;
@@ -3047,7 +3047,7 @@ ANSWER Q1202:
 
 Default if blank: (a).
 
-ANSWER Q1203:
+ANSWER Q1203: a
 
 #### Q1204 · The second half of the plan
 - (a) ★ **Gate files for 0.4–0.9 (Q112) and the slice briefs (Q113) written in one session from the
@@ -3056,7 +3056,7 @@ ANSWER Q1203:
 
 Default if blank: (a).
 
-ANSWER Q1204:
+ANSWER Q1204: a
 
 #### Q1205 · The rulings artifact
 - (a) ★ **Retire it; the markdown sheet is the channel.**
@@ -3064,7 +3064,7 @@ ANSWER Q1204:
 
 Default if blank: (a).
 
-ANSWER Q1205:
+ANSWER Q1205: a
 
 #### Q1206 · A rulings index
 - (a) ★ **Create `docs/ledger/RULINGS_INDEX.md` — one line per ruling (id · date · ruling · source · where
@@ -3073,7 +3073,7 @@ ANSWER Q1205:
 
 Default if blank: (a).
 
-ANSWER Q1206:
+ANSWER Q1206: a
 
 #### Q1207 · This format as the standard
 - (a) ★ **Future question rounds use this sheet format (IDs, options with impact, defaults, ANSWER lines,
@@ -3082,7 +3082,7 @@ ANSWER Q1206:
 
 Default if blank: (a).
 
-ANSWER Q1207:
+ANSWER Q1207: a
 
 #### Q1208 · Anything else you decided while reading
 Write it here as `NOTE:` lines. Each becomes a ruling recorded verbatim.

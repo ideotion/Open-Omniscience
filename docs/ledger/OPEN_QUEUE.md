@@ -21,6 +21,523 @@
 > reduced to its unshipped half.
 
 ## Open queue (when maintainer says proceed)
+- **ROADMAP ANSWER SHEET — THE 278 ANSWERS RECORDED (the maintainer returned the sheet 2026-09-15;
+  processed per its own §0.2 protocol; PLANS ONLY, nothing built; draft PR #1131). THE PRIMARY
+  RECORD is the answered file itself, overwritten in place (Q1201):
+  [`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md);
+  THIS ENTRY IS THE INDEX (Q1202), and [`RULINGS_INDEX.md`](RULINGS_INDEX.md) (created per Q1206)
+  carries one line per ruling with where it is enforced. The gate files
+  `docs/product/RELEASE_0.4_GATE.md` (amended) … `RELEASE_0.9_GATE.md` and the slice briefs under
+  `docs/plans/2026-09-12-beta-pathway/` are written FROM these answers (Q112/Q113/Q1204).** COUNTS,
+  measured on the returned file (3,115 lines, LF, no BOM; 271 `ANSWER` lines differ from the blank):
+  270 answered · 4 ⛔ left blank → PENDING, never defaulted (Q823, Q925, Q1009, Q1113) · 4 non-⛔ left
+  blank → the sheet's stated default taken as an ASSUMPTION, revisitable at any time (Q001 = (a),
+  Q207 = (a), Q804 = (a), Q1208 = no notes; Q1203 = a) · 0 `later` · 0 heading-prefix answers · 0
+  `NOTE:` lines — the maintainer wrote notes inline after the letter, in parentheses, and every one
+  is recorded VERBATIM below (typos included). Multi-letter answers: Q513 (b and c), Q901 (a, b and
+  c), Q902 (a, b and d) on multi-select questions; Q903 (a and b) on a single-select question —
+  recorded as written and flagged. Q305 was answered in words ('follows Q301') and is recorded as
+  its own answer.
+  **CONSISTENCY (§0.2 step 3) — CONTRADICTIONS LISTED, NOT RESOLVED:** Q903: CONFLICT (within one
+  answer): (a) ends 'subnational recorded for post-beta' while (b) says 'Subnational from 0.7'; both
+  recorded as given, neither picked — the plan places subnational at 0.7 as the reading that keeps
+  both options' scope, labelled for confirmation (Q928's own conditional then resolves the same
+  way). Q1103: CONFLICT with Q1104: (b) 'Never; the shipped stoplists are frozen' beside Q1104 = (a)
+  'Yes, through the review surface, batch by batch' for the triage proposals into the GLOBAL
+  channel; Q1103's own note ('we will update the list as we update the app … a stopword-related
+  diagnostic') admits a reading — no runtime merging, per-release curated updates guided by a
+  diagnostic — which is offered, not taken. Couplings checked and consistent: Q102←Q101 (a/a) ·
+  Q105←Q106–Q108 (all a) · Q117←Q1128 (a/a: rows D, E become bars, F closes on the Chromium +
+  click-through bar) · Q219←Q1004 (a/a) · Q301 = c with Q304 = a and Q305 = 'follows Q301' —
+  consistent under the staging Q301 names: DISPLAY+BOUNDARY (payloads gain `country_iso3`, the
+  loader normalises) in 0.4, the storage half (`country` becomes alpha-3, the scripted config
+  rewrite + its test, Q304's FULL shape) in 0.5 · Q405←Q404 (a/a) · Q417←Q501 (a/a) · Q719←Q1004
+  (a/a) · Q929←Q902(e): (e) was NOT chosen, so Q929 = (a) post-beta backlog applies only if case law
+  ever enters scope · Q930←Q902(d): (d) chosen, so treaties land in 0.6 as `INT` · Q1104←Q1103: the
+  CONFLICT above. IMPACTS the sheet's own options flagged and the maintainer chose knowingly
+  (recorded, not re-litigated): Q708 = b + Q709 = b + Q1007 = b (every edit as a raw row for every
+  page, in SQLite — the sheet's FROM-MEMORY figure is 250–300 k rows/day, ~15 GB/year uncompressed)
+  · Q814 = b (the full-history planet is ONE planet-wide file; Geofabrik's per-region full-history
+  extracts sit behind an OSM login, which Q910's reasoning treats as key-gated) · Q809 = b + Q821 =
+  b + Q811 = b (roads and buildings, self-rendered streets, all in SQLite) · Q722 = b (the
+  hundreds-of-GB tail walk may run over Tor when that is the transport — it waits, it never
+  downgrades) · Q515 = b (exact uncapped totals cost a full count on the ring-size extremes) · Q1122
+  = b (~2 M characters of Help translated ×12; AI-drafted, flagged for native review like the
+  GUI-gallery precedent).
+  **TENSIONS INSIDE ONE ANSWER (the maintainer's note is the ruling; the option's label is
+  context):** Q302: the note inverts the label: the ruling as written = the CODE is displayed and
+  the full country name, in the UI language, is in the hover bubble (i.e. option (b) plus the
+  localised name on hover). Q702: the note overrides the label's 'default off': the ruling as
+  written = a dedicated Wikipedia toggle, DEFAULT ON, in the top bar (like the AI toggle, with a
+  consistent animation), letting the user stop / start / halt / resume the streaming; the one online
+  consent (invariant #14) still gates the first egress. Q1103: the note qualifies 'frozen': the list
+  still evolves with app releases, guided by a new stopword diagnostic. **NEW RULINGS CARRIED BY
+  NOTES:** Q701: NEW CROSS-CUTTING RULING carried by the note (not an option): every page request /
+  download / fetch history is part of the backup for EVERYTHING the app downloads (not only
+  Wikipedia), so a fresh install restored from an old backup does not re-download the same pages and
+  prioritises other fetches; at install and at import the user chooses whether to trust it through a
+  'trust the backup scrapping history' toggle. The reason dumps are out (the NOTE the question asked
+  for) was NOT given — recorded as unstated. Q911: the note asks whether China is missing: it is not
+  — `zh` is one of the twelve UI locales (src/static/locales/zh.json), the seed table's `zh` row
+  lists flk.npc.gov.cn, Hong Kong, Taiwan, Macau and Singapore, and configs/legal_sources.yml
+  already carries NPC (npc.gov.cn, country cn) — but the emphasis 'incorporate China and Chinese
+  support throughout the app; this is important' is recorded as a standing ruling: every lane treats
+  zh as a first-class language (Q506 segmenters, the zh edition, PRC law sources) and reports its
+  coverage separately Q1140: the note is recorded as a design constraint: keep the PostgreSQL-parity
+  aspiration, and anticipate its column limit (Postgres allows at most 1,600 columns per table, FROM
+  MEMORY; SQLite's compile-time default is 2,000) whenever a curated column set is widened (Q810).
+  **`CLAUDE.md` AMENDMENTS MADE THIS TURN (Q1202: only non-negotiables, UI invariants and the
+  protocol itself; the line ratchet raised in the same commit):** (1) THE PROTOCOL gains
+  `docs/ledger/RULINGS_INDEX.md` as the fourth ledger file (Q1206 = a) and the answer-sheet format
+  as the standard for future question rounds (Q1207 = a); (2) UI invariant #12 is amended for Q1123
+  = b (the catalogue may be culled to ≥ 10; the ≥ 16 pin in test_ui_invariants moves in the same PR
+  as the cull, not before); (3) UI invariant #20's recorded bandwidth-cap omission is RESOLVED by
+  Q1012 = a (a per-PROCESS budget composed with the collection-speed governor, never a second rate
+  authority; per-job caps stay omitted) and its 'REMAINING: History' is qualified by Q222 = b
+  (import/export history lives in Settings → Backup). The two `Amends:` flags whose answer amends a
+  CODE design note rather than `CLAUDE.md` — Q201 = a (the 2026-07-16 `_uxShowLastCompletedSummary`
+  behaviour is SUPERSEDED: a fresh page + one quiet 'Last import' line) and Q411 = a (the
+  `i18n.js:162` 'data never translates' note gains the ruled exception for keyword cards) — are
+  recorded HERE and in the rulings index; the code comment changes ride the build slices. Q1122's
+  `Amends:` sat on option (a); (b) was chosen, so the 'every user-facing string ×12' non-negotiable
+  stands UNAMENDED and Help's body is translated.
+  **STILL PENDING AFTER THE SHEET (nothing assumed):** Q823 ⛔ ODbL at every point data leaves the
+  machine (until ruled, no OSM-derived row enters an export, bulletin or evidence ZIP — today's
+  state, not a decision) · Q925 ⛔ the law adapter ORDER and the first managed dataset (0.4 builds
+  the adapter framework and the CLML adapter that exists; the next adapters wait) · Q1009 ⛔ the
+  storage round-2 rows 3–6 (blob dedup · OOENC2 vs `age` · keyed-HMAC addressing · the sqlite3mc
+  benchmark trial) · Q1113 ⛔ the compromised embassy platforms · the reason dumps are out (Q701's
+  requested NOTE, not written) · and, NOT asked by the sheet, unchanged: the eight lesson-shaped
+  queue entries awaiting relocation (the 2026-09-07 entry below), the `PR pending`-at-zero test
+  question and the `#N`-paragraph check question recorded in LESSONS.md.
+  **THE INDEX — every question ID with the chosen option's label verbatim, the note verbatim, and
+  the release + slice that carries it (see the gate files):** §1: Q001 = (a) All nineteen are
+  correctly recorded. [ASSUMPTION: blank, the sheet's default] → this PR. §2 the train: Q101 ⛔ = (a)
+  0.9.0 = Beta 1, 0.9.x = later betas, 1.0.0 = general availability ("the gift"). → 0.9 S09-01 ·
+  Q102 = (a) Features + schema (only additive migrations after 0.9.0) + backup format (every backup
+  made since 0.9.0 restores forever) + the consent model. → 0.9 S09-01 · Q103 = (b) Public
+  pre-release → 0.9 S09-01 · Q104 = (b) V1 §8 only. → 0.9 S09-01 · Q105 = (a) Yes — amend the
+  contents, keep the themes. → this PR · Q106 = (a) 0.5 seeds it (the Place entity + the first
+  country's POIs + the tag-completeness view); 0.6 adds daily change tracking and the trend
+  surfaces; 0.7–0.8 widen to more countries. → 0.5 S05-04 · Q107 = (a) 0.4: the metadata model + the
+  L0 defects + the first bulk adapters; 0.5: the evolution surface; 0.6: breadth to the language
+  coverage floor (R15); 0.7–0.8: the rest of the world + subnational. → 0.4 S04-10 · Q108 = (a) 0.4:
+  the stream (metadata for every edit, all twelve editions) + HOT full text; 0.5: WARM + the tail
+  walk under budget; 0.6: the coverage report per edition. → 0.4 S04-09 · Q109 = (a) Yes: row 5 (the
+  Tier-A quarantine run, 8 articles) + the `v0.3.0` tag from your machine; then the version flips to
+  `0.4.0`. → 0.3 S03-01 · Q110 = (c) No dates at all. → 0.9 S09-01 · Q111 = (a) Tag + GitHub release
+  notes generated from `shipped.csv` since the previous tag + the no-telemetry re-check stated in
+  the notes (the per-release ritual already in `CLAUDE.md`). → 0.4 S04-15 · Q112 = (a) Write
+  `RELEASE_0.5_GATE.md` … `RELEASE_0.9_GATE.md` now, from this sheet's answers, and amend
+  `RELEASE_0.4_GATE.md`; every row cites the question ID it implements. → this PR · Q113 = (a) One
+  prompt file per slice under `docs/plans/2026-09-12-beta-pathway/` — the shape of the 23-prompt
+  action plan: scope fence, verbatim gate commands, the rulings it implements by ID, the operator
+  steps, what it may not decide. → this PR · Q114 ⛔ = (a) Add them to the session environment's
+  allowlist. → 0.4 S04-15 · Q115 = (c) Unbounded. → this PR · Q116 = (a) Planning (web) + build
+  (CLI) + verification (AppVM/Chromium), as today. → this PR · Q117 = (a) D and E become bars; F
+  ("the browser bar reaches a human, a second engine, or is closed as-is") is closed as-is with
+  Q1128's answer. → 0.4 S04-15 · Q118 = (a) A `docs/product/POST_1.0_BACKLOG.md` created with the
+  0.9 gate, each item citing its ruling. → 0.9 S09-01. §3 import / export: Q201 = (a) One quiet
+  line: "Last import · 2026-09-12 10:45 · 12,340 articles · open report", linking the persisted
+  import report (`GET /api/backup/import-reports`, unused today). → 0.4 S04-02 · Q202 = (a) Four
+  stages, shown as four rows with their own progress. → 0.4 S04-02 · Q203 = (a) Files: after the
+  swap. Close/update: after the swap (a durable cursor resumes stages 3–4 on the next boot).
+  Analytics complete: after stage 4. → 0.4 S04-02 · Q204 = (a) Stage 4 lives inside the import
+  experience as its own row (progress from `GET …/reindex-backlog/resume/status`) with a link to the
+  task manager. → 0.4 S04-02 · Q205 = (a) The existing durable cursor (`reindex-resume`)
+  auto-resumes on boot; the UI shows "resuming re-index (N left)". → 0.4 S04-02 · Q206 = (a) One
+  poll chain, one bar owner, rows patched in place (keyed by item id), the two `_uxImQueuePoll`
+  chains reduced to one. → 0.4 S04-02 · Q207 = (a) Remove it. [ASSUMPTION: blank, the sheet's
+  default] → 0.4 S04-02 · Q208 = (a) Volumes · total bytes · per-table counts with articles first
+  (the ruled headline unit) · files copied per category (dumps, models, newsletters) · elapsed ·
+  destination path · encryption state · schema version · app version · the licence lines that apply
+  (Q1008). → 0.4 S04-03 · Q209 = (a) Write `BACKUP_SUMMARY.md` beside `volumes.json` with the same
+  facts, so the folder explains itself on a removable drive years later. → 0.4 S04-03 · Q210 = (a)
+  Local time → 0.4 S04-03 · Q211 = (a) `_2`, `_3` … appended: `202609121045_OOS_Backup_2`. → 0.4
+  S04-03 · Q212 = (c) Spell it out: `OpenOmniscience`. → 0.4 S04-03 · Q213 = (c) Always a full new
+  backup, no reuse. → 0.4 S04-03 · Q214 = (a) `import-queue/*` is the one path: delete
+  `v2/restore/*` after moving anything only it does into the queue; wire `reindex-*` (Q204). → 0.4
+  S04-02 · Q215 ⛔ = (a) Keep the restore half forever, as the docstring commits; close C1. → 0.4
+  S04-04 · Q216 ⛔ = (a) K = 3. → 0.4 S04-02 · Q217 = (a) Build only if the first real `verify_copy`
+  timing shows "prepare" still dominating. → 0.4 S04-02 · Q218 = (a) Re-read every volume after
+  writing and check its checksum; default ON; the panel says "verified". → 0.4 S04-03 · Q219 = (a)
+  The corpus always; the Wikipedia, OSM and law lanes as opt-in members with their sizes shown
+  before the export starts → 0.4 S04-03 · Q220 = (c) Never → 0.4 S04-03 · Q221 = (a) The same import
+  dialog and lifecycle; each lane is a row with the same four stages. → 0.4 S04-02 · Q222 = (b)
+  Settings → Backup. → 0.4 S04-02. §4 alpha-3: Q301 ⛔ = (c) FULL, staged: (b) in 0.4, the storage
+  half in 0.5 once the backup-format bump and the normaliser have shipped and been exercised on a
+  real restore. → 0.4 S04-05 · Q302 = (c) Name only, the code in the hover bubble. — NOTE
+  (verbatim): «but in the opposite way (the code is displayed and the full conutry name is shown in
+  the hover bubble in the UI language)» [TENSION: note overrides label] → 0.4 S04-05 · Q303 = (a)
+  World-Bank-compatible: `EUU` (EU), `XKX` (Kosovo), `ANT` (the withdrawn Netherlands Antilles,
+  legacy rows only), `GBR` for the law `uk`, and app-defined `INT` for "international", each
+  disclosed in the hover as "not an ISO code". → 0.4 S04-05 · Q304 = (a) If Q301 = FULL: `country`
+  becomes alpha-3 everywhere; every parameter accepts both forms through `normalize_country`;
+  external-contract endpoints emit `country_iso2` beside it. → 0.5 S05-02 · Q305 = «follows Q301»
+  [own words] → 0.5 S05-02 · Q306 = (b) Move to ISO 639-2/3 (`fra`). → 0.4 S04-05 · Q307 = (a) Keep
+  the flag emoji, derived internally from alpha-3 → alpha-2 → 0.4 S04-05 · Q308 = (a) By localised
+  name, the code as a secondary column. → 0.4 S04-05 · Q309 = (a) Rule: a filename carrying a
+  country uses uppercase alpha-3 (`osm_FRA_2026-09.pbf`, `laws_DEU.jsonl`), enforced by a repo test
+  over `data/` naming helpers. → 0.4 S04-05 · Q310 = (a) The restore path normalises alpha-2 →
+  alpha-3 while importing (old backups restorable forever), and the 0.4 gate proves it with a
+  duplicate-key scan after restoring a pre-migration backup. → 0.4 S04-04 · Q311 = (a) Confirm;
+  fetch `P298` in the catalog query as a cross-check. → 0.4 S04-05 · Q312 = (a) 0.4 → 0.4 S04-05 ·
+  Q313 = (a) CSV/JSON exports carry both `country` (old form) and `country_iso3` for one release,
+  then the old column is dropped; diagnostics payloads switch in the same release as storage. → 0.4
+  S04-04 · Q314 = (a) ISO 3166-2 (`FR-75`, `US-CA`) where OSM carries the `ISO3166-2` tag; the OSM
+  relation id as the fallback identity. → 0.5 S05-05. §5 keyword translation: Q401 = (a) The
+  translation is the visible term; a small tag "translated from French" follows it; the hover bubble
+  shows the original `climat`, the ring's other members with counts, and the source. → 0.4 S04-06 ·
+  Q402 = (a) The language's name in the UI language ("traduit de l'anglais", "translated from
+  Arabic"). → 0.4 S04-06 · Q403 = (a) Confirm. → 0.4 S04-06 · Q404 🔒 = (a) A `keyword_translations`
+  table (term, source lang, target lang, text, model, prompt version, created) — never the trusted
+  index, always ≈, rides the backup. → 0.4 S04-04 · Q405 = (a) Shown by default once persisted,
+  ≈-marked, when the AI coordinator is on; filled by a background sweep over the untranslated head.
+  → 0.5 S05-08 · Q406 ⛔ = (b) Auto-load without review → 0.4 S04-06 · Q407 = (a) The gap digest: the
+  most frequent untranslated keywords per language first → 0.4 S04-06 · Q408 = (a)
+  `wbsearchentities` in the term's language, then `wbgetentities` for labels in all twelve
+  languages, one item per request, 10 s apart. → 0.4 S04-06 · Q409 = (b) All rings, including
+  shipped. → 0.4 S04-04 · Q410 = (a) Regenerate `keyword_rings_generated.yml` on your machine before
+  each tag at the polite rate, targeting the top 2,000 keywords per language (≈ 24,000 lookups ≈ 3
+  days of a background script). → 0.4 S04-06 · Q411 = (a) Yes, as a ruled exception to the "data
+  never translates" design: `title_vars` gains `term_translation` + `term_lang`; the template reads
+  `"{term_translation}" (translated from {term_lang}: {term})`. → 0.4 S04-06 · Q412 = (a) No single
+  translation: "several senses" + a sense picker; `translate_term` gains the refusal path
+  `expand_term` already has. → 0.4 S04-06 · Q413 = (a) Confirm; the `reconcile_keyword_language`
+  pass runs in the 0.4 gate. → 0.4 S04-06 · Q414 = (a) Store the language per mention (= the
+  article's language) and derive the keyword's language as the majority; the first-write-wins column
+  becomes a cache. → 0.4 S04-06 · Q415 = (a) The same ladder for entities, keyed by Wikidata QID —
+  this is the 0.5 entity spine's first concrete use. → 0.5 S05-03 · Q416 = (a) Add `simplemma` to
+  the core dependencies; lemmatise at extraction; a migration re-normalises existing keywords under
+  a job. → 0.4 S04-06 · Q417 = (a) Aggregates (rising, trends, top) are computed per RING when the
+  term is in one, with a per-language breakdown in the hover; the display shows the UI-language
+  label. → 0.4 S04-07 · Q418 = (a) Original term · source language · ring members with per-language
+  counts · the QID with a LOCAL preview first (invariant #6) · the tier (verified / ≈ tentative). →
+  0.4 S04-06. §6 cross-language search: Q501 = (a) Yes: `resolve_concept(term, ui_lang, sense)`
+  computed once per analysis tab and passed to both the FTS path and the keyword-keyed aggregates;
+  "only the words I typed" is one toggle persisted in the tab seed and the URL. → 0.4 S04-07 · Q502
+  = (a) Stacked per language with a legend. → 0.4 S04-07 · Q503 = (a) Cap at 40 literals, the most
+  frequent first, disclosed as "expanded to 40 of 63 forms". — NOTE (verbatim): «but give users the
+  option to deactivate the cap with a toggle / switch, activate the cap by default» → 0.4 S04-07 ·
+  Q504 = (a) Confirm (`?expand=0`, `?sense=`). → 0.4 S04-07 · Q505 = (b) Advanced search only. → 0.5
+  S05-01 · Q506 🔒 = (b) A segmenter dependency (`jieba` for zh, `sudachipy` for ja). → 0.4 S04-07 ·
+  Q507 = (a) `remove_diacritics=2` + alef/teh-marbuta/yeh folding at index and query time. → 0.4
+  S04-07 · Q508 = (a) Interleaved by date, a language chip on every row. — NOTE (verbatim): «but it
+  should be possible to group results by language» → 0.4 S04-07 · Q509 = (a) "climate 120 · climat
+  45 · Klima 30 · …" — the honest picture of where the concept lives. — NOTE (verbatim): «but add
+  the single total also» → 0.4 S04-07 · Q510 = (a) A watch on "climate" watches the ring → 0.4
+  S04-07 · Q511 = (a) Bulletin sections built from keywords use the ring — NOTE (verbatim): «add all
+  ring analytics and details into a new bulletin annexe» → 0.4 S04-07 · Q512 = (a) The ring is the
+  centre node; each language is an arm; associations hang off the arms. → 0.4 S04-07 · Q513 = (b)
+  Also article titles and summaries, translated by the local LLM, ≈-marked, shown on hover and in
+  lists when the AI coordinator is on; never stored as the article; opt-in. + (c) Also full-article
+  translation in the reader, on demand, local LLM, ≈, never stored as the article. → 0.5 S05-08 ·
+  Q514 = (a) Confirm: expansion is ring-verified only; a ≈ translation may display but expands a
+  query only when the user opts in per query. → 0.4 S04-07 · Q515 = (b) Exact, uncapped. → 0.4
+  S04-07 · Q516 = (a) Confirm. → 0.4 S04-07. §7 advanced search: Q601 = (a) Confirm the list. → 0.5
+  S05-01 · Q602 = (a) Rows of `field · operator · value` rendered as chips above the query box; the
+  box stays editable and shows the compiled query (two-way: typing updates the rows where
+  parseable). → 0.5 S05-01 · Q603 = (a) Add prefix `word*`, `NEAR(a b, N)`, and column filters
+  `title:`, `author:` — three FTS5-native additions behind an explicit token class so `_quote`'s
+  injection safety stays. → 0.5 S05-01 · Q604 = (a) English tokens stay canonical; the builder is
+  the localised layer (buttons say "ET/OU/SAUF" in French, compile to `AND/OR/NOT`); a hover
+  explains each. → 0.5 S05-01 · Q605 = (b) A SymSpell-shaped precomputed table built by a background
+  job (deletes-within-2 over the keyword vocabulary), offering "did you mean" — never silently
+  rewriting the query. → 0.5 S05-01 · Q606 = (a) The Watch model gains the full filter set; a saved
+  search is a watch with threshold zero. → 0.5 S05-01 · Q607 = (a) `/api/articles/export` takes the
+  full parameter set, so an export reproduces the filtered view. → 0.5 S05-01 · Q608 = (a) Enter
+  always opens the analysis window on the typed query; static commands need an explicit selection. →
+  0.5 S05-01 · Q609 = (a) `ooTimeScope` gains the timescale selector and becomes the one
+  begin/end/scale component for Advanced, Markets and Insights → 0.5 S05-01 · Q610 = (a) Fold by
+  default (`é` = `e`, case-insensitive) with an "exact" toggle per query. — NOTE (verbatim): «but
+  keep an on/off toggle for user in advanced search with an explanation in a hover» → 0.5 S05-01 ·
+  Q611 = (b) Also `url:` and `tag:`. — NOTE (verbatim): «we need to be precise for user clarity :
+  would the url/title/author/source 'contain' or 'start with' or else? give user choice while
+  keeping the UI fresh and simple» → 0.5 S05-01 · Q612 = (a) `NEAR` defaults to 10 tokens; the
+  builder's row has a distance stepper. — NOTE (verbatim): «however, the user should be able to
+  change the default number» → 0.5 S05-01 · Q613 = (a) A deliberate omission → 0.5 S05-01 · Q614 =
+  (a) Local, private, opt-in (default off), clearable, never exported. — NOTE (verbatim): «add the
+  option during the installation process, after the legal screen, to activate local search history»
+  → 0.5 S05-01 · Q615 = (a) List (cards) + a table view toggle (sortable columns: date, source,
+  language, words, sentiment). → 0.5 S05-01 · Q616 = (a) The full query + every filter is
+  URL-addressable (`?q=…&lang=…&from=…`), so a search can be shared as a local link and re-opened
+  after a restart. → 0.5 S05-01 · Q617 = (a) Excluded by default; "include quarantined" is an
+  advanced-only control with the quarantine reason shown on each such row. → 0.5 S05-01 · Q618 = (b)
+  Relevance → 0.5 S05-01. §8 Wikipedia: Q701 ⛔ = (c) Stream-forward plus a slow `allpages` walk for
+  the tail, batched 50 per request, serial, under the storage budget (Q707), coverage reported per
+  edition. — NOTE (verbatim): «!!!IMPORTANT NOTE!!!: we need to incorporate EVERY page request and
+  download and history in backups so that a fresh install with an old backup doesn't re-downloads
+  the same pages over and prioritizes other downloads / fetches, THIS IS TRUE NOT ONLY FOR WIKIPEDIA
+  BUT FOR EVERYTHING DOWNLOADED WITH THE APP, web fetch/web scrapping history should be backed-up,
+  and at install and import, users should be given the choice to trust or not the history with a
+  "trust the backup scrapping history" toggle» [NEW RULING IN NOTE] → 0.5 S05-06 · Q702 ⛔ = (b) A
+  dedicated Wikipedia toggle, default off. — NOTE (verbatim): «but make it default on, and add a
+  toggle on the taskbar -like the AI toggle, with a nice and consistent animation- , to allow users
+  to stop / start / halt / resume wikipedia streaming» [TENSION: note overrides label] → 0.4 S04-09
+  · Q703 = (a) Namespace 0 (articles), excluding redirects, including disambiguation and list pages.
+  → 0.4 S04-09 · Q704 = (a) Wikitext (the source of truth: infoboxes, `{{coord}}`, categories and
+  templates are extractable from it) + a derived plain text for the FTS index. → 0.4 S04-09 · Q705 =
+  (a) Confirm the list. → 0.4 S04-09 · Q706 = (a) The daily top-1,000 per edition (12 requests a
+  day) + per-article daily views for HOT pages. → 0.4 S04-09 · Q707 = (a) Three tiers under a
+  per-edition daily budget the first-run wizard sets (default proposed: 20 GB total, published): HOT
+  = pages the corpus already mentions, tracked pages, and the pageview top-1,000 (full text +
+  `index_article` on every change); WARM = every other changed page (full text, indexed lazily under
+  the daily budget); COLD = the tail reached by the walk (metadata now; text as budget allows). →
+  0.4 S04-09 · Q708 = (b) Every edit as a row for every page. → 0.4 S04-09 · Q709 = (b) Keep
+  everything raw. → 0.4 S04-09 · Q710 🔒 = (a) HOT: every ingested version's text; WARM: latest +
+  previous; counters and metadata forever. → 0.4 S04-09 · Q711 = (a) Against the previous ingested
+  version, section-aware (which section changed), per-mention revid anchoring per the standing
+  ruling. → 0.4 S04-09 · Q712 = (a) Confirm the five and the order (1–3 in 0.4, 4–5 in 0.5). → 0.4
+  S04-09 · Q713 = (a) Tracked from the stream's log events; a deleted page keeps its last text and
+  is marked deleted. → 0.4 S04-09 · Q714 = (a) Separate lane counts everywhere; the "articles"
+  headline stays press unless a lane filter is chosen; the Home strip shows "Wikipedia: N pages · M
+  changes today" as its own figure. → 0.4 S04-09 · Q715 = (a) `WikiPage` keyed `(wiki, pageid)` with
+  `qid`; the Article carries `wiki_pageid`, `qid`, `source_revision` (exists),
+  `source_type="wikipedia"`, the edition as language. → 0.4 S04-09 · Q716 = (a) Wikipedia becomes a
+  lane beside RSS collection; `mode="wiki"` is retired; `POST /api/wiki/pages` survives as "pin this
+  page to HOT". → 0.4 S04-08 · Q717 = (a) Verify Wikimedia's current scoring endpoint (the ORES →
+  Lift Wing migration, FROM MEMORY), keep it opt-in, ≈-labelled. → 0.4 S04-09 · Q718 = (a) Excluded
+  under V1-2 (no key-gated source), confirm. → 0.4 S04-09 · Q719 🔒 = (a) `wiki.db` (and `osm.db`,
+  `law.db`) beside the corpus, linked by ids; backups per lane; a 100 GB lane never bloats the
+  corpus file or its encryption rekey. → 0.4 S04-08 · Q720 🔒 = (a) Encrypted with the same
+  passphrase, same threat model, no exceptions. → 0.4 S04-08 · Q721 = (a) Lane backups are opt-in
+  members with their size shown (Q219); HOT pages' Articles ride the corpus backup as any Article. →
+  0.4 S04-09 · Q722 = (b) Everything follows the transport setting, including the walk over Tor. →
+  0.5 S05-06 · Q723 = (a) Per edition: pages seen / edition total (from `siteinfo` statistics),
+  full-text share, last event time, gap history — in the Living sources view and the diagnostics
+  bundle. → 0.6 S06-03 · Q724 = (a) In 0.5 (the entity spine): labels, descriptions and a claims
+  subset (P31, P17, P625, P571…) per QID the corpus mentions, fetched at etiquette pace, cached
+  locally. → 0.5 S05-03 · Q725 = (a) Edition choice (default: all twelve) + the storage budget
+  (Q707) + the plain statement of what the lane contacts. → 0.4 S04-09 · Q726 = (a)
+  `docs/SECURITY.md` lists every Wikimedia host; the Wikipedia surface states the robots exemption
+  the way `stats/fetch.py:22–25` does; the reader shows the CC BY-SA 4.0 attribution with a link to
+  the page history. → 0.4 S04-09 · Q727 = (a) If the gap exceeds the stream's retention, fall back
+  to `list=recentchanges` per edition (bounded at 30 days by MediaWiki), then record an honest gap
+  ("no change data between … and …"). → 0.4 S04-09 · Q728 = (a) The modal becomes the Living sources
+  view; the dump machinery stays (it is built and tested) as an opt-in offline reader, never the
+  tracking path; the dump→corpus endpoint is retired. → 0.4 S04-09. §9 maps / OSM: Q801 = (a) Equal
+  Earth on all five map surfaces through the one `project(lon, lat)` seam, no toggle, named in the
+  legend ("Equal Earth · equal-area"). → 0.4 S04-11 · Q802 = (a) Natural Earth 50m now (a few
+  hundred KB more; the 110m polygons facet under the polar shear), OSM-derived admin-0/admin-1
+  artifacts from 0.5 replacing it. → 0.4 S04-11 · Q803 = (a) OSM's convention as of `<date>`, with
+  every disputed area rendered CONTESTED showing both claims (the 2026-07-13 ruling), the convention
+  named in the legend. — NOTE (verbatim): «but users should be able to see difference with toggles ;
+  the app should start with OSM's convention as of `<date>` as default» → 0.4 S04-11 · Q804 = (a)
+  OSM `admin_level=4` relations → shipped artifacts keyed ISO 3166-2 (Q314), rendered on all five
+  surfaces from 0.5. [ASSUMPTION: blank, the sheet's default] → 0.5 S05-05 · Q805 = (a) Built from
+  the ingested OSM `place=*` nodes joined to Wikidata (population, names ×12, QID) at artifact-build
+  time on your machine; shipped with a registry entry and a freshness test. → 0.5 S05-03 · Q806 =
+  (b) Continent-level as today. → 0.5 S05-04 · Q807 = (a) Off until the user picks countries (sizes
+  and the daily diff cost shown); the wizard suggests the countries of the UI language, never from
+  the IP. → 0.5 S05-04 · Q808 = (a) A `[geo]` extra with `pyosmium` for the extract pass; `.osc`
+  diffs are XML and stay pure Python; without the extra the lane says so and offers the
+  small-country path. → 0.5 S05-04 · Q809 = (b) Also roads and buildings. → 0.5 S05-04 · Q810 = (a)
+  A curated column set (`name`, `name:*`, `brand`, `brand:wikidata`, `operator`, `opening_hours`,
+  `website`, `contact:*`, `phone`, `email`, `addr:*`, `wikidata`, `wikipedia`, `cuisine`, `level`,
+  `check_date`, `disused:*`, `wheelchair`, `payment:*`) + every other tag in one compact JSON blob,
+  so nothing is lost and the columns stay queryable. — NOTE (verbatim): «yes, but extend the list of
+  columns to minimize the JSON blob» → 0.5 S05-04 · Q811 = (b) SQLite for everything. → 0.5 S05-04 ·
+  Q812 🔒 = (a) Geofabrik daily diffs per selected extract, applied to the ingested classes; if a
+  diff older than the three-month retention is needed, re-baseline from a fresh extract and say so.
+  → 0.6 S06-01 · Q813 = (a) Tag-level: for each object, each key added / removed / modified, with
+  the diff's timestamp (and the object's `version`). → 0.6 S06-01 · Q814 = (b) The full-history
+  planet. → 0.5 S05-04 · Q815 = (a) Confirm the six and the order (1–3 first). → 0.5 S05-04 · Q816 =
+  (a) Choropleths by alpha-3 and admin-1 on Equal Earth + the ranked table in full (the Observatory
+  rule: the table is canonical), the vintage stated. → 0.5 S05-05 · Q817 = (a) Notable Places only —
+  admin areas, `place=*` (cities, towns, villages), and any object carrying `wikidata`/`wikipedia` —
+  become Articles with a body (Q818); every other POI stays a structured row with its own search
+  facet ("Places"), and the aggregates surface as cards. → 0.5 S05-04 · Q818 = (a) `Place(id = OSM
+  type+id, qid, kind, admin path, names ×12, geometry ref, as_of)` with `article_mentioned_places`
+  resolving into it; its body = the Wikidata/Wikipedia description + its OSM metadata rendered as
+  metadata; keywords come from that text; it is searchable and indexed. → 0.5 S05-03 · Q819 = (a)
+  Confirm the order (1–2 in 0.4/0.5 with the wiki lane, 3 in 0.5, 4 in 0.6). → 0.4 S04-09 · Q820 =
+  (a) Yes, for the countries the user ingested, disclosed ("addresses outside your OSM countries are
+  not located"); never an external geocoding service. → 0.5 S05-04 · Q821 = (b) Self-rendered vector
+  streets at high zoom from the ingested roads. → 0.7 S07-02 · Q822 = (a) Canvas 2D with published
+  level-of-detail caps (points per view, polygon vertices per zoom), degrading to clusters, never to
+  a frozen tab. → 0.5 S05-04 · Q823 ⛔ = PENDING (blank on a ⛔; never defaulted) · Q824 = (a) Daily
+  diff apply per selected extract inside the online consent; re-baseline when a diff gap exceeds the
+  retention; the per-country cost shown before selection. → 0.5 S05-04 · Q825 = (a) Same answers as
+  the Wikipedia lane (Q719, Q720). → 0.5 S05-04 · Q826 = (a) Rendered CONTESTED with both claims,
+  never a silent pick; confirm. → 0.4 S04-11 · Q827 = (a) OSM `name:xx` first, Wikidata labels as
+  the fallback, the source shown in the hover. → 0.5 S05-03 · Q828 = (a) Settings → Data sources →
+  Maps (invariant #8: data tabs show data, acquisition lives in Settings); the World map tab shows
+  the vintage and a link there. → 0.5 S05-04. §10 laws: Q901 = (a) An official translation by the
+  issuing state or its designated body + (b) Also translations published by intergovernmental bodies
+  + (c) Also any government's translation of another state's law — NOTE (verbatim): «all of it, each
+  translation should be accessible with their own rich metadata and individually tracked for
+  changes, same as the official laws, with links to the other existing translations and to the
+  original untranslated text» → 0.4 S04-10 · Q902 = (a) Constitutions, statutes and codes
+  (consolidated). + (b) Regulations, decrees, ordinances (executive instruments). + (d) Treaties and
+  international instruments — NOTE (verbatim): «include to add c (bills and drafts) to the post
+  beta» → 0.4 S04-10 · Q903 = (a) National + supranational (EU, OHADA's uniform acts for its 17
+  member states) through beta; subnational recorded for post-beta. + (b) Subnational from 0.7
+  [CONFLICT] → 0.7 S07-03 · Q904 = (a) Act / code level by default; per-provision rows for sources
+  that arrive pre-split (LEGI, CLML, USLM, e-Gov XML, EUR-Lex Formex). → 0.4 S04-10 · Q905 = (a)
+  Point-in-time consolidated versions with `valid_from` / `valid_to` (the legislation.gov.uk and
+  Légifrance model); an observed snapshot without official dating becomes a version dated by
+  observation and labelled so. → 0.4 S04-10 · Q906 = (a) Akoma-Ntoso-lite: document → versions →
+  provisions with stable addresses, plus a metadata block (ELI / CELEX / ECLI / act number, issuing
+  body, dates, status, language, translation provenance, licence); one adapter per source format
+  (CLML, LEGI XML, USLM, e-Gov XML, Formex/HTML, gesetze-im-internet XML, Akoma Ntoso itself where a
+  portal serves it); text-only sources fill the same model with one provision. → 0.4 S04-10 · Q907 =
+  (a) Confirm. → 0.4 S04-10 · Q908 = (a) One document identity (CELEX/ELI), N language versions
+  aligned by identity — no ring needed; the reader offers the language switch; cross-language search
+  finds it through any version. → 0.4 S04-10 · Q909 = (a) Bulk open data first wherever it exists
+  (LEGI, legislation.gov.uk, gesetze-im-internet XML, e-Gov API, US Code XML + govinfo, Canada's
+  XML, Austria's RIS, Portugal's DRE API, Spain's BOE open data, Brazil's LexML), then enumeration
+  adapters (crawl an index politely), then gazette feeds for countries with neither. → 0.4 S04-10 ·
+  Q910 = (a) Treated as key-gated → excluded under V1-2; EU law comes through the open per-document
+  API, the Cellar SPARQL endpoint and the weekly public RDF bulk. → 0.4 S04-10 · Q911 = (a) Take
+  this as the 0.6 verification worklist — NOTE (verbatim): «but are we enterly missing china ? Also
+  in the UI language ? This must be a mistake I made. We should incororate china and chinese support
+  throughout the app. This is important.» [NEW RULING IN NOTE] → 0.6 S06-02 · Q912 = (a) Floor =
+  every country in `language_countries.yml` (official / de-facto / regional bases all count,
+  labelled); order = sources serving many countries first (EU, OHADA, UN/WIPO), then by population
+  reached. → 0.6 S06-02 · Q913 = (a) EuroVoc concepts (en/fr/de/es/pt), reached in the other seven
+  languages through Wikidata's EuroVoc-ID property (P5437, FROM MEMORY) and the keyword rings;
+  assigned by rules over titles and provisions, ≈ where the LLM proposes one. → 0.6 S06-02 · Q914 =
+  (a) Confirm the five (1–2 in 0.4 on the small corpus, 3–5 in 0.5). → 0.4 S04-10 · Q915 = (a) Daily
+  for gazettes and bulk deltas; weekly for consolidated portals without deltas; on-demand for a
+  document the user opens; every fetch within the adaptive per-pass budget and the host's
+  politeness. → 0.4 S04-10 · Q916 = (a) FTS over versions with `valid_on`, so "what did this say in
+  2019" works without an Article per version. → 0.5 S05-07 · Q917 = (a) Confirm, in 0.4 before
+  anything else in this section. → 0.4 S04-10 · Q918 = (a) Version selector · side-by-side diff ·
+  provision navigation · an ELI/CELEX permalink · the licence line · "AI-derived · unreliable" on
+  summaries · translation provenance where applicable. — NOTE (verbatim): «but the UI should be
+  homogenous with other parts of the app's ability to track change, such as wikipedia articles, and
+  so forth» → 0.5 S05-07 · Q919 = (a) Each law authority is a `Source` row with `source_type="law"`,
+  so the Sources tab, coverage and qualification see it like any other source. → 0.4 S04-10 · Q920 =
+  (a) Summaries only, ≈, "AI-derived · unreliable"; dates, provisions and identifiers come from
+  rules, never from the model. → 0.5 S05-07 · Q921 = (a) Declare `counts_documents` per official
+  count so the coverage diagnostic can divide where units are commensurable and refuse where not. →
+  0.4 S04-10 · Q922 = (a) Yes: 63 of 275 sources are PDF-only. → 0.4 S04-10 · Q923 = (a) Run it as
+  the 0.4 law operator step. → 0.4 S04-10 · Q924 = (a) Yes: each source carries `verified: live |
+  fixture | unverified` with a date; the UI shows it. → 0.4 S04-10 · Q925 ⛔ = PENDING (blank on a ⛔;
+  never defaulted) · Q926 = (a) Same answers as the Wikipedia lane (Q719, Q720). → 0.4 S04-08 · Q927
+  = (a) Recorded per document (OGL, Licence Ouverte 2.0, Japan's Standard Terms, the EU reuse
+  notice, US public domain, …), shown in the reader, and stated at every export point (Q1008); a
+  source whose terms forbid redistribution is excluded under V1-3. → 0.4 S04-10 · Q928 = (a)
+  Post-beta backlog (Q118) unless Q903 = (b) or (c). → 0.7 S07-03 · Q929 = (a) Post-beta backlog →
+  0.9 S09-01 · Q930 = (a) 0.6, as jurisdiction `INT` — the UN Treaty Collection (six UI languages at
+  once) and WIPO Lex are the highest-yield multilingual sources on the list. → 0.6 S06-02. §11
+  cross-cutting: Q1001 = (a) Complete it now as a docs-only PR; from then on every PR adding a host
+  adds it there and to the consent popup's hover in the same diff (a repo test greps the fetch sites
+  against the list). → 0.4 S04-01 · Q1002 = (a) The one popup stays; its hover lists, per lane, the
+  hosts it will contact (Wikimedia ×4, the OSM mirrors, the law authorities of the countries
+  chosen); the popup's body names the lanes that are on. → 0.4 S04-01 · Q1003 = (a) `src/versioned/`
+  shared by the wiki, law and OSM lanes, the wiki adapter first. → 0.4 S04-08 · Q1004 🔒 = (a) Yes:
+  `corpus.db` (press, as today) + `wiki.db` + `osm.db` + `law.db`, each encrypted alike, each an
+  opt-in backup member, linked by ids. → 0.4 S04-08 · Q1005 🔒 = (a) Encrypted, same passphrase, same
+  threat model, because the selection reveals interests. → 0.4 S04-08 · Q1006 = (a) Settings →
+  Storage shows each lane's size, its budget, the honest arithmetic ("at your current rate this lane
+  grows ~2 GB/month"), and the disk left; budgets are published defaults sized for the reference VM.
+  → 0.4 S04-08 · Q1007 = (b) SQLite for everything. → 0.4 S04-08 · Q1008 = (a) Every export,
+  bulletin and evidence ZIP carries the attribution lines that apply (CC BY-SA 4.0 Wikipedia, ODbL
+  OSM, per-law licences, DB-IP CC BY) and, for OSM-derived rows, the share-alike note. → 0.4 S04-03
+  · Q1009 ⛔ = PENDING (blank on a ⛔; never defaulted) · Q1010 = (a) Every budget is published and
+  sized for the 2-core / 3.5 GB VM by default; power users raise them; nothing silently assumes the
+  maintainer's machine. → 0.4 S04-08 · Q1011 = (a) The app reads cores, RAM and free disk at boot
+  (no network), proposes budgets from a published table, and shows the reading. → 0.4 S04-08 · Q1012
+  = (a) A per-PROCESS budget composed with the collection-speed governor (`#rate-toggle`), never a
+  second rate authority beside it; per-job caps stay omitted. → 0.4 S04-13 · Q1013 = (a) Persist a
+  per-host next-allowed-at beside the robots cache; refuse an inline wait beyond a few minutes with
+  a named deferral counted as its own bucket; the ride-along and trial fetch inherit both. → 0.4
+  S04-13 · Q1014 = (a) Each lane declares its transport in the consent hover; a lane never
+  downgrades Tor → clearnet without the explicit consent the non-negotiable requires (Q722's walk
+  waits instead). → 0.4 S04-08 · Q1015 = (a) Compiled code only in optional extras (`[geo]` =
+  pyosmium); pure Python in core (`simplemma`); SSE hand-rolled over the guarded session (no new
+  client library); every addition registered in `configs/external_artifacts.yml`. → 0.4 S04-08 ·
+  Q1016 = (a) One view for wiki / law / OSM: timeline of changes, diff, coverage, freshness, budget;
+  replaces the tracked-changes modal; a main tab or a Home family — your call in a NOTE. → 0.4
+  S04-08 · Q1017 = (a) Measured first (V1-6): each lane ships its coverage/freshness resolver; bars
+  are set only after a release has recorded values. → 0.8 S08-02 · Q1018 = (a) A synthetic wiki
+  edition, a synthetic OSM extract and a synthetic jurisdiction in `tests/fixtures/`, so every
+  lane's pipeline runs end-to-end in CI without a socket. → 0.4 S04-08 · Q1019 = (a) `pyosmium`
+  wheels exist for Windows (FROM MEMORY); the lanes are in the Windows CI matrix from the release
+  they land in, blocking at 0.9 per V1-5. → 0.9 S09-01 · Q1020 = (a) The scheduler runs lanes
+  (press, wiki, osm, law, hazards, discovery) under one online consent with one governor and
+  per-lane budgets; the `mode` setting is retired with a migration. → 0.4 S04-08. §12 the standing
+  docket: Q1101 ⛔ = (a) A `qualified` verdict flips `enabled=True` → 0.4 S04-12 · Q1102 ⛔ = (b) Key
+  a source on its FEED → 0.5 S05-10 · Q1103 = (b) Never; the shipped stoplists are frozen. — NOTE
+  (verbatim): «but we will update the list as we update the app, there should be a stopword related
+  diagnostic to allow us to optimize the list, enlarge it when possible» [CONFLICT; TENSION: note
+  overrides label] → 0.4 S04-06 · Q1104 = (a) Yes, through the review surface, batch by batch.
+  [CONFLICT] → 0.4 S04-06 · Q1105 = (a) A worklist for a review surface; never auto-applied. → 0.4
+  S04-12 · Q1106 = (a) Ship the overlay editor (adopt / export / revert) in Settings. → 0.4 S04-12 ·
+  Q1107 = (a) Keep 0.5, record it as unreachable, let the measured criteria decide. → 0.4 S04-12 ·
+  Q1108 = (a) The 6-month re-verification reads the last 6 months, not the whole history. → 0.4
+  S04-12 · Q1109 = (b) `academic_sources.yml`. — NOTE (verbatim): «we should develop a strategy to
+  comprehensively increase the list» → 0.4 S04-12 · Q1110 = (a) Defer-not-reject now; rewrite the
+  axis as an observable ("publishes dated official instruments?") checkable against headlines. → 0.4
+  S04-12 · Q1111 = (a) Move them to `academic_sources.yml`. → 0.4 S04-12 · Q1112 = (b) Flag at
+  admission: a candidate tripping `restricted_namespace` cannot be spliced without a written
+  override; never a silent drop. → 0.4 S04-12 · Q1113 ⛔ = PENDING (blank on a ⛔; never defaulted) ·
+  Q1114 = (a) `enabled AND qualified` everywhere a headline count is shown; the other predicates are
+  labelled where they appear. → 0.4 S04-12 · Q1115 = (a) A diagnostic proposes corrections for
+  review; never an automatic ccTLD rule. → 0.4 S04-12 · Q1116 = (a) Resolve the label at the polite
+  rate or decline to admit the row. → 0.4 S04-12 · Q1117 = (a) Admit them, tagged with the vendor
+  path so a supplier outage is one visible cause; the balance shift disclosed in the splice report.
+  → 0.4 S04-12 · Q1118 = (a) Run the shortlist (3,031) next; the remainder and the religious lists
+  after the splice is reviewed. → 0.4 S04-12 · Q1119 = (a) Admit the rows where both judges agree;
+  defer the ~15% contested band. → 0.4 S04-12 · Q1120 = (a) "Rings, not gates" as the spine (a Ring
+  controls what is pinned, never what is reachable) with the two grafts from "Works while you
+  sleep". → 0.5 S05-09 · Q1121 = (a) Standard (Ring 1) when the depth question is skipped;
+  Essentials only by explicit choice. → 0.5 S05-09 · Q1122 = (b) Translate the 167,022-character
+  body ×12 → 0.6 S06-05 · Q1123 = (b) Cull the near-duplicates to ≥ 10 with an amendment to
+  invariant #12. → 0.5 S05-09 · Q1124 = (a) Flip on only when the corpus is ≥ 100 k articles and a
+  labelled sample shows a false-positive rate ≤ 5%; both numbers on the toggle. → 0.4 S04-14 · Q1125
+  = (a) Both actions carry equal visual weight; "Not now" is not quieter than "Go online". → 0.4
+  S04-13 · Q1126 ⛔ = (a) Align the task-manager title to the stronger, true claim ("every new
+  network request will be refused"), re-translated ×12. → 0.4 S04-13 · Q1127 = (a) Fund a retirement
+  slice in 0.5 with a ratchet that fails on any new inline handler; drop `'unsafe-inline'` when it
+  reaches zero. → 0.5 S05-09 · Q1128 = (a) Chromium in the sandbox + your click-through = verified;
+  Gecko stays best-effort. → 0.4 S04-15 · Q1129 = (a) Keep the stance: reported, never filtered. ·
+  Q1130 = (a) Filter only the `via:*` provenance prefixes from topical displays; keep the rest
+  reported. → 0.4 S04-14 · Q1131 = (a) Never. · Q1132 = (a) Pin digests in the external-artifact
+  registry; the pull verifies them. → 0.4 S04-13 · Q1133 = (a) AR6 Summaries for Policymakers first;
+  `pypdf` acceptable. → 0.6 S06-04 · Q1134 = (a) Temperature and precipitation first; 1991–2020
+  baseline; soil moisture later. → 0.6 S06-04 · Q1135 = (b) Drop the feature. → 0.4 S04-14 · Q1136 =
+  (a) Tags only, signed releases, an opt-in check that is consented like any egress, never
+  auto-install. → 0.9 S09-01 · Q1137 = (a) Never stored; each pull asks. · Q1138 = (a) Parked until
+  0.9's security review. → 0.9 S09-01 · Q1139 = (a) Authorise the mechanical split into a package,
+  routes unchanged. → 0.4 S04-14 · Q1140 = (b) Keep parity as an aspiration. — NOTE (verbatim): «we
+  might need to change database architecture in the future, SQLite has certain limitations that will
+  cost increasingly as the database expands. PostgresSQL seems a good alternative at the cost of
+  greater complexity. As PostgresSQL has column limitations SQLite doesn't have, we should
+  anticipate this in our current work.» [NEW RULING IN NOTE] · Q1141 = (a) Full: every section
+  re-checked against the tree, stale claims corrected. → 0.4 S04-14 · Q1142 = (a) Run it when the
+  AI-coordinator translation sweep (Q405) lands in 0.5. → 0.5 S05-08 · Q1143 = (a) Consented,
+  opt-in, egress named. → 0.5 S05-08 · Q1144 = (a) Enable per language only where the measured gate
+  passes; `who` stays refused where it fails. → 0.5 S05-08 · Q1145 = (a) Exclude · Q1146 = (a) Adopt
+  EuroVoc + the UNESCO Thesaurus (ar/en/fr/ru/es) + AGROVOC + IPTC Media Topics for topic tagging,
+  tied to Q913. → 0.6 S06-02 · Q1147 = (a) A networked session builds the directory; `news_url` per
+  agency verified live. → 0.6 S06-04 · Q1148 = (a) Raise it for loopback UI calls (1,000/hour), keep
+  100 for anything else. → 0.4 S04-13 · Q1149 = (a) Add an encrypted variant to the runner. → 0.4
+  S04-14 · Q1150 = (a) Keep. · Q1151 = (a) Go → 0.4 S04-14 · Q1152 = (a) Fund it in 0.4. → 0.4
+  S04-14 · Q1153 = (a) Population-weighted with the weighting disclosed on the figure. → 0.6 S06-04
+  · Q1154 = (b) Not me; ignore it. → this PR · Q1155 = (a) Ratify all. → this PR · Q1156 = (a) Keep
+  the stratified round-robin (the ruled equilibrium lever) and randomise the order of the singleton
+  strata across passes. → 0.4 S04-12 · Q1157 = (a) Superseded by §8 of this sheet.. §13 process:
+  Q1201 = (a) This file, overwritten in place with your answers, is the primary record; the
+  OPEN_QUEUE entry is the index. → this PR · Q1202 = (a) One OPEN_QUEUE entry indexing every
+  question ID with the chosen option's label verbatim and your note; `CLAUDE.md` amendments only for
+  non-negotiables and UI invariants (each marked `Amends:` above); tests extended where an invariant
+  is testable. → this PR · Q1203 = (a) A blank non-⛔ question takes its default, recorded as an
+  ASSUMPTION you may reverse at any time; a blank ⛔ stays pending. → this PR · Q1204 = (a) Gate
+  files for 0.4–0.9 (Q112) and the slice briefs (Q113) written in one session from the answered
+  sheet, as one docs PR. → this PR · Q1205 = (a) Retire it; the markdown sheet is the channel. →
+  this PR · Q1206 = (a) Create `docs/ledger/RULINGS_INDEX.md` — one line per ruling (id · date ·
+  ruling · source · where enforced) — maintained under THE PROTOCOL, so nothing is restated. → this
+  PR · Q1207 = (a) Future question rounds use this sheet format (IDs, options with impact, defaults,
+  ANSWER lines, a processing protocol). → this PR · Q1208 = «no notes» [ASSUMPTION: blank, the
+  sheet's default] → this PR.
+  **R1–R19 stand as recorded (Q001 at its default), with two touched by answers:** R5's literal
+  token `OOS` becomes `OpenOmniscience` (Q212 = c: `YYYYMMDDHHMM_OpenOmniscience_Backup`, `_2`/`_3`
+  on collision per Q211, local time per Q210); R18 is FINAL through Q101 = a (0.9.0 = Beta 1, 0.9.x
+  = later betas, 1.0.0 = general availability; alphas 0.4–0.8). Everything above is recorded per
+  rule (2) in the turn it was received; the rulings index carries the same facts one line per
+  ruling.
 - **ROADMAP ANSWER SHEET 2026-09-12 — THE SECOND MESSAGE'S RULINGS + 278 QUESTIONS ANSWERABLE IN
   PLACE (maintainer message 2 of 2026-09-12; PLANS ONLY, nothing built; draft PR #1131; the sheet =
   [`docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`](../design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md),
@@ -65,6 +582,7 @@
   coefficients, whether Geofabrik keeps `version`/`timestamp`, per-edition edit rates. PENDING:
   every question in the sheet until the maintainer returns it; the processing session records the
   answers HERE in the same turn, per rule (2).
+  **RESOLVED 2026-09-15 — the sheet came back and every answer is recorded in the entry directly above (270 answered, 4 ⛔ pending: Q823, Q925, Q1009, Q1113; 4 assumptions); nothing in this entry is pending any more except what that entry lists.**
 - **ROADMAP INTAKE 2026-09-12 — EIGHT FIELD IMPRESSIONS + THE ALPHA TRAIN TO BETA (maintainer
   message 2026-09-12: "We're only making plans, I'd like a robust, detailed roadmap towards the beta
   release, with all detailed plans and stages for all remaining alpha releases"; INTAKE + PLAN ONLY,
@@ -106,6 +624,7 @@
   asked, not recorded as a ruling (Q69). OPERATOR STEPS (none guessable here): the egress allowlist
   (five sessions, five tool surfaces, same wall — §4.4), the 0.3 row-5 run + tag, the 0.4 rows A–C runs,
   a gazetteer build, one fetched CLML document, per-edition Wikipedia counts.
+  **SUPERSEDED IN PART 2026-09-15 — its §6 questions were folded into the answer sheet (each cited there as "was Qn") and are now RECORDED: see the ROADMAP ANSWER SHEET … 278 ANSWERS RECORDED entry at the head of this section; §1–§5 and §7 of the intake remain the design of record for the verified state.**
 - **TWO 2026-09-11 FIELD FINDINGS INVESTIGATED AND NOT CONFIRMED AS DEFECTS (recorded 2026-09-11,
   PR #1115, so the next session does not re-open them).** Both were in the field brief's own
   finding list; both were traced to code and came back clean. A finding that survives triage and
@@ -9996,6 +10515,7 @@
   recommended default, never as a decision taken; the standing 2026-06-15 autonomy ruling applies to the
   unmarked ones and explicitly does not apply to the marked ones. **PENDING:** the maintainer's answers, and
   then the prompts' execution.
+  **RULED 2026-09-15 — the register's open rulings were re-asked as the answer sheet's §12 (with the ⛔ ones never defaulted) and are recorded at the head of this section:** B1 = Q1101 (a) · B11 = Q1102 (b) · C1 = Q215 (a) · C2 = Q216 (a: K = 3) · C3 = Q217 (a) · C4 = Q1009 ⛔ LEFT BLANK, STILL PENDING · F1 = Q114 (a) · M2 = Q1126 (a) · B2 = Q1103 (b) and B3 = Q1104 (a) — a CONFLICT, listed there · B4 = Q1105 (a) · B5 = Q1106 (a) · B6 = Q1107 (a) · B7 = Q1108 (a) · D3 = Q1131 (a) · D6 = Q1132 (a) · D8 = Q1142 (a) · D9 = Q1143 (a) · D10 = Q1144 (a) · E3 = Q1145 (a) · E4 = Q1146 (a) · G4 = Q1133 (a) · G5 = Q1147 (a) · G7 = Q1134 (a) · G8 = Q1135 (b: drop) · G9 = Q1136 (a) · G10 = Q1157 (superseded by the sheet's §8) · G11 = Q1153 (a) · H2/L2 = Q1128 (a) · H4 = Q1127 (a) · I1 = Q1137 (a) · I3/I4 = Q1138 (a) · J1 = Q1139 (a) · J3 = Q1140 (b) · L4 = Q1148 (a) · L7 = Q1149 (a) · L9 = Q1129 (a) · L10 = Q1130 (a) · M3 = Q1150 (a) · M4 = Q1151 (a) · M5 = Q1152 (a) · A4 = Q1141 (a) · A2's remainder = Q117 (a). The eight lesson-shaped entries (the entry directly below) were NOT in the sheet and stay pending.
 - **EIGHT LESSON-SHAPED ENTRIES ARE MISFILED IN THIS QUEUE — a ruling is owed on relocating
   them (found 2026-09-07 while executing A3(3); NOTHING MOVED, recorded per rule (2)):** the
   A3(3) sweep of all 165 entries found eight that are LESSONS by content and by house style —
@@ -10800,6 +11320,7 @@ code over a judgement it made deliberately. Also in `PARKED.md`, under the DDG e
   ordering collision between the two vLLM files. Untouched. The one member this session DID fix
   was not on the prompt's list: it was found by the mandatory baseline run, and it was RED on
   `main`.
+  **2026-09-15: the four open rulings (rows 3–6 of STORAGE_RULINGS_ROUND2) were asked as the answer sheet's Q1009 ⛔ and LEFT BLANK — STILL PENDING, nothing assumed; the 0.5 gate carries them as a blocker of the Phase-C store.**
 - **WHAT PROMPT_11 LEFT UNDONE — the standing list, written 2026-09-07 after #1024 merged
   (`965e3e5`).** The executed record is the entry above; this is the actionable remainder, most
   serious first. Items (1) and (5) are findings made while writing this list, not carry-over.
@@ -11134,6 +11655,8 @@ The audit is report-only. Nothing below was decided by the session; each needs t
 Full context: [`docs/audit/11_VISUAL_UI_AUDIT_2026-09-08.md`](../audit/11_VISUAL_UI_AUDIT_2026-09-08.md),
 [`docs/design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md`](../design/UI_COMPLEXITY_AND_AUTOMATION_PLAN_2026-09-08.md),
 [`docs/design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md`](../design/VISUAL_DESIGN_PROGRAMME_2026-09-08.md).
+
+**RECORDED 2026-09-15 — Q-VIS-1..7 were re-asked as the answer sheet's Q1120–Q1125 and Q214 and are answered at the head of this section:** Q-VIS-1 = Q1120 (a: "rings, not gates") · Q-VIS-2 = Q1121 (a: Standard when skipped) · Q-VIS-3 = Q1122 (b: translate Help's body ×12) · Q-VIS-4 = Q1123 (b: cull the themes to ≥ 10, invariant #12 amended) · Q-VIS-5 = Q214 (a: `import-queue/*` is the one path) · Q-VIS-6 = Q1124 (a) · Q-VIS-7 = Q1125 (a).
 
 **Q-VIS-1 — the information architecture.** Three proposals were built and a four-lens panel scored
 them. **Rings, not gates** won 3 of 4 lenses (ethical 78, power-user 68, feasibility 64) on the principle
@@ -11478,6 +12001,7 @@ corpus. So "bounded" on this surface means *not a function of the corpus*, and t
 test to apply to the two still open — date/period search with the calendar picker, and the
 Enter-to-corpus-window absorption gate.
 
+  **RULED 2026-09-15 (answer sheet Q605 = b): a SymSpell-shaped precomputed table built by a background job (deletes-within-2 over the keyword vocabulary), offering "did you mean" — never silently rewriting the query; the 0.5 advanced-search slice (S05-01) carries it. See the head entry.**
 - **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
   superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
   awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
@@ -12767,6 +13291,7 @@ ejecting the reader — cosmetic residue, explicitly not the P0.
   rare (the shortlist's p99 elapsed was 138 s) -- but a worker asleep for a day is the Windows-lane
   hang in another coat, and it should be a ruling, not a surprise.
 
+  **RULED 2026-09-15 (answer sheet Q1013 = a): persist a per-host next-allowed-at beside the robots cache; refuse an inline wait beyond a few minutes with a named deferral counted as its own bucket; the ride-along and the trial fetch inherit both — the 0.4 slice S04-13 carries it. See the head entry.**
 - **RULED + SHIPPED 2026-09-10 (see the RULING that follows this entry) — WAS: QUESTION FROM
   RUNNING SEVERAL BLANK INSTANCES: THE
   COLLECTION SHUFFLE IS TRULY RANDOM, BUT THE HEAD OF EVERY PASS IS STRUCTURALLY THE SAME
@@ -13246,6 +13771,8 @@ per-row agreement on `kind` and on `primary_source`. **The disagreement rate is 
 are DEFERRED, not rejected, per the robots precedent (a non-answer is not a no).
 
 ### B. PENDING RULINGS
+
+**RECORDED 2026-09-15 — this docket's rulings were re-asked as the answer sheet's Q1109–Q1119 and are answered at the head of this section:** B1 = Q1109 (b: `academic_sources.yml`, plus a strategy to grow the list) · B2 = Q1110 (a) · B3 = Q1111 (a) · B4 = Q1112 (b) · B5 = Q1113 ⛔ LEFT BLANK, STILL PENDING · C3 = Q1114 (a) · C7 = Q1115 (a) · C8 = Q1116 (a) · C9 = Q1117 (a) · D2 = Q1118 (a) · D3 = Q1119 (a).
 
 **B1. Where does a RESEARCH INSTITUTE belong?** It is neither a peer-reviewed journal nor a body
 publishing public records. Tags that already exist: `research` (607), `academic` (607),

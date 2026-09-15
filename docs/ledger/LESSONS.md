@@ -9319,3 +9319,25 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   them, and record the answered file itself as the primary record. A question round that will be
   answered across a compaction is a message to a stranger — write the instructions for the stranger
   into the artifact, not into the chat.
+  - **A MAINTAINER'S NOTE CAN INVERT THE OPTION IT IS ATTACHED TO, AND A LETTER PARSER THAT SCANS
+    FOR `[a-z]` READS "b and c" AS FIVE ANSWERS (2026-09-15, processing the 278-answer roadmap
+    sheet):** two answers chose a letter and then said the opposite of its label in the parenthesis
+    — Q302 "(c) name only, the code in the hover" was answered "c but in the opposite way (the code
+    is displayed and the full country name is shown in the hover bubble)", and Q702 "(b) a dedicated
+    toggle, default off" was answered "b (but make it default on …)". Recording the LABEL as the
+    ruling would have shipped the reverse of what was asked, twice, from a file whose whole design
+    was "the letter is the answer". RULE: the note is the ruling and the label is context; record
+    both verbatim, flag the tension in the index, and never let the mechanical extraction step
+    decide which one wins — it cannot see the inversion. SECOND HALF, from the same pass: the
+    extractor's `re.findall(r'[a-z]', "b and c")` returned b, a, n, d, c — three letters out of the
+    word "and", each a valid option letter on most questions — so the generated table printed "(a)
+    Keywords only + (n) ?? + (d) ??" beside the two real choices and read like a maintainer who had
+    chosen everything. Caught by eye on the second read; fixed with word boundaries AND an assertion
+    that every extracted letter is an option OF THAT QUESTION (a "(n) ??" label is the tell, and a
+    parser that can print "??" for a ruling should refuse instead of printing). The third shape is
+    not a parse error: a multi-letter answer on a SINGLE-select question (Q903 "a and b", whose two
+    options contradict each other on timing) is a contradiction the coupling check owes a CONFLICT
+    flag, recorded with both options as given and neither picked. GENERAL FORM: a structured answer
+    file has three layers — the letter, the label the letter names, and the words after it — and
+    only the last one is the maintainer's; extract the first mechanically, quote the second
+    verbatim, and treat the third as the ruling whenever they disagree.
