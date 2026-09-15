@@ -315,6 +315,19 @@ commands in `RELEASE_0.3_GATE.md` §7.1) is run from the maintainer's machine an
 then `pyproject.toml` flips to `0.4.0` (the 0.2→0.3 sequence: pass → tag → flip). **Closes when** the tag is
 on the remote and `main` reads `0.4.0`. **Operator:** both steps. Brief `S03-01`.
 
+**PREMISE CHECK (2026-09-15, found while writing brief `S03-01`; hand-verified):** the remote ALREADY carries
+`refs/tags/v0.3.0` at `917e8095` — the 2026-08-23 merge of PR #979 — and a published GitHub release `v0.3.0`
+(`prerelease: true`, created 2026-08-23T12:39Z, wheel + sdist + `SHA256SUMS` uploaded by the release
+workflow), cut BEFORE row 5 was run and before this board or the answer sheet were written; the 0.3 gate's
+§7.3 says "do not start this until row 5 is ticked", `README.md:8` still reads "latest tagged release:
+`v0.2.0`", and the 0.3 gate's §1/§3 record no tag. So the sheet's "the `v0.3.0` tag from your machine" and
+this row's "then the tag" describe a step that is ALREADY DONE as a pre-release; what remains is row 5 (the
+quarantine run), the maintainer's word on whether that pre-release IS the 0.3 tag or is to be superseded by a
+full release once row 5 is run (a tag cannot be moved; a second release can be published), the README /
+0.3-gate records, and the version flip. Q109 = a stands as answered; its premise is corrected here and in
+the brief, per the recorded rule that a plan's premise is checked in the tree, never accepted from the
+document that states it.
+
 ### Row H — `docs/SECURITY.md` enumerates every host; the consent hover lists them per lane · ruled (Q1001 = a, Q1002 = a) · OPEN
 
 **What it must demonstrate.** The "full set of endpoints the app can reach" section names the hosts the tree
@@ -324,7 +337,7 @@ then on every PR that adds a host adds it there **and** to the consent popup's h
 repo test that greps the fetch sites against the list (Q1001). The one popup stays; its hover lists, per lane,
 the hosts that lane will contact, and its body names the lanes that are on (Q1002). **Closes when** the test
 exists and is green on the tree that tags, and a Chromium click-through of the popup hover is recorded
-(Q1128). Docs-only first (the SECURITY.md half ships as its own PR, per Q1001's "now"). Brief `S04-01`.
+(Q1128). Docs-only first (the SECURITY.md half ships as its own PR, per Q1001's "now"). Brief `S04-01`. *Premise check (brief `S04-01`):* two more hosts the tree reaches are absent from the list — `www.wikidata.org/w/api.php` (`src/catalog/wikidata_enrich.py:33`) and `huggingface.co` (`src/llm/weights_pin.py:30`, `vllm_lifecycle.py:241`); the consent dialog has no hover `title` today (`index.html:3133–3149`); no test references `SECURITY.md`.
 
 ### Row I — The import lifecycle · ruled (R1–R3; Q201–Q207, Q214, Q216, Q217, Q221, Q222) · OPEN
 
@@ -345,7 +358,7 @@ each lane's import is a row with the same four stages when lanes exist (Q221); h
 Backup (Q222 = b). **Closes when** (1) a recorded Chromium click-through shows the four rows, the three
 statements at their stages and the fresh page with its one line; (2) a test kills the app between stages 3
 and 4 and proves the resume; (3) a repo test asserts the `v2/restore` routes are gone (anchored to the router
-definitions, never the app singleton's live route table, per the recorded flakiness lesson). Brief `S04-02`.
+definitions, never the app singleton's live route table, per the recorded flakiness lesson). Brief `S04-02`. *Premise check (brief `S04-02`):* the durable cursor exists (`reindex_job.json`, the resume endpoint) but boot only LOGS the backlog and an interrupted run is parked PAUSED — the auto-resume Q205 names is the delta, not a fact; the sheet's "zero frontend callers" holds.
 
 ### Row J — The export · ruled (R4, R5; Q208–Q213, Q218–Q220, Q1008) · OPEN
 
@@ -361,7 +374,7 @@ never a scheduled export (Q220 = c); the Wikipedia, OSM and law lanes as opt-in 
 before the export starts (Q219 — the member hook now, members as the lanes land). **Closes when** an export
 produced on the reference VM shows the folder name, a `BACKUP_SUMMARY.md` whose figures equal `volumes.json`'s,
 and a panel reading "verified"; the artifact is the folder listing + the summary file quoted in the PR.
-Brief `S04-03`.
+Brief `S04-03`. *Premise check (brief `S04-03`):* the sheet's "no `OOS` string exists in the tree" is FALSE — `src/bulletin/annexes.py:122–130` (`YYYYMMDD_OOS_Bulletin_<cadence>`, `_2` and up), `src/bulletin/evidence.py:232` (`-OOS-…-evidence.zip`), `src/bulletin/store.py:19–60`; whether Q212 = c's spelled-out token also renames the bulletin, evidence and store names is an OPEN DETAIL for the maintainer (the brief lists it, never decides it).
 
 ### Row K — ONE backup-format bump · ruled (Q215 ⛔ = a, Q310, Q313, Q404, Q409, the Q701 note) · OPEN
 
@@ -429,7 +442,7 @@ surface, batch by batch") is a recorded CONFLICT; the row ships without any merg
 and the stopword DIAGNOSTIC the note asks for may ship (it decides nothing). **Closes when** every keyword
 surface renders a tier tag (a Chromium click-through record across the eleven silent surfaces), the reconcile
 report exists, a fixture proves the 10 s spacing and the refusal on the kill switch, and `simplemma` is in
-`pyproject` core with its registry entry. Brief `S04-06`.
+`pyproject` core with its registry entry. Brief `S04-06`. *Premise check (brief `S04-06`):* `simplemma` is ALREADY a dependency — `pyproject.toml:147` under the `[analysis]` extra, used display-time only (`OO_FAMILY_LEMMA`, `src/analytics/families.py`), with no registry entry; the delta Q416 asks for is core + at-extraction + the migration, not a new package.
 
 ### Row N — Cross-language search through the rings, everywhere · ruled (R10; Q417, Q501–Q504, Q506 🔒 = b, Q507–Q512, Q514–Q516) · OPEN
 
@@ -449,7 +462,7 @@ ring-size extremes); the Observatory, the map and the sources tab read the same 
 trends / top computed per ring with a per-language breakdown in the hover (Q417). **Closes when** "every
 analysis tab agrees with the Articles list on the same concept" is demonstrated on the reference corpus (a
 recorded comparison, numbers in the PR), the CJK and Arabic re-index has run on it (the fixture and the
-reference corpus, counts before/after), and the toggles are Chromium-verified. Brief `S04-07`.
+reference corpus, counts before/after), and the toggles are Chromium-verified. Brief `S04-07`. *Premise check (brief `S04-07`):* the FTS tokenizer is already `unicode61 remove_diacritics 2` (`src/database/fts.py:254`; also `src/wiki/dump_index.py:84`), so Q507's first half exists and only the alef / teh-marbuta / yeh folding is new; and the tree's `[segmentation]` extra (`pyproject.toml:193–195`) already carries `jieba` + `janome` (ja) + `pythainlp` on the keyword-extraction path, where Q506 = b's label names `sudachipy` for ja — which library serves the FTS path is an OPEN DETAIL for the maintainer, never substituted by a session.
 
 ### Row O — The versioned-source substrate and the lanes · ruled (Q716, Q719 🔒, Q720 🔒, Q926, Q1003–Q1007, Q1010, Q1011, Q1014–Q1016, Q1018, Q1020) · OPEN
 
@@ -638,6 +651,7 @@ The `0.3` gate's own log is the format.
 | 2026-09-09 | **Row F ADVANCED again, and the browser bar is now measured at three widths** — the open-queue burn-down swept axe-core at 1440×900, 768×1024 and 390×844 across every main surface, the palette, the analysis window, `/tasks` and all eight Help documents, and closed every finding (the 768 sweep found a CRITICAL that the 1440 sweep could not see: the icon rail hid every nav label from the accessibility tree). Still ONE engine: Chromium only. The Gecko/AppVM bar is untouched, and every stamp still reads "awaiting human UX pass" — a passing axe sweep is a conformance measurement, not a human judging whether the thing is usable | session |
 | 2026-09-15 | **Rows D and E become BARS; row F CLOSED as-is** — the answered roadmap sheet, Q117 = a on Q1128 = a: the verification bar is Chromium in the sandbox plus the maintainer's click-through, Gecko best-effort. Every stamp reading "awaiting human UX pass" now closes on the maintainer's click-through of that surface, recorded per surface; no second engine is owed | maintainer (answer sheet, 2026-09-15) |
 | 2026-09-15 | **Rows G–V ADDED** — the sixteen 0.4 slices from the answered sheet (Q105 = a: contents amended, theme kept), each citing its question IDs, each with a brief under `docs/plans/2026-09-12-beta-pathway/`. No target dates (Q110 = c); operator time unbounded (Q115 = c) | maintainer (answer sheet) · rows written by the session |
+| 2026-09-15 | **Premise corrections from the brief-writing pass, hand-verified:** `v0.3.0` already exists as a 2026-08-23 pre-release (row G); the `OOS` token lives in the bulletin / evidence / store names (row J); `simplemma` is already in the `[analysis]` extra (row M); the FTS tokenizer already folds diacritics and the `[segmentation]` extra carries `janome`, not `sudachipy` (row N); boot only logs the re-index backlog (row I); `SECURITY.md` also omits `wikidata.org/w/api.php` and `huggingface.co` (row H). No ruling changes; the open details are named for the maintainer | session (briefs S03-01, S04-01, S04-02, S04-03, S04-06, S04-07) |
 | 2026-09-15 | **The exit clause written** (§1): rows A–E, G–V closed on named artifacts; the pending ⛔ questions block only the rows that name them | session, from Q110/Q112 |
 
 ---
