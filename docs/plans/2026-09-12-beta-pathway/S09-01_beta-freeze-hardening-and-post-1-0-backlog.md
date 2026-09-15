@@ -49,6 +49,15 @@ with Q1138 = a (`RC14`); I4 = `default` (park) — consistent. G9's mechanics re
 on a snapshot; checksums stated until a key exists; no anchoring until then. D7 = `default`: pqcrypto stays `<1.0`
 until a custody-path session with the full skeptic matrix.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC14` → **ASSUMPTION (a) at 0.9 row E: Tor-exit-resolve
+(SOCKS `RESOLVE 0xF0`) GOES, as its own skeptic-matrixed slice**, rather than staying parked. Both answers
+land on this brief, so the difference is what it carries: a parked item is recorded and not built, while this
+one is a small transport slice with the full skeptic matrix, closing the source-IP gap over Tor — under the
+unchanged non-negotiables (no silent transport downgrade, no evasion of a host's block, transport-aware
+verdicts). **I4 is unaffected:** `oo-netcut` and the Stem/Tor integration stay parked, where register I4 and
+Q1138 agree. D7 (pqcrypto stays `<1.0` until a custody-path session with the full skeptic matrix) and G9 are
+unchanged. The CONFLICT with Q1138 = a stays recorded on both index rows.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - grep-verified in this brief: `.github/workflows/ci.yml:366–379` — the `portability` job, matrix

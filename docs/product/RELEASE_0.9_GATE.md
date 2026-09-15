@@ -109,6 +109,17 @@ guards re-verified against the lanes added since 0.3 (every new host in `SECURIT
 when** the review's report exists with each item's finding and the re-check is stated in the notes. Brief
 `S09-01`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC14` came back blank → **ASSUMPTION
+(a) at this row: Tor-exit-resolve (SOCKS `RESOLVE 0xF0`) GOES, as its own skeptic-matrixed slice**, rather
+than staying parked. The register's I3 side takes §0's later-channel default over Q1138 = a (parked until
+this security review), and the difference is real even though both land here: a parked item is recorded and
+not built, while this row now carries one small transport slice with the full skeptic matrix, closing the
+source-IP gap over Tor. The non-negotiables it must satisfy are unchanged and not relaxed by the assumption —
+no silent transport downgrade, no evasion of a host's block, transport-aware verdicts. **I4 is NOT affected:**
+`oo-netcut` and the Stem/Tor integration stay parked (register I4 and Q1138 agree), and this row's other
+clauses (Q1136's consented self-update check, the no-telemetry re-check, and D7's parked pqcrypto 1.0
+migration) are untouched. The CONFLICT with Q1138 stays recorded on both rows.
+
 ### Row F — The storage rulings executed · PENDING on Q1009 ⛔
 
 **What it must demonstrate.** The intake's 0.9 line — "the storage rulings executed" — depends on the four
@@ -152,6 +163,7 @@ resolves to a ruling id in `RULINGS_INDEX.md`. Brief `S09-01`.
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a): 0.9.0 = Beta 1 (Q101 = a), the freeze (Q102), public pre-release (Q103 = b), exit = V1 §8 only (Q104 = b), no dates (Q110 = c), the security and Windows rows, the backlog file; row F recorded PENDING on Q1009 | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **Premise corrections from the brief-writing pass:** (row G) the `portability` job (`ci.yml:371–387`) is `continue-on-error: true` with `timeout-minutes: 45` and the PRH-29 note that the Windows leg hangs (3 h 21 m to failure) — the cap does not fix the hang, a bisect against the suite is owed first, so "graduate to blocking" is bisect → green → blocking, in that order; `sqlcipher-smoke` (`ci.yml:411–416`) already runs `windows-latest` blocking. No `pyosmium` and no `[geo]` extra exist in `pyproject.toml` at `bebcef4` (Q1019's wheels stay FROM MEMORY). (row D) the "three widths of the 2026-09-09 sweep" are the 0.4 gate's §3 entry of that date (1440×900, 768×1024, 390×844); no audit DOCUMENT carries that date (the visual audit is `docs/audit/11_VISUAL_UI_AUDIT_2026-09-08.md`). (row B) the session clone is shallow (`git rev-parse --is-shallow-repository` = true), so release notes "from `shipped.csv` since the previous tag" need `git fetch --unshallow` first (CLAUDE.md protocol 5b's trap). No ruling changed. | session (`S09-01` §2, hand-verified) |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers — effects on this board:** row E — I3 `default` (go: Tor-exit-resolve as its own skeptic-matrixed slice) CONFLICTS with Q1138 = a (parked until this review; `RC14`); I4 `default` (park `oo-netcut` / Stem) consistent; G9's mechanics recorded (re-run `install.sh` on a snapshot; checksums stated until a key exists; no anchoring until then); D7 `default`: the pqcrypto 1.0 migration stays parked until a custody-path session with the full skeptic matrix. | maintainer (the register, 2026-09-15) · reconciled by the session |
+| 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effect on this board: row E — `RC14` ASSUMPTION (a), Tor-exit-resolve becomes a built, skeptic-matrixed slice here rather than a parked item; I4 (`oo-netcut` / Stem) stays parked and every other clause of the row is untouched. Row F is unchanged: `RC03` ⛔ came back blank, so the four storage round-2 values stay unwritten and row F stays PENDING on Q1009 with nothing assumed. The CONFLICT with Q1138 = a stays recorded on both rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 
 ---
 

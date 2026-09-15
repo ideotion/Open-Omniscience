@@ -40,6 +40,15 @@ up and change what's best for the user. Wait. Mark that we need the decision to 
 CONFLICTS with Q1142 = a (`RC04`) — the bench part of this brief is contested; the decision itself is 0.8 row C.
 D9 = `default` (drop the live browse) CONFLICTS with Q1143 = a (`RC09`). D10 consistent.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** Two assumptions reach this slice, and both make it smaller.
+**`RC04` → (a): the multi-model specialisation bench is NOT run here.** The app-wide one-model decision is
+taken before 0.8 opens (0.8 row C; the 0.7 exit clause), so this slice drops its bench part rather than
+producing numbers for a decision that will be taken on other grounds. **`RC09` → (a): the live ollama.com
+library browse is DROPPED** — no new consented host, no search-and-filter UI, no ×12 strings for it; the
+custom-model field stays the only path, and the reason is recorded rather than the surface built. D10 /
+Q1144 (cleared fields only, the production sweep on, the per-field refusals rendered) is unchanged, and so
+are Q405 and Q513. Both CONFLICTS stay recorded on their index rows.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - `src/ai_layer/translate.py` is "Local loopback only (Ollama); airplane mode (the kill switch) …

@@ -169,6 +169,15 @@ on a build carrying the `statement_deadline` fix, with every member non-zero. Th
 data-safety trio has already been read at that scale (2026-08-12: 1,048,725 articles, 21.0 GB,
 backup RSS +1.4 %), so what is owed is the *diagnostics* run, not the safety evidence.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies.** `RC08.3` asked where register ruling
+**E1** («Automate this in the diagnostic bundle.») lands. It came back blank, so its stated default is taken
+as a labelled **ASSUMPTION: (a) — `month-occupancy.json` becomes a member of THIS row's bundle**, sampled as
+the ruling specifies, with no operator script run; PROMPT_06 slice 3 (the date-aware month block and its
+re-index) reads it from the bundle rather than from a hand-run measurement. This adds ONE member to the
+bundle and changes no bar: the row still closes on a `complete: true` coverage block with every member
+non-zero — which the new member must therefore satisfy too. The re-index remains the operator's. Reversed by
+writing a letter at `ANSWER RC08.3`.
+
 ---
 
 ### Row D — row B's evidence is readable from one artifact · *proposed* · BUILT
@@ -328,6 +337,12 @@ full release once row 5 is run (a tag cannot be moved; a second release can be p
 the brief, per the recorded rule that a plan's premise is checked in the tree, never accepted from the
 document that states it.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC01` asked whether the version flip may proceed on the
+existing `v0.3.0` pre-release without row 5. It came back blank, so its stated default is taken as a labelled
+**ASSUMPTION: (b) — this row keeps waiting on 0.3 row 5.** The version stays `0.3.0` until the maintainer runs
+the quarantine; A1 stays `deferred` with no date; the premise check above is unchanged and still describes the
+pre-release. Reversed by writing a letter at `ANSWER RC01`.
+
 ### Row H — `docs/SECURITY.md` enumerates every host; the consent hover lists them per lane · ruled (Q1001 = a, Q1002 = a) · OPEN
 
 **What it must demonstrate.** The "full set of endpoints the app can reach" section names the hosts the tree
@@ -395,6 +410,11 @@ for this one release (Q313). **Closes when** the maintainer restores a real pre-
 machine and the duplicate-key scan reports 0 duplicates (operator; the scan's output is the artifact), the P0
 data-safety trio is re-run green on the new format (the `0.3` runbook), and a CI restore of a fixture backup
 proves each of the five members round-trips. `not-measurable-here` for the real-restore half. Brief `S04-04`.
+
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC02` ⛔ (C1 «a, but wait for version 0.7» against
+Q215 = a) came back blank on a ⛔ question, so it **stays PENDING and is never defaulted**. Payload (5) is
+unchanged: the legacy single-file restore half is kept forever as its docstring commits, `S04-04` builds on
+Q215 = a, and no 0.7 removal row exists. Nothing in this row moved.
 
 ### Row L — ISO 3166-1 alpha-3, step 1 · ruled (R6; Q301 ⛔ = c, Q302, Q303, Q307–Q309, Q311, Q312) · OPEN
 
@@ -593,6 +613,16 @@ review and tests, the overlay editor is Chromium-verified, the moves land as cat
 exists with its agree / defer counts, and one headline count on each surface is proven to be `enabled AND
 qualified` by a test that reads the shipped predicate. Brief `S04-12`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** Three assumptions land here, each reversible.
+**`RC05` → (a): no tool.** The 64,910 `kind_overrides` proposals stay a design-doc measurement and the
+worklist Q1105 = a funds is NOT built in `S04-12` — the register's B4 side, taken as §0's later-channel
+default; the CONFLICT with Q1105 stays recorded on both rows. **`RC06` → (a): 90 days BESIDE the
+whole-history verdict**, never replacing it — two verdicts per source, each with its own n, rather than
+Q1108 = a's six months instead of the whole history; the CONFLICT stays recorded. **`RC07` → (b):** B7's
+article-revision-tracking note is placed as its own 0.5 slice on the finished row O substrate — a PLACEMENT
+assumption only; the feature itself is ruled. B5 and B6 are unaffected. The embassy platforms (Q1113 ⛔)
+remain PENDING for their own reason.
+
 ### Row T — Network budgets and politeness · ruled (Q1012, Q1013, Q1125, Q1126 ⛔ = a, Q1132, Q1148) · OPEN
 
 **What it must demonstrate.** A per-PROCESS bandwidth budget composed with the collection-speed governor
@@ -607,6 +637,12 @@ external-artifact registry and verified on pull (Q1132). **Closes when** each ha
 deferral bucket appears in the pass summary on a fixture host declaring a long `Crawl-delay`; the budget
 composes with the governor in one place), the ×12 strings pass all three i18n gates run separately, and the
 net-coach weights are Chromium-verified. Brief `S04-13`.
+
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC15` came back blank → **ASSUMPTION (a): L4's
+«most ethical» is the app's own loopback guard**, so Q1148's figures stand exactly as this row already states
+them (1,000 / hour for loopback UI calls, 100 for anything else) and the per-host egress politeness
+(Q1013 = a, the other clause of this row) is NOT re-opened. Nothing in this row changed; the assumption is
+recorded so that a later reading of L4 as the egress knob is a reversal rather than a discovery.
 
 ### Row U — UI, i18n and the small rulings · ruled (Q1124, Q1130, Q1135, Q1139, Q1141, Q1149, Q1151, Q1152) · OPEN
 
@@ -623,6 +659,19 @@ false-positive rate ≤ 5 %, both numbers on the toggle (Q1124 — no flip in 0.
 the three i18n gates are green at the lowered numbers, the removal PR names what went, the route-equality
 test exists, and the reality-check PR lists every corrected claim. Brief `S04-14`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** Three assumptions land here. **`RC13` → (b): the
+religious calendars are NOT dropped** — a dedicated networked session researches the dates from published
+calendars and authorities and implements them, dated, sourced, method stated, ×12, nothing fabricated (the
+register's G8 side; the CONFLICT with Q1135 = b stays recorded). **The eclipse canon is the half this
+assumption does not reach:** `RC13` asks for `+ eclipses` or `− eclipses` after the letter and nothing was
+written, so the eclipse canon is neither dropped nor funded and this row no longer reads it as dropped —
+that clause of Q1135 = b is UNSTATED pending the letter, and no session may decide it. **`RC17` → (a):** the
+coverage-state prefixes (data-gap, thin-coverage, fragmented, …) are filtered from topical displays ALONGSIDE
+the `via:*` provenance prefixes, widening Q1130 = a's `via:*`-only clause; the judgement words stay reported
+and the CONFLICT with Q1130 stays recorded. **`RC08.6` → (a):** L5's `_SPARSE_BAR_MAX` extension to
+`commodityOverlaySvg` only is PLACED in this row; invariant #16 is unchanged. Every other clause of this row
+(Q1124, Q1139, Q1141, Q1149, Q1151, Q1152) is untouched.
+
 ### Row V — The release ritual and the allowlist · ruled (Q111, Q114 ⛔ = a, Q116) · OPEN
 
 **What it must demonstrate.** Every alpha tag ships with GitHub release notes generated from `shipped.csv` since
@@ -635,6 +684,13 @@ planet.openstreetmap.org, api.worldbank.org, sdmx.oecd.org, api.imf.org, extensi
 (Q116). **Closes when** the `v0.4.0` release notes carry both items and a session's probe to
 `dumps.wikimedia.org` returns an HTTP status rather than `000` (the recorded 2026-09-07 probe shape) — until
 then every live-verification step reads `not-measurable-here`. Brief `S04-15`.
+
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC10` ⛔ (does F1's «add them» include
+`dumps.wikimedia.org`?) came back blank on a ⛔ question, so it **stays PENDING and is never defaulted**:
+that one host is CARVED OUT of the Q114 list above and is not added to the session environment's allowlist.
+Every other host in the list stands under Q114 = a / F1. The consequence is unchanged and stated rather than
+worked around: PROMPT_06's sense inventory and ambiguity map (slices 4 and 6) stay operator-side, and this
+row's closing probe to `dumps.wikimedia.org` still reads `not-measurable-here`.
 
 ---
 
@@ -654,6 +710,8 @@ The `0.3` gate's own log is the format.
 | 2026-09-15 | **Premise corrections from the brief-writing pass, hand-verified:** `v0.3.0` already exists as a 2026-08-23 pre-release (row G); the `OOS` token lives in the bulletin / evidence / store names (row J); `simplemma` is already in the `[analysis]` extra (row M); the FTS tokenizer already folds diacritics and the `[segmentation]` extra carries `janome`, not `sudachipy` (row N); boot only logs the re-index backlog (row I); `SECURITY.md` also omits `wikidata.org/w/api.php` and `huggingface.co` (row H). No ruling changes; the open details are named for the maintainer | session (briefs S03-01, S04-01, S04-02, S04-03, S04-06, S04-07) |
 | 2026-09-15 | **The exit clause written** (§1): rows A–E, G–V closed on named artifacts; the pending ⛔ questions block only the rows that name them | session, from Q110/Q112 |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z; recorded in `QUESTIONS_FOR_THE_MAINTAINER.md` in place, `OPEN_QUEUE.md` head entry, `RULINGS_INDEX.md` rows A1–L10) — effects on this board, nothing resolved by the session:** row G — A1 `deferred` (the operator step; `RC01` asks whether the version flip may proceed on the existing pre-release); row K — C1 «a, but wait for version 0.7» CONFLICTS with Q215 = a (⛔, `RC02`; nothing removed meanwhile); row M — B3's method (a seeded stratified sample per batch, furniture words only, open-class refused) recorded; the Q1103/Q1104 CONFLICT stays; row Q — L6 «Promote [pdf] into the default» (pyproject; both venv profiles re-verified; the coverage report's «without [pdf]» wording retired); row S — B5 (the source-qualification export + merge run automated inside the diagnostics), B6 (`high_link_density` as the second, measured criterion beside the kept 0.5), B4 CONFLICT (no tool vs Q1105's worklist surface, `RC05`), B7 window CONFLICT (90 days beside the whole-history verdict vs Q1108's 6 months instead, `RC06`; B7's article-revision-tracking note placed by `RC07`); row T — L4 qualifies Q1148 (`RC15`); row U — G8 CONFLICTS with Q1135 = b (drop vs a dedicated networked session, `RC13`), L10 CONFLICTS with Q1130 on the coverage-state prefixes (`RC17`), L5 proposed here (`RC08.6`), A4's actions (banner + archive, never merge) beside Q1141's depth, L1/L3/L7 consistent; row V — F1 «add them» confirms Q114 = a; E2's host undecided (`RC10` ⛔). | maintainer (the register, 2026-09-15) · reconciled by the session; the confirmation round is `docs/design/RULINGS_CONFIRMATION_2026-09-15_REGISTER_ROUND.md` |
+| 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0; nothing resolved by the session.** Effects on this board, all reversible by writing a letter: row G — `RC01` ASSUMPTION (b), the flip keeps waiting on 0.3 row 5; row K — `RC02` ⛔ PENDING, the legacy restore half untouched; row S — `RC05` ASSUMPTION (a) no tool, `RC06` ASSUMPTION (a) 90 days beside the whole-history verdict, `RC07` ASSUMPTION (b) article revision tracking to its own 0.5 slice; row T — `RC15` ASSUMPTION (a), Q1148's figures stand; row U — `RC13` ASSUMPTION (b) the religious dates get a networked session **and the ECLIPSE CANON is left UNSTATED** (the `± eclipses` suffix was not written, so this row no longer reads it as dropped), `RC17` ASSUMPTION (a) the coverage-state prefixes filtered too, `RC08.6` ASSUMPTION (a) L5 placed here; row V — `RC10` ⛔ PENDING, `dumps.wikimedia.org` carved out of the Q114 allowlist. Eight of the assumptions sit on CONFLICT questions and follow the later channel exactly as §0 directs; BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
+| 2026-09-15 | **The 0.4 board re-verified against the tree at today's `main` (`0d6e4708`): rows G–V, every §2 staleness anchor of all sixteen briefs re-run by grep, never from memory. 127 anchors; 126 live; ONE wrong.** The one: brief `S03-01` (row G) cites `docs/product/RELEASE_0.3_GATE.md:33` for the 0.3 board's row 5 — `:33` is row **6** (the DB-10 page-size bench, CLOSED 2026-08-13); row 5 is at **`:32`**. The text the brief quotes («**OPEN** — criteria **agreed 2026-08-23**; the pass has not been run») is row 5's, verbatim and still exact, and the 0.3 gate has not changed since the briefs were written — `git diff bebcef4..origin/main` on that file is EMPTY and row 5 sat at `:32` at `bebcef4` too, so **the anchor did not drift: it was mis-cited when written**. Corrected in the brief in this PR. **No ruling changes and no row changes status** — row G still waits on row 5 (`RC01`'s assumption), and row G's own 2026-09-15 premise check about the existing `v0.3.0` pre-release is re-confirmed unchanged. The other 126 anchors were checked against the claim each brief quotes beside them rather than against the nearest identifier: an earlier, looser pass flagged eleven and **nine of those were the checker's own false positives** (it matched a neighbouring backticked name instead of the brief's claim), hand-re-verified one by one before anything was recorded — `folder_backup.py:48`, `artifact.py:48`/`:650`, `main.py:1450–1455`, `source_tags.py:441`, `models.py:786`, `runner.py:744–761`, `fts.py:254`, `qualification.py:230` and `calendar_feeds.yml:3288` are all exact. | session (grep-verified at `0d6e4708`) |
 
 ---
 

@@ -40,6 +40,17 @@ nothing for the feature until confirmed. L10 = `default` (filter `via:*` AND the
 CONFLICTS with Q1130 = a (`RC17`). J1 = Q1139, L7 = Q1149 — consistent; L1 (keep) and L3 (leave) — no change.
 L5 (extend `_SPARSE_BAR_MAX` to the commodity overlay only) is proposed for this slice (`RC08.6`).
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** Three assumptions reach this slice. **`RC13` → (b): the
+religious calendars are NOT dropped** — a dedicated networked session researches the dates from published
+calendars and authorities and implements them (dated, sourced, method stated, ×12, nothing fabricated), so
+this slice must NOT carry out Q1135 = b's removal. **The eclipse canon is the half the assumption does not
+reach:** `RC13` asks for `+ eclipses` / `− eclipses` after the letter and nothing was written, so it is
+neither dropped nor funded and **this slice decides nothing about it**. **`RC17` → (a):** filter the
+coverage-state prefixes (data-gap, thin-coverage, fragmented, …) from topical displays ALONGSIDE the `via:*`
+prefixes, widening Q1130 = a; the judgement words stay reported. **`RC08.6` → (a):** L5's `_SPARSE_BAR_MAX`
+extension to `commodityOverlaySvg` only is PLACED in this slice; invariant #16 is unchanged. A4, J1, L1, L3
+and L7 are unchanged. Both CONFLICTS stay recorded on their index rows.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - The ratchets: `.github/workflows/ci.yml:167` `--min 100`, `:191` `--max-untranslatable 470`, `:209`

@@ -79,6 +79,16 @@ maintainer before 0.8 opens, with the models available at that time. Whether the
 Q1142 = a said) or is skipped (as D8's «Wait» says) is `RC04`'s question; the decision is owed either way.
 **Closes when** the ruling is recorded with its date. **Owner: the maintainer.**
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC04` came back blank → **ASSUMPTION
+(a): no specialisation bench runs in 0.5, so this decision is taken WITHOUT bench numbers behind it.** The
+register's D8 side takes §0's later-channel default over Q1142 = a (run the bench in 0.5), whose own reasoning
+— «new models might come up and change what's best for the user» — is why the measurement is not commissioned
+in advance. This row is unchanged in owner, timing and status: still the maintainer's, still PENDING before
+0.8 opens, still a decision rather than work. What the assumption fixes is only the evidence it arrives with,
+and the CONFLICT with Q1142 stays recorded on both rows. Writing `b` at `ANSWER RC04` would commission the
+bench in 0.5 as a measurement only and hand this row numbers; writing `c` would move the decision itself into
+0.5 and retire this row.
+
 ---
 
 ## 3. Amendment log
@@ -88,6 +98,7 @@ Q1142 = a said) or is skipped (as D8's «Wait» says) is `RC04`'s question; the 
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a); the V1 vertical carried; the OSM seed recorded as pulled forward to 0.5/0.6; the schema-freeze clause written from Q102 = a | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **Premise correction from the brief-writing pass (row B):** `grep -rn kpi src/static/` finds nothing — the KPI board is `src/monitoring/kpi.py`'s snapshot served at `/api/diagnostics/kpi` and the diagnostics bundle member; the row's "shows each lane's bar … on hover" presupposes a rendering surface that does not exist at `bebcef4`. The row now says so; the surface's placement is listed in `S08-02` §6 as a NOTE the maintainer owes, never decided by the session. No ruling changed. | session (`S08-02` §2, hand-verified) |
 | 2026-09-15 | **Row C ADDED — the app-wide one-model decision, owner: the maintainer** (register D8, 2026-09-15 15:17Z: «wait for the app wide one model ruling, new models might come up and change what's best for the user. Wait. Mark that we need the decision to be made before version 0.8 r»). A decision, not work; the 0.7 exit clause names it. Its CONFLICT with Q1142 = a (the bench in 0.5) is `RC04`'s. | maintainer (the register, 2026-09-15) |
+| 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0.** Effect on this board: row C — `RC04` ASSUMPTION (a), the decision is taken without a 0.5 bench behind it; owner, timing and status unchanged (the maintainer's, PENDING before 0.8 opens). The CONFLICT with Q1142 = a stays recorded on both rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 
 ---
 

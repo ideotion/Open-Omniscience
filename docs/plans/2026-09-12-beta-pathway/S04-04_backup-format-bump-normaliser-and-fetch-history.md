@@ -45,6 +45,12 @@ matrix applies to every slice here.
 restore authorised for 0.7; it CONFLICTS with Q215 = a (keep the restore half forever). ⛔ `RC02`. Until
 confirmed: build on Q215 = a and remove nothing.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC02` ⛔ → **PENDING, never defaulted.** This slice is
+unchanged: build on Q215 = a, keep the legacy single-file restore half forever as its docstring commits, and
+do NOT touch `read_artifact`'s «forever (D7)» wording. The C1 «a, but wait for version 0.7» reading is
+recorded and unexercised; if it is later confirmed, the removal is a 0.7 gate row of its own and a
+data-safety-class change, never a tidy-up inside this one.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Sheet §4 context (VERIFIED): "The restore merge keys on the **value** (`merge.py:3280`; `country` adoptable

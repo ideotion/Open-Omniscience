@@ -10,6 +10,31 @@ them. This file puts each one back to you, answerable in place, in the format pr
 Everything not listed here is already recorded and needs no restating (`docs/ledger/RULINGS_INDEX.md` rows
 `A1`–`L10`).
 
+> ## PROCESSING RECORD — the round was processed UNANSWERED (2026-09-15, the intake session)
+>
+> **This file is still the primary record, and it is still open.** A session ran §0's mechanical parse over
+> it and found **0 of 22 `ANSWER` lines carrying a letter** — every one is blank. Nothing below was written
+> by a session and nothing below was resolved by one; the parse only applied §0's own blank rules:
+>
+> - **4 stay PENDING, never defaulted** — `RC02` ⛔, `RC03` ⛔, `RC10` ⛔ (blank on a ⛔ question), and
+>   `RC12`, whose own clause reads *"Default if blank: none — the note left it blank and a second blank
+>   keeps it pending"*. Nothing that depends on these moved: the legacy single-file restore is untouched,
+>   the storage round-2 rows 3–6 are unexecuted, `dumps.wikimedia.org` is not on any allowlist, and the
+>   poll work has no version.
+> - **18 take their stated default as a labelled ASSUMPTION, reversible by writing the letter** — `RC01`,
+>   `RC04`–`RC09`, `RC08.1`–`RC08.6`, `RC11`, `RC13`–`RC17`. Eight of those are CONFLICT questions, so the
+>   assumption follows the **later** channel (the register, 15:02–16:00Z) exactly as §0 directs. **The
+>   CONFLICT is recorded, not resolved:** both answers stay on their `RULINGS_INDEX.md` rows, and writing
+>   the letter here is what settles them.
+> - **Two residual points the defaults do NOT reach, left open rather than guessed:** `RC13` asks for
+>   `+ eclipses` / `− eclipses` after the letter and nothing was written, so the **eclipse canon's fate is
+>   unstated** even under (b); and `RC11`'s default fixes only the SHAPE of the owed V1-1..V1-9 round — the
+>   round itself is recorded as owed and was not written.
+>
+> **How to answer now:** write a letter after any `ANSWER RCnn:` line below. The lines are untouched and
+> each blank is still a live question; answering one replaces its assumption and needs no other edit.
+> Index entry: the `OPEN_QUEUE.md` head entry of 2026-09-15; one `RULINGS_INDEX.md` row per `RCnn`.
+
 ## §0 — How to answer, and how the answers are processed
 
 - Write a letter after `ANSWER RCnn:` (a note in your own words after it is welcome and is recorded verbatim;

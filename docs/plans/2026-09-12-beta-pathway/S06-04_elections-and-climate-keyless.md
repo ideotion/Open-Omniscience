@@ -47,6 +47,13 @@ from a suggested list (S3). G7 adds: the signal-keywords layer is toggleable and
 G6: the poll idea re-stated — raw poll data, verbatim questions and results, orienting-question detection — with
 the version blank (`RC12`); not this slice's to place.
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC08.4` → **ASSUMPTION (a): register ruling G3's bloc-roster
+networked session is PLACED in this slice**, beside the statistics directory of G5 / Q1147 and on the same
+contract as G2's elections-acquisition session (§5 step 1). The ruling's own clause is not weakened: the
+registry stays **EMPTY until the session runs**, because a partial roster is more dangerous than none.
+G2, G4, G5 and G7 are unchanged. `RC12` (G6, the poll version) stays **PENDING** — it is not this slice's,
+and `docs/FUTURE_DEVELOPMENTS.md` §Poll analysis still owes its rewrite, which waits on that version.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - grep-verified in this brief: `src/civic/coverage_floor.py:59` `LANGUAGE_COUNTRIES_AS_OF = "2026-09-07"`

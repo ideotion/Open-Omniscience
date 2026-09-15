@@ -100,6 +100,15 @@ before/after row counts per table are recorded, the config test is green, the re
 duplicates (operator; `not-measurable-here` in the sandbox), and the P0 data-safety trio is green on the
 migrated store. Brief `S05-02`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC08.1` asked where register ruling **C5** (the DB-10
+migrate-op: rebuild the store at the ruled pragmas, as a Settings → Advanced action carrying the honest cost
+estimate from `rebuild.seconds`) lands. Blank, so its stated default is a labelled **ASSUMPTION: (a) — this
+row, the storage half.** What that places here is an app-stopped, hours-long operation needing one spare
+drive, whose estimate comes from a real `rebuild.seconds` reading and is shown before it starts; the
+informed-consent non-negotiable makes that estimate and its caveat visible by default, ×12. It does not
+change this row's own bar (Q301 = c step 2) and it does not open a new row. Reversed by writing a letter at
+`ANSWER RC08.1`.
+
 ### Row C — The entity spine · ruled (Q415, Q724, Q805, Q818, Q827) · OPEN
 
 **What it must demonstrate.** Entities (people, organisations, places) on the same three-tier ladder as
@@ -176,6 +185,13 @@ own coverage counters (pages seen / edition total per edition) read from one art
 (Q1006) shows the lane's growth, and analytics 4–5 render from real rows. `not-measurable-here` for the run;
 **operator:** the run and the transport choice. Brief `S05-06`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC03` ⛔ (C4 = Q1009, the storage round-2 rows
+3–6 — blob-store dedup · OOENC2 for pack AEAD · keyed-HMAC blob addressing with opaque pack names · the
+sqlite3mc benchmark trial) came back blank on a ⛔ question, so it **stays PENDING and is never defaulted**.
+The four values are still unwritten, so none of rows 3–6 may be executed and **this row's Phase-C seam stays
+shut** — unchanged from before the round, and stated here so the pending is visible where the work is
+blocked rather than only on the 0.9 board. The tail walk's own bar (Q722 = b) is untouched.
+
 ### Row G — Laws: the evolution surface · ruled (Q107, Q905, Q908, Q914, Q916, Q918, Q920) · OPEN
 
 **What it must demonstrate.** The reader — version selector · side-by-side diff · provision navigation · an ELI
@@ -204,6 +220,19 @@ appears on the KPI board as a persisted measurement (the recorded K6 lesson: on-
 reader's on-demand translation is Chromium-verified with its ≈ label in two locales, and the bench report
 exists with its fixture stated. Brief `S05-08`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** Three things land on this row, each reversible.
+**`RC04` → (a): the model bench is NOT run in 0.5.** The register's D8 side wins §0's later-channel default
+over Q1142 = a, so this row drops its bench part and the app-wide one-model decision is taken before 0.8
+opens (0.8 row C; the 0.7 exit clause). The CONFLICT with Q1142 stays recorded on both rows. **`RC09` → (a):
+the live ollama.com library browse is DROPPED** — no new consented egress surface, no search-and-filter UI,
+no ×12 strings for it; the custom-model field stays the only path. The CONFLICT with Q1143 = a (a consented,
+opt-in browse) stays recorded. **`RC08.2` → (a):** register rulings **D2** (editions open on the
+deterministic introduction; the narrated path stays opt-in with its `fallback_reason`) and **D4** (the eight
+bulletin sections and the checkbox review screen ratified as-is) are placed as a small `bulletin-defaults`
+slice BESIDE this row in 0.5 — one setting plus its copy ×12, no model needed. It is recorded as a placement,
+not opened as a board row: the two rulings already stand, and only where they sit was assumed. Q405, Q513
+and Q1144 (D10) are untouched.
+
 ### Row I — The UI shell · ruled (Q1120, Q1121, Q1123, Q1127) · OPEN
 
 **What it must demonstrate.** "Rings, not gates" as the information-architecture spine — a Ring controls what
@@ -219,6 +248,14 @@ audit's own viewport table lists five — the session reads the sweep record for
 culled themes are named with their nearest survivor.
 Brief `S05-09`.
 
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC08.5` asked where register ruling **H3**
+(remove `#ins-term` + `exploreTerm`, behind the omnibar-absorption test) lands. Blank, so its stated default
+is a labelled **ASSUMPTION: (a) — this row, the UI shell.** The gate on it is the one the ruling itself
+names and is not weakened here: the surface goes only once its absorption test passes, which is the recorded
+"never lose a tool" discipline and the reason the 2026-07-12 blind hide was refused. The theme cull (Q1123 =
+b, invariant #12's floor moving to ≥ 10 in the same PR as the cull) and the inline-handler retirement (Q1127,
+H4's one-module-per-slice method) are untouched. Reversed by writing a letter at `ANSWER RC08.5`.
+
 ### Row J — A source is keyed on its FEED · ruled (Q1102 ⛔ = b) · *proposed placement* 0.5 · OPEN
 
 **What it must demonstrate.** The identity migration the maintainer chose — a source keyed on its feed, so
@@ -230,6 +267,15 @@ keys) never land on one untested format; the maintainer may pull it forward in �
 migration's row counts before/after are recorded, a real pre-migration backup restores with 0 duplicates from
 the scan (operator), the shadowed-entry count falls from 475 to the measured residue, and the citations tally
 is proven stable across the migration by a fixture. Brief `S05-10`.
+
+**RC round 2026-09-15 — BLANK, so the round's §0 rule applies and nothing here is resolved.** `RC16` came back blank → **ASSUMPTION (a): the
+`lean-*` political-lean scale is REMOVED from the offerable vocabulary.** The LLM may no longer propose a
+lean tag; human-asserted lean tags stay, and the stated position in `source_tags.py` changes with its reason
+recorded in the same diff. This follows the register's L9 as §0's later-channel default over Q1129 = a (keep
+the stance: reported, never filtered) — and note what the 2026-09-11 check measured before either answer
+existed: the code already classifies `lean-*` as non-topical and declines to filter it, twice in 921
+assignments, so this assumption changes what may be PROPOSED, not what is displayed. The CONFLICT with Q1129
+stays recorded on both rows. This row's own ruling (Q1102 ⛔ = b, the feed key) is untouched.
 
 ### Row K — The approved desk · carried from the V1 train, kept by Q105 = a · OPEN
 
@@ -250,6 +296,7 @@ carries none of them; corrected 2026-09-15 from brief `S05-11`'s grep), not re-a
 |---|---|---|
 | 2026-09-15 | Board created from the answered roadmap sheet (Q112 = a, Q1204 = a): rows A–K, each citing its question IDs; the entry precondition (0.4 row K before row B) recorded from Q301 = c | maintainer (answer sheet) · rows written by the session |
 | 2026-09-15 | **The 2026-09-06 register's 65 answers (rulings artifact, 15:02–16:00Z) — effects on this board, nothing resolved by the session:** row H — D8 «wait for the app wide one model ruling … before version 0.8» CONFLICTS with Q1142 = a (run the bench in 0.5; `RC04`) and D9 `default` (drop the live ollama.com browse) CONFLICTS with Q1143 = a (`RC09`); D10 consistent; row I — H4's method (one module per slice, `app-boot.js` first) recorded; H3 (remove `#ins-term` behind the absorption test) proposed here (`RC08.5`); row J — L9 `default` (remove the lean scale) CONFLICTS with Q1129 = a (`RC16`); row B — C5 (the DB-10 migrate-op as a Settings → Advanced action) proposed here (`RC08.1`); row F — C4 came back `default` (yes / OOENC2 / yes / yes) at 15:12Z where Q1009 was blank that morning: ⛔, `RC03` asks for the four values; the seam stays. A `bulletin-defaults` slice (D2 + D4) is proposed beside row H (`RC08.2`). | maintainer (the register, 2026-09-15) · reconciled by the session |
+| 2026-09-15 | **The RC confirmation round came back UNANSWERED — 0 of 22 `ANSWER` lines carry a letter — processed per its own §0; nothing resolved by the session.** Effects on this board, all reversible by writing a letter: row B — `RC08.1` ASSUMPTION (a), C5's DB-10 migrate-op placed here; row F — `RC03` ⛔ PENDING, the four storage round-2 values still unwritten so the Phase-C seam stays shut; row H — `RC04` ASSUMPTION (a) the bench is NOT run in 0.5 (the decision moves to 0.8 row C), `RC09` ASSUMPTION (a) the live ollama.com browse dropped, `RC08.2` ASSUMPTION (a) D2 + D4 placed as a small `bulletin-defaults` slice beside this row; row I — `RC08.5` ASSUMPTION (a), H3 placed here behind its absorption test; row J — `RC16` ASSUMPTION (a), the `lean-*` scale leaves the offerable vocabulary. A NEW 0.5 slice is also assumed by `RC07` (article revision tracking on the finished 0.4 row O substrate, B7's note) — recorded as a placement, not opened as a board row. Four of these sit on CONFLICT questions and follow the later channel exactly as §0 directs; BOTH answers stay recorded on their `A1`–`L10` and `Qnnn` rows. **No row changed status.** | maintainer (the round, left blank) · §0's blank rules applied by the session |
 
 ---
 

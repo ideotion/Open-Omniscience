@@ -37,6 +37,12 @@ anything — the sheet's anchors were verified at `main`@`bebcef4` on 2026-09-12
 for Q1127 = a. H3 = `default`: remove `#ins-term` + `exploreTerm` behind the omnibar-absorption test — proposed for
 this slice (`RC08.5`). H5: the 3D explorer is retired in favour of the Observatory (no build).
 
+**RC round 2026-09-15 — BLANK (0 of 22 `ANSWER` lines carry a letter); §0's blank rules applied, nothing resolved.** `RC08.5` → **ASSUMPTION (a): register ruling H3 (remove
+`#ins-term` + `exploreTerm`) is PLACED in this slice**, behind the omnibar-absorption test the ruling itself
+names — the gate is not weakened here, and the recorded "never lose a tool" discipline (and the 2026-07-12
+refusal of a blind hide over an interleaved shared component) still governs the removal. H4's method (one
+module per slice, `app-boot.js` first) and H5 are unchanged, as are Q1120, Q1121, Q1123 and Q1127.
+
 ## 2. Where this stands in the tree — the staleness guard, with anchors
 
 - Inline handlers: 335 in `index.html` + 278 across `app-*.js` = 613 on 2026-09-11 "with an explicit
