@@ -148,3 +148,10 @@ logs/
 # checkout the install root is this directory, so it would otherwise show up
 # untracked in every contributor's `git status`, naming their data path.
 oo.env
+
+# Release notes produced by scripts/release_notes.py (and the body the release
+# workflow composes from it). Both are build output, not sources -- and ignoring
+# them is load-bearing rather than tidy: the generator REFUSES on a dirty tree, so
+# a tracked generated_notes.md would make its own second run fail as a dirty tree.
+generated_notes.md
+release_notes.md

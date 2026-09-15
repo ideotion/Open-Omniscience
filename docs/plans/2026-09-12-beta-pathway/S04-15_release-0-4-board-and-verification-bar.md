@@ -93,8 +93,14 @@ register's H2 / L2). Grep the tree before building anything — the sheet's anch
 
 ## 4. Verification
 
-The gates verbatim (`_WORKING_MODE.md` §4), each run separately with its exit code captured (the generator is
-Python under `scripts/`, so `ruff`, `mypy` and `bandit` see it); the whole-tree guard set after the file
+The gates verbatim (`_WORKING_MODE.md` §4), each run separately with its exit code captured. **PREMISE
+CORRECTED 2026-09-15, measured while executing this brief: `scripts/` is NOT covered by any of the three
+lanes** — `ci.yml` lints `src/ tests/`, types `src/` and runs bandit over `src/`, and
+`scripts/ruff_ratchet.py`'s own `TARGETS` is `("src/", "tests/")`, so a generator under `scripts/` is seen by
+none of them (67 files there carry 23 blocking-class `F,B` findings and 81 advisory ones that no gate
+reports). Run the three tools on the new file BY HAND and say so; the coverage gap is recorded as a finding
+in `LESSONS.md`, not fixed here, because adding `scripts/` to a max-gate ratchet's tree changes the
+population it measures. Then the whole-tree guard set after the file
 addition; the generator's test on the real CSV; the `shipped.csv` numstat + duplicate-key scan; a dry run of
 `release.yml`'s notes step locally (the heredoc + the generated block) with the output quoted. No app string
 changes: the notes are a repository artifact, not an app surface, so the i18n gates are unaffected (say so

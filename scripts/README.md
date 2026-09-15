@@ -16,6 +16,7 @@ root; none are needed for normal app use. Network-touching scripts say so.
 | `i18n_report.py` | Locale completeness report; `--audit-chrome` diffs every UI text node against `en.json` (the long-tail number). | no |
 | `translate_docs.py` | Draft `docs/i18n/<lang>/` translations with the LOCAL Ollama (provenance banner, resumable). | loopback (Ollama) |
 | `benchmark_audit.py` | The performance gates recorded during the v0.0.7 audit. | no |
+| `release_notes.py` | Release notes generated from `docs/ledger/shipped.csv` since the previous tag (Q111 = a), with the per-release no-telemetry re-check and the verification bar. Called by `.github/workflows/release.yml`; every line traces to a ledger row, and it REFUSES rather than degrading on a dirty tree, a shallow clone, an unswept `PR pending` in a row it would cite, or a ratchet it could not run. | no (it runs pytest locally; no egress) |
 | `verify_custody.py` / `verify_evidence.py` | Offline verification of the signed custody log / evidence bundles. | no |
 | `add_gpl3_headers.py` / `update_license.py` | License-header maintenance. | no |
 | `make_icon_png.py` | Render the eye icon PNG from the SVG. | no |
