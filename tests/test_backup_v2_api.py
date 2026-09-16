@@ -1,5 +1,5 @@
 """
-oo-backup-2 endpoints: merge-restore preview/commit.
+Single-file backup endpoints: merge-restore preview/commit.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -31,7 +31,7 @@ def client():
 
 
 def _build_backup(passphrase=None) -> bytes:
-    """Build a single-file oo-backup-2 artifact via the internal builder + return its
+    """Build a single-file artifact via the internal builder + return its
     bytes (replaces the retired POST /api/backup/v2 create endpoint in tests). Must run
     while the app/DB is up (the ``client`` fixture)."""
     import os
@@ -57,7 +57,14 @@ def test_plaintext_artifact_manifest_shape(client):
     with zipfile.ZipFile(io.BytesIO(blob)) as zf:
         env = json.loads(zf.read("manifest.json"))
         m = env["manifest"]
-        assert m["backup_schema"] == "oo-backup-2"
+        # Read from the CONSTANT, not a literal: the writer's format is bumped
+        # deliberately (S04-04 took it to `oo-backup-3`), and a literal here turns every
+        # future bump into a false failure in a test about the manifest's SHAPE. The
+        # literal values and the forever-accepted set are pinned where that is the
+        # subject -- tests/test_backup_format_bump.py.
+        from src.backup.artifact import BACKUP_SCHEMA
+
+        assert m["backup_schema"] == BACKUP_SCHEMA
         assert m["keys_included"] is False  # D2: plaintext never carries keys
         assert not any(x["role"] == "keys" for x in m["members"])
         assert "corpus.db" in zf.namelist()
@@ -66,7 +73,7 @@ def test_plaintext_artifact_manifest_shape(client):
 
 def test_persisted_import_reports_ride_the_backup_export(client):
     """S3.5 (field-feedback A1): a persisted import/restore report under
-    data_dir()/import_reports/ must be carried by the oo-backup-2 export (never
+    data_dir()/import_reports/ must be carried by the single-file export (never
     silently dropped), while a fresh install with NO reports yet never crashes."""
     from src.backup.import_reports import persist_import_report
 
