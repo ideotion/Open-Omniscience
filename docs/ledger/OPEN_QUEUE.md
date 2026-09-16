@@ -40,12 +40,36 @@
   one here either; what is established is that the OUTCOME does not depend on the diff. The file
   passes 3/3 locally and inside a full local suite of 11,212.
 
-  **What the shapes suggest, for whoever takes it:** one test drives the boot path through
-  `monkeypatch.setenv("OO_REINDEX_AUTORESUME", "0")` (line 354) and the other spawns a
-  SUBPROCESS with `{**os.environ, …}` and `e.pop("OO_REINDEX_AUTORESUME", None)` (line 463).
-  A subprocess reading a parent environment mid-mutation, or a module-level flag surviving
-  between them, would produce exactly this alternation. That is a hypothesis, not a diagnosis —
-  it wants a reproduction under `-p randomly` with a recorded seed, which is its own task.
+  **DIAGNOSED, not guessed — the reproduction this entry first asked for was run.** The boot
+  helper (`_KILL_AND_BOOT`, `tests/test_import_lifecycle_stages.py:412`) sets `started` ONLY by
+  catching the job mid-flight:
+
+      deadline = time.time() + 120
+      while time.time() < deadline:
+          st = _REINDEX_RESUME_JOB.status()
+          if st.get("state") == "running":
+              started = True
+          elif started:
+              break
+          time.sleep(0.1)
+
+  A 1 ms-resolution probe of the REAL boot path, on the fixture's own 2-article backlog,
+  measured: `idle` at 0.3 ms → **`running` at 2.1 ms** → `done` at 227 ms, i.e. an observable
+  `running` window of **224 ms**, with `pending_after == 0`. The test samples every **100 ms**.
+  So it is catching a ~200 ms event with a 100 ms sampler, and the moment that window falls
+  under one tick — a faster runner, a different scheduler, a smaller backlog — every poll
+  misses it, `started` stays `False`, and the loop spins out its full 120 s while the work has
+  in fact completed correctly. The wall-clock corroborates it: the failing macOS run took
+  1509 s against 1416 s for the passing one on the SAME commit, a 93 s gap against a 120 s
+  deadline. **The drain is not broken; the test measures the observation rather than the fact.**
+
+  **The proposed patch, for whoever owns S04-02** (not applied here — a display slice must not
+  rewrite another slice's test): assert the FACT the property is about, not the sighting.
+  `started` should be satisfied by any non-`idle` state ever observed, or better by the job's
+  own durable record (it reaches `done`; `pending_after == 0` already proves the work ran), so
+  a drain that finishes between two polls reads as success rather than as a failure to start.
+  A `time.sleep(0.1)` sampler can never be made reliable by shortening it — that is a race the
+  test can only lose more slowly.
 
   **Not blocking today:** the macOS lane is `continue-on-error: true` (an observation lane that
   graduates to required when green), and `Core-only install` — which is NOT observational —
