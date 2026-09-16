@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "⁨{rate} kbit/s⁩",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "تنزيل ملف وحده يستخدم ⁨{rate} kbit/s⁩ من الميزانية البالغة ⁨{budget} kbit/s⁩ — تقليل الجمع لا يمكنه استرجاعه.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "بعض التنزيلات لا يمكن قياسها بعد، لذا هذا الرقم حدّ أدنى فقط.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "تخضع العملية بأكملها لهذا المعدّل — عمليات جلب المُجمِّع إضافة إلى كل تنزيل ملف — مقاسة من قِبل التطبيق نفسه، وليست أبدًا عداد شبكة النظام."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "تخضع العملية بأكملها لهذا المعدّل — عمليات جلب المُجمِّع إضافة إلى كل تنزيل ملف — مقاسة من قِبل التطبيق نفسه، وليست أبدًا عداد شبكة النظام.",
+  "Equal Earth · equal-area": "Equal Earth · متساوية المساحة",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "متساوية المساحة: تُرسم كل دولة بحجمها النسبي الحقيقي، فلا تكون مساحة التعبئة يومًا دليلًا أكبر مما تعطيه البيانات. Savric وPatterson وJenny (2018). إسقاط واحد على كل خريطة في هذا التطبيق؛ ولا يوجد مبدّل للإسقاط.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "تُرسم المناطق المتنازع عليها دائمًا على أنها متنازع عليها مع ذكر كل المطالبات. لا تحدد رؤية العالم سوى المطالبة التي تُنسب إليها المنطقة هنا — وهي وسيلة لرؤية الفرق بين الأعراف، لا حكم هذا التطبيق.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "تُرسم كل منطقة متنازع عليها مظللة بخطوط مع ذكر جميع مطالباتها في التلميح، في كل رؤى العالم. لا تغيّر رؤية العالم سوى المطالبة التي تُنسب إليها المنطقة هنا، حتى تتمكن من رؤية اختلاف الأعراف — وهي ليست أبدًا حكم هذا التطبيق على من هو المحق. المصدر: طبقة breakaway/disputed من Natural Earth، التي تسجّل نسبةً لكل وجهة نظر.",
+  "Worldview": "رؤية العالم",
+  "Contested (assign nothing)": "متنازع عليها (دون نسبة لأحد)",
+  "ISO / de jure": "ISO / بحكم القانون",
+  "Natural Earth (de facto)": "Natural Earth (بحكم الأمر الواقع)",
+  "no claimant assigned in this view": "لا مطالب منسوب في هذه الرؤية",
+  "recognised as its own state in this view": "معترف بها دولة مستقلة في هذه الرؤية",
+  "assigned to no recognised state in this view": "غير منسوبة إلى أي دولة معترف بها في هذه الرؤية",
+  "attributed to": "منسوبة إلى",
+  "contested": "متنازع عليها",
+  "Contested": "متنازع عليها",
+  "every claim shown, none assigned": "كل المطالبات معروضة، ولا واحدة منسوبة",
+  "attributed under": "منسوبة وفق",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "حدود الدول تحتها مأخوذة من نسبة Natural Earth الخاصة بحكم الأمر الواقع — لا بد من رسم حدٍّ ما في مكان ما، وهذا الاختيار نفسه أحد الأعراف التي يتيح هذا العنصر مقارنتها."
 }

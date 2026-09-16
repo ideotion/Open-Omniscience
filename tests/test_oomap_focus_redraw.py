@@ -46,11 +46,19 @@ def test_the_signals_layer_is_its_own_function_and_its_own_svg_group():
 
 
 def test_the_projection_is_module_level_which_is_what_makes_the_cheap_path_safe():
-    """`lon2x`/`lat2y` must stay pure module-level constants with zoom on the viewBox. If
-    the projection ever depended on the current view, redrawing one layer against a stale
-    projection would misplace every marker -- so this is the precondition, not a detail."""
+    """`project()` must stay a pure module-level function with zoom on the viewBox. If the
+    projection ever depended on the current view, redrawing one layer against a stale
+    projection would misplace every marker -- so this is the precondition, not a detail.
+
+    It SURVIVED the Equal Earth migration (Q801): the seam replaced `lon2x`/`lat2y` with
+    one `project(lon, lat)`, and the property this test exists for is unchanged. The
+    behavioural half -- that moving the viewBox does not move a projected point -- is
+    executed in `tests/map_projection_node_test.js`, because a grep for `MAP_VB` inside
+    `project` passes just as well against code that reads it and throws the value away."""
     js = _map_js()
-    assert "const lon2x = lon =>" in js and "const lat2y = lat =>" in js
+    assert "function project(lon, lat)" in js, "the one projection seam must be present"
+    seam = strip_comments(function_source(js, "project"))
+    assert_absent(seam, "MAP_VB", why="the projection must not read the live viewBox")
     layer = strip_comments(function_source(js, "_ooSignalLayer"))
     assert_absent(layer, "MAP_VB", why="the layer must not read the live viewBox")
     assert_absent(layer, "getBoundingClientRect", why="no view-dependent measurement")

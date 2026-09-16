@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Some downloads cannot be measured yet, so this figure is a lower bound.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.",
+  "Equal Earth · equal-area": "Equal Earth · equal-area",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.",
+  "Worldview": "Worldview",
+  "Contested (assign nothing)": "Contested (assign nothing)",
+  "ISO / de jure": "ISO / de jure",
+  "Natural Earth (de facto)": "Natural Earth (de facto)",
+  "no claimant assigned in this view": "no claimant assigned in this view",
+  "recognised as its own state in this view": "recognised as its own state in this view",
+  "assigned to no recognised state in this view": "assigned to no recognised state in this view",
+  "attributed to": "attributed to",
+  "contested": "contested",
+  "Contested": "Contested",
+  "every claim shown, none assigned": "every claim shown, none assigned",
+  "attributed under": "attributed under",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare."
 }

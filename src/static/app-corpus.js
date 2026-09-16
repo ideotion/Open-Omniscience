@@ -1506,4 +1506,3 @@
       if (opts && typeof opts.onReady === "function") opts.onReady(body);
     }
 
-    // World map: equirectangular projection, viewBox-based zoom/pan (no deps).

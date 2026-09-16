@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Una descarga de archivo por sí sola está usando {rate} kbit/s del presupuesto de {budget} kbit/s — reducir la recopilación no puede recuperarlo.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Algunas descargas aún no se pueden medir, así que esta cifra es un límite inferior.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Todo el proceso está limitado a esta velocidad — las solicitudes del recolector más cada descarga de archivo — medida por la propia aplicación, nunca por un contador de red del sistema."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Todo el proceso está limitado a esta velocidad — las solicitudes del recolector más cada descarga de archivo — medida por la propia aplicación, nunca por un contador de red del sistema.",
+  "Equal Earth · equal-area": "Equal Earth · equivalente",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Equivalente: cada país se dibuja con su tamaño relativo real, de modo que la superficie de un relleno nunca es más evidencia de la que dan los datos. Savric, Patterson & Jenny (2018). Una sola proyección en todos los mapas de esta aplicación; no hay selector de proyección.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "Las zonas en disputa siempre se dibujan como disputadas, con todas sus reivindicaciones nombradas. Una visión del mundo decide únicamente a qué reivindicación se ATRIBUYE aquí la zona: es una forma de VER la diferencia entre convenciones, nunca el veredicto de esta aplicación.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Cada zona en disputa se dibuja con trama y todas sus reivindicaciones aparecen en la información emergente, en todas las visiones del mundo. Una visión del mundo solo cambia a qué reivindicación se atribuye aquí la zona, para que pueda ver en qué difieren las convenciones: nunca es el veredicto de esta aplicación sobre quién tiene razón. Fuente: la capa breakaway/disputed de Natural Earth, que registra una atribución por punto de vista.",
+  "Worldview": "Visión del mundo",
+  "Contested (assign nothing)": "En disputa (no atribuir a nadie)",
+  "ISO / de jure": "ISO / de iure",
+  "Natural Earth (de facto)": "Natural Earth (de facto)",
+  "no claimant assigned in this view": "ningún reclamante atribuido en esta visión",
+  "recognised as its own state in this view": "reconocida como Estado propio en esta visión",
+  "assigned to no recognised state in this view": "no atribuida a ningún Estado reconocido en esta visión",
+  "attributed to": "atribuida a",
+  "contested": "en disputa",
+  "Contested": "En disputa",
+  "every claim shown, none assigned": "todas las reivindicaciones mostradas, ninguna atribuida",
+  "attributed under": "atribuidas según",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "Los contornos de los países que hay debajo proceden de la atribución de facto propia de Natural Earth: alguna frontera hay que trazar, y esa elección es en sí misma una de las convenciones que este control permite comparar."
 }

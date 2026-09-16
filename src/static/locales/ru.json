@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Одна загрузка файла сама по себе использует {rate} kbit/s из бюджета {budget} kbit/s — снижение скорости сбора не может это восстановить.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Некоторые загрузки пока нельзя измерить, поэтому эта цифра — нижняя граница.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Весь процесс ограничен этой скоростью — запросы сборщика плюс каждая загрузка файла — измеряется самим приложением, но никогда не системным счётчиком сети."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Весь процесс ограничен этой скоростью — запросы сборщика плюс каждая загрузка файла — измеряется самим приложением, но никогда не системным счётчиком сети.",
+  "Equal Earth · equal-area": "Equal Earth · равновеликая",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Равновеликая проекция: каждая страна показана в своём истинном относительном размере, поэтому площадь заливки никогда не является большим доказательством, чем дают данные. Savric, Patterson & Jenny (2018). Одна проекция на всех картах этого приложения; переключателя проекций нет.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "Спорные территории всегда отображаются как спорные, со всеми названными притязаниями. Мировоззрение определяет только то, к какому притязанию территория ОТНЕСЕНА здесь — это способ УВИДЕТЬ разницу между конвенциями, а не вердикт этого приложения.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Каждая спорная территория показана штриховкой, а все притязания названы во всплывающей подсказке, при любом мировоззрении. Мировоззрение меняет только то, к какому притязанию территория отнесена здесь, чтобы вы могли увидеть, чем различаются конвенции — это никогда не вердикт приложения о том, кто прав. Источник: слой breakaway/disputed проекта Natural Earth, который фиксирует отнесение для каждой точки зрения.",
+  "Worldview": "Мировоззрение",
+  "Contested (assign nothing)": "Спорная (никому не относить)",
+  "ISO / de jure": "ISO / де-юре",
+  "Natural Earth (de facto)": "Natural Earth (де-факто)",
+  "no claimant assigned in this view": "в этом представлении не отнесена ни к кому",
+  "recognised as its own state in this view": "в этом представлении признана самостоятельным государством",
+  "assigned to no recognised state in this view": "в этом представлении не отнесена ни к одному признанному государству",
+  "attributed to": "отнесена к",
+  "contested": "спорная",
+  "Contested": "Спорные",
+  "every claim shown, none assigned": "показаны все притязания, ни одно не отнесено",
+  "attributed under": "отнесены согласно",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "Контуры стран под ними взяты из собственного фактического отнесения Natural Earth — границу где-то провести необходимо, и сам этот выбор является одной из конвенций, которые позволяет сравнить этот элемент управления."
 }

@@ -217,6 +217,18 @@
     .skip-link { position:absolute; left:8px; top:-48px; z-index:200; background:var(--accent);
       color:var(--accent-fg); padding:8px 14px; border-radius:8px; font-weight:600; transition:top .15s ease; }
     .skip-link:focus { top:8px; }
+    /* The in-map control groups overlay the map, and at phone width they already cover
+       most of it before anything is added (measured 2026-09-16: 79.4% of the map area at
+       390x844 with the worldview picker removed, 111.7% with it -- the groups overlap).
+       So below 600px the worldview picker drops its visible label and keeps only the
+       select, whose own aria-label and #oo-tip hover carry the name. CLIPPED, never
+       display:none: a hidden label is hidden from the screen reader too, and this project
+       has paid for that once already. */
+    @media (max-width: 600px) {
+      .oomap-worldview .oomap-wv-label { position:absolute; width:1px; height:1px; padding:0;
+        margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+      .oomap-worldview select { max-width:132px; font-size:10px; }
+    }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0,0,0,0); white-space:nowrap; border:0; }
     ::-webkit-scrollbar { width:11px; height:11px; }

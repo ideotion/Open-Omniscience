@@ -18,10 +18,136 @@
    not, and the failure is a TDZ error at load rather than anything a reader would
    spot in review. Add new code inside the module it belongs to.
 */
-    const MAP_W = 720, MAP_H = 360;
+    // ======================= THE PROJECTION SEAM ======================= //
+    // ONE projection for every map surface in this app (maintainer ruling Q801,
+    // 2026-09-15): Equal Earth, an EQUAL-AREA pseudocylindrical projection. There
+    // is no projection toggle and there is no second projection anywhere -- every
+    // lon/lat that reaches a screen goes through `project()` below, so two surfaces
+    // cannot drift into drawing the same coordinate in two places.
+    //
+    // WHY EQUAL-AREA: this app draws CHOROPLETHS. An area-distorting projection
+    // makes a high-latitude country's fill look like more evidence than an
+    // equatorial one carrying the same number -- the projection would be silently
+    // editing the data. Equal Earth preserves relative area exactly, so a fill's
+    // size is never an argument the data did not make. (The app was previously
+    // plate carree, which stretches area by 1/cos(lat) -- Greenland at ~5x.)
+    //
+    // COEFFICIENTS -- CONFIRMED, not remembered. Bojan Savric, Tom Patterson &
+    // Bernhard Jenny (2018), "The Equal Earth map projection", International
+    // Journal of Geographical Information Science, DOI 10.1080/13658816.2018.1504949.
+    // Verified 2026-09-16 against TWO independent published reference
+    // implementations, which agree exactly:
+    //   * OSGeo PROJ, src/projections/eqearth.cpp (the reference port; the
+    //     ellipsoidal equations were added by Savric, a co-author of the paper)
+    //   * d3-geo, src/projection/equalEarth.js
+    // EE_Y_MAX below is computed from the polynomial rather than transcribed, and
+    // reproduces PROJ's own documented MAX_Y (1.3173627591574) to 1.3e-14.
+    const EE_A1 = 1.340264, EE_A2 = -0.081106, EE_A3 = 0.000893, EE_A4 = 0.003796;
+    const EE_M = Math.sqrt(3) / 2;
+    const EE_ITER = 12, EE_EPS = 1e-12;            // Newton budget, as PROJ and d3 use
+
+    // The projection plane, in its own units, before any scaling to pixels.
+    function _eeFwd(lonDeg, latDeg) {
+      const lam = Number(lonDeg) * Math.PI / 180, phi = Number(latDeg) * Math.PI / 180;
+      const psi = Math.asin(EE_M * Math.sin(phi));
+      const p2 = psi * psi, p6 = p2 * p2 * p2;
+      return {
+        x: lam * Math.cos(psi) / (EE_M * (EE_A1 + 3 * EE_A2 * p2 + p6 * (7 * EE_A3 + 9 * EE_A4 * p2))),
+        y: psi * (EE_A1 + EE_A2 * p2 + p6 * (EE_A3 + EE_A4 * p2)),
+      };
+    }
+    const EE_X_MAX = Math.PI / (EE_M * EE_A1);     // x at lon 180, lat 0 -- the widest point
+    const EE_Y_MAX = _eeFwd(0, 90).y;              // y at the pole
+
+    // THE MAP BOX IS THE PROJECTION'S OWN ASPECT, never a chosen rectangle: 720 x
+    // 350.44 (2.0546:1). Deriving MAP_H instead of writing it down means the box
+    // cannot drift away from the projection it is drawing.
+    const MAP_W = 720;
+    const MAP_H = MAP_W * EE_Y_MAX / EE_X_MAX;
+    const MAP_ASPECT = EE_X_MAX / EE_Y_MAX;
     let MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H};
-    const lon2x = lon => (Number(lon) + 180) / 360 * MAP_W;
-    const lat2y = lat => (90 - Number(lat)) / 180 * MAP_H;
+    const MAP_MIN_W = 40;                          // tightest zoom, in projection units;
+                                                   // the minor axis follows MAP_ASPECT
+
+    // THE SEAM. lon/lat degrees -> {x, y} in the [0,MAP_W] x [0,MAP_H] box, y
+    // increasing SOUTHWARD (SVG convention, as the old plate-carree pair did).
+    // PURE and VIEW-INDEPENDENT: it reads no zoom, pan or viewBox state, which is
+    // the precondition the cheap focus-redraw path relies on (see _ooSignalLayer)
+    // and which tests/oomap_focus_redraw_node_test.js pins.
+    function project(lon, lat) {
+      const p = _eeFwd(lon, lat);
+      return {
+        x: (p.x + EE_X_MAX) / (2 * EE_X_MAX) * MAP_W,
+        y: (EE_Y_MAX - p.y) / (2 * EE_Y_MAX) * MAP_H,
+      };
+    }
+
+    // The inverse. NO CALLER YET, and that is stated rather than left to be discovered:
+    // nothing in this app converts a screen point back to lon/lat today (the plate carree
+    // it replaced had no inverse either), so this ships as part of the seam's contract for
+    // the surfaces the briefs put next on it -- a pointer read-out and click-to-drill on
+    // the wiki map layer (S04-09). It is fully exercised by round trip in
+    // tests/map_projection_node_test.js, which is what stops an unused function from
+    // quietly rotting; it is NOT evidence that anything draws with it.
+    // Equal Earth has NO closed-form inverse: y is a 9th-degree polynomial in the parametric
+    // angle, so the angle is recovered by Newton-Raphson (the same iteration, budget
+    // and convergence test both reference implementations use). Verified by ROUND
+    // TRIP rather than by a formula rule -- project(unproject(p)) must return p.
+    function unproject(px, py) {
+      const x = (Number(px) / MAP_W) * 2 * EE_X_MAX - EE_X_MAX;
+      const y = EE_Y_MAX - (Number(py) / MAP_H) * 2 * EE_Y_MAX;
+      let l = Math.max(-EE_Y_MAX, Math.min(EE_Y_MAX, y));
+      for (let i = 0; i < EE_ITER; i++) {
+        const l2 = l * l, l6 = l2 * l2 * l2;
+        const f = l * (EE_A1 + EE_A2 * l2 + l6 * (EE_A3 + EE_A4 * l2)) - y;
+        const fp = EE_A1 + 3 * EE_A2 * l2 + l6 * (7 * EE_A3 + 9 * EE_A4 * l2);
+        const d = f / fp;
+        l -= d;
+        if (Math.abs(d) < EE_EPS) break;
+      }
+      const l2 = l * l, l6 = l2 * l2 * l2;
+      const lam = EE_M * x * (EE_A1 + 3 * EE_A2 * l2 + l6 * (7 * EE_A3 + 9 * EE_A4 * l2)) / Math.cos(l);
+      const s = Math.sin(l) / EE_M;
+      return {
+        lon: lam * 180 / Math.PI,
+        lat: Math.asin(Math.max(-1, Math.min(1, s))) * 180 / Math.PI,
+      };
+    }
+
+    // THE GRATICULE, drawn through the seam -- ONE builder for every surface that
+    // draws one, so two maps cannot come to disagree about where a meridian runs
+    // (invariant #16's "the rules must not be re-derived per surface", applied to
+    // geometry). In Equal Earth a PARALLEL is straight but SHORTER toward the poles,
+    // while a MERIDIAN is genuinely CURVED -- so meridians are sampled, never drawn
+    // as a straight line between their endpoints, which would be a fabricated shape.
+    function _mapGraticule(step, stroke) {
+      const sw = stroke || "0.3";
+      let out = "";
+      for (let lon = -180; lon <= 180; lon += step) {
+        const pts = [];
+        for (let lat = -90; lat <= 90; lat += 3) pts.push(project(lon, lat));
+        out += `<polyline points="${pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}" `
+          + `fill="none" stroke="var(--border)" stroke-width="${sw}"/>`;
+      }
+      for (let lat = -90; lat <= 90; lat += step) {
+        const a = project(-180, lat), b = project(180, lat);
+        out += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" `
+          + `stroke="var(--border)" stroke-width="${sw}"/>`;
+      }
+      return out;
+    }
+
+    // The projected outline of the whole sphere. Equal Earth's world is a lens, not
+    // a rectangle, so the corners of the box are NOT map -- painting them as map
+    // would invent ocean where the projection has none. Drawn first, beneath
+    // everything, as the sea.
+    function _mapSphere() {
+      const pts = [];
+      for (let lat = -90; lat <= 90; lat += 3) pts.push(project(-180, lat));
+      for (let lat = 90; lat >= -90; lat -= 3) pts.push(project(180, lat));
+      return `<path d="M${pts.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join("L")}Z" `
+        + `fill="var(--panel2)" stroke="var(--border)" stroke-width="0.4"/>`;
+    }
 
     function applyVB() {
       const svg = document.getElementById("oo-map");
@@ -29,8 +155,8 @@
     }
     function zoomMap(f) {
       const cx = MAP_VB.x + MAP_VB.w/2, cy = MAP_VB.y + MAP_VB.h/2;
-      MAP_VB.w = Math.min(MAP_W, Math.max(40, MAP_VB.w * f));
-      MAP_VB.h = Math.min(MAP_H, Math.max(20, MAP_VB.h * f));
+      MAP_VB.w = Math.min(MAP_W, Math.max(MAP_MIN_W, MAP_VB.w * f));
+      MAP_VB.h = Math.min(MAP_H, Math.max(MAP_MIN_W / MAP_ASPECT, MAP_VB.h * f));
       MAP_VB.x = cx - MAP_VB.w/2; MAP_VB.y = cy - MAP_VB.h/2;
       applyVB();
     }
@@ -38,15 +164,11 @@
 
     function buildMapSvg(cities) {
       const placed = cities.filter(c => c.lat != null && c.lon != null);
-      // graticule every 30 degrees
-      let grid = "";
-      for (let lon = -180; lon <= 180; lon += 30)
-        grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${MAP_H}" stroke="var(--border)" stroke-width="0.3"/>`;
-      for (let lat = -90; lat <= 90; lat += 30)
-        grid += `<line x1="0" y1="${lat2y(lat)}" x2="${MAP_W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.3"/>`;
+      // graticule every 30 degrees, through the ONE seam (curved meridians)
+      const grid = _mapGraticule(30, "0.3");
       const maxM = Math.max(1, ...placed.map(c => (c.top||[]).reduce((s,t)=>s+t.mentions,0)));
       const dots = placed.map(c => {
-        const x = lon2x(c.lon).toFixed(1), y = lat2y(c.lat).toFixed(1);
+        const _p = project(c.lon, c.lat), x = _p.x.toFixed(1), y = _p.y.toFixed(1);
         const m = (c.top||[]).reduce((s,t)=>s+t.mentions,0);
         const r = (1.5 + 4*Math.sqrt(m/maxM)).toFixed(1);
         const terms = (c.top||[]).map(t=>t.term+" "+t.mentions).join(", ");
@@ -56,8 +178,8 @@
       }).join("");
       if (!placed.length)
         return `<div class="muted">No placed cities yet. Index the corpus (sources need a city), or generate the full gazetteer (scripts/build_city_gazetteer.py).</div>`;
-      return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H}" width="100%" style="max-width:${MAP_W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab">
-        ${grid}${dots}</svg>`;
+      return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H.toFixed(2)}" width="100%" style="max-width:${MAP_W}px;border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${MAP_ASPECT.toFixed(4)}">
+        ${_mapSphere()}${grid}${dots}</svg>`;
     }
 
     function wireMapDrag() {
@@ -79,9 +201,9 @@
     // Universal CHOROPLETH world map (no deps, like ooChart/ooSubtabs). Colours
     // each country POLYGON by a measured data dimension on a sequential scale,
     // with in-map zoom/pan, a legend, honest no-data, and a centroid POINT
-    // fallback for territories the coarse 110m geometry has no polygon for
-    // (a point, never an invented border). Reuses the equirectangular
-    // projection (lon2x/lat2y, MAP_W/MAP_H). Maintainer ruling 2026-06-18.
+    // fallback for territories the 50m geometry has no polygon for
+    // (a point, never an invented border). Draws through the ONE projection seam
+    // (project(), Equal Earth). Maintainer rulings 2026-06-18 and Q801 2026-09-15.
     // Localised COUNTRY name from an ISO-2 code via the browser's CLDR data
     // (Intl.DisplayNames) — accurate in every locale, no translation tables. Falls
     // back to the supplied English name / the code. Reusable wherever the UI shows
@@ -164,9 +286,116 @@
       catch { _ooMapGeo = false; }                   // absent -> honest "unavailable", never an error
       return _ooMapGeo;
     }
+    // ===================== CONTESTED AREAS + WORLDVIEWS ===================== //
+    // RULINGS Q826 and Q803 (2026-09-15): every disputed area is rendered CONTESTED
+    // showing BOTH claims, NEVER a silent pick -- and the user can switch worldview to
+    // see how the conventions differ, rather than being handed one as if it were the
+    // world. A map that quietly assigns Crimea, Aksai Chin or Western Sahara is making
+    // a political claim in the app's voice; this app does not do that anywhere else.
+    //
+    // THE DATA ANSWERS THE QUESTION; WE DO NOT. Natural Earth's breakaway/disputed
+    // layer records an assignment PER POINT OF VIEW on each polygon, so both the claim
+    // list and the per-worldview attribution are read out of the asset
+    // (scripts/build_disputed_areas.py). Nothing here is hand-curated, and an area the
+    // asset does not carry is simply not drawn -- never invented.
+    let _ooMapDisputed = null;                       // cached world_disputed.json
+    async function _ooMapDisputedLoad() {
+      if (_ooMapDisputed !== null) return _ooMapDisputed;
+      try {
+        const r = await fetch("/static/world_disputed.json");
+        _ooMapDisputed = r.ok ? await r.json() : false;
+      } catch { _ooMapDisputed = false; }            // absent -> no layer, never an error
+      return _ooMapDisputed;
+    }
+
+    // The worldview in force. "contested" is the DEFAULT and assigns NOTHING: every
+    // disputed area is drawn as contested and no claimant is preferred. See the
+    // _ooWorldviewLabel note on why this, and not a national convention, is the default.
+    const OOMAP_WORLDVIEW_DEFAULT = "contested";
+    let _ooMapWorldview = OOMAP_WORLDVIEW_DEFAULT;
+    try {
+      const saved = localStorage.getItem("oo.map.worldview");
+      if (saved) _ooMapWorldview = saved;
+    } catch { /* private mode: the default stands */ }
+
+    // Natural Earth keys its viewpoints by country except for Korea, whose "KO" is the
+    // region KR. Everything else is already a valid CLDR region code, so the label
+    // comes from the browser's own data rather than a translation table we maintain.
+    const _OO_POV_REGION = { ko: "kr" };
+    function _ooWorldviewLabel(code) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (code === "contested") return t("Contested (assign nothing)");
+      if (code === "iso") return t("ISO / de jure");
+      if (code === "tlc") return t("Natural Earth (de facto)");
+      return ooRegionName(_OO_POV_REGION[code] || code, code.toUpperCase());
+    }
+
+    // What a single area's worldview cell means, as a translated sentence. The three
+    // cases are genuinely different facts and must not collapse into one another:
+    // a country, the area AS ITS OWN STATE, and "no recognised state" -- which is a
+    // viewpoint's explicit refusal to assign, not a missing value.
+    function _ooDisputedViewNote(area, view) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (view === "contested") return t("no claimant assigned in this view");
+      const v = (area.views || {})[view];
+      if (v === "self") return t("recognised as its own state in this view");
+      if (!v) return t("assigned to no recognised state in this view");
+      return t("attributed to") + " " + ooRegionName(v, v.toUpperCase());
+    }
+
+    // An area's name in the reader's locale, from Natural Earth's own NAME_<lang>
+    // field -- DATA the source supplies, never a translation this app invented. Falls
+    // back to the English name when the source carries no field for that locale.
+    function _ooDisputedName(area) {
+      const lang = (window.OOI18N && OOI18N.lang) ? OOI18N.lang : "en";
+      return (area.names && area.names[lang]) || area.name || "";
+    }
+
+    // Every claim on an area, as a list the reader can see at once. A claim with no
+    // ISO code is the area's OWN claim to statehood (Abkhazia, Somaliland, Northern
+    // Cyprus) -- it has no alpha-2 to look up, so its name travels with it, and
+    // dropping it would list only the parent state, which is the silent pick itself.
+    function _ooDisputedClaims(area) {
+      return (area.claims || []).map(c => c.a2 ? ooRegionName(c.a2, c.name) : c.name).join(" / ");
+    }
+
+    // The CONTESTED layer. Drawn ABOVE the choropleth so a contested area is never
+    // hidden by a country fill, and always carrying the hatch + dashed edge, in EVERY
+    // worldview -- switching view changes the attribution, never whether the dispute
+    // is shown.
+    function _ooDisputedLayer(disputed, view, fillFor, values) {
+      if (!disputed || !Array.isArray(disputed.areas)) return { markup: "", shown: 0 };
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      let shown = 0;
+      const markup = disputed.areas.map(a => {
+        const d = _ooMapPath(a.rings);
+        if (!d) return "";
+        shown++;
+        // Under a named worldview the area takes that view's country fill, so the
+        // difference between conventions is visible rather than merely stated. Under
+        // the default it takes none.
+        const who = view === "contested" ? null : (a.views || {})[view];
+        const v = (who && who !== "self") ? (values || {})[who] : undefined;
+        const under = (typeof v === "number" && isFinite(v))
+          ? `<path d="${d}" fill="${fillFor(v)}" stroke="none"/>` : "";
+        const claims = _ooDisputedClaims(a);
+        const ti = `${_ooDisputedName(a)} — ${t("contested")}: ${claims} · ${_ooDisputedViewNote(a, view)}`;
+        // The CLICK follows the visible attribution and nothing else. Under a named
+        // worldview the area drills into the country that view attributes it to, which
+        // is what the reader is looking at. Under the default it carries no `data-iso`
+        // at all, so a click does NOT quietly drill into one claimant -- that silent
+        // pick is the thing Q826 forbids, and it would be invisible in a screenshot.
+        const drill = (who && who !== "self") ? ` data-iso="${esc(who)}" style="cursor:pointer"` : "";
+        return under + `<path d="${d}" fill="url(#oomap-contested)" stroke="var(--caveat)" `
+          + `stroke-width="0.6" stroke-dasharray="2.4 1.6" vector-effect="non-scaling-stroke" `
+          + `data-oomap-disputed="${esc(a.id)}"${drill}><title>${esc(ti)}</title></path>`;
+      }).join("");
+      return { markup, shown };
+    }
+
     function _ooMapPath(rings) {                      // [[lon,lat]...] rings -> SVG path 'd'
       return (rings || []).map(ring => ring.length
-        ? "M" + ring.map(p => `${lon2x(p[0]).toFixed(1)} ${lat2y(p[1]).toFixed(1)}`).join("L") + "Z" : "").join(" ");
+        ? "M" + ring.map(p => { const q = project(p[0], p[1]); return `${q.x.toFixed(1)} ${q.y.toFixed(1)}`; }).join("L") + "Z" : "").join(" ");
     }
     // Sequential fill: t in [0,1] -> theme accent over panel2. The MINIMUM data
     // value still reads as >=12% accent so a data area is never mistaken for the
@@ -201,13 +430,17 @@
     // THE SIGNALS LAYER, ALONE (2026-09-09). Extracted from ooMap verbatim so the focus
     // slider can redraw it WITHOUT rebuilding the map underneath it: `focusT` feeds
     // nothing else -- not the choropleth, not the grid, not the labels or the OSM overlay
-    // -- yet a drag frame re-projected and re-serialised all 175 countries (285 rings,
-    // 10,521 coordinate pairs) into fresh path `d` strings, replaced the whole host's
+    // -- yet a drag frame re-projected and re-serialised all 229 countries (540 rings,
+    // 71,184 coordinate pairs) into fresh path `d` strings, replaced the whole host's
     // innerHTML and re-attached every listener, in order to move a handful of circles.
     //
-    // PURE, and it can be: `lon2x`/`lat2y` are module-level constants and zoom rides the
+    // PURE, and it can be: `project()` is a module-level pure function and zoom rides the
     // SVG viewBox, so the projection does not depend on the current view. That is what
-    // makes the cheap path safe rather than a cache that can go stale.
+    // makes the cheap path safe rather than a cache that can go stale. THE PRECONDITION
+    // SURVIVED THE EQUAL EARTH MIGRATION (Q801, 2026-09-16) and is pinned by
+    // tests/oomap_focus_redraw_node_test.js: if `project` ever learns about the viewBox,
+    // this fast path starts MISPLACING markers rather than merely showing stale ones,
+    // and that reads as a data bug rather than a rendering one.
     function _ooSignalLayer(opts) {
       if (!opts.signalsOn || !Array.isArray(opts.signals)) {
         return { markup: "", kinds: [], visible: [] };
@@ -218,7 +451,7 @@
         && (!win || focus == null || Math.abs(s.t - focus) <= win));
       const kinds = [...new Set(visible.map(s => s.kind))];
       const markup = visible.map((s, i) => {
-          const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
+          const _sp = project(s.lon, s.lat), x = +_sp.x.toFixed(1), y = +_sp.y.toFixed(1);
           const dist = focus == null ? 0 : Math.abs(s.t - focus);
           const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
           // Item 2 (field-feedback A6, ruled): a hazard's radius scales with its
@@ -316,6 +549,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const geo = await _ooMapGeoLoad();
       if (!geo || !geo.countries) { host.innerHTML = `<div class="muted">${esc(t("Map geometry unavailable."))}</div>`; return; }
+      // Absent -> no contested layer and no worldview control. The map still draws; it
+      // simply makes no claim about disputed areas, which is the honest degrade.
+      const disputed = await _ooMapDisputedLoad();
       const values = opts.values || {}, names = opts.names || {};
       const nums = Object.values(values).filter(v => typeof v === "number" && isFinite(v));
       const maxV = nums.length ? Math.max(...nums) : 0, minV = nums.length ? Math.min(...nums) : 0;
@@ -328,13 +564,11 @@
       const vlabel = (iso, v) => opts.valueLabel ? opts.valueLabel(iso, v) : `${v} ${opts.unit || ""}`.trim();
 
       const W = MAP_W, H = MAP_H;
-      let grid = "";
-      for (let lon = -180; lon <= 180; lon += 30) grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${H}" stroke="var(--border)" stroke-width="0.25"/>`;
-      for (let lat = -90; lat <= 90; lat += 30) grid += `<line x1="0" y1="${lat2y(lat)}" x2="${W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.25"/>`;
+      const grid = _mapGraticule(30, "0.25");
 
       // Effective geometry: real OSM admin boundaries (opt-in) AUGMENT the coarse
-      // 110m polygons by ISO code (#51). An OSM-derived shape REPLACES the coarse
-      // one for that country and ADDS countries the 110m set never had (microstates),
+      // 50m polygons by ISO code (#51). An OSM-derived shape REPLACES the bundled
+      // one for that country and ADDS countries the 50m set never had (microstates),
       // so a data-bearing microstate renders a true polygon instead of a centroid
       // point. Honest: only closed OSM rings reach here; everything else is unchanged.
       const osmAreas = opts.osmAreas || null;
@@ -364,7 +598,7 @@
         && typeof p.value === "number" && isFinite(p.value) && !geoCodes.has((p.iso2 || "").toLowerCase()));
       let pts = "";
       for (const p of pointRows) {
-        const x = lon2x(p.lon).toFixed(1), y = lat2y(p.lat).toFixed(1), iso = (p.iso2 || "").toLowerCase();
+        const _pp = project(p.lon, p.lat), x = _pp.x.toFixed(1), y = _pp.y.toFixed(1), iso = (p.iso2 || "").toLowerCase();
         pts += `<circle cx="${x}" cy="${y}" r="2.4" fill="${fillFor(p.value)}" stroke="var(--accent)" stroke-width="0.5" `
           + `data-iso="${esc(iso)}"${opts.onCountry ? ' style="cursor:pointer"' : ""}>`
           + `<title>${esc((p.label || p.iso2 || "") + " — " + vlabel(iso, p.value) + " " + t("(shown as a point)"))}</title></circle>`;
@@ -377,7 +611,7 @@
         const ov = opts.overlayPoints.filter(p => p.lat != null && p.lon != null);
         const ovMax = Math.max(1, ...ov.map(p => +p.value || 0));
         for (const p of ov) {
-          const x = lon2x(p.lon).toFixed(1), y = lat2y(p.lat).toFixed(1);
+          const _op = project(p.lon, p.lat), x = _op.x.toFixed(1), y = _op.y.toFixed(1);
           const r = (1.3 + 3.2 * Math.sqrt((+p.value || 0) / ovMax)).toFixed(1);
           overlayPts += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="0.7" opacity="0.85">`
             + `<title>${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(mentioned, deduced)"))}</title></circle>`;
@@ -393,7 +627,7 @@
         const sv = opts.serverPoints.filter(p => p.lat != null && p.lon != null);
         const svMax = Math.max(1, ...sv.map(p => +p.value || 0));
         for (const p of sv) {
-          const cx = lon2x(p.lon), cy = lat2y(p.lat);
+          const _vp = project(p.lon, p.lat), cx = _vp.x, cy = _vp.y;
           const s = 2 + 3 * Math.sqrt((+p.value || 0) / svMax);
           serverPts += `<rect x="${(cx - s / 2).toFixed(1)}" y="${(cy - s / 2).toFixed(1)}" width="${s.toFixed(1)}" height="${s.toFixed(1)}" fill="#8b5cf6" stroke="var(--panel)" stroke-width="0.4" opacity="0.85">`
             + `<title>${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(server IP location)"))}</title></rect>`;
@@ -406,6 +640,9 @@
       // (/api/timemap) + helpers (kindColor / TMAP_KINDS / fmtYear / fmtDate). The
       // in-map slider moves the focus moment. Confirmed = filled, future/unconfirmed
       // = a hollow/dashed ring (the temporal map's honest convention).
+      // ABOVE the choropleth: a contested area must never be hidden by a country fill.
+      const _disp = _ooDisputedLayer(disputed, _ooMapWorldview, fillFor, values);
+
       const _sig = _ooSignalLayer(opts);
       const signalPts = opts.signalsOn ? `<g data-oomap-siglayer>${_sig.markup}</g>` : "";
       const sigKinds = _sig.kinds, sigVisible = _sig.visible;
@@ -424,19 +661,19 @@
       // zoom and never overlap). Opt-in via the in-map "Labels" toggle.
       const labelCands = (opts.labelsOn && Array.isArray(opts.points))
         ? opts.points.filter(p => p.lat != null && p.lon != null && p.label)
-            .map(p => ({ x: lon2x(p.lon), y: lat2y(p.lat), text: String(p.label), value: +p.value || 0 }))
+            .map(p => ({ ...project(p.lon, p.lat), text: String(p.label), value: +p.value || 0 }))
             .sort((a, b) => b.value - a.value)
         : [];
 
       // OSM offline-region overlay (THEME-2): the bounded preview parsed by OOPBF
       // from a downloaded .osm.pbf — ways as thin polylines + nodes as faint dots,
-      // both CAPPED so a dense region can't choke the SVG. Reuses the same lon2x/
-      // lat2y projection (no second projection). Honest preview, never fabricated.
+      // both CAPPED so a dense region can't choke the SVG. Draws through the same
+      // project() seam (no second projection). Honest preview, never fabricated.
       let osmHtml = "";
       const osm = opts.osmOn && opts.osmGeo ? opts.osmGeo : null;
       if (osm) {
         const lines = (osm.lines || []).slice(0, 3000).map(cs => {
-          const pts = cs.map(c => `${lon2x(c.lon).toFixed(1)},${lat2y(c.lat).toFixed(1)}`).join(" ");
+          const pts = cs.map(c => { const q = project(c.lon, c.lat); return `${q.x.toFixed(1)},${q.y.toFixed(1)}`; }).join(" ");
           return `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="0.4" vector-effect="non-scaling-stroke" opacity="0.7"/>`;
         }).join("");
         const allPts = osm.points || [];
@@ -444,7 +681,8 @@
         let dots = "";
         for (let i = 0; i < allPts.length; i += step) {
           const p = allPts[i];
-          dots += `<circle cx="${lon2x(p.lon).toFixed(1)}" cy="${lat2y(p.lat).toFixed(1)}" r="0.5" fill="var(--accent)" opacity="0.55"/>`;
+          const _dp = project(p.lon, p.lat);
+          dots += `<circle cx="${_dp.x.toFixed(1)}" cy="${_dp.y.toFixed(1)}" r="0.5" fill="var(--accent)" opacity="0.55"/>`;
         }
         osmHtml = `<g id="oomap-osm">${lines}${dots}</g>`;
       }
@@ -452,16 +690,30 @@
       // Granularity + places overlay (slice 4) — finer/coarser spatial resolution,
       // also "controls inside the map". Continent = the per-country values
       // pre-aggregated by the loader; Places = the mentioned-places overlay.
-      const granHtml = opts.onGranularity ? `
+      // THE WORLDVIEW PICKER, inside the map (the "controls inside the map"
+      // convention). It changes which convention the contested areas are ATTRIBUTED
+      // under; it never changes whether a dispute is drawn. Present whenever the
+      // contested layer is, independently of whether this map offers granularity.
+      const worldviewHtml = _disp.shown ? `
+          <label class="oomap-worldview" style="display:inline-flex;align-items:center;gap:4px"
+                 title="${esc(t("Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict."))}">
+            <span class="muted oomap-wv-label" style="font-size:11px">${esc(t("Worldview"))}</span>
+            <select class="tiny" data-oomap-worldview aria-label="${esc(t("Worldview"))}" style="font-size:11px;max-width:150px">
+              ${["contested", ...(disputed.views || [])].map(v =>
+                `<option value="${esc(v)}"${v === _ooMapWorldview ? " selected" : ""}>${esc(_ooWorldviewLabel(v))}</option>`).join("")}
+            </select>
+          </label>` : "";
+      const granHtml = (opts.onGranularity || _disp.shown) ? `
         <div class="oomap-gran" role="group" aria-label="${esc(t("Granularity"))}"
-             style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;z-index:5">
-          <button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
-          <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>
+             style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;z-index:5">
+          ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
+          <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>` : ""}
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
           ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
           ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
+          ${worldviewHtml}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
@@ -510,11 +762,17 @@
            <span class="muted">${esc(fmtNum(maxV))}${opts.unit ? " " + esc(opts.unit) : ""}</span>`;
 
       host.innerHTML = `<div class="oomap-wrap" style="position:relative">
-        <svg id="oo-choro" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(aria)}"
-             style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
+        <svg id="oo-choro" viewBox="0 0 ${W} ${H.toFixed(2)}" width="100%" role="img" aria-label="${esc(aria)}"
+             style="display:block;border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${MAP_ASPECT.toFixed(4)}">
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
-          ${grid}${paths}${pts}${overlayPts}${serverPts}${signalPts}${osmHtml}
+            <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern>
+            <!-- CONTESTED: a caveat-coloured cross-hatch, deliberately unlike the
+                 no-data hatch (different angle, different colour, transparent ground)
+                 so "nobody measured this" and "this border is disputed" can never be
+                 mistaken for one another. -->
+            <pattern id="oomap-contested" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+              <line x1="0" y1="0" x2="0" y2="5" stroke="var(--caveat)" stroke-width="1.1" opacity="0.75"/></pattern></defs>
+          ${_mapSphere()}${grid}${paths}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
@@ -532,6 +790,13 @@
         <span style="display:inline-flex;align-items:center;gap:5px">
           <span style="width:14px;height:10px;border:1px solid var(--border);background:repeating-linear-gradient(45deg,var(--panel2),var(--panel2) 2px,var(--border) 2px,var(--border) 3px)"></span>
           ${esc(t("no data"))}</span>
+        <span class="muted" title="${esc(t("Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle."))}">${esc(t("Equal Earth · equal-area"))}</span>
+        ${_disp.shown ? `<span style="display:inline-flex;align-items:center;gap:5px"
+          title="${esc(t("Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.")) + " " + esc(t("The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare."))}">
+          <span style="width:14px;height:10px;border:1px solid var(--caveat);background:repeating-linear-gradient(-45deg,transparent,transparent 2px,var(--caveat) 2px,var(--caveat) 3px)"></span>
+          <span class="card-caveat">${esc(t("Contested"))}: ${_disp.shown} · ${esc(_ooMapWorldview === "contested"
+            ? t("every claim shown, none assigned")
+            : t("attributed under") + " " + _ooWorldviewLabel(_ooMapWorldview))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
@@ -645,6 +910,20 @@
       if (opts && opts.onServer) { const vb = host.querySelector("[data-oomap-server]"); if (vb) vb.addEventListener("click", () => opts.onServer()); }
       if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
       if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
+      // The worldview is MODULE state, not a per-caller option: every map surface shows
+      // the same convention, so the app cannot say two different things on two tabs.
+      const wvSel = host.querySelector("[data-oomap-worldview]");
+      if (wvSel) wvSel.addEventListener("change", () => {
+        _ooMapWorldview = wvSel.value;
+        try { localStorage.setItem("oo.map.worldview", wvSel.value); }
+        catch { /* private mode: the choice simply does not persist */ }
+        // A FULL re-render, deliberately. The worldview changes the contested layer AND
+        // the legend caveat that explains it; a partial redraw that updated one and not
+        // the other would put two different statements on screen at once. This is a
+        // deliberate click, not a drag frame, so the cost is not the concern the
+        // focus-slider fast path exists for.
+        void ooMap(host, host._ooOpts || opts);
+      });
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       if (opts && opts.onTimeScale) host.querySelectorAll("[data-oomap-tscale]").forEach(b =>
         b.addEventListener("click", () => opts.onTimeScale(b.dataset.oomapTscale)));
@@ -1004,7 +1283,7 @@
         // rAF-coalesce slider drags so a fast sweep is at most one redraw per frame --
         // and make that redraw the CHEAP one. The focus moment feeds the signal markers
         // and their year label, nothing else, so rebuilding the map under them meant
-        // re-projecting 175 countries (285 rings, 10,521 coordinate pairs) into fresh
+        // re-projecting 229 countries (540 rings, 71,184 coordinate pairs) into fresh
         // path strings, per frame, to move a handful of circles.
         onFocus: v => {
           _ooMapFocusSlider = v;
@@ -1028,7 +1307,7 @@
         // .osm.pbf locally (zero network) and draw its geometry. Opt-in.
         osmOn: _ooMapOsmOn, osmGeo: _ooMapOsmGeo,
         // #51: real OSM admin (country) boundaries AUGMENT the choropleth geometry
-        // by ISO code (a microstate the coarse 110m map drops now gets a true shape).
+        // by ISO code (a microstate the bundled 50m map drops now gets a true shape).
         osmAreas: _ooMapOsmOn && _ooMapOsmGeo ? _ooMapOsmGeo.areas : null,
         onOsm: () => _ooMapToggleOsm(),
         // Click a country → its coverage breakdown (THEME-2 "click-country → list").
@@ -1231,7 +1510,7 @@
           if (cs.length >= 2) lines.push(cs);
         }
         // Country (admin_level=2) boundary polygons, keyed by ISO 3166-1 alpha-2 so
-        // they MERGE into the choropleth by code — replaces the coarse 110m shape /
+        // they MERGE into the choropleth by code — replaces the bundled 50m shape /
         // centroid point for whatever country the region covers. Honest: only rings
         // we actually closed are emitted (assembleAdminAreas), never a fake border.
         const areas = (OOPBF.assembleAdminAreas ? OOPBF.assembleAdminAreas(geo) : []) || [];
@@ -1299,7 +1578,7 @@
     }
 
     // -- World map (ooMap): choropleth + space-time signals + a time slider -- //
-    // Reuses the equirectangular projection (lon2x/lat2y, MAP_W/MAP_H) with its
+    // Reuses the ONE projection seam (project(), Equal Earth; MAP_W/MAP_H) with its
     // own viewBox so it pans/zooms independently of the Insights map.
     const TMAP_KINDS = {
       disaster:{c:"#e5484d", l:"Disaster"}, conflict:{c:"#d6731f", l:"Conflict"},

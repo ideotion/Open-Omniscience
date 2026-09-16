@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Un téléchargement de fichier à lui seul utilise {rate} kbit/s du budget de {budget} kbit/s — réduire la collecte ne peut pas le récupérer.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Certains téléchargements ne peuvent pas encore être mesurés, donc ce chiffre est une limite inférieure.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Le processus complet est limité à ce débit — les requêtes du collecteur plus chaque téléchargement de fichier — mesuré par l’application elle-même, jamais par un compteur réseau du système."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Le processus complet est limité à ce débit — les requêtes du collecteur plus chaque téléchargement de fichier — mesuré par l’application elle-même, jamais par un compteur réseau du système.",
+  "Equal Earth · equal-area": "Equal Earth · équivalente",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Équivalente : chaque pays est dessiné à sa taille relative réelle, de sorte que la surface d’un aplat ne constitue jamais plus de preuves que ce que disent les données. Savric, Patterson & Jenny (2018). Une seule projection sur toutes les cartes de cette application ; il n’y a pas de sélecteur de projection.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "Les zones disputées sont toujours dessinées comme contestées, avec toutes leurs revendications nommées. Une vision du monde décide seulement à quelle revendication la zone est ATTRIBUÉE ici — c’est un moyen de VOIR la différence entre les conventions, jamais le verdict de cette application.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Chaque zone disputée est hachurée et toutes ses revendications sont nommées dans l’infobulle, dans toutes les visions du monde. Une vision du monde change seulement à quelle revendication la zone est attribuée ici, afin que vous puissiez voir en quoi les conventions diffèrent — ce n’est jamais le verdict de cette application sur qui a raison. Source : la couche breakaway/disputed de Natural Earth, qui enregistre une attribution par point de vue.",
+  "Worldview": "Vision du monde",
+  "Contested (assign nothing)": "Contestée (n’attribuer à personne)",
+  "ISO / de jure": "ISO / de jure",
+  "Natural Earth (de facto)": "Natural Earth (de facto)",
+  "no claimant assigned in this view": "aucun revendicateur attribué dans cette vision",
+  "recognised as its own state in this view": "reconnue comme État à part entière dans cette vision",
+  "assigned to no recognised state in this view": "attribuée à aucun État reconnu dans cette vision",
+  "attributed to": "attribuée à",
+  "contested": "contestée",
+  "Contested": "Contestées",
+  "every claim shown, none assigned": "toutes les revendications affichées, aucune attribuée",
+  "attributed under": "attribuées selon",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "Les contours des pays en dessous proviennent de l’attribution de facto propre à Natural Earth — une frontière doit bien être tracée quelque part, et ce choix est lui-même l’une des conventions que ce contrôle permet de comparer."
 }

@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "একটি ফাইল ডাউনলোড একাই {budget} kbit/s বাজেটের মধ্যে {rate} kbit/s ব্যবহার করছে — সংগ্রহ কমালে তা পুনরুদ্ধার করা যাবে না।",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "কিছু ডাউনলোড এখনো মাপা যায় না, তাই এই সংখ্যাটি একটি নিম্ন সীমা মাত্র।",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "সম্পূর্ণ প্রক্রিয়াটি এই হারের মধ্যে সীমাবদ্ধ — কালেক্টরের ফেচ এবং প্রতিটি ফাইল ডাউনলোড — এই অ্যাপ নিজে যা মাপে, কখনও সিস্টেম নেটওয়ার্ক কাউন্টার নয়।"
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "সম্পূর্ণ প্রক্রিয়াটি এই হারের মধ্যে সীমাবদ্ধ — কালেক্টরের ফেচ এবং প্রতিটি ফাইল ডাউনলোড — এই অ্যাপ নিজে যা মাপে, কখনও সিস্টেম নেটওয়ার্ক কাউন্টার নয়।",
+  "Equal Earth · equal-area": "Equal Earth · সমক্ষেত্র",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "সমক্ষেত্র প্রক্ষেপ: প্রতিটি দেশ তার প্রকৃত আপেক্ষিক আকারে আঁকা হয়, তাই কোনও রঙের ক্ষেত্রফল কখনও তথ্যের চেয়ে বেশি প্রমাণ নয়। Savric, Patterson ও Jenny (২০১৮)। এই অ্যাপের সব মানচিত্রে একটিই প্রক্ষেপ; প্রক্ষেপ বদলানোর কোনও সুইচ নেই।",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "বিতর্কিত অঞ্চল সবসময় বিতর্কিত হিসেবেই আঁকা হয় এবং সব দাবি নাম ধরে দেখানো হয়। বিশ্বদৃষ্টি কেবল ঠিক করে এখানে অঞ্চলটি কোন দাবির অধীনে ধরা হবে — এটি রীতিগুলির পার্থক্য দেখার উপায়, এই অ্যাপের রায় নয়।",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "প্রতিটি বিশ্বদৃষ্টিতেই প্রতিটি বিতর্কিত অঞ্চল তির্যক রেখায় আঁকা হয় এবং টুলটিপে তার সব দাবি নাম ধরে দেখানো হয়। বিশ্বদৃষ্টি কেবল বদলায় এখানে অঞ্চলটি কোন দাবির অধীনে ধরা হবে, যাতে আপনি রীতিগুলির পার্থক্য দেখতে পারেন — কে ঠিক সে বিষয়ে এটি কখনও এই অ্যাপের রায় নয়। উৎস: Natural Earth-এর breakaway/disputed স্তর, যা প্রতিটি দৃষ্টিকোণের জন্য একটি অ্যাট্রিবিউশন নথিভুক্ত করে।",
+  "Worldview": "বিশ্বদৃষ্টি",
+  "Contested (assign nothing)": "বিতর্কিত (কাউকে দেওয়া হবে না)",
+  "ISO / de jure": "ISO / আইনত",
+  "Natural Earth (de facto)": "Natural Earth (কার্যত)",
+  "no claimant assigned in this view": "এই দৃশ্যে কোনও দাবিদার নির্ধারিত নয়",
+  "recognised as its own state in this view": "এই দৃশ্যে স্বতন্ত্র রাষ্ট্র হিসেবে স্বীকৃত",
+  "assigned to no recognised state in this view": "এই দৃশ্যে কোনও স্বীকৃত রাষ্ট্রের অধীনে নয়",
+  "attributed to": "অধীনে ধরা হয়েছে",
+  "contested": "বিতর্কিত",
+  "Contested": "বিতর্কিত",
+  "every claim shown, none assigned": "সব দাবি দেখানো হয়েছে, কোনওটি নির্ধারিত নয়",
+  "attributed under": "যে অনুসারে ধরা হয়েছে",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "নিচের দেশ-সীমারেখাগুলি Natural Earth-এর নিজস্ব কার্যত অ্যাট্রিবিউশন থেকে এসেছে — সীমানা কোথাও না কোথাও আঁকতেই হয়, আর সেই নির্বাচনটিই এই নিয়ন্ত্রণ যে রীতিগুলি তুলনা করতে দেয় তার একটি।"
 }

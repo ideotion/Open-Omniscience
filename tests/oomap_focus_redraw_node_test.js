@@ -36,18 +36,22 @@ function extract(name) {
   return APP.slice(at, j);
 }
 
-// The real projection constants, lifted from the module so the geometry is not re-typed.
-const mm = /const MAP_W\s*=\s*([0-9.]+)\s*,\s*MAP_H\s*=\s*([0-9.]+)/.exec(APP);
-assert.ok(mm, "MAP_W/MAP_H not found -- the projection moved");
-const mw = [null, mm[1]], mh = [null, mm[2]];
+// THE REAL PROJECTION SEAM, lifted from the module rather than re-typed. It used to
+// be two re-typed arrow functions; when the app moved to Equal Earth (Q801) a re-typed
+// copy would have gone on passing while the shipped map drew something else, which is
+// the one thing this extract-the-real-code harness exists to prevent. The slice runs
+// from the coefficients to the sphere helper and carries project()/unproject() whole.
+const _seamFrom = APP.indexOf("const EE_A1");
+const _seamTo = APP.indexOf("// The projected outline of the whole sphere");
+assert.ok(_seamFrom !== -1 && _seamTo > _seamFrom,
+  "the projection seam was not found -- did project()/EE_A1 move or get renamed?");
+const SEAM = APP.slice(_seamFrom, _seamTo);
 
 const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
   "var window = {};\n" +                       // OOI18N absent = the boot-time state
-  "const MAP_W=" + mw[1] + ", MAP_H=" + mh[1] + ";\n" +
-  "const lon2x = lon => (Number(lon) + 180) / 360 * MAP_W;\n" +
-  "const lat2y = lat => (90 - Number(lat)) / 180 * MAP_H;\n" +
+  SEAM + "\n" +
   "const kindColor = k => 'col:' + k;\n" +
   "function kindLabel(k){ return 'Kind ' + k; }\n" +
   "function fmtDate(s){ return 'D' + s.t; }\n" +
@@ -57,11 +61,11 @@ const src =
   extract("_ooSignalLayer") + "\n" +
   extract("_ooSigKindsHtml") + "\n" +
   extract("_ooMapFocusRedraw") + "\n" +
-  "module.exports = { _ooSignalLayer, _ooSigKindsHtml, _ooMapFocusRedraw };\n";
+  "module.exports = { _ooSignalLayer, _ooSigKindsHtml, _ooMapFocusRedraw, project, unproject, MAP_W, MAP_H, MAP_ASPECT };\n";
 
 const mod = { exports: {} };
 new Function("module", "exports", src)(mod, mod.exports);
-const { _ooSignalLayer, _ooSigKindsHtml, _ooMapFocusRedraw } = mod.exports;
+const { _ooSignalLayer, _ooSigKindsHtml, _ooMapFocusRedraw, project, unproject, MAP_W, MAP_H, MAP_ASPECT } = mod.exports;
 
 const SIGNALS = [
   { lat: 10, lon: 20, t: 2000, kind: "hazard", title: "Quake", confirmed: true, magnitude: 6 },

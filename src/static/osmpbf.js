@@ -227,7 +227,7 @@
   // Assemble country (admin_level=2) boundary polygons from a region parsed with
   // parse(buf, {withTags:true, withRelations:true}). Keyed by the ISO 3166-1 alpha-2
   // tag so the result MERGES into the choropleth by code (fixing microstates the
-  // coarse 110m geometry drops). Honest: emits ONLY rings we actually CLOSED from
+  // bundled 50m geometry drops). Honest: emits ONLY rings we actually CLOSED from
   // resolved coordinates — never fabricates a border or a code. opts.adminLevel
   // (default "2") picks the boundary level. Returns [{iso2,name,rings,source}].
   function assembleAdminAreas(parsed, opts) {

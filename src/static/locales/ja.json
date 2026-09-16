@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "ファイルダウンロード1件だけで、{budget} kbit/sの予算のうち{rate} kbit/sを使用しています — 収集を減らしてもこれは取り戻せません。",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "一部のダウンロードはまだ計測できないため、この数値は下限です。",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "プロセス全体がこのレートに制限されています — コレクターのフェッチとすべてのファイルダウンロードを合わせたもの — アプリ自身が計測しており、システムのネットワークカウンターでは決してありません。"
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "プロセス全体がこのレートに制限されています — コレクターのフェッチとすべてのファイルダウンロードを合わせたもの — アプリ自身が計測しており、システムのネットワークカウンターでは決してありません。",
+  "Equal Earth · equal-area": "Equal Earth · 正積",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "正積図法：各国が実際の相対面積どおりに描かれるため、塗りの大きさがデータ以上の根拠になることはありません。Savric, Patterson & Jenny (2018)。本アプリのすべての地図で投影法は一つだけで、切り替えはありません。",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "係争地域は常に係争として描かれ、すべての主張が明記されます。ワールドビューは、その地域をここでどの主張に帰属させるかだけを決めるものです — 慣行の違いを「見る」ための手段であり、本アプリの判定ではありません。",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "どのワールドビューでも、係争地域はすべて斜線で描かれ、ツールチップにすべての主張が明記されます。ワールドビューは、その地域をここでどの主張に帰属させるかだけを変え、慣行の違いを確認できるようにします — どちらが正しいかについての本アプリの判定ではありません。出典：視点ごとの帰属を記録している Natural Earth の breakaway/disputed レイヤー。",
+  "Worldview": "ワールドビュー",
+  "Contested (assign nothing)": "係争（帰属させない）",
+  "ISO / de jure": "ISO / 法律上",
+  "Natural Earth (de facto)": "Natural Earth（事実上）",
+  "no claimant assigned in this view": "このビューでは帰属先なし",
+  "recognised as its own state in this view": "このビューでは独立国家として承認",
+  "assigned to no recognised state in this view": "このビューでは承認された国家に帰属しない",
+  "attributed to": "帰属先：",
+  "contested": "係争",
+  "Contested": "係争地域",
+  "every claim shown, none assigned": "すべての主張を表示、帰属はなし",
+  "attributed under": "帰属の基準：",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "その下の国境線は Natural Earth 自身の事実上の帰属によるものです — 境界はどこかに引かねばならず、その選択自体が、この操作で見比べられる慣行の一つです。"
 }
