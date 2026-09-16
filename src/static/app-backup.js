@@ -496,62 +496,126 @@
       document.getElementById("ux-imp-status").textContent = "";
       document.getElementById("ux-imp-progress").textContent = "";
       document.getElementById("ux-imp-summary").innerHTML = "";
+      document.getElementById("ux-imp-last").innerHTML = "";
       const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
       document.getElementById("ux-imp-run").disabled = true;
       _uxImFound = null; _uxImSrc = "";
+      // The re-index read is module-level and outlives the dialog, so a reopen used to
+      // render the PREVIOUS run's snapshot -- a stage-4 figure and an "analytics are
+      // complete" statement from minutes ago, shown as current, until the first tick
+      // replaced them. Cleared here: unknown-until-read ("could not be read") is an
+      // honest momentary answer; a stale number presented as current is not. The zeroed
+      // timestamp makes the very next tick take the read rather than wait out its pacing.
+      _uxImRx = null; _uxImRxAt = 0;
       document.getElementById("ux-import").showModal();
-      _uxShowLastCompletedSummary();  // best-effort; never blocks opening the dialog
+      // A FRESH PAGE (R1, Q201 = a). Reopening after an import used to re-render the
+      // whole previous run here -- summary, per-item rows, corpus delta -- so the
+      // dialog you came back to was the last import's report rather than a place to
+      // start the next one. One quiet line now says a previous run exists and links
+      // its persisted report, which is where the detail belongs.
+      _uxImLastLine();
+      _uxImCheckpointNote();
       // Reattach to a run already in flight on the SERVER (ruling item 16): a reload no
       // longer decapitates an import, so the dialog must be able to find it again.
       _uxImReattach();
     }
 
-    // Field report 2026-07-16: "after a successful import/merge, the interface doesn't
-    // show the amounts of deduplicated and other import statistics." Root cause: a large
-    // restore runs for hours as a background job (task-manager-visible), so the browser
-    // tab is very likely closed or reloaded before it finishes -- and the SAME JS closure
-    // that would have called _renderImportSummary() is gone with it. openUnifiedImport()
-    // then unconditionally blanked #ux-imp-summary on every reopen, discarding the result
-    // forever even though it was never shown. But each job manager (get_volume_manager(),
-    // get_folder_manager(), the newsletter import job) is a PROCESS-WIDE singleton whose
-    // last completed summary survives any number of page reloads until a NEW job starts --
-    // so recover it here and render it via the same _renderImportSummary the live run uses,
-    // labelled as the last completed run (never confused with a fresh one).
-    async function _uxShowLastCompletedSummary() {
+    // Q201 = a: "Last import - <when> - <n> articles - open report", and nothing else.
+    // Reads the newest persisted report from /import-reports, which had no frontend
+    // caller at all before this. Three honesty rules ride in one line: an absent
+    // article figure renders NO number (a 0 there would say the import added nothing,
+    // which is a different fact from "we could not read it"); a run that did not
+    // complete is labelled, and its figure says PLANNED, because a plan is computed
+    // before the commit point; and a failed read renders nothing rather than a
+    // fabricated "no imports yet".
+    async function _uxImLastLine() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const label = (title) => `${title} (${t("last completed import")})`;
-      const summaries = [];
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const host = document.getElementById("ux-imp-last");
+      if (!host) return;
+      let reports = null;
       try {
-        const s = await api("/api/backup/v2/volumes/status");
-        if (s && s.state === "done" && s.mode === "restore" && s.summary && s.summary.report) {
-          const rep = s.summary.report;
-          summaries.push({ title: label(t("Corpus backup")), plan: rep.plan || {}, ..._uxPlanExtras(rep) });
-        }
-      } catch (e) { /* best-effort: one endpoint failing must not hide the others */ }
-      try {
-        const s = await api("/api/backup/folder/status");
-        if (s && s.state === "done" && s.mode === "restore") {
-          const p = s.progress || {};
-          summaries.push({ title: label(t("Large data")), tally: { restored: p.restored || 0, skipped: p.skipped || 0 }, lines: [
-            `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`],
-            // Carried onto the summary itself, not only into `lines` (which render as a
-            // muted hint inside the collapsed per-item detail): a member the restore
-            // turned away has to be readable without opening anything.
-            caveat: _fbRefusalLines(p) });
-        }
-      } catch (e) { /* best-effort */ }
-      try {
-        const s = await api("/api/newsletters/import-folder/status");
-        if (s && s.state === "done") {
-          const tl = s.tally || {};
-          summaries.push({ title: label(t("Newsletters")), tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 }, lines: [
-            `${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
-            `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
-        }
-      } catch (e) { /* best-effort */ }
-      if (summaries.length) _renderImportSummary(document.getElementById("ux-imp-summary"), summaries);
+        const r = await api("/api/backup/import-reports");
+        reports = (r && r.reports) || [];
+      } catch (e) {
+        host.innerHTML = "";  // could not read: say nothing, never "no imports yet"
+        return;
+      }
+      if (!reports.length) { host.innerHTML = ""; return; }
+      host.innerHTML = _uxImLastLineHtml(reports[0], t, tf);
     }
+
+    // The line itself, as a PURE function of one report row: the only way to assert
+    // what it says rather than that the identifiers appear in the source (the recorded
+    // "a substring proves a field is MENTIONED, never that it reaches the output").
+    function _uxImLastLineHtml(rep, t, tf) {
+      if (!rep || !rep.filename) return "";
+      const bits = [];
+      bits.push(`<b>${esc(t("Last import"))}</b>`);
+      if (rep.created_at) bits.push(esc(fmtDateTime(rep.created_at)));
+      if (rep.articles != null) {
+        const n = Number(rep.articles).toLocaleString();
+        bits.push(rep.articles_basis === "planned"
+          ? esc(tf("{n} articles planned", { n }))
+          : esc(tf("{n} articles", { n })));
+      }
+      if (rep.outcome && rep.outcome !== "ok") {
+        bits.push(`<span class="note err">${esc(t("did not complete"))}</span>`);
+      }
+      const href = `/api/backup/import-reports/${encodeURIComponent(rep.filename)}?format=md`;
+      bits.push(`<a href="${href}" target="_blank" rel="noopener">${esc(t("open report"))}</a>`);
+      return bits.join(" \u00b7 ");
+    }
+
+    // Q216 = a: what the checkpoint costs, from the queue's OWN resolved K so the
+    // sentence can never disagree with the number the run will use. Composed with tf()
+    // from a keyed template rather than rendering the backend's `checkpoint.note`,
+    // which is English prose (the recorded rule that a method/reason/caveat field is
+    // documentation for a reader, so it is subject to i18n).
+    async function _uxImCheckpointNote() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const host = document.getElementById("ux-imp-checkpoint");
+      if (!host) return;
+      let k = null;
+      try {
+        const st = await api("/api/backup/import-queue/status");
+        k = st && st.checkpoint && st.checkpoint.k;
+      } catch (e) { /* best-effort: a sentence we cannot ground is not printed */ }
+      host.innerHTML = _uxImCheckpointHtml(k, t, tf);
+    }
+
+    function _uxImCheckpointHtml(k, t, tf) {
+      const n = Number(k);
+      if (!Number.isFinite(n) || n < 1) return "";  // unread K: no claim at all
+      if (n === 1) return esc(t("Every backup is verified and written to your corpus as soon as it finishes."));
+      return esc(tf(
+        "Verified and written to your corpus once every {k} backups \u2014 nothing is durable until a save, so a stop or a crash before one means those backups have to be imported again.",
+        { k: n }
+      ));
+    }
+
+    // REMOVED 2026-09-16 (R1, Q201 = a): `_uxShowLastCompletedSummary`.
+    //
+    // It existed for a real field report (2026-07-16, "after a successful import the
+    // interface doesn't show the amounts of deduplicated and other import statistics"):
+    // a long restore outlives the browser tab, so the JS closure that would have
+    // rendered the result is gone, and reopening the dialog used to blank the summary
+    // and discard it forever. Its fix was to recover each job manager's last completed
+    // summary and re-render the FULL report on every reopen.
+    //
+    // The maintainer's own ruling reverses that shape, not the need behind it: the
+    // dialog is a fresh page (R1), and the result now lives in the PERSISTED import
+    // report, which survives the tab, the process and the machine -- strictly more
+    // durable than a process-wide singleton's last summary ever was. `_uxImLastLine`
+    // is what points at it, and Settings -> Data & backup lists every one (Q222 = b).
+    // Recorded here rather than deleted silently, because the next reader of the
+    // 2026-07-16 report needs to know where its answer went.
 
     // VERIFY a backup at the source folder without restoring (field-test Item 9). Runs the
     // shipped /volumes/verify job: manifest signature + every volume + parity checksum; with
@@ -573,9 +637,15 @@
       const pass = (passEl && passEl.value) || "";
       summary.innerHTML = ""; st.textContent = t("Verifying…"); btn.disabled = true;
       try {
-        const s = await _uxStartThenPoll(
+        // ONE chain (Q206 = a): the start is still guarded by the same
+        // job-state-as-truth check _uxStartThenPoll applies -- a lost START response
+        // must not print a fatal over a job that is genuinely running -- and the
+        // POLLING then belongs to _uxImTick, which is the only thing in this dialog
+        // that owns #ux-imp-bar.
+        await _uxImStartGuarded(
           () => api("/api/backup/v2/volumes/verify", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) }),
-          "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Verify") });
+          "/api/backup/v2/volumes/status");
+        const s = await _uxImWatchVerify();
         if (bar) bar.style.display = "none"; prog.textContent = "";
         _uxRenderVerify(summary, (s && s.summary && s.summary.report) || {}, t);
         st.textContent = "";
@@ -715,7 +785,7 @@
         document.getElementById("ux-imp-progress").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
         return;
       }
-      _uxImQueuePoll();
+      _uxImWatchQueue();
     }
 
     // A backup set's folder name is its most useful identity (the maintainer's six
@@ -726,22 +796,168 @@
       return parts.length ? parts[parts.length - 1] : fallback;
     }
 
-    let _uxImPollTimer = null;
+    // ── THE ONE POLL CHAIN (Q206 = a, R2) ──────────────────────────────────
+    // ONE timer, ONE subject, ONE bar owner. Until 2026-09-16 the Import dialog had
+    // two chains that both painted #ux-imp-bar: the generic 1200 ms job poller behind
+    // Verify (_uxPoll) and the 1000 ms queue renderer. They never fought over the bar
+    // by LUCK rather than by construction -- pressing Verify while a reattached run
+    // was polling had both writing the same element on different clocks, which is the
+    // overlapping/blinking R2 calls a defect. The subject is what makes one owner
+    // structural: the chain polls whatever it is watching, and it can watch one thing.
+    let _uxImPollTimer = null;     // THE timer. There is exactly one.
+    let _uxImWatch = null;         // "verify" | "queue" | null -- the chain's subject
+    let _uxImFails = 0;            // consecutive transport failures, for the backoff
+    let _uxImSettle = null;        // {resolve, reject} for the verify mode's promise
+    // THE GENERATION, and why the subject alone was not enough. Every (re)start and every
+    // stop bumps it; a tick captures it on entry and abandons itself if it changed across
+    // ANY await. Clearing `_uxImPollTimer` cancels a SCHEDULED tick, but a tick that is
+    // mid-fetch has already nulled that variable, so it survived the clear -- and
+    // `_uxImWatch !== subject` could not see it either, because a re-watch of the SAME
+    // subject (Stop re-arms the queue watch; so does reopening the dialog on a live run)
+    // leaves the subject identical. Two concurrent queue chains then both reached the
+    // terminal branch: two "Import complete." toasts and a twice-rebuilt summary -- the
+    // overlapping-messages defect this chain exists to have removed. Found 2026-09-16 by
+    // an adversarial read, not by a test, which is why the fix is structural.
+    let _uxImGen = 0;
 
-    // Poll the ONE server-side run and mirror it. Deliberately not a client-side
-    // sequencer: nothing here decides what runs next, so closing the tab or reloading
-    // the page cannot decapitate the import (the reason the old loop could not).
-    async function _uxImQueuePoll() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+    // STAGE 4 RIDES THE SAME CHAIN, at its own cadence. The backlog read behind it is
+    // LINEAR in the pending article count -- measured on a plaintext fixture, median
+    // of five: 0.97 ms at 10,000 pending articles, 10.5 ms at 100,000, 101.9 ms at
+    // 1,000,000 -- and the figure it returns moves on the scale of minutes, so putting
+    // it on the 1 s tick would spend a tenth of a core on a number that cannot have
+    // changed. Same chain, same timer, slower read.
+    const _UX_IM_RX_INTERVAL_MS = 5000;
+    let _uxImRx = null, _uxImRxAt = 0;
+    // The last status the chain rendered. Held ONLY so a language switch can re-render
+    // the interpolated surfaces from the same facts -- never polled from, never a
+    // second source of truth: the chain overwrites it on every tick.
+    let _uxImLastStatus = null;
+
+    // JOB-STATE-AS-TRUTH for the START request (the property _uxStartThenPoll carries
+    // for the export dialog): the POST returns AFTER the worker thread is spawned, so
+    // a transport hiccup that loses the RESPONSE -- the request reached the server,
+    // the job is running -- must not print a fatal "failed". On a start error consult
+    // /status: a LIVE job (running|paused) proves the start landed and we fall through
+    // to the chain; anything else re-throws so a real 400/409 still surfaces. NOT
+    // "done": a just-started job cannot be instantly done, so a stale "done" here must
+    // never mask a failed start as complete.
+    async function _uxImStartGuarded(startCall, statusUrl) {
+      try {
+        await startCall();
+      } catch (e) {
+        let st = null;
+        try { st = await api(statusUrl); } catch (_) { throw e; }
+        const s = (st && st.state) || "";
+        if (!(s === "running" || s === "paused")) throw e;
+      }
+    }
+
+    function _uxImStopChain() {
+      if (_uxImPollTimer) clearTimeout(_uxImPollTimer);
+      _uxImPollTimer = null;
+      _uxImWatch = null;
+      _uxImGen++;                  // an in-flight tick belongs to the old generation
+    }
+
+    // Point the chain at the import run and (re)start it.
+    function _uxImWatchQueue() {
+      _uxImWatch = "queue";
+      _uxImFails = 0;
+      _uxImGen++;
       if (_uxImPollTimer) { clearTimeout(_uxImPollTimer); _uxImPollTimer = null; }
+      _uxImTick();
+    }
+
+    // Point the chain at a volumes VERIFY job and resolve when it reaches a terminal
+    // state. Returns the final status object, exactly as the old _uxPoll promise did,
+    // so _uxImVerify's own error handling is unchanged.
+    function _uxImWatchVerify() {
+      if (_uxImPollTimer) { clearTimeout(_uxImPollTimer); _uxImPollTimer = null; }
+      _uxImWatch = "verify";
+      _uxImFails = 0;
+      _uxImGen++;
+      return new Promise((resolve, reject) => {
+        _uxImSettle = { resolve, reject };
+        _uxImTick();
+      });
+    }
+
+    // ONE tick of the ONE chain. Polls the current subject, paints the bar, renders,
+    // and schedules itself. Nothing else in this file owns #ux-imp-bar.
+    async function _uxImTick() {
+      _uxImPollTimer = null;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const subject = _uxImWatch;
+      const gen = _uxImGen;
+      if (!subject) return;
+      const url = subject === "verify"
+        ? "/api/backup/v2/volumes/status"
+        : "/api/backup/import-queue/status";
       let st = null;
-      try { st = await api("/api/backup/import-queue/status"); }
-      catch (e) { console.error("import queue status", e); }
-      if (!st) { _uxImPollTimer = setTimeout(_uxImQueuePoll, 3000); return; }
+      try {
+        st = await api(url);
+        _uxImFails = 0;
+      } catch (e) {
+        // JOB-STATE-AS-TRUTH: a dropped poll does not mean the job failed -- it keeps
+        // running server-side. Back off and keep watching; only a backend-reported
+        // terminal error is a failure. (Carried over verbatim from _uxPoll, which the
+        // verify path used to reach; the property must not be lost with the chain.)
+        _uxImFails++;
+        if (subject === "verify" && _uxImFails > 40) {
+          const settle = _uxImSettle; _uxImSettle = null; _uxImStopChain();
+          if (settle) settle.reject(new Error(t("Lost contact with the backup job — check the task manager; it may still be running.")));
+          return;
+        }
+        if (_uxImWatch !== subject || _uxImGen !== gen) return;  // superseded while we awaited
+        _uxImPollTimer = setTimeout(_uxImTick, Math.min(1200 * Math.pow(1.6, _uxImFails - 1), 15000));
+        return;
+      }
+      if (_uxImWatch !== subject || _uxImGen !== gen) return;  // a newer chain owns the bar
+      if (subject === "verify") { _uxImTickVerify(st, t); return; }
+      await _uxImTickQueue(st, t, gen);
+    }
+
+    function _uxImTickVerify(st, t) {
+      const bar = document.getElementById("ux-imp-bar");
+      const prog = document.getElementById("ux-imp-progress");
+      const state = st.state || "";
+      const view = _uxProgressView("volumes", st, t);
+      _uxPaintBar(bar, view);
+      if (prog) prog.innerHTML = `${esc(t("Verify"))}: ` + view.text;
+      if (state === "done" || state === "paused") {
+        const settle = _uxImSettle; _uxImSettle = null; _uxImStopChain();
+        if (settle) settle.resolve(st);
+        return;
+      }
+      if (state === "error" || state === "cancelled") {
+        const settle = _uxImSettle; _uxImSettle = null; _uxImStopChain();
+        if (settle) settle.reject(new Error(st.error || view.text || state));
+        return;
+      }
+      _uxImPollTimer = setTimeout(_uxImTick, 1200);
+    }
+
+    async function _uxImTickQueue(st, t, gen) {
+      // Stage 4 is a SEPARATE, resumable job that outlives this run, so its numbers
+      // come from the job itself rather than from the queue (which would be reporting
+      // on work it does not own). Paced; see _UX_IM_RX_INTERVAL_MS.
+      const now = Date.now();
+      if (now - _uxImRxAt >= _UX_IM_RX_INTERVAL_MS) {
+        _uxImRxAt = now;
+        try { _uxImRx = await api("/api/backup/reindex-backlog/resume/status"); }
+        catch (e) { _uxImRx = null; }   // unread: the row says so, never a zero
+        // RE-GUARDED after ITS OWN await, not only after the caller's. A stale queue
+        // tick resuming here rendered over whatever owned the bar and, on a terminal
+        // status, called _uxImStopChain() -- which nulls the chain state whoever owns
+        // it. A Verify started during that window was killed silently: its promise
+        // never settled, so the button stayed disabled with no error, forever.
+        if (gen !== undefined && (_uxImGen !== gen || _uxImWatch !== "queue")) return;
+      }
       _uxImRenderQueue(st);
-      if (st.state === "running") { _uxImPollTimer = setTimeout(_uxImQueuePoll, 1000); return; }
+      if (st.state === "running") { _uxImPollTimer = setTimeout(_uxImTick, 1000); return; }
       // Terminal: surface the per-item reports through the SAME summary renderer the
       // single-archive path uses, so nothing about the outcome view changes.
+      _uxImStopChain();
       const runBtn = document.getElementById("ux-imp-run");
       const stopBtn = document.getElementById("ux-imp-stop");
       const bgBtn = document.getElementById("ux-imp-bg");
@@ -763,7 +979,13 @@
           summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
         } else if (it.kind === "blobs") {
           summaries.push({ ...base, tally: { restored: sm.restored || 0, skipped: sm.skipped || 0 },
-            lines: [`${sm.restored || 0} ${t("restored")}`, `${sm.skipped || 0} ${t("skipped")}`] });
+            lines: [`${sm.restored || 0} ${t("restored")}`, `${sm.skipped || 0} ${t("skipped")}`],
+            // A member the restore TURNED AWAY has to be readable in the artifact an
+            // operator reads afterwards. This used to ride only on the recovered
+            // last-completed summary (removed 2026-09-16 with R1); the queue's own
+            // summary is the post-hoc artifact now, and it never carried it -- so the
+            // fields travel through the queue item and are rendered here.
+            caveat: _fbRefusalLines(sm) });
         } else if (it.kind === "newsletters") {
           const tl = sm.tally || {};
           summaries.push({ ...base, tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 },
@@ -792,11 +1014,57 @@
       // CHECKPOINT INTERVAL K. "Merged, not yet saved" is the whole distinction: the
       // articles are in this run's working copy and not in the corpus, so calling it
       // "Done" would claim a change that has not happened, and calling it "Running"
-      // would claim work still going. Both states are unreachable at the default
-      // K = 1, where every backup commits as it finishes.
+      // would claim work still going. Both states are unreachable at K = 1, where
+      // every backup commits as it finishes; at the ruled K = 3 they are ordinary.
       staged: "Merged — not yet saved",
       discarded: "Discarded — import it again",
     };
+
+    // The four stage rows, in order. `key` matches the backend's own (import_queue
+    // ._stage_rows), so neither side invents a stage the other does not have.
+    // The run states a stage row can carry that mean "this run ended without finishing",
+    // beside the label table it is read with: a row in one of these is labelled from
+    // _UX_IM_STATE_LABEL above, so the four words are the ones already shipped x12. The
+    // backend's own set is `_ENDED` in import_queue._stage_rows.
+    const _UX_IM_ENDED = { interrupted: 1, error: 1, cancelled: 1, stopped: 1 };
+
+    const _UX_IM_STAGE_LABEL = {
+      verify_stage: "Check the backup and unpack it",
+      merge_swap: "Merge it into your corpus and save",
+      search_index: "Merge the search index",
+      reindex: "Re-index the imported articles",
+    };
+
+    // ROWS PATCHED IN PLACE, keyed (Q206 = a). The old renderer wrote
+    // `rows.innerHTML = items.map(...)` on every tick, so a six-item run replaced six
+    // unchanged DOM subtrees once a second. The signature is what makes "unchanged"
+    // checkable: identical signature, and the DOM is not touched at all.
+    function _uxRowNode(host, key) {
+      for (const el of host.children) {
+        if (el.getAttribute && el.getAttribute("data-row-key") === key) return el;
+      }
+      return null;
+    }
+    function _uxPatchRow(host, key, sig, html) {
+      let el = _uxRowNode(host, key);
+      if (!el) {
+        el = document.createElement("div");
+        el.setAttribute("data-row-key", key);
+        host.appendChild(el);
+      }
+      if (el.dataset.sig === sig) return el;   // unchanged: no write
+      el.dataset.sig = sig;
+      el.innerHTML = html;
+      return el;
+    }
+    function _uxPruneRows(host, keys) {
+      const want = {};
+      for (const k of keys) want[k] = true;
+      for (const el of Array.from(host.children)) {
+        const k = el.getAttribute && el.getAttribute("data-row-key");
+        if (k && !want[k]) el.remove();
+      }
+    }
 
     function _uxImRenderQueue(st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -852,12 +1120,18 @@
           runBar.style.display = "none";
         }
       }
-      note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
+      const noteHtml = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
         + stagedLine
         + tailLine
         + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
         + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
-      rows.innerHTML = items.map((it) => {
+      if (note && note.dataset.sig !== noteHtml) { note.dataset.sig = noteHtml; note.innerHTML = noteHtml; }
+
+      _uxImLastStatus = st;
+      _uxImRenderStages(st, _uxImRx, t, tf);
+      _uxImRenderStatements(st, _uxImRx, t, tf);
+
+      for (const it of items) {
         const label = esc(it.label || it.kind);
         const state = esc(t(_UX_IM_STATE_LABEL[it.state] || it.state));
         const el = it.elapsed_s != null ? ` · ${esc(_uxImDur(it.elapsed_s))}` : "";
@@ -869,11 +1143,151 @@
           // and painting it as done would say the opposite of its own label.
           staged: "var(--warn)", discarded: "var(--err)",
         }[it.state] || "var(--muted)";
-        return `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
-          + `<b>${label}</b> <span class="muted">— ${state}${el}</span>${live}</div>${err}`;
-      }).join("");
-      const body = document.getElementById("ux-imp-details-body");
-      if (body) body.innerHTML = _uxImDetails(st, t);
+        // Which of the four stages THIS item is in. Absent for a kind that does not
+        // walk them (a large-data copy, a newsletter import): the backend says which
+        // is which with `stage_applicable`, so an empty cell is never a failed read.
+        const stg = (it.stage_applicable && it.stage)
+          ? ` <span class="muted">· ${esc(tf("stage {n} of {total}", { n: it.stage, total: 4 }))}</span>`
+          : "";
+        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
+          + `<b>${label}</b> <span class="muted">— ${state}${el}</span>${stg}${live}${err}`;
+        _uxPatchRow(rows, String(it.id || it.label || it.kind), html, html);
+      }
+      _uxPruneRows(rows, items.map((it) => String(it.id || it.label || it.kind)));
+    }
+
+    // Q202 = a: four rows with their own progress. `rx` is the re-index job's own
+    // status (stage 4 outlives the run, so the queue cannot speak for it) or null when
+    // it could not be read -- which the row SAYS, rather than showing a zero.
+    function _uxImRenderStages(st, rx, t, tf) {
+      const host = document.getElementById("ux-imp-stages");
+      if (!host) return;
+      const stages = st.stages || [];
+      if (!stages.length) { host.innerHTML = ""; return; }   // older server: no claim
+      for (const sRow of stages) {
+        const key = String(sRow.key || sRow.n);
+        const title = esc(t(_UX_IM_STAGE_LABEL[key] || key));
+        // A run that ENDED is not pending, and grey-like-pending is how the backend's
+        // own distinction became invisible. Deliberate endings (the operator stopped or
+        // cancelled) are warned, not errored; an interrupt or a failure is an error.
+        const dot = { done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)",
+                      external: "var(--muted)", stopped: "var(--warn)",
+                      cancelled: "var(--warn)", interrupted: "var(--err)",
+                      error: "var(--err)" }[sRow.state] || "var(--muted)";
+        const bits = [];
+        if (key === "reindex") {
+          bits.push(_uxImReindexBits(rx, t, tf));
+        } else if (sRow.measured && sRow.total) {
+          bits.push(esc(tf("{done} of {total} backups", { done: sRow.done || 0, total: sRow.total })));
+          if (sRow.failed) bits.push(`<span class="note err">${esc(tf("{n} failed", { n: sRow.failed }))}</span>`);
+        } else if (sRow.state === "done") {
+          bits.push(esc(t("done")));
+        } else if (sRow.state === "running") {
+          // No number, and the reason is stated rather than a bar drawn over nothing.
+          bits.push(esc(t("running")));
+        } else if (sRow.skipped) {
+          bits.push(esc(t("skipped — the import was stopped")));
+        } else {
+          bits.push(esc(t("not started")));
+        }
+        // ...and it SAYS which ending it was, reusing _UX_IM_STATE_LABEL -- the same four
+        // words the item rows already use, already translated. A row that reads "2 of 4
+        // backups" with nothing else cannot distinguish "two still to come" from "the app
+        // died after two", which is the whole point of the backend carrying the ending.
+        if (_UX_IM_ENDED[sRow.state]) {
+          bits.push(`<span class="note err">${esc(t(_UX_IM_STATE_LABEL[sRow.state] || sRow.state))}</span>`);
+        }
+        if (sRow.phase) {
+          bits.push(`<span class="muted">${esc(_uxVolPhase(sRow.phase, "restore", t))}</span>`);
+        }
+        const link = key === "reindex"
+          ? ` <a href="#" onclick="event.preventDefault();openTaskManager()">${esc(t("open the task manager"))}</a>`
+          : "";
+        const html = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
+          + `<b>${sRow.n}. ${title}</b> <span class="muted">— ${bits.filter(Boolean).join(" · ")}</span>${link}`;
+        _uxPatchRow(host, key, html, html);
+      }
+      _uxPruneRows(host, stages.map((r) => String(r.key || r.n)));
+    }
+
+    // Stage 4's own line, as a PURE function of the re-index job's status. THREE
+    // states, kept apart on purpose: unread (we could not ask), idle-with-a-backlog
+    // (work is owed and nothing is draining it), and running (a measured count). A
+    // `0` for any of the first two would claim the re-index is finished.
+    function _uxImReindexBits(rx, t, tf) {
+      if (!rx) return `<span class="muted">${esc(t("could not be read"))}</span>`;
+      const bk = rx.backlog || null;
+      if (bk && bk.available === false) {
+        return `<span class="muted">${esc(t("the backlog could not be read"))}</span>`;
+      }
+      const left = bk ? bk.articles_pending : null;
+      if (rx.state === "running") {
+        const done = rx.done || 0, total = rx.total || 0;
+        return total
+          ? esc(tf("resuming re-index — {done} of {total} articles", { done, total }))
+          : esc(t("resuming re-index"));
+      }
+      if (left != null && left > 0) {
+        return esc(tf("{n} articles left to re-index", { n: Number(left).toLocaleString() }));
+      }
+      if (left === 0) return esc(t("complete"));
+      return `<span class="muted">${esc(t("not measured"))}</span>`;
+    }
+
+    // Q203 = a: the three statements, each keyed on ITEM STATE (unambiguous) rather
+    // than on a live phase (which straddles). A pure function of the two payloads, so
+    // what it SAYS is testable, not merely that the identifiers appear in the source.
+    function _uxImStatements(st, rx, t, tf) {
+      // EVERY ITEM IN THE RUN, not only the restore kinds. The first version filtered to
+      // corpus/legacy, so the moment a (fast) corpus restore finished it announced "the
+      // import files can be removed" and "safe to close" while a `blobs` item from the
+      // SAME click -- wiki dumps, maps, models, gigabytes -- was still copying out of
+      // that same folder. `_uxImScan` pre-checks every box, so a mixed run is the normal
+      // case, not a corner. An operator acting on that sentence deletes the source of a
+      // transfer still reading it. The statement is unscoped in plain words ("the import
+      // files", "everything they carried"), so its test has to be unscoped too.
+      //
+      // And SUCCEEDED, not merely finished: a failed blobs item means the folder still
+      // holds something that never arrived, so "everything they carried is in your
+      // corpus" would be false in the other direction.
+      const done = (i) => i.state === "done" || i.state === "skipped";
+      const items = st.items || [];
+      const restores = items.filter((i) => i.kind === "corpus" || i.kind === "legacy");
+      // BOTH halves, and each is load-bearing on its own. The restores decide whether
+      // there is a corpus claim to make at all (a blobs-only run carries nothing INTO
+      // the corpus, so it may never say "everything they carried is in your corpus");
+      // the whole run decides whether the folder is finished with (see above).
+      const saved = restores.length > 0 && restores.every(done) && items.every(done);
+      const out = [];
+      out.push(saved
+        ? { ok: true, text: t("The import files can be removed — everything they carried is in your corpus now.") }
+        : { ok: false, text: t("Keep the import files until this import is saved — nothing is durable until then.") });
+      out.push(saved
+        ? { ok: true, text: t("Safe to close or update the app — the re-index picks up where it left off on the next start.") }
+        : { ok: false, text: t("Closing the app now abandons whatever has not been saved yet; your corpus is untouched.") });
+      const bk = rx && rx.backlog;
+      if (!rx || !bk || bk.available === false) {
+        out.push({ ok: false, text: t("Whether analytics have caught up could not be read.") });
+      } else if ((bk.articles_pending || 0) > 0) {
+        out.push({ ok: false, text: tf(
+          "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
+          { n: Number(bk.articles_pending).toLocaleString() }) });
+      } else {
+        out.push({ ok: true, text: t("Analytics are complete — every imported article is indexed.") });
+      }
+      return out;
+    }
+
+    function _uxImRenderStatements(st, rx, t, tf) {
+      const host = document.getElementById("ux-imp-statements");
+      if (!host) return;
+      const lines = _uxImStatements(st, rx, t, tf);
+      const html = lines.map((l) =>
+        `<div><span aria-hidden="true">${l.ok ? "✓" : "•"}</span> ${esc(l.text)}</div>`
+      ).join("");
+      if (host.dataset.sig === html) return;
+      host.dataset.sig = html;
+      host.innerHTML = html;
     }
 
     // The current PHASE's own honest unit (ruling 14) -- never a made-up percentage of
@@ -910,22 +1324,66 @@
       return `${Math.floor(m / 60)}h ${m % 60}m`;
     }
 
-    // "Show details" (ruling 16): the per-item facts behind the rows. Reads from the
-    // SERVER's status, so it is still correct after a reload -- there is no client-side
-    // record it could disagree with.
-    function _uxImDetails(st, t) {
-      const rows = (st.items || []).map((it) => {
-        const bits = [`<b>${esc(it.label || it.kind)}</b>`, esc(it.kind), esc(t(_UX_IM_STATE_LABEL[it.state] || it.state))];
-        if (it.elapsed_s != null) bits.push(esc(_uxImDur(it.elapsed_s)));
-        bits.push(`<span class="muted">${esc(it.path)}</span>`);
-        return `<div>${bits.join(" · ")}</div>`;
-      });
-      if (st.started_at) {
-        // fmtDateTime, never toLocaleString: dates render in the APP language, not
-        // whatever locale the browser happens to be set to.
-        rows.unshift(`<div class="muted">${esc(t("Started"))}: ${esc(fmtDateTime(st.started_at * 1000))}</div>`);
+    // REMOVED 2026-09-16 (Q207 = a, R2): `_uxImDetails` and the "Show details"
+    // <details> block it filled. It duplicated the queue rows -- label, kind, state,
+    // elapsed -- and added exactly one fact they did not carry: the item's PATH. That
+    // fact did not go with it: it rides the persisted import report, which is the
+    // artifact that survives the tab. Q207 was left BLANK on the answer sheet and took
+    // the sheet's default (a), so this is an ASSUMPTION and is reversible: the block
+    // was ~20 lines over a payload the server still publishes in full.
+
+    // ── IMPORT HISTORY (Q222 = b: Settings -> Data & backup) ───────────────
+    // Every persisted report, newest first. This is where the detail the fresh
+    // dialog no longer re-renders actually lives (R1) -- and it outlives the tab,
+    // the process and the machine, which the recovered last-completed summary it
+    // replaces never did.
+    async function loadImportHistory() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const host = document.getElementById("imp-history");
+      if (!host) return;
+      let reports = null;
+      try {
+        const r = await api("/api/backup/import-reports");
+        reports = (r && r.reports) || [];
+      } catch (e) {
+        // A failed READ is not an empty history. Saying "no imports yet" here would
+        // be a positive claim about the operator's data made from a broken request.
+        host.innerHTML = `<span class="note err">${esc(t("The import history could not be read."))}</span>`;
+        return;
       }
-      return rows.join("") || `<span class="muted">${esc(t("No details yet."))}</span>`;
+      host.innerHTML = _uxImHistoryHtml(reports, t, tf);
+    }
+
+    // Pure, so what the list SAYS is assertable rather than the identifiers appearing
+    // in the source. Three honesty rules: an unreadable report's article figure is
+    // ABSENT (never 0); a run that did not complete is labelled and its figure reads
+    // PLANNED; and an empty list is an honest empty state, never a blank div.
+    function _uxImHistoryHtml(reports, t, tf) {
+      if (!reports || !reports.length) {
+        return `<span class="muted">${esc(t("No imports recorded yet."))}</span>`;
+      }
+      return reports.map((r) => {
+        const bits = [];
+        bits.push(`<b>${esc(fmtDateTime(r.created_at))}</b>`);
+        if (r.kind) bits.push(`<span class="muted">${esc(r.kind)}</span>`);
+        if (r.articles != null) {
+          const n = Number(r.articles).toLocaleString();
+          bits.push(r.articles_basis === "planned"
+            ? esc(tf("{n} articles planned", { n }))
+            : esc(tf("{n} articles", { n })));
+        } else {
+          bits.push(`<span class="muted">${esc(t("article count not recorded"))}</span>`);
+        }
+        if (r.outcome && r.outcome !== "ok") {
+          bits.push(`<span class="note err">${esc(t("did not complete"))} (${esc(r.outcome)})</span>`);
+        }
+        const href = `/api/backup/import-reports/${encodeURIComponent(r.filename)}?format=md`;
+        bits.push(`<a href="${href}" target="_blank" rel="noopener">${esc(t("open report"))}</a>`);
+        return `<div>${bits.join(" \u00b7 ")}</div>`;
+      }).join("");
     }
 
     // Stop the run. The two halves are genuinely different, so the confirmation says
@@ -938,7 +1396,7 @@
       try { await api("/api/backup/import-queue/stop", { method: "POST" }); }
       catch (e) { toast(t("Could not stop the import:") + " " + (e.message || e), "err"); }
       btn.disabled = false;
-      _uxImQueuePoll();
+      _uxImWatchQueue();
     }
 
     // Reattach to a run already in flight (or just finished) when the dialog opens --
@@ -948,7 +1406,7 @@
       try { st = await api("/api/backup/import-queue/status"); } catch { return; }
       if (!st || !(st.items || []).length) return;
       _uxImRenderQueue(st);
-      if (st.state === "running") { _uxImQueuePoll(); }
+      if (st.state === "running") { _uxImWatchQueue(); }
     }
 
     // Leave the (modal) Import dialog while the import keeps running as background
@@ -2008,4 +2466,44 @@
       }
       requestAnimationFrame(step);
     }
+
+    // -- Live language switch: the import dialog's INTERPOLATED surfaces ----- //
+    // The recorded frozen-locale bug class (Lead card titles 2026-07, the Composition
+    // figures 2026-08, and the same again here): the i18n DOM walker re-translates a
+    // text node whose content is still an exact KEY, but an already-interpolated
+    // OOI18N.tf() string -- "once every 3 backups", "24 articles" -- is no longer a key
+    // and stays in whatever locale first rendered it. Every surface this slice adds is
+    // built that way, and the chain that would repaint them STOPS at a terminal state,
+    // so after a finished import nothing re-renders them at all.
+    //
+    // MEASURED, not assumed: the 2026-09-16 Chromium sweep screenshotted the dialog in
+    // fr, ar and zh and found the checkpoint sentence still reading "Verified and
+    // written to your corpus once every 3 backups" in all three -- a caveat about
+    // durability, which the informed-consent non-negotiable says is the one thing that
+    // may never reach an operator in a language they did not choose.
+    //
+    // Re-renders from the SAME facts (the last status, the cached re-index read), never
+    // re-fetches: a language switch is not a reason to touch the network or the queue.
+    document.addEventListener("oo:langchange", () => {
+      const dlg = document.getElementById("ux-import");
+      if (dlg && dlg.open) {
+        try { _uxImCheckpointNote(); } catch (_e) {}
+        try { _uxImLastLine(); } catch (_e) {}
+        try {
+          if (_uxImLastStatus) {
+            const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+            const tf = (window.OOI18N && OOI18N.tf)
+              ? OOI18N.tf
+              : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+            _uxImRenderStages(_uxImLastStatus, _uxImRx, t, tf);
+            _uxImRenderStatements(_uxImLastStatus, _uxImRx, t, tf);
+          }
+        } catch (_e) {}
+      }
+      // The history list is the same shape, one surface over. Only if it has rendered.
+      try {
+        const h = document.getElementById("imp-history");
+        if (h && h.innerHTML.trim() && typeof loadImportHistory === "function") loadImportHistory();
+      } catch (_e) {}
+    });
 

@@ -53,19 +53,49 @@ function extract(head) {
 // The state-label table, taken from the real file rather than restated: it is what
 // turns an item's state into the word the operator reads, and a stand-in here would
 // let the two drift.
+// BOUNDED ON THE NEXT DECLARATION, not on a distant one: slicing to
+// `function _uxImRenderQueue(` used to be correct and stopped being so the moment a
+// second table and the patch helpers were added between the two -- the recorded
+// "a slice that runs to the next top-level declaration sweeps in unrelated code"
+// trap, which here presented as a duplicate-declaration SyntaxError rather than as
+// a silent over-run, because the sweep also re-declared what is extracted below.
 const stateTable = APP.slice(
   APP.indexOf("const _UX_IM_STATE_LABEL = {"),
-  APP.indexOf("function _uxImRenderQueue("),
+  APP.indexOf("const _UX_IM_STAGE_LABEL = {"),
 );
 assert(stateTable.indexOf("done:") !== -1, "the state-label table did not extract");
+
+// The four stage-row labels (Q202 = a) and the chain's re-index cache, both read by
+// _uxImRenderQueue's helpers. Sliced, not retyped, for the same reason as above.
+const stageTable = APP.slice(
+  APP.indexOf("const _UX_IM_STAGE_LABEL = {"),
+  APP.indexOf("function _uxRowNode("),
+);
+assert(stageTable.indexOf("verify_stage:") !== -1, "the stage-label table did not extract");
+const rxState = APP.slice(
+  APP.indexOf("let _uxImRx = null, _uxImRxAt = 0;"),
+  APP.indexOf("let _uxImRx = null, _uxImRxAt = 0;") + "let _uxImRx = null, _uxImRxAt = 0;".length,
+);
+assert(rxState.length > 10, "the chain's re-index cache declaration did not extract");
 
 const src = [
   extract("function _uxVolPhase("),
   extract("function _uxImPhaseBits("),
   extract("function _uxImLive("),
   extract("function _uxImDur("),
-  extract("function _uxImDetails("),
   stateTable,
+  stageTable,
+  // The chain's own state, extracted rather than stubbed: _uxImRenderQueue reads
+  // _uxImRx (the re-index job's last status) to fill stage 4, and a stand-in would
+  // let this copy drift from the shipped declaration.
+  rxState,
+  extract("function _uxPatchRow("),
+  extract("function _uxPruneRows("),
+  extract("function _uxRowNode("),
+  extract("function _uxImReindexBits("),
+  extract("function _uxImStatements("),
+  extract("function _uxImRenderStatements("),
+  extract("function _uxImRenderStages("),
   extract("function _uxImRenderQueue("),
   extract("function _jobRow("),
   extract("function _fmtBytes("),
@@ -85,19 +115,46 @@ const src = [
   "return { _uxImRenderQueue, _uxImLive, _uxImPhaseBits, _uxVolPhase, _jobRow };",
 ].join("\n");
 
-// A DOM small enough to be obviously faithful: the elements the renderer asks for.
+// A DOM small enough to be obviously faithful: the elements the renderer asks for,
+// plus the handful of node operations the patch-in-place renderer uses (Q206 = a).
+// `children`, `appendChild`, `remove`, `dataset` and get/setAttribute are the whole
+// surface -- anything more would be a browser, and anything less would make the
+// renderer unrunnable rather than testable.
+function makeNode() {
+  const attrs = {};
+  const node = {
+    innerHTML: "", style: {}, disabled: false, value: 0, max: 1,
+    dataset: {}, children: [],
+    setAttribute(k, v) { attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
+    removeAttribute(k) { delete attrs[k]; },
+    appendChild(c) { c._parent = node; node.children.push(c); return c; },
+    remove() {
+      const par = node._parent;
+      if (par) par.children = par.children.filter((c) => c !== node);
+    },
+  };
+  return node;
+}
 const dom = {};
 function resetDom() {
   for (const id of ["ux-imp-queue", "ux-imp-queue-rows", "ux-imp-queue-note",
-                    "ux-imp-stop", "ux-imp-run", "ux-imp-details-body", "ux-imp-bar"]) {
-    dom[id] = { innerHTML: "", style: {}, disabled: false, value: 0, max: 1 };
+                    "ux-imp-stop", "ux-imp-run", "ux-imp-bar",
+                    "ux-imp-stages", "ux-imp-statements"]) {
+    dom[id] = makeNode();
   }
 }
-const document = { getElementById: (id) => dom[id] || null };
+const document = { getElementById: (id) => dom[id] || null, createElement: () => makeNode() };
 
 const mod = new Function("window", "document", src)({}, document);  // no OOI18N: t() is identity
 
 function render(st) { resetDom(); mod._uxImRenderQueue(st); return dom["ux-imp-queue-note"].innerHTML; }
+
+// Q206 = a: rows are PATCHED IN PLACE now, so the host's own innerHTML stays empty
+// and the content lives on its children. Reading the host directly would report an
+// empty string for a correctly-rendered list -- a false negative that reads exactly
+// like a broken renderer.
+function childHtml(id) { return dom[id].children.map((c) => c.innerHTML).join(""); }
 
 const DONE_ITEM = { label: "backup-a", kind: "corpus", state: "done", elapsed_s: 6240, path: "/x" };
 const RUNNING_ITEM = { label: "backup-a", kind: "corpus", state: "running", elapsed_s: 60, path: "/x" };
@@ -178,7 +235,7 @@ test("an item genuinely in flight keeps its phase in its own row, not the header
     live: { state: "running", progress: { phase: "merging" } },
   });
   const note = dom["ux-imp-queue-note"].innerHTML;
-  const rows = dom["ux-imp-queue-rows"].innerHTML;
+  const rows = childHtml("ux-imp-queue-rows");
   assert(note.indexOf("Merging") === -1, "the header must not duplicate a running item's phase");
   assert(rows.indexOf("Merging") !== -1, "the running item's own row still carries it");
 });

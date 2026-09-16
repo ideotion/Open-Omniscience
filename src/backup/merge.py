@@ -384,7 +384,7 @@ def _db_integrity_error_types() -> tuple[type, ...]:
 def classify_restore_error(action: str, exc: Exception) -> str:
     """Classify an unexpected restore failure into an HONEST detail (P0-2).
 
-    Shared by both restore entry points: the single-shot ``/api/backup/v2/restore``
+    Shared by both restore entry points: the single-shot ``/api/backup/legacy/restore``
     endpoint (via ``_restore_error``, which wraps this in an HTTPException) and the
     background ``volume-restore`` job (``volume_job.py``, which stores the plain
     string as the job's ``error``) -- the classification must not depend on which
@@ -5045,7 +5045,7 @@ def run_restore(
     timings = StageTimings(on_start=stage_progress_cb, sink=_journal_stage)
 
     # OWNERSHIP-DERIVED DEFAULTS (field report 2026-07-30). Two callers -- the legacy
-    # single-archive restore and the /v2/restore commit -- pass none of the throughput
+    # single-archive restore and the queue's own legacy items -- pass none of the throughput
     # knobs and never pause anything, so their re-index ran at ONE COMMIT PER ARTICLE
     # even when nothing else was touching the machine. Derived here rather than at each
     # call site so there is one answer to "does this restore own the machine", and so a

@@ -411,5 +411,8 @@ def download_backup() -> FileResponse:
 # NOTE: the destructive POST /api/database/restore (replace the live corpus with
 # an uploaded SQLite file) was REMOVED on 2026-06-13 (maintainer ruling: restore
 # is ADDITIVE-ONLY). Restoring goes exclusively through the merge engine at
-# POST /api/database/v2/restore/{preview,commit}, which complements the corpus
-# and never overwrites it. (Backup CREATION — GET /api/database/backup — stays.)
+# the additive merge engine, which complements the corpus and never overwrites it.
+# Its endpoints are POST /api/backup/import-queue/start (the one import path) and
+# POST /api/backup/legacy/restore (one single-file archive). The upload-based
+# /api/backup/v2/restore/{preview,commit} this note used to name was consolidated
+# away on 2026-09-16 (Q214 = a). (Backup CREATION — GET /api/database/backup — stays.)

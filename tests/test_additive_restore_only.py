@@ -5,7 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Maintainer ruling 2026-06-13: restoring a backup must NEVER replace the corpus.
 The destructive "replace the live database" paths were removed; the merge engine
-(the oo-backup-2 artifact + /api/backup/v2/restore) is the ONLY restore. This
+(the oo-backup-2 artifact + /api/backup/import-queue + /api/backup/legacy/restore)
+is the ONLY restore. This
 test fails the build if a replace-restore endpoint or function reappears — so the
 guarantee cannot silently regress between sessions.
 """
@@ -43,7 +44,7 @@ def test_replace_restore_endpoints_are_gone_and_merge_remains():
     # own module-level route definitions and the wiring in src/api/main.py — not
     # to the long-lived, shared ``src.api.main.app`` singleton's mutable .routes
     # list. Reading that process-global made this guard FLAKY in CI: it tripped
-    # intermittently (assert False on `app.routes` lacking /v2/restore) even
+    # intermittently (assert False on `app.routes` lacking a backup-v2 route) even
     # though NO code anywhere mutates app.routes, rebinds the app, or reloads
     # src.api.main — verified statically AND by a per-test route watcher across
     # the whole suite that never once saw the route disappear. Asserting against
@@ -67,16 +68,28 @@ def test_replace_restore_endpoints_are_gone_and_merge_remains():
     assert "/api/safety/restore/encrypted" not in safety_paths
     assert "/api/safety/restore/encrypted" not in live_paths
 
-    # The ONE restore — the additive merge — must remain: (a) /v2/restore is
-    # DECLARED on the backup-v2 router, and (b) the router is wired unconditionally.
-    # The include_router calls moved from main.py into src/api/_wiring.py (audit PR H),
-    # so the registration is anchored there (the immutable wiring source) + main's
-    # delegation to wire(). A regression that deleted the route or dropped the
-    # registration still fails the build.
-    assert any("/v2/restore" in p for p in backup_v2_paths), (
-        "the merge restore endpoint must remain: no /v2/restore route is declared "
-        "on the backup-v2 router"
+    # The ONE restore — the additive merge — must remain, and since Q214 = a
+    # (2026-09-16) its path is the import QUEUE plus the legacy single-file route.
+    # ``/v2/restore/*`` (the upload-based preview→commit two-step) is DELETED; what
+    # this guard has always been about is that SOME additive-merge restore is
+    # declared and wired, never that a particular spelling of it exists.
+    assert not any("/v2/restore" in p for p in backup_v2_paths), (
+        "/v2/restore/* was consolidated into import-queue/* (Q214 = a); a route "
+        "carrying that prefix is a regression of the consolidation"
     )
+    assert not any("/v2/restore" in p for p in live_paths), (
+        "/v2/restore/* must not be reachable on the live app either"
+    )
+    assert "/api/backup/import-queue/start" in backup_v2_paths, (
+        "the merge restore endpoint must remain: the import queue is the one path"
+    )
+    assert "/api/backup/legacy/restore" in backup_v2_paths, (
+        "the legacy single-file restore stays forever (Q215 ⛔ = a)"
+    )
+    # (b) the router is wired unconditionally. The include_router calls moved from
+    # main.py into src/api/_wiring.py (audit PR H), so the registration is anchored
+    # there (the immutable wiring source) + main's delegation to wire(). A regression
+    # that deleted the route or dropped the registration still fails the build.
     _api_dir = Path(__file__).resolve().parents[1] / "src" / "api"
     main_src = (_api_dir / "main.py").read_text(encoding="utf-8")
     wiring_src = (_api_dir / "_wiring.py").read_text(encoding="utf-8")

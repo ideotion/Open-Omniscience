@@ -104,32 +104,36 @@ def test_import_reports_list_and_download_endpoints(client):
     assert client.get("/api/backup/import-reports/..%2F..%2Fetc%2Fpasswd").status_code in (404, 400)
 
 
-def test_encrypted_roundtrip_and_self_merge(client):
+def test_encrypted_roundtrip_and_self_merge(client, tmp_path):
+    """An ENCRYPTED artifact decrypts, merges additively, and is recorded as a batch.
+
+    RE-ANCHORED 2026-09-16 (Q214 = a). This drove ``/v2/restore/preview`` then
+    ``/v2/restore/commit`` with an upload and a single-use token; those routes are
+    gone and ``/api/backup/legacy/restore`` is the surviving path for a single
+    artifact. Every assertion with a subject is kept -- decryption, the all-duplicate
+    self-merge plan, the verification verdict, and the batch landing in
+    ``/v2/batches`` with a status inside the known vocabulary. The token's
+    single-use assertion is NOT kept: the token mechanism was the deleted routes'
+    own, so re-pointing it would be asserting a property nothing has.
+    """
+    from pathlib import Path
+
     blob = _build_backup("api-pw-123")
     assert blob[:6] == b"OOENC1"
+    dest = Path(tmp_path) / "roundtrip.oobak.ooenc"
+    dest.write_bytes(blob)
 
     before = client.get("/api/backup/v2/batches").json()
-    prev = client.post(
-        "/api/backup/v2/restore/preview",
-        files={"file": ("b.oobak.ooenc", blob)},
-        data={"passphrase": "api-pw-123"},
+    com = client.post(
+        "/api/backup/legacy/restore",
+        json={"path": str(dest), "passphrase": "api-pw-123"},
     )
-    assert prev.status_code == 200, prev.text
-    rep = prev.json()
-    assert rep["committed"] is False and rep["verification"]["ok"] is True
-    # Self-merge: everything is a duplicate of itself; nothing new anywhere.
-    news = {k: v["new"] for k, v in rep["plan"].items() if isinstance(v, dict) and v.get("new")}
-    assert news == {}
-    token = rep["commit_token"]
-
-    com = client.post("/api/backup/v2/restore/commit", data={"token": token})
     assert com.status_code == 200, com.text
     rep2 = com.json()
     assert rep2["committed"] is True and rep2["verification"]["ok"] is True
-
-    # The token is single-use.
-    again = client.post("/api/backup/v2/restore/commit", data={"token": token})
-    assert again.status_code == 409
+    # Self-merge: everything is a duplicate of itself; nothing new anywhere.
+    news = {k: v["new"] for k, v in rep2["plan"].items() if isinstance(v, dict) and v.get("new")}
+    assert news == {}
 
     after = client.get("/api/backup/v2/batches").json()
     assert len(after["batches"]) == len(before["batches"]) + 1
@@ -142,22 +146,29 @@ def test_encrypted_roundtrip_and_self_merge(client):
     assert after["batches"][0]["status"] in {"merged", "reindexed"}
 
 
-def test_restore_preview_wrong_passphrase_is_loud(client):
+def test_restore_wrong_passphrase_is_loud(client, tmp_path):
+    """A wrong passphrase is a NAMED 400, never a generic failure (re-anchored from
+    ``/v2/restore/preview`` onto the surviving legacy path, Q214 = a)."""
+    from pathlib import Path
+
     blob = _build_backup("right-pw")
+    dest = Path(tmp_path) / "enc.ooenc"
+    dest.write_bytes(blob)
     bad = client.post(
-        "/api/backup/v2/restore/preview",
-        files={"file": ("b.ooenc", blob)},
-        data={"passphrase": "wrong-pw"},
+        "/api/backup/legacy/restore",
+        json={"path": str(dest), "passphrase": "wrong-pw"},
     )
     assert bad.status_code == 400
     assert "decryption failed" in bad.json()["detail"]
 
 
-def test_restore_rejects_garbage(client):
-    bad = client.post(
-        "/api/backup/v2/restore/preview",
-        files={"file": ("x.bin", b"this is not a backup at all")},
-    )
+def test_restore_rejects_garbage(client, tmp_path):
+    """Bytes that are not a backup are refused with a 400 (re-anchored, Q214 = a)."""
+    from pathlib import Path
+
+    dest = Path(tmp_path) / "x.bin"
+    dest.write_bytes(b"this is not a backup at all")
+    bad = client.post("/api/backup/legacy/restore", json={"path": str(dest)})
     assert bad.status_code == 400
 
 

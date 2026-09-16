@@ -1940,8 +1940,170 @@ def investigate_state_d_import(pw, report: Report, shots: Path) -> None:
         report.add_coverage(surface="post_import_content", axis="default", result="verified",
                             note=f"summary length={len(text)}; first line: "
                             f"{text.splitlines()[0][:80]!r}")
+
+        # -- S04-02: the import LIFECYCLE surfaces, on the run that just happened -------- #
+        _import_lifecycle_checks(page, driver, report)
     finally:
         browser.close()
+
+
+def _import_lifecycle_checks(page, driver, report: Report) -> None:
+    """The four stage rows, the three statements, the fresh reopen and the history list.
+
+    Driven on the SAME real import the drill above just ran, because every one of these is
+    a claim about a run that happened: a stage row read off a fixture with no import behind
+    it would be a claim about the fixture. The locale sweep is part of the check rather
+    than a follow-up -- the informed-consent non-negotiable puts every caveat in twelve
+    locales, and a sentence that renders in English for an Arabic operator IS the defect.
+    """
+    close_btn = "#ux-import button[onclick*=\'close()\']"
+
+    # (1) FOUR STAGE ROWS, by their own keys (Q202 = a).
+    keys = page.evaluate(
+        "() => Array.from((document.getElementById('ux-imp-stages')||{children:[]}).children)"
+        ".map(e => e.getAttribute('data-row-key'))"
+    )
+    want = ["verify_stage", "merge_swap", "search_index", "reindex"]
+    report.add_coverage(
+        surface="import_lifecycle", axis="four-stage-rows",
+        result="verified" if keys == want else "partial",
+        note=f"rows rendered: {keys}",
+    )
+    shot_stages = driver.screenshot(Surface("import_stage_rows", "Import stage rows",
+                                            dom_id="ux-imp-stages"))
+
+    # (2) THE THREE STATEMENTS (Q203 = a).
+    statements = page.evaluate(
+        "() => Array.from((document.getElementById('ux-imp-statements')||{children:[]}).children)"
+        ".map(e => e.innerText.trim()).filter(Boolean)"
+    )
+    report.add_coverage(
+        surface="import_lifecycle", axis="three-statements",
+        result="verified" if len(statements) == 3 else "partial",
+        note=" | ".join(s[:70] for s in statements) or "none rendered",
+    )
+
+    # (3) STAGE 4 names who owns the number and links the task manager (Q204 = a).
+    stage4 = page.evaluate(
+        "() => { const rows = Array.from((document.getElementById('ux-imp-stages')"
+        "||{children:[]}).children);"
+        " const r = rows.find(e => e.getAttribute('data-row-key') === 'reindex');"
+        " return r ? r.innerHTML : ''; }"
+    )
+    report.add_coverage(
+        surface="import_lifecycle", axis="stage-four-task-manager-link",
+        result="verified" if "openTaskManager()" in stage4 else "partial",
+        note=stage4[:160],
+    )
+
+    # (4) THE CHECKPOINT SENTENCE at the ruled K = 3 (Q216 = a).
+    cp = page.inner_text("#ux-imp-checkpoint").strip()
+    report.add_coverage(
+        surface="import_lifecycle", axis="checkpoint-sentence",
+        result="verified" if cp else "partial", note=cp[:160],
+    )
+
+    # (5) A FRESH REOPEN (R1, Q201 = a): close, reopen, and the whole previous summary
+    # must be GONE while ONE quiet line names the run that just finished and LINKS its
+    # persisted report.
+    page.click(close_btn)
+    page.wait_for_timeout(400)
+    page.click('button[onclick="openUnifiedImport()"]')
+    page.wait_for_timeout(2000)
+    fresh = page.evaluate(
+        "() => { const a = document.querySelector('#ux-imp-last a');"
+        " return { summary: (document.getElementById('ux-imp-summary')||{innerText:''})"
+        ".innerText.trim(),"
+        " last: (document.getElementById('ux-imp-last')||{innerText:''}).innerText.trim(),"
+        " href: a ? (a.getAttribute('href')||'') : '' }; }"
+    )
+    report.add_coverage(
+        surface="import_lifecycle", axis="fresh-page-on-reopen",
+        result="verified" if (not fresh["summary"] and fresh["last"]) else "partial",
+        note=f"summary={fresh['summary'][:60]!r} last={fresh['last'][:110]!r}",
+    )
+    shot_fresh = driver.screenshot(Surface("import_fresh_reopen", "Import dialog, reopened",
+                                           dom_id="ux-import"))
+    report.add_coverage(
+        surface="import_lifecycle", axis="last-import-line-links-the-report",
+        result="verified" if "/api/backup/import-reports/" in fresh["href"] else "partial",
+        note=fresh["href"] or "no link",
+    )
+
+    # (6) THE LOCALE SWEEP. The brief asks en/fr/ar, the build prompt en/ar/zh -- the
+    # superset costs one extra screenshot and settles both.
+    #
+    # EACH SURFACE SEPARATELY, and this is the whole lesson of the first run: the check
+    # originally compared the CONCATENATION of the quiet line and the checkpoint
+    # sentence, which changed in every locale because the quiet line translated -- and
+    # reported "verified" while the checkpoint sentence beside it was still English in
+    # fr, ar AND zh. One translated half masks an untranslated half, exactly as a
+    # non-unique needle masks a dead guard.
+    surfaces = {
+        "last-line": "#ux-imp-last",
+        "checkpoint": "#ux-imp-checkpoint",
+        "stage-rows": "#ux-imp-stages",
+        "statements": "#ux-imp-statements",
+    }
+    base = {k: page.inner_text(sel).strip() for k, sel in surfaces.items()}
+    for locale in ("fr", "ar", "zh", "en"):
+        driver.set_locale(locale)
+        page.wait_for_timeout(800)
+        got = {k: page.inner_text(sel).strip() for k, sel in surfaces.items()}
+        direction = page.evaluate("() => document.documentElement.getAttribute('dir')")
+        # en is the baseline, so "unchanged" is the PASS there and the FAIL elsewhere.
+        # A surface that rendered EMPTY is not evidence either way and is named as such.
+        frozen, empty = [], []
+        for k in surfaces:
+            if not got[k]:
+                empty.append(k)
+            elif locale != "en" and got[k] == base[k]:
+                frozen.append(k)
+            elif locale == "en" and got[k] != base[k]:
+                frozen.append(k + "(did-not-return)")
+        ok = not frozen and (direction == "rtl" if locale == "ar" else direction != "rtl")
+        note = f"dir={direction}"
+        if frozen:
+            note += f"; STILL IN THE PREVIOUS LOCALE: {frozen}"
+        if empty:
+            note += f"; empty (no evidence): {empty}"
+        note += f"; checkpoint={got['checkpoint'][:70]!r}"
+        report.add_coverage(
+            surface="import_lifecycle", axis=f"locale-{locale}",
+            result="verified" if ok else "partial", note=note,
+        )
+        driver.screenshot(Surface(f"import_lifecycle_{locale}", f"Import dialog ({locale})",
+                                  dom_id="ux-import"))
+
+    # (7) THE HISTORY LIST in Settings -> Data & backup (Q222 = b). Re-read through the
+    # app's OWN loader, because the panel was last filled before this import ran.
+    page.click(close_btn)
+    page.wait_for_timeout(300)
+    page.evaluate("() => { if (window.loadImportHistory) return loadImportHistory(); }")
+    page.wait_for_timeout(1200)
+    hist = page.evaluate(
+        "() => (document.getElementById('imp-history')||{innerText:''}).innerText.trim()"
+    )
+    report.add_coverage(
+        surface="import_lifecycle", axis="history-in-settings",
+        result="verified" if hist else "partial",
+        note=hist.splitlines()[0][:140] if hist else "empty",
+    )
+    driver.screenshot(Surface("import_history", "Import history (Settings > Data & backup)",
+                              dom_id="imp-history"))
+    if shot_stages and shot_fresh:
+        report.add_finding(
+            id="import-lifecycle-renders-live", severity="POSITIVE",
+            surface="import_lifecycle",
+            title="The import lifecycle's four stage rows, three statements and fresh "
+            "reopen render from a REAL import",
+            detail="Driven on the state-D import: the four stage rows by their own keys, "
+            "the three ruled statements, stage 4's task-manager link, the K = 3 checkpoint "
+            "sentence, a reopen showing a fresh page with one quiet line linking the "
+            "persisted report, and the history list in Settings > Data & backup. Swept "
+            "across en, fr, ar (RTL) and zh.",
+            evidence=shot_stages, new=True,
+        )
 
 
 def _drill(report: Report, name: str, fn, *args):

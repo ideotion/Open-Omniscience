@@ -102,6 +102,57 @@ def run_deferred_startup() -> None:
     set_startup("ready", "")
 
 
+def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
+    """AUTO-RESUME the deferred re-index at boot (Q205 = a, 2026-09-15).
+
+    Until this existed, boot only LOGGED the backlog: a warning in a file, on a
+    machine whose operator had closed the app mid-import exactly because they were
+    told they could. The durable cursor and the drain job were both already there --
+    ``reindex-resume`` is idempotent, stops at a batch boundary, and yields to an
+    import's exclusive window -- so the only missing piece was the CALLER. That is
+    the recorded dead-end shape (a state with no reader in the decision path), and
+    Q203's "a durable cursor resumes stages 3-4 on the next boot" is the promise the
+    dialog now makes on the app's behalf.
+
+    OFF THE STARTUP PATH, in a thread. The drain is the heaviest writer this process
+    runs; blocking boot on it would make a large backlog an app that will not start
+    (the recorded forensic-reader lesson: the worse the incident, the more likely the
+    boot path is what pays for it). ``BackgroundJob.start`` returns immediately, but
+    the import it may have to wait behind and the backlog read before it do not, so
+    the thread is not a micro-optimisation.
+
+    ``OO_REINDEX_AUTORESUME=0`` declines it for one process. The caller has already
+    gated on ``OO_NO_SCHEDULER`` for the surrounding block? No -- it has not, and
+    that is deliberate: the backlog report runs on every boot including the test
+    suite's, so THIS function does its own gating, and a test that drives the report
+    must not silently acquire a live re-index (the recorded "adding an ACTION to a
+    production path makes it a side effect of every test that drives it" lesson).
+    """
+    if os.getenv("OO_NO_SCHEDULER", "0") == "1":
+        return
+    if os.getenv("OO_REINDEX_AUTORESUME", "1").strip() == "0":
+        logger.info(
+            "re-index auto-resume declined by OO_REINDEX_AUTORESUME=0; %s article(s) "
+            "stay pending and visible", articles_pending,
+        )
+        return
+    import threading
+
+    def _start() -> None:
+        try:
+            from src.backup.volume_job import start_reindex_drain
+
+            started, detail = start_reindex_drain()
+            logger.info(
+                "boot re-index auto-resume: %s (%s article(s) pending)",
+                "started" if started else f"not started ({detail})", articles_pending,
+            )
+        except Exception:  # noqa: BLE001 - a resume must never affect the app
+            logger.warning("boot re-index auto-resume failed", exc_info=True)
+
+    threading.Thread(target=_start, name="oo-reindex-resume-boot", daemon=True).start()
+
+
 def _run_startup_upkeep() -> None:
     """The post-``init_db`` startup work (planner stats, error log, janitor, seeds,
     metrics, cache warm, airplane). Split out so the unlock path can run it in a
@@ -138,6 +189,7 @@ def _run_startup_upkeep() -> None:
                 "re-indexed -- they carry no keywords until it finishes",
                 _bk.get("articles_pending"), _bk.get("batches_pending"),
             )
+            _resume_reindex_backlog_at_boot(int(_bk.get("articles_pending") or 0))
     except Exception:  # noqa: BLE001 - a report must never block startup
         logger.warning("re-index backlog check failed", exc_info=True)
 

@@ -427,7 +427,11 @@
       // Q1151: the undo must be findable a week after the import that created it, not
       // only on the screen that announced it -- so the Data panel reads the attach
       // summary on open, exactly like the remove count beside it.
-      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); }
+      // Q222 = b: import HISTORY lives in Settings -> Data & backup, not in a task
+      // manager History subtab. A moved panel takes its loader with it (the recorded
+      // 2026-08-13 "can't find your keyword triage button" lesson), so it is wired
+      // HERE, on the subtab that contains the markup.
+      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); loadImportHistory(); }
     }
 
     // ADVANCED subtab (2026-07-31 Settings review): Collection, Sources and Keywords moved

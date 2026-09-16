@@ -544,7 +544,8 @@ def test_every_long_import_export_worker_journals_no_exceptions():
         folder_backup.FolderBackupManager._run_restore,
         folder_backup.FolderBackupManager._run_verify,
         import_job.NewsletterImportManager._run,
-        backup_v2._commit_sync,
+        # ``_commit_sync`` was deleted with /v2/restore/commit (Q214 = a); the
+        # legacy route's own implementation is the surviving single-artifact worker.
         backup_v2.restore_legacy_path,
     ]
     for fn in workers:

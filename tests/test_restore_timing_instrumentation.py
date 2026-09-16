@@ -176,18 +176,41 @@ def _build_backup(passphrase=None) -> bytes:
         dest.unlink(missing_ok=True)
 
 
-def _preview(client, blob):
-    return client.post(
-        "/api/backup/v2/restore/preview",
-        files={"file": ("b.oobak", blob, "application/octet-stream")},
-    )
+def _dry_run(blob, passphrase=None) -> dict:
+    """The DRY-RUN report for ``blob`` -- stage it, merge it into a disposable
+    working copy, return ``run_restore``'s own report without committing.
+
+    RE-ANCHORED 2026-09-16 (Q214 = a). This used to POST ``/v2/restore/preview``,
+    which is deleted; the dry run itself is a LIBRARY capability that survives
+    untouched (``run_restore(..., commit=False)``), and it is what these tests are
+    actually about -- the timing instrumentation inside run_restore, not the HTTP
+    wrapper that used to drive it. The two tests that ARE about the HTTP wrapper (a
+    crash classified into a JSON 500; a refusal returned as a 200 carrying its
+    partial timings) drive ``_commit`` instead, which is the surviving endpoint and
+    carries the identical ``_restore_error`` classification.
+    """
+    from src.backup.artifact import cleanup_staging, read_artifact
+    from src.backup.merge import run_restore
+
+    staged = read_artifact(blob, passphrase=passphrase)
+    try:
+        return run_restore(staged, commit=False)
+    finally:
+        cleanup_staging(staged)
 
 
 def _commit(client, blob):
-    return client.post(
-        "/api/backup/v2/restore/commit",
-        files={"file": ("b.oobak", blob, "application/octet-stream")},
-    )
+    """Commit ``blob`` through the surviving single-artifact endpoint."""
+    import os
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(suffix=".oobak")
+    os.close(fd)
+    Path(tmp).write_bytes(blob)
+    try:
+        return client.post("/api/backup/legacy/restore", json={"path": tmp})
+    finally:
+        Path(tmp).unlink(missing_ok=True)
 
 
 _EXPECTED_PREVIEW_STAGES = {
@@ -204,9 +227,7 @@ _EXPECTED_COMMIT_ONLY_STAGES = {
 
 def test_preview_report_carries_the_stages_that_actually_ran(client):
     blob = _build_backup()
-    resp = _preview(client, blob)
-    assert resp.status_code == 200
-    report = resp.json()
+    report = _dry_run(blob)
     assert report["committed"] is False
 
     timings = report["timings"]
@@ -226,13 +247,7 @@ def test_an_encrypted_artifacts_decrypt_stage_is_genuinely_measured(client):
     step really runs (and the preview still succeeds with the right
     passphrase)."""
     blob = _build_backup(passphrase="a-real-test-passphrase-123")
-    resp = client.post(
-        "/api/backup/v2/restore/preview",
-        data={"passphrase": "a-real-test-passphrase-123"},
-        files={"file": ("b.oobak", blob, "application/octet-stream")},
-    )
-    assert resp.status_code == 200
-    report = resp.json()
+    report = _dry_run(blob, passphrase="a-real-test-passphrase-123")
     assert report["encrypted"] is True
     assert report["timings"]["stages"]["stage_a:decrypt"] >= 0
 
@@ -284,7 +299,7 @@ def test_every_merge_step_gets_its_own_named_timing(client):
     from src.backup.merge import _merge_steps
 
     blob = _build_backup()
-    report = _preview(client, blob).json()
+    report = _dry_run(blob)
     step_keys = [k for k in report["timings"]["stages"] if k.startswith("merge_step:")]
     declared = [name for name, _fn in _merge_steps()]
     assert len(step_keys) == len(declared)
@@ -306,7 +321,7 @@ def test_a_refused_preview_still_carries_its_partial_timings(client, monkeypatch
 
     monkeypatch.setattr(merge_mod, "verify_copy", _fake_verify)
     blob = _build_backup()
-    resp = _preview(client, blob)
+    resp = _commit(client, blob)
     assert resp.status_code == 200
     report = resp.json()
     assert "refused" in report
@@ -325,7 +340,7 @@ def test_an_exception_inside_an_instrumented_stage_still_propagates(client, monk
 
     monkeypatch.setattr(merge_mod, "verify_copy", _boom)
     blob = _build_backup()
-    resp = _preview(client, blob)
+    resp = _commit(client, blob)
     assert resp.status_code == 500
     assert "a genuine verification crash" in resp.json()["detail"]
 

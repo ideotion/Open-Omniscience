@@ -63,34 +63,43 @@ def _build_backup(passphrase=None) -> bytes:
         dest.unlink(missing_ok=True)
 
 
-def test_old_schema_backup_preview_returns_json_naming_the_version_gap(client):
-    old = _rewrite_manifest(_build_backup(), backup_schema="oo-backup-1")
+def test_old_schema_backup_restore_returns_json_naming_the_version_gap(client, tmp_path):
+    """RE-ANCHORED 2026-09-16 (Q214 = a): the preview route is gone and
+    ``/api/backup/legacy/restore`` is the surviving single-artifact path. The property
+    -- a schema this build cannot read is a JSON 400 that NAMES the gap, never a bare
+    plain-text 500 (the P0-3 field bug) -- is unchanged, and so is its error
+    classification, because both routes always went through the same helpers."""
+    from pathlib import Path
 
-    prev = client.post(
-        "/api/backup/v2/restore/preview",
-        files={"file": ("old.oobak", old, "application/octet-stream")},
-    )
+    old = _rewrite_manifest(_build_backup(), backup_schema="oo-backup-1")
+    dest = Path(tmp_path) / "old.oobak"
+    dest.write_bytes(old)
+
+    prev = client.post("/api/backup/legacy/restore", json={"path": str(dest)})
     assert prev.status_code == 400
     assert prev.headers["content-type"].startswith("application/json")
     detail = prev.json()["detail"]
     assert "schema" in detail.lower() and "oo-backup-1" in detail  # names the gap
 
 
-def test_run_restore_failure_in_preview_returns_json_500_not_plaintext(client, monkeypatch):
+def test_run_restore_failure_returns_json_500_not_plaintext(client, monkeypatch, tmp_path):
     """The actual P0-3 bug: an exception escaping run_restore used to re-raise into a
-    plain-text 500. It must now be a JSON {detail}."""
+    plain-text 500. It must now be a JSON {detail}. (Re-anchored onto the surviving
+    ``/api/backup/legacy/restore``, Q214 = a -- the classification helper is the same
+    one both routes always called.)"""
+    from pathlib import Path
+
     import src.api.backup_v2 as bv2
 
     blob = _build_backup()
+    dest = Path(tmp_path) / "b.oobak"
+    dest.write_bytes(blob)
 
     def boom(*a, **k):
         raise RuntimeError("staged migration failed on an ancient corpus")
 
     monkeypatch.setattr(bv2, "run_restore", boom)
-    prev = client.post(
-        "/api/backup/v2/restore/preview",
-        files={"file": ("b.oobak", blob, "application/octet-stream")},
-    )
+    prev = client.post("/api/backup/legacy/restore", json={"path": str(dest)})
     assert prev.status_code == 500
     assert prev.headers["content-type"].startswith("application/json")
     detail = prev.json()["detail"]

@@ -266,16 +266,19 @@ def test_the_activity_view_re_renders_on_a_language_switch() -> None:
     screenshotting the tile in French, where every neighbouring label had translated and
     this one sentence had not -- the recorded frozen-locale class, recurring the moment a
     new interpolated string was added to a render-once surface."""
-    from tests.js_source_helper import read_static, strip_comments
+    from tests.js_source_helper import event_listener_bodies, read_static, strip_comments
 
     app = strip_comments(read_static("app.js"))
-    at = app.index('addEventListener("oo:langchange"')
-    handler = app[at:at + 4000]
-    assert '_libViewLoaded.has("activity")' in handler, (
+    # EVERY listener, not the first found: taking `app.index(...)` plus a fixed span
+    # assumed the app registers exactly ONE oo:langchange listener -- true when this was
+    # written, guaranteed by nothing, and it went red on 2026-09-16 when a second one was
+    # added earlier in module order. See event_listener_bodies.
+    handlers = event_listener_bodies(app, "oo:langchange")
+    assert any('_libViewLoaded.has("activity")' in h and "renderLibraryActivityGraphs()" in h
+               for h in handlers), (
         "the Activity view must re-render on a language switch, or its interpolated note "
-        "stays frozen in whatever locale first rendered it"
+        f"stays frozen in whatever locale first rendered it ({len(handlers)} listener(s))"
     )
-    assert "renderLibraryActivityGraphs()" in handler
 
 
 def test_the_legend_carries_no_unit_because_the_slot_is_the_unit_of_n() -> None:

@@ -56,6 +56,119 @@ _STATE_FILE = "import_queue.json"
 KINDS = ("corpus", "legacy", "blobs", "newsletters")
 
 # --------------------------------------------------------------------------- #
+#  The four stages of the import lifecycle (Q202 = a, Q203 = a, 2026-09-15)
+# --------------------------------------------------------------------------- #
+#: The lifecycle a corpus-bearing import walks, named once here so the UI never
+#: invents a stage boundary of its own. The numbers are the ROW ORDER the dialog
+#: draws; the labels live in the locales.
+STAGE_VERIFY_STAGE = 1  # verify the artifact, reassemble it, stage a plaintext copy
+STAGE_MERGE_SWAP = 2  # merge into a working copy, verify it, swap it in
+STAGE_SEARCH_INDEX = 3  # the run's ONE FTS segment merge, after the last item
+STAGE_REINDEX = 4  # the deferred per-article re-index, resumable across boots
+STAGE_COUNT = 4
+
+#: Kinds that walk stages 1 and 2. The others are real import work with their own
+#: progress and they do NOT walk this lifecycle: a large-data restore is a file
+#: copy and a newsletter import is an ingest, so neither has an artifact to verify,
+#: a working copy to merge or a swap to commit. Their items keep their own rows and
+#: report ``stage: None`` with a reason -- a fabricated stage would be worse than an
+#: honest absence (Q221's lane hook rides this registry, not a hardcoded list).
+STAGE_WALKING_KINDS = ("corpus", "legacy")
+
+#: Phase name -> stage, for every phase the sub-jobs emit. Unlisted phases resolve
+#: to ``None`` (see :func:`stage_for_phase`): an unknown phase is an honest gap, and
+#: guessing a stage for it would move a row for a reason nobody measured.
+_PHASE_STAGE: dict[str, int] = {
+    # volume_job's own manager phases, before run_restore is entered
+    "verifying": STAGE_VERIFY_STAGE,
+    "reassembling": STAGE_VERIFY_STAGE,
+    "prepare_staged": STAGE_VERIFY_STAGE,
+    # run_restore's merge + commit stages (names via volume_job._stage_phase_name)
+    "snapshot_working_copy": STAGE_MERGE_SWAP,
+    "merging": STAGE_MERGE_SWAP,
+    "verify": STAGE_MERGE_SWAP,
+    "corpus_delta_before": STAGE_MERGE_SWAP,
+    "pre_restore_snapshot": STAGE_MERGE_SWAP,
+    "side_files_and_custody": STAGE_MERGE_SWAP,
+    "report_json_write": STAGE_MERGE_SWAP,
+    "swap": STAGE_MERGE_SWAP,
+    # run_restore's post-swap housekeeping -- see _PHASE_STAGE_AMBIGUOUS below
+    "corpus_delta_after": STAGE_MERGE_SWAP,
+    "corpus_epoch_bump": STAGE_MERGE_SWAP,
+    "event_mirror_refresh": STAGE_MERGE_SWAP,
+    "keyword_counter_reconcile": STAGE_MERGE_SWAP,
+    "quarantine_scan": STAGE_MERGE_SWAP,
+    "work_induced_tally": STAGE_MERGE_SWAP,
+    "prune_snapshots": STAGE_MERGE_SWAP,
+    # the run's own tail phase (ImportQueueManager._tune_after_run)
+    "tuning": STAGE_SEARCH_INDEX,
+    # the in-restore re-index, when it is NOT deferred (defer_reindex() False)
+    "reindexing": STAGE_REINDEX,
+}
+
+#: The phases that genuinely STRADDLE two stages, recorded rather than resolved.
+#: Each of these runs INSIDE run_restore -- so inside the item the dialog is drawing
+#: under stage 2 -- but AFTER the atomic swap, i.e. after the thing stage 2 is named
+#: for has already happened. Which stage owns them is not this slice's to decide
+#: (`S04-02` §6), so nothing here rests on the answer: the stage ROWS count ITEM
+#: STATES, which are unambiguous, and a live phase only ever supplies a LABEL. Filing
+#: them under stage 2 is therefore a rendering position, never a claim.
+_PHASE_STAGE_AMBIGUOUS: frozenset[str] = frozenset({
+    "corpus_delta_after",
+    "corpus_epoch_bump",
+    "event_mirror_refresh",
+    "keyword_counter_reconcile",
+    "quarantine_scan",
+    "work_induced_tally",
+    "prune_snapshots",
+})
+
+
+#: Item states that count as having reached the corpus. ``skipped`` is here because a
+#: skip means the backup was ALREADY merged (found by digest before staging), which is
+#: the same fact as ``done`` for every stage row; ``staged`` is deliberately NOT, because
+#: nothing has swapped it in. Kept beside ``_stage_rows`` and ``status``'s own
+#: ``items_committed``, which must agree with it.
+_PASSED_STATES: frozenset[str] = frozenset({"done", "skipped"})
+
+
+def _refusal_of(summary: dict) -> str | None:
+    """The refusal message in a finished restore's summary, or None.
+
+    TWO SHAPES, because the two restore kinds hand their result back differently and a
+    check that knew only one would leave the other silently wrong: the corpus path wraps
+    ``run_restore``'s report in ``{"report": ..., "held": ...}`` (``volume_job``), while
+    the legacy path returns the report ITSELF (``restore_legacy_path``). The legacy half
+    has no group bookkeeping to catch it either, so there this is the only guard there is.
+
+    Keyed on ``refused`` alone and never on ``committed``: a PREVIEW also returns
+    ``committed: False``, and the queue has no preview path today -- but reading "not
+    committed" as "refused" would make one wrong the day it does.
+    """
+    if not isinstance(summary, dict):
+        return None
+    for candidate in (summary, summary.get("report")):
+        if isinstance(candidate, dict) and candidate.get("refused"):
+            return str(candidate["refused"])
+    return None
+
+
+def stage_for_phase(phase: str | None) -> int | None:
+    """Which of the four stages ``phase`` belongs to, or ``None``.
+
+    ``None`` means "this phase is not one of the four" -- an unknown phase name, a
+    terminal marker (``done``/``cancelled``/``refused``), or a phase belonging to a
+    kind that does not walk the lifecycle. Callers must render that as an absence,
+    never as stage 1: the recorded ``.get(key, 0)`` family is exactly this defect,
+    and a stage row that advanced on an unrecognised string would be a measurement
+    nobody made.
+    """
+    if not phase:
+        return None
+    return _PHASE_STAGE.get(str(phase))
+
+
+# --------------------------------------------------------------------------- #
 #  The checkpoint interval K (the 2026-08-08 queue entry's item (b))
 # --------------------------------------------------------------------------- #
 #: The highest K this code will honour. Not a safety limit -- the mechanism is the
@@ -64,7 +177,15 @@ KINDS = ("corpus", "legacy", "blobs", "newsletters")
 #: is not a thing anyone would ask for. Twenty-four is comfortably above the largest
 #: queue the field has run (eighteen).
 CHECKPOINT_K_MAX = 24
-CHECKPOINT_K_DEFAULT = 1
+#: RULED 2026-09-15 (Q216 ⛔ = a): **K = 3**. Until then this was 1 -- the
+#: pre-checkpoint behaviour, byte for byte -- because the trade is a DURABILITY
+#: choice and the ledger recorded it as needing a ruling rather than a guess. The
+#: ruling was given, so the default is the ruled number and the override paths are
+#: unchanged (``OO_IMPORT_CHECKPOINT_K`` for one process,
+#: ``AppSettings.import_checkpoint_k`` for a stored choice). What it costs is stated
+#: where it is paid: see :func:`import_checkpoint_k` and the ``checkpoint.note`` the
+#: status payload publishes, which the dialog shows.
+CHECKPOINT_K_DEFAULT = 3
 
 
 def import_checkpoint_k() -> int:
@@ -80,12 +201,14 @@ def import_checkpoint_k() -> int:
     way through a group discards every merge in it. At K = 1 a kill at item 12 keeps
     eleven; at K = 18 it loses twelve merges' CPU.
 
-    THE DEFAULT IS 1 -- today's behaviour exactly, byte for byte -- because the
-    trade is the maintainer's to make and the ledger records it as needing a ruling
-    rather than a guess (CLAUDE.md open queue, 2026-08-08, item (b)). **The
-    recommendation on record is 3.** Setting it is one value:
+    THE DEFAULT IS 3, RULED 2026-09-15 (Q216 ⛔ = a). It was 1 -- the
+    pre-checkpoint behaviour, byte for byte -- for as long as the trade was the
+    maintainer's to make and the ledger recorded it as needing a ruling rather than
+    a guess (CLAUDE.md open queue, 2026-08-08, item (b)). The ruling was given, so
+    the number is theirs and not this code's. Setting it is one value:
     ``AppSettings.import_checkpoint_k``, or ``OO_IMPORT_CHECKPOINT_K`` for a run
-    that should not touch stored settings.
+    that should not touch stored settings; neither override is hidden, because the
+    trade a K makes is one an operator is entitled to unmake.
 
     Resolution order is settings first, env second, so an operator's stored choice
     is authoritative and the env var stays what it is elsewhere in this module: an
@@ -230,16 +353,36 @@ class ImportQueueManager:
         else:
             self._state = state
         # A STAGED item is one whose merge landed in a working copy that was never
-        # swapped in. That copy does not survive this process, so on the next boot
-        # the item did not import -- and leaving it "staged" would show it as work
-        # in flight forever, while calling it "done" would claim an import that
-        # never reached the corpus. It is discarded, by name.
+        # recorded as swapped in. Leaving it "staged" would show it as work in flight
+        # forever, and calling it "done" would claim an import that may never have
+        # reached the corpus. It is discarded, by name.
+        #
+        # WHAT THIS MAY NOT ASSERT (adversarial pass, 2026-09-16). There is a window
+        # where the swap ALREADY LANDED and the commit was simply never recorded: the
+        # rename is atomic and durable (`merge._replace_live_corpus`), but several more
+        # stages run inside the same call, then the status has to travel back up through
+        # volume_job and the queue's 0.4 s poll before `_commit_group` flips these items
+        # to "done" and saves. A kill anywhere in there leaves exactly this state on
+        # disk. The old wording -- "which the app did not survive to commit" -- stated
+        # the failure as a certainty, so durably imported work could be reported as lost,
+        # which is the direction that costs trust the most. It now says what is actually
+        # known (no commit was RECORDED) and what follows (re-importing is safe, because
+        # `find_completed_import` reads the live corpus by digest before staging anything
+        # and skips a backup already merged).
+        #
+        # A future session CAN resolve it rather than decline to: the digest is already
+        # persisted on the item (`summary.source_digest`). Not done here because reading
+        # the live corpus during `_load_persisted` means a DB read at manager
+        # construction, which on an encrypted corpus happens before the store is
+        # unlocked -- a design change, not the wiring this slice may do.
         for it in self._items:
             if it.get("state") == "staged":
                 it["state"] = "discarded"
                 it["discarded_reason"] = (
-                    "merged into this run's working copy, which the app did not "
-                    "survive to commit — import it again"
+                    "merged into this run's working copy; the app stopped before it "
+                    "recorded a commit, so whether the save landed cannot be told from "
+                    "here — importing it again is safe, a backup already in your corpus "
+                    "is recognised and skipped"
                 )
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -267,11 +410,24 @@ class ImportQueueManager:
                     "path": path,
                     "label": str(raw.get("label") or Path(path).name or kind),
                     "categories": list(raw.get("categories") or []),
+                    # The two restore options that used to live only on
+                    # /v2/restore/* (Q214 = a). Defaults reproduce today's queue
+                    # behaviour exactly, so an existing caller is byte-identical.
+                    "allow_unverified": bool(raw.get("allow_unverified") or False),
+                    "include_newsletters": bool(
+                        True if raw.get("include_newsletters") is None
+                        else raw.get("include_newsletters")
+                    ),
                     "state": "queued",
                     "started_at": None,
                     "ended_at": None,
                     "error": None,
                     "summary": None,
+                    # The furthest of the four stages this item has been OBSERVED in
+                    # (:meth:`_note_stage`). ``None`` until a phase is recognised --
+                    # never 0 and never 1, because "not seen yet" and "in stage 1"
+                    # are different facts and only one of them is a measurement.
+                    "stage_reached": None,
                 })
             if not queued:
                 raise ValueError("nothing to import")
@@ -402,9 +558,27 @@ class ImportQueueManager:
                         # swapped in yet, so calling it imported would claim a corpus
                         # change that has not happened.
                         state = "staged"
+                    refusal = _refusal_of(summary)
+                    if refusal and state == "done":
+                        # NOT "done" either, and for the same reason one level down: a
+                        # post-merge verification REFUSAL returns normally (it is a
+                        # well-formed answer, not a crash), so every layer above it read
+                        # "the job finished" as "the import worked". run_restore sets
+                        # `refused` and `committed: False` and returns; volume_job records
+                        # state "done" with `held` FALSE, because a refused report returns
+                        # BEFORE the hold_after_merge branch that would have set it; and
+                        # this loop then wrote "done" for a backup whose rows never
+                        # touched the corpus. In a K-group it inverted the whole picture
+                        # -- _after_item discards the group, so the two GOOD backups read
+                        # "discarded" beside the corrupt one reading "done", and an
+                        # operator trusting that label could delete the only copy of the
+                        # one backup that actually failed.
+                        state = "error"
                     with self._lock:
                         item["state"] = state
                         item["summary"] = summary
+                        if refusal and state == "error":
+                            item["error"] = refusal
                     # OUTSIDE the item's own verdict. Every path in _after_item is
                     # already non-raising (rmtree ignores errors, _save swallows, the
                     # staging guard is wrapped), but it sits inside the try that
@@ -687,6 +861,35 @@ class ImportQueueManager:
             return self._run_newsletters(item)
         raise ValueError(f"unknown import kind {kind!r}")
 
+    def _note_stage(self, live: dict) -> None:
+        """Record how far the RUNNING item has got through the four stages.
+
+        A HIGH-WATER MARK, not the live phase: run_restore's stages are ordered but
+        a reader polling once a second sees whichever one happened to be in flight,
+        and a row that went back a stage because a cheap post-swap step reported
+        late would be describing the poll rather than the import. ``max`` is the
+        whole mechanism.
+
+        Call under ``self._lock``. Never raises: a stage number is a rendering
+        convenience, and a bookkeeping fault must not be able to fail an import (the
+        same rule the group's own bookkeeping is held to, one function over).
+        """
+        try:
+            idx = self._cursor
+            if not (0 <= idx < len(self._items)):
+                return
+            item = self._items[idx]
+            if item.get("kind") not in STAGE_WALKING_KINDS:
+                return
+            p = live.get("progress") if isinstance(live.get("progress"), dict) else live
+            s = stage_for_phase((p or {}).get("phase"))
+            if s is None:
+                return
+            prev = item.get("stage_reached")
+            item["stage_reached"] = s if not isinstance(prev, int) else max(prev, s)
+        except Exception:  # noqa: BLE001 - bookkeeping must never cost an import
+            _LOG.debug("could not record the import stage", exc_info=True)
+
     def _await(self, status_fn, cancel_fn, *, poll: float = 0.4) -> dict:
         """Drive one sub-manager to a terminal state, mirroring its live progress.
 
@@ -699,6 +902,7 @@ class ImportQueueManager:
             state = str(st.get("state") or "")
             with self._lock:
                 self._live = st
+                self._note_stage(st)
             if state in ("done", "error", "cancelled", "stopped", "paused", "idle"):
                 if state == "error":
                     raise RuntimeError(str(st.get("error") or "the job failed"))
@@ -724,10 +928,25 @@ class ImportQueueManager:
             group = self._open_group()
         working_copy = group.working if group is not None else None
         already = frozenset(group.digests) if group is not None else frozenset()
+        # REFUSED, never silently ignored. ``include_newsletters=False`` drops a
+        # category from the STAGED plaintext copy before the merge reads it, and a
+        # volume-set restore stages inside VolumeBackupManager._run_restore, which has
+        # no such seam. Accepting the flag and discarding it would tell an operator
+        # their selective restore took effect when it did not -- the same family as an
+        # opt-out answered with a 200 and dropped (2026-09-16). A loud refusal names
+        # the one path that can honour it.
+        if not bool(item.get("include_newsletters", True)):
+            raise ValueError(
+                "include_newsletters=false is not available for a volume corpus "
+                "backup: the selective filter runs on a staged single-file artifact, "
+                "which this path does not produce. Import it without the filter, or "
+                "use a legacy single-file archive, where it is honoured."
+            )
         mgr.start_restore(
             item["path"], self._passphrase, force=bool(item.get("force")),
             working_copy=working_copy, hold_after_merge=hold,
             already_merged_digests=already,
+            allow_unverified=bool(item.get("allow_unverified")),
         )
         st = self._await(mgr.status, mgr.cancel)
         summary = st.get("summary") or {}
@@ -754,7 +973,12 @@ class ImportQueueManager:
         from src.api.backup_v2 import restore_legacy_path
 
         return restore_legacy_path(
-            item["path"], self._passphrase, should_stop=self._stop.is_set
+            item["path"], self._passphrase, should_stop=self._stop.is_set,
+            # The two options that used to live only on /v2/restore/* (Q214 = a).
+            # ``restore_legacy_path`` has always accepted both, so this is wiring: a
+            # caller that sends neither gets today's behaviour unchanged.
+            allow_unverified=bool(item.get("allow_unverified")),
+            include_newsletters=bool(item.get("include_newsletters", True)),
         )
 
     def _run_blobs(self, item: dict) -> dict:
@@ -764,7 +988,19 @@ class ImportQueueManager:
         mgr.start(item["path"], item.get("categories") or [], mode="restore")
         st = self._await(mgr.status, mgr.cancel)
         p = st.get("progress") or {}
-        return {"restored": p.get("restored", 0), "skipped": p.get("skipped", 0)}
+        return {
+            "restored": p.get("restored", 0),
+            "skipped": p.get("skipped", 0),
+            # WHAT THE RESTORE TURNED AWAY travels too (2026-09-16). These three fields
+            # were computed by the folder manager and dropped here, so the queue's
+            # summary -- the artifact an operator reads after the run -- could not say
+            # that a member failed its checksum and was NOT restored. It reached a
+            # reader only through the dialog's recovered last-completed summary, which
+            # R1 retires; without this the capability would have gone with it.
+            "corrupt_refused": p.get("corrupt_refused", 0),
+            "corrupt": list(p.get("corrupt") or []),
+            "restored_unverified": p.get("restored_unverified", 0),
+        }
 
     def _run_newsletters(self, item: dict) -> dict:
         from src.ingest.import_job import get_import_manager
@@ -778,6 +1014,164 @@ class ImportQueueManager:
         return {"tally": st.get("tally") or {}}
 
     # -- reporting ---------------------------------------------------------- #
+    @staticmethod
+    def _stage_rows(
+        items: list[dict], live: dict | None, tuning_done: bool, run_state: str
+    ) -> list[dict]:
+        """The FOUR stage rows (Q202 = a), each with its own measured progress.
+
+        WHAT EACH ROW COUNTS, and why it is not the live phase. ``done``/``total``
+        are ITEM STATES -- an item is either committed or it is not -- which are
+        unambiguous and survive a poll landing anywhere. The live phase is used for
+        ONE thing: saying which row is running right now, and supplying its label.
+        Nothing in a stage row rests on where run_restore's post-swap housekeeping
+        is filed (``_PHASE_STAGE_AMBIGUOUS``), which is the straddle `S04-02` §6
+        says this slice may not decide.
+
+        ``measured`` is the honesty flag the renderer keys on: a row whose progress
+        is genuinely countable carries numbers, and a row whose work publishes no
+        counter carries ``measured: false`` with a ``reason``. It must render
+        indeterminate there -- never a percentage of something nobody counted.
+        """
+        walking = [it for it in items if it.get("kind") in STAGE_WALKING_KINDS]
+        total = len(walking)
+        # An item that FAILED, was cancelled, was discarded or was INTERRUPTED neither
+        # passed the stage nor is still waiting for it. Reported on its own, so the
+        # denominator is never quietly shrunk to make the row read complete
+        # (anti-capping, one row down).
+        #
+        # "interrupted" belongs here and was missing: it is the state a killed run's
+        # own item carries on the next boot, and leaving it out meant a dead run's item
+        # counted in NEITHER done nor failed -- the row read `pending`, which is what an
+        # ordinary run still working through its queue reads, so "the app died, nothing
+        # more will happen" and "one still to go" were the same picture.
+        failed_items = [
+            it for it in walking
+            if it.get("state") in ("error", "cancelled", "discarded", "interrupted")
+        ]
+        failed = len(failed_items)
+        failed_ids = {id(it) for it in failed_items}
+        # EVERY ITEM COUNTS ONCE PER ROW. A discarded item can carry `stage_reached >= 2`
+        # (it really did verify and merge, before the group was thrown away), and the
+        # first version of this counted it as passed_1 AND as failed -- so `done +
+        # failed` could exceed `total`, which is not a thing a reader can make sense of.
+        # The failed count is where a discarded item's story is told.
+        passed_1 = sum(
+            1
+            for it in walking
+            if id(it) not in failed_ids
+            and (
+                it.get("state") in _PASSED_STATES or it.get("state") == "staged"
+                or (isinstance(it.get("stage_reached"), int)
+                    and it["stage_reached"] >= STAGE_MERGE_SWAP)
+            )
+        )
+        # "done" OR "skipped", and never "staged". A `staged` item has merged into a
+        # working copy that nothing has swapped in, so counting it here would claim the
+        # corpus change the state's own label denies. A SKIPPED item is the opposite
+        # case and belongs here: it was skipped precisely BECAUSE the backup is already
+        # in the corpus (`find_completed_import` reads the live corpus by digest before
+        # staging anything), which is the same fact this row reports.
+        #
+        # Counting only "done" also broke the ordinary FINISHED run, not just an exotic
+        # one: the field log records 8 of 18 imports adding zero articles, so a skip is
+        # the common case, and a run that ended with one read `done < total` with
+        # `failed: 0` and a state of "pending" -- "more is coming" about a run that was
+        # over. It also disagreed with `items_committed` in the same payload, which has
+        # always counted ("done", "skipped"). Two facts about one thing, in one
+        # response, saying different numbers.
+        passed_2 = sum(1 for it in walking if it.get("state") in _PASSED_STATES)
+        p = (live or {}).get("progress") if isinstance((live or {}).get("progress"), dict) else live
+        live_stage = stage_for_phase((p or {}).get("phase"))
+        live_phase = str((p or {}).get("phase") or "") or None
+
+        # A run that ENDED without finishing is not "pending". `pending` says "not yet",
+        # which is a claim about the future, and after an interrupted/stopped/failed run
+        # there is no future without the operator starting a new import.
+        #
+        # The row reports the RUN'S OWN ending verbatim, in the same vocabulary the item
+        # states use, so the dialog can label it with the strings it already ships in
+        # twelve locales rather than growing four more for the same four words.
+        _ENDED = frozenset({"interrupted", "error", "cancelled", "stopped"})
+
+        def _state(n: int, done: int, tot: int) -> str:
+            if live_stage == n:
+                return "running"
+            if tot and done >= tot:
+                return "done"
+            return run_state if run_state in _ENDED else "pending"
+
+        rows: list[dict] = [
+            {
+                "n": STAGE_VERIFY_STAGE,
+                "key": "verify_stage",
+                "state": _state(STAGE_VERIFY_STAGE, passed_1, total),
+                "done": passed_1,
+                "total": total,
+                "failed": failed,
+                "measured": True,
+                "unit": "backups",
+            },
+            {
+                "n": STAGE_MERGE_SWAP,
+                "key": "merge_swap",
+                "state": _state(STAGE_MERGE_SWAP, passed_2, total),
+                "done": passed_2,
+                "total": total,
+                "failed": failed,
+                "measured": True,
+                "unit": "backups",
+            },
+            {
+                "n": STAGE_SEARCH_INDEX,
+                "key": "search_index",
+                # One pass for the whole run, so "done" is a fact and there is
+                # nothing inside it to count: SQLite reports no progress for an FTS5
+                # 'optimize', and a bar drawn over it would be invented.
+                "state": (
+                    "running"
+                    if live_stage == STAGE_SEARCH_INDEX
+                    else ("done" if tuning_done else "pending")
+                ),
+                "done": 1 if tuning_done else 0,
+                "total": 1,
+                "measured": False,
+                "reason": (
+                    "SQLite publishes no progress for a search-index merge, so this "
+                    "stage reports that it is running and when it finished, never how "
+                    "far through it is"
+                ),
+                # Ruling item 15 makes Stop immediate and this stage is skipped by it,
+                # so a stopped run correctly never reaches its own end.
+                "skipped": run_state == "stopped" and not tuning_done,
+            },
+            {
+                "n": STAGE_REINDEX,
+                "key": "reindex",
+                # Deliberately NOT measured here. This stage outlives the run (it is
+                # a separate, resumable job with its own durable cursor), so the queue
+                # would be reporting on work it does not own. The endpoint that DOES
+                # own it is named instead -- a number invented here would be stale the
+                # moment the dialog closed.
+                "state": "external",
+                "measured": False,
+                "reason": (
+                    "the re-index is a separate resumable job that continues after "
+                    "this run and across a restart; its progress is read from the "
+                    "job itself"
+                ),
+                "reads": "/api/backup/reindex-backlog/resume/status",
+            },
+        ]
+        if live_phase:
+            for r in rows:
+                if r["n"] == live_stage:
+                    r["phase"] = live_phase
+                    # Named so a reader is never told the stage boundary is settled
+                    # where it is not (S04-02 §6).
+                    r["phase_stage_is_exact"] = live_phase not in _PHASE_STAGE_AMBIGUOUS
+        return rows
+
     def status(self) -> dict:
         """The whole run: every item with its own identity and outcome, plus the
         live sub-job progress for the one in flight.
@@ -801,6 +1195,12 @@ class ImportQueueManager:
         for it in items:
             s, e = it.get("started_at"), it.get("ended_at")
             it["elapsed_s"] = round((e or now) - s, 1) if s else None
+            # WHETHER the four stages even apply to this item, beside WHERE it is in
+            # them. Without the first, a `stage: null` on a large-data restore is
+            # indistinguishable from a corpus backup whose phase we failed to read --
+            # one is a kind that has no such lifecycle, the other is a gap.
+            it["stage_applicable"] = it.get("kind") in STAGE_WALKING_KINDS
+            it["stage"] = it.get("stage_reached") if it["stage_applicable"] else None
         # An item whose own work is FINISHED, which at K > 1 includes one that has
         # merged into the carried working copy: the queue really has walked past it,
         # and a bar that stalled while three backups merged would be as wrong as one
@@ -810,6 +1210,7 @@ class ImportQueueManager:
         committed = sum(1 for it in items if it["state"] in ("done", "skipped"))
         staged = sum(1 for it in items if it["state"] == "staged")
         return {
+            "stages": self._stage_rows(items, live, tuning_done, state),
             "state": state,
             "items": items,
             "cursor": cursor,

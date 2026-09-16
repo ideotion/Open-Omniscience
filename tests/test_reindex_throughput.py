@@ -244,7 +244,7 @@ def test_the_knobs_are_gated_on_ownership_not_on_was_paused():
 
 
 def test_run_restore_derives_the_knobs_for_callers_that_pass_none():
-    """The legacy single-archive restore and the /v2/restore commit pass no knobs and
+    """The legacy single-archive restore and the queue's own legacy items pass no knobs and
     never pause anything, so their re-index ran at one commit per article even on a
     completely idle machine. An explicit argument still wins -- a caller that says
     what it wants is never second-guessed."""

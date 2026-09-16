@@ -156,7 +156,8 @@ def test_api_encrypted_backup_create_works_and_replace_restore_is_gone(client):
     assert blob[:8] == b"OOENC1\x00\x00"
     # The destructive replace-restore endpoint was REMOVED (additive-only ruling,
     # 2026-06-13): restoring is exclusively the additive merge at
-    # /api/database/v2/restore. The old route no longer exists.
+    # /api/backup/import-queue (or /api/backup/legacy/restore for one archive).
+    # The old route no longer exists.
     r = client.post(
         "/api/safety/restore/encrypted",
         files={"file": ("b.ooenc", blob, "application/octet-stream")},

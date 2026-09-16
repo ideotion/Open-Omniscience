@@ -1,8 +1,21 @@
 """
-oo-backup-2 endpoints: merge-only restore (preview/commit). The size-capped
-single-file CREATE was retired (2026-07-01) — backups are made by the unified
-volume/folder export. Restore stays for legacy single-file backups (to be removed
-in a future release once the single-file format is fully retired).
+oo-backup-2 endpoints: the import QUEUE, the persisted import reports, and the
+legacy single-file restore. The size-capped single-file CREATE was retired
+(2026-07-01) — backups are made by the unified volume/folder export.
+
+ONE IMPORT PATH (Q214 = a, 2026-09-16). ``/v2/restore/preview``,
+``/v2/restore/commit`` and ``DELETE /v2/restore/preview/{token}`` are GONE. They
+were an upload-based preview→commit two-step for a single artifact, with no caller
+anywhere in ``src/static/`` or ``src/``; ``import-queue/*`` is the path the app
+takes, and on a loopback-only, local-first app any file a browser could have
+uploaded is already a server-side path the queue accepts. The two options only
+those routes could express -- ``allow_unverified`` and ``include_newsletters`` --
+moved onto ``ImportQueueItem`` rather than being dropped. The dry-run plan they
+also offered stays available in the library (``run_restore(commit=False)``), which
+is what the queue's own preflight and the merge tests use.
+
+The legacy single-file RESTORE stays forever, as ``read_artifact``'s docstring
+commits and Q215 ⛔ = a re-affirms.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -16,12 +29,10 @@ and can refuse, never replaces.
 from __future__ import annotations
 
 import logging
-import secrets
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
-from starlette.concurrency import run_in_threadpool
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, RestoreRefused, run_restore
@@ -42,7 +53,8 @@ def _restore_error(action: str, exc: Exception) -> HTTPException:
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
 
-# The upload/RAM cap for the single-shot restore path. Aligned EXACTLY to the AES-GCM limit
+# The read/RAM cap for the legacy single-file restore path (``_stage_upload`` reads
+# the whole archive into memory before decrypting it). Aligned EXACTLY to the AES-GCM limit
 # (2**31-1 = src.safety.crypto._GCM_MAX_BYTES, a fixed cryptographic constant) so an
 # encrypted blob that passes this guard can't then overflow AES-GCM on decrypt — the old
 # 2*1024**3 (=2**31) was one byte too generous. Above this, use the streaming volume restore.
@@ -114,12 +126,6 @@ def import_scan_endpoint(path: str) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-# Staged previews awaiting a commit decision: token -> StagedArtifact. Process-
-# local by design (preview + commit happen within one operator session); orphans
-# on disk are reclaimed by cleanup_stale_staging at boot.
-_PENDING: dict[str, StagedArtifact] = {}
-
-
 def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
     from src.safety.crypto import EncryptionError
 
@@ -135,10 +141,14 @@ def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
 
 def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: bool) -> None:
     """Selective restore (maintainer 2026-06-21): drop a category from the STAGED
-    plaintext corpus copy BEFORE the merge reads it, so the preview reflects exactly
-    what the commit will do (they share the filtered staged copy). Reuses the
-    backup-side, stdlib-tested filter. Only newsletters are filterable in the main
-    artifact today (maps/wiki/models are separate/excluded)."""
+    plaintext corpus copy BEFORE the merge reads it. Reuses the backup-side,
+    stdlib-tested filter. Only newsletters are filterable in the main artifact today
+    (maps/wiki/models are separate/excluded).
+
+    Reachable ONLY on the legacy single-file path, which is the only one that stages
+    a single artifact this filter can edit. The import queue therefore REFUSES
+    ``include_newsletters=false`` for a volume corpus backup by name rather than
+    accepting it and doing nothing (:meth:`ImportQueueManager._run_corpus`)."""
     if include_newsletters:
         return
     from src.backup.artifact import _drop_newsletter_articles
@@ -147,145 +157,6 @@ def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: boo
         _drop_newsletter_articles(staged.corpus_path)
     except Exception:  # noqa: BLE001 - never block a restore on the optional filter
         _LOG.warning("restore: newsletter filter on the staged corpus failed", exc_info=True)
-
-
-def _preview_sync(
-    data: bytes, passphrase: str | None, *, allow_unverified: bool, include_newsletters: bool
-) -> dict:
-    """The blocking body of restore_preview (decrypt + stage + dry-run merge).
-
-    Runs OFF the event loop (run_in_threadpool). Preview copies the live corpus to
-    a disposable working DB and runs the FULL merge against it so the plan can never
-    lie — on a large corpus that is nearly as costly as a commit, so it MUST NOT run
-    on the single async worker's event loop (it would freeze every other request —
-    the task manager, polls, the UI — for the whole restore; field report 2026-07-02
-    'stuck on Previewing… for an hour')."""
-    staged = _stage_upload(data, passphrase)
-    _apply_restore_selection(staged, include_newsletters=include_newsletters)
-    try:
-        report = run_restore(staged, commit=False, allow_unverified=allow_unverified)
-    except MergeError as exc:
-        cleanup_staging(staged)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except HTTPException:
-        cleanup_staging(staged)
-        raise
-    except Exception as exc:
-        # Any other failure (e.g. an OLD backup whose corpus carries a schema this
-        # build cannot stage-migrate) must STILL return a JSON {detail}, never a bare
-        # plain-text 500 — the SPA reads res.json() and would otherwise show only
-        # "JSON.parse: unexpected character" (field test 2026-06-19 P0-3).
-        cleanup_staging(staged)
-        _LOG.exception("restore preview failed")
-        raise _restore_error("read", exc) from exc
-    token = secrets.token_urlsafe(24)
-    _PENDING[token] = staged
-    report["commit_token"] = token
-    return report
-
-
-@router.post("/v2/restore/preview")
-async def restore_preview(
-    file: UploadFile = File(...),
-    passphrase: str = Form(""),
-    allow_unverified: bool = Form(False),
-    include_newsletters: bool = Form(True),
-) -> dict:
-    """Stage an artifact and return the dry-run merge plan + verification verdicts.
-
-    Nothing in the live corpus changes. The returned token authorises ONE commit
-    of exactly this staged artifact. ``include_newsletters=false`` drops imported
-    newsletters from the staged corpus so the preview AND the eventual commit
-    (which reuses this filtered staged copy) restore everything else.
-
-    The heavy stage+merge runs in the threadpool so a long preview never freezes the
-    single-worker server (see _preview_sync)."""
-    data = await file.read()
-    return await run_in_threadpool(
-        _preview_sync,
-        data,
-        passphrase or None,
-        allow_unverified=allow_unverified,
-        include_newsletters=include_newsletters,
-    )
-
-
-def _commit_sync(staged: StagedArtifact, *, allow_unverified: bool) -> dict:
-    """The blocking body of restore_commit (full merge + atomic swap). Runs OFF the
-    event loop for the same reason preview does (see _preview_sync)."""
-    from src.backup import runlog
-    from src.backup.volume_job import defer_reindex, hand_off_reindex
-
-    # The single-shot REST commit. It wires no progress callbacks at all, so
-    # before this it was the LEAST observable import path in the app -- and it
-    # is the one a scripted or legacy restore takes.
-    #
-    # The re-index is deferred here for the same reason as on the volume path, and
-    # from the SAME switch. Fixing only the volume path left the identical operator
-    # action ("import my backup") returning in two minutes down one route and blocking
-    # for hours down another, with nothing anywhere naming the difference -- and both
-    # routes are reachable from one queued run, so a mixed folder would have done both
-    # in the same import. That legacy single-file imports are slated for removal is a
-    # reason not to INVEST in them, not a reason to leave a trap in one.
-    try:
-        with runlog.run("import", label="rest-commit", path="/api/backup/v2/restore/commit"):
-            report = run_restore(
-                staged,
-                commit=True,
-                allow_unverified=allow_unverified,
-                reindex_imported=not defer_reindex(),
-            )
-            if defer_reindex():
-                hand_off_reindex(report)
-            return report
-    except (MergeError, RestoreRefused) as exc:
-        # A RestoreRefused is a swap barrier declining because another job still held
-        # the corpus: nothing was written, and its own message names the holder and
-        # the way out. Classified with MergeError so that sentence reaches the caller
-        # verbatim rather than being re-worded into a generic 500.
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except HTTPException:
-        raise
-    except Exception as exc:  # JSON, never a plain-text 500 (P0-3) — see preview above.
-        _LOG.exception("restore commit failed")
-        raise _restore_error("restore", exc) from exc
-    finally:
-        cleanup_staging(staged)
-
-
-@router.post("/v2/restore/commit")
-async def restore_commit(
-    token: str = Form(""),
-    file: UploadFile | None = File(None),
-    passphrase: str = Form(""),
-    allow_unverified: bool = Form(False),
-    include_newsletters: bool = Form(True),
-) -> dict:
-    """Merge a previously previewed artifact (token) -- or stage+merge directly
-    when called with a file. The merge re-plans against the CURRENT corpus at
-    commit time; the preview is advisory, the commit's own verification decides.
-    A token's staged copy already reflects the preview's selection; a direct-file
-    commit applies ``include_newsletters`` here.
-
-    The heavy stage+merge runs in the threadpool so the swap never freezes the
-    single-worker server."""
-    if token:
-        staged = _PENDING.pop(token, None)
-        if staged is None or not staged.staging_dir.exists():
-            raise HTTPException(
-                status_code=409,
-                detail="unknown or expired preview token -- preview again",
-            )
-        # token path: the staged corpus was already filtered at preview time.
-    elif file is not None:
-        data = await file.read()
-        staged = await run_in_threadpool(_stage_upload, data, passphrase or None)
-        await run_in_threadpool(
-            _apply_restore_selection, staged, include_newsletters=include_newsletters
-        )
-    else:
-        raise HTTPException(status_code=400, detail="provide a preview token or a file")
-    return await run_in_threadpool(_commit_sync, staged, allow_unverified=allow_unverified)
 
 
 class LegacyRestoreBody(BaseModel):
@@ -300,10 +171,11 @@ def legacy_restore(body: LegacyRestoreBody) -> dict:
     """Restore ONE legacy single-file backup found on disk (a SERVER-SIDE path),
     additively — the unified Import dialog's path for legacy archives it discovered in
     a scanned folder (a folder may hold several; the caller merges each in turn). Reuses
-    the exact staging + additive merge as the upload path (``restore_commit``), so a
-    legacy archive nested in a subfolder is now a first-class importable item, not just a
-    note pointing at the old panel. The 2 GiB legacy-format cap still applies (these
-    single files were always ≤2 GiB — the volume set is the large path)."""
+    same staging + additive merge helpers the import queue's own legacy items take
+    (``restore_legacy_path`` below is the one implementation; this is its thin
+    wrapper), so a legacy archive nested in a subfolder is a first-class importable
+    item. The 2 GiB legacy-format cap still applies (these single files were always
+    ≤2 GiB — the volume set is the large path)."""
     return restore_legacy_path(
         body.path,
         body.passphrase or None,
@@ -374,15 +246,6 @@ def restore_legacy_path(
         raise _restore_error("restore", exc) from exc
     finally:
         cleanup_staging(staged)
-
-
-@router.delete("/v2/restore/preview/{token}")
-def restore_discard(token: str) -> dict:
-    """Discard a staged preview without merging."""
-    staged = _PENDING.pop(token, None)
-    if staged is not None:
-        cleanup_staging(staged)
-    return {"discarded": staged is not None}
 
 
 @router.get("/v2/batches")
@@ -711,6 +574,14 @@ class ImportQueueItem(BaseModel):
     path: str
     label: str | None = None
     categories: list[str] = []
+    # MOVED HERE FROM /v2/restore/* (Q214 = a, 2026-09-16). Those two routes were the
+    # only surface that could express either option, so deleting them without these
+    # would have retired a capability nobody decided to drop. Both are DECLARED here
+    # -- a settings key that exists in the store and the writer but not in the request
+    # model is accepted with a 200 and silently discarded, which is the defect the
+    # 2026-09-16 `auto_track_signals` lesson records.
+    allow_unverified: bool = False
+    include_newsletters: bool = True
 
 
 class ImportQueueBody(BaseModel):
@@ -895,8 +766,35 @@ def reindex_backlog_resume() -> dict:
 
 @router.get("/reindex-backlog/resume/status")
 def reindex_backlog_resume_status() -> dict:
-    """Live status of the re-index resume job."""
-    return _REINDEX_RESUME_JOB.status()
+    """Live status of the re-index resume job, plus the BACKLOG it drains.
+
+    ADDITIVE (2026-09-16, Q204 = a): every key the job already published is
+    unchanged; ``backlog`` is new. It is here rather than behind a second poll
+    because stage 4 of the import lifecycle needs both facts to say anything true --
+    the job answers *is a drain running and how far has it got*, the backlog answers
+    *how much is left*, and an idle job's ``total`` is a stale number from whenever
+    it last ran, which on its own reads as "nothing to do". ``backlog.available:
+    false`` still means the backlog could not be READ, never that it is empty.
+
+    One poll chain, one read (Q206): the import dialog's stage-4 row polls this and
+    nothing else.
+
+    WHAT THE BACKLOG READ COSTS, measured rather than assumed before it was put on a
+    polled route. ``_BACKLOG_SQL`` is an index-only seek per PENDING batch over the
+    ``merged_rows`` primary key, so it is LINEAR IN THE PENDING ARTICLE COUNT and
+    free once the backlog is empty. On a fresh PLAINTEXT SQLite fixture (3 pending
+    batches, five times as many non-article rows beside them, ANALYZE run, five
+    repetitions, median): **0.97 ms at 10,000 pending articles, 10.5 ms at 100,000,
+    101.9 ms at 1,000,000.** That is a floor -- the encrypted store pays the codec on
+    top -- and 102 ms is far too much for a one-second poll, which is why the client
+    paces THIS read at 5 s inside its single chain while the queue status keeps the
+    1 s cadence. The figure moves on the scale of minutes, so nothing is lost.
+    """
+    from src.backup.merge import reindex_backlog
+
+    st = _REINDEX_RESUME_JOB.status()
+    st["backlog"] = reindex_backlog()
+    return st
 
 
 @router.post("/reindex-backlog/resume/cancel")

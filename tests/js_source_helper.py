@@ -512,6 +512,29 @@ def strip_comments(js: str) -> str:
     return _LINE_COMMENT.sub("", js)
 
 
+def event_listener_bodies(js: str, event: str, *, span: int = 4000) -> list[str]:
+    """EVERY ``document.addEventListener("<event>", ...)`` body, not the first one.
+
+    Three separate guards took ``js.index('document.addEventListener("oo:langchange"')``
+    and read a fixed span from it, which silently assumes the app registers exactly ONE
+    listener for that event -- true when each was written, guaranteed by nothing. All
+    three went red on 2026-09-16 the moment a second ``oo:langchange`` listener was added
+    EARLIER in module order: each assertion was about its own surface and the text it read
+    was about the new one. A guard anchored to "the first occurrence" is a guard a correct
+    change can redden, and the failure names the wrong thing.
+
+    Returns a fixed ``span`` of source from each registration, which is coarse and
+    deliberately so: the point is to test every listener, not to parse one exactly.
+    Assert with ``any(... for h in ...)`` and say how many were found when it fails.
+    """
+    needle = f'document.addEventListener("{event}"'
+    out, at = [], js.find(needle)
+    while at != -1:
+        out.append(js[at : at + span])
+        at = js.find(needle, at + 1)
+    return out
+
+
 def assert_absent(haystack: str, needle: str, *, why: str = "") -> None:
     """Assert a string is gone from CODE, ignoring the comments that explain it.
 

@@ -1,0 +1,22 @@
+surface,axis,result,note
+state_d_guide_wizard,auto-open-on-empty-corpus,verified,#guide-wizard open on boot: True
+state_d_guide_wizard,dismissed-via-gw-close,verified,still open after clicking #gw-close: False
+post_import_content,scan-finds-corpus,verified,"Restore corpus backup (encrypted volumes — additive, nothing you already have is overwritten · 2 volumes)"
+post_import_content,articles-first-headline,verified,
+post_import_content,labeled-all-types-rowsum,verified,
+post_import_content,before-after-delta,verified,
+post_import_content,qualification-carried,verified,
+post_import_content,work-induced-indexing,verified,
+post_import_content,additive-statement,verified,
+post_import_content,default,verified,summary length=720; first line: '✓ Import successful'
+import_lifecycle,four-stage-rows,verified,"rows rendered: ['verify_stage', 'merge_swap', 'search_index', 'reindex']"
+import_lifecycle,three-statements,verified,✓ The import files can be removed — everything they carried is in your | ✓ Safe to close or update the app — the re-index picks up where it lef | ✓ Analytics are complete — every imported article is indexed.
+import_lifecycle,stage-four-task-manager-link,verified,"<span style=""display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px""></span><b>4. Re-index the imported articles</"
+import_lifecycle,checkpoint-sentence,verified,"Verified and written to your corpus once every 3 backups — nothing is durable until a save, so a stop or a crash before one means those backups have to be impor"
+import_lifecycle,fresh-page-on-reopen,verified,"summary='' last='Last import · September 16, 2026 at 03:11 PM · 24 articles · open report'"
+import_lifecycle,last-import-line-links-the-report,verified,/api/backup/import-reports/restore-20260916T151154Z-1.json?format=md
+import_lifecycle,locale-fr,verified,dir=ltr; checkpoint='Vérifié et écrit dans votre corpus une fois toutes les 3 sauvegardes —'
+import_lifecycle,locale-ar,verified,dir=rtl; checkpoint='يُتحقَّق منها وتُكتب في مجموعتك مرة كل 3 نسخ احتياطية — لا شيء دائم قب'
+import_lifecycle,locale-zh,verified,dir=ltr; checkpoint='每 3 个备份校验并写入你的语料库一次——在保存之前没有任何内容是持久的，因此在保存前停止或崩溃意味着这些备份必须重新导入。'
+import_lifecycle,locale-en,verified,dir=ltr; checkpoint='Verified and written to your corpus once every 3 backups — nothing is '
+import_lifecycle,history-in-settings,verified,"September 16, 2026 at 03:11 PM · restore · 24 articles · open report"

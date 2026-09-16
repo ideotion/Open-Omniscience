@@ -1834,9 +1834,8 @@
       </div>
       <!-- THE IMPORT CHECKPOINT INTERVAL K (2026-09-07). A durability knob, so the
            cost is on the VISIBLE surface and the long form is layered into the hover
-           bubble (informed consent by layering, never by hiding). Default 1 = today's
-           behaviour; the recommendation on record is 3, and the choice is the
-           maintainer's. -->
+           bubble (informed consent by layering, never by hiding). The choice stays the
+           maintainer's. RULED 2026-09-15 (Q216 = a): the default is 3. -->
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:10px">
         <div style="flex:0 0 auto">
           <label for="set-checkpoint-k">Backups per save point</label>
@@ -1847,6 +1846,16 @@
         <div style="flex:0 0 auto;align-self:end"><span id="set-checkpoint-k-msg" class="hint" role="status" aria-live="polite"></span></div>
       </div>
       <p class="hint" style="margin-top:6px">Higher is faster and loses more work if an import is stopped or crashes.</p>
+      <!-- Q222 = b: import HISTORY lives here, not in the task manager. Every persisted
+           report, newest first, with what it added and how it ended. A run that did not
+           complete says so and its article figure is labelled as PLANNED, because a plan
+           is computed before the commit point and is not a record of what the corpus
+           now holds. -->
+      <div style="margin-top:14px">
+        <h3 style="margin:0 0 4px">Import history</h3>
+        <p class="hint" style="margin-top:0">Every import this app has recorded, newest first. Open one for its full per-table report.</p>
+        <div id="imp-history" style="margin-top:6px"></div>
+      </div>
     </section>
     <!-- Newsletter / document IMPORT (2026-07-31 Settings review): moved here from its
          own subtab. Importing .eml and PDF files is bringing data IN, which is exactly
@@ -2985,6 +2994,12 @@
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-imp-src', false)">Browse…</button>
           <button class="secondary" type="button" onclick="_uxImScan(this)">Scan</button>
           <button class="secondary" type="button" onclick="_uxImVerify(this)" title="Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.">Verify</button></div></div>
+      <!-- Q201 = a: ONE quiet line about the previous run, and nothing else. Reopening
+           the dialog after an import is a FRESH PAGE (R1) -- until 2026-09-16 it
+           re-rendered the whole previous summary here, which is the behaviour the
+           ruling reverses. The line links the persisted report, which is where the
+           detail lives. -->
+      <p id="ux-imp-last" class="hint" style="margin-top:8px"></p>
       <p class="muted" id="ux-imp-status" style="margin-top:8px"></p>
       <div id="ux-imp-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
       <div id="ux-imp-pass-row" style="margin-top:6px;display:none"><label for="ux-imp-pass">Passphrase (to decrypt the corpus backup)</label>
@@ -2996,13 +3011,21 @@
            belong to the run as a whole, not to any single item. -->
       <div id="ux-imp-queue" style="display:none;margin-top:8px">
         <div id="ux-imp-queue-note" class="hint"></div>
+        <!-- Q202 = a: the FOUR stages of an import, as four rows with their own
+             progress. A stage whose work publishes no counter renders indeterminate
+             and says why -- never a percentage of something nobody measured. -->
+        <div id="ux-imp-stages" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
+        <!-- Q203 = a: the three statements, at the moment each becomes true. They are
+             keyed on ITEM STATE, never on a live phase, so nothing here rests on where
+             a straddling phase is filed. -->
+        <div id="ux-imp-statements" class="hint" style="margin-top:6px"></div>
         <div id="ux-imp-queue-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
-        <details id="ux-imp-details" style="margin-top:6px">
-          <summary class="muted" style="cursor:pointer">Show details</summary>
-          <div id="ux-imp-details-body" class="hint" style="margin-top:4px"></div>
-        </details>
       </div>
       <div id="ux-imp-summary" style="margin-top:8px"></div>
+      <!-- Q216 = a (K = 3): what the checkpoint costs, stated where the operator
+           decides. Filled by _uxImCheckpointNote from the queue's own resolved K, so
+           it can never disagree with the number the run will actually use. -->
+      <p id="ux-imp-checkpoint" class="note" style="margin-top:8px"></p>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
         <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>
         <button id="ux-imp-bg" class="secondary" style="display:none" onclick="_uxImBackground()">Continue in background</button>
