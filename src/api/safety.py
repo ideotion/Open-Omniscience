@@ -123,7 +123,8 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
 # NOTE: POST /api/safety/restore/encrypted (decrypt + REPLACE the live corpus)
 # was REMOVED on 2026-06-13 (maintainer ruling: restore is additive-only).
 # Restoring goes exclusively through the merge engine (the oo-backup-2 artifact +
-# POST /api/database/v2/restore), which never overwrites the corpus. Encrypted
+# POST /api/backup/import-queue/start or /api/backup/legacy/restore), which never
+# overwrites the corpus. Encrypted
 # backup CREATION (POST /api/safety/backup/encrypted) stays.
 
 

@@ -15,7 +15,7 @@ import ast
 import re
 from pathlib import Path
 
-from tests.js_source_helper import app_js, app_modules
+from tests.js_source_helper import app_js, app_modules, event_listener_bodies
 from tests.js_source_helper import assert_absent as _assert_js_absent
 from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
@@ -207,9 +207,13 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "oo:langchange" in i18n, "setLang no longer emits the language-change event"
     assert 'CustomEvent("oo:langchange"' in i18n
     assert 'addEventListener("oo:langchange"' in app, "app.js does not listen for the lang switch"
-    # The listener must re-render the CLDR-name surface (the world map).
-    listener = app.split('addEventListener("oo:langchange"', 1)[1][:400]
-    assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
+    # The listener must re-render the CLDR-name surface (the world map). EVERY listener
+    # is searched, not the first one found -- see event_listener_bodies for why.
+    handlers = event_listener_bodies(app, "oo:langchange")
+    assert any("_renderOoMapDim" in h for h in handlers), (
+        f"lang switch no longer re-renders the map names "
+        f"({len(handlers)} oo:langchange listener(s), none calls _renderOoMapDim)"
+    )
 
 
 def test_analysis_window_per_query_spawns_tabs_and_retires_corpus_modal():
@@ -1393,15 +1397,36 @@ def test_restore_can_exclude_newsletters():
 
     AMENDED 2026-07-31 (Settings review, ruling 7): the UI toggle lived on the
     legacy-restore panel and was removed with it. The BACKEND filter is deliberately
-    KEPT — it still runs on the retained /v2/restore preview+commit path (itself pinned
-    by test_additive_restore_only), so re-homing the toggle into the unified Import
-    dialog is a UI change, not a rebuild. Pinning the backend is what makes that true;
-    weakening this guard to 'the feature is gone' would quietly authorise deleting the
-    capability next time someone tidies unreferenced code."""
+    KEPT, so re-homing the toggle into the unified Import dialog is a UI change, not a
+    rebuild. Pinning the backend is what makes that true; weakening this guard to 'the
+    feature is gone' would quietly authorise deleting the capability next time someone
+    tidies unreferenced code.
+
+    AMENDED 2026-09-16 (Q214 = a): ``/v2/restore/preview|commit`` carried the only
+    ``Form(True)`` declaration of this option and those routes are gone. The
+    capability MOVED rather than going with them, so this guard now pins all three
+    halves of where it lives — which is strictly stronger than the one it replaced:
+      1. the filter itself, unchanged, on the staged copy before the merge;
+      2. the two surviving DECLARATIONS an operator can reach it through (the legacy
+         single-file body and the import-queue item), because a key present in the
+         store and the writer but not in the REQUEST MODEL is accepted with a 200 and
+         silently discarded;
+      3. the volume-corpus path's explicit REFUSAL, because that path stages inside
+         the volume manager and has no seam the filter can edit — accepting the flag
+         there and doing nothing would be the same fabricated-consent defect.
+    """
     bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
-    # backend: the filter runs on the STAGED copy before the merge (reuses the tested helper)
+    q = (_SRC / "backup" / "import_queue.py").read_text(encoding="utf-8")
+    # 1. the filter runs on the STAGED copy before the merge (reuses the tested helper)
     assert "def _apply_restore_selection(" in bk and "_drop_newsletter_articles" in bk
-    assert "include_newsletters: bool = Form(True)" in bk
+    # 2. both surviving request models DECLARE it, so neither can drop it silently
+    assert "include_newsletters: bool = True" in bk
+    assert bk.count("include_newsletters: bool = True") >= 2, (
+        "both LegacyRestoreBody and ImportQueueItem must declare include_newsletters"
+    )
+    assert '"include_newsletters"' in q, "the queue item must carry the option"
+    # 3. the path that CANNOT honour it refuses by name rather than ignoring it
+    assert "include_newsletters=false is not available" in q
 
 
 def test_remove_imported_newsletters_live_action():
@@ -7215,12 +7240,14 @@ def test_home_briefing_re_renders_on_language_switch():
     actually loaded at least once, so a fresh boot never fires an unnecessary
     fetch before Home was ever opened)."""
     app = app_js()
-    listener = app.split('document.addEventListener("oo:langchange", () => {', 1)[1] \
-                  .split("\n    });\n", 1)[0]
-    assert "_lastBriefGen !== null" in listener, \
-        "the re-render must be gated on the briefing having actually loaded once"
-    assert "loadBriefing()" in listener, \
-        "the langchange listener must re-fetch+re-render the Home briefing"
+    # EVERY oo:langchange listener, not the first -- see event_listener_bodies. The
+    # briefing's re-render and its gate must live in the SAME one, so the assertion is
+    # over one handler rather than over the union of all of them.
+    handlers = event_listener_bodies(app, "oo:langchange")
+    assert any("_lastBriefGen !== null" in h and "loadBriefing()" in h for h in handlers), (
+        f"the langchange listener must re-fetch+re-render the Home briefing, gated on the "
+        f"briefing having actually loaded once ({len(handlers)} listener(s) found)"
+    )
 
 
 def test_insights_landscape_kind_group_labels_are_translated():

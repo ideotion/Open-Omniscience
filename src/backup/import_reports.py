@@ -19,6 +19,7 @@ real report dict already built by the restore-merge or newsletter-import path.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from datetime import UTC, datetime
@@ -310,23 +311,72 @@ def _safe_report_path(filename: str) -> Path | None:
 _OUTCOME_PARSE_MAX_BYTES = 4 * 1024 * 1024
 
 
-def _report_outcome(p: Path, size_bytes: int) -> str:
-    """``"ok"`` / the report's own outcome / ``"unknown"``.
+#: Outcome strings that mean the run reached its commit point. Shared with the
+#: Markdown renderer's own reading of the same field, so a listing and a rendered
+#: report can never disagree about whether a run committed.
+_COMMITTED_OUTCOMES = ("", "ok", "done", "success", "committed")
 
-    A report with no ``outcome`` key at all predates this field and came from
-    the success path (it is written after the commit), so it reads ``ok``. An
-    unreadable or oversized one reads ``unknown`` -- never ``ok``, because
-    guessing success is the one direction that misleads.
+
+def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
+    """The facts a LISTING needs, from ONE parse of the report.
+
+    ``outcome`` is ``"ok"`` / the report's own outcome / ``"unknown"``. A report with
+    no ``outcome`` key at all predates that field and came from the success path (it
+    is written after the commit), so it reads ``ok``. An unreadable or oversized one
+    reads ``unknown`` -- never ``ok``, because guessing success is the one direction
+    that misleads.
+
+    ``articles`` is the figure the report itself headlines, in the ARTICLES unit --
+    never a cross-table row-sum (the maintainer's own 2026-07-20 complaint). It is
+    ABSENT when the report could not be read or carries no article figure: a 0 there
+    would say "this import added nothing", which is a different fact from "we could
+    not tell". ``articles_basis`` says which of two things the number IS --
+    ``"merged"`` for a committed run, ``"planned"`` for one that did not complete,
+    whose plan is computed before the commit point and describes what it WOULD have
+    merged. Publishing the count without the basis is how a killed run's plan comes
+    to be read as a corpus change.
     """
     if size_bytes > _OUTCOME_PARSE_MAX_BYTES:
-        return "unknown"
+        return {"outcome": "unknown"}
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 - a torn/half-written report is not a success
-        return "unknown"
+        return {"outcome": "unknown"}
     if not isinstance(data, dict):
-        return "unknown"
-    return str(data.get("outcome") or "ok")
+        return {"outcome": "unknown"}
+    outcome = str(data.get("outcome") or "ok")
+    out: dict[str, Any] = {"outcome": outcome}
+    committed = str(data.get("outcome") or "").lower() in _COMMITTED_OUTCOMES
+    raw_plan = data.get("plan")
+    plan: dict[str, Any] = raw_plan if isinstance(raw_plan, dict) else {}
+    raw_articles = plan.get("articles")
+    articles: dict[str, Any] = raw_articles if isinstance(raw_articles, dict) else {}
+    n = articles.get("new")
+    if n is None and isinstance(data.get("tally"), dict):
+        tally = data["tally"]
+        n = tally.get("new") if tally.get("new") is not None else tally.get("imported")
+    if n is not None:
+        try:
+            out["articles"] = int(n)
+        except (TypeError, ValueError):
+            # A non-numeric figure is not a figure. Dropping it keeps the absent
+            # case honest rather than coercing it to something plausible.
+            return out
+        out["articles_basis"] = "merged" if committed else "planned"
+        dup = articles.get("duplicate")
+        if dup is not None:
+            # Same rule as the figure above: a non-numeric duplicate count is not a
+            # count, and it is left ABSENT rather than coerced to a plausible zero.
+            with contextlib.suppress(TypeError, ValueError):
+                out["duplicates"] = int(dup)
+    return out
+
+
+def _report_outcome(p: Path, size_bytes: int) -> str:
+    """``"ok"`` / the report's own outcome / ``"unknown"``. See :func:`_report_facts`,
+    which this now delegates to -- kept because it is the narrow question and has its
+    own callers and its own tests."""
+    return str(_report_facts(p, size_bytes)["outcome"])
 
 
 def list_import_reports() -> list[dict[str, Any]]:
@@ -352,7 +402,10 @@ def list_import_reports() -> list[dict[str, Any]]:
                 # run listed as a normal one. Read the outcome out of the file --
                 # a listing that erases the distinction is the conflation this
                 # project forbids.
-                "outcome": _report_outcome(p, stat.st_size),
+                # ONE parse, several facts: the outcome AND the article figure the
+                # report headlines, so the quiet "last import" line (Q201 = a) and
+                # the history list (Q222 = b) need no second read per entry.
+                **_report_facts(p, stat.st_size),
                 "created_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                 "size_bytes": stat.st_size,
             }

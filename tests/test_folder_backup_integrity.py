@@ -382,11 +382,23 @@ def test_both_folder_restore_consumers_render_the_refusal() -> None:
         "a refusal is not a muted footnote -- invariant #23 puts caveats in the visible line"
     )
 
-    last = function_body(src, "_uxShowLastCompletedSummary")
-    assert "caveat: _fbRefusalLines(p)" in last, (
+    # RE-ANCHORED 2026-09-16 (R1, Q201 = a). The post-hoc surface used to be the
+    # dialog's recovered last-completed summary; that is retired, and the QUEUE's own
+    # terminal summary is the artifact an operator reads afterwards now. It never
+    # carried the refusal at all, so the capability moved rather than being lost --
+    # and moving it needed the three fields to travel through the queue item too,
+    # which is the half a JS-only guard cannot see.
+    post_hoc = function_body(src, "_uxImTickQueue")
+    assert "caveat: _fbRefusalLines(sm)" in post_hoc, (
         "the post-hoc import summary is the artifact an operator reads afterwards; a "
         "restore that discarded rotted members is not a clean one"
     )
+    queue_py = (Path(__file__).resolve().parents[1] / "src" / "backup" / "import_queue.py").read_text(encoding="utf-8")
+    for field in ("corrupt_refused", "restored_unverified"):
+        assert f'"{field}": p.get("{field}"' in queue_py, (
+            f"_run_blobs must carry {field} out of the folder manager's progress, or "
+            "the renderer above has nothing to render"
+        )
     summary = function_body(src, "_renderImportSummary")
     assert "s2.caveat" in summary and "refusalLine" in summary, (
         "the summary collects `caveat` from its inputs but never renders it -- a "

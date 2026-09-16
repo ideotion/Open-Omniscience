@@ -9952,3 +9952,87 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   for the *primitive* rather than the names found a second map renderer the brief never
   mentioned — an orphaned `// World map: equirectangular projection` comment stranded at the
   end of `app-corpus.js` by the module split, describing code that now lives in `app-map.js`.
+
+- **A "MUST BE GONE" GUARD THAT READS UN-STRIPPED SOURCE CANNOT TELL A CALL FROM A NOTE
+  ABOUT A CALL (2026-09-16, S04-02's mutation matrix):** `assert "_uxImLastLine()" in
+  opener` passed against a mutant that had commented the call out — `// _uxImLastLine();`
+  — because the needle is still there, in a comment. The repo already ships
+  `strip_comments` and an `assert_absent` built on it for the mirror-image case (a
+  removal whose explanatory comment names the thing removed); the PRESENCE direction
+  needs it just as much, and nobody had written that down. **GENERAL FORM: strip comments
+  before asserting either presence or absence in JS source. A substring test is a test
+  about text, and code and prose about code live in the same file.**
+
+- **A TWO-FILE REMOVAL GUARDED IN ONE FILE REPORTS THE REMOVAL AS HELD WHILE THE OTHER
+  HALF WALKS BACK IN (2026-09-16, same matrix):** Q207 removed the import dialog's
+  "details" block — a renderer in `app-backup.js` AND its host `<div>` in `index.html`.
+  The guard asserted the id was absent from the SCRIPT, so re-adding
+  `<div id="ux-imp-details"></div>` to the markup passed it unchanged. **GENERAL FORM:
+  when a feature lives in more than one file, its removal guard has to name every file it
+  lived in. Enumerate the files from the DIFF that removed it, not from memory.**
+
+- **A HELPER CAN BE CORRECT AND UNREACHED, AND TESTING THE HELPER ALONE LOOKS EXACTLY LIKE
+  TESTING THE FIX (2026-09-16, same matrix):** the guard for "a refused restore is never
+  reported as done" exercised the `_refusal_of` helper thoroughly — both summary shapes,
+  the negative cases — and a mutation that disabled the `if` in `_drive` that CALLS it
+  survived. **GENERAL FORM: for a fix that is "compute X, then act on X", the mutation
+  that matters is the one that deletes the ACT. Drive the real loop with its collaborators
+  stubbed; a unit test of the predicate is not a test of the behaviour.**
+
+- **A WELL-FORMED REFUSAL THAT RETURNS NORMALLY READS LIKE SUCCESS TO EVERY LAYER ABOVE IT
+  (2026-09-16, S04-02's adversarial pass; hand-verified before any edit):** `run_restore`
+  answers a failed post-merge verification by RETURNING — `{"refused": ..., "committed":
+  False}` — because a refusal is an answer, not a crash. Three layers above, each asking
+  only "did the job finish?", turned that into `state: "done"`: `volume_job` recorded done
+  with `held` False (a refused report returns BEFORE the branch that sets `held`), and the
+  queue wrote `done` for a backup whose rows never touched the corpus. In a checkpoint
+  group it INVERTED the picture — `_after_item` discards the group, so the two good
+  backups read `discarded` beside the corrupt one reading `done`. **GENERAL FORM: every
+  caller of a function that can refuse in-band must check the refusal, and the guard
+  belongs at each layer that renders an outcome. A try/except finds a raise for you; a
+  returned refusal is found only by someone reading for it.**
+
+- **CLEARING A TIMER CANNOT CANCEL A TICK THAT IS MID-FETCH, AND A SUBJECT GUARD CANNOT SEE
+  A RE-WATCH OF THE SAME SUBJECT (2026-09-16, S04-02's poll chain):** the import dialog's
+  one chain cancelled a re-entrant start by `clearTimeout(_uxImPollTimer)` plus a
+  `_uxImWatch !== subject` check after each await. A tick already inside its `await` has
+  nulled the timer variable, so the clear finds nothing; and Stop, and reopening the dialog
+  on a live run, both re-watch "queue", so the subject is unchanged. Two concurrent chains
+  then both reached the terminal branch: two toasts, a twice-rebuilt summary — the exact
+  overlapping-messages defect the one-chain design was built to remove. **GENERAL FORM: to
+  supersede in-flight async work you need a monotonic GENERATION captured at entry and
+  re-checked after every await. "Which subject" and "is a timer pending" are both
+  answerable in a way that says yes when the honest answer is "someone else is already in
+  flight".**
+
+- **A LOCALE CHECK OVER A CONCATENATION PASSES WHEN ONE HALF TRANSLATES (2026-09-16,
+  S04-02's Chromium sweep):** the sweep compared `inner_text("#ux-imp-last") + " " +
+  inner_text("#ux-imp-checkpoint")` against the English baseline and reported every locale
+  `verified`, while the checkpoint sentence — a durability caveat — was still English in
+  fr, ar AND zh. The quiet line beside it translated, so the concatenation changed. **This
+  is the non-unique-needle trap wearing different clothes: a check whose subject is broader
+  than its claim can pass for the wrong reason.** GENERAL FORM: assert per surface, and
+  name which surface failed.
+
+- **`src.index(needle)` PLUS A FIXED SPAN ASSUMES EXACTLY ONE OCCURRENCE, AND A CORRECT
+  CHANGE IS WHAT REDDENS IT (2026-09-16, same slice):** three separate guards read the
+  first `document.addEventListener("oo:langchange"` and 400–4000 characters after it. Each
+  was about its own surface (the world map, the Home briefing, the Composition figures) and
+  each was true when written, because the app had one such listener. Adding a second one
+  EARLIER in module order broke all three at once, and each failure message accused the
+  wrong code: "lang switch no longer re-renders the map names", pointing at an import
+  dialog. Now `js_source_helper.event_listener_bodies` returns EVERY registration and the
+  assertions are `any(...)` with the count in the message. **GENERAL FORM: a guard anchored
+  to "the first occurrence" encodes a uniqueness assumption nobody stated. Search all
+  occurrences, and say how many you found when it fails.**
+
+- **THE FROZEN-LOCALE BUG CLASS RECURS IN EVERY NEW SURFACE, AND A POLL CHAIN THAT STOPS
+  MAKES IT PERMANENT (2026-09-16, S04-02; the third recorded instance after the Home Lead
+  titles and the Composition figures):** the i18n DOM walker re-translates a text node
+  whose content is still an exact KEY; an already-interpolated `OOI18N.tf()` string ("once
+  every 3 backups", "24 articles") is not a key and stays in whatever locale first rendered
+  it. What is new here is the second half: the surfaces were repainted by a poll chain that
+  STOPS at a terminal state, so after a finished import nothing repainted them at all — the
+  usual "it fixes itself on the next tick" did not apply. **GENERAL FORM: every `tf()`-built
+  surface needs an `oo:langchange` re-render, and the ones repainted by a loop need it MORE,
+  not less, because the loop ends.**

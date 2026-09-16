@@ -50,21 +50,42 @@ _HELPER = _REPO / "tests" / "torture_helper.py"
 # --------------------------------------------------------------------------- #
 #  1. The default is one, and at one nothing below it exists
 # --------------------------------------------------------------------------- #
-def test_the_shipped_default_is_one_backup_per_checkpoint(monkeypatch, tmp_path):
-    """K = 1 is today's behaviour: every backup written to the corpus as it finishes.
+def test_the_shipped_default_is_the_ruled_three(monkeypatch, tmp_path):
+    """K = 3, RULED 2026-09-15 (Q216 = a).
 
-    The recommendation on record is 3 and the choice is the maintainer's; shipping
-    3 as the default would make a durability trade nobody ruled on, for everyone.
+    It was 1 -- the pre-checkpoint behaviour, byte for byte -- and this test said so,
+    with the reason: shipping 3 before the ruling would have made a durability trade
+    nobody had decided, for everyone. The ruling was given, so the number is the
+    maintainer's and the guard now pins THEIR answer. Both halves are asserted
+    because they can drift apart: the constant is what a reader sees, and
+    ``import_checkpoint_k()`` is what a run actually resolves.
     """
     monkeypatch.delenv("OO_IMPORT_CHECKPOINT_K", raising=False)
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
-    assert CHECKPOINT_K_DEFAULT == 1
-    assert import_checkpoint_k() == 1
+    assert CHECKPOINT_K_DEFAULT == 3
+    assert import_checkpoint_k() == 3
+
+
+def test_the_stored_default_equals_the_engine_default(monkeypatch, tmp_path):
+    """``AppSettings.import_checkpoint_k`` is the value the engine PREFERS, so a
+    default that disagreed with ``CHECKPOINT_K_DEFAULT`` would mean a fresh install
+    and an install whose settings file was never written resolve different Ks -- and
+    nothing would say so, because both numbers are legal. Pinned rather than
+    remembered, because the two live in different modules on purpose (the settings
+    path must not import the merge stack)."""
+    from src.config.app_settings import AppSettings
+
+    assert AppSettings().import_checkpoint_k == CHECKPOINT_K_DEFAULT
 
 
 def test_the_env_override_wins_and_a_nonsense_value_falls_back_to_the_default(monkeypatch):
-    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "3")
-    assert import_checkpoint_k() == 3
+    # 5, not 3: the override must DIFFER from CHECKPOINT_K_DEFAULT or an honoured
+    # override and a silently-ignored one give the same answer (the recorded
+    # coincident-fixture trap -- this test used 3, which the 2026-09-15 ruling made
+    # the default).
+    assert CHECKPOINT_K_DEFAULT != 5
+    monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", "5")
+    assert import_checkpoint_k() == 5
     for bad in ("0", "-2", "not-a-number", str(CHECKPOINT_K_MAX + 1), ""):
         monkeypatch.setenv("OO_IMPORT_CHECKPOINT_K", bad)
         if bad == "":
@@ -293,7 +314,14 @@ def test_a_process_restart_reports_staged_items_as_discarded_never_as_imported(t
     }), encoding="utf-8")
     q = ImportQueueManager(state_path=state)
     assert [it["state"] for it in q._items] == ["discarded", "done"]
-    assert "did not survive" in q._items[0]["discarded_reason"]
+    reason = q._items[0]["discarded_reason"]
+    # IT MAY NOT ASSERT THE FAILURE (adversarial pass, 2026-09-16). The swap may already
+    # have landed durably and only the COMMIT RECORD be missing -- a kill between the
+    # atomic rename and the queue's own bookkeeping leaves exactly this state on disk --
+    # so the old "the app did not survive to commit" reported durably imported work as
+    # lost. It must say what is known, and that re-importing is safe.
+    assert "did not survive" not in reason, reason
+    assert "cannot be told" in reason and "recognised and skipped" in reason, reason
 
 
 def test_status_reports_committed_and_staged_as_two_different_numbers(tmp_path):

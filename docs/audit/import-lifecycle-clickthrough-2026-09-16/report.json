@@ -1,0 +1,175 @@
+{
+  "schema": "oo-ui-clickthrough-1",
+  "started_at": "2026-09-16T15:11:49+00:00",
+  "findings": [
+    {
+      "id": "post-import-redesign-renders-live",
+      "severity": "POSITIVE",
+      "surface": "post_import_content",
+      "title": "The post-import results screen renders its full redesigned content from a REAL import \u2014 browser-verified for the first time",
+      "detail": "Articles-first headline, the labeled all-types row-sum, the BEFORE/AFTER corpus delta, qualification carried (criteria version shown), the work-induced indexing note and the additive-restore statement all rendered from a real volume-backup import on a fresh instance.",
+      "evidence": "/tmp/oo-ui/report-d/evidence/post_import_content.png",
+      "new": true
+    },
+    {
+      "id": "import-lifecycle-renders-live",
+      "severity": "POSITIVE",
+      "surface": "import_lifecycle",
+      "title": "The import lifecycle's four stage rows, three statements and fresh reopen render from a REAL import",
+      "detail": "Driven on the state-D import: the four stage rows by their own keys, the three ruled statements, stage 4's task-manager link, the K = 3 checkpoint sentence, a reopen showing a fresh page with one quiet line linking the persisted report, and the history list in Settings > Data & backup. Swept across en, fr, ar (RTL) and zh.",
+      "evidence": "/tmp/oo-ui/report-d/evidence/import_stage_rows.png",
+      "new": true
+    }
+  ],
+  "coverage": [
+    {
+      "surface": "state_d_guide_wizard",
+      "axis": "auto-open-on-empty-corpus",
+      "result": "verified",
+      "note": "#guide-wizard open on boot: True"
+    },
+    {
+      "surface": "state_d_guide_wizard",
+      "axis": "dismissed-via-gw-close",
+      "result": "verified",
+      "note": "still open after clicking #gw-close: False"
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "scan-finds-corpus",
+      "result": "verified",
+      "note": "Restore corpus backup (encrypted volumes \u2014 additive, nothing you already have is overwritten \u00b7 2 volumes)"
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "articles-first-headline",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "labeled-all-types-rowsum",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "before-after-delta",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "qualification-carried",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "work-induced-indexing",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "additive-statement",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "default",
+      "result": "verified",
+      "note": "summary length=720; first line: '\u2713 Import successful'"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "four-stage-rows",
+      "result": "verified",
+      "note": "rows rendered: ['verify_stage', 'merge_swap', 'search_index', 'reindex']"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "three-statements",
+      "result": "verified",
+      "note": "\u2713 The import files can be removed \u2014 everything they carried is in your | \u2713 Safe to close or update the app \u2014 the re-index picks up where it lef | \u2713 Analytics are complete \u2014 every imported article is indexed."
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "stage-four-task-manager-link",
+      "result": "verified",
+      "note": "<span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px\"></span><b>4. Re-index the imported articles</"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "checkpoint-sentence",
+      "result": "verified",
+      "note": "Verified and written to your corpus once every 3 backups \u2014 nothing is durable until a save, so a stop or a crash before one means those backups have to be impor"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "fresh-page-on-reopen",
+      "result": "verified",
+      "note": "summary='' last='Last import \u00b7 September 16, 2026 at 03:11 PM \u00b7 24 articles \u00b7 open report'"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "last-import-line-links-the-report",
+      "result": "verified",
+      "note": "/api/backup/import-reports/restore-20260916T151154Z-1.json?format=md"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "locale-fr",
+      "result": "verified",
+      "note": "dir=ltr; checkpoint='V\u00e9rifi\u00e9 et \u00e9crit dans votre corpus une fois toutes les 3 sauvegardes \u2014'"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "locale-ar",
+      "result": "verified",
+      "note": "dir=rtl; checkpoint='\u064a\u064f\u062a\u062d\u0642\u064e\u0651\u0642 \u0645\u0646\u0647\u0627 \u0648\u062a\u064f\u0643\u062a\u0628 \u0641\u064a \u0645\u062c\u0645\u0648\u0639\u062a\u0643 \u0645\u0631\u0629 \u0643\u0644 3 \u0646\u0633\u062e \u0627\u062d\u062a\u064a\u0627\u0637\u064a\u0629 \u2014 \u0644\u0627 \u0634\u064a\u0621 \u062f\u0627\u0626\u0645 \u0642\u0628'"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "locale-zh",
+      "result": "verified",
+      "note": "dir=ltr; checkpoint='\u6bcf 3 \u4e2a\u5907\u4efd\u6821\u9a8c\u5e76\u5199\u5165\u4f60\u7684\u8bed\u6599\u5e93\u4e00\u6b21\u2014\u2014\u5728\u4fdd\u5b58\u4e4b\u524d\u6ca1\u6709\u4efb\u4f55\u5185\u5bb9\u662f\u6301\u4e45\u7684\uff0c\u56e0\u6b64\u5728\u4fdd\u5b58\u524d\u505c\u6b62\u6216\u5d29\u6e83\u610f\u5473\u7740\u8fd9\u4e9b\u5907\u4efd\u5fc5\u987b\u91cd\u65b0\u5bfc\u5165\u3002'"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "locale-en",
+      "result": "verified",
+      "note": "dir=ltr; checkpoint='Verified and written to your corpus once every 3 backups \u2014 nothing is '"
+    },
+    {
+      "surface": "import_lifecycle",
+      "axis": "history-in-settings",
+      "result": "verified",
+      "note": "September 16, 2026 at 03:11 PM \u00b7 restore \u00b7 24 articles \u00b7 open report"
+    }
+  ],
+  "steps": [],
+  "at_rest": [
+    {
+      "state": "D",
+      "url": "http://127.0.0.1:8003",
+      "when": "before-walk",
+      "detected": "plaintext",
+      "via": "doctor",
+      "driver": true,
+      "custody_log": "absent",
+      "configured": "unstated"
+    },
+    {
+      "state": "D",
+      "url": "http://127.0.0.1:8003",
+      "when": "after-walk",
+      "detected": "plaintext",
+      "via": "doctor",
+      "driver": true,
+      "custody_log": "absent",
+      "configured": "unstated"
+    }
+  ]
+}

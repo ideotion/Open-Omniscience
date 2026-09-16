@@ -126,11 +126,12 @@ class AppSettings:
     # copy is carried across K backups and the whole-file checks and the swap are
     # paid once -- which is faster and strictly less durable, because nothing is
     # durable until a swap and a Stop, a failure or a crash discards the group.
-    # Range 1..CHECKPOINT_K_MAX; the recommendation on record is 3. The reasoning
-    # and the resolution order live in
+    # Range 1..CHECKPOINT_K_MAX. RULED 2026-09-15 (Q216 = a): the default is 3.
+    # The reasoning and the resolution order live in
     # src.backup.import_queue.import_checkpoint_k, which is the ONE place that
-    # decides -- this is the stored value it prefers.
-    import_checkpoint_k: int = 1
+    # decides -- this is the stored value it prefers, and its default is kept
+    # equal to CHECKPOINT_K_DEFAULT there by a test rather than by memory.
+    import_checkpoint_k: int = 3
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:

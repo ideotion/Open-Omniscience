@@ -146,7 +146,7 @@ def test_restore_failure_gets_the_honest_classified_detail(tmp_path):
     """Field bug (2026-07-15): a real data-merge conflict (a UNIQUE constraint hit
     merging a large backup) used to surface as the bare str(exc) -- e.g. an
     unqualified "UNIQUE constraint failed:" -- instead of the same honest
-    classification /api/backup/v2/restore's single-shot path already applies
+    classification /api/backup/legacy/restore's single-shot path already applies
     (_restore_error / classify_restore_error, P0-2). The job's error must go
     through the same classifier regardless of which restore surface hit it."""
     import sqlite3

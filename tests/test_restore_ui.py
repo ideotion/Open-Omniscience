@@ -67,9 +67,10 @@ def test_additive_only_restore_no_destructive_paths():
 # warns_on_failed_verification and test_js_matches_the_api_form_contract both guarded the
 # legacy-restore UPLOAD FORM (file picker -> preview -> apply, multipart file/passphrase/
 # token). That panel is gone, so both asserted properties of markup that no longer exists.
-# The /v2/restore preview+commit ENDPOINTS they exercised are deliberately retained and
-# still pinned by test_additive_restore_only; restoring an existing single-file backup now
-# runs through the unified Import (test_legacy_single_file_restore_is_kept_for_migration).
+# The /v2/restore preview+commit ENDPOINTS they exercised were themselves consolidated
+# away on 2026-09-16 (Q214 = a); restoring an existing single-file backup runs through the
+# unified Import (test_legacy_single_file_restore_is_kept_for_migration) and, for one
+# archive, POST /api/backup/legacy/restore, both pinned by test_additive_restore_only.
 
 
 def test_merge_semantics_stated_to_the_operator():

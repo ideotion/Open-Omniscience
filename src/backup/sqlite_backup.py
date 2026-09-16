@@ -13,7 +13,8 @@ file that may be mid-write:
     active and the app is running. No app downtime, no half-written page.
   * **Restore is ADDITIVE-ONLY** (maintainer-ruled 2026-06-13): a restore must
     NEVER replace the corpus. The ONLY restore is the merge engine
-    (:mod:`src.backup.merge` / the ``/api/database/v2/restore`` endpoints), which
+    (:mod:`src.backup.merge` / the ``/api/backup/import-queue`` + ``legacy/restore``
+    endpoints), which
     complements the live corpus duplicate-lessly and can refuse, but never
     overwrites. The old destructive "replace the live file" path has been
     REMOVED from this module so no flow can clobber a journalist's evidence.

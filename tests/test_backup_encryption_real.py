@@ -120,12 +120,16 @@ def test_restore_preview_reports_encrypted_verdict():
         dest = Path(tmp)
         dest.unlink(missing_ok=True)
         write_backup_v2(dest, passphrase="verdict-pw")
-        blob = dest.read_bytes()
-        dest.unlink(missing_ok=True)
-        prev = c.post(
-            "/api/backup/v2/restore/preview",
-            files={"file": ("b.ooenc", blob, "application/octet-stream")},
-            data={"passphrase": "verdict-pw"},
-        )
+        # RE-ANCHORED 2026-09-16 (Q214 = a): /v2/restore/preview is deleted and
+        # /api/backup/legacy/restore is the surviving single-artifact endpoint. The
+        # property is unchanged -- a REAL OOENC1 artifact is reported as encrypted by
+        # the restore path, not merely by the writer that produced it.
+        try:
+            prev = c.post(
+                "/api/backup/legacy/restore",
+                json={"path": str(dest), "passphrase": "verdict-pw"},
+            )
+        finally:
+            dest.unlink(missing_ok=True)
         assert prev.status_code == 200, prev.text
         assert prev.json()["encrypted"] is True

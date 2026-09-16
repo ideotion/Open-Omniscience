@@ -250,7 +250,7 @@ def test_stripping_powershell_comments_keeps_code_and_string_hashes():
 #: the same blind detector, which makes the pair a tautology rather than a check.
 #: That is the exact failure mode this module exists to document, committed into the
 #: module documenting it. The detector below tests the PROPERTY instead.
-_ADHOC_SLICER_BUDGET = 232
+_ADHOC_SLICER_BUDGET = 230
 
 #: A string literal that anchors into SOURCE CODE rather than into data. A
 #: `.index`/`.split`/`.find` taking one of these is slicing a program, which is the

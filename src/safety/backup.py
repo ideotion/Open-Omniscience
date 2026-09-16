@@ -11,7 +11,8 @@ stash their corpus across a border or a hostile network without exposing it.
 Restore is ADDITIVE-ONLY (maintainer-ruled 2026-06-13): the destructive
 ``restore_encrypted_backup`` that *replaced* the live corpus has been REMOVED.
 Restoring now goes exclusively through the merge engine (the oo-backup-2 artifact
-+ the ``/api/database/v2/restore`` endpoints), which complements the corpus and
++ the ``/api/backup/import-queue`` and ``/api/backup/legacy/restore`` endpoints),
+which complements the corpus and
 never overwrites it. This module now only *creates* encrypted backups.
 """
 

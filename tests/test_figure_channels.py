@@ -28,6 +28,7 @@ import re
 from tests.js_source_helper import (
     array_literal,
     css_rule,
+    event_listener_bodies,
     function_body,
     read_static,
     strip_comments,
@@ -242,8 +243,17 @@ def test_the_composition_figures_re_render_on_a_language_change():
     so it stays in whatever locale first rendered it."""
     assert '_libViewLoaded.has("composition")' in APP
     assert "renderCompositionFigures();" in APP
-    at = APP.index('document.addEventListener("oo:langchange"')
-    handler = APP[at : at + 4000]
-    assert "renderCompositionFigures" in handler, (
-        "the figures must be re-rendered by the oo:langchange handler"
+    # EVERY oo:langchange handler, not the first one found. This test used to take
+    # `APP.index(...)` and read 4000 characters from it, which silently assumed the app
+    # has exactly ONE such listener -- true when it was written, and never guaranteed.
+    # It went red on 2026-09-16 the moment a second listener (the import dialog's own
+    # interpolated surfaces, app-backup.js) was added EARLIER in module order: the
+    # assertion was about the Composition figures and the text it read was about the
+    # import dialog. A guard anchored to "the first occurrence" is a guard that a
+    # correct change can redden.
+    handlers = event_listener_bodies(APP, "oo:langchange")
+    assert handlers, "no oo:langchange listener at all"
+    assert any("renderCompositionFigures" in h for h in handlers), (
+        f"the figures must be re-rendered by an oo:langchange handler "
+        f"({len(handlers)} listener(s) found, none of them calls it)"
     )

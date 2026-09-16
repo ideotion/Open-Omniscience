@@ -57,12 +57,23 @@ def test_the_dialog_reattaches_to_a_run_after_a_reload():
 # --------------------------------------------------------------------------- #
 #  per-item rendering
 # --------------------------------------------------------------------------- #
-def test_the_markup_has_a_per_item_run_panel_and_a_details_disclosure():
+def test_the_markup_has_a_per_item_run_panel_and_the_four_stage_rows():
+    """AMENDED 2026-09-16 (Q207 = a, Q202 = a). The "Show details" <details> block is
+    gone: it duplicated the queue rows and added only the item's PATH, which rides
+    the persisted report. Its slot is taken by the four stage rows and the three
+    statements, so the panel says MORE than it did, not less.
+
+    Q207 was left BLANK on the answer sheet and took the sheet's default, so the
+    removal is an ASSUMPTION -- named here as well as in the PR body, because this is
+    the guard a session reversing it would edit."""
     for needle in (
-        'id="ux-imp-queue"', 'id="ux-imp-queue-rows"', 'id="ux-imp-details"',
-        'id="ux-imp-stop"',
+        'id="ux-imp-queue"', 'id="ux-imp-queue-rows"', 'id="ux-imp-stop"',
+        'id="ux-imp-stages"', 'id="ux-imp-statements"', 'id="ux-imp-last"',
+        'id="ux-imp-checkpoint"',
     ):
         assert needle in _HTML, needle
+    for gone in ('id="ux-imp-details"', 'id="ux-imp-details-body"'):
+        assert gone not in _HTML, f"{gone} was retired by Q207 = a"
 
 
 def test_each_row_carries_its_state_and_a_real_elapsed_time():

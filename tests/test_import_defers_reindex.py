@@ -124,7 +124,12 @@ def test_every_committing_restore_path_defers_it_the_same_way():
 
     from src.api import backup_v2
 
-    for fn in (backup_v2._commit_sync, backup_v2.restore_legacy_path):
+    # ``_commit_sync`` went with ``/v2/restore/commit`` (Q214 = a, 2026-09-16), so the
+    # committing single-artifact paths are now the legacy route's one implementation
+    # and the queue's own corpus items. The property is unchanged and the ENUMERATION
+    # is what matters here, so it is re-derived rather than shortened: a path that
+    # blocks on the re-index while its sibling defers is the defect either way.
+    for fn in (backup_v2.restore_legacy_path,):
         src = inspect.getsource(fn)
         i = src.index("run_restore(") + len("run_restore(")
         depth, j = 1, i
