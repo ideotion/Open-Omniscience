@@ -3403,5 +3403,18 @@
   "hosts": "হোস্ট",
   "the full list is in the security notes": "সম্পূর্ণ তালিকাটি নিরাপত্তা নোটে আছে",
   "Where this will let the app connect:": "এটি অ্যাপকে কোথায় সংযোগ করতে দেবে:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "এর অফ-সুইচ আছে, কিন্তু অ্যাপ তাতে পৌঁছাতে পারে না: সেটিংস এন্ডপয়েন্ট পরিবর্তনটি গ্রহণ করে এবং তা বাতিল করে দেয়।"
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "এর অফ-সুইচ আছে, কিন্তু অ্যাপ তাতে পৌঁছাতে পারে না: সেটিংস এন্ডপয়েন্ট পরিবর্তনটি গ্রহণ করে এবং তা বাতিল করে দেয়।",
+  "Automatically filed newsletters": "স্বয়ংক্রিয়ভাবে শ্রেণিবদ্ধ নিউজলেটার",
+  "How this was decided": "এটি কীভাবে নির্ধারিত হয়েছে",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "স্বয়ংক্রিয়ভাবে সংযুক্ত প্রতিটি নিউজলেটারকে আমদানি-সংগ্রহে ফিরিয়ে আনে এবং সংযুক্তির রেকর্ড মুছে দেয়। আপনি নিজে যেগুলি শ্রেণিবদ্ধ করেছেন এবং যেগুলি নিয়ম-শৃঙ্খল প্রত্যাখ্যান করেছে, সেগুলিতে কখনও হাত দেওয়া হয় না।",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "স্বয়ংক্রিয়ভাবে শ্রেণিবদ্ধ প্রতিটি নিউজলেটার আমদানি-সংগ্রহে ফিরিয়ে আনবেন? আপনি নিজে যেগুলি শ্রেণিবদ্ধ করেছেন সেগুলিতে হাত দেওয়া হবে না, আর একই .eml ফাইল আবার আমদানি করলে শ্রেণিবিন্যাস পুনরায় চলবে।",
+  "Removed the now-empty sources this filing had created": "এই শ্রেণিবিন্যাসের তৈরি, এখন খালি উৎসগুলি সরানো হয়েছে",
+  "Undo failed": "পূর্বাবস্থায় ফেরানো ব্যর্থ",
+  "Undo the automatic filing": "স্বয়ংক্রিয় শ্রেণিবিন্যাস পূর্বাবস্থায় ফেরান",
+  "filed under a publisher you already track": "আপনি ইতিমধ্যে অনুসরণ করছেন এমন প্রকাশকের অধীনে শ্রেণিবদ্ধ",
+  "filed under a new, DISABLED source for the sender's domain": "প্রেরকের ডোমেনের জন্য তৈরি নতুন, নিষ্ক্রিয় উৎসের অধীনে শ্রেণিবদ্ধ",
+  "left in the import bucket (the sender could not be resolved without guessing)": "আমদানি-সংগ্রহেই রাখা হয়েছে (অনুমান না করে প্রেরক শনাক্ত করা যায়নি)",
+  "newsletters moved back to the import bucket.": "টি নিউজলেটার আমদানি-সংগ্রহে ফিরিয়ে আনা হয়েছে।",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "আমদানির সময় চালানো প্রকাশক-নির্ধারণ শৃঙ্খল: Public Suffix List-এর eTLD+1 (আগে প্ল্যাটফর্ম-বিপরীতকরণ প্রয়োগ করে), আপনার বিদ্যমান উৎসগুলির সঙ্গে প্রথমে হুবহু ডোমেন, তারপর উপনাম-তালিকা দিয়ে মেলানো হয়; নইলে একটি নতুন, নিষ্ক্রিয় ইমেল উৎস হিসেবে নিবন্ধিত হয়। হয় নিশ্চিত, নয় প্রত্যাখ্যান — কোনও আন্দাজি মিল নয়, কোনও স্ট্রিং-সাদৃশ্য নয়; প্রত্যাখ্যাত নিউজলেটার আমদানি-সংগ্রহেই থাকে",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "এটি একটি স্থাননির্ধারণ, প্রকাশক সম্পর্কে কোনও বিচার নয়: এটি বলে যে নিউজলেটারটি এমন একটি ডোমেন থেকে এসেছে যা আপনার সংগ্রহ আগে থেকেই অনুসরণ করে — কখনওই বলে না যে দুটি সমানভাবে নির্ভরযোগ্য। পূর্বাবস্থায় ফেরালে প্রতিটি স্বয়ংক্রিয় স্থাননির্ধারণ হুবহু ফিরে আসে, আর আপনি নিজে যা শ্রেণিবদ্ধ করেছেন তাতে হাত দেওয়া হয় না"
 }

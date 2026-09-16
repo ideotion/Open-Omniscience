@@ -3403,5 +3403,18 @@
   "hosts": "hôtes",
   "the full list is in the security notes": "la liste complète se trouve dans les notes de sécurité",
   "Where this will let the app connect:": "Où l'application pourra se connecter :",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Son interrupteur d'arrêt existe, mais l'application ne peut pas y accéder : le point d'accès des paramètres accepte la modification et l'écarte."
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Son interrupteur d'arrêt existe, mais l'application ne peut pas y accéder : le point d'accès des paramètres accepte la modification et l'écarte.",
+  "Automatically filed newsletters": "Newsletters classées automatiquement",
+  "How this was decided": "Comment cela a été décidé",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "Replace chaque newsletter rattachée automatiquement dans le bac d'importation et efface la trace du rattachement. Les newsletters que vous avez classées vous-même, et celles que la cascade a refusé de rattacher, ne sont jamais touchées.",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "Replacer chaque newsletter classée automatiquement dans le bac d'importation ? Celles que vous avez classées vous-même ne sont pas touchées, et réimporter les mêmes fichiers .eml relance le classement.",
+  "Removed the now-empty sources this filing had created": "Sources désormais vides créées par ce classement, supprimées",
+  "Undo failed": "Échec de l'annulation",
+  "Undo the automatic filing": "Annuler le classement automatique",
+  "filed under a publisher you already track": "classées sous un éditeur que vous suivez déjà",
+  "filed under a new, DISABLED source for the sender's domain": "classées sous une nouvelle source DÉSACTIVÉE pour le domaine de l'expéditeur",
+  "left in the import bucket (the sender could not be resolved without guessing)": "laissées dans le bac d'importation (l'expéditeur ne pouvait être résolu sans deviner)",
+  "newsletters moved back to the import bucket.": "newsletters replacées dans le bac d'importation.",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "la cascade de résolution d'éditeur appliquée à l'import : un eTLD+1 de la Public Suffix List (l'inversion plateforme s'appliquant d'abord), comparé à vos sources existantes par domaine exact, puis par la table d'alias, sinon enregistré comme nouvelle source e-mail DÉSACTIVÉE. Déterministe ou refusé — aucun rapprochement flou, aucune similarité de chaînes, et un refus laisse la newsletter dans le bac d'importation",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "il s'agit d'un CLASSEMENT, pas d'un jugement sur l'éditeur : cela dit qu'une newsletter a été envoyée depuis un domaine que votre corpus suit déjà, jamais que les deux sont aussi fiables l'un que l'autre. L'annulation rétablit exactement chaque classement automatique et ne touche à rien que vous ayez classé vous-même"
 }

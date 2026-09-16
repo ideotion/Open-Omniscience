@@ -3403,5 +3403,18 @@
   "hosts": "مضيفات",
   "the full list is in the security notes": "القائمة الكاملة في ملاحظات الأمن",
   "Where this will let the app connect:": "أين سيسمح هذا للتطبيق بالاتصال:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "مفتاح إيقافه موجود، لكن لا يصل إليه التطبيق: تقبل نقطة نهاية الإعدادات التغيير ثم تتجاهله."
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "مفتاح إيقافه موجود، لكن لا يصل إليه التطبيق: تقبل نقطة نهاية الإعدادات التغيير ثم تتجاهله.",
+  "Automatically filed newsletters": "النشرات البريدية المصنَّفة تلقائيًا",
+  "How this was decided": "كيف تقرَّر ذلك",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "يعيد كل نشرة بريدية أُرفقت تلقائيًا إلى حاوية الاستيراد ويمسح سجل الإرفاق. أما النشرات التي صنّفتها بنفسك، والنشرات التي رفض السلّم إرفاقها، فلا تُمسّ أبدًا.",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "هل تريد إعادة كل نشرة بريدية صُنِّفت تلقائيًا إلى حاوية الاستيراد؟ لن تُمسّ النشرات التي صنّفتها بنفسك، وإعادة استيراد ملفات ‎.eml‎ نفسها تُعيد تنفيذ التصنيف.",
+  "Removed the now-empty sources this filing had created": "حُذفت المصادر التي أنشأها هذا التصنيف وأصبحت فارغة الآن",
+  "Undo failed": "فشل التراجع",
+  "Undo the automatic filing": "التراجع عن التصنيف التلقائي",
+  "filed under a publisher you already track": "صُنِّفت تحت ناشر تتابعه بالفعل",
+  "filed under a new, DISABLED source for the sender's domain": "صُنِّفت تحت مصدر جديد مُعطَّل لنطاق المُرسِل",
+  "left in the import bucket (the sender could not be resolved without guessing)": "بقيت في حاوية الاستيراد (تعذّر تحديد المُرسِل دون تخمين)",
+  "newsletters moved back to the import bucket.": "نشرة بريدية أُعيدت إلى حاوية الاستيراد.",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "سلّم تحديد الناشر المطبَّق عند الاستيراد: نطاق eTLD+1 من Public Suffix List (مع تطبيق انعكاس المنصّات أولًا)، يُقارَن بمصادرك الحالية بالنطاق المطابق تمامًا ثم بجدول الأسماء البديلة، وإلا يُسجَّل كمصدر بريد جديد مُعطَّل. إمّا نتيجة قاطعة وإمّا رفض — لا مطابقة تقريبية ولا تشابه نصوص، والرفض يُبقي النشرة في حاوية الاستيراد",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "هذا تصنيفٌ للمكان، لا حكمٌ على الناشر: فهو يقول إن النشرة أُرسلت من نطاق يتابعه مجموعك أصلًا، ولا يقول أبدًا إن الاثنين متساويان في الموثوقية. والتراجع يعيد كل تصنيف تلقائي بدقة، ولا يمسّ شيئًا صنّفته بنفسك"
 }

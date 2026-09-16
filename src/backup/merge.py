@@ -2316,6 +2316,17 @@ _NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
     "compressed_content": "content (see title)",
     "hash": "the dedup key",
     "canon_version": "describes how THIS machine canonicalised its own url",
+    # THE AUTO-ATTACH RECORD (Q1151). Not adoptable, and unusually the reason is that a
+    # local NULL is not a gap at all: it means "nothing automated moved THIS article in
+    # THIS install", which is a true and complete answer. Adopting a remote value would
+    # assert that the local app performed an attach it never performed -- and the undo
+    # believes that column, so it would then move an article this install never placed,
+    # to a bucket its source_id may have nothing to do with (source_id is remapped
+    # through temp.map_sources and never copied raw, so the remote pair does not even
+    # travel together). The INSERT path DOES carry it, because there the whole row --
+    # placement and record together -- comes from the backup and stays consistent.
+    "newsletter_attached_via": "a local NULL is a real answer (nothing automated moved "
+                               "this article here), and the undo acts on this column",
     "created_at": "local bookkeeping: when this corpus first stored the row",
     "updated_at": "local bookkeeping",
     # The quarantine block is deliberately absent from the adoptable set. It is a
@@ -2513,7 +2524,14 @@ def _merge_articles(con, batch_id, results) -> None:
         # so a re-fetch reads a LATER revision and can never rebuild which one this
         # body is, and the recorded 2026-08-03 lesson is exactly that a dropped column
         # arrives as a plausible NULL nothing reports.
-        " source_revision, newsletter_list_id)"
+        # Q1151: the AUTO-ATTACH record. A fresh-install restore inserts the article at
+        # its backed-up source -- which, for an auto-attached newsletter, is the
+        # publisher the ladder chose. Dropping the record would leave the article MOVED
+        # with nothing saying the app moved it, so the undo could never put it back:
+        # the placement survives the restore and its reversibility does not. That is the
+        # 2026-08-03 lesson exactly -- a dropped column arrives as a plausible NULL that
+        # nothing reports.
+        " source_revision, newsletter_list_id, newsletter_attached_via)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
@@ -2521,7 +2539,7 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.detected_language, i.server_ip, i.ip_observed_at, i.server_ip_reason,"
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
-        " i.source_revision, i.newsletter_list_id"
+        " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"
         + _WINDOW_MARK,

@@ -810,6 +810,22 @@ class Article(Base):
     # caveat instead of claiming the gap is shut.
     newsletter_list_id: Mapped[str | None] = mapped_column(String(255))
 
+    # THE AUTO-ATTACH RECORD (2026-06-15 ruling clause (d), shipped 2026-09-16 under
+    # Q1151 = a). The ruled ladder now runs on the WRITE path, so an imported newsletter
+    # can land on the publisher's own Source instead of the one undifferentiated
+    # `newsletters.import.local` bucket. This column is what makes that reversible: it
+    # holds the ladder's own verdict for the placement THIS APP CHOSE -- "attach-exact",
+    # "attach-alias" or "new-email-source", each with the basis that produced it, e.g.
+    # `attach-alias:public-suffix`.
+    #
+    # NULL is the load-bearing value and it means ONE thing: nothing automated moved this
+    # article. That covers a newsletter that stayed in the bucket (the ladder refused), a
+    # web article that was never a newsletter at all, and every row imported before this
+    # column existed. So the UNDO can reverse exactly what it did and nothing else -- it
+    # restores only rows carrying a value here, and a placement the USER made is
+    # untouched because the app never wrote one.
+    newsletter_attached_via: Mapped[str | None] = mapped_column(String(120))
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
 

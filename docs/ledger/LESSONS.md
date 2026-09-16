@@ -9712,3 +9712,124 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   which findings were mine: two, both in files I had just written. The delta is the only
   number that answers "whose finding is this", and it must be taken after the LAST edit, not
   the last edit to `src/`.
+
+- **A REALITY CHECK CAN BE WRONG, AND THE ONE YOU ARE RE-DOING PROBABLY IS — SO DATE THE
+  STATUS LINE INSTEAD OF EDITING THE CLAIM (2026-09-16, Q1141 = a / A4 = b, all 51 sections
+  of `docs/FUTURE_DEVELOPMENTS.md`):** the document already carried a 2026-09-07 pass, so the
+  cheap reading was "re-check the sections that pass did not reach". That reading is what the
+  pass found to be false. **Two of the 2026-09-07 banners were wrong the day they were
+  written**, not stale since: the Lunar-effects banner called the testing framework
+  "designed-only" while `src/analytics/lunar.py` had carried the whole thing since 2026-07-03
+  (and a further pre-registration control shipped 2026-09-09 — *two days after* that banner),
+  and the Open-Meteo banner listed "signal-keywords" as remaining when they had shipped
+  2026-07-03/07-08. A previous check is EVIDENCE, never a boundary: re-read what it asserted,
+  not only what it skipped.
+  **AND THIS IS THE ARGUMENT FOR THE FORM A4 RULED.** Had 2026-09-07 overwritten the original
+  claims rather than annotating them, its two errors would be indistinguishable today from
+  correct corrections — there would be nothing to compare against the tree. A dated status line
+  keeps the original claim, the first verdict and the second verdict all visible and all
+  attributable, and it is the reason this pass could find the error at all. The cost is a
+  document that grows; the alternative is a document that lies with more confidence each pass.
+  **THE NUMBERS THAT NO AMOUNT OF READING WILL SETTLE.** One section claimed 73% catalog
+  coverage and 49% located; the 2026-09-07 banner beside it claimed different figures. Both are
+  documents. `scripts/catalog_coverage_report.py` exists, takes seconds, and answers **5,546
+  domains / 4,059 located (73.2%) / Missing (51)** — neither of them. When a claim names a
+  quantity the repo can COMPUTE, computing it is not extra diligence, it is the only way to
+  avoid picking a winner between two equally confident documents.
+  **THE READ/VERIFY SPLIT THAT MADE IT AFFORDABLE.** Six parallel readers (one per ~10
+  sections) returned `claim → tree evidence` pairs; every load-bearing claim was then
+  hand-re-verified by grep before a single edit, per the recorded 06-audit false-positive
+  lesson. Of the claims that came back, several did not survive that second pass — the readers
+  are a search tool, not a witness. **AND TWO OF A4'S THREE CLAUSES TURNED OUT TO BE ALREADY
+  DONE** (the four embedded ledgers were already archived under
+  `docs/archive/future-developments/` behind a pointer; the three duplicate pairs were already
+  cross-linked and explicitly unmerged). Re-verifying and recording "already satisfied" is the
+  completion of a ruling. Re-doing it would have been churn, and merging the pairs would have
+  broken protocol rule (5).
+
+
+- **THE ATTESTATION ENDPOINT IS OFFLINE IN EXACTLY THE STATE YOU BUILT IT TO ATTEST
+  (2026-09-16, Q1149, the encrypted click-through variant):** the runner's whole job in an
+  encrypted run is to say "this state really was encrypted at rest", and the app has one
+  endpoint whose whole job is to answer that from the FILE HEADER rather than from
+  configuration — `GET /api/system/doctor`. It is not in `ALLOWED_WHILE_LOCKED`. A locked
+  store is precisely what an encrypted run boots into, so the probe got a 503, recorded
+  `unknown`, and `--require-encrypted` would have REFUSED every genuinely encrypted run while
+  passing nothing. The failure is not that the endpoint is wrong; it is that **an attestation
+  surface is usually gated behind the very state it attests**, because the gate is written
+  against "the app is not usable yet" and attestation is the one thing that must be usable
+  then. The fix was already in the tree: `/api/system/lock-state` IS allowlisted while locked
+  and its `state` comes from the same header read (`app_lock_state` → `main_header_state` →
+  `state_for_header`), so it is the same fact in lock vocabulary rather than a weaker second
+  source — and the row records `via` so a reader never has to guess which one answered.
+  **FOUND BY RUNNING IT, NOT BY READING IT.** The first design was written from the endpoint's
+  docstring, which describes exactly the right behaviour and says nothing about the middleware
+  in front of it. One boot against a real encrypted store — seed with `OO_DB_PASSPHRASE` and
+  no `OO_DB_PLAINTEXT`, boot with NEITHER — printed `{"detail": "the database is locked",
+  "locked": true}` and settled it in seconds.
+  **AND THE PROBE MUST RUN TWICE, BEFORE AND AFTER THE WALK.** The before reading can only
+  come from `lock-state` (the store is locked, by construction); the after reading comes from
+  `doctor` and adds the engine's cipher. Keeping only the after row would make a store that
+  was ALREADY encrypted indistinguishable from one the run encrypted itself — and keeping only
+  the before row throws away the cipher. The pair is the evidence; either half alone is an
+  assertion.
+  **A SURPRISE THAT WAS MY OWN PROCESS, WORTH THE SAME DISCIPLINE.** A first live probe came
+  back `unlocked-encrypted` against what should have been a locked instance. Before recording
+  anything about the app, the server log said `address already in use`: a `kill` had not taken,
+  the new process had exited, and the probe had hit the OLD, already-unlocked server on that
+  port. A surprising measurement is a claim about the measurement setup until the setup has
+  been checked.
+
+- **MOVING A ROW BETWEEN PARENTS BREAKS EVERY READER THAT DEFINED THE CHILD BY ITS PARENT —
+  AND TWO OF THIS TREE'S WERE PRIVACY GATES (2026-09-16, Q1151, the newsletter auto-attach):**
+  the feature is one sentence — file an imported newsletter under its publisher's Source
+  instead of one undifferentiated bucket. Before it, "an imported newsletter" and "an article
+  whose source is a newsletter bucket" were THE SAME SET, so every reader in the tree quite
+  reasonably asked about the SOURCE. Four did, and the attach silently falsified all four:
+  `count_imported_newsletters` / `delete_imported_newsletters` would have left the attached
+  ones behind while the screen promised it removed every one; `resolution_preview` would have
+  reported an ever-shrinking corpus as the attach succeeded, so the feature WORKING would have
+  looked like the feature LOSING DATA; `_drop_newsletter_rows` would have written newsletter
+  bodies into a backup the operator had ticked "exclude newsletters" on; and
+  `build_sample_records` would have exported those bodies into the source-quality diagnostic
+  zip that withholds private `.eml` text by default. The last two are the ones that matter:
+  **a scope widening is a privacy change when the narrow scope was a gate.** The general form:
+  before you let a row change parents, grep for every reader that identifies the row BY that
+  parent, and re-read each one asking "is this a gate?" — the count is an inconvenience, the
+  gate is a disclosure.
+  **THE COLUMN TO STORE IS THE DECISION, NOT THE DESTINATION.** The docket had asked for "the
+  attached source id". But `Article.source_id` already IS the destination; what no reader can
+  otherwise recover is whether the APP chose it or a person did. Storing the ladder's own
+  verdict (`attach-exact:etld1`, `new-email-source:etld1`) makes the undo exactly as narrow as
+  the thing it undoes — NULL means "nothing automated moved this", which is the literally
+  correct value for every row predating the column, so the migration needs no backfill and the
+  undo cannot touch a placement a person made.
+  **AND IT ANSWERS A QUESTION A FLAG HEURISTIC GETS WRONG.** The undo deletes a source it
+  created and now-empty; the tempting test is "disabled + newsletter-typed + empty", and that
+  is a shape a USER's own source can have — a mutant that switched to it deleted theirs. The
+  recorded rung is decisive instead: an `attach-exact` article can only exist against a source
+  that was already there, so one such article proves the source pre-existed whatever its flags
+  say. Emptiness is then checked AFTER the restore, because a source the ladder created can
+  pick up articles the undo will not restore, and deleting it would take those with it.
+  **COUNT ON THE COMMIT, NOT ON THE DECISION.** The import batches its commits and redoes a
+  failed batch one message at a time, re-placing every message in it. Counters raised at
+  placement time double-count exactly the messages a retry touched; counters raised after a
+  successful store make the three attach figures sum to `stored` by construction — which is
+  the property the screen shows the user.
+
+- **A SUITE RUN WITH APP SERVERS UP IS NOT A SUITE RUN, AND THE FAILURES IT INVENTS LOOK REAL
+  (2026-09-16, measured):** a full-suite run came back **23 failed**. Three were genuine — a new
+  `Article` column that three "declare every column" guards correctly refused. The other twenty
+  were every test in `test_gpu_arbitration`, `test_vllm_endpoints`, `test_vllm_lifecycle`,
+  `test_vllm_port_collision` and `test_vllm_start_diagnosable`, and they were caused **by this
+  session**, not by the change: a click-through state was still bound to port **8001**, and
+  `default_vllm_port()` derives vLLM's port as the app's `OO_PORT` **+ 1** — precisely so the two
+  can never collide — which makes 8001 the port those tests bind and probe. All 200 pass in
+  isolation once the servers are down; the mechanism was checked (`default_vllm_port` read, the
+  port matched) rather than assumed from "they look unrelated".
+  **THE GENERAL FORM, and it is the same family as the recorded never-switch-branches-mid-suite
+  rule: the suite owns the machine, not just the working tree.** Ports, the venv (a mid-run `pip
+  install` can turn a skip-guarded file into a running one), `OO_DATA_DIR`, and any process that
+  holds a lock are all shared state a concurrent run will silently attribute to the diff. Before
+  reporting a full-suite result, confirm nothing of yours is still listening — and if something
+  was, the number to report is from the clean re-run, not from the run you are explaining away.

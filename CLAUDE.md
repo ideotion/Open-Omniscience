@@ -663,6 +663,18 @@ pending, contradictions are listed and never resolved by the recording session.
   `docs/legal/IMPLEMENTATION_NOTES.md` §3 and test-guarded by `tests/test_legal_documents.py`
   (which asserts no document in any of the 12 languages still carries an unresolved bracket); the
   professional-verification gap those notes describe is a permanent, stated choice, never a to-do.
+- **PER-RELEASE: ONE ENCRYPTED CLICK-THROUGH RUN (ruled 2026-09-15, Q1149 = a / L7; shipped
+  2026-09-16).** Every recorded UI walk until now ran the seeded states with
+  `OO_DB_PLAINTEXT=1` for speed, so the app's ENCRYPTED path — the one every real operator
+  uses, and the one that starts behind a lock screen — had never been walked. Before a tag:
+  seed a state with `OO_DB_PASSPHRASE` set and `OO_DB_PLAINTEXT` UNSET, boot it with NEITHER
+  set so it genuinely starts locked, and run
+  `OO_UIWALK_ENCRYPTED_PASS=… scripts/ui_clickthrough_run.py --require-encrypted`. The flag is
+  the point: without it "this run was encrypted" is a claim, and with it the harness refuses to
+  produce a report unless a seeded, WALKED state measures encrypted at rest by the app's own
+  header read. The report's `at_rest` rows keep `configured` and `detected` separate, so a
+  passphrase that silently did not take is visible rather than assumed away. Say in the release
+  notes that it was run, beside the no-telemetry re-check above.
 - Lessons that cost a bug: duplicate top-level JS function names silently
   override — grep before declaring. Sizes lie, diffs don't (`git diff
   --numstat` before fearing loss). A ledger merge is NOT resolved until

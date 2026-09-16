@@ -3403,5 +3403,18 @@
   "hosts": "主机",
   "the full list is in the security notes": "完整列表见安全说明",
   "Where this will let the app connect:": "此操作将允许本应用连接到以下位置：",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "开关本身存在，但应用无法访问它：设置端点会接受这项更改并将其丢弃。"
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "开关本身存在，但应用无法访问它：设置端点会接受这项更改并将其丢弃。",
+  "Automatically filed newsletters": "自动归档的邮件通讯",
+  "How this was decided": "此判断的依据",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "把所有自动归档的邮件通讯移回导入分组，并清除归档记录。您亲自归档的邮件通讯，以及判定规则拒绝归档的邮件通讯，都不会被改动。",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "把所有自动归档的邮件通讯移回导入分组吗？您亲自归档的不会被改动；重新导入同样的 .eml 文件会再次执行归档。",
+  "Removed the now-empty sources this filing had created": "已删除此次归档创建的、现已为空的来源",
+  "Undo failed": "撤销失败",
+  "Undo the automatic filing": "撤销自动归档",
+  "filed under a publisher you already track": "归入您已追踪的出版方",
+  "filed under a new, DISABLED source for the sender's domain": "归入为发件域名新建的、已停用的来源",
+  "left in the import bucket (the sender could not be resolved without guessing)": "留在导入分组中（无法在不猜测的情况下判定发件方）",
+  "newsletters moved back to the import bucket.": "封邮件通讯已移回导入分组。",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "导入时运行的出版方判定规则：取 Public Suffix List 的 eTLD+1（先应用平台反转），先按精确域名、再按别名表与您已有的来源比对；都不匹配则登记为一个新建的、已停用的邮件来源。要么确定，要么拒绝——不做模糊匹配，不做字符串相似度比较；被拒绝的邮件通讯留在导入分组中",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "这是一次归档，不是对出版方的评判：它只说明这封邮件通讯来自您的语料库已经追踪的域名，绝不表示两者同样可靠。撤销会精确还原每一次自动归档，并且不会动您亲自归档的任何内容"
 }

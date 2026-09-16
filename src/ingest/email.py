@@ -30,7 +30,7 @@ from html import unescape
 from pathlib import Path
 from typing import cast
 
-from sqlalchemy import Table
+from sqlalchemy import Table, or_
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
@@ -40,6 +40,12 @@ from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_te
 from src.utils.url_utils import generate_content_hash
 
 _LOG = logging.getLogger(__name__)
+
+# The ingest channel stamped on a source this module CREATES for a resolved publisher.
+# It mirrors src/api/ingestion.py's _IMPORT_SOURCE_TYPE deliberately rather than
+# importing it: ingest must not depend on the API layer, and a newsletter is a CHANNEL
+# (never the Source.source_type default "news", which mislabels every import).
+_NEWSLETTER_SOURCE_TYPE = "newsletter"
 
 # Order matters in _strip_html: <style>/<script> BLOCKS (content + tags) and HTML
 # COMMENTS must go BEFORE the generic tag strip — otherwise the CSS/JS text survives
@@ -391,7 +397,98 @@ def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) 
 
 
 
-def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canonical: str) -> Article:
+# ---------------------------------------------------------------------------------------- #
+# THE WRITE-PATH AUTO-ATTACH (2026-06-15 ruling clause (d); Q1151 = a, 2026-09-16)
+# ---------------------------------------------------------------------------------------- #
+# Until now every imported newsletter landed in ONE bucket source, so a BBC newsletter sent
+# from email.bbc.com had no relationship to the scraped bbc.com. `newsletter_source.py` has
+# carried the ruled ladder as a PURE decision since 2026-09-07 and deliberately decided
+# nothing on the write path, because the ruling pairs the silent attach with an import UI
+# that announces it and an UNDO -- and all three ship together or none do.
+#
+# WHAT THIS IS NOT. There is no fuzzy matching anywhere in it: `resolve_newsletter_publisher`
+# is deterministic or it refuses, and a refusal lands in the bucket exactly as before. "bbc is
+# not nbc" is enforced by the resolver, not re-litigated here.
+
+
+@dataclass
+class _AttachDecision:
+    """One publisher's resolved destination, reused for every message from that publisher."""
+
+    source_id: int
+    via: str | None  # None = the bucket; the undo only ever restores rows with a value
+
+
+def _attach_target(
+    session: Session,
+    bucket: Source,
+    parsed: ParsedEmail,
+    cache: dict[tuple[str | None, str | None], _AttachDecision],
+) -> _AttachDecision:
+    """Where should THIS message be filed, and did the app decide it?
+
+    CACHED PER PUBLISHER, and that is a correctness requirement rather than a nicety: the
+    resolver compares ``lower(Source.domain)`` (deliberately, so a source added as
+    ``Example.COM`` still matches), which SQLite cannot serve from an index, so it scans the
+    sources table. The module's own docstring flags this for "a future write-path wiring that
+    runs this per message" -- this is that wiring, and a 5,000-message import would otherwise
+    perform 5,000 scans to answer at most a few dozen distinct questions.
+
+    THE CACHE KEY IS THE RESOLVER'S OWN INPUT SET, not the sender: on a platform host the
+    List-Id selects the PUBLICATION, so two messages sharing substack.com are two different
+    publishers and one cache entry for both would assert the very merge the refusal branch
+    exists to prevent. Everywhere else `publisher_key` ignores the List-Id and the key
+    collapses back to the domain.
+    """
+    from src.ingest.newsletter_source import (
+        _platform_for,
+        resolve_newsletter_publisher,
+        sender_domain,
+    )
+
+    dom = sender_domain(parsed.from_addr)
+    # list_id_parsed, never list_id: what `parse_email` stores is the already-PARSED bare
+    # identifier, and `publisher_key`'s `list_id` parameter would parse a raw header a second
+    # time, get None, and drop silently to the refusal branch (the recorded 2026-09-10 trap).
+    lid = (parsed.list_id or None) if (dom and _platform_for(dom)) else None
+    key = (dom, lid)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
+    res = resolve_newsletter_publisher(
+        session, parsed.from_addr, list_id_parsed=lid
+    )
+    if res.action in ("attach-exact", "attach-alias") and res.source_id is not None:
+        decision = _AttachDecision(res.source_id, f"{res.action}:{res.basis}")
+    elif res.action == "new-email-source" and res.key:
+        # The ladder's fourth rung, verbatim: "else a NEW, DISABLED email source". DISABLED
+        # matters -- the scheduler must never start fetching a domain because a newsletter
+        # from it was imported; arriving by email is not consent to scrape the website.
+        src = Source(
+            name=res.key,
+            domain=res.key,
+            enabled=False,
+            source_type=_NEWSLETTER_SOURCE_TYPE,
+        )
+        session.add(src)
+        # flush, never commit: the caller owns the transaction and batches its commits, so a
+        # batch that rolls back must take its newly-created sources with it. An id is all we
+        # need here and flush gives us one.
+        session.flush()
+        decision = _AttachDecision(int(src.id), f"{res.action}:{res.basis}")
+    else:
+        # Refused, or resolved to something with no id we can trust. The bucket, and NO
+        # provenance value -- the app did not move this article, so the undo must not either.
+        decision = _AttachDecision(int(bucket.id), None)
+    cache[key] = decision
+    return decision
+
+
+def _email_article(
+    source: Source, parsed: ParsedEmail, content_hash: str, canonical: str,
+    *, attached_via: str | None = None,
+) -> Article:
     now = datetime.now(UTC)
     # Sending mail-server IP (recipient-safe, deduced) → the same server_ip columns
     # web articles use, so newsletters surface on the ooMap "Server IPs" layer and
@@ -418,6 +515,9 @@ def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canon
         # header -> NULL: an absence, never an invented identifier, exactly as
         # ``parse_list_id`` already refuses to read the free-text phrase as one.
         newsletter_list_id=parsed.list_id,
+        # The auto-attach record (Q1151). None = the app did not move this article, which
+        # is what makes the undo reverse exactly its own decisions and nothing else.
+        newsletter_attached_via=attached_via,
         created_at=now,
         updated_at=now,
     )
@@ -559,7 +659,49 @@ def ingest_emails(
         "recipient_redactions": 0,
         "tracker_params_stripped": 0,
         "trackers_flagged": 0,
+        # Q1151: what the auto-attach DID, so the import UI can announce it rather than
+        # move the user's articles silently. Counted on the message, not on the cache, so
+        # ten messages from one publisher count ten times -- the user asks "where did my
+        # articles go", never "how many distinct decisions were taken".
+        "attached_existing": 0,   # a deterministic eTLD+1 or alias hit on a source you have
+        "attached_new_source": 0, # the ladder's 4th rung: a NEW, DISABLED email source
+        "attach_refused": 0,      # stayed in the bucket; a gap, never a guess
     }
+    # publisher -> destination, resolved once per publisher per import (see _attach_target).
+    attach_cache: dict[tuple[str | None, str | None], _AttachDecision] = {}
+    _ACTION_TALLY = {
+        "attach-exact": "attached_existing",
+        "attach-alias": "attached_existing",
+        "new-email-source": "attached_new_source",
+    }
+
+    def _place(parsed: ParsedEmail) -> tuple[Source, str | None]:
+        """Resolve THIS message's destination Source. Counting happens after a successful store.
+
+        A cached id that no longer resolves falls back to the BUCKET *with no provenance
+        value* rather than to the bucket while still claiming an attach. The two halves have
+        to move together: `newsletter_attached_via` is what the undo trusts to say "the app
+        put this here", and a value beside a placement the app did not make would have the
+        undo move an article it never touched.
+        """
+        d = _attach_target(session, source, parsed, attach_cache)
+        if d.source_id == source.id:
+            return source, d.via
+        got = session.get(Source, d.source_id)
+        if got is None:
+            return source, None
+        return got, d.via
+
+    def _count_placement(via: str | None) -> None:
+        """Raise the attach counter for one article that is now COMMITTED.
+
+        Deliberately not called at placement time: a batch that fails its commit is redone
+        one message at a time, re-placing every message in it, and a counter raised at
+        placement would count those twice. Counting on the commit also makes the three
+        attach figures sum to ``stored`` by construction -- the property the import UI
+        shows the user.
+        """
+        tally[_ACTION_TALLY.get((via or "").split(":")[0], "attach_refused")] += 1
     # Added-but-not-yet-committed: (article, parsed, hash, canonical) — kept so a batch
     # that fails on commit can be re-applied one message at a time without re-parsing,
     # and so a successful flush can link-index each article by its post-commit id.
@@ -596,7 +738,12 @@ def ingest_emails(
         holder: dict = {}
 
         def _work() -> None:
-            a = _email_article(source, parsed, content_hash, canonical)
+            # Re-resolved here rather than carried in: this path runs after a rollback, and a
+            # source the rolled-back batch had FLUSHED no longer exists. The cache is
+            # repopulated by the same call, so a re-created publisher source is reused for the
+            # rest of the retry rather than created once per message.
+            target, via = _place(parsed)
+            a = _email_article(target, parsed, content_hash, canonical, attached_via=via)
             session.add(a)
             session.commit()
             holder["article"] = a
@@ -604,6 +751,7 @@ def ingest_emails(
         try:
             run_write_with_retry(_work, session=session, label="newsletter import")
             tally["stored"] += 1
+            _count_placement(holder["article"].newsletter_attached_via)
             _maybe_index_email_links(session, holder["article"].id, parsed.links)
         except Exception as exc:  # noqa: BLE001 - is_locked_error/_is_integrity_error are the
             # precise, cross-driver-aware discriminators (see _is_integrity_error's docstring);
@@ -625,6 +773,7 @@ def ingest_emails(
             session.commit()
             tally["stored"] += len(pending)
             for article, parsed, _h, _canon in pending:
+                _count_placement(article.newsletter_attached_via)
                 _maybe_index_email_links(session, article.id, parsed.links)
         except Exception as exc:  # noqa: BLE001 - same discriminated dispatch as _commit_one
             if not (is_locked_error(exc) or _is_integrity_error(exc)):
@@ -634,6 +783,10 @@ def ingest_emails(
             # lock: redo this batch one message at a time so a single collision/lock never
             # drops its batch-mates and never escapes as an unhandled error.
             session.rollback()
+            # The rollback took any publisher Source this batch had FLUSHED with it, so every
+            # cached id may now dangle. Dropping the cache costs one resolve per publisher on
+            # the retry; keeping it would attach articles to source ids that no longer exist.
+            attach_cache.clear()
             for _article, parsed, h, canon in pending:
                 _commit_one(parsed, h, canon)
         pending.clear()
@@ -660,7 +813,8 @@ def ingest_emails(
         ):
             tally["duplicate"] += 1
             continue
-        article = _email_article(source, parsed, content_hash, canonical)
+        target, via = _place(parsed)
+        article = _email_article(target, parsed, content_hash, canonical, attached_via=via)
         session.add(article)
         pending.append((article, parsed, content_hash, canonical))
         pending_hashes.add(content_hash)
@@ -717,13 +871,26 @@ NEWSLETTER_SOURCE_DOMAINS: tuple[str, ...] = (
 
 
 def _newsletter_article_ids(session: Session) -> list[int]:
-    """Live ids of every article that arrived via an imported-newsletter source."""
+    """Live ids of every article that ARRIVED as an imported newsletter.
+
+    TWO CLAUSES SINCE THE AUTO-ATTACH (Q1151), and the second one is the whole point. Before
+    it, "an imported newsletter" and "an article in a newsletter bucket source" were the same
+    set, so every reader could ask about the SOURCE. The attach breaks that: a newsletter
+    filed under ``bbc.com`` is still a newsletter, and a definition that only knows about the
+    bucket would quietly stop counting it -- which would make "Remove imported newsletters"
+    leave some behind while promising it removed every one.
+
+    ``newsletter_attached_via IS NOT NULL`` is exactly the set the app moved, so the union is
+    the true arrival set with no double counting and no guessing: nothing else in the tree
+    writes that column.
+    """
     src_ids = [
         s for (s,) in session.query(Source.id).filter(Source.domain.in_(NEWSLETTER_SOURCE_DOMAINS))
     ]
-    if not src_ids:
-        return []
-    return [a for (a,) in session.query(Article.id).filter(Article.source_id.in_(src_ids))]
+    clauses = [Article.newsletter_attached_via.isnot(None)]
+    if src_ids:
+        clauses.append(Article.source_id.in_(src_ids))
+    return [a for (a,) in session.query(Article.id).filter(or_(*clauses))]
 
 
 def count_imported_newsletters(session: Session) -> int:

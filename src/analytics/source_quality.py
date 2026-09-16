@@ -741,7 +741,13 @@ def build_sample_records(
     for chunk in _chunks(ids):
         arts.extend(session.query(Article).filter(Article.id.in_(chunk)).order_by(Article.id))
     for art in arts:
-        is_newsletter = art.source_id in newsletter_source_ids
+        # PER-ARTICLE, not per-source, since the write-path auto-attach (Q1151): a newsletter
+        # filed under its publisher's own source is still a private .eml body, and a
+        # source-only test would have exported exactly the bodies this gate exists to hold
+        # back. `newsletter_attached_via` is written by nothing else in the tree.
+        is_newsletter = (
+            art.source_id in newsletter_source_ids or bool(art.newsletter_attached_via)
+        )
         gated = is_newsletter and not include_newsletter_text
         text_head = None if gated else (art.get_content() or "")[:max_chars]
         ext_links = link_counts.get(int(art.id), 0)
