@@ -156,7 +156,17 @@ jobs:
       # topic PR genuinely removes that finding can take 445 with it and prove it on its own
       # tree. Lowering it from here would be asserting a number this branch cannot measure.
       - name: Lint — style non-growth ratchet (may only be lowered)
-        run: python scripts/ruff_ratchet.py --max 446
+        # 2026-09-16 (Q1139, the diagnostics package split): 446 -> 442, MEASURED ON THIS
+        # branch, which is the tree that carries it. `origin/main`@a962ea1b reads 445 and
+        # this branch reads 441 -- four findings genuinely gone (the split's own modules are
+        # import-sorted). This is the drop the note above says a topic PR may claim once it
+        # can prove it on its own tree. The ceiling is set at 442 rather than 441 ON PURPOSE,
+        # for the same reason as the note above: CI measures the MERGE, so one slot absorbs a
+        # finding main lands while this PR is open, and the script prints the new floor to
+        # whoever touches the lane next. THE READING TO TRUST IS THE ONE TAKEN AFTER THE LAST
+        # EDIT: this branch read 442, then 447, then 443, then 441 as files were added and
+        # fixed -- only the base measurement (445) ever said which findings were its own.
+        run: python scripts/ruff_ratchet.py --max 442
 
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session

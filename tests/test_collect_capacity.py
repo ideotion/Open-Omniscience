@@ -425,11 +425,13 @@ def test_the_learned_ceiling_reaches_a_reader():
     they configured 50 and has nowhere to look. Guarded as a CALL, because the block's own
     comment names the module."""
     import ast
-    import pathlib
 
-    import src.api.diagnostics as diagnostics
+    from tests.diagnostics_source import diagnostics_source
 
-    tree = ast.parse(pathlib.Path(diagnostics.__file__).read_text(encoding="utf-8"))
+    # Q1139 split: `diagnostics.__file__` is the PACKAGE `__init__.py`, which holds only
+    # re-exports. The shared reader concatenates every slice, which is what an "is it
+    # called anywhere" question has to search.
+    tree = ast.parse(diagnostics_source())
     called = [
         n
         for n in ast.walk(tree)

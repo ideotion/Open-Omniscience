@@ -21,6 +21,8 @@ import zipfile
 import pytest
 
 from src.api import diagnostics as d
+from src.api.diagnostics import bundle as _diag_bundle
+from tests.diagnostics_source import diagnostics_source
 
 
 class _Ctx:
@@ -51,8 +53,8 @@ def tiny_members(monkeypatch, tmp_path):
         ("bad.json", _boom),  # a failing member must not abort the bundle
         ("b.json", lambda: {"y": 2}),
     ]
-    monkeypatch.setattr(d, "_all_diagnostics_members", lambda db: members)
-    monkeypatch.setattr(d, "_all_diagnostics_dir", lambda: tmp_path)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_members", lambda db: members)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_dir", lambda: tmp_path)
     return tmp_path
 
 
@@ -482,10 +484,11 @@ def test_no_member_call_site_leaves_a_Query_default_unpassed():
     exactly how this shipped.
     """
     import ast
-    import inspect
     import re
 
-    src = inspect.getsource(d)
+    # Q1139 split: `inspect.getsource(package)` returns only `__init__.py`. The shared
+    # reader concatenates every slice, which is what this guard has to search.
+    src = diagnostics_source()
     tree = ast.parse(src)
 
     fastapi_defaults: dict[str, list[str]] = {}

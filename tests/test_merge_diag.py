@@ -316,9 +316,16 @@ def test_the_bundle_member_produces_a_real_report(monkeypatch) -> None:
     ``probe=False`` here keeps the test fast; the member itself passes True.
     """
     pytest.importorskip("sqlalchemy")
+    from fastapi.responses import JSONResponse  # not re-exported by the package
+
     import src.api.diagnostics as d
 
-    monkeypatch.setattr(d, "merge_diag", lambda **kw: d.JSONResponse(
+    # Q1139 split: `bundle.py` does `from .evals import merge_diag`, which binds its OWN
+    # name. Patching the DEFINING module leaves that copy untouched -- patch the module
+    # whose code reads it.
+    from src.api.diagnostics import bundle as _diag_evals
+
+    monkeypatch.setattr(_diag_evals, "merge_diag", lambda **kw: JSONResponse(
         merge_diag.merge_diagnostics(probe=False) | {"_kw": sorted(kw)}
     ))
     from src.database.session import SessionLocal

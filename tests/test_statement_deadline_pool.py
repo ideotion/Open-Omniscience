@@ -347,6 +347,7 @@ def test_a_partial_member_keeps_its_payload(tmp_path, monkeypatch):
     import zipfile
 
     from src.api import diagnostics as D
+    from src.api.diagnostics import bundle as _diag_bundle
 
     eng = _engine(tmp_path)
     db = sessionmaker(bind=eng)()
@@ -355,8 +356,8 @@ def test_a_partial_member_keeps_its_payload(tmp_path, monkeypatch):
         time.sleep(0.15)                 # overruns the deadline, then returns its work
         return {"cards": [1, 2, 3]}
 
-    monkeypatch.setattr(D, "_member_touches_db", lambda _fn: True)
-    monkeypatch.setattr(D, "_all_diag_db_member_deadline_s", lambda: 0.05)
+    monkeypatch.setattr(_diag_bundle, "_member_touches_db", lambda _fn: True)
+    monkeypatch.setattr(_diag_bundle, "_all_diag_db_member_deadline_s", lambda: 0.05)
 
     buf = io.BytesIO()
     try:
