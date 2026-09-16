@@ -7,11 +7,14 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 - Binds to **127.0.0.1 only** (loopback). It must never be exposed on a network
   interface; there is intentionally no authentication/RBAC for this deployment.
 - **No telemetry. No data leaves the machine.** LLM inference is local (Ollama, HTTP).
-- Outbound traffic happens **only during ingestion**, and only through the single
-  ethical fetcher: robots.txt is honoured and **fail-closed** (if it can't be
-  confirmed, the URL is not fetched), per-host rate-limited, identifying User-Agent.
-  As of the v0.0.7 audit (finding ETH-01) this includes RSS-feed **discovery** —
-  it fetches through the same ethical fetcher, with the same guards.
+- **Article collection** goes through the single ethical fetcher and nothing else:
+  robots.txt is honoured and **fail-closed** (if it can't be confirmed, the URL is not
+  fetched), per-host rate-limited, identifying User-Agent. As of the v0.0.7 audit
+  (finding ETH-01) this includes RSS-feed **discovery** — same fetcher, same guards.
+  *Outside* collection the app can also reach the endpoints enumerated below; three of
+  them do not use the ethical fetcher and each says so on its own row. **That table is
+  the complete answer to "what can this app contact"** — it is derived from the tree by
+  a sweep a repo test re-runs, not from anyone's memory.
 - **One documented exception, now opt-in** (audit finding ETH-02, gated in 0.0.8 per
   RM-03): *Discover by topic* sends your topic query to **DuckDuckGo** (an external
   service) to find candidate outlets. It is **disabled by default** — the endpoint
@@ -20,51 +23,131 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   (`OO_DISCOVERY_EXTERNAL=1` for headless use). It is strictly user-triggered — never
   part of ingestion, the scheduler, or any default path. (The browser-rendered `/docs` Swagger page also
   references a CDN for its own assets; the app itself never fetches it.)
-- **Every other outbound call is consented and off the default/boot path — most by
-  explicit user action, one (the hazard feeds, below) by an opt-out setting rather
-  than a click.** For completeness, the full set of endpoints the app can reach
-  beyond article ingestion, re-verified against the current tree (last checked
-  2026-09-08):
-  - **DuckDuckGo** — the opt-in *Discover by topic* channel above.
-  - **Open-Meteo** (`src/weather/openmeteo.py`, `archive-api.open-meteo.com`) —
-    weather-context reanalysis, fetched only when you click "fetch" on a corroboration
-    Lead. CC BY 4.0, disclosed at the point of use.
-  - **Official-statistics endpoints** (`src/stats/fetch.py`: World Bank
-    `api.worldbank.org`, Eurostat, Our World In Data `ourworldindata.org/grapher`,
-    and any JSON-stat/PxWeb URL you paste in, e.g. IRENA) — official figures, fetched
-    on click; a tracked figure can auto-refresh on the scheduler's markets pass only
-    if you subscribed it.
-  - **GitHub releases API** (`src/llm/installer.py`, `api.github.com/repos/ollama/…`) —
-    to fetch the official Ollama installer and its attested `sha256` digest when you run
-    the in-app installer.
-  - **Ollama's own model pulls** — when you pull a model, Ollama downloads it over
-    **clearnet via its own process** (not our fetcher, not Tor); this is disclosed at the
-    consent step.
-  - **USGS earthquake + GDACS disaster-alert feeds** (`src/api/hazards.py`:
-    `earthquake.usgs.gov`, `gdacs.org`) — the one **automatic, opt-out** exception on
-    this list: fetched through the same ethical fetcher, but on every scheduler pass
-    rather than by click, unless you set the scheduler's `auto_track_signals` to
-    `false` (`src/scheduler/settings.py`, via `PUT /api/scheduler/config`), which
-    defaults **on** and has no dedicated Settings-panel toggle today.
-  - **IMAP/POP3 newsletter mailbox pull** (`src/ingest/email.py`,
-    `POST /api/newsletters/mailbox`) — connects, only when you trigger a pull, to a
-    mail server *you* configure, over raw `imaplib`/`poplib` rather than the ethical
-    fetcher (mail protocols have no robots.txt or HTML to parse); its own explicit
-    kill-switch check refuses while offline is engaged.
-  - **OpenTimestamps calendar submission** (`src/custody/timestamp.py`: three public
-    calendar hosts including `a.pool.opentimestamps.org`) — submits an opaque SHA-256
-    digest of your content (never the content itself) to public Bitcoin-calendar
-    servers, only when you enable the opt-in "opentimestamps" chain-of-custody
-    anchoring mode (off by default). The module's own docstring discloses that the
-    *act of submitting* reveals your IP and timing to the calendar operator, and
-    recommends routing it over Tor for a source who needs anonymity. Uses the
-    OpenTimestamps client library's own HTTP calls, not our ethical fetcher.
+- **Every other outbound call is consented and off the default/boot path.** Some are a
+  click; several are **ride-alongs that run inside an online collect pass you started**,
+  each named below with its own opt-out (or with the honest note that it has none yet).
+  The table is the **full set of endpoints the app can reach**, grouped by lane, derived
+  from the tree rather than from memory — the sweep that produced it is quoted under *How
+  this list is kept true*. Every PR that adds a host adds it **here and to the consent
+  popup's hover in the same diff** — enforced by
+  `tests/test_security_endpoint_enumeration.py`, which lands with that hover in the second
+  PR of this slice. Last checked **2026-09-16**.
 
-  All of the above are gated behind the airplane kill switch. Most add their own
-  explicit per-call refusal; the two that bypass the ethical fetcher (mailbox pull,
-  OpenTimestamps) still cannot open a socket while offline, because the kill switch
-  is enforced process-wide at the socket level, not only inside the fetcher (see
-  *Data at rest & airplane mode*, next).
+  **One consent, many hosts.** Every offline→online transition passes the ONE consent
+  popup (`ensureOnline`, UI invariant #14), whose hover lists exactly the hosts below,
+  per lane, so that single decision is an informed one. Every row is gated by the airplane
+  kill switch, which is enforced **process-wide at the socket level** — not only inside the
+  fetcher — so a row that bypasses `EthicalFetcher` still cannot open a socket while
+  offline.
+
+  **Transport (Q1014).** Every row marked *ethical fetcher* goes through the ONE
+  `EthicalFetcher` / `guarded_session` path: robots.txt fail-closed, per-host politeness,
+  an honest bot User-Agent, bounded redirects re-validated per hop, and the connect-time
+  SSRF check. With protected fetch mode on, that path carries your proxy (e.g. Tor), and
+  **a lane never silently downgrades Tor → clearnet** — the fetch is refused and the
+  refusal is surfaced. The three rows that do *not* use the ethical fetcher say so, and say
+  what they use instead.
+
+| Lane | Hosts it can reach | Trigger | Transport | Where in the tree |
+|---|---|---|---|---|
+| **Press collection** | *A class, never enumerable:* the domains of **the sources you have enabled** — **9,033 distinct hosts** across the bundled directory (`configs/sources.yml`, `configs/academic_sources.yml`, `configs/official_sources.yml`, `configs/sources_spectrum.yml`, `configs/markets_sources.yml`), plus every feed or site **you** add. A source is reached at *two* addresses: its `rss_url` when it has one, and `https://<its domain>` for the crawl and the preflight — which is why a sweep for `https://` literals alone sees only 5,425 of them, and why the guard sweeps the scheme-less `domain:` field too. The sub-rungs stay on the source's own domain: sitemap discovery, the bounded crawl rung (`crawl_per_pass`, default 3) and the archive-backfill rung (`archive_backfill_per_pass`, default 5). | The collect pass you start | ethical fetcher | `src/ingest/__init__.py:529` · `src/ingest/pipeline.py` · `src/ingest/sitemap.py` · `src/ingest/crawl.py` · `src/ingest/archive_backfill.py` · `src/ingest/seed_sources.py` · `src/ingest/crawl.py:149` and `src/monitoring/preflight.py:68` (the `https://{domain}` synthesis) |
+| **Source discovery** | `query.wikidata.org` (the SPARQL endpoint), `www.wikidata.org` (the Action API, for entity enrichment) | **Ride-along, default on** — `world_discovery_per_pass` defaults to **2**; set it to `0` to stop it. Candidate *qualification* (`qualification_per_pass`, default 5) reaches the candidate's own domain, i.e. the press class. | ethical fetcher (`guarded_session`) | `src/catalog/wikidata.py:23` · `src/catalog/discover.py:40` · `src/catalog/wikidata_enrich.py:33` · `src/catalog/wikidata_apply.py` · `configs/catalog_query.yml` |
+| **Wikipedia / Wikimedia** | `*.wikipedia.org` — the per-edition Action API, one host per language edition you watch — plus `ores.wikimedia.org` (revision-quality models) and `dumps.wikimedia.org` (full-edition dumps **and** the size estimate) — plus any alternate **mirror URL an operator adds** for the same artifact, which every shipped catalogue entry leaves empty | Click: watching a page, running a `wiki` scheduler pass, "Estimate size", "Download" | ethical fetcher | `src/wiki/mediawiki.py:26` · `src/wiki/client.py` · `src/wiki/ores.py:22` · `src/wiki/dumps.py:140` · `src/wiki/dumps.py:419` (the HEAD behind the estimate) |
+| **Maps / OpenStreetMap** | `download.geofabrik.de` (regional extracts), `planet.openstreetmap.org` (the planet file) — plus any alternate **mirror URL an operator adds**, empty in every shipped entry | Click — starting a region or planet download | ethical fetcher | `src/geo/osm_downloads.py:61` · `src/geo/osm_downloads.py:62` · `src/geo/osm_regions.py` |
+| **Law** | *A class today:* the **law authorities of the jurisdictions being tracked** — **260 distinct hosts** across `configs/legal_sources.yml` (the curated portals: `eur-lex.europa.eu`, `www.legifrance.gouv.fr`, `www.legislation.gov.uk`, `www.govinfo.gov`, `www.gesetze-im-internet.de`, `laws-lois.justice.gc.ca`, `www.un.org`, `www.wipo.int`) and `configs/legal_sources_generated.yml` (national gazettes and attorney-general chambers). Each file has two halves: its `documents:` are polled by the law tracker, least-recently-checked first, and only the ones you watch; its `sources:` are seeded into the source directory and crawled like any press source. | **Ride-along, always on.** `src/scheduler/runner.py:1250` reads an `auto_track_law` opt-out, but `SchedulerSettings` defines no such field — so the `getattr(…, True)` default always wins and **there is no way to switch it off today** (recorded 2026-09-16; the toggle is owed). | ethical fetcher | `src/law/track.py:455` · `src/scheduler/runner.py:1250` · `src/law/catalog.py` |
+| **Official statistics** | `api.worldbank.org`, `ec.europa.eu` (Eurostat), `ourworldindata.org`, and any JSON-stat / PxWeb URL **you** paste in (e.g. IRENA) | Click ("Load standard country data", a figure's fetch) **and a ride-along, default on**: `country_data_per_pass` defaults to **2** and bootstraps the first load of a curated indicator in the background; set it to `0` to stop it. A figure you subscribed also auto-refreshes on the markets pass. | ethical fetcher | `src/stats/fetch.py:54` · `src/stats/fetch.py:56` · `src/stats/fetch.py:63` · `src/api/governments.py:582` · `src/scheduler/runner.py:1394` |
+| **Markets & commodities** | `fred.stlouisfed.org`, `www.eia.gov`, `www.imf.org`, `www.worldbank.org` — the bundled commodity and index feed catalogs | **Ride-along, always on** — the markets rung runs on every online pass (a feed fresher than its threshold is skipped). Its budget has no toggle. | ethical fetcher | `src/markets/pipeline.py:186` · `src/markets/feed_catalog.py` · `configs/commodity_feeds.yml` · `configs/index_feeds.yml` |
+| **Calendars** | The bundled directory `configs/calendar_feeds.yml`: `date.nager.at`, `www.openholidaysapi.org`, `www.officeholidays.com`, `www.calendarlabs.com`, `www.hebcal.com`, `litcal.johnromanodorazio.com`, `worldpublicholiday.com`, `fosdem.org`, `f1calendar.com`, `www.matchesio.com`, `www.rocketlaunch.live`, `pirate.monkeyness.com`, `raw.githubusercontent.com`, `jonamarkin.github.io` — plus any `.ics` URL **you** add. (Four more hosts ship in that file and are **never fetched**; they are named under the table.) | **Ride-along, always on.** `src/scheduler/runner.py:1248` reads an `auto_import_calendars` opt-out that `SchedulerSettings` likewise does not define, so it is **not switchable today** (recorded 2026-09-16). Up to five feeds per pass also have their robots verdict re-verified. | ethical fetcher | `src/events/feeds.py:40` · `src/events/feeds.py:58` · `src/scheduler/runner.py:1300` · `src/monitoring/feed_preflight.py:119` |
+| **Hazard feeds** | `earthquake.usgs.gov`, `www.gdacs.org` | **Ride-along, default on, and its opt-out does not work.** `auto_track_signals` is a real `SchedulerSettings` field and `save_settings` honours it — but `SchedulerConfigUpdate`, the request model `PUT /api/scheduler/config` validates against, does not declare it, so Pydantic drops the key and the endpoint returns **200 having changed nothing**. Live-reproduced 2026-09-16. This document has named that route as the opt-out for months; it is corrected here rather than left standing | ethical fetcher | `src/api/hazards.py:27` · `src/api/hazards.py:28` · `src/scheduler/runner.py:1349` |
+| **Weather** | `archive-api.open-meteo.com` | Click — "fetch" on a corroboration Lead. CC BY 4.0, disclosed at the point of use. | ethical fetcher | `src/weather/openmeteo.py:33` |
+| **Discover by topic** | `html.duckduckgo.com` — and only that host; the redirector DuckDuckGo wraps its results in is unwrapped locally and never followed (see under the table) | **Opt-in, off by default** — the endpoint refuses with an honest message until you enable *Settings → Advanced → Safety → External topic discovery* (`OO_DISCOVERY_EXTERNAL=1` headless). Strictly user-triggered: never part of ingestion, the scheduler, or any default path. | ethical fetcher | `src/services/duckduckgo.py:60` · `src/services/duckduckgo.py:227` (the refusal) |
+| **Local AI install & weights** | `api.github.com` (the official Ollama installer and its attested `sha256`) and the release-asset host that API names, today `objects.githubusercontent.com` — a value read from the response, not a URL we build; `huggingface.co` (vLLM model weights), `pypi.org` (installing vLLM into the managed venv) — plus whatever registry **Ollama's own daemon** contacts for a model pull (see Transport) | Click, through the **separate AI-egress consent window** — a third state in which the kill switch stays engaged, the collector stays stopped, and only the install is exempted | **Mixed.** `api.github.com` is a guarded fetch. The other three are performed by a **spawned process** — `pip`/`uv` and `huggingface_hub` — over **clearnet, not through this app's fetcher or proxy**. A model pull is a loopback `POST /api/pull` to the Ollama daemon, which then egresses on its own: this app neither builds that URL nor can name the host, and saying so is more honest than guessing one. Every `ollama.com` literal in our source is a **page we link you to**, never a page we fetch. Disclosed at the consent step. | `src/llm/installer.py:61` · `src/llm/ollama.py:751` (the loopback `POST /api/pull` that asks the daemon to fetch) · `src/llm/vllm_lifecycle.py:3321` · `src/llm/vllm_lifecycle.py:3510` · `src/llm/weights_pin.py` |
+| **Newsletter mailbox** | The **mail server you configure** (IMAP/POP3) | Click — only when you trigger a pull | **Not the ethical fetcher:** raw `imaplib`/`poplib` (mail protocols have no robots.txt or HTML to parse). Its own explicit kill-switch check refuses while offline is engaged. | `src/ingest/email.py` · `POST /api/newsletters/mailbox` |
+| **Chain of custody** | `a.pool.opentimestamps.org`, `b.pool.opentimestamps.org`, `alice.btc.calendar.opentimestamps.org` | **Opt-in, off by default** — the "opentimestamps" anchoring mode. All three reachable paths are consent-gated (invariant #14f): the "Anchor root" button, the endpoint itself (`consent: true`), and turning the setting on (`ots_consent: true`, demanded once on the local→OTS transition, never re-stamped on every save). | **Not the ethical fetcher:** the OpenTimestamps client library's own HTTP calls. `ots_stamp()` refuses **by name** when the kill switch is on. | `src/custody/timestamp.py:40` |
+
+  **The four calendar hosts that are never fetched.** `configs/calendar_feeds.yml` still
+  ships `calendar.google.com`, `www.webcal.guru`, `cantonbecker.com` and
+  `space.floern.com`, each with its dated record — and `src/events/feeds.py:58` filters all
+  four out of the loaded directory entirely, because their robots.txt disallows the paths
+  in question (field-verified). They are removed, not merely skipped, so they never appear
+  in the UI, the preflight or the auto-import. That is the host's own choice, surfaced
+  rather than worked around.
+
+  **The DuckDuckGo redirector is refused, not followed.** A result comes back wrapped in
+  `duckduckgo.com/l/?uddg=…`. The app extracts the real target **from the query string,
+  locally**, and refuses the redirector itself (`src/services/duckduckgo.py:227`) — so the
+  host is never fetched and never registered as a source.
+
+  **What an OpenTimestamps submission reveals** is your IP and timing, to the calendar
+  operator — the *act of submitting*, not the content: only an opaque SHA-256 digest of
+  your content is sent, never the content itself. Route it over Tor if you are a source
+  who needs anonymity.
+
+  **The preview is gated too (invariant #14e).** After gating an action, every estimate,
+  preview, validation, reachability check and autocomplete that runs *before* it is gated
+  as well, because those egress first. That is why "Estimate size" is named on the dumps
+  row, and why the robots **preflight** (`src/monitoring/feed_preflight.py:119`) is named
+  on the calendar and market rows whose hosts it reads. A refusal by the kill switch is
+  reported as a kill-switch refusal, never as the remote server's failure.
+
+  **Two endpoints that exist only because they are switched off.** DuckDB would fetch
+  its own extensions from its extension repository on first use; the columnar store opens
+  every connection with `autoinstall_known_extensions`, `autoload_known_extensions` and
+  `enable_external_access` all **false** (`src/analytics/columnar.py`), and the one
+  extension we use is loaded from a locally bundled, SHA-256-verified binary.
+  `huggingface_hub` pings its own telemetry endpoint by default; the weight-download
+  subprocess sets `HF_HUB_DISABLE_TELEMETRY=1` (`src/llm/vllm_lifecycle.py`). Both are
+  worth stating because "we do not contact it" is a property of a setting here, not of
+  the absence of code, and a dependency upgrade can quietly change a default.
+
+  **⚠ Three ride-alongs cannot be switched off today, for two different reasons.**
+  `auto_import_calendars` and `auto_track_law` are read through
+  `getattr(settings, …, True)` (`src/scheduler/runner.py:1248,1250`) against a
+  `SchedulerSettings` that defines neither, so the default always wins.
+  `auto_track_signals` is worse in kind: the field exists and is honoured, but the API's
+  request model omits it, so an operator who turns it off is told the change succeeded
+  and it was not. A refusal is honest; a **silently discarded** consent control is not,
+  which is why it is stated here rather than waiting for the fix. All three are recorded
+  as open work, with the reproduction, in `docs/ledger/OPEN_QUEUE.md` (2026-09-16).
+
+  **Named here because the running app never fetches them.** These host names are in the
+  tree and are *not* endpoints: the GPL licence URL `www.gnu.org` in every file header;
+  `github.com/ideotion/Open-Omniscience` in the bot User-Agent's contact field and in docs
+  links; `publicsuffix.org` and `db-ip.com`, recorded as the provenance of lists that ship
+  **bundled in the repo** and are never downloaded; `graphml.graphdrawing.org`, an XML
+  namespace URI; `open-meteo.com`, the CC BY 4.0 attribution the weather note carries;
+  `wiki.openstreetmap.org` and `astral.sh`, named by a comment and by a docstring that
+  explains what the code deliberately does *not* do; `origin.cpc.ncep.noaa.gov` and `www.naturalearthdata.com`, named by a
+  parser docstring and by the artifact registry for files an **operator** supplies; the
+  ~30 agency home pages in `src/stats/agencies.py`, which are descriptive metadata reduced
+  to a registrable domain locally; the `en.wikipedia.org` citation links in
+  `configs/world_timeline.yml` and `configs/world_events.yml`; and the fixture hosts in
+  docstrings and self-tests. **Installers, maintainer tooling and CI** —
+  `./install.sh`, `./install.ps1`, `scripts/` and `.github/workflows/` — reach `pypi.org`, the
+  platform's package mirror, `api.github.com`, `raw.githubusercontent.com`,
+  `api.nuget.org`, `query.wikidata.org`, `api.worldbank.org`, `download.db-ip.com` and
+  `origin.cpc.ncep.noaa.gov`. That is a developer's machine, an operator installing the
+  app, or a CI runner — never the installed app at runtime. `./install-offline.sh` makes
+  zero network requests by design.
+
+  **How this list is kept true.** The enumeration is derived, not remembered:
+
+  ```
+  grep -rnoE 'https?://[A-Za-z0-9._{}%$()-]+' src/ configs/ scripts/
+  grep -rnE '^[A-Z_]*(BASE|URL|ENDPOINT|HOST|API|MIRROR|CALENDAR|FEED|DOMAIN)[A-Z_]*\s*[:=]' src/ --include=*.py
+  grep -rnE '^\s*-?\s*domain:' configs/            # scheme-less; a URL grep cannot see these
+  ```
+
+  The third line is not decoration. `configs/markets_sources.yml` carries 112 sources as
+  bare `domain:` values with no `rss_url` at all, so **a sweep for `https://` literals sees
+  none of them** — and `src/ingest/crawl.py:149` still reaches every one at
+  `https://<domain>`. Any future guard that greps only for URLs inherits that blindness.
+
+  `tests/test_security_endpoint_enumeration.py` will re-run that sweep on every CI run and
+  fail when a host literal in the tree is absent from this table, when a URL-bearing config
+  file is not named here, or when this table and the consent popup's hover disagree. Every
+  exemption in it states its reason in a sentence a reviewer can disagree with. It arrives
+  with the hover, in the second PR of this slice; this PR is the enumeration itself.
 
 ## Data at rest & airplane mode
 
