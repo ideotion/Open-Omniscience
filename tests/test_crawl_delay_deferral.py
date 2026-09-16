@@ -326,3 +326,45 @@ def test_the_trial_fetch_and_ride_along_inherit_by_construction():
         "trial_fetch stopped going through the shared ingest path; the deferral "
         "bucket and the persisted stamp no longer reach it"
     )
+
+
+def test_a_deferred_host_gets_no_qualification_verdict_rather_than_a_bad_one():
+    """The load-bearing half of "never a failure of the source", pinned.
+
+    A host we declined to fetch out of politeness must not be JUDGED for it. The
+    guarantee holds today as a side effect of a mechanism built for something else
+    -- the 2026-07-23 no-evidence fix -- and the recorded rule is that a ruled
+    guarantee resting on an unrelated mechanism is untested, and the change that
+    breaks it will look unrelated. So it is asserted at the chokepoint:
+
+      * a deferral stores no article, so the source is absent from
+        ``per_source_metrics``;
+      * ``run_qualification_pass`` splits on ``s.id not in per`` and routes the
+        absent ones to ``log_no_evidence_attempts``;
+      * ``no_evidence`` is an ATTEMPT-LOG-only verdict that never becomes a
+        ``Source.status``, so the ladder neither advances nor resets.
+
+    Reading the source rather than driving a whole pass, because the property is
+    about which SET a source lands in; the pass itself needs a corpus, a fetcher and
+    a network posture, none of which change the answer.
+    """
+    import inspect
+
+    from src.catalog import qualification
+
+    src = inspect.getsource(qualification.run_qualification_pass)
+    assert "s.id not in per" in src, (
+        "the no-evidence split is gone; a source that produced no evidence may now "
+        "be judged on it"
+    )
+    assert "log_no_evidence_attempts" in src
+    # The verdict must be in NEITHER set. The module's own comment says why: it
+    # records that a judgement could not happen, so counting it either way would be
+    # a lie in a different direction.
+    assert qualification.VERDICT_NO_EVIDENCE == "no_evidence"
+    for name in ("JUDGING_VERDICTS", "CLOCK_VERDICTS"):
+        bucket = getattr(qualification, name)
+        assert qualification.VERDICT_NO_EVIDENCE not in bucket, (
+            f"no_evidence joined {name}; a host we declined to fetch out of "
+            "politeness would then have that counted as a judgement about it"
+        )

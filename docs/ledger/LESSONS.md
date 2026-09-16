@@ -9872,3 +9872,31 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   answered it in seconds. Cost here was small (the item was recorded VERIFIED-PRESENT rather
   than rebuilt), and it would have been a whole duplicated slice had the tell not been an
   existing file turning up under the exact path the brief said to create.
+
+- **TWO RECORDS OF ONE CONSTRAINT WILL DISAGREE THE MOMENT ANYTHING MOVES ONE OF THEM — and
+  "I only compare durations, so the frames don't matter" is the reasoning that ships it
+  (2026-09-16, S04-13 S2, PR #1142).** The new persisted per-host stamp was consulted for
+  EVERY host alongside the in-memory `_last_request`, with `max()` picking the longer wait —
+  written deliberately, with a docstring explaining that the two live in different clock
+  frames *on purpose* and that comparing the resulting DURATIONS is frame-independent. The
+  durations are frame-independent. What is not is the amount each clock has ADVANCED: under an
+  injected test clock the monotonic record had moved 2 s and the wall-clock stamp 0.1 ms, so a
+  fetcher owing 8 s of a 10 s `Crawl-delay` slept 10. **Both readings were internally correct**,
+  which is what made it hard to see and what makes the class worth naming: the bug was not an
+  arithmetic error in either record, it was having two. In production the frames tick together,
+  so the second record was pure redundancy — it could only ever be wrong, never right. The fix
+  was to narrow the sidecar to what the in-memory record genuinely cannot know (first contact in
+  this process; a declared delay a lapsed robots TTL has forgotten), which is the same "one
+  authority, never a second beside it" principle the slice's OWN S1 ruling (Q1012 = a) was
+  built on — applied to S1 and violated two files away in S2, in the same PR.
+  **THE REASON THIS WAS CAUGHT AT ALL:** `tests/test_rate_limit_timing.py` has pinned this
+  arithmetic since 0.0.8 and injects a fake clock *precisely because* the durations are the
+  thing worth asserting. It went red on a change that never mentioned it. The four new suites
+  written FOR this slice all passed — they assert which branch was taken and what was recorded,
+  deliberately never a duration (their own docstring says so), so none of them could see it.
+  A new test suite covers what its author thought of; an old one covers what someone else did.
+  **AND THE SAME SESSION HAD ALREADY LEARNED THE PRINCIPLE AND WRITTEN IT DOWN:** invariant
+  #20's own recorded omission says "a second, unrelated rate authority beside it is how two
+  surfaces come to disagree about one quantity". Knowing the rule is not the same as noticing
+  you are breaking it — the tell is structural and greppable (a `max()` or a `min()` over two
+  stored records of the same fact), not a matter of remembering harder.

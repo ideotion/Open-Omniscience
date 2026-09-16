@@ -25,20 +25,45 @@ import subprocess
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
-#: Every string the budget panel can render, named one by one.
-_BUDGET_STRINGS = [
-    "Collection speed",
-    "Budget",
-    "Measured (whole process)",
-    "of which file downloads",
-    "Maximum — no ceiling",
-    "{rate} kbit/s",
-    "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — "
-    "reducing collection cannot recover it.",
-    "Some downloads cannot be measured yet, so this figure is a lower bound.",
-    "The whole process is held to this rate — the collector’s fetches plus every "
-    "file download — measured by the app itself, never a system network counter.",
-]
+def _budget_strings() -> list[str]:
+    """Every string the budget panel can render, READ OUT OF THE PANEL.
+
+    A hand-mirrored list is the thing this function exists not to be. It agreed with
+    the renderer the day it was written -- verified string by string -- and from then
+    on a copy in a test file is a claim about code it cannot see: add a note to
+    ``_budgetHtml`` and the x12 check below simply stops covering it, silently and
+    green. Deriving the list means a string that is added is a string that is
+    checked.
+
+    Comment-stripped first, because the renderer's comments quote the copy they
+    explain, and a quoted example is not a rendered string.
+    """
+    import re
+
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    body = strip_comments(function_body(app_js(), "_budgetHtml"))
+    # ``t9`` and ``tf`` are the function's own two locals (t9 = translate, tf =
+    # translate-with-data). Matching the CALL rather than every double-quoted run
+    # keeps CSS class names and HTML fragments out.
+    found = re.findall(r'\bt(?:9|f)\(\s*"((?:[^"\\]|\\.)*)"', body)
+    out: list[str] = []
+    for s in found:
+        if s not in out:
+            out.append(s)
+    # An empty or collapsed population is how a derived list fails OPEN: rename the
+    # helpers, or move the copy into a shared table, and every x12 assertion below
+    # becomes a loop over nothing that passes. The floor is the count at the time of
+    # writing; raise it deliberately, and never lower it to make a refactor green
+    # without checking where the strings went.
+    assert len(out) >= 9, (
+        f"only {len(out)} translatable strings found in _budgetHtml -- the panel's "
+        "copy moved, so the x12 checks below are no longer covering it"
+    )
+    return out
+
+
+_BUDGET_STRINGS = _budget_strings()
 
 #: Q1126 = a. The stronger, TRUE claim the task manager now makes.
 _AIRPLANE_ONLINE_TITLE = (
