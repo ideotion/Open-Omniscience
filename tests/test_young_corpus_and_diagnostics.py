@@ -212,7 +212,7 @@ def test_keyword_log_digest_mode(client, monkeypatch):
         s.close()
 
     # Shrink the sample so the omission path is exercised without 100+ keywords.
-    monkeypatch.setattr("src.api.diagnostics._DIGEST_SAMPLE", 2)
+    monkeypatch.setattr("src.api.diagnostics.keywords._DIGEST_SAMPLE", 2)
 
     r = client.get("/api/diagnostics/keywords", params={"digest": "1"})
     assert r.status_code == 200

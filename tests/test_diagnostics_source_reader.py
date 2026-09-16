@@ -28,18 +28,47 @@ def _api(root: Path) -> Path:
     return d
 
 
-# --- today: a single module ---------------------------------------------------- #
+# --- today: a package (the Q1139 split landed 2026-09-16) ----------------------- #
 
 
-def test_the_real_tree_reads_byte_identically_to_the_file_it_replaces():
-    """Migrating a call site to the reader must be a verifiable no-op right now."""
-    assert diagnostics_source() == (
-        _REAL / "src" / "api" / "diagnostics.py"
-    ).read_text(encoding="utf-8")
+def test_the_real_tree_is_a_package_and_every_slice_contributes():
+    """The split happened; the reader's whole purpose is that nothing downstream noticed.
+
+    Before 2026-09-16 this asserted the reader returned one FILE byte-for-byte. It now
+    asserts the property that mattered all along and survives the split: every ``.py`` in
+    the package is present in what callers see, so an ``assert X not in source`` cannot
+    pass because the text moved to a slice the reader skipped."""
+    pkg = _REAL / "src" / "api" / "diagnostics"
+    assert pkg.is_dir(), "diagnostics is expected to be a package since the Q1139 split"
+    assert not (_REAL / "src" / "api" / "diagnostics.py").exists(), (
+        "the pre-split module must be gone -- with both present Python imports the "
+        "package while a path-reading caller could still read the stale file"
+    )
+    on_disk = sorted(p.name for p in pkg.glob("*.py"))
+    assert sorted(n for n, _ in diagnostics_parts()) == on_disk, (
+        "every .py in the package must contribute, including one __init__ never imports"
+    )
+    src = diagnostics_source()
+    for name in on_disk:
+        assert (pkg / name).read_text(encoding="utf-8") in src, f"{name} is missing"
 
 
-def test_the_real_tree_reports_one_part_named_for_the_module():
-    assert [n for n, _ in diagnostics_parts()] == ["diagnostics.py"]
+def test_the_reader_sees_every_route_the_router_actually_registers():
+    """The anti-vacuity floor: a reader that saw one slice would still pass a name check.
+
+    131 routes at the split. Reading the COUNT off the live router rather than pinning a
+    literal keeps this honest when a route is legitimately added or removed -- what it
+    forbids is the reader going blind to some of them."""
+    import re
+
+    from src.api.diagnostics import router
+
+    src = diagnostics_source()
+    decorated = len(re.findall(r"@router\.(?:get|post|put|patch|delete)\(", src))
+    assert decorated == len(router.routes), (
+        f"the reader sees {decorated} route decorators but the router registered "
+        f"{len(router.routes)} -- the reader is not seeing the whole package"
+    )
 
 
 # --- tomorrow: a package -------------------------------------------------------- #

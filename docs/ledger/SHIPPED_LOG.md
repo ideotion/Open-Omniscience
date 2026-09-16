@@ -7766,3 +7766,38 @@ D8). Docs-only; `CLAUDE.md` untouched.
   also showed the page's horizontal scroll at 375px is pre-existing (it is there with the
   dialog closed), which is why the measurement was taken in both states before anything was
   blamed on the change.
+- **SPLITTING A MODULE INTO A PACKAGE BREAKS THREE THINGS A GREEN TARGETED RUN CANNOT SEE, AND
+  ALL THREE FAIL TOWARD "FINE" (2026-09-16, Q1139, `src/api/diagnostics.py` → 18 slices):** the
+  recorded 2026-08-20 `app.js` lesson says a split turns every NEGATIVE assertion vacuous at
+  every site at once, and this repo had already acted on it — `tests/diagnostics_source.py`
+  was built a week ahead, explicitly "the first commit of the split", concatenating whatever
+  the path turns out to be. That closed the assertion hazard completely and left three
+  others, each of which really fired here.
+  **(a) `pathlib.Path(__file__)` SILENTLY NARROWS.** `_diagnostics_coverage_report` recomputed
+  the all-diagnostics route-vs-member comparison from its own module's source. After the split
+  `__file__` is ONE SLICE, so it saw 28 of 131 routes — and the sibling read
+  `Path(__file__).parent / "integrity.py"` now pointed inside the package instead of at
+  `src/api/`. The report is the one artifact whose entire job is to say the bundle lost
+  nothing; it would have shipped saying `complete` about a route set it could no longer see.
+  Any reader built on `__file__` in a module that becomes a package needs a package-wide
+  reader, and the honest floor is to RAISE when it finds nothing (an empty read passes every
+  comparison).
+  **(b) A `monkeypatch.setattr` ON THE PACKAGE IS A NO-OP, AND THE OBVIOUS REPOINT RULE IS
+  WRONG.** 38 sites patched names on the module. A package `__init__` re-exports a name; the
+  submodule that READS it keeps its own global, so the double never arrives. The rule that
+  looks right — "patch the module that DEFINES the name" — is right only when the definer is
+  also the reader: `bundle.py` does `from .evals import merge_diag`, which binds a COPY, so
+  patching `evals` left `bundle`'s copy untouched and the test failed against correct code.
+  **Patch the module whose code reads the name.** Closed with a ratchet that fails on the next
+  package-level `setattr`, since a list of 38 fixed sites is complete exactly once.
+  **(c) A PACKAGE RE-EXPORTS WHAT ITS SLICES DEFINE, NEVER WHAT THE OLD MODULE IMPORTED.**
+  `d.JSONResponse` and `d.statement_deadline` were tests reaching through the module namespace
+  for a third-party symbol — legal on a module, `AttributeError` on a package. Sweep for them
+  by DIFFING the old module's imported names against the package's defined names; a grep for
+  the alias alone cannot tell the two apart.
+  **AND THE RATCHET READING TAKEN MID-CHANGE IS NOT THE READING THAT COUNTS.** I measured the
+  advisory-ruff lane at 442 (under its 446 ceiling), added a test file and two helpers, and it
+  was 447 — over. Only measuring the BASE in a detached worktree (`origin/main` = 445) said
+  which findings were mine: two, both in files I had just written. The delta is the only
+  number that answers "whose finding is this", and it must be taken after the LAST edit, not
+  the last edit to `src/`.
