@@ -76,10 +76,10 @@ def test_a_streamed_member_never_sits_whole_in_ram(monkeypatch):
     ROLLS OVER to disk, so the 73.2 MB member that pushed RSS up by 3.4 GB could not sit
     in memory today no matter how large it grew. Asserting the real property beats
     asserting a proxy that has stopped tracking it."""
-    from src.api import diagnostics as dg
+    from src.api.diagnostics import bundle as _diag_bundle
 
     monkeypatch.setenv("OO_DIAG_MEMBER_MAX_MB", "0")        # no cap: exercise the big path
-    monkeypatch.setattr(dg, "_MEMBER_SPOOL_MAX", 1024)      # spill past 1 KiB
+    monkeypatch.setattr(_diag_bundle, "_MEMBER_SPOOL_MAX", 1024)      # spill past 1 KiB
 
     made: list = []
     real_spooled = tempfile.SpooledTemporaryFile
