@@ -1678,12 +1678,16 @@ class EthicalFetcher:
     def _respect_rate_limit(self, netloc: str, host_key: str) -> None:
         """Wait out this host's interval, or REFUSE when the wait is too long.
 
-        S04-13 S2 (Q1013 = a). Two stamps decide the wait and they live in different
-        clock frames on purpose (see the module-level block): ``_last_request`` is
-        this process's monotonic record, the sidecar is a wall-clock record that
-        survives the per-pass fetcher rebuild. Only the resulting DURATIONS are
-        compared, which is frame-independent, and the longer one wins -- a host is
-        never fetched earlier than either stamp allows.
+        S04-13 S2 (Q1013 = a). Two stamps CAN decide the wait and they live in
+        different clock frames (see the module-level block): ``_last_request`` is this
+        process's monotonic record, the sidecar is a wall-clock record that survives
+        the per-pass fetcher rebuild. They are not both consulted for the same host:
+        ``_last_request`` is the authority whenever it has an entry, and the sidecar
+        speaks only where it knows something that record cannot -- first contact in
+        this process, or a declared delay our robots cache has since forgotten. The
+        longer wait still wins where both apply; what is gone is the case where both
+        described the SAME constraint through different clocks (the block below
+        records what that cost).
 
         Beyond the cap the wait is refused by name rather than slept. The refusal is
         a DEFERRAL, not a failure of the source: the stamp is still written, so the
@@ -1709,20 +1713,32 @@ class EthicalFetcher:
             if elapsed < interval:
                 wait = interval - elapsed
 
-        # The persisted stamp, in its own frame. A host we have not fetched in THIS
-        # process still owes whatever a previous pass promised it -- and the delay it
-        # DECLARED, so a refusal on a fresh fetcher names the host's real figure
-        # rather than the courtesy interval this instance happens to have fallen
-        # back to.
-        persisted_wait = 0.0
+        # The persisted stamp -- consulted ONLY when it can say something this
+        # instance's own record cannot. Two conditions, and the negative space is the
+        # point: a host we have already contacted in THIS process is governed by
+        # ``_last_request`` above, which is the same constraint measured by the same
+        # clock, so re-deriving it from the sidecar adds no information and makes two
+        # records of one quantity -- which is exactly how the two came to DISAGREE.
+        # Measured, not feared: the sidecar is wall-clock and ``_last_request`` is
+        # monotonic, so under an injected test clock the wall read returned the full
+        # interval (real elapsed ~0.1 ms) while the monotonic read returned the
+        # correct remainder, and ``max()`` took the stale one -- a fetcher sleeping
+        # 10 s where 8 were owed. In production the two frames tick together and the
+        # ``max()`` was simply redundant; the disagreement only ever showed up where
+        # something moved one clock and not the other.
+        #
+        # The second condition is the one that earns its keep: a sidecar delay LARGER
+        # than anything we can re-derive means our robots cache has forgotten (a fresh
+        # pass, or a lapsed TTL) what the host itself declared. Then the stamp is the
+        # only surviving record of the host's own stated wish, and it wins.
         stamp = self._host_schedule.get(netloc)
         if stamp is not None:
             not_before, persisted_delay = stamp
-            persisted_wait = max(0.0, not_before - time.time())
-            if persisted_delay > declared_delay:
-                declared_delay = persisted_delay
-                interval = max(interval, persisted_delay)
-        wait = max(wait, persisted_wait)
+            if netloc not in self._last_request or persisted_delay > declared_delay:
+                if persisted_delay > declared_delay:
+                    declared_delay = persisted_delay
+                    interval = max(interval, persisted_delay)
+                wait = max(wait, max(0.0, not_before - time.time()))
 
         if wait <= 0:
             self._stamp_host_schedule(netloc, interval, declared_delay)

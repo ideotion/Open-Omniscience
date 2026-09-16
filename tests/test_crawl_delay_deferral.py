@@ -135,6 +135,72 @@ def test_the_stamp_survives_the_per_pass_fetcher_rebuild(tmp_path):
     )
 
 
+def test_the_sidecar_never_re_decides_a_host_this_instance_already_holds_a_record_for(
+    tmp_path,
+):
+    """ONE authority per host per instance -- the slice's own principle, applied here.
+
+    Found by the timing suite, which had pinned this arithmetic since 0.0.8 and went
+    red: a fetcher owing 8 s of a 10 s ``Crawl-delay`` slept 10. Both records were
+    internally correct and they disagreed because they were read through different
+    CLOCKS -- ``_last_request`` through the injected monotonic one that had been
+    advanced 2 s, the sidecar through the real wall clock that had advanced 0.1 ms --
+    and ``max()`` dutifully took the larger. In production the two frames tick
+    together, so the second record was pure redundancy; it could only ever be wrong.
+
+    So the assertion is not "the frames agree" (they did not, and a wall clock is
+    free to step under NTP whatever we assert) but the structural property that
+    removes the question: once ``_last_request`` holds an entry for a host, it
+    decides, and the stamp is not consulted at all. Driven through the real method
+    with a fake clock, because a source-level check could not tell the two apart.
+    """
+    f = _fetcher(tmp_path, delay=10, host="ten.example")
+    slept: list[float] = []
+    f._sleep = slept.append
+    fake = [1000.0]
+    f._now = lambda: fake[0]
+
+    f._respect_rate_limit("ten.example", "https://ten.example")
+    assert "ten.example" in f._host_schedule, "the declared delay was not stamped"
+
+    f._last_request["ten.example"] = fake[0]
+    fake[0] += 2.0  # two of the ten seconds have passed IN THIS INSTANCE'S CLOCK
+    f._respect_rate_limit("ten.example", "https://ten.example")
+
+    assert slept == [pytest.approx(8.0, abs=1e-9)], (
+        "the wait was not the eight seconds this instance itself still owed -- a "
+        "second record of the same constraint was consulted and won"
+    )
+
+
+def test_a_stamp_STILL_wins_when_it_knows_a_delay_this_instance_has_forgotten(tmp_path):
+    """The negative-space twin, and the reason the narrowing above is a narrowing and
+    not a removal.
+
+    A robots verdict expires on its own TTL while a ``Crawl-delay: 3600`` stamp is
+    still live, so an instance can hold a ``_last_request`` entry for a host whose
+    declared delay it can no longer re-derive. Governed by ``_last_request`` alone it
+    would fall back to the one-second courtesy interval and fetch a host that asked
+    for an hour. The stamp carries the DECLARED delay precisely so it can speak up
+    here, and it must outrank the fallback rather than defer to the fresher record.
+    """
+    f = _fetcher(tmp_path, delay=3600, host="hour.example")
+    f._sleep = lambda _s: None
+    f._respect_rate_limit("hour.example", "https://hour.example")
+
+    # The TTL lapses: the robots verdict is gone, the stamp is not.
+    f._robots.pop("https://hour.example", None)
+    f._last_request["hour.example"] = f._now()
+    assert "hour.example" in f._host_schedule
+
+    with pytest.raises(CrawlDelayDeferred) as exc:
+        f._respect_rate_limit("hour.example", "https://hour.example")
+    assert exc.value.delay_s == 3600.0, (
+        "the host's own declared hour was forgotten and the courtesy interval was "
+        "used in its place"
+    )
+
+
 def test_a_lapsed_stamp_is_absent_so_the_host_becomes_fetchable_again(tmp_path):
     """A stamp lapses by TIME and by nothing else; once it has, it is simply gone."""
     path = tmp_path / "host_schedule.json"
