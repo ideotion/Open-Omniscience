@@ -9712,3 +9712,37 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   which findings were mine: two, both in files I had just written. The delta is the only
   number that answers "whose finding is this", and it must be taken after the LAST edit, not
   the last edit to `src/`.
+
+- **A REALITY CHECK CAN BE WRONG, AND THE ONE YOU ARE RE-DOING PROBABLY IS — SO DATE THE
+  STATUS LINE INSTEAD OF EDITING THE CLAIM (2026-09-16, Q1141 = a / A4 = b, all 51 sections
+  of `docs/FUTURE_DEVELOPMENTS.md`):** the document already carried a 2026-09-07 pass, so the
+  cheap reading was "re-check the sections that pass did not reach". That reading is what the
+  pass found to be false. **Two of the 2026-09-07 banners were wrong the day they were
+  written**, not stale since: the Lunar-effects banner called the testing framework
+  "designed-only" while `src/analytics/lunar.py` had carried the whole thing since 2026-07-03
+  (and a further pre-registration control shipped 2026-09-09 — *two days after* that banner),
+  and the Open-Meteo banner listed "signal-keywords" as remaining when they had shipped
+  2026-07-03/07-08. A previous check is EVIDENCE, never a boundary: re-read what it asserted,
+  not only what it skipped.
+  **AND THIS IS THE ARGUMENT FOR THE FORM A4 RULED.** Had 2026-09-07 overwritten the original
+  claims rather than annotating them, its two errors would be indistinguishable today from
+  correct corrections — there would be nothing to compare against the tree. A dated status line
+  keeps the original claim, the first verdict and the second verdict all visible and all
+  attributable, and it is the reason this pass could find the error at all. The cost is a
+  document that grows; the alternative is a document that lies with more confidence each pass.
+  **THE NUMBERS THAT NO AMOUNT OF READING WILL SETTLE.** One section claimed 73% catalog
+  coverage and 49% located; the 2026-09-07 banner beside it claimed different figures. Both are
+  documents. `scripts/catalog_coverage_report.py` exists, takes seconds, and answers **5,546
+  domains / 4,059 located (73.2%) / Missing (51)** — neither of them. When a claim names a
+  quantity the repo can COMPUTE, computing it is not extra diligence, it is the only way to
+  avoid picking a winner between two equally confident documents.
+  **THE READ/VERIFY SPLIT THAT MADE IT AFFORDABLE.** Six parallel readers (one per ~10
+  sections) returned `claim → tree evidence` pairs; every load-bearing claim was then
+  hand-re-verified by grep before a single edit, per the recorded 06-audit false-positive
+  lesson. Of the claims that came back, several did not survive that second pass — the readers
+  are a search tool, not a witness. **AND TWO OF A4'S THREE CLAUSES TURNED OUT TO BE ALREADY
+  DONE** (the four embedded ledgers were already archived under
+  `docs/archive/future-developments/` behind a pointer; the three duplicate pairs were already
+  cross-linked and explicitly unmerged). Re-verifying and recording "already satisfied" is the
+  completion of a ruling. Re-doing it would have been churn, and merging the pairs would have
+  broken protocol rule (5).

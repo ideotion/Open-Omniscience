@@ -19,6 +19,26 @@
 > RESTORE and IMPORT removals. Each carries a cross-reference. **Merging them would risk exactly what
 > protocol rule 5 forbids: the 2026-06-12 Wikipedia section carries the SUPERSEDING auto-track ruling,
 > which must survive verbatim.** A duplicate pair is cheaper than a lost ruling.
+>
+> **Reality-check pass, 2026-09-16 (Q1141 = a, FULL depth; A4 = (b)).** All 51 sections were re-checked
+> against the tree again, and **fourteen** now carry a dated `Reality check 2026-09-16` note. A4's other
+> two clauses were found already satisfied and are recorded as such rather than redone: the four
+> embedded ledgers are archived (above) and the three duplicate pairs are cross-linked and unmerged.
+>
+> **The finding worth putting at the top: the 2026-09-07 pass was itself wrong in places, and two of
+> its banners were wrong the day they were written.** The Lunar-effects banner called the testing
+> framework "designed-only" while `src/analytics/lunar.py` had carried the whole thing since
+> 2026-07-03 — and a further pre-registration control shipped 2026-09-09, two days AFTER that banner.
+> The Open-Meteo banner listed "signal-keywords" as remaining; they shipped 2026-07-03/07-08.
+> Neither had aged: a re-check phrased in the DESIGN's own vocabulary cannot see an implementation
+> that solved the problem another way, which is precisely the item whose blocker was interesting
+> enough for someone to solve creatively. **Every wrong sentence is kept beside its correction**, here
+> and in each section, because a status line that was wrong is itself the finding and deleting it hides
+> that the re-check mechanism can fail.
+>
+> Method: six reader agents proposed findings; every correction was then re-verified by hand against
+> the tree with the `file:line` that proves it, and the two figures in the de-US-centring section were
+> settled by RUNNING `scripts/catalog_coverage_report.py` rather than by reading it.
 
 ## Versioned sources as first-class Articles — Wikipedia + laws (2026-07-10, maintainer-directed; MARK FOR THE FUTURE VERSION — not now)
 
@@ -67,6 +87,14 @@ statistics vintages, tracked gazettes, case-law) can reuse it later.
   The directive promotes `LawDocument` to a first-class Article, with `LawRevision` becoming (or
   feeding) the per-article linked audit layer — the same pattern as Wikipedia.
 
+  > **Reality check 2026-09-16 (Q1141 = a, full depth):** **the bullet above is now FALSE, and is kept for the record.**
+  > Law text DOES flow through `index_article`: `src/law/corpus.py:178`
+  > (`upsert_law_corpus_article`, whose header says it "mirrors `src/wiki/corpus.py`
+  > deliberately"), wired live from `src/law/track.py:156-158`, each jurisdiction given its
+  > own `source_type="legal"` catalog Source. It landed 2026-07-14 — four days AFTER this
+  > section's own directive date. The section's item 6 ("confirm laws routed through
+  > `index_article` don't pollute…") therefore reads as pending while it is already true.
+
 **Design points to settle when built:**
 1. **Article-first, version-linked schema.** The Article row is canonical and carries `latest_text`;
    the revision history is a linked layer (`WikiRevision` / `LawRevision` generalized to an
@@ -97,6 +125,12 @@ statistics vintages, tracked gazettes, case-law) can reuse it later.
 
 **Status: recorded, NOT built. Future version, gated on the P0 scale set.** Tracked on the roadmap
 under "Wikipedia as a living source" and the world-law vertical.
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **HALF-SHIPPED — say which half.** The LAWS half shipped
+> 2026-07-14 (above). The WIKIPEDIA whole-edition half is genuinely unbuilt and correctly
+> described: `src/wiki/corpus.py:449` `ingest_dump_pages()` is bounded (`limit: int = 1000`)
+> and operator-chosen, and `fetch_recentchanges` (`src/wiki/client.py:81`) still has no
+> consumer. One blanket "NOT built" over two verticals is how the shipped one stays invisible.
 
 ### The Settings surface says the opposite (2026-07-31, maintainer, Settings-tab review)
 
@@ -288,7 +322,21 @@ at-rest encryption (ruled GO, own fresh session — one coherent key story), and
 **The goal (maintainer-stated 2026-06-11):** ingest the operator's newsletters
 as a first-class corpus domain. A detailed implementation plan already exists in
 `docs/ROADMAP.md` ("Email & Newsletter Intelligence"); `scripts/import_eml.py`
-is the manual seed of the path. What makes this different from web sources — and
+is the manual seed of the path.
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **both artifacts this sentence names are wrong, and the feature
+> is far past "a manual seed".** (a) `scripts/import_eml.py` was DELETED on 2026-06-16
+> (commit `5ccc01e2`) because it captured To/Cc/Bcc recipient identity — an
+> anonymize-at-ingest violation — five days after this section was written; the
+> 2026-09-07 pass over this file did not catch it. (b) `docs/ROADMAP.md` carries no
+> "Email & Newsletter Intelligence" heading; the plan is
+> `docs/product/EMAIL_NEWSLETTER_IMPORT_PLAN.md`. (c) A full live-mailbox pipeline is
+> SHIPPED: `POST /api/newsletters/mailbox` (`src/api/ingestion.py:590`) over IMAP/POP3,
+> a registered background job, a Settings UI (`src/static/index.html:1902`), and it never
+> stores credentials. What is genuinely open here is the publisher ATTACH (Q1151) — the
+> resolver exists and is pure (`src/ingest/newsletter_source.py`), the write path does not
+> use it.
+ What makes this different from web sources — and
 why it is **deliberately blocked behind the database mandate** — is that it is
 **personal data**: a mailbox identifies the operator, their subscriptions and
 their reading life. The bar:
@@ -399,7 +447,13 @@ horizon), and ReliefWeb/FEWS NET/WHO humanitarian channels.
 The agenda core shipped (catalog, subscriptions, facets, event-family dedup,
 verified feed directory). Still genuinely future, all queued in CLAUDE.md:
 - **Calendar VIEWS**: list / week / month / trimester / semester / year / decade
-  switcher (the tab has only the list). **Field report #2 (2026-06-11): the
+  switcher (the tab has only the list).
+  > **Reality check 2026-09-16 (Q1141 = a, full depth):** SHIPPED — all seven views exist
+  > (`src/static/index.html:990`, `<nav id="agenda-views">` with seven `data-tab`
+  > buttons; `src/static/app-agenda.js:150` drives them through `ooSubtabs`), and the
+  > month GRID the field report asked for is the DEFAULT (`app-agenda.js:949`).
+  > "the tab has only the list" is kept above as the claim that was wrong.
+ **Field report #2 (2026-06-11): the
   DEFAULT becomes a month GRID — 4–5 week rows, brief event descriptions,
   like a regular agenda — with customizable view options.**
 - **Month-spanning events** ("Dry January"): a duration/whole-month kind in the
@@ -411,6 +465,12 @@ verified feed directory). Still genuinely future, all queued in CLAUDE.md:
 - **Full iCal import into the agenda** (feeds → exact dated events, idempotent
   per (source, uid)) — the verified directory covers discovery; import is the
   missing half.
+  > **Reality check 2026-09-16 (Q1141 = a, full depth):** SHIPPED, and automatic — `src/events/feeds.py:659`
+  > `auto_import_due_feeds` ("ruled 2026-06-15 'auto-import everything'", round-robin by
+  > least-recently-imported so every feed is eventually covered), called each collect pass
+  > from `src/scheduler/runner.py:1311`. Idempotency is keyed on `(title, date)` plus uid
+  > unioning rather than literally `(source, uid)`: the property holds, the key differs.
+
 - **Saved-filter "smart calendars"**: subscribing to a *tag query* ("all
   elections in Africa") as the natural subscription unit.
 - **Agenda tab translation** (currently the worst i18n surface).
@@ -419,7 +479,11 @@ verified feed directory). Still genuinely future, all queued in CLAUDE.md:
 
 The maintainer saw "Independence Day (Mexico) 2026" as a one-off — root
 cause verified: the bundled `world_events.yml` is already recurrence-based
-(`cadence: annual, month, day`) and simply has no Mexico entry; **imported
+(`cadence: annual, month, day`) and simply has no Mexico entry;
+>
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** the Mexico entry now exists — `configs/world_events.yml:71`,
+> `cadence: annual, month: 9, day: 16`. The root-cause ANALYSIS stands; its example is closed.
+> **imported
 ICS feeds store year-pinned instances**, which is where single-dated
 "recurring" events come from. The design that unifies it all:
 
@@ -558,7 +622,14 @@ intent without the deanonymisation cost.
 **Direction (proposed, not yet scheduled):** (a) make Tor *easier* — an optional
 in-app Tor setup (Stem-controlled `tor` process, à la the planned Ollama
 installer), bootstrap progress shown, still "we use+verify, never guarantee";
-(b) per-source circuit isolation **by default** when on Tor; (c) clearnet for
+(b) per-source circuit isolation **by default** when on Tor;
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** (b) is ALREADY ON — per-HOST Tor stream isolation is the
+> default (`src/ingest/__init__.py:618-624`; `OO_TOR_STREAM_ISOLATION=0` disables it).
+> It is listed here as "proposed, not yet scheduled"; it shipped. (a), (c) and (d)'s
+> scraping-path half are still open — no `stem` import exists anywhere in the tree.
+
+ (c) clearnet for
 Tor-hostile sources only as an **explicit, per-source, consented opt-in** with
 the full exposure stated; (d) keep the transport-aware verdict taxonomy (T4) so
 a Tor block is surfaced honestly rather than auto-evaded. **Open questions:**
@@ -606,6 +677,14 @@ never verdicts):
 3. **Disputed chronology detector** — where outlets' date/place assertions
    disagree, surfaced as claims side by side.
 4b. **News-desert atlas** (the map view of card 4; the producer shipped).
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **three of the eight items in this list have shipped as
+> registered producers** and are kept above for the record: card 3 `disputed_chronology`
+> (`src/briefing/producers.py:2675`), card 7 `story_propagation` (`:2740`) and card 9
+> `supply_chain_ripple` (`:2802`), each with a `src/briefing/catalog.py` entry. Cards 1,
+> 4b, 5, 6 and 10 are genuinely absent — and for 5 and 6 the code says why itself
+> (`src/briefing/recipes.py:17-19`: both are parked until their data is modelled).
+
 5. **Silent disasters** — hazard severity vs zero local coverage in the cell.
 6. **Law-takes-effect watch** — effective-date → coverage window in that
    jurisdiction.
@@ -731,6 +810,18 @@ tier header (early/developing/established) on Home; power-style "what's missing"
 inversions when a card does NOT fire; optional Benjamini–Hochberg once p-values
 exist; the dismiss-with-reason local feedback loop and the card-diagnostics
 export slice (the app's honest observational study of its own card quality).
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **four of the five named "remaining" items have shipped.**
+> Corpus tier header: `src/briefing/producers.py:153` `corpus_tier`, tiers
+> early/developing/established, rendered at `src/static/app-home.js:852`.
+> Benjamini–Hochberg: `src/stats/fdr.py` + `src/signals/fdr.py`, already reused by the
+> lunar screen and the flood/bury cards — not waiting on p-values. Dismiss-with-reason:
+> `POST /api/signals/dismiss-reason` (`src/api/signals.py:235`). Card-diagnostics export:
+> `home_card_diagnostics` (`src/api/diagnostics/corpus.py`), also a bundle member.
+> GENUINELY OPEN: the power-style "what's missing" inversion when a card does NOT fire.
+> (A warning for the next reader: `src/config/power_profiles.py` matches "power" and is
+> an unrelated CPU/battery feature — not evidence either way.)
+
 RULED 2026-06-12: caveats by design — visible by default, "informed consent" app-wide; translated hover bubbles carry the long form (layering, never hiding).
 
 ---
@@ -753,6 +844,12 @@ dominant `language_signature` — the signature-supported join, so en-dominant
 member out; `OO_KEYWORD_EQUIV=0` disables. `tests/test_keyword_equivalence.py`.
 REMAINING: the cross-country case (split a ring's trend per source country); the
 map view; surfacing `language_breakdown` in the frontend; the local LLM PROPOSING
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** `language_breakdown` IS surfaced in the frontend —
+> `src/static/app-corpus.js:799-802` and `src/static/app-insights.js:550`. The
+> cross-country split, the map view and the LLM ring-proposal are still open.
+
+
 candidate rings (a human confirms) — the analyzer (PR #279) already emits ring
 candidates from the diagnostics logs.
 
@@ -766,7 +863,16 @@ Offline channels shipped (citation promotion + catalog refresh, staged
 candidates, budgets, activity log). Still future, by ruling only after the
 staging UX proves out: the **DuckDuckGo query channel** behind the off-by-default
 external-lookup gate, clearly labelled "this query leaves your machine",
-per-query logging, individually toggleable, budgeted. Also future: running the
+per-query logging, individually toggleable, budgeted.
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **BUILT, not "still future".** `src/services/duckduckgo.py` +
+> `POST /api/sources/discover/topic` (`src/api/source_management.py:1348`), rate-limited
+> `20/hour` (the budget), gated on `discovery_external_enabled` which defaults **False**
+> (`src/safety/settings.py:61`) and refuses with a 403 naming the setting. The Settings UI
+> (`src/static/index.html:2792-2806`) carries the sentence **"Your query leaves this
+> machine."** — near-verbatim the copy this paragraph proposes. Worth keeping as a record
+> of a design that was implemented exactly as written.
+ Also future: running the
 Wikidata catalog generator as a *scheduled refresh* instead of a manual script.
 
 ---
@@ -1097,6 +1203,16 @@ pruning as a repeatable workflow.
 Remaining: run the Wikidata generator for the 73 named gaps (network step,
 maintainer's machine — `scripts/catalog_coverage_report.py` prints the exact
 targets); raise the located share (49% of domains carry no country); maintainer
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **both numbers are stale; the report was RUN rather than
+> read.** `.venv/bin/python scripts/catalog_coverage_report.py` on 2026-09-16:
+> **5,546 unique domains, 4,059 with a country (73.2% located, floor 70%)** and
+> **Missing (51)**, not 73 — and the 70% concentration floor is now MET, where "49% carry
+> no country" was the 2026-06-11 drafting baseline (`configs/catalog_targets.yml`'s own
+> header records it as such). The 51 remaining are overwhelmingly micro-territories
+> (Tokelau, Niue, Svalbard, Wallis and Futuna…). Two regions still read SHORT on the
+> per-region country floor. The maintainer-ratification half is untouched and still owed.
+
 ratification of the drafted `configs/catalog_targets.yml` floors; longer term,
 extend the multilingual country-alias table from field logs.
 
@@ -1289,6 +1405,20 @@ Wikipedia-as-living-source design; the event→page mapping ships as data
 
 > **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **Unchanged and correctly stated** — the astronomy series ships (`src/events/astronomy.py`); the testing framework is designed-only.
 
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **the 2026-09-07 banner above is WRONG and is kept as the
+> finding.** The testing framework is fully BUILT and has been since 2026-07-03:
+> `src/analytics/lunar.py` carries `circular_shift_test` (:132), `correlate_daily_series`,
+> `correlate_keyword` and `lunar_screen` (:246) importing `benjamini_hochberg` from
+> `src/stats/fdr.py` (:263) — i.e. every bullet this section lists as "designed". It has a
+> REST endpoint (`GET /api/insights/lunar-correlation`, `src/api/insights.py:1530`) that
+> REFUSES an undeclared single-term test, an Insights subtab (`#ins-lunar`,
+> `src/static/index.html:1374`) whose "Declare first: what do you expect?" select
+> (`:1390`) enforces pre-registration in the UI, and ×12 locale strings. The
+> pre-registration control shipped 2026-09-09 — TWO DAYS AFTER the banner that calls the
+> framework unbuilt. This is the recorded failure mode: a re-check phrased in the design's
+> own vocabulary misses an implementation that solved the problem another way.
+
+
 **The ask (recorded):** people around the maintainer are certain the moon
 affects mood; old agricultural practice plants/harvests by waxing/waning.
 The app should let users TEST such concepts against large datasets of
@@ -1404,6 +1534,16 @@ the reference VM scale.
 ## Open-Meteo weather context — the When×Where corroboration layer (maintainer concept 2026-06-12; designed-only)
 
 > **Status re-check 2026-09-07 (docs-hygiene + reality-check pass):** **SLICE 1 SHIPPED (2026-06-12).** `src/analytics/corroboration.py` scans locally and emits suggest-to-fetch cards that state they made no network call; `src/api/weather.py` performs the ONE bounded consented fetch. Anomaly baselines, signal-keywords and the reader row remain.
+
+> **Reality check 2026-09-16 (Q1141 = a, full depth):** **"signal-keywords" do NOT remain — they shipped**
+> 2026-07-03/07-08, two months before the banner above:
+> `src/analytics/weather_signals.py` (`derive_weather_signals` :74,
+> `refresh_weather_signals` :173) with `GET /api/signals/weather-signals` and
+> `POST /api/signals/weather-signals/refresh` (`src/api/signals.py:334,346`). The other
+> two DO remain and are correctly stated: the anomaly baseline is explicitly deferred
+> (`weather_signals.py` always returns `"checked": False`), and the article reader
+> carries no weather row.
+
 
 **The ask (recorded):** ingest Open-Meteo data into the when/where/who
 approach — when articles talk about a drought, the claim might be checked
