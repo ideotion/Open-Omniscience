@@ -11,7 +11,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   robots.txt is honoured and **fail-closed** (if it can't be confirmed, the URL is not
   fetched), per-host rate-limited, identifying User-Agent. As of the v0.0.7 audit
   (finding ETH-01) this includes RSS-feed **discovery** — same fetcher, same guards.
-  *Outside* collection the app can also reach the endpoints enumerated below; four of
+  *Outside* collection the app can also reach the endpoints enumerated below; three of
   them do not use the ethical fetcher and each says so on its own row. **That table is
   the complete answer to "what can this app contact"** — it is derived from the tree by
   a sweep a repo test re-runs, not from anyone's memory.
@@ -45,7 +45,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   an honest bot User-Agent, bounded redirects re-validated per hop, and the connect-time
   SSRF check. With protected fetch mode on, that path carries your proxy (e.g. Tor), and
   **a lane never silently downgrades Tor → clearnet** — the fetch is refused and the
-  refusal is surfaced. The four rows that do *not* use the ethical fetcher say so, and say
+  refusal is surfaced. The three rows that do *not* use the ethical fetcher say so, and say
   what they use instead.
 
 | Lane | Hosts it can reach | Trigger | Transport | Where in the tree |
@@ -58,7 +58,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 | **Official statistics** | `api.worldbank.org`, `ec.europa.eu` (Eurostat), `ourworldindata.org`, and any JSON-stat / PxWeb URL **you** paste in (e.g. IRENA) | Click ("Load standard country data", a figure's fetch) **and a ride-along, default on**: `country_data_per_pass` defaults to **2** and bootstraps the first load of a curated indicator in the background; set it to `0` to stop it. A figure you subscribed also auto-refreshes on the markets pass. | ethical fetcher | `src/stats/fetch.py:54` · `src/stats/fetch.py:56` · `src/stats/fetch.py:63` · `src/api/governments.py:582` · `src/scheduler/runner.py:1394` |
 | **Markets & commodities** | `fred.stlouisfed.org`, `www.eia.gov`, `www.imf.org`, `www.worldbank.org` — the bundled commodity and index feed catalogs | **Ride-along, always on** — the markets rung runs on every online pass (a feed fresher than its threshold is skipped). Its budget has no toggle. | ethical fetcher | `src/markets/pipeline.py:186` · `src/markets/feed_catalog.py` · `configs/commodity_feeds.yml` · `configs/index_feeds.yml` |
 | **Calendars** | The bundled directory `configs/calendar_feeds.yml`: `date.nager.at`, `www.openholidaysapi.org`, `www.officeholidays.com`, `www.calendarlabs.com`, `www.hebcal.com`, `litcal.johnromanodorazio.com`, `worldpublicholiday.com`, `fosdem.org`, `f1calendar.com`, `www.matchesio.com`, `www.rocketlaunch.live`, `pirate.monkeyness.com`, `raw.githubusercontent.com`, `jonamarkin.github.io` — plus any `.ics` URL **you** add. (Four more hosts ship in that file and are **never fetched**; they are named under the table.) | **Ride-along, always on.** `src/scheduler/runner.py:1248` reads an `auto_import_calendars` opt-out that `SchedulerSettings` likewise does not define, so it is **not switchable today** (recorded 2026-09-16). Up to five feeds per pass also have their robots verdict re-verified. | ethical fetcher | `src/events/feeds.py:40` · `src/events/feeds.py:58` · `src/scheduler/runner.py:1300` · `src/monitoring/feed_preflight.py:119` |
-| **Hazard feeds** | `earthquake.usgs.gov`, `www.gdacs.org` | **Ride-along, default on** — set the scheduler's `auto_track_signals` to `false` to stop it (it has no dedicated Settings-panel toggle today, but the field exists and `PUT /api/scheduler/config` accepts it) | ethical fetcher | `src/api/hazards.py:27` · `src/api/hazards.py:28` · `src/scheduler/runner.py:1349` |
+| **Hazard feeds** | `earthquake.usgs.gov`, `www.gdacs.org` | **Ride-along, default on, and its opt-out does not work.** `auto_track_signals` is a real `SchedulerSettings` field and `save_settings` honours it — but `SchedulerConfigUpdate`, the request model `PUT /api/scheduler/config` validates against, does not declare it, so Pydantic drops the key and the endpoint returns **200 having changed nothing**. Live-reproduced 2026-09-16. This document has named that route as the opt-out for months; it is corrected here rather than left standing | ethical fetcher | `src/api/hazards.py:27` · `src/api/hazards.py:28` · `src/scheduler/runner.py:1349` |
 | **Weather** | `archive-api.open-meteo.com` | Click — "fetch" on a corroboration Lead. CC BY 4.0, disclosed at the point of use. | ethical fetcher | `src/weather/openmeteo.py:33` |
 | **Discover by topic** | `html.duckduckgo.com` — and only that host; the redirector DuckDuckGo wraps its results in is unwrapped locally and never followed (see under the table) | **Opt-in, off by default** — the endpoint refuses with an honest message until you enable *Settings → Advanced → Safety → External topic discovery* (`OO_DISCOVERY_EXTERNAL=1` headless). Strictly user-triggered: never part of ingestion, the scheduler, or any default path. | ethical fetcher | `src/services/duckduckgo.py:60` · `src/services/duckduckgo.py:227` (the refusal) |
 | **Local AI install & weights** | `api.github.com` (the official Ollama installer and its attested `sha256`) and the release-asset host that API names, today `objects.githubusercontent.com` — a value read from the response, not a URL we build; `huggingface.co` (vLLM model weights), `pypi.org` (installing vLLM into the managed venv) — plus whatever registry **Ollama's own daemon** contacts for a model pull (see Transport) | Click, through the **separate AI-egress consent window** — a third state in which the kill switch stays engaged, the collector stays stopped, and only the install is exempted | **Mixed.** `api.github.com` is a guarded fetch. The other three are performed by a **spawned process** — `pip`/`uv` and `huggingface_hub` — over **clearnet, not through this app's fetcher or proxy**. A model pull is a loopback `POST /api/pull` to the Ollama daemon, which then egresses on its own: this app neither builds that URL nor can name the host, and saying so is more honest than guessing one. Every `ollama.com` literal in our source is a **page we link you to**, never a page we fetch. Disclosed at the consent step. | `src/llm/installer.py:61` · `src/llm/ollama.py:751` (the loopback `POST /api/pull` that asks the daemon to fetch) · `src/llm/vllm_lifecycle.py:3321` · `src/llm/vllm_lifecycle.py:3510` · `src/llm/weights_pin.py` |
@@ -99,6 +99,16 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   subprocess sets `HF_HUB_DISABLE_TELEMETRY=1` (`src/llm/vllm_lifecycle.py`). Both are
   worth stating because "we do not contact it" is a property of a setting here, not of
   the absence of code, and a dependency upgrade can quietly change a default.
+
+  **⚠ Three ride-alongs cannot be switched off today, for two different reasons.**
+  `auto_import_calendars` and `auto_track_law` are read through
+  `getattr(settings, …, True)` (`src/scheduler/runner.py:1248,1250`) against a
+  `SchedulerSettings` that defines neither, so the default always wins.
+  `auto_track_signals` is worse in kind: the field exists and is honoured, but the API's
+  request model omits it, so an operator who turns it off is told the change succeeded
+  and it was not. A refusal is honest; a **silently discarded** consent control is not,
+  which is why it is stated here rather than waiting for the fix. All three are recorded
+  as open work, with the reproduction, in `docs/ledger/OPEN_QUEUE.md` (2026-09-16).
 
   **Named here because the running app never fetches them.** These host names are in the
   tree and are *not* endpoints: the GPL licence URL `www.gnu.org` in every file header;
