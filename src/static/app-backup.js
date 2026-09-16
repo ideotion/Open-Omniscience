@@ -124,7 +124,7 @@
       const enc = facts.encryption || {};
       const dash = "—";
       const bytes = (n) => (n == null ? dash : humanBytes(n));
-      const secs = (n) => (n == null ? null : (n < 90 ? `${n.toFixed(1)} ${t("s")}` : `${Math.round(n / 60)} ${t("min")}`));
+      const secs = (n) => (n == null ? null : (n < 90 ? `${n.toFixed(1)} ${esc(t("s"))}` : `${Math.round(n / 60)} ${esc(t("min"))}`));
       const rows = [];
       const row = (label, value, title) =>
         rows.push(`<div class="row" style="gap:6px;align-items:baseline"><span class="muted" style="min-width:150px"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span><span>${value}</span></div>`);
@@ -170,7 +170,7 @@
               : (enc.corpus_encrypted ? t("corpus encrypted at rest inside the backup") : t("corpus stored unencrypted in this backup"))) +
           (files.length ? ` · ${esc(t("copied files are not encrypted"))}` : ""),
           enc.note || "");
-      row(t("Schema version"), esc(`${sch.backup_schema || dash} · ${sch.container || dash} · ${t("database")} ${sch.alembic_rev || dash}`));
+      row(t("Schema version"), esc(`${sch.backup_schema || dash} · ${sch.container || dash} · ${t("database")} ${sch.alembic_rev || dash}`));  // esc(): alembic_rev is read out of a database, not a constant
       row(t("App version"), esc(facts.app_version || dash));
       // 10. the licence lines that apply (Q1008 = a).
       const lic = facts.attribution || [];

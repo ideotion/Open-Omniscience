@@ -1285,6 +1285,11 @@ Official **figures** are not here at all — they are data, so they live under
     what the backup holds. It is there so the folder explains itself on a removable drive
     years later, when the panel that stated all this is long gone. It is a description,
     not a signature: `volumes.json` carries the per-volume checksums that prove the bytes.
+    **It is also the one file in that folder that is not encrypted** — the corpus is
+    unreadable without your passphrase, and this summary is plain text beside it, saying
+    how many articles, sources and tracked documents the corpus holds. That is the trade
+    the file makes, it is stated in the file itself, and you can delete it if the folder
+    explaining itself matters less to you than saying nothing to whoever finds the drive.
   - **Exports are never scheduled.** There is no automatic or timed export and none is
     planned — an export is a **deliberate act**, because it writes your corpus somewhere
     you chose, at a moment you chose.

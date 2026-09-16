@@ -405,6 +405,14 @@ def render_summary_markdown(facts: dict[str, Any]) -> str:
         "what is here; it is not a signature and proves nothing about the bytes — "
         "`volumes.json` carries the per-volume checksums that do.",
         "",
+        "**This file is not encrypted.** The backup's contents are: the corpus and every "
+        "member of the artifact are unreadable without the passphrase. This summary is "
+        "plain text beside them, and the counts above say how many articles, sources, "
+        "law documents and tracked pages the corpus holds. That is what makes the folder "
+        "explain itself years later, and it is also what a person who picks up this drive "
+        "can read without the passphrase. Delete this file if that matters more than the "
+        "explanation.",
+        "",
     ]
     return "\n".join(out)
 

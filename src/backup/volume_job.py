@@ -293,7 +293,7 @@ class VolumeBackupManager:
         else. The manifest is the reference, so this compares the bytes now on the
         drive against the bytes the export believed it wrote.
 
-        FOUR OUTCOMES, kept apart on purpose, because "not verified" is not one fact:
+        FIVE OUTCOMES, kept apart on purpose, because "not verified" is not one fact:
         ``verified`` (every volume re-read and matched), ``failed`` (named volumes no
         longer match -- the backup is not to be trusted), ``off`` (the operator
         turned it off), ``stopped`` (the operator cancelled the re-read) and
