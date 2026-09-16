@@ -576,7 +576,7 @@
       const values = {}, names = {};
       (data.by_country || []).forEach(r => {
         if (r.value != null) values[r.country] = r.value;
-        names[r.country] = ooRegionName(r.country, r.country);
+        names[r.country] = ooRegionName(r.country);
       });
       await ooMap(host, {
         values, names,

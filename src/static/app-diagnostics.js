@@ -1381,7 +1381,7 @@
           const rows = (d.examples || []).map((c) => {
             const ov = c.plural_overlap || "";
             const ovTag = ov ? ` <span class="muted" style="font-size:11px">(${esc(overlapLabel[ov] || ov)})</span>` : "";
-            return `<tr><td><b>${esc(c.lemma)}</b> <span class="muted">${esc(c.language || "?")}</span>${ovTag}</td>`
+            return `<tr><td><b>${esc(c.lemma)}</b> <span class="muted">${ooLangCell(c.language, {empty: "?"})}</span>${ovTag}</td>`
               + `<td>${(c.members || []).map(esc).join(", ")}</td>`
               + `<td style="text-align:right;font-variant-numeric:tabular-nums">${c.n}</td></tr>`;
           }).join("");
@@ -1430,10 +1430,10 @@
           return `<div class="gb-row" tabindex="0" data-q="${qi}" data-a="${r.article_id}" onkeydown="goldBuilderKey(event,${qi},${r.article_id})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
             + `<span style="min-width:70px">${btns}</span>`
             + `<a href="/api/articles/${r.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(r.title || ("#" + r.article_id))}</a>`
-            + `<span class="muted" style="font-size:11px">${esc(r.source || "")}${r.language ? " · " + esc(r.language) : ""}</span></div>`;
+            + `<span class="muted" style="font-size:11px">${esc(r.source || "")}${r.language ? " · " + ooLangCell(r.language) : ""}</span></div>`;
         }).join("");
         return `<div class="an-panel" style="margin-top:8px"><b>${esc(q.query)}</b> `
-          + `<span class="muted">(${esc(q.language)} · ${esc(q.axis)})</span>`
+          + `<span class="muted">(${ooLangCell(q.language)} · ${esc(q.axis)})</span>`
           + (rows || `<div class="muted">No results in your corpus for this query.</div>`) + `</div>`;
       }).join("");
       body.innerHTML = `<div class="hint muted">${esc(note || "")} ${esc(grading || "")}</div>` + blocks;
@@ -1500,10 +1500,10 @@
         return;
       }
       const strata = (d.keyword_strata || []).map((s) =>
-        `${esc(s.language)} ${s.n} (${s.n_head} head · ${s.n_tail} tail)`).join(" · ");
+        `${ooLangCell(s.language)} ${esc(String(s.n))} (${esc(String(s.n_head))} head · ${esc(String(s.n_tail))} tail)`).join(" · ");
       out.innerHTML = `<b>${d.n_keywords || 0}</b> keywords · <b>${d.n_sources || 0}</b> sources · `
         + `${(d.source_tag_vocabulary || []).length} tags · digest <code>${esc(d.digest || "?")}</code>`
-        + `<div class="hint muted">${esc(strata)}</div>`
+        + `<div class="hint muted">${strata}</div>`
         + ((d.normalized_collisions || []).length
           ? `<div class="hint muted">${d.normalized_collisions.length} term group(s) differ only by case or accents — matched by exact echo only.</div>` : "");
     }
@@ -1529,7 +1529,7 @@
         return `<div class="mb-row" tabindex="0" data-i="${i}" onkeydown="mbAnchorKey(event,${i})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
           + `<span style="min-width:78px">${vb}</span>`
           + `<span style="min-width:170px">${esc(a.term)}</span>`
-          + `<span class="muted" style="font-size:11px;min-width:26px">${esc(a.language || "")}</span>`
+          + `<span class="muted" style="font-size:11px;min-width:26px">${ooLangCell(a.language)}</span>`
           + `<span>${kb}</span></div>`;
       }).join("");
       body.innerHTML = `<div class="hint muted">J = junk · C = content · U = unsure on a focused row. A kind is optional — leaving it blank costs one kind case, an invented kind costs the measurement.</div>` + rows;
@@ -1803,13 +1803,13 @@
           body += `<details class="gate-refused"><summary class="card-caveat">`
             + `${esc(t("Refused fields"))}: ${refusals.length} — ${shape}</summary>`
             + refusals.map((rf) =>
-              `<div class="card-caveat">${esc(rf.language)} · ${esc(rf.field)} — `
+              `<div class="card-caveat">${ooLangCell(rf.language)} · ${esc(rf.field)} — `
               + `${esc(rf.reason || "")}</div>`).join("")
             + `</details>`;
         }
         // "cleared" over-reads without this: a language here cleared at least one field.
         const partly = (g.partly_cleared || [])
-          .map((p) => `${esc(p.language)} (${esc((p.not_cleared || []).join(", "))})`);
+          .map((p) => `${ooLangCell(p.language)} (${esc((p.not_cleared || []).join(", "))})`);
         if (partly.length) {
           body += `<div class="hint">${esc(t("Cleared for some fields only"))}: ${partly.join(", ")}</div>`;
         }

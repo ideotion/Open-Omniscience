@@ -298,11 +298,18 @@
         const cy = (padT + i * rowH + rowH / 2).toFixed(1);
         const xa = x(r.articles || 0), xm = x(r.mentions || 0);
         const lo = Math.min(xa, xm).toFixed(1), hi = Math.max(xa, xm).toFixed(1);
-        const nm = esc((names && names[r.country]) || String(r.country).toUpperCase());
+        // Q302 in an SVG: the axis label is the alpha-3 CODE, and the <title> IS the
+        // hover, so the localised NAME goes there -- same split as `ooCountryCell`,
+        // expressed in the two SVG nodes that play those parts. The server's own
+        // `names` map wins over the browser's when it has an entry (it is the one
+        // that knows a code this app made up), and `ooCountryName` is the fallback
+        // rather than an uppercased alpha-2, which was never the name it claimed.
+        const cc = esc(ooCountryCode(r.country) || String(r.country || "").toUpperCase());
+        const nm = esc((names && names[r.country]) || ooCountryName(r.country, "") || cc);
         const clickable = ringId
           ? ` style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(r.country)}')"` : "";
         return `<g${clickable}><title>${nm}</title>`
-          + `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${nm}</text>`
+          + `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${cc}</text>`
           + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
           + `<circle cx="${xa.toFixed(1)}" cy="${cy}" r="4" fill="var(--accent)"><title>${nm}: ${r.articles} ${esc(t("articles"))}</title></circle>`
           + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)"><title>${nm}: ${r.mentions} ${esc(t("mentions"))}</title></circle></g>`;
@@ -449,7 +456,7 @@
         (d.countries || []).forEach(c => {
           if (!c.country) { unloc = c; return; }            // unlocated bucket — never mapped
           values[c.country] = c.articles;                  // distinct-article spread per country
-          names[c.country] = (typeof ooRegionName === "function") ? ooRegionName(c.country, String(c.country).toUpperCase()) : String(c.country).toUpperCase();
+          names[c.country] = (typeof ooRegionName === "function") ? ooRegionName(c.country) : String(c.country).toUpperCase();
         });
         const label = d.label || ringId;
         // Anti-capping: the polygons are a bounded LIST, so the figure announced beside
@@ -526,7 +533,7 @@
           + (country ? "&country=" + encodeURIComponent(country) : ""));
         if (!d.article_ids || !d.article_ids.length) { toast(t("No articles found for this cell.")); return; }
         const place = country
-          ? ((typeof ooRegionName === "function") ? ooRegionName(country, String(country).toUpperCase()) : String(country).toUpperCase())
+          ? ((typeof ooRegionName === "function") ? ooRegionName(country) : String(country).toUpperCase())
           : t("not mapped");
         openAnalysisForIds(d.article_ids, `${ringId} · ${place}`);
       } catch (e) { toast(t("Drill failed: ") + (e && e.message || e), "err"); }
@@ -804,7 +811,7 @@
           (r.keywords || []).map(k =>
             `<div style="padding:3px 0;border-bottom:1px solid var(--line)">
                <div style="display:flex;gap:8px;align-items:center">
-                 <span style="flex:1">${esc(k.term)} <span class="muted">${esc(k.language || "?")} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
+                 <span style="flex:1">${esc(k.term)} <span class="muted">${k.language ? ooLangCell(k.language) : "?"} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
                  <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxToggleTags(this)"
                    title="${esc(t("Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score."))}">${esc(t("Tags"))}</button>
                  <button class="ghost tiny" data-norm="${esc(k.normalized)}" onclick="kxHide(this)">Hide</button>

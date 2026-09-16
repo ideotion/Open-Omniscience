@@ -222,11 +222,16 @@
       const a2 = (typeof ooCountryAlpha2 === "function") ? ooCountryAlpha2(src) : "";
       const cc = (a2 || src).toUpperCase();
       if (!cc) return fallback || "";
+      // THE LAST RESORT IS A DISPLAY CODE, NOT `cc`. `cc` is the alpha-2 this
+      // function derived for CLDR's benefit; printing it when CLDR has no name
+      // would put a two-letter code on a screen of three-letter ones, in the one
+      // case nobody looks at -- which is how the old shape survived the sweep.
+      const _dispCC = () => ((typeof ooCountryCode === "function") ? ooCountryCode(src) : "") || cc;
       const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         if (!_ooRegionDN[lang]) _ooRegionDN[lang] = new Intl.DisplayNames([lang], { type: "region" });
-        return _ooRegionDN[lang].of(cc) || fallback || cc;
-      } catch { return fallback || cc; }
+        return _ooRegionDN[lang].of(cc) || fallback || _dispCC();
+      } catch { return fallback || _dispCC(); }
     }
     // The language analog (field test 2026-06-19 #52/#53, THEME-4): show the full
     // language NAME in the current UI locale via the browser's own CLDR data, instead
@@ -244,11 +249,14 @@
       const src = (code || "").trim();
       if (!src) return fallback || "";
       const lc = ((typeof ooLangStorage === "function") ? ooLangStorage(src) : "") || src;
+      // Same rule as the region twin: `lc` is the 639-1 tag derived for CLDR, so it
+      // is the wrong thing to print when CLDR has no name for it.
+      const _dispLC = () => ((typeof ooLangCode === "function") ? ooLangCode(src) : "") || lc;
       const ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         if (!_ooLangDN[ui]) _ooLangDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
-        return _ooLangDN[ui].of(lc) || fallback || lc;
-      } catch { return fallback || lc; }
+        return _ooLangDN[ui].of(lc) || fallback || _dispLC();
+      } catch { return fallback || _dispLC(); }
     }
 
     // Server-side folder picker (field test 2026-06-22 #8: "Browse buttons, never
@@ -343,7 +351,7 @@
       if (code === "contested") return t("Contested (assign nothing)");
       if (code === "iso") return t("ISO / de jure");
       if (code === "tlc") return t("Natural Earth (de facto)");
-      return ooRegionName(_OO_POV_REGION[code] || code, code.toUpperCase());
+      return ooRegionName(_OO_POV_REGION[code] || code);
     }
 
     // What a single area's worldview cell means, as a translated sentence. The three
@@ -356,7 +364,7 @@
       const v = (area.views || {})[view];
       if (v === "self") return t("recognised as its own state in this view");
       if (!v) return t("assigned to no recognised state in this view");
-      return t("attributed to") + " " + ooRegionName(v, v.toUpperCase());
+      return t("attributed to") + " " + ooRegionName(v);
     }
 
     // An area's name in the reader's locale, from Natural Earth's own NAME_<lang>
@@ -2233,7 +2241,7 @@
           const iso2 = iso2By[c.area];
           if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
           values[iso2] = c.value;
-          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2, iso2.toUpperCase()) : iso2;
+          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2) : iso2;
         });
         const unit = (cd.basis && cd.basis.unit) || "";
         const nMapped = Object.keys(values).length;

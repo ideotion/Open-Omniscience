@@ -18,6 +18,7 @@ import csv
 import io
 
 from src.catalog.countries import normalize_country, to_iso2, to_iso3
+from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -153,6 +154,16 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
             val = (rec.get(opt) or "").strip()
             if val:
                 out[opt] = val.lower() if opt in ("country", "language") else val
+        # Language: accept BOTH forms, the same discipline the country columns got
+        # (S04-05 S8). The app DISPLAYS 639-2/T (`fra`), so an operator exporting,
+        # editing and re-importing a sheet types back what they were shown --
+        # `language_storage_code` turns that into the 639-1 the column stores, and
+        # a 639-1 typed directly passes through it unchanged. A value it cannot
+        # place (`pcm`, `yue`, `tet` have no 639-1 at all) is KEPT AS TYPED rather
+        # than dropped: the column is free text for exactly those, and silently
+        # discarding a real language the operator stated would be the worse answer.
+        if "language" in out:
+            out["language"] = language_storage_code(out["language"]) or out["language"]
         # Country: canonical lowercase ISO-2 via the one conversion layer —
         # accepts codes, full names and slugs; unrecognisable values are dropped
         # (never stored as junk).

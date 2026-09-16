@@ -59,7 +59,7 @@
       if (donutHost) {
         const byLang = (d.unlocated && d.unlocated.by_language) || {};
         const ddata = Object.keys(byLang).map(code => ({
-          value: byLang[code], label: code ? ooLangName(code, code) : t("Unknown language"),
+          value: byLang[code], label: code ? ooLangName(code) : t("Unknown language"),
         })).filter(x => x.value > 0);
         if (!ddata.length) {
           donutHost.innerHTML = `<div class="muted">${esc(t("All collected articles have a country."))}</div>`;
@@ -724,8 +724,8 @@
       else {
         list.innerHTML = rows.map(s => {
           const feed = !!s.rss_url;
-          const meta = [s.language ? ooLangName(s.language, s.language) : null,
-                        s.country ? ooRegionName(s.country, s.country) : null,
+          const meta = [s.language ? ooLangName(s.language) : null,
+                        s.country ? ooRegionName(s.country) : null,
                         s.source_type].filter(Boolean).map(esc).join(" · ");
           return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
             <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}

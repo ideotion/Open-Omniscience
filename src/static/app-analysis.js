@@ -1316,10 +1316,10 @@
       s = s || {};
       const facts = [
         s.country ? (typeof ooRegionName === "function"
-          ? ooRegionName(s.country, s.country.toUpperCase()) : s.country) : null,
+          ? ooRegionName(s.country) : s.country) : null,
         s.region || null,
         s.language ? (typeof ooLangName === "function"
-          ? ooLangName(s.language, s.language) : s.language) : null,
+          ? ooLangName(s.language) : s.language) : null,
         s.source_type || null,
       ].filter(Boolean).join(" \u00b7 ");
       const tags = (s.tags && s.tags.length)
