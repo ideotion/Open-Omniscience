@@ -19,6 +19,7 @@ real report dict already built by the restore-merge or newsletter-import path.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from datetime import UTC, datetime
@@ -364,10 +365,10 @@ def _report_facts(p: Path, size_bytes: int) -> dict[str, Any]:
         out["articles_basis"] = "merged" if committed else "planned"
         dup = articles.get("duplicate")
         if dup is not None:
-            try:
+            # Same rule as the figure above: a non-numeric duplicate count is not a
+            # count, and it is left ABSENT rather than coerced to a plausible zero.
+            with contextlib.suppress(TypeError, ValueError):
                 out["duplicates"] = int(dup)
-            except (TypeError, ValueError):
-                pass
     return out
 
 
