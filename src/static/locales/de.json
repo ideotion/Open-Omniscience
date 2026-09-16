@@ -3403,5 +3403,18 @@
   "hosts": "Hosts",
   "the full list is in the security notes": "die vollständige Liste steht in den Sicherheitshinweisen",
   "Where this will let the app connect:": "Wohin sich die App dadurch verbinden kann:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Ein Ausschalter dafür existiert, aber die App kann ihn nicht erreichen: Der Einstellungen-Endpoint nimmt die Änderung an und verwirft sie."
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Ein Ausschalter dafür existiert, aber die App kann ihn nicht erreichen: Der Einstellungen-Endpoint nimmt die Änderung an und verwirft sie.",
+  "Automatically filed newsletters": "Automatisch zugeordnete Newsletter",
+  "How this was decided": "Wie das entschieden wurde",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "Verschiebt jeden automatisch zugeordneten Newsletter zurück in den Import-Sammelordner und löscht den Zuordnungsvermerk. Newsletter, die Sie selbst zugeordnet haben, und solche, die die Zuordnungskette verweigert hat, bleiben unberührt.",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "Jeden automatisch zugeordneten Newsletter zurück in den Import-Sammelordner verschieben? Von Ihnen selbst zugeordnete bleiben unberührt, und ein erneuter Import derselben .eml-Dateien führt die Zuordnung wieder aus.",
+  "Removed the now-empty sources this filing had created": "Die nun leeren Quellen, die diese Zuordnung angelegt hatte, wurden entfernt",
+  "Undo failed": "Rückgängig machen fehlgeschlagen",
+  "Undo the automatic filing": "Automatische Zuordnung rückgängig machen",
+  "filed under a publisher you already track": "einem Herausgeber zugeordnet, den Sie bereits verfolgen",
+  "filed under a new, DISABLED source for the sender's domain": "einer neuen, DEAKTIVIERTEN Quelle für die Absenderdomain zugeordnet",
+  "left in the import bucket (the sender could not be resolved without guessing)": "im Import-Sammelordner belassen (der Absender war nicht ohne Raten aufzulösen)",
+  "newsletters moved back to the import bucket.": "Newsletter zurück in den Import-Sammelordner verschoben.",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "die geregelte Herausgeber-Zuordnungskette beim Import: eine eTLD+1 aus der Public Suffix List (die Plattform-Umkehrung zuerst angewandt), abgeglichen mit Ihren vorhandenen Quellen über die exakte Domain, dann über die Alias-Tabelle, sonst als neue, DEAKTIVIERTE E-Mail-Quelle angelegt. Deterministisch oder verweigert — kein unscharfer Abgleich, keine Zeichenketten-Ähnlichkeit, und eine Verweigerung belässt den Newsletter im Import-Sammelordner",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "dies ist eine ZUORDNUNG, kein Urteil über den Herausgeber: sie besagt, dass ein Newsletter von einer Domain kam, die Ihr Korpus bereits verfolgt, niemals, dass beide gleich verlässlich sind. Das Rückgängigmachen stellt jede automatische Zuordnung exakt wieder her und lässt alles unberührt, was Sie selbst zugeordnet haben"
 }

@@ -1861,6 +1861,17 @@
         <button class="secondary" id="nl-import-btn" onclick="importNewsletters(this)">Import .eml files</button>
       </div>
       <div id="nl-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+      <!-- Q1151: the attach ANNOUNCES itself and stays undoable. The caveat is visible by
+           default (never behind a toggle) and the hover carries the long form, per the
+           informed-consent non-negotiable. -->
+      <div id="nl-attach" style="margin-top:10px;display:none">
+        <div class="card-caveat" id="nl-attach-caveat"></div>
+        <div id="nl-attach-body" class="hint" style="margin-top:6px"></div>
+        <div class="row" style="gap:8px;margin-top:6px">
+          <button class="secondary" id="nl-attach-undo" onclick="undoNewsletterAttach(this)"
+                  title="Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.">Undo the automatic filing</button>
+        </div>
+      </div>
       <hr>
       <h3 style="margin-bottom:6px">Import a whole folder (for very large sets)</h3>
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>

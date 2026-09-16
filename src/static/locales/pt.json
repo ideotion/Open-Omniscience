@@ -3403,5 +3403,18 @@
   "hosts": "hosts",
   "the full list is in the security notes": "a lista completa está nas notas de segurança",
   "Where this will let the app connect:": "Onde isto vai deixar o aplicativo se conectar:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "O interruptor existe, mas é inacessível ao aplicativo: o endpoint de configurações aceita a mudança e a descarta."
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "O interruptor existe, mas é inacessível ao aplicativo: o endpoint de configurações aceita a mudança e a descarta.",
+  "Automatically filed newsletters": "Newsletters arquivadas automaticamente",
+  "How this was decided": "Como isto foi decidido",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "Devolve ao contentor de importação todas as newsletters anexadas automaticamente e apaga o registo de anexação. As newsletters que arquivou você mesmo, e as que a cadeia recusou, nunca são tocadas.",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "Devolver ao contentor de importação todas as newsletters arquivadas automaticamente? As que arquivou você mesmo não são tocadas, e reimportar os mesmos ficheiros .eml executa o arquivamento outra vez.",
+  "Removed the now-empty sources this filing had created": "Removidas as fontes agora vazias que este arquivamento criara",
+  "Undo failed": "Falha ao anular",
+  "Undo the automatic filing": "Anular o arquivamento automático",
+  "filed under a publisher you already track": "arquivadas sob um editor que já acompanha",
+  "filed under a new, DISABLED source for the sender's domain": "arquivadas sob uma fonte nova e DESATIVADA para o domínio do remetente",
+  "left in the import bucket (the sender could not be resolved without guessing)": "deixadas no contentor de importação (o remetente não pôde ser resolvido sem adivinhar)",
+  "newsletters moved back to the import bucket.": "newsletters devolvidas ao contentor de importação.",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "a cadeia de resolução de editor aplicada na importação: um eTLD+1 da Public Suffix List (com a inversão de plataforma aplicada primeiro), comparado com as suas fontes existentes por domínio exato e depois pelo mapa de aliases; caso contrário, registado como uma nova fonte de e-mail DESATIVADA. Determinista ou recusado — sem correspondência aproximada, sem semelhança de cadeias, e uma recusa deixa a newsletter no contentor de importação",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "isto é uma COLOCAÇÃO, não um juízo sobre o editor: diz que uma newsletter foi enviada de um domínio que o seu corpus já acompanha, nunca que os dois são igualmente fiáveis. Anular restaura exatamente cada colocação automática e não toca em nada que tenha arquivado você mesmo"
 }

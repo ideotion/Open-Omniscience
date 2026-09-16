@@ -424,7 +424,10 @@
       // The newsletter/PDF import panels moved into Data & backup (2026-07-31). Both
       // calls are cheap and loopback-only -- a count query and a job-status poll -- so
       // they load with the subtab rather than needing the Advanced lazy treatment.
-      if (cat === "data") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }
+      // Q1151: the undo must be findable a week after the import that created it, not
+      // only on the screen that announced it -- so the Data panel reads the attach
+      // summary on open, exactly like the remove count beside it.
+      if (cat === "data") { loadNewsletterRemoveCount(); loadNewsletterAttach(); _folderImportStartPoll(); }
     }
 
     // ADVANCED subtab (2026-07-31 Settings review): Collection, Sources and Keywords moved

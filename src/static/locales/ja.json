@@ -3403,5 +3403,18 @@
   "hosts": "ホスト",
   "the full list is in the security notes": "全リストはセキュリティノートにあります",
   "Where this will let the app connect:": "この操作でアプリが接続できるようになる範囲:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "スイッチは存在しますが、アプリはそれに到達できません: 設定のエンドポイントはその変更を受け付け、それを破棄します。"
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "スイッチは存在しますが、アプリはそれに到達できません: 設定のエンドポイントはその変更を受け付け、それを破棄します。",
+  "Automatically filed newsletters": "自動的に振り分けられたニュースレター",
+  "How this was decided": "この判断の根拠",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "自動的に振り分けられたニュースレターをすべて取り込み用のまとめ先に戻し、振り分けの記録を消去します。ご自身で振り分けたもの、および判定が拒否したものには一切触れません。",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "自動的に振り分けられたニュースレターをすべて取り込み用のまとめ先に戻しますか？ ご自身で振り分けたものは変更されません。同じ .eml ファイルを取り込み直せば、振り分けは再度実行されます。",
+  "Removed the now-empty sources this filing had created": "この振り分けが作成し、空になった情報源を削除しました",
+  "Undo failed": "取り消しに失敗しました",
+  "Undo the automatic filing": "自動振り分けを取り消す",
+  "filed under a publisher you already track": "すでに追跡している発行元に振り分け",
+  "filed under a new, DISABLED source for the sender's domain": "送信元ドメイン用に新規作成した「無効」の情報源に振り分け",
+  "left in the import bucket (the sender could not be resolved without guessing)": "取り込み用のまとめ先に保留（推測せずに送信元を特定できませんでした）",
+  "newsletters moved back to the import bucket.": "件のニュースレターを取り込み用のまとめ先に戻しました。",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "取り込み時に実行される発行元判定の手順：Public Suffix List の eTLD+1（プラットフォーム反転を先に適用）を、既存の情報源と完全一致ドメインで照合し、次に別名表で照合します。いずれにも当たらない場合は、新規の「無効」なメール情報源として登録します。確定するか拒否するかのどちらかで、あいまい一致も文字列類似度も使いません。拒否されたニュースレターは取り込み用のまとめ先に残ります",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "これは「振り分け」であって、発行元への評価ではありません。すでに追跡しているドメインから送られたという事実を示すだけで、両者が同じだけ信頼できるという意味ではありません。取り消すと自動振り分けはすべて正確に元へ戻り、ご自身で振り分けたものには一切触れません"
 }

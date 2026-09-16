@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
@@ -223,6 +224,156 @@ def newsletter_publisher_preview(db: Session = Depends(get_db)) -> dict:
     from src.ingest.newsletter_source import resolution_preview
 
     return resolution_preview(db)
+
+
+@router.get("/newsletters/attach/summary")
+def newsletter_attach_summary(db: Session = Depends(get_db)) -> dict:
+    """What the auto-attach has ACTUALLY done to this corpus, so it can be reviewed and undone.
+
+    The import screen announces a single run; this answers the question a user has a week
+    later, on a page they did not have open at the time: where did my newsletters go, and can
+    I put them back? Read-only, loopback, no network.
+
+    Grouped by destination source, counts only. Sorted by size then name, so the answer is
+    stable between calls rather than reordering under the reader.
+    """
+    from src.database.models import Article
+
+    rows = (
+        db.query(Article.source_id, Article.newsletter_attached_via, func.count(Article.id))
+        .filter(Article.newsletter_attached_via.isnot(None))
+        .group_by(Article.source_id, Article.newsletter_attached_via)
+        .all()
+    )
+    if not rows:
+        return {
+            "attached": 0,
+            "groups": [],
+            "method": _ATTACH_METHOD,
+            "caveat": _ATTACH_CAVEAT,
+        }
+    names = {
+        int(s.id): (s.name, s.domain, bool(s.enabled))
+        for s in db.query(Source).filter(Source.id.in_({int(r[0]) for r in rows if r[0]}))
+    }
+    groups = []
+    for sid, via, n in rows:
+        name, domain, enabled = names.get(int(sid), (None, None, None))
+        action, _, basis = (via or "").partition(":")
+        groups.append({
+            "source_id": int(sid),
+            "source_name": name,
+            "source_domain": domain,
+            "source_enabled": enabled,
+            "action": action,
+            "basis": basis or None,
+            "articles": int(n),
+        })
+    groups.sort(key=lambda g: (-int(g["articles"] or 0), str(g["source_domain"] or "")))
+    return {
+        "attached": sum(g["articles"] for g in groups),
+        "groups": groups,
+        "method": _ATTACH_METHOD,
+        "caveat": _ATTACH_CAVEAT,
+    }
+
+
+@router.post("/newsletters/attach/undo")
+def newsletter_attach_undo(db: Session = Depends(get_db)) -> dict:
+    """Put every AUTOMATICALLY attached newsletter back in the import bucket.
+
+    THE RULED HALF OF THE ATTACH. The 2026-06-15 ruling pairs the silent auto-attach with an
+    import UI that announces it and an undo for the automated attaches; this is that undo, and
+    it is why the attach was allowed to ship at all.
+
+    EXACT, AND NARROW BY CONSTRUCTION. It moves only rows carrying
+    ``newsletter_attached_via`` -- the column nothing else in the tree writes -- so an article
+    a person filed by hand is untouched, as is every newsletter the ladder refused (those
+    never left the bucket). Restoring means BOTH halves: the article returns to the bucket AND
+    the column is cleared, so a second undo is a no-op rather than a second move.
+
+    A source this feature CREATED and that is now empty is deleted; one that existed before is
+    never touched however empty it ends up, because deleting a source the operator configured
+    would be a second, unasked-for change riding along with the undo. "Created by this
+    feature" is READ, not guessed: the ladder records ``new-email-source`` only when it had to
+    create the source, and ``attach-exact`` / ``attach-alias`` only when it matched one that
+    was already there. So a source with even one exact/alias article demonstrably pre-existed,
+    whatever its flags say -- which matters, because "disabled + newsletter + now empty" is a
+    shape a user's own source can have, and a heuristic would have deleted theirs.
+
+    Local-only and reversible in the sense that matters: re-importing the same .eml files
+    re-runs the ladder and re-attaches them.
+    """
+    from src.database.models import Article
+    from src.database.writer import write_lock
+
+    bucket = _get_newsletter_source(db)
+    rows = db.query(Article.id, Article.source_id, Article.newsletter_attached_via).filter(
+        Article.newsletter_attached_via.isnot(None)
+    ).all()
+    if not rows:
+        return {"restored": 0, "sources_emptied": 0, "sources_deleted": [], "bucket": bucket.domain}
+
+    touched_source_ids = {int(sid) for _aid, sid, _via in rows if sid is not None}
+    # A source is ours to delete only if EVERY article we are taking out of it got there by
+    # the ladder's create rung. One exact/alias article proves the source was already there.
+    ladder_created = {
+        sid for sid in touched_source_ids
+        if all(
+            (via or "").startswith("new-email-source")
+            for _aid, s, via in rows if s is not None and int(s) == sid
+        )
+    }
+    art_ids = [int(aid) for aid, _sid, _via in rows]
+    with write_lock():
+        for lo in range(0, len(art_ids), 900):  # under SQLite's 999-variable cap
+            chunk = art_ids[lo : lo + 900]
+            db.query(Article).filter(Article.id.in_(chunk)).update(
+                {"source_id": bucket.id, "newsletter_attached_via": None},
+                synchronize_session=False,
+            )
+        db.commit()
+
+    deleted: list[str] = []
+    for sid in sorted(ladder_created - {int(bucket.id)}):
+        src = db.get(Source, sid)
+        # enabled / source_type are belt-and-braces beside the recorded fact above: if either
+        # ever disagrees with `new-email-source`, something else has edited the source and it
+        # is no longer purely ours to remove.
+        if src is None or src.enabled or src.source_type != _IMPORT_SOURCE_TYPE:
+            continue
+        still = db.query(Article.id).filter(Article.source_id == sid).first()
+        if still is None:
+            deleted.append(src.domain)
+            db.delete(src)
+    if deleted:
+        db.commit()
+
+    # The bulk UPDATE bypassed index_article's per-source counter maintenance, so the
+    # denormalised Source.article_count is now stale for both ends of every move.
+    from src.analytics.store import reconcile_source_counters
+
+    reconcile_source_counters(db)
+    return {
+        "restored": len(art_ids),
+        "sources_emptied": len(touched_source_ids - {int(bucket.id)}),
+        "sources_deleted": deleted,
+        "bucket": bucket.domain,
+    }
+
+
+_ATTACH_METHOD = (
+    "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the "
+    "platform inversion applied first) matched against your existing sources by exact domain, "
+    "then by the alias map, else registered as a new DISABLED email source. Deterministic or "
+    "refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter "
+    "in the import bucket"
+)
+_ATTACH_CAVEAT = (
+    "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent "
+    "from a domain your corpus already tracks, never that the two are equally reliable. Undo "
+    "restores every automatic placement exactly, and touches nothing you filed yourself"
+)
 
 
 # Starlette's MultiPartParser defaults to max_files=1000, so a selection of ~1300

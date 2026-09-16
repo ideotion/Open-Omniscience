@@ -43,7 +43,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from src.catalog.publicsuffix import list_status, registrable_domain_psl
@@ -332,8 +332,13 @@ def resolution_preview(session: Session, *, limit_examples: int = 3) -> dict:
             Source.domain.in_(NEWSLETTER_SOURCE_DOMAINS)
         )
     ]
+    # Since the write-path attach (Q1151) an imported newsletter may no longer live in a
+    # bucket source. A preview that only looked at the buckets would report an ever-shrinking
+    # corpus as the attach succeeded -- i.e. it would look like the feature was losing data.
+    attached = Article.newsletter_attached_via.isnot(None)
+    scope = or_(Article.source_id.in_(src_ids), attached) if src_ids else attached
     status = list_status()
-    if not src_ids:
+    if not src_ids and not session.query(Article.id).filter(attached).first():
         return {
             "groups": [],
             "articles": 0,
@@ -350,7 +355,7 @@ def resolution_preview(session: Session, *, limit_examples: int = 3) -> dict:
     total = 0
     q = (
         session.query(Article.author, Article.title, Article.newsletter_list_id)
-        .filter(Article.source_id.in_(src_ids))
+        .filter(scope)
         .yield_per(500)
     )
     for author, title, stored_list_id in q:

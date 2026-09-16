@@ -230,6 +230,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_article_identity_columns,
         ensure_article_ip_columns,
         ensure_article_quarantine_columns,
+        ensure_article_newsletter_attach_column,
         ensure_article_newsletter_list_id_column,
         ensure_source_catalog_baseline_column,
         ensure_article_source_revision_column,
@@ -264,6 +265,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_article_quarantine_columns(engine)
     ensure_article_source_revision_column(engine)
     ensure_article_newsletter_list_id_column(engine)
+    ensure_article_newsletter_attach_column(engine)
     ensure_source_catalog_baseline_column(engine)
     ensure_article_detected_language_column(engine)
     ensure_article_top_keyword_columns(engine)

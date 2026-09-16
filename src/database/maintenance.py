@@ -1273,6 +1273,42 @@ def ensure_article_newsletter_list_id_column(engine: Engine) -> list[str]:
     return added
 
 
+# THE NEWSLETTER AUTO-ATTACH RECORD on `articles` (Q1151 = a). Additive + NULLABLE with NO
+# backfill, on the same pattern. NULL means "nothing automated moved this article" -- which
+# is exactly right for every row predating the column, because nothing automated had moved
+# any of them. That is the one case in this family where the no-backfill NULL is not an
+# ambiguity to disclose but the literally correct value.
+_ARTICLE_NEWSLETTER_ATTACH_COLUMN: dict[str, str] = {
+    "newsletter_attached_via": "ALTER TABLE articles ADD COLUMN newsletter_attached_via VARCHAR(120)",
+}
+
+
+def ensure_article_newsletter_attach_column(engine: Engine) -> list[str]:
+    """Self-heal ``articles.newsletter_attached_via`` (idempotent, additive, no backfill).
+
+    Not every install runs alembic and ``create_all`` never ALTERs an existing table, so a
+    store predating this column would raise "no such column" on the first .eml import AND on
+    the undo endpoint. No-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_NEWSLETTER_ATTACH_COLUMN.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles newsletter-attach column(s): {', '.join(added)}")
+    return added
+
+
 # Additive + NULLABLE with NO backfill, on the source_revision pattern. NULL means "the
 # catalogue baseline was never recorded for this row", which is every row predating the
 # column -- and sync_catalogue_corrections ADOPTS the current catalogue for those and changes
@@ -1331,6 +1367,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_KEYWORD_INDEXED_COLUMN)
         | frozenset(_ARTICLE_SOURCE_REVISION_COLUMN)
         | frozenset(_ARTICLE_NEWSLETTER_LIST_ID_COLUMN)
+        | frozenset(_ARTICLE_NEWSLETTER_ATTACH_COLUMN)
     ),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL, column + its index).

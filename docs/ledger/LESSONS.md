@@ -9779,3 +9779,57 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   the new process had exited, and the probe had hit the OLD, already-unlocked server on that
   port. A surprising measurement is a claim about the measurement setup until the setup has
   been checked.
+
+- **MOVING A ROW BETWEEN PARENTS BREAKS EVERY READER THAT DEFINED THE CHILD BY ITS PARENT —
+  AND TWO OF THIS TREE'S WERE PRIVACY GATES (2026-09-16, Q1151, the newsletter auto-attach):**
+  the feature is one sentence — file an imported newsletter under its publisher's Source
+  instead of one undifferentiated bucket. Before it, "an imported newsletter" and "an article
+  whose source is a newsletter bucket" were THE SAME SET, so every reader in the tree quite
+  reasonably asked about the SOURCE. Four did, and the attach silently falsified all four:
+  `count_imported_newsletters` / `delete_imported_newsletters` would have left the attached
+  ones behind while the screen promised it removed every one; `resolution_preview` would have
+  reported an ever-shrinking corpus as the attach succeeded, so the feature WORKING would have
+  looked like the feature LOSING DATA; `_drop_newsletter_rows` would have written newsletter
+  bodies into a backup the operator had ticked "exclude newsletters" on; and
+  `build_sample_records` would have exported those bodies into the source-quality diagnostic
+  zip that withholds private `.eml` text by default. The last two are the ones that matter:
+  **a scope widening is a privacy change when the narrow scope was a gate.** The general form:
+  before you let a row change parents, grep for every reader that identifies the row BY that
+  parent, and re-read each one asking "is this a gate?" — the count is an inconvenience, the
+  gate is a disclosure.
+  **THE COLUMN TO STORE IS THE DECISION, NOT THE DESTINATION.** The docket had asked for "the
+  attached source id". But `Article.source_id` already IS the destination; what no reader can
+  otherwise recover is whether the APP chose it or a person did. Storing the ladder's own
+  verdict (`attach-exact:etld1`, `new-email-source:etld1`) makes the undo exactly as narrow as
+  the thing it undoes — NULL means "nothing automated moved this", which is the literally
+  correct value for every row predating the column, so the migration needs no backfill and the
+  undo cannot touch a placement a person made.
+  **AND IT ANSWERS A QUESTION A FLAG HEURISTIC GETS WRONG.** The undo deletes a source it
+  created and now-empty; the tempting test is "disabled + newsletter-typed + empty", and that
+  is a shape a USER's own source can have — a mutant that switched to it deleted theirs. The
+  recorded rung is decisive instead: an `attach-exact` article can only exist against a source
+  that was already there, so one such article proves the source pre-existed whatever its flags
+  say. Emptiness is then checked AFTER the restore, because a source the ladder created can
+  pick up articles the undo will not restore, and deleting it would take those with it.
+  **COUNT ON THE COMMIT, NOT ON THE DECISION.** The import batches its commits and redoes a
+  failed batch one message at a time, re-placing every message in it. Counters raised at
+  placement time double-count exactly the messages a retry touched; counters raised after a
+  successful store make the three attach figures sum to `stored` by construction — which is
+  the property the screen shows the user.
+
+- **A SUITE RUN WITH APP SERVERS UP IS NOT A SUITE RUN, AND THE FAILURES IT INVENTS LOOK REAL
+  (2026-09-16, measured):** a full-suite run came back **23 failed**. Three were genuine — a new
+  `Article` column that three "declare every column" guards correctly refused. The other twenty
+  were every test in `test_gpu_arbitration`, `test_vllm_endpoints`, `test_vllm_lifecycle`,
+  `test_vllm_port_collision` and `test_vllm_start_diagnosable`, and they were caused **by this
+  session**, not by the change: a click-through state was still bound to port **8001**, and
+  `default_vllm_port()` derives vLLM's port as the app's `OO_PORT` **+ 1** — precisely so the two
+  can never collide — which makes 8001 the port those tests bind and probe. All 200 pass in
+  isolation once the servers are down; the mechanism was checked (`default_vllm_port` read, the
+  port matched) rather than assumed from "they look unrelated".
+  **THE GENERAL FORM, and it is the same family as the recorded never-switch-branches-mid-suite
+  rule: the suite owns the machine, not just the working tree.** Ports, the venv (a mid-run `pip
+  install` can turn a skip-guarded file into a running one), `OO_DATA_DIR`, and any process that
+  holds a lock are all shared state a concurrent run will silently attribute to the diff. Before
+  reporting a full-suite result, confirm nothing of yours is still listening — and if something
+  was, the number to report is from the clean re-run, not from the run you are explaining away.
