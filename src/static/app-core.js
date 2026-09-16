@@ -103,6 +103,20 @@
     // value typed into a filter box behaves the same on both sides.
     const OO_COUNTRY_ALIASES = { uk: "gb", usa: "us", uae: "ae", drc: "cd" };
 
+    // THE TWO CODES CLDR ANSWERS WRONGLY, measured in Chromium rather than assumed.
+    // `Intl.DisplayNames(…,{type:"region"}).of("AN")` returns **Curaçao**: CLDR aliases
+    // the withdrawn Netherlands Antilles code to its successor territory, so the hover
+    // named a DIFFERENT place than the code means -- while `countries.SPECIAL_CODES`
+    // server-side had it right all along, which is the tell: the two halves of one
+    // helper disagreed about one value. `INT` is not a region code at all (regions are
+    // two-alpha or three-digit), so the lookup throws and the name was simply absent,
+    // leaving a code with a disclosure and nothing to disclose it ABOUT.
+    //
+    // `eu` and `xk` are deliberately NOT here. CLDR names both correctly and in every
+    // UI locale; an English table beside it would be a downgrade, and a table that
+    // duplicates a correct source is a second place to forget to update.
+    const OO_CLDR_WRONG_ABOUT = { an: "Netherlands Antilles", int: "International" };
+
     // lowercase alpha-2 for any stored or displayed country value, or "" when we
     // cannot read it. This is the SINGLE place a code changes shape, so a caller
     // that needs alpha-2 for `Intl.DisplayNames`, for a flag, or for a GeoJSON key
@@ -160,6 +174,10 @@
       const a2 = ooCountryAlpha2(value);
       const fb = fallback == null ? "" : String(fallback);
       if (!a2) return fb;
+      if (OO_CLDR_WRONG_ABOUT[a2]) {
+        const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        return tt(OO_CLDR_WRONG_ABOUT[a2]);
+      }
       if (typeof ooRegionName === "function") return ooRegionName(a2, fb || ooCountryCode(value));
       return fb || ooCountryCode(value);
     }

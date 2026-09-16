@@ -3523,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Confiar nele evita baixar novamente o que o histórico indica já ter sido obtido; não confiar nele baixa tudo novamente do zero.",
   "Restoring a backup later": "Restaurar um backup mais tarde",
   "Trust a backup's scraping history by default": "Confiar por padrão no histórico de coleta de um backup",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Confiar nele evita baixar novamente o que o histórico indica já ter sido obtido; não confiar nele baixa tudo novamente do zero. Você pode alterar isso para qualquer importação específica."
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Confiar nele evita baixar novamente o que o histórico indica já ter sido obtido; não confiar nele baixa tudo novamente do zero. Você pode alterar isso para qualquer importação específica.",
+  "Netherlands Antilles": "Antilhas Neerlandesas"
 }

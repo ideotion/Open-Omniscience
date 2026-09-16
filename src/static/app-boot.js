@@ -49,6 +49,19 @@
         const tbl = $("src-table");
         if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
       } catch (_e) {}
+      // World coverage is the same frozen-locale class, and it needed BOTH halves --
+      // which is why the first fix looked like a fix and was not. Its two repaint
+      // guards fingerprint the payload, so they now carry the locale too (otherwise
+      // this call returns early on unchanged data and changes nothing); and nothing
+      // re-ran it on a switch, so walking en -> fr -> ar -> zh left all 218 country
+      // hovers reading whichever locale painted them first. Measured in Chromium:
+      // after a switch the table was stale, and a forced `loadCoverage()` was correct.
+      // Guarded on the table already having rows, exactly like `src-table` above: a
+      // language switch must never FETCH for a panel the reader has not opened.
+      try {
+        const cov = $("coverage-table");
+        if (cov && cov.querySelector("tr") && typeof loadCoverage === "function") loadCoverage();
+      } catch (_e) {}
       // home-lead-title-frozen-locale (P1): renderBriefing() (Home Leads + the
       // corpus-tier badge it renders internally via renderCorpusTier) builds
       // OOI18N.tf()-templated titles that were never re-rendered on a language

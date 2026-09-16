@@ -18,6 +18,11 @@
    spot in review. Add new code inside the module it belongs to.
 */
     let _covMapStamp = "";
+    // ONE reader for the active locale, used by BOTH coverage repaint guards, because
+    // the two of them getting different answers is exactly the failure above.
+    function _covUiLang() {
+      return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+    }
     async function renderCoverageMap() {
       const mapHost = $("coverage-map");
       if (!mapHost) return;
@@ -25,7 +30,16 @@
       let d;
       try { d = await api("/api/insights/map-coverage"); }
       catch (e) { mapHost.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
-      const stamp = JSON.stringify([d.by_country, d.unlocated]);
+      // THE LOCALE IS PART OF THE FINGERPRINT. Without it this guard is right about a
+      // live poll (same data, no repaint) and wrong about a language switch: the walk
+      // of 2026-09-16 went en -> fr -> ar -> zh and left all 218 country hovers reading
+      // FRENCH, because the payload never changed. That is the frozen-locale family
+      // `app-boot.js`'s oo:langchange handler already documents for the Lead titles and
+      // the Composition figures, and it became load-bearing here the moment the
+      // localised name moved into a hover (Q302). Fixed in the GUARD rather than by
+      // adding a third entry to that handler, so the next surface behind this stamp
+      // cannot inherit the bug by being written correctly.
+      const stamp = JSON.stringify([d.by_country, d.unlocated, _covUiLang()]);
       if (stamp === _covMapStamp) return;   // live poll: unchanged, no repaint
       _covMapStamp = stamp;
       const values = {}, names = {}, points = [];
@@ -83,7 +97,12 @@
           api("/api/database/coverage"),
           api("/api/database/countries"),
         ]);
-        const stamp = JSON.stringify([c, d.countries, d.missing]);
+        // The locale is part of THIS fingerprint too, and forgetting it here is what
+        // the first fix missed: the panel has TWO guards, and only the map's was made
+        // locale-aware, so the map followed the language and the 218-row TABLE beneath
+        // it kept the hovers it was first painted with. Re-measured in Chromium rather
+        // than reasoned about -- the walk is what said the fix was half a fix.
+        const stamp = JSON.stringify([c, d.countries, d.missing, _covUiLang()]);
         if (stamp === _covStamp) return;   // live poll: nothing changed, no repaint
         _covStamp = stamp;
         el.innerHTML =

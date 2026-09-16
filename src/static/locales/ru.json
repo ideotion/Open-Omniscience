@@ -3523,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля.",
   "Restoring a backup later": "Восстановление резервной копии позже",
   "Trust a backup's scraping history by default": "Доверять истории сбора данных резервной копии по умолчанию",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля. Это можно изменить для любого отдельного импорта."
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля. Это можно изменить для любого отдельного импорта.",
+  "Netherlands Antilles": "Нидерландские Антильские острова"
 }

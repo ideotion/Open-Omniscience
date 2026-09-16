@@ -10161,3 +10161,95 @@ Inside a declarative class body, `text: Mapped[str] = mapped_column(...)` shadow
 `text`, so `__table_args__` calls the MappedColumn and raises `TypeError: 'MappedColumn' object is
 not callable` at import. Alias it (`text as sql_text`). Cheap to fix, and the error message points
 nowhere near the import.
+
+### CLDR silently ALIASES a withdrawn country code, so the browser and the server can name different places
+
+`Intl.DisplayNames(…,{type:"region"}).of("AN")` returns **Curaçao** — not "Netherlands
+Antilles", not an error. CLDR aliases the withdrawn code to its successor territory, in
+every locale (`كوراساو`, `库拉索`). So a hover derived from CLDR named a *different place*
+than the code means, while the server's own `SPECIAL_CODES` table had it right all along:
+one fact, two answers, and neither side could see the disagreement alone. A three-letter
+code that is not a region at all (`INT`) makes the same lookup *throw*, so the name is
+simply absent — a disclosure with nothing to disclose about.
+
+Two rules out of it. **A display helper split across Python and JavaScript must have a
+test that compares the two TABLES**, not two behaviours measured separately; the browser
+half asking a third party (CLDR) for an answer the server half already has is exactly
+where they drift. And **override only what the third party gets wrong**: `eu` and `xk`
+are deliberately NOT in the override table, because CLDR names both correctly and
+localised, and a duplicate English table beside a correct source is a downgrade and a
+second place to forget to update.
+
+Node cannot find this. It has no CLDR region data of its own to disagree with, so a node
+driver stubbing `ooRegionName` passes happily. A real browser is the only instrument.
+
+### A source needle is satisfied by the COMMENT that explains the call
+
+A guard asserting `"loadCoverage" in handler_body` stayed green after the
+`loadCoverage()` call was deleted — because the comment above it said *"a forced
+`loadCoverage()` was correct"*. This is the recorded commented-out-call defect arriving
+from the other direction: not code that was commented out, but prose that was never code.
+Strip comments before matching, and match the CALL (`\bname\(\)`) rather than the
+identifier. Found by the mutation check, which is the only reason it was found at all.
+
+### Reading an assignment's right-hand side to the end of the LINE truncates a chain
+
+A detector that scanned `const x = <rhs>` to the newline reported correct code as a
+defect: `(d.countries || []).filter(c => c.country)\n  .map(c => …ooCountryCell(c.country)…)`
+ends the first line at bracket depth zero, so the helper call inside the `.map` was never
+read. Consume to the first `;` at depth zero instead. The general form: **a line is not a
+statement**, and any AST-less scanner over JavaScript has to say which one it means.
+
+### A converter that learns a broader input format changes every caller, including the one reading prose
+
+Teaching `normalize_country` the alpha-3 forms (a ruled, wanted change) made
+`country_from_title` read a trailing **acronym** as a country: `(PRI)` is the Permaculture
+Research Institute *and* Puerto Rico; `(ARM)` is the Alliance for Regenerative Medicine
+*and* Armenia. Two catalogue sources were filed under a country nobody claimed for them,
+and the catalogue's own suffix-convention test is what caught it — in the FULL suite, not
+in any test this slice wrote.
+
+The fix went on the **call site**, as `normalize_country(…, accept_alpha3=False)`, not as
+a special case inside the converter: *"this input is a guess about human prose"* is a fact
+about the caller, and a rule inside the converter would have been a rule about the wrong
+thing. When widening what a normaliser accepts, enumerate its callers and ask of each
+whether its input is STRUCTURED or PROSE — the prose ones are where a broader grammar
+turns into a wrong answer rather than a helpful one.
+
+The same change also falsified a *measured* claim in a neighbouring comment
+(`normalize_country("DEU") is None`, true when written). A comment that states a
+measurement is a test with no runner; grep for the function you widened.
+
+### A repaint guard that fingerprints the PAYLOAD is blind to a language switch — and a panel may have more than one
+
+`if (stamp === _covStamp) return;` is right about a live poll and wrong about a locale
+change: the data is identical, so nothing repaints and every localised string stays in
+whichever language painted it first. That is the frozen-locale family `app-boot.js`
+already documents — and it became load-bearing the moment a localised NAME moved out of
+the visible text and into a hover, where `data-i18n` walkers never reach it.
+
+Two halves, and each looked sufficient alone. (1) The panel had **two** such guards — one
+for its map, one for its 218-row table — and fixing only the first produced a result that
+reads as an intermittent timing flake (`ar` showing French, a later `en` showing Chinese)
+rather than as a second guard. Both now fingerprint through ONE locale reader, because two
+guards disagreeing about one quantity is how this happened. (2) With both fixed, a
+**forced** call to the loader came back correct while a bare language switch still did
+nothing — nothing re-ran it. The `oo:langchange` handler does now, guarded on the panel
+already having rows so a switch never fetches for a panel nobody opened.
+
+The diagnostic that separated the two halves: *call the loader explicitly and compare*. If
+a forced render is correct and a bare switch is not, the guard is fine and the trigger is
+missing; if the forced render is also stale, the guard is eating it.
+
+### Measure a ratchet's BASE in a detached worktree before believing the delta is yours
+
+CI reported the advisory ruff lane at 444 against a ceiling of 442. `git worktree add
+--detach <dir> origin/main` and one more measurement said the base was **441**, so all
+three (and the five more the uncommitted work added) were this branch's — seven import
+orderings, six of them from inserting an import by AST, which gets the position right and
+the sort order wrong. Without the base measurement the honest-looking move is to raise the
+ceiling; with it, the fix is obvious and the ceiling never moves.
+
+And **leave a deliberate slack alone**: the CI step's own comment said the one slot above
+the base absorbs a finding `main` lands while a PR is open. Lowering it to make this branch
+look tidier would have spent something somebody put there on purpose.

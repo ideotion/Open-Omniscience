@@ -53,8 +53,11 @@ const src = [
   "const OO_LANG1_TO_3 = {}; const OO_LANG3_TO_1 = {};",
   "_OO_ISO1_TO_3_TEXT.split(/\\s+/).forEach((p)=>{if(!p)return;const[a,b]=p.split(':');" +
     "if(!a||!b)return;OO_LANG1_TO_3[a]=b;OO_LANG3_TO_1[b]=a;});",
+  // Through OO_CLDR_WRONG_ABOUT, not only through OO_COUNTRY_ALIASES: the override
+  // table is what keeps the `an` hover from saying Curaçao, and a slice that stopped
+  // one declaration short left `ooCountryName` throwing on it.
   APP.slice(APP.indexOf("const OO_SPECIAL_ALPHA3 = "),
-            APP.indexOf("\n", APP.indexOf("const OO_COUNTRY_ALIASES = "))),
+            APP.indexOf("\n", APP.indexOf("const OO_CLDR_WRONG_ABOUT = "))),
   span("ooCountryAlpha2"),
   span("ooCountryCode"),
   span("ooCountryKind"),
@@ -91,6 +94,25 @@ assert.ok(!/>France</.test(fr), "the NAME must not be the visible text (Q302's n
 // point of the derivation, and the case Intl.DisplayNames silently gets wrong.
 assert.strictEqual(F.ooCountryName("FRA", ""), "NAME(fr)");
 assert.strictEqual(F.ooCountryName("France", ""), "");   // a NAME is not a code: no alpha-2
+
+// -- the two codes CLDR answers wrongly (the 2026-09-16 Chromium walk) ------------- //
+// `ooRegionName` is stubbed here as NAME(x), so a name that came back as anything
+// BUT "NAME(an)" proves the override was consulted BEFORE the CLDR lookup -- which is
+// the whole fix: in a real browser that lookup returns "Curaçao" for AN, naming a
+// different territory than the code means, and nothing about the shape of the answer
+// would have told a reviewer.
+assert.strictEqual(F.ooCountryName("an", ""), "Netherlands Antilles");
+assert.strictEqual(F.ooCountryName("ANT", ""), "Netherlands Antilles");
+assert.strictEqual(F.ooCountryName("int", ""), "International");
+assert.strictEqual(F.ooCountryName("INT", ""), "International");
+// eu/xk deliberately still go to CLDR, which names both correctly and localised.
+assert.strictEqual(F.ooCountryName("eu", ""), "NAME(eu)");
+assert.strictEqual(F.ooCountryName("xk", ""), "NAME(xk)");
+// and the disclosure still rides beside the corrected name.
+assert.ok(/Netherlands Antilles/.test(F.ooCountryTitle("an")),
+  "the ANT hover must name the territory the code means");
+assert.ok(/not an ISO code/.test(F.ooCountryTitle("an")),
+  "and must still disclose that it is not an ISO code (Q303)");
 
 // -- the code, from every form a caller legitimately holds -------------------------- //
 assert.strictEqual(F.ooCountryCode("fr"), "FRA");

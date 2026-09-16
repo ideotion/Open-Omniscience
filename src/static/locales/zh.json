@@ -3523,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "信任它会跳过重新抓取历史记录中显示已获取的内容；不信任它则会从头重新抓取所有内容。",
   "Restoring a backup later": "稍后恢复备份",
   "Trust a backup's scraping history by default": "默认信任备份的抓取历史记录",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信任它会跳过重新抓取历史记录中显示已获取的内容；不信任它则会从头重新抓取所有内容。您可以针对每次导入单独更改此设置。"
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信任它会跳过重新抓取历史记录中显示已获取的内容；不信任它则会从头重新抓取所有内容。您可以针对每次导入单独更改此设置。",
+  "Netherlands Antilles": "荷属安的列斯"
 }

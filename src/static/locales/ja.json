@@ -3523,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "信頼すると、履歴上ですでに取得済みとされている内容の再取得はスキップされます。信頼しない場合は、すべて最初から取得し直します。",
   "Restoring a backup later": "後でバックアップを復元する",
   "Trust a backup's scraping history by default": "バックアップの取得履歴をデフォルトで信頼する",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信頼すると、履歴上ですでに取得済みとされている内容の再取得はスキップされます。信頼しない場合は、すべて最初から取得し直します。インポートごとに個別に変更できます。"
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信頼すると、履歴上ですでに取得済みとされている内容の再取得はスキップされます。信頼しない場合は、すべて最初から取得し直します。インポートごとに個別に変更できます。",
+  "Netherlands Antilles": "オランダ領アンティル"
 }

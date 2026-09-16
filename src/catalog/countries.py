@@ -741,12 +741,22 @@ _SPECIAL_ALPHA3_TO_CODE: dict[str, str] = {
 }
 
 
-def normalize_country(value: str | None) -> str | None:
+def normalize_country(value: str | None, *, accept_alpha3: bool = True) -> str | None:
     """Canonicalise any country representation to a lowercase ISO-2 code.
 
     Accepts codes in any case ("us", "US"), full names ("United States"),
     catalog slugs ("united-states"), and common shorthand ("USA", "UK").
     Returns ``None`` for empty or unrecognised input -- never guesses.
+
+    ``accept_alpha3=False`` REFUSES the three-letter forms, and exists because one
+    caller reads HUMAN TITLES rather than a structured field. A trailing ``(PRI)``
+    or ``(ARM)`` in a catalogue name is an organisation's initials -- the
+    Permaculture Research Institute, the Alliance for Regenerative Medicine -- and
+    also, exactly, the alpha-3 codes of Puerto Rico and Armenia. Accepting alpha-3
+    everywhere filed both of those sources under a country nobody claimed for them,
+    which the catalogue's own suffix-convention test caught. The flag is on the
+    NARROW caller rather than a special case in here, because "this input is a
+    guess about prose" is a fact about the call site, not about the codes.
     """
     raw = (value or "").strip()
     if not raw:
@@ -769,6 +779,8 @@ def normalize_country(value: str | None) -> str | None:
     # only when it is a recognised country, so `HIC`, `WLD` and `EUU` still come back
     # None here and an aggregate can never become a country by arriving through this
     # door. A 4+-letter string cannot reach `to_iso2`'s alpha-3 branch at all.
+    if not accept_alpha3:
+        return None
     direct = to_iso2(raw)
     if direct is not None:
         return direct

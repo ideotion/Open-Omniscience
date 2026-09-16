@@ -14,6 +14,7 @@ the pairs that differ.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -286,3 +287,82 @@ def test_the_browser_helper_is_driven_for_real_in_node() -> None:
     )
     assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
     assert "country_display_node_test.js: OK" in proc.stdout, proc.stdout
+
+
+# ===================================================================== #
+#  What the Chromium walk of 2026-09-16 found (docs/audit/alpha3-…)      #
+# ===================================================================== #
+
+
+@pytest.mark.parametrize(
+    ("title", "expect"),
+    [
+        # The regression. Both were filed under a country nobody claimed for them the
+        # day `normalize_country` learned alpha-3: `PRI` is the Permaculture Research
+        # Institute AND Puerto Rico; `ARM` is the Alliance for Regenerative Medicine
+        # AND Armenia. A three-letter parenthetical in a human title is an acronym far
+        # more often than a code, and the two are indistinguishable by shape.
+        ("Permaculture Research Institute (PRI)", None),
+        ("Alliance for Regenerative Medicine (ARM)", None),
+        ("Some Institute (DEU)", None),
+        # What the convention is actually for, and must keep working.
+        ("Le Monde (France)", "fr"),
+        ("Some Paper (US)", "us"),
+        ("Some Paper (USA)", "us"),
+        ("Some Paper (UK)", "gb"),
+        ("Kyodo News (English)", None),
+    ],
+)
+def test_a_human_title_never_reads_an_acronym_as_a_country(title, expect) -> None:
+    from src.catalog.normalize import country_from_title
+
+    assert country_from_title(title) == expect
+
+
+def test_the_alpha3_opt_out_is_the_only_thing_the_flag_changes() -> None:
+    """The flag is narrow ON PURPOSE: it must not also start refusing names, alpha-2
+    or the curated shorthands, or `country_from_title` would silently lose the
+    convention it exists to read."""
+    for value in ("France", "france", "united-states", "fr", "FR", "USA", "UK", "eu"):
+        assert normalize_country(value, accept_alpha3=False) == normalize_country(value), value
+    for value in ("FRA", "DEU", "PRI", "ARM", "EUU", "XKX"):
+        assert normalize_country(value, accept_alpha3=False) is None, value
+    assert normalize_country("FRA") == "fr", "the default must still accept alpha-3"
+    assert normalize_country("EUU") == "eu", "including Q303's four"
+
+
+def test_the_browser_and_the_server_name_the_same_place() -> None:
+    """The walk found them disagreeing about ONE value, and the disagreement was
+    invisible from either side alone: `Intl.DisplayNames(…,{type:"region"}).of("AN")`
+    answers **Curaçao**, because CLDR aliases the withdrawn Netherlands Antilles code
+    to its successor territory. The server had it right; the hover named a different
+    place than the code means. `INT` is not a region at all, so CLDR gave no name.
+
+    Pinned as a TABLE COMPARISON rather than by re-measuring CLDR, which this process
+    has no copy of: the browser's override table must carry exactly the codes where
+    the two would otherwise differ, spelled as the server spells them."""
+    from src.catalog.countries import SPECIAL_CODES
+
+    js = (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
+    m = re.search(r"const OO_CLDR_WRONG_ABOUT = \{([^}]*)\}", js)
+    assert m, "the browser's CLDR override table is gone; the `an` hover will say Curaçao again"
+    override = dict(re.findall(r'(\w+):\s*"([^"]+)"', m.group(1)))
+    assert override == {"an": "Netherlands Antilles", "int": "International"}, override
+    for code, name in override.items():
+        assert SPECIAL_CODES[code] == name, (
+            f"the browser calls {code!r} {name!r} and the server calls it "
+            f"{SPECIAL_CODES[code]!r} — one fact, two answers"
+        )
+    # eu/xk are deliberately absent: CLDR names both correctly in every UI locale,
+    # and a duplicate English table beside a correct localised source is a downgrade.
+    assert "eu" not in override and "xk" not in override
+
+
+def test_the_two_override_names_ship_in_every_locale() -> None:
+    """They are hover text a person reads, so the informed-consent rule applies: ×12."""
+    locales = sorted((_ROOT / "src" / "static" / "locales").glob("*.json"))
+    assert len(locales) == 12, f"expected 12 locale files, found {len(locales)}"
+    for path in locales:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for key in ("Netherlands Antilles", "International"):
+            assert data.get(key), f"{path.name}: {key!r} is missing or empty"

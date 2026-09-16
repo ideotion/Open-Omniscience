@@ -180,11 +180,13 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
         # one in a form we understand. So the fall-back is keyed on the RESULT ("is
         # there a country now?"), never on which column happened to be present.
         if "country" not in out and iso3_raw:
-            # Through `to_iso2`, not `normalize_country` -- measured,
-            # `normalize_country("DEU")` is None, because it resolves codes, NAMES and
-            # slugs and alpha-3 is none of the three. `to_iso2` is the alpha-3 converter
-            # and fails closed the same way, so an aggregate or an unknown code still
-            # yields nothing.
+            # Through `to_iso2`, not `normalize_country`. The claim this comment used
+            # to make -- that `normalize_country("DEU")` is None -- was measured and
+            # TRUE until S04-05 taught that function the alpha-3 forms; either call
+            # now answers `de`. `to_iso2` is kept because it is the narrower one: this
+            # column is declared to hold an alpha-3, so reading it with the alpha-3
+            # converter says what the column means, and both fail closed on an
+            # aggregate or an unknown code.
             cc = to_iso2(iso3_raw)
             if cc:
                 out["country"] = cc

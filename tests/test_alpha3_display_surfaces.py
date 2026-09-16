@@ -435,3 +435,48 @@ def test_intl_displaynames_is_reached_only_through_the_two_owning_helpers() -> N
         "an alpha-3 or a 639-2/T code by handing it straight back — no exception, no "
         f"empty string — so this call site will fail silently: {stray}"
     )
+
+
+def test_the_coverage_repaint_guard_is_locale_aware() -> None:
+    """A repaint guard that fingerprints only the PAYLOAD is right about a live poll
+    and wrong about a language switch. The 2026-09-16 Chromium walk went en → fr → ar
+    → zh and left all 218 country hovers in the coverage panel reading FRENCH, because
+    the data never changed and the guard returned early — the same frozen-locale family
+    `app-boot.js`'s `oo:langchange` handler already documents for the Lead titles and
+    the Composition figures. It became load-bearing here the moment the localised name
+    moved out of the visible text and into a hover."""
+    src = (_STATIC / "app-sources.js").read_text(encoding="utf-8")
+    stamps = re.findall(r"const stamp = JSON\.stringify\(\[([^\]]*)\]\)", src)
+    assert len(stamps) == 2, (
+        "the coverage panel has TWO repaint guards -- one for the map, one for the "
+        f"218-row table -- and this test found {len(stamps)}. The first fix made only "
+        "the map's locale-aware and the table kept its French hovers, so the COUNT is "
+        "asserted: a third guard must be made locale-aware too, not just tolerated."
+    )
+    for parts in stamps:
+        assert "_covUiLang()" in parts, (
+            "a coverage repaint fingerprint does not include the active locale, so a "
+            f"language switch will not repaint its hovers: [{parts}]"
+        )
+    assert "OOI18N.current()" in src, "the locale is not read from the i18n engine"
+
+    # AND the other half, because the guards alone are not the fix and this is where
+    # the first attempt stopped: with locale-aware guards but nothing re-running the
+    # loader, a language switch still left the panel painted in the old locale --
+    # measured in Chromium, where a forced `loadCoverage()` came back correct and a
+    # bare switch did not. Guarded on the table already having rows, so a switch never
+    # fetches for a panel the reader has not opened (also measured: 0 rows).
+    boot = (_STATIC / "app-boot.js").read_text(encoding="utf-8")
+    hook = re.search(r'oo:langchange", \(\) => \{(.*?)\n    \}\);', boot, re.S)
+    assert hook, "the oo:langchange handler moved; the re-render guard measures nothing"
+    # COMMENTS STRIPPED FIRST. The handler's own comment names `loadCoverage()` while
+    # explaining why the call is there, so a needle read against raw source is
+    # satisfied by the prose ABOUT the call -- measured: deleting the call left this
+    # assertion green. That is the recorded "a commented-out call still matched its
+    # needle" defect, arriving as a comment that was never code.
+    body = re.sub(r"//[^\n]*", "", hook.group(1))
+    assert re.search(r"\bloadCoverage\(\)", body), (
+        "nothing re-renders the coverage panel on a language switch, so its hovers "
+        "will freeze in whichever locale painted them first"
+    )
+    assert "coverage-table" in body, "the re-render is not guarded on the panel being open"

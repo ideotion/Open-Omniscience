@@ -3523,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "এতে ভরসা করলে ইতিহাস অনুযায়ী আগে থেকেই আনা জিনিসগুলো আবার আনা হয় না; ভরসা না করলে সবকিছু নতুন করে শুরু থেকে আনা হয়।",
   "Restoring a backup later": "পরে একটি ব্যাকআপ পুনরুদ্ধার করা",
   "Trust a backup's scraping history by default": "ব্যাকআপের স্ক্র্যাপিং ইতিহাসে ডিফল্টরূপে ভরসা করুন",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "এতে ভরসা করলে ইতিহাস অনুযায়ী আগে থেকেই আনা জিনিসগুলো আবার আনা হয় না; ভরসা না করলে সবকিছু নতুন করে শুরু থেকে আনা হয়। যেকোনো একটি আমদানির জন্য আপনি এটি বদলাতে পারেন।"
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "এতে ভরসা করলে ইতিহাস অনুযায়ী আগে থেকেই আনা জিনিসগুলো আবার আনা হয় না; ভরসা না করলে সবকিছু নতুন করে শুরু থেকে আনা হয়। যেকোনো একটি আমদানির জন্য আপনি এটি বদলাতে পারেন।",
+  "Netherlands Antilles": "নেদারল্যান্ডস অ্যান্টিলস"
 }
