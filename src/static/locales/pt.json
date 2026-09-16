@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Uma transferência de ficheiro, por si só, usa {rate} kbit/s do orçamento de {budget} kbit/s — reduzir a coleta não consegue recuperar isso.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Algumas transferências ainda não podem ser medidas, por isso este número é um limite inferior.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "O processo completo é limitado a esta taxa — os pedidos do coletor mais cada transferência de ficheiro — medida pela própria aplicação, nunca por um contador de rede do sistema."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "O processo completo é limitado a esta taxa — os pedidos do coletor mais cada transferência de ficheiro — medida pela própria aplicação, nunca por um contador de rede do sistema.",
+  "Equal Earth · equal-area": "Equal Earth · equivalente",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Equivalente: cada país é desenhado no seu tamanho relativo real, de modo que a área de um preenchimento nunca é mais prova do que os dados deram. Savric, Patterson & Jenny (2018). Uma única projeção em todos os mapas desta aplicação; não há seletor de projeção.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "As áreas disputadas são sempre desenhadas como contestadas, com todas as suas reivindicações nomeadas. Uma visão do mundo decide apenas a que reivindicação a área é ATRIBUÍDA aqui — é uma forma de VER a diferença entre convenções, nunca o veredito desta aplicação.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Cada área disputada é desenhada com hachura e todas as suas reivindicações são nomeadas na dica, em todas as visões do mundo. Uma visão do mundo muda apenas a que reivindicação a área é atribuída aqui, para que possa ver em que diferem as convenções — nunca é o veredito desta aplicação sobre quem tem razão. Fonte: a camada breakaway/disputed do Natural Earth, que regista uma atribuição por ponto de vista.",
+  "Worldview": "Visão do mundo",
+  "Contested (assign nothing)": "Contestada (não atribuir a ninguém)",
+  "ISO / de jure": "ISO / de jure",
+  "Natural Earth (de facto)": "Natural Earth (de facto)",
+  "no claimant assigned in this view": "nenhum reivindicante atribuído nesta visão",
+  "recognised as its own state in this view": "reconhecida como Estado próprio nesta visão",
+  "assigned to no recognised state in this view": "não atribuída a nenhum Estado reconhecido nesta visão",
+  "attributed to": "atribuída a",
+  "contested": "contestada",
+  "Contested": "Contestadas",
+  "every claim shown, none assigned": "todas as reivindicações mostradas, nenhuma atribuída",
+  "attributed under": "atribuídas segundo",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "Os contornos dos países por baixo provêm da atribuição de facto do próprio Natural Earth — alguma fronteira tem de ser traçada, e essa escolha é ela mesma uma das convenções que este controlo permite comparar."
 }

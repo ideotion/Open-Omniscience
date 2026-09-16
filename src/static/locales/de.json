@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Allein ein Download nutzt {rate} kbit/s des Budgets von {budget} kbit/s — die Sammelgeschwindigkeit zu drosseln kann das nicht zurückholen.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Manche Downloads können noch nicht gemessen werden, daher ist diese Zahl eine Untergrenze.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Der gesamte Prozess wird auf diese Rate begrenzt — die Abrufe des Collectors plus jeder Download — gemessen von der App selbst, nie von einem System-Netzwerkzähler."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Der gesamte Prozess wird auf diese Rate begrenzt — die Abrufe des Collectors plus jeder Download — gemessen von der App selbst, nie von einem System-Netzwerkzähler.",
+  "Equal Earth · equal-area": "Equal Earth · flächentreu",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Flächentreu: Jedes Land wird in seiner tatsächlichen relativen Größe gezeichnet, sodass die Fläche einer Einfärbung nie mehr Beleg ist, als die Daten hergeben. Savric, Patterson & Jenny (2018). Eine Projektion auf jeder Karte dieser Anwendung; es gibt keinen Projektionsumschalter.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "Umstrittene Gebiete werden immer als umstritten gezeichnet, mit allen genannten Ansprüchen. Eine Weltsicht entscheidet nur, welchem Anspruch das Gebiet hier ZUGEORDNET wird — sie dient dazu, den Unterschied zwischen Konventionen zu SEHEN, nie als Urteil dieser Anwendung.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Jedes umstrittene Gebiet wird schraffiert gezeichnet, mit allen Ansprüchen im Tooltip, in jeder Weltsicht. Eine Weltsicht ändert nur, welchem Anspruch das Gebiet hier zugeordnet wird, damit Sie sehen können, wie sich die Konventionen unterscheiden — sie ist nie das Urteil dieser Anwendung darüber, wer recht hat. Quelle: die Ebene breakaway/disputed von Natural Earth, die eine Zuordnung je Standpunkt festhält.",
+  "Worldview": "Weltsicht",
+  "Contested (assign nothing)": "Umstritten (nichts zuordnen)",
+  "ISO / de jure": "ISO / de jure",
+  "Natural Earth (de facto)": "Natural Earth (de facto)",
+  "no claimant assigned in this view": "in dieser Sicht kein Anspruchsteller zugeordnet",
+  "recognised as its own state in this view": "in dieser Sicht als eigener Staat anerkannt",
+  "assigned to no recognised state in this view": "in dieser Sicht keinem anerkannten Staat zugeordnet",
+  "attributed to": "zugeordnet zu",
+  "contested": "umstritten",
+  "Contested": "Umstritten",
+  "every claim shown, none assigned": "alle Ansprüche gezeigt, keiner zugeordnet",
+  "attributed under": "zugeordnet nach",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "Die Landesumrisse darunter stammen aus Natural Earths eigener De-facto-Zuordnung — eine Grenze muss irgendwo gezogen werden, und diese Entscheidung ist selbst eine der Konventionen, die dieses Bedienelement vergleichbar macht."
 }

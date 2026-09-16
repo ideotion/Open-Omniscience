@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "单是一次文件下载，就已经在 {budget} kbit/s 预算中占用了 {rate} kbit/s — 降低采集速度无法收回这部分。",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "部分下载暂时无法测量，因此这个数字是一个下限。",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "整个进程都被限制在这个速率之内 — 采集器的抓取请求加上每一次文件下载 — 由本应用自身测量，绝不是系统网络计数器。"
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "整个进程都被限制在这个速率之内 — 采集器的抓取请求加上每一次文件下载 — 由本应用自身测量，绝不是系统网络计数器。",
+  "Equal Earth · equal-area": "Equal Earth · 等面积",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "等面积投影：每个国家都按其真实的相对面积绘制，因此色块的大小绝不会比数据本身提供更多的证据。Savric、Patterson 与 Jenny（2018）。本应用的所有地图共用一个投影；没有投影切换开关。",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "争议地区始终以争议方式绘制，并列出全部主张。世界观只决定该地区在此处被归属于哪一方主张——它是用来看清不同惯例之间差异的方式，绝非本应用的裁决。",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "在任何世界观下，每个争议地区都以斜纹绘制，并在提示中列出其全部主张。世界观只改变该地区在此处被归属于哪一方主张，以便您看清各惯例的差异——它绝不是本应用对谁有理的裁决。来源：Natural Earth 的 breakaway/disputed 图层，其中按每个视角记录了归属。",
+  "Worldview": "世界观",
+  "Contested (assign nothing)": "争议（不作归属）",
+  "ISO / de jure": "ISO / 法理",
+  "Natural Earth (de facto)": "Natural Earth（实际控制）",
+  "no claimant assigned in this view": "此视角下未归属任何主张方",
+  "recognised as its own state in this view": "此视角下被承认为独立国家",
+  "assigned to no recognised state in this view": "此视角下不归属任何被承认的国家",
+  "attributed to": "归属于",
+  "contested": "存在争议",
+  "Contested": "争议地区",
+  "every claim shown, none assigned": "列出全部主张，不作归属",
+  "attributed under": "归属依据",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "下方的国界轮廓来自 Natural Earth 自己的实际控制归属——界线总要画在某处，而这一选择本身就是本控件可供比较的惯例之一。"
 }

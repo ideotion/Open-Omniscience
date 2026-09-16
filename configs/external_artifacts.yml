@@ -527,14 +527,24 @@ artifacts:
   - id: natural-earth-geometry
     title: Natural Earth coastline + country polygons
     kind: vendored-data
-    description: world_outline.json (110m land) + world_countries.json (110m admin-0) for ooMap.
+    description: >
+      world_countries.json (50m admin-0, ruled Q802 2026-09-15) + world_outline.json
+      (110m land) for ooMap. The admin-0 set moved 110m -> 50m because the coarser
+      polygons facet visibly under the equal-area polar shear the app adopted with
+      Equal Earth (Q801): 175 -> 229 countries, 285 -> 540 rings, 10,521 -> 71,184
+      coordinate pairs, 136 KB -> 892 KB (measured 2026-09-16, precision=1,
+      min_span=0.8). world_outline.json stays at 110m: it is a different Natural Earth
+      layer (land, not admin-0), and no SPA module fetches it.
     upstream: https://www.naturalearthdata.com (public domain)
+    fetched_from: https://raw.githubusercontent.com/nvkelso/natural-earth-vector (the
+      project's own git mirror; the naturalearthdata.com CDN answers 000 from build
+      sandboxes, measured 2026-09-16)
     check_upstream: "Natural Earth changes rarely; refresh only on a data correction"
     license: public domain
-    pin: {path: src/static/world_countries.json, sha256: ""}
+    pin: {path: src/static/world_countries.json, sha256: "426046dc5157a58e2490006fb24ed2735b4274e335da741ce77801db95477957"}
     refresh: "python scripts/build_country_polygons.py ; python scripts/build_world_outline.py"
     freshness: {policy: rarely}
-    last_verified: "2026-06-18"
+    last_verified: "2026-09-16"
 
   - id: offline-bundle-python-runtime
     title: Self-contained CPython for the air-gapped installer (OPERATOR-SUPPLIED)

@@ -41,9 +41,19 @@ on 2026-09-12 and may have moved; this brief re-checked them at `7ca142e`.
 - The one projection is equirectangular at `app-map.js:21–24` (sheet VERIFIED; confirmed: `MAP_W = 720,
   MAP_H = 360`, `lon2x`, `lat2y`) — plate carrée, NOT Mercator (the 2026-09-12 lesson in `LESSONS.md`:
   "VERIFY A PREMISE IN BOTH DIRECTIONS"). The sheet counts nine `lon2x` / `lat2y` call sites; grep-verified
-  today: 18 lines outside the two definitions, across `app-boot.js`, `app-gov-law.js`, `app-insights.js`,
-  `app-library.js`, `app-map.js`, `app-markets.js`, `app-shell.js`, `app-sources.js`, `osmpbf.js`
+  today: 18 lines outside the two definitions
   (`grep -rn "lon2x\|lat2y" src/static/*.js | grep -v "const lon2x\|const lat2y"`) — recount before routing.
+  **CORRECTED 2026-09-16 by the executing session (S04-11): the COUNT was right and the FILE LIST was
+  wrong.** This paragraph previously named nine files (`app-boot.js`, `app-gov-law.js`, `app-insights.js`,
+  `app-library.js`, `app-map.js`, `app-markets.js`, `app-shell.js`, `app-sources.js`, `osmpbf.js`); all
+  **18 sites are in `app-map.js` alone**, and eight of the nine named files contain no projection
+  arithmetic whatsoever (appending `| awk -F: '{print $1}' | sort -u` to the very command quoted above
+  returns one path). A count and a breakdown come from DIFFERENT commands, so reproducing the quoted
+  count corroborated only itself — recorded in `LESSONS.md` as "A BRIEF CAN BE RIGHT ABOUT THE COUNT
+  AND WRONG ABOUT THE BREAKDOWN". Widening the sweep to the projection PRIMITIVE rather than the two
+  names did find one thing the file list missed: an orphaned `// World map: equirectangular projection`
+  comment stranded at the end of `app-corpus.js` by the module split, describing code that now lives in
+  `app-map.js` (removed in the same PR).
 - The five surfaces = the five `ooMap(host, …)` call sites — grep-verified: `app-gov-law.js:565`,
   `app-insights.js:478`, `app-map.js:965`, `app-map.js:1944`, `app-sources.js:43` (`grep -n "ooMap(host"
   src/static/app-*.js`); the definition is `app-map.js:313`.

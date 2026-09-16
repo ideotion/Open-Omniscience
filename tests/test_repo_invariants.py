@@ -4481,11 +4481,27 @@ def test_ooMap_choropleth():
     assert "async function _ooMapGeoLoad()" in html, "the geometry loader must exist"
     assert "/static/world_countries.json" in html, "ooMap must load the slice-1 country polygons"
 
-    # Reuses the EXISTING equirectangular projection -- no second projection invented.
+    # Draws through the ONE projection seam -- no second projection invented. The seam
+    # became Equal Earth on 2026-09-16 (ruling Q801); the property this pins is
+    # unchanged, and the exclusivity of the seam is guarded in tests/test_map_projection.py.
     assert "function _ooMapPath(rings)" in html, "the polygon path builder must exist"
-    assert "lon2x(p[0])" in html and "lat2y(p[1])" in html, (
-        "country polygons must reuse the map's lon2x/lat2y projection"
+    assert "function project(lon, lat)" in html, "the one projection seam must exist"
+    assert "project(p[0], p[1])" in html, (
+        "country polygons must draw through the project() seam, never their own maths"
     )
+
+    # CONTESTED borders (rulings Q826 + Q803, 2026-09-15): every disputed area is drawn
+    # with both claims named, never a silent pick, and a worldview toggle lets the
+    # differences between conventions be SEEN. The default assigns nothing.
+    assert 'pattern id="oomap-contested"' in html, "the contested hatch must be defined"
+    assert "function _ooDisputedLayer(" in html, "the contested layer must exist"
+    assert "/static/world_disputed.json" in html, "ooMap must load the contested areas"
+    assert "data-oomap-worldview" in html, "the worldview picker must be in the map"
+    assert 'OOMAP_WORLDVIEW_DEFAULT = "contested"' in html, (
+        "the default worldview must assign nothing -- a default that picks a side is the "
+        "silent pick Q826 forbids"
+    )
+    assert "function _ooDisputedClaims(" in html, "every claim must be named, not just the winner"
 
     # Honest NO-DATA: a hatched pattern fill, distinct from any data colour, NOT zero.
     assert "url(#oomap-nodata)" in html, "no-data countries must use the hatch fill"

@@ -14164,3 +14164,50 @@ reads `DEFERRED_REASONS` rather than "everything that is not verified". The meas
 6.40% → 1.15%, and within that, re-asking an unreachable homepage returned 0.60%. A third pass
 runs against rows that failed TWICE. Nobody should quote a projected yield for it, including
 this entry.
+
+## 2026-09-16 — THE IN-MAP CONTROL CLUSTERS COVER THE MAP AT PHONE WIDTH, and the worldview
+picker joined a problem it did not create (S04-11, reported not fixed)
+
+**Measured in Chromium, both states, at 390x844** (the world map, `#oo-coverage-map`): the
+three overlay control groups (`.oomap-controls`, `.oomap-dims`, `.oomap-gran`) cover **79.4 %
+of the map area with the new worldview picker removed from the layout, and 111.7 % with it**
+— over 100 % because the groups overlap one another. At 1440x900 the same measurement is
+**4.3 % -> 7.6 %**. So the picker costs **+32.3 pp at phone width and +3.3 pp on a desktop**,
+and the dominant fact is the other one: **at 390px the map is already almost entirely hidden
+behind its own controls before anything is added.**
+
+The isolation matters and is why the number is trustworthy: the second state is produced by
+removing ONLY `.oomap-worldview` from the live page, so nothing else differs. A git-stash
+baseline would also have reverted the 50m geometry and the contested layer and could not have
+attributed anything to one control.
+
+**What S04-11 did about its own share:** below 600px the picker's visible label is CLIPPED
+(the `.sr-only` clip, never `display:none` — the select carries its own `aria-label`, and this
+project has already paid once for a label that was hidden from the screen reader too), taking
+that row from 211px to 150px wide. The select still forces one extra wrap row, which is where
+the +32.3 pp lives.
+
+**What is NOT decided here, because it is not this slice's to decide.** Making the in-map
+controls usable at phone width is a change to the *"controls inside the map"* convention
+itself (CLAUDE.md's Google-Maps principle, and invariant #8's data-not-plumbing rule), across
+every group and every ooMap surface — not a map slice. Three shapes, none chosen: a single
+non-wrapping row that scrolls horizontally; a disclosure that collapses the groups to one
+button below a breakpoint; or moving the groups out of the overlay and under the map at narrow
+widths. **The first would change behaviour for controls this slice never touched**, which is
+why it was not taken unilaterally.
+
+## 2026-09-16 — `unproject()` SHIPS WITH NO CALLER (S04-11, stated deliberately)
+
+The Equal Earth seam carries a Newton inverse because the brief specified one ("for pointer ->
+lon/lat readouts and drilling") and because a projection seam without an inverse is half a
+seam. **Nothing in the app calls it today** — and nothing did before either: the plate carree
+it replaced had no inverse at all, so this is not a capability that was lost and re-added. It
+is exercised by round trip in `tests/map_projection_node_test.js` (worst error 2.0e-13 degrees
+over the whole sphere), and the function's own comment says it has no caller, so it cannot be
+mistaken for wiring.
+
+Recorded because the ledger's own rule is that a tested function with no caller is a dead end
+until someone names who will call it. Here that is named: **S04-09's wiki map layer** is the
+brief's own sequencing note ("S04-09's wiki map layer and S04-05's alpha-3 display ride the
+seam this slice makes"). If that slice lands without needing it, the honest move is to delete
+the function rather than keep it warm.

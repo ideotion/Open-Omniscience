@@ -3424,5 +3424,22 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Satu unduhan file saja sudah memakai {rate} kbit/s dari anggaran {budget} kbit/s — mengurangi pengumpulan tidak bisa memulihkannya.",
   "Some downloads cannot be measured yet, so this figure is a lower bound.": "Beberapa unduhan belum bisa diukur, jadi angka ini adalah batas bawah.",
-  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Seluruh proses dibatasi pada laju ini — permintaan kolektor ditambah setiap unduhan file — diukur oleh aplikasi itu sendiri, tidak pernah oleh penghitung jaringan sistem."
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Seluruh proses dibatasi pada laju ini — permintaan kolektor ditambah setiap unduhan file — diukur oleh aplikasi itu sendiri, tidak pernah oleh penghitung jaringan sistem.",
+  "Equal Earth · equal-area": "Equal Earth · sama luas",
+  "Equal-area: every country is drawn at its true relative size, so the size of a fill is never more evidence than the data gave. Savric, Patterson & Jenny (2018). One projection on every map in this app; there is no projection toggle.": "Proyeksi sama luas: setiap negara digambar pada ukuran relatifnya yang sebenarnya, sehingga luas sebuah blok warna tidak pernah menjadi bukti yang lebih besar daripada yang diberikan data. Savric, Patterson & Jenny (2018). Satu proyeksi pada semua peta di aplikasi ini; tidak ada sakelar proyeksi.",
+  "Disputed areas are always drawn as contested with every claim named. A worldview decides only which claim the area is ATTRIBUTED to here — it is a way to SEE the difference between conventions, never this app's verdict.": "Wilayah sengketa selalu digambar sebagai wilayah sengketa dengan semua klaimnya disebutkan. Pandangan dunia hanya menentukan klaim mana yang DIATRIBUSIKAN pada wilayah itu di sini — ini cara untuk MELIHAT perbedaan antarkonvensi, bukan vonis aplikasi ini.",
+  "Every disputed area is drawn hatched with all of its claims named in the tooltip, in every worldview. A worldview changes only which claim the area is attributed to here, so you can see how the conventions differ — it is never this app's verdict on who is right. Source: Natural Earth's breakaway/disputed layer, which records an assignment per point of view.": "Pada setiap pandangan dunia, setiap wilayah sengketa digambar dengan arsir dan semua klaimnya disebutkan pada tooltip. Pandangan dunia hanya mengubah klaim mana yang diatribusikan pada wilayah itu di sini, sehingga Anda dapat melihat perbedaan antarkonvensi — ini tidak pernah menjadi vonis aplikasi ini tentang siapa yang benar. Sumber: lapisan breakaway/disputed Natural Earth, yang mencatat atribusi per sudut pandang.",
+  "Worldview": "Pandangan dunia",
+  "Contested (assign nothing)": "Sengketa (tidak diatribusikan)",
+  "ISO / de jure": "ISO / de jure",
+  "Natural Earth (de facto)": "Natural Earth (de facto)",
+  "no claimant assigned in this view": "tidak ada pengklaim yang diatribusikan dalam tampilan ini",
+  "recognised as its own state in this view": "diakui sebagai negara sendiri dalam tampilan ini",
+  "assigned to no recognised state in this view": "tidak diatribusikan ke negara mana pun yang diakui dalam tampilan ini",
+  "attributed to": "diatribusikan ke",
+  "contested": "sengketa",
+  "Contested": "Sengketa",
+  "every claim shown, none assigned": "semua klaim ditampilkan, tidak ada yang diatribusikan",
+  "attributed under": "diatribusikan menurut",
+  "The country outlines underneath come from Natural Earth's own de-facto assignment — a boundary has to be drawn somewhere, and that choice is itself one of the conventions this control lets you compare.": "Garis batas negara di bawahnya berasal dari atribusi de facto milik Natural Earth sendiri — sebuah batas harus digambar di suatu tempat, dan pilihan itu sendiri adalah salah satu konvensi yang dapat Anda bandingkan dengan kontrol ini."
 }

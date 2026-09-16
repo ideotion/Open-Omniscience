@@ -9900,3 +9900,55 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   surfaces come to disagree about one quantity". Knowing the rule is not the same as noticing
   you are breaking it — the tell is structural and greppable (a `max()` or a `min()` over two
   stored records of the same fact), not a matter of remembering harder.
+
+- **A BREAKAWAY'S OWN CLAIM IS THE ONE AN ALPHA-3 SWEEP CANNOT SEE, AND OMITTING IT IS THE
+  SILENT PICK ITSELF (2026-09-16, S04-11's CONTESTED layer):** the ruling (Q826) is that a
+  disputed area is drawn showing BOTH claims, never a silent pick, and Natural Earth's
+  breakaway/disputed layer looks like it answers that directly — each polygon carries an
+  `ADM0_A3_<POV>` per point of view, so sweeping those fields and resolving each code to a
+  country yields the claimants. It does, for a *territorial* dispute: Crimea came out
+  `RUS / UKR`, Aksai Chin `CHN / IND / TWN`, Kashmir `IND / PAK`. **Abkhazia came out
+  `Georgia`.** So did Somaliland (`Somalia`), Northern Cyprus (`Cyprus`) and Artsakh
+  (`Azerbaijan`) — every self-declared entity listed exactly one claimant, the parent state,
+  which is precisely the silent pick the ruling forbids, delivered by the mechanism built to
+  prevent it and wearing a CONTESTED hatch while it did so. The cause is that a self-declared
+  entity **has no ISO alpha-2 to appear in an alpha-3 field**: Natural Earth gives it an
+  internal code (`B35`, `B30`, `B20`), which resolves to nothing, and the resolver dropped it
+  as unresolvable. The claim is recorded in a DIFFERENT field — `FCLASS_<POV> = "Admin-0
+  country"`, meaning that viewpoint recognises it as a state — plus `BRK_NAME` for the name.
+  THREE THINGS GENERALISE. (a) **When a schema encodes one relationship two ways, a sweep of
+  one way is not a sweep of the relationship**; the tell here was that the failure clustered
+  exactly on the cases a reader would consider most contested, which is the opposite of
+  random. (b) **An unresolvable code is not a gap, and not a country either** — NE also uses
+  internal codes for "this viewpoint assigns the area to no recognised state", an explicit
+  refusal, so the three outcomes (a country · the area itself · undetermined) need three
+  representations and collapsing any two loses a fact the source stated. (c) The defect was
+  invisible to the build, which reported 28 areas and no error, and to the count test, which
+  asked only that claims be non-empty — `len(claims) >= 1` passes on exactly the defect.
+  What found it was printing four named disputes and reading them; the guard now asserts the
+  *both-claims* property on named areas, and a mutation that disables the self-claim reddens.
+  RIDER, from the same hour: the fix's own first draft introduced a DUPLICATE-claim bug
+  (`claims[1:] = sorted(claims)` re-inserts `claims[0]`), which rendered as "China / China /
+  India" — caught the same way, by printing the result rather than by a test, because every
+  assertion in flight was about presence and none about multiplicity.
+
+- **A BRIEF CAN BE RIGHT ABOUT THE COUNT AND WRONG ABOUT THE BREAKDOWN, AND THE COUNT IS WHAT
+  MAKES THE BREAKDOWN READ AS VERIFIED (2026-09-16, S04-11's call-site sweep):** the brief
+  said "the sheet counts nine `lon2x`/`lat2y` call sites; grep-verified today: 18 lines
+  outside the two definitions, across `app-boot.js`, `app-gov-law.js`, `app-insights.js`,
+  `app-library.js`, `app-map.js`, `app-markets.js`, `app-shell.js`, `app-sources.js`,
+  `osmpbf.js`", and quoted the exact command. The command reproduces: **18**. The file list
+  is wrong — **all 18 are in `app-map.js`**, and eight of the nine named files contain no
+  projection arithmetic at all. A count and a breakdown printed in one sentence come from
+  *different* commands (`| wc -l` versus `| cut -d: -f1 | sort -u`), so reproducing the one
+  the brief quoted says nothing about the other; and because the quoted number matched, the
+  list beside it inherited its credibility. The cost would have been a call-site sweep
+  fanned out across nine modules — the brief even suggested one agent per module — to find
+  nothing in eight of them, and, worse, a plausible conclusion that the sweep was *complete*
+  because every named file had been checked. **GENERAL FORM: verify each claim with the
+  command that would produce THAT claim. When a document states a total and a distribution
+  together, they are two claims, and the cheap one being true is the reason nobody checks the
+  expensive one.** The inverse held too and is why the sweep still had to be widened: a grep
+  for the *primitive* rather than the names found a second map renderer the brief never
+  mentioned — an orphaned `// World map: equirectangular projection` comment stranded at the
+  end of `app-corpus.js` by the module split, describing code that now lives in `app-map.js`.
