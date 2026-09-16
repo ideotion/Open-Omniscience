@@ -18,6 +18,29 @@ this writes directly to the SQLite file, and the single-writer gate is a per-pro
     OO_DATA_DIR=/tmp/oo-ui/state-c OO_DB_PLAINTEXT=1 \\
         .venv/bin/python scripts/ui_clickthrough_seed.py
 
+THE ENCRYPTED VARIANT (Q1149 = a). Every seeded state above runs the app's PLAINTEXT path,
+which is the one path no real operator uses. To seed the same corpus into a genuinely
+encrypted store, set the passphrase and leave ``OO_DB_PLAINTEXT`` UNSET:
+
+    OO_DATA_DIR=/tmp/oo-ui/state-c-enc OO_DB_PASSPHRASE='...' \\
+        .venv/bin/python scripts/ui_clickthrough_seed.py
+
+Nothing in this script changes for that: ``src/database/connect`` reads ``OO_DB_PASSPHRASE``
+and every write lands through SQLCipher. MEASURED 2026-09-16 on a ``--mini`` seed -- the
+resulting file's first bytes are ciphertext (not ``SQLite format 3``) and
+``is_encrypted_file()`` returns True.
+
+Then boot the app against that directory with NEITHER variable set, so it starts genuinely
+LOCKED and serves the unlock flow, and give the runner the same passphrase:
+
+    OO_UIWALK_ENCRYPTED_PASS='...' .venv/bin/python scripts/ui_clickthrough_run.py \\
+        --require-encrypted
+
+The runner then walks in through the real ``#view-unlock`` form and records each state's
+at-rest reality from the app's own header read, refusing the run if no walked state measures
+encrypted. See ``ui_clickthrough_run._probe_at_rest`` for why it reads ``lock-state`` and not
+only ``doctor``.
+
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
