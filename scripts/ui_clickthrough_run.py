@@ -50,6 +50,15 @@ STATE_D_URL = "http://127.0.0.1:8003"
 IMPORT_ARTIFACT_DIR = os.environ.get("OO_UIWALK_IMPORT_ARTIFACT", "")
 IMPORT_ARTIFACT_PASS = os.environ.get("OO_UIWALK_IMPORT_PASS", "")
 
+# Q1149: THE ENCRYPTED VARIANT. Set this to the passphrase the seeded states were
+# created with and the runner walks each one in through its REAL unlock screen
+# (#view-unlock -> #pw -> #btn-unlock) instead of arriving at an already-open app.
+# It arrives by env exactly like OO_UIWALK_IMPORT_PASS, so no machine secret is ever
+# written into this script or into the report -- only WHETHER an unlock happened.
+# UNSET = the historical plaintext run, whose behaviour is unchanged: every hook
+# below returns immediately without touching the page.
+ENCRYPTED_PASS = os.environ.get("OO_UIWALK_ENCRYPTED_PASS", "")
+
 # All 17 concrete themes (2026-08-20, T4 — the 2026-08-13 run sampled 5 of the stated >=9
 # floor; the contrast checks are cheap, so the full set runs; "system" follows the OS and
 # resolves to one of these, so it is not a separate palette to measure).
@@ -93,6 +102,13 @@ class Report:
     findings: list[Finding] = field(default_factory=list)
     coverage: list[CoverageRow] = field(default_factory=list)
     steps: list[dict] = field(default_factory=list)
+    # Q1149: two rows per state (before and after the walk), MEASURED from the app's
+    # own header read and never from the env this shell set. `configured` and
+    # `detected` stay separate fields on purpose: an operator whose passphrase did
+    # not take has no other way to find out, and a report that SAYS encrypted while
+    # the file says plaintext is the most misleading artifact this harness could
+    # produce.
+    at_rest: list[dict] = field(default_factory=list)
 
     def add_finding(self, **kw) -> None:
         self.findings.append(Finding(**kw))
@@ -415,6 +431,7 @@ def investigate_state_b(pw, report: Report, shots: Path) -> None:
         page = browser.new_page(viewport={"width": 1280, "height": 900})
         driver = PlaywrightUiWalkDriver(page, base_url=STATE_B_URL, screenshot_dir=shots)
         page.wait_for_timeout(500)
+        _unlock_if_locked(page, report, "state_b", STATE_B_URL)  # no-op unless encrypted
         _dismiss_guide_wizard(page, report, "state_b")
         for surface_id in ("home_leads",):
             surface = next(s for s in FLAGSHIP_SURFACES if s.id == surface_id)
@@ -649,6 +666,188 @@ def _check_breakpoint_overflow(driver: PlaywrightUiWalkDriver, report: Report,
 # and none fabricates a pass for a state this sandbox cannot reach (no GPU, no LLM backend, no
 # egress -- airplane mode stays engaged throughout).
 # ------------------------------------------------------------------------------------------ #
+
+# ``app_lock_state()`` maps the store's OWN HEADER to these four words (src/api/unlock.py:52
+# -> main_header_state -> state_for_header), so ``/api/system/lock-state`` is a header read
+# reported in lock vocabulary -- not a second, weaker source. That matters because the fuller
+# attestation is unreachable at exactly the moment an encrypted run needs it (below).
+_LOCK_STATE_TO_AT_REST = {
+    "unlocked-plaintext": "plaintext",
+    "unlocked-encrypted": "encrypted",
+    "locked": "encrypted",
+    "fresh": "absent",
+}
+
+
+def _record_at_rest(report: Report, label: str, url: str, when: str) -> dict:
+    """Probe one state's at-rest reality and append the row, logging what was measured.
+
+    Called TWICE per state on purpose. The before-walk reading is taken while an encrypted
+    state is still LOCKED, so it can only come from ``lock-state``; the after-walk reading is
+    taken once the walk has unlocked it, when ``doctor`` answers and adds the CIPHER the
+    running engine reports. Keeping both rows means the report shows the store was already
+    encrypted before anything typed a passphrase into it -- a single after-walk row cannot
+    distinguish that from a store this run encrypted itself.
+    """
+    row = _probe_at_rest(label, url, when)
+    # CONFIGURED is what this shell asked for; DETECTED is what the header says. They are
+    # never collapsed into one field, and the runner cannot see another process's env, so an
+    # unstated configuration says exactly that rather than guessing one.
+    row["configured"] = "encrypted" if ENCRYPTED_PASS else "unstated"
+    report.at_rest.append(row)
+    _log(
+        f"state {label} at rest ({when}): {row.get('detected')} [via {row.get('via', '-')}]"
+        + (f" cipher={row['cipher']}" if row.get("cipher") else "")
+        + (f" custody_log={row['custody_log']}" if row.get("custody_log") else "")
+    )
+    return row
+
+
+def _probe_at_rest(label: str, url: str, when: str) -> dict:
+    """What is this instance's store ACTUALLY at rest? (Q1149.)
+
+    ``GET /api/system/doctor`` attests from the file header rather than from configuration,
+    which is the whole reason to ask it instead of reading our own environment: an operator
+    whose passphrase did not take gets ``plaintext`` here while their shell still says
+    otherwise. The custody log is read alongside the corpus, because they are separate files
+    with separate headers, and an instance whose corpus is encrypted while its custody log is
+    not is a real finding that a corpus-only probe would report as a clean encrypted run.
+
+    **MEASURED 2026-09-16, and it is the entire reason this function is not four lines:
+    ``/api/system/doctor`` answers 503 ``{"locked": true}`` while the store is locked** -- it
+    is not in ``ALLOWED_WHILE_LOCKED``. A locked store is precisely the state an encrypted run
+    boots into, so a doctor-only probe would report ``unknown`` for every encrypted state and
+    ``--require-encrypted`` would refuse the very run it exists to demand. The fallback is
+    ``/api/system/lock-state``, which IS allowlisted while locked and whose ``state`` comes
+    from the same header read (see the map above). ``via`` records which endpoint answered, so
+    a reader never has to guess how strong the reading is.
+
+    A state we cannot reach at all is recorded as ``unknown`` WITH the reason -- never as
+    plaintext, because "we could not read it" and "we read it and it is not encrypted" are
+    opposite facts and only one of them is a finding about the app.
+    """
+    row: dict = {"state": label, "url": url, "when": when}
+    try:
+        doc = _get_json(f"{url}/api/system/doctor")
+    except Exception as exc:  # noqa: BLE001 - one unreachable state must not sink the run
+        doc = None
+        doctor_error = f"{type(exc).__name__}: {exc}"
+    else:
+        doctor_error = ""
+
+    if isinstance(doc, dict) and isinstance(doc.get("corpus"), dict) and doc["corpus"].get("state"):
+        store = doc["corpus"]
+        row["detected"] = store["state"]
+        row["via"] = "doctor"
+        if store.get("cipher"):
+            # Present only when this server HOLDS the passphrase, so its absence beside
+            # detected=encrypted means "the header says encrypted and the app is still
+            # locked" -- state A's correct reading, never a defect.
+            row["cipher"] = store["cipher"]
+        row["driver"] = doc.get("driver")
+        custody = doc.get("custody_log")
+        if isinstance(custody, dict):
+            row["custody_log"] = custody.get("state")
+        return row
+
+    try:
+        lock = _get_json(f"{url}/api/system/lock-state")
+    except Exception as exc:  # noqa: BLE001
+        row["detected"] = "unknown"
+        row["reason"] = (
+            f"doctor: {doctor_error or 'unrecognised payload'}; "
+            f"lock-state: {type(exc).__name__}: {exc}"
+        )
+        return row
+
+    mapped = _LOCK_STATE_TO_AT_REST.get(str(lock.get("state")))
+    if mapped is None:
+        # The vocabulary moved. Say so rather than inferring a verdict from a word we do not
+        # know -- a wrong "plaintext" here would be a fabricated finding about the app.
+        row["detected"] = "unknown"
+        row["reason"] = (
+            f"doctor: {doctor_error or 'unrecognised payload'}; "
+            f"lock-state returned an unknown state {lock.get('state')!r}"
+        )
+        return row
+    row["detected"] = mapped
+    row["via"] = "lock-state"
+    row["lock_state"] = lock.get("state")
+    row["driver"] = lock.get("driver")
+    row["reason"] = (
+        f"doctor was unavailable ({doctor_error or 'unrecognised payload'}); read from "
+        "/api/system/lock-state, which is allowlisted while locked and derives its state from "
+        "the same store header"
+    )
+    return row
+
+
+def _unlock_if_locked(page, report: Report, state_label: str, url: str) -> None:
+    """Walk an encrypted state in through the REAL unlock screen (Q1149).
+
+    NO-OP without ``OO_UIWALK_ENCRYPTED_PASS``: the plaintext run keeps its exact previous
+    behaviour, down to the page never being navigated here.
+
+    This deliberately types into ``#view-unlock``'s own form rather than handing the server a
+    passphrase by env. Booting the app with ``OO_DB_PASSPHRASE`` set would produce an
+    already-unlocked instance and a walk that never touches the screen every encrypted
+    operator sees on every launch -- which is most of what an encrypted variant is FOR.
+
+    An encrypted run that finds NO lock screen is recorded, not quietly accepted: either the
+    state is not encrypted (the at-rest row says which) or it was pre-unlocked, and both
+    change what the rest of the walk means.
+    """
+    if not ENCRYPTED_PASS:
+        return
+    with contextlib.suppress(Exception):
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(600)
+    if not _safe_visible(page, "#view-unlock"):
+        report.add_coverage(
+            surface=f"{state_label}_unlock", axis="encrypted-run", result="partial",
+            note="OO_UIWALK_ENCRYPTED_PASS is set but no #view-unlock screen appeared; this "
+            "state is either not encrypted or was already unlocked -- the report's at_rest "
+            "rows say which",
+        )
+        return
+    with contextlib.suppress(Exception):
+        page.fill("#pw", ENCRYPTED_PASS)
+        page.click("#btn-unlock")
+    reached = False
+    with contextlib.suppress(Exception):
+        # The unlock page shows its own progress view and then either lands on #view-open
+        # ("Open the Console") or redirects straight into the SPA; wait for either.
+        page.wait_for_function(
+            "() => !!document.getElementById('tab-home') "
+            "|| !!document.querySelector('#view-open:not(.hidden)')",
+            timeout=60000,
+        )
+        reached = True
+    if reached and _safe_visible(page, "#view-open"):
+        with contextlib.suppress(Exception):
+            page.click("#view-open button")
+            page.wait_for_timeout(1000)
+    report.add_coverage(
+        surface=f"{state_label}_unlock", axis="encrypted-run",
+        result="verified" if reached else "blocked",
+        note=(
+            "walked in through the real #view-unlock form (#pw -> #btn-unlock)"
+            if reached
+            else "the passphrase was submitted to #view-unlock but the app was not reached "
+            "within 60s -- every later row for this state reads against a locked app"
+        ),
+    )
+    if not reached:
+        report.add_finding(
+            id=f"ui-clickthrough-{state_label}-encrypted-unlock-failed",
+            severity="P1", surface="unlock",
+            title="An encrypted state could not be unlocked through its own unlock screen",
+            detail="OO_UIWALK_ENCRYPTED_PASS was submitted to #view-unlock's #pw/#btn-unlock "
+            "and the app did not appear within 60s. Either the passphrase is wrong for this "
+            "state or the unlock path is broken; the at_rest rows say which store this was.",
+            new=True,
+        )
+
 
 def _get_json(url: str, *, attempts: int = 6):
     """Loopback JSON GET with a bounded 429 retry. The first full-matrix run's reader
@@ -1673,6 +1872,7 @@ def investigate_state_d_import(pw, report: Report, shots: Path) -> None:
         page.on("dialog", lambda d: d.accept())  # arbitrate() is a native confirm()
         driver = PlaywrightUiWalkDriver(page, base_url=STATE_D_URL, screenshot_dir=shots)
         page.wait_for_timeout(1500)
+        _unlock_if_locked(page, report, "state_d", STATE_D_URL)  # no-op unless encrypted
         _dismiss_guide_wizard(page, report, "state_d")
         driver.goto(Surface("state_d_import_dialog", "Import dialog", nav_tab="settings",
                             subtab="data", trigger='button[onclick="openUnifiedImport()"]',
@@ -1744,6 +1944,42 @@ def investigate_state_d_import(pw, report: Report, shots: Path) -> None:
         browser.close()
 
 
+def _drill(report: Report, name: str, fn, *args):
+    """Run one drill; a failure inside it becomes a FINDING, never the end of the run.
+
+    Added 2026-09-16 from a measured loss: `drill_bulletin` hit a 30s `Page.click` timeout
+    (a real markup defect on `main` -- the Bulletin section is nested inside the Uninstall
+    fold), the exception propagated out of `main()`, and `report.json` / `findings.csv` /
+    `coverage.csv` were NEVER WRITTEN. An hour of walking A, B and C, and the three at-rest
+    attestations the encrypted run exists to produce, were lost to one broken surface. That
+    is backwards: the drill that fails is exactly the one whose failure the report should
+    carry.
+
+    Deliberately BLE001-broad. A drill can raise anything -- a Playwright timeout, an
+    AttributeError against a renamed id, a JSON error from a changed payload -- and every one
+    of them is a fact about the app worth recording, not a reason to discard the rest.
+    KeyboardInterrupt/SystemExit are BaseException and still propagate, so an operator can
+    still stop the run.
+    """
+    try:
+        return fn(*args)
+    except Exception as exc:  # noqa: BLE001 - see the docstring: a drill failure is a finding
+        detail = f"{type(exc).__name__}: {exc}"
+        _log(f"DRILL FAILED: {name} -- {detail.splitlines()[0][:200]}")
+        report.add_coverage(
+            surface=f"drill_{name}", axis="default", result="blocked",
+            note=f"the drill raised and was recorded rather than ending the run: {detail[:400]}",
+        )
+        report.add_finding(
+            id=f"ui-clickthrough-drill-{name}-raised",
+            severity="P1", surface=name,
+            title=f"The {name} drill could not complete",
+            detail=detail[:1500],
+            new=True,
+        )
+        return None
+
+
 def investigate_state_c(pw, report: Report, shots: Path) -> None:
     _log("STATE C (populated) -- " + STATE_C_URL)
     browser = pw.chromium.launch(executable_path=_chromium_path())
@@ -1751,6 +1987,7 @@ def investigate_state_c(pw, report: Report, shots: Path) -> None:
         page = browser.new_page(viewport={"width": 1440, "height": 950})
         driver = PlaywrightUiWalkDriver(page, base_url=STATE_C_URL, screenshot_dir=shots)
         page.wait_for_timeout(600)
+        _unlock_if_locked(page, report, "state_c", STATE_C_URL)  # no-op unless encrypted
         # State C is populated (articles > 0), so openGuide()'s own gate should keep the
         # wizard from firing at all here -- this call is a defensive no-op that also proves
         # (and records) that the populated corpus genuinely suppresses the first-run wizard.
@@ -1977,14 +2214,14 @@ def investigate_state_c(pw, report: Report, shots: Path) -> None:
             )
 
         # ==================== the 2026-08-20 matrix expansion (T3/T5/T6/T7) ================= #
-        reader_article_id = drill_reader(driver, report, shots)            # T3
-        drill_worldmap_lens_controls(driver, report)                       # T5a
-        drill_task_manager_panels(driver, report)                          # T5c
-        drill_settings_ai_pill(driver, report)                             # T5b
-        drill_bulletin(driver, report, shots)                              # T5d
-        drill_agenda_provenance(driver, report)                            # T5e
-        a11y_pass(driver, report, reader_article_id)                       # T6
-        honesty_checks(driver, report, shots)                              # T7
+        reader_article_id = _drill(report, "reader", drill_reader, driver, report, shots)  # T3
+        _drill(report, "worldmap_lens", drill_worldmap_lens_controls, driver, report)      # T5a
+        _drill(report, "task_manager_panels", drill_task_manager_panels, driver, report)   # T5c
+        _drill(report, "settings_ai_pill", drill_settings_ai_pill, driver, report)         # T5b
+        _drill(report, "bulletin", drill_bulletin, driver, report, shots)                  # T5d
+        _drill(report, "agenda_provenance", drill_agenda_provenance, driver, report)       # T5e
+        _drill(report, "a11y", a11y_pass, driver, report, reader_article_id)               # T6
+        _drill(report, "honesty", honesty_checks, driver, report, shots)                   # T7
 
         report.add_coverage(surface="state_c_walk", axis="summary", result="verified",
                              note=f"{len(FLAGSHIP_SURFACES) + len(BACKLOG_SURFACES)} named "
@@ -1999,6 +2236,16 @@ def investigate_state_c(pw, report: Report, shots: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="docs/audit/ui-clickthrough-2026-08-20")
+    ap.add_argument(
+        "--require-encrypted",
+        action="store_true",
+        help=(
+            "Q1149: refuse the run unless at least one SEEDED, WALKED state (B/C/D) is "
+            "MEASURABLY encrypted at rest, per the app's own header read. Without this "
+            "flag an encrypted run is a claim; with it the harness will not produce a "
+            "report that does not have one."
+        ),
+    )
     args = ap.parse_args()
 
     out_dir = Path(args.out)
@@ -2015,12 +2262,36 @@ def main() -> None:
                  f"timeout -- proceeding anyway, but its results may read as false negatives.")
         else:
             _log(f"state {label} ({url}) is warm")
+        _record_at_rest(report, label, url, "before-walk")
+
+    if args.require_encrypted:
+        # B/C/D only: state A is EXPECTED to be encrypted-and-locked (it runs the
+        # create flow), so counting it would let an otherwise-plaintext walk satisfy
+        # the flag on a state that proves nothing about the seeded path.
+        walked = [r for r in report.at_rest if r["state"] in ("B", "C", "D")]
+        enc = sorted({r["state"] for r in walked if r.get("detected") == "encrypted"})
+        if not enc:
+            _log(
+                "REFUSING: --require-encrypted was passed and no seeded, walked state "
+                f"measured as encrypted at rest. Measured: {walked}. Seed the state "
+                "with OO_DB_PASSPHRASE set and OO_DB_PLAINTEXT unset, boot it with "
+                "NEITHER set so it starts locked, and pass the same passphrase as "
+                "OO_UIWALK_ENCRYPTED_PASS."
+            )
+            raise SystemExit(2)
+        _log(f"encrypted variant satisfied by state(s): {enc}")
 
     with sync_playwright() as pw:
         investigate_state_a(pw, report, shots)
         investigate_state_b(pw, report, shots)
         investigate_state_c(pw, report, shots)
         investigate_state_d_import(pw, report, shots)  # T2 (self-skips without the env)
+
+    # The second at-rest reading (Q1149): now that the walk has unlocked whatever it
+    # unlocked, `doctor` answers and reports the running engine's cipher. Taken after
+    # the browsers close, so nothing is still writing to the stores being attested.
+    for label, url in states:
+        _record_at_rest(report, label, url, "after-walk")
 
     (out_dir / "report.json").write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
 

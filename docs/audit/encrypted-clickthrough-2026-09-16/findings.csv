@@ -1,0 +1,40 @@
+id,severity,surface,title,detail,evidence,new
+ui-clickthrough-lc-view-hidden-verified-fixed,POSITIVE,state_a_first_launch,LC-VIEW-HIDDEN-ON-ERROR stays fixed under live re-verification,"a rejected short passphrase leaves the form visible (body text 720 chars); the error message is readable, never a blank page.",state-a-03-after-short-pw.png,False
+ui-clickthrough-state-a-happy-path,POSITIVE,state_a_first_launch,The first-launch create-passphrase happy path reaches the app,a strong passphrase submitted after a rejected short one succeeds and lands on Home -- the error path does not corrupt the retry.,,False
+ui-clickthrough-state-b-empty-honesty,POSITIVE,home_leads,"Home's empty-state honesty holds on a catalog-seeded, zero-article corpus","Home renders an explicit 'No Leads yet' message rather than a blank panel, with zero console errors.",/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/state-b-home_leads.png,False
+ui-clickthrough-home_leads-default-fail,P1,home_leads,Home / Leads: failed the walk (default),"visible=True, console_errors=['startLive is not defined']",/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/home_leads.png,True
+ui-clickthrough-bulletin-default-fail,P1,bulletin,Bulletin -- review screen + the Settings section: failed the walk (default),"visible=False, console_errors=['TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(""details[data-adv=\\""bulletin\\""] > summary"")\n    - locator resolved to <summary>…</summary>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n']",,True
+governments-tab-defaults-to-countries-not-law,P2,governments_default,"Governments tab still defaults to Countries, not Law","Confirmed still present live -- this is the KNOWN-OPEN item from the 2026-07-22 audit (independently rediscovered by 4 groups there), deliberate/documented per the triage. NOT counted as a new finding.",,False
+ins-map-cjk-sentence-keywords-not-reproduced,P1,insights_map_cjk,Could not reproduce ins-map-cjk-sentence-keywords against the seeded zh corpus in this run,"sampled 60 pill texts, none matched the long-unsegmented-CJK pattern; the seeded corpus's zh keyword yield for country=cn may be thinner than the original run's, or the underlying segmentation gap may have narrowed since 2026-07-22 -- neither is confirmed here, this is an honest non-reproduction, not a verified fix.",,False
+ui-clickthrough-topbar-fixed-375,POSITIVE,topbar,No page overflow and all core controls on-screen at 375px,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-768,POSITIVE,topbar,No page overflow and all core controls on-screen at 768px,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-1024,POSITIVE,topbar,No page overflow and all core controls on-screen at 1024px,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-1440,POSITIVE,topbar,No page overflow and all core controls on-screen at 1440px,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-375-home_leads,POSITIVE,topbar,No page overflow and all core controls on-screen at 375px on home_leads,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-375-analysis_window,POSITIVE,topbar,No page overflow and all core controls on-screen at 375px on analysis_window,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-375-post_import_screen,POSITIVE,topbar,No page overflow and all core controls on-screen at 375px on post_import_screen,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-375-source_management,POSITIVE,topbar,No page overflow and all core controls on-screen at 375px on source_management,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-topbar-fixed-375-diagnostics_panel,POSITIVE,topbar,No page overflow and all core controls on-screen at 375px on diagnostics_panel,the T1 phone-top-bar collapse verified live (activity chip forced visible — the measured worst case).,,False
+ui-clickthrough-reader-covered,POSITIVE,reader,"The Reader (tabs, provenance classes, Loaded-language) is now walked — the 2026-08-13 report's largest named-surface gap closes",10 tabs drilled individually; the two-class provenance headings render; the Loaded-language pane renders.,/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/reader.png,True
+ui-clickthrough-drill-bulletin-raised,P1,bulletin,The bulletin drill could not complete,"TimeoutError: Page.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(""details[data-adv=\""bulletin\""] > summary"")
+    - locator resolved to <summary>…</summary>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+      - waiting 100ms
+    58 × waiting for element to be visible, enabled and stable
+       - element is not visible
+     - retrying click action
+       - waiting 500ms
+",,True
+a11y-agenda-link-in-text-block,P2,agenda,axe serious: link-in-text-block on agenda (124 nodes),"Links must be distinguishable without relying on color — targets: ['.ag-row:nth-child(5) > .ag-body > .hint > .ext-link[rel=""noopener""]', '.ag-row:nth-child(6) > .ag-body > .hint > .ext-link[rel=""noopener""]', 'a[href$=""commission.europa.eu/""]', 'a[href$=""val.se/""]', 'a[href$=""ga/""]']",,True
+a11y-tasks-color-contrast,P2,tasks,axe serious: color-contrast on tasks (1 nodes),Elements must meet minimum color contrast ratio thresholds — targets: ['#llm'],,True
+a11y-reader-color-contrast,P2,reader,axe serious: color-contrast on reader (2 nodes),"Elements must meet minimum color contrast ratio thresholds — targets: ['.deduced > h3', '.dup-pill']",,True
+honesty-class-with-no-rule-candidates,P2,app-wide,"7 used-but-unstyled class names LOOK presentational — triage candidates, not verdicts","a class with no rule reads as styled in the markup (the recorded class=""small"" lesson); candidates: ag-evtitlex153 <b>, an-panelx13 <div#an-overview>, adv-collectx12 <details>, bk-contextx6 <div>, tm-panelx5 <div#tm-tasks>, note-amberx1 <div>, pal-hintx1 <div> — most unstyled names are legitimate JS/state hooks; each candidate needs a human read before any rule is added.",,True

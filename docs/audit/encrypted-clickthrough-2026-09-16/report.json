@@ -1,0 +1,2122 @@
+{
+  "schema": "oo-ui-clickthrough-1",
+  "started_at": "2026-09-16T05:33:35+00:00",
+  "findings": [
+    {
+      "id": "ui-clickthrough-lc-view-hidden-verified-fixed",
+      "severity": "POSITIVE",
+      "surface": "state_a_first_launch",
+      "title": "LC-VIEW-HIDDEN-ON-ERROR stays fixed under live re-verification",
+      "detail": "a rejected short passphrase leaves the form visible (body text 720 chars); the error message is readable, never a blank page.",
+      "evidence": "state-a-03-after-short-pw.png",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-state-a-happy-path",
+      "severity": "POSITIVE",
+      "surface": "state_a_first_launch",
+      "title": "The first-launch create-passphrase happy path reaches the app",
+      "detail": "a strong passphrase submitted after a rejected short one succeeds and lands on Home -- the error path does not corrupt the retry.",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-state-b-empty-honesty",
+      "severity": "POSITIVE",
+      "surface": "home_leads",
+      "title": "Home's empty-state honesty holds on a catalog-seeded, zero-article corpus",
+      "detail": "Home renders an explicit 'No Leads yet' message rather than a blank panel, with zero console errors.",
+      "evidence": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/state-b-home_leads.png",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-home_leads-default-fail",
+      "severity": "P1",
+      "surface": "home_leads",
+      "title": "Home / Leads: failed the walk (default)",
+      "detail": "visible=True, console_errors=['startLive is not defined']",
+      "evidence": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/home_leads.png",
+      "new": true
+    },
+    {
+      "id": "ui-clickthrough-bulletin-default-fail",
+      "severity": "P1",
+      "surface": "bulletin",
+      "title": "Bulletin -- review screen + the Settings section: failed the walk (default)",
+      "detail": "visible=False, console_errors=['TimeoutError: Page.click: Timeout 30000ms exceeded.\\nCall log:\\n  - waiting for locator(\"details[data-adv=\\\\\"bulletin\\\\\"] > summary\")\\n    - locator resolved to <summary>\u2026</summary>\\n  - attempting click action\\n    2 \u00d7 waiting for element to be visible, enabled and stable\\n      - element is not visible\\n    - retrying click action\\n    - waiting 20ms\\n    2 \u00d7 waiting for element to be visible, enabled and stable\\n      - element is not visible\\n    - retrying click action\\n      - waiting 100ms\\n    58 \u00d7 waiting for element to be visible, enabled and stable\\n       - element is not visible\\n     - retrying click action\\n       - waiting 500ms\\n']",
+      "evidence": "",
+      "new": true
+    },
+    {
+      "id": "governments-tab-defaults-to-countries-not-law",
+      "severity": "P2",
+      "surface": "governments_default",
+      "title": "Governments tab still defaults to Countries, not Law",
+      "detail": "Confirmed still present live -- this is the KNOWN-OPEN item from the 2026-07-22 audit (independently rediscovered by 4 groups there), deliberate/documented per the triage. NOT counted as a new finding.",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ins-map-cjk-sentence-keywords-not-reproduced",
+      "severity": "P1",
+      "surface": "insights_map_cjk",
+      "title": "Could not reproduce ins-map-cjk-sentence-keywords against the seeded zh corpus in this run",
+      "detail": "sampled 60 pill texts, none matched the long-unsegmented-CJK pattern; the seeded corpus's zh keyword yield for country=cn may be thinner than the original run's, or the underlying segmentation gap may have narrowed since 2026-07-22 -- neither is confirmed here, this is an honest non-reproduction, not a verified fix.",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-375",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 375px",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-768",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 768px",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-1024",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 1024px",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-1440",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 1440px",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-375-home_leads",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 375px on home_leads",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-375-analysis_window",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 375px on analysis_window",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-375-post_import_screen",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 375px on post_import_screen",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-375-source_management",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 375px on source_management",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-topbar-fixed-375-diagnostics_panel",
+      "severity": "POSITIVE",
+      "surface": "topbar",
+      "title": "No page overflow and all core controls on-screen at 375px on diagnostics_panel",
+      "detail": "the T1 phone-top-bar collapse verified live (activity chip forced visible \u2014 the measured worst case).",
+      "evidence": "",
+      "new": false
+    },
+    {
+      "id": "ui-clickthrough-reader-covered",
+      "severity": "POSITIVE",
+      "surface": "reader",
+      "title": "The Reader (tabs, provenance classes, Loaded-language) is now walked \u2014 the 2026-08-13 report's largest named-surface gap closes",
+      "detail": "10 tabs drilled individually; the two-class provenance headings render; the Loaded-language pane renders.",
+      "evidence": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/reader.png",
+      "new": true
+    },
+    {
+      "id": "ui-clickthrough-drill-bulletin-raised",
+      "severity": "P1",
+      "surface": "bulletin",
+      "title": "The bulletin drill could not complete",
+      "detail": "TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"details[data-adv=\\\"bulletin\\\"] > summary\")\n    - locator resolved to <summary>\u2026</summary>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 \u00d7 waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n",
+      "evidence": "",
+      "new": true
+    },
+    {
+      "id": "a11y-agenda-link-in-text-block",
+      "severity": "P2",
+      "surface": "agenda",
+      "title": "axe serious: link-in-text-block on agenda (124 nodes)",
+      "detail": "Links must be distinguishable without relying on color \u2014 targets: ['.ag-row:nth-child(5) > .ag-body > .hint > .ext-link[rel=\"noopener\"]', '.ag-row:nth-child(6) > .ag-body > .hint > .ext-link[rel=\"noopener\"]', 'a[href$=\"commission.europa.eu/\"]', 'a[href$=\"val.se/\"]', 'a[href$=\"ga/\"]']",
+      "evidence": "",
+      "new": true
+    },
+    {
+      "id": "a11y-tasks-color-contrast",
+      "severity": "P2",
+      "surface": "tasks",
+      "title": "axe serious: color-contrast on tasks (1 nodes)",
+      "detail": "Elements must meet minimum color contrast ratio thresholds \u2014 targets: ['#llm']",
+      "evidence": "",
+      "new": true
+    },
+    {
+      "id": "a11y-reader-color-contrast",
+      "severity": "P2",
+      "surface": "reader",
+      "title": "axe serious: color-contrast on reader (2 nodes)",
+      "detail": "Elements must meet minimum color contrast ratio thresholds \u2014 targets: ['.deduced > h3', '.dup-pill']",
+      "evidence": "",
+      "new": true
+    },
+    {
+      "id": "honesty-class-with-no-rule-candidates",
+      "severity": "P2",
+      "surface": "app-wide",
+      "title": "7 used-but-unstyled class names LOOK presentational \u2014 triage candidates, not verdicts",
+      "detail": "a class with no rule reads as styled in the markup (the recorded class=\"small\" lesson); candidates: ag-evtitlex153 <b>, an-panelx13 <div#an-overview>, adv-collectx12 <details>, bk-contextx6 <div>, tm-panelx5 <div#tm-tasks>, note-amberx1 <div>, pal-hintx1 <div> \u2014 most unstyled names are legitimate JS/state hooks; each candidate needs a human read before any rule is added.",
+      "evidence": "",
+      "new": true
+    }
+  ],
+  "coverage": [
+    {
+      "surface": "state_a_boot",
+      "axis": "default",
+      "result": "verified",
+      "note": "redirected to /unlock, body text length 152"
+    },
+    {
+      "surface": "state_a_first_launch",
+      "axis": "language-step-shown",
+      "result": "verified",
+      "note": "#view-language visible=True"
+    },
+    {
+      "surface": "state_a_first_launch",
+      "axis": "legal-step-shown",
+      "result": "verified",
+      "note": "#view-legal visible=True"
+    },
+    {
+      "surface": "state_a_first_launch",
+      "axis": "legal-accept-enables-on-check",
+      "result": "verified",
+      "note": "#lg-accept disabled after checking #lg-check: False"
+    },
+    {
+      "surface": "state_a_first_launch",
+      "axis": "create-step-reached",
+      "result": "verified",
+      "note": "#view-create visible=True"
+    },
+    {
+      "surface": "state_a_first_launch",
+      "axis": "short-passphrase-error-path",
+      "result": "verified",
+      "note": "live Chromium re-verification of the fixed P0"
+    },
+    {
+      "surface": "state_a_first_launch",
+      "axis": "happy-path-create",
+      "result": "verified",
+      "note": "reached #tab-home=True"
+    },
+    {
+      "surface": "state_b_unlock",
+      "axis": "encrypted-run",
+      "result": "verified",
+      "note": "walked in through the real #view-unlock form (#pw -> #btn-unlock)"
+    },
+    {
+      "surface": "state_b_guide_wizard",
+      "axis": "auto-open-on-empty-corpus",
+      "result": "verified",
+      "note": "#guide-wizard open on boot: False"
+    },
+    {
+      "surface": "state_b_home_empty",
+      "axis": "default",
+      "result": "verified",
+      "note": "visible=True errors=[] empty_honesty_text=True"
+    },
+    {
+      "surface": "state_c_unlock",
+      "axis": "encrypted-run",
+      "result": "verified",
+      "note": "walked in through the real #view-unlock form (#pw -> #btn-unlock)"
+    },
+    {
+      "surface": "state_c_guide_wizard",
+      "axis": "auto-open-on-empty-corpus",
+      "result": "verified",
+      "note": "#guide-wizard open on boot: False"
+    },
+    {
+      "surface": "home_leads",
+      "axis": "default",
+      "result": "partial",
+      "note": "startLive is not defined"
+    },
+    {
+      "surface": "analysis_window",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "post_import_screen",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "source_management",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "diagnostics_panel",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "export_import_dialog",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "world_map_server_ips",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "governments_law",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_ai",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_cards",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "keyword_supergroups",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "agenda_month",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "task_manager",
+      "axis": "default",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "bulletin",
+      "axis": "default",
+      "result": "partial",
+      "note": "TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"details[data-adv=\\\"bulletin\\\"] > summary\")\n    - locator resolved to <summary>\u2026</summary>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 \u00d7 waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n"
+    },
+    {
+      "surface": "analysis_keywords",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_trend",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_mindmap",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_articles",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_www",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_links",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_related",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_sentiment",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_sources",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_competitive",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "analysis_advanced",
+      "axis": "an-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_trends",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_sources",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_families",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_supergroups",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_map",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_convergence",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_watches",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "insights_lunar",
+      "axis": "ins-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_graphics",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_general",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_cards",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_models",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_wikipedia",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_offlinemap",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_agenda",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_data",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "settings_safety",
+      "axis": "set-subtabs",
+      "result": "partial",
+      "note": "TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"#subtab-strip button[data-tab=\\\"safety\\\"]:visible\")\n"
+    },
+    {
+      "surface": "settings_advanced",
+      "axis": "set-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "library_overview",
+      "axis": "lib-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "library_activity",
+      "axis": "lib-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "library_tracked",
+      "axis": "lib-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "library_composition",
+      "axis": "lib-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "library_storage",
+      "axis": "lib-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "library_coverage",
+      "axis": "lib-subtabs",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "worldmap_coverage",
+      "axis": "map-lenses",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "worldmap_stories",
+      "axis": "map-lenses",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "worldmap_places",
+      "axis": "map-lenses",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "worldmap_servers",
+      "axis": "map-lenses",
+      "result": "verified",
+      "note": ""
+    },
+    {
+      "surface": "governments_default_landing",
+      "axis": "default",
+      "result": "verified",
+      "note": "lands on subtab='countries'"
+    },
+    {
+      "surface": "insights_map_cjk_keywords",
+      "axis": "zh-content",
+      "result": "verified",
+      "note": "sampled 60 pills; long-unsegmented-CJK=0"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=ink",
+      "result": "verified",
+      "note": "ratio=7.91:1 fg=(217.0, 164.0, 65.0) bg=(20.0, 24.0, 31.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=ink",
+      "result": "verified",
+      "note": "ratio=9.44:1 fg=(234.0, 180.0, 78.0) bg=(20.0, 24.0, 31.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=slate",
+      "result": "verified",
+      "note": "ratio=7.68:1 fg=(217.0, 164.0, 65.0) bg=(22.0, 27.0, 35.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=slate",
+      "result": "verified",
+      "note": "ratio=9.17:1 fg=(234.0, 180.0, 78.0) bg=(22.0, 27.0, 35.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=midnight",
+      "result": "verified",
+      "note": "ratio=8.04:1 fg=(217.0, 164.0, 65.0) bg=(16.0, 20.0, 46.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=midnight",
+      "result": "verified",
+      "note": "ratio=9.59:1 fg=(234.0, 180.0, 78.0) bg=(16.0, 20.0, 46.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=arctic",
+      "result": "verified",
+      "note": "ratio=7.62:1 fg=(217.0, 164.0, 65.0) bg=(23.0, 28.0, 34.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=arctic",
+      "result": "verified",
+      "note": "ratio=9.09:1 fg=(234.0, 180.0, 78.0) bg=(23.0, 28.0, 34.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=cyber",
+      "result": "verified",
+      "note": "ratio=8.35:1 fg=(217.0, 164.0, 65.0) bg=(13.0, 17.0, 32.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=cyber",
+      "result": "verified",
+      "note": "ratio=9.96:1 fg=(234.0, 180.0, 78.0) bg=(13.0, 17.0, 32.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=forest",
+      "result": "verified",
+      "note": "ratio=7.88:1 fg=(217.0, 164.0, 65.0) bg=(19.0, 26.0, 20.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=forest",
+      "result": "verified",
+      "note": "ratio=9.39:1 fg=(234.0, 180.0, 78.0) bg=(19.0, 26.0, 20.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=aubergine",
+      "result": "verified",
+      "note": "ratio=7.98:1 fg=(217.0, 164.0, 65.0) bg=(26.0, 20.0, 36.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=aubergine",
+      "result": "verified",
+      "note": "ratio=9.52:1 fg=(234.0, 180.0, 78.0) bg=(26.0, 20.0, 36.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=garnet",
+      "result": "verified",
+      "note": "ratio=7.96:1 fg=(217.0, 164.0, 65.0) bg=(31.0, 20.0, 25.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=garnet",
+      "result": "verified",
+      "note": "ratio=9.50:1 fg=(234.0, 180.0, 78.0) bg=(31.0, 20.0, 25.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=solar",
+      "result": "verified",
+      "note": "ratio=5.78:1 fg=(217.0, 164.0, 65.0) bg=(7.0, 54.0, 66.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=solar",
+      "result": "verified",
+      "note": "ratio=6.89:1 fg=(234.0, 180.0, 78.0) bg=(7.0, 54.0, 66.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=sepia",
+      "result": "verified",
+      "note": "ratio=7.17:1 fg=(217.0, 164.0, 65.0) bg=(38.0, 32.0, 25.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=sepia",
+      "result": "verified",
+      "note": "ratio=8.55:1 fg=(234.0, 180.0, 78.0) bg=(38.0, 32.0, 25.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=terminal",
+      "result": "verified",
+      "note": "ratio=8.52:1 fg=(217.0, 164.0, 65.0) bg=(10.0, 16.0, 19.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=terminal",
+      "result": "verified",
+      "note": "ratio=10.16:1 fg=(234.0, 180.0, 78.0) bg=(10.0, 16.0, 19.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=contrast",
+      "result": "verified",
+      "note": "ratio=13.83:1 fg=(255.0, 212.0, 0.0) bg=(10.0, 10.0, 10.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=contrast",
+      "result": "verified",
+      "note": "ratio=10.50:1 fg=(234.0, 180.0, 78.0) bg=(10.0, 10.0, 10.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=light",
+      "result": "verified",
+      "note": "ratio=7.97:1 fg=(122.0, 67.0, 8.0) bg=(255.0, 255.0, 255.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=light",
+      "result": "verified",
+      "note": "ratio=6.67:1 fg=(138.0, 77.0, 10.0) bg=(255.0, 255.0, 255.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=mist",
+      "result": "verified",
+      "note": "ratio=7.63:1 fg=(122.0, 67.0, 8.0) bg=(249.0, 250.0, 252.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=mist",
+      "result": "verified",
+      "note": "ratio=6.39:1 fg=(138.0, 77.0, 10.0) bg=(249.0, 250.0, 252.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=dawn",
+      "result": "verified",
+      "note": "ratio=7.68:1 fg=(122.0, 67.0, 8.0) bg=(255.0, 250.0, 243.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=dawn",
+      "result": "verified",
+      "note": "ratio=6.43:1 fg=(138.0, 77.0, 10.0) bg=(255.0, 250.0, 243.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=mint",
+      "result": "verified",
+      "note": "ratio=7.65:1 fg=(122.0, 67.0, 8.0) bg=(248.0, 251.0, 248.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=mint",
+      "result": "verified",
+      "note": "ratio=6.40:1 fg=(138.0, 77.0, 10.0) bg=(248.0, 251.0, 248.0)"
+    },
+    {
+      "surface": "contrast_pill.warn",
+      "axis": "theme=paper",
+      "result": "verified",
+      "note": "ratio=7.52:1 fg=(122.0, 67.0, 8.0) bg=(251.0, 248.0, 241.0)"
+    },
+    {
+      "surface": "contrast_card-caveat",
+      "axis": "theme=paper",
+      "result": "verified",
+      "note": "ratio=6.29:1 fg=(138.0, 77.0, 10.0) bg=(251.0, 248.0, 241.0)"
+    },
+    {
+      "surface": "topbar_overflow",
+      "axis": "375x900",
+      "result": "verified",
+      "note": "scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow",
+      "axis": "768x1000",
+      "result": "verified",
+      "note": "scrollWidth=768 clientWidth=768 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow",
+      "axis": "1024x900",
+      "result": "verified",
+      "note": "scrollWidth=1024 clientWidth=1024 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow",
+      "axis": "1440x950",
+      "result": "verified",
+      "note": "scrollWidth=1440 clientWidth=1440 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow_home_leads",
+      "axis": "375x900",
+      "result": "verified",
+      "note": "scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow_analysis_window",
+      "axis": "375x900",
+      "result": "verified",
+      "note": "scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow_post_import_screen",
+      "axis": "375x900",
+      "result": "verified",
+      "note": "scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow_source_management",
+      "axis": "375x900",
+      "result": "verified",
+      "note": "scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "topbar_overflow_diagnostics_panel",
+      "axis": "375x900",
+      "result": "verified",
+      "note": "scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)"
+    },
+    {
+      "surface": "locale_switch",
+      "axis": "en",
+      "result": "verified",
+      "note": "dir=ltr errors=[]"
+    },
+    {
+      "surface": "locale_switch",
+      "axis": "fr",
+      "result": "verified",
+      "note": "dir=ltr errors=[]"
+    },
+    {
+      "surface": "locale_switch",
+      "axis": "ar",
+      "result": "verified",
+      "note": "dir=rtl errors=[]"
+    },
+    {
+      "surface": "locale_switch",
+      "axis": "zh",
+      "result": "verified",
+      "note": "dir=ltr errors=[]"
+    },
+    {
+      "surface": "opacity_pseudo_spotcheck",
+      "axis": "#net-toggle::after",
+      "result": "verified",
+      "note": "{'color': 'rgb(140, 149, 166)', 'backgroundColor': 'rgb(91, 157, 217)', 'opacity': '0.55', 'display': 'block', 'visibility': 'visible', 'content': '\"\"', 'width': '4px', 'height': '4px', 'fontSize': '15px', 'textTransform': 'none', 'position': 'absolute'}"
+    },
+    {
+      "surface": "opacity_pseudo_spotcheck",
+      "axis": ".nav-item.adv .badge",
+      "result": "verified",
+      "note": "{'color': 'rgb(217, 164, 65)', 'backgroundColor': 'rgba(0, 0, 0, 0)', 'opacity': '1', 'display': 'block', 'visibility': 'visible', 'content': 'normal', 'width': '32.4062px', 'height': '17.5px', 'fontSize': '10px', 'textTransform': 'none', 'position': 'static'}"
+    },
+    {
+      "surface": "reader",
+      "axis": "default",
+      "result": "verified",
+      "note": "article_id=134 visible=True errors=[]"
+    },
+    {
+      "surface": "reader",
+      "axis": "provenance-classes",
+      "result": "verified",
+      "note": "groups=['From the source', 'Deduced by this app \u2014 less reliable'] (the AI-derived third class renders only when ai_keyword rows exist for the article; absent here = honest, not a defect: present=False)"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-read",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='FROM THE SOURCE\\nSource\\nDE Regional Herald de\\nAuthor\\nStaff Wr'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-summary",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Loading\u2026'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-translation",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Loading\u2026'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-keywords",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='KEYWORDS IN THIS ARTICLE\\n\\nClick any keyword to analyse it ac'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-mindmap",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Loading\u2026'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-sentiment",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Loading\u2026'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-subjectivity",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Loading\u2026'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-related",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Related in your corpus\\n\\nRanked by shared extracted keywords '"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-source",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='Source profile\\nName\\nDE Regional Herald de\\nDomain\\nherald-de-d'"
+    },
+    {
+      "surface": "reader",
+      "axis": "tab-links",
+      "result": "verified",
+      "note": "pane visible=True errors=[] first-words='No external links are recorded in your stored copy.'"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "dimension-sources",
+      "result": "verified",
+      "note": "map innerHTML 162625->162625 errors=[]"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "dimension-articles",
+      "result": "verified",
+      "note": "map innerHTML 162625->162730 errors=[]"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "dimension-keywords",
+      "result": "verified",
+      "note": "map innerHTML 162730->162824 errors=[]"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "dimension-sentiment",
+      "result": "verified",
+      "note": "map innerHTML 162824->156571 errors=[]"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "granularity-continent",
+      "result": "verified",
+      "note": "aria-pressed=true map_len=158484"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "granularity-country",
+      "result": "verified",
+      "note": "aria-pressed=true map_len=156571"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "places-overlay",
+      "result": "verified",
+      "note": "deduced-places caveat visible with the layer: True"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "signals-layer",
+      "result": "verified",
+      "note": "focus slider rendered with the layer: True"
+    },
+    {
+      "surface": "worldmap_controls",
+      "axis": "signals-focus-slider",
+      "result": "verified",
+      "note": "5x ArrowLeft on the slider; map innerHTML 172446->172446 errors=[]"
+    },
+    {
+      "surface": "task_manager",
+      "axis": "panel-inventory",
+      "result": "verified",
+      "note": "current panels=['processes', 'performance', 'queue', 'schedule', 'history'] (the ledger's Active/Queue/System/Schedule naming predates the current page; anchors followed, rename recorded)"
+    },
+    {
+      "surface": "task_manager",
+      "axis": "panel-processes",
+      "result": "verified",
+      "note": "visible=True others_hidden=True first-words='Nothing active right now \u2014 running jobs (a collection pass, '"
+    },
+    {
+      "surface": "task_manager",
+      "axis": "panel-performance",
+      "result": "verified",
+      "note": "visible=True others_hidden=True first-words='CPU\\n8.6%\\n4 cores \u00b7 19 threads\\nMEMORY\\n999.1 MB\\nresident set s'"
+    },
+    {
+      "surface": "task_manager",
+      "axis": "panel-queue",
+      "result": "verified",
+      "note": "visible=True others_hidden=True first-words='QUEUE\\nThe queue is empty \u2014 downloads waiting their turn appe'"
+    },
+    {
+      "surface": "task_manager",
+      "axis": "panel-schedule",
+      "result": "verified",
+      "note": "visible=True others_hidden=True first-words='COLLECTION\\nState\\nstopped\\nCurrent pass\\nidle \u2014 no pass in flig'"
+    },
+    {
+      "surface": "task_manager",
+      "axis": "panel-history",
+      "result": "verified",
+      "note": "visible=True others_hidden=True first-words='ONLINE SESSIONS\\nNo completed sessions yet \u2014 each finished co'"
+    },
+    {
+      "surface": "settings_ai_pill",
+      "axis": "live-state",
+      "result": "partial",
+      "note": "class='pill warn' -> unpainted (the status poll never painted a state class within 12s \u2014 an honest unknown, never read as serving)"
+    },
+    {
+      "surface": "settings_ai_pill",
+      "axis": "state-ai-starting",
+      "result": "blocked",
+      "note": "unreachable without a local backend on this sandbox \u2014 recorded honestly, never forced via a class edit (that would fabricate a state)"
+    },
+    {
+      "surface": "settings_ai_pill",
+      "axis": "state-serving",
+      "result": "blocked",
+      "note": "unreachable without a local backend on this sandbox \u2014 recorded honestly, never forced via a class edit (that would fabricate a state)"
+    },
+    {
+      "surface": "settings_ai_panels",
+      "axis": "backend-panel",
+      "result": "verified",
+      "note": "panel names its prerequisite/backend state: True (len=2177)"
+    },
+    {
+      "surface": "drill_bulletin",
+      "axis": "default",
+      "result": "blocked",
+      "note": "the drill raised and was recorded rather than ending the run: TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"details[data-adv=\\\"bulletin\\\"] > summary\")\n    - locator resolved to <summary>\u2026</summary>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 \u00d7 waiting for element to be visible, enabled and "
+    },
+    {
+      "surface": "agenda_glyphs",
+      "axis": "month-grid",
+      "result": "verified",
+      "note": "{'moons': 4, 'moons_titled': 4, 'seasons': 1, 'seasons_titled': 1} (titles carry method+accuracy \u2014 the informed-consent hover)"
+    },
+    {
+      "surface": "agenda_deduced",
+      "axis": "list-view-pills",
+      "result": "verified",
+      "note": "deduced-pill n=1 titled=1 sample=['3 articles mention this date deduced  deduced \u00b7 never confirmed'] (seeded specimen: 3 articles / 2 sources naming 2026-10-12)"
+    },
+    {
+      "surface": "a11y_axe_home",
+      "axis": "axe-core-4.13",
+      "result": "verified",
+      "note": "0 violations (0 serious/critical): "
+    },
+    {
+      "surface": "a11y_axe_settings-models",
+      "axis": "axe-core-4.13",
+      "result": "verified",
+      "note": "0 violations (0 serious/critical): "
+    },
+    {
+      "surface": "a11y_axe_agenda",
+      "axis": "axe-core-4.13",
+      "result": "partial",
+      "note": "1 violations (1 serious/critical): link-in-text-block[serious]x124"
+    },
+    {
+      "surface": "a11y_axe_analysis",
+      "axis": "axe-core-4.13",
+      "result": "verified",
+      "note": "0 violations (0 serious/critical): "
+    },
+    {
+      "surface": "a11y_axe_tasks",
+      "axis": "axe-core-4.13",
+      "result": "partial",
+      "note": "1 violations (1 serious/critical): color-contrast[serious]x1"
+    },
+    {
+      "surface": "a11y_axe_reader",
+      "axis": "axe-core-4.13",
+      "result": "partial",
+      "note": "4 violations (1 serious/critical): color-contrast[serious]x2; heading-order[moderate]x1; landmark-one-main[moderate]x1; region[moderate]x4"
+    },
+    {
+      "surface": "a11y_keyboard_home",
+      "axis": "tab-traversal",
+      "result": "verified",
+      "note": "40 stops, 10 distinct, focus-not-indicated=0 []"
+    },
+    {
+      "surface": "a11y_keyboard_reader",
+      "axis": "tab-traversal",
+      "result": "verified",
+      "note": "22 stops, 4 distinct, focus-not-indicated=0 []"
+    },
+    {
+      "surface": "a11y_prefers_contrast",
+      "axis": "emulated-more",
+      "result": "verified",
+      "note": "base={'hint_color': 'rgb(140, 149, 166)', 'icon_border': '1px'} more={'hint_color': 'rgb(232, 235, 240)', 'icon_border': '1px'} \u2014 the app.css (prefers-contrast: more) block applies"
+    },
+    {
+      "surface": "honesty_class_no_rule",
+      "axis": "sweep",
+      "result": "verified",
+      "note": "16 used-but-unstyled class names across 4 surfaces (7 presentational-looking); top: ag-evtitlex153, an-panelx13, adv-collectx12, ins-viewx9, set-viewx9, bk-contextx6, gov-viewx6, tm-panelx5, bulk-llmx2, bulk-queuex2, an-sortbarx1, primaryx1"
+    },
+    {
+      "surface": "honesty_greyscale_middrag",
+      "axis": "ins-trend-brush",
+      "result": "verified",
+      "note": "band luminance delta=18.6 vs null=0.3 (band=53.3, outside L/R=34.8/34.6) \u2014 the selection band IS visible without colour, measured from rendered pixels mid-drag"
+    },
+    {
+      "surface": "honesty_rtl_bidi",
+      "axis": "rtl_home",
+      "result": "verified",
+      "note": "run='2025-10-11' in [data-oo-rtl-probe=\"1\"] \u2014 per-char x monotonic (logical order preserved: isolates working)"
+    },
+    {
+      "surface": "honesty_rtl_bidi",
+      "axis": "specimen-search",
+      "result": "blocked",
+      "note": "Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"details[data-adv=\\\"bulletin\\\"] > summary\")\n    "
+    },
+    {
+      "surface": "honesty_uppercase_noop",
+      "axis": "ar-zh-ja-hi-bn",
+      "result": "verified",
+      "note": "case-ONLY-rank elements per locale: {'ar': 0, 'zh': 0, 'ja': 0, 'hi': 0, 'bn': 0}; distinct specimens: none \u2014 every uppercase element also steps on size or weight, so hierarchy survives translation"
+    },
+    {
+      "surface": "honesty_i18n_exact_node",
+      "axis": "fr",
+      "result": "verified",
+      "note": "0 distinct keyed-in-fr strings still rendering as their EXACT English value under fr (welded/frozen/unwalked nodes); specimens: "
+    },
+    {
+      "surface": "state_c_walk",
+      "axis": "summary",
+      "result": "verified",
+      "note": "14 named surfaces + subtab drills + 17 themes + 4 breakpoints (+ flagship-375 walk) + 4 locales + reader/lens/a11y/honesty drills (T3/T5/T6/T7)"
+    },
+    {
+      "surface": "post_import_content",
+      "axis": "default",
+      "result": "blocked",
+      "note": "OO_UIWALK_IMPORT_ARTIFACT / OO_UIWALK_IMPORT_PASS not set \u2014 the import drill needs the pre-built volume-backup artifact (scripts/ui_clickthrough_seed.py --mini + write_volume_backup); recorded, never silently skipped"
+    }
+  ],
+  "steps": [
+    {
+      "surface": "home_leads",
+      "label": "Home / Leads",
+      "axis": "default",
+      "ok": false,
+      "visible": true,
+      "errors": [
+        "startLive is not defined"
+      ],
+      "console_summary": {
+        "pageerror": 1,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/home_leads.png",
+      "elapsed_s": 0.85
+    },
+    {
+      "surface": "analysis_window",
+      "label": "The analysis window",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_window.png",
+      "elapsed_s": 1.56
+    },
+    {
+      "surface": "post_import_screen",
+      "label": "The post-import screen",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/post_import_screen.png",
+      "elapsed_s": 3.64
+    },
+    {
+      "surface": "source_management",
+      "label": "Source management",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/source_management.png",
+      "elapsed_s": 2.98
+    },
+    {
+      "surface": "diagnostics_panel",
+      "label": "The one-button diagnostics panel",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/diagnostics_panel.png",
+      "elapsed_s": 2.24
+    },
+    {
+      "surface": "export_import_dialog",
+      "label": "Export / Import (unified dialog)",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/export_import_dialog.png",
+      "elapsed_s": 1.47
+    },
+    {
+      "surface": "world_map_server_ips",
+      "label": "World map -- Server IPs lens",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/world_map_server_ips.png",
+      "elapsed_s": 1.41
+    },
+    {
+      "surface": "governments_law",
+      "label": "Governments -> Law",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/governments_law.png",
+      "elapsed_s": 1.09
+    },
+    {
+      "surface": "settings_ai",
+      "label": "Settings -> AI (the pill's third state, backend panel, roster install)",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_ai.png",
+      "elapsed_s": 1.12
+    },
+    {
+      "surface": "settings_cards",
+      "label": "Settings -> Cards (the 37 Lead producers, safe ranges)",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_cards.png",
+      "elapsed_s": 1.46
+    },
+    {
+      "surface": "keyword_supergroups",
+      "label": "Settings -> Advanced -> Keywords (group/super-group curation, the concept map)",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/keyword_supergroups.png",
+      "elapsed_s": 1.24
+    },
+    {
+      "surface": "agenda_month",
+      "label": "Agenda -- month grid, glyphs, deduced events",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/agenda_month.png",
+      "elapsed_s": 2.44
+    },
+    {
+      "surface": "task_manager",
+      "label": "Task manager -- Active / Queue / System / Schedule",
+      "axis": "default",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/task_manager.png",
+      "elapsed_s": 0.6
+    },
+    {
+      "surface": "bulletin",
+      "label": "Bulletin -- review screen + the Settings section",
+      "axis": "default",
+      "ok": false,
+      "visible": false,
+      "errors": [
+        "TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"details[data-adv=\\\"bulletin\\\"] > summary\")\n    - locator resolved to <summary>\u2026</summary>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 \u00d7 waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n"
+      ],
+      "console_summary": {},
+      "screenshot": null,
+      "elapsed_s": 31.37
+    },
+    {
+      "surface": "analysis_keywords",
+      "label": "Analysis > keywords",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_keywords.png",
+      "elapsed_s": 1.12
+    },
+    {
+      "surface": "analysis_trend",
+      "label": "Analysis > trend",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_trend.png",
+      "elapsed_s": 1.02
+    },
+    {
+      "surface": "analysis_mindmap",
+      "label": "Analysis > mindmap",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_mindmap.png",
+      "elapsed_s": 1.09
+    },
+    {
+      "surface": "analysis_articles",
+      "label": "Analysis > articles",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_articles.png",
+      "elapsed_s": 1.33
+    },
+    {
+      "surface": "analysis_www",
+      "label": "Analysis > www",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_www.png",
+      "elapsed_s": 0.99
+    },
+    {
+      "surface": "analysis_links",
+      "label": "Analysis > links",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_links.png",
+      "elapsed_s": 1.01
+    },
+    {
+      "surface": "analysis_related",
+      "label": "Analysis > related",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_related.png",
+      "elapsed_s": 1.19
+    },
+    {
+      "surface": "analysis_sentiment",
+      "label": "Analysis > sentiment",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_sentiment.png",
+      "elapsed_s": 0.99
+    },
+    {
+      "surface": "analysis_sources",
+      "label": "Analysis > sources",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_sources.png",
+      "elapsed_s": 0.97
+    },
+    {
+      "surface": "analysis_competitive",
+      "label": "Analysis > competitive",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_competitive.png",
+      "elapsed_s": 0.96
+    },
+    {
+      "surface": "analysis_advanced",
+      "label": "Analysis > advanced",
+      "axis": "an-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/analysis_advanced.png",
+      "elapsed_s": 0.99
+    },
+    {
+      "surface": "insights_trends",
+      "label": "Insights > trends",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_trends.png",
+      "elapsed_s": 1.29
+    },
+    {
+      "surface": "insights_sources",
+      "label": "Insights > sources",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_sources.png",
+      "elapsed_s": 1.27
+    },
+    {
+      "surface": "insights_families",
+      "label": "Insights > families",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_families.png",
+      "elapsed_s": 1.02
+    },
+    {
+      "surface": "insights_supergroups",
+      "label": "Insights > supergroups",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_supergroups.png",
+      "elapsed_s": 1.13
+    },
+    {
+      "surface": "insights_map",
+      "label": "Insights > map",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_map.png",
+      "elapsed_s": 1.15
+    },
+    {
+      "surface": "insights_convergence",
+      "label": "Insights > convergence",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_convergence.png",
+      "elapsed_s": 1.06
+    },
+    {
+      "surface": "insights_watches",
+      "label": "Insights > watches",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_watches.png",
+      "elapsed_s": 1.23
+    },
+    {
+      "surface": "insights_lunar",
+      "label": "Insights > lunar",
+      "axis": "ins-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/insights_lunar.png",
+      "elapsed_s": 1.09
+    },
+    {
+      "surface": "settings_graphics",
+      "label": "Settings > graphics",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_graphics.png",
+      "elapsed_s": 1.6
+    },
+    {
+      "surface": "settings_general",
+      "label": "Settings > general",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_general.png",
+      "elapsed_s": 1.49
+    },
+    {
+      "surface": "settings_cards",
+      "label": "Settings > cards",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_cards.png",
+      "elapsed_s": 1.65
+    },
+    {
+      "surface": "settings_models",
+      "label": "Settings > models",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_models.png",
+      "elapsed_s": 1.51
+    },
+    {
+      "surface": "settings_wikipedia",
+      "label": "Settings > wikipedia",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_wikipedia.png",
+      "elapsed_s": 2.03
+    },
+    {
+      "surface": "settings_offlinemap",
+      "label": "Settings > offlinemap",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_offlinemap.png",
+      "elapsed_s": 1.4
+    },
+    {
+      "surface": "settings_agenda",
+      "label": "Settings > agenda",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_agenda.png",
+      "elapsed_s": 1.36
+    },
+    {
+      "surface": "settings_data",
+      "label": "Settings > data",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_data.png",
+      "elapsed_s": 1.12
+    },
+    {
+      "surface": "settings_safety",
+      "label": "Settings > safety",
+      "axis": "set-subtabs",
+      "ok": false,
+      "visible": false,
+      "errors": [
+        "TimeoutError: Page.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"#subtab-strip button[data-tab=\\\"safety\\\"]:visible\")\n"
+      ],
+      "console_summary": {},
+      "screenshot": null,
+      "elapsed_s": 30.65
+    },
+    {
+      "surface": "settings_advanced",
+      "label": "Settings > advanced",
+      "axis": "set-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/settings_advanced.png",
+      "elapsed_s": 1.14
+    },
+    {
+      "surface": "library_overview",
+      "label": "Library > overview",
+      "axis": "lib-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/library_overview.png",
+      "elapsed_s": 1.08
+    },
+    {
+      "surface": "library_activity",
+      "label": "Library > activity",
+      "axis": "lib-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/library_activity.png",
+      "elapsed_s": 1.16
+    },
+    {
+      "surface": "library_tracked",
+      "label": "Library > tracked",
+      "axis": "lib-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/library_tracked.png",
+      "elapsed_s": 1.03
+    },
+    {
+      "surface": "library_composition",
+      "label": "Library > composition",
+      "axis": "lib-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/library_composition.png",
+      "elapsed_s": 1.1
+    },
+    {
+      "surface": "library_storage",
+      "label": "Library > storage",
+      "axis": "lib-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 0,
+        "console_error_noise_429": 0,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/library_storage.png",
+      "elapsed_s": 1.12
+    },
+    {
+      "surface": "library_coverage",
+      "label": "Library > coverage",
+      "axis": "lib-subtabs",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 2,
+        "console_error_noise_429": 2,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/library_coverage.png",
+      "elapsed_s": 1.63
+    },
+    {
+      "surface": "worldmap_coverage",
+      "label": "World map > coverage",
+      "axis": "map-lenses",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 2,
+        "console_error_noise_429": 2,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/worldmap_coverage.png",
+      "elapsed_s": 1.19
+    },
+    {
+      "surface": "worldmap_stories",
+      "label": "World map > stories",
+      "axis": "map-lenses",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 2,
+        "console_error_noise_429": 2,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/worldmap_stories.png",
+      "elapsed_s": 1.1
+    },
+    {
+      "surface": "worldmap_places",
+      "label": "World map > places",
+      "axis": "map-lenses",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 2,
+        "console_error_noise_429": 2,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/worldmap_places.png",
+      "elapsed_s": 1.12
+    },
+    {
+      "surface": "worldmap_servers",
+      "label": "World map > servers",
+      "axis": "map-lenses",
+      "ok": true,
+      "visible": true,
+      "errors": [],
+      "console_summary": {
+        "pageerror": 0,
+        "console_error_total": 2,
+        "console_error_noise_429": 2,
+        "console_error_real": 0
+      },
+      "screenshot": "/tmp/claude-0/-home-user-Open-Omniscience/5ec5a240-7b8f-5bfe-9491-d05eb6ae7f41/scratchpad/enc-walk/evidence/worldmap_servers.png",
+      "elapsed_s": 1.15
+    }
+  ],
+  "at_rest": [
+    {
+      "state": "A",
+      "url": "http://127.0.0.1:8001",
+      "when": "before-walk",
+      "detected": "absent",
+      "via": "lock-state",
+      "lock_state": "fresh",
+      "driver": true,
+      "reason": "doctor was unavailable (HTTPError: HTTP Error 503: Service Unavailable); read from /api/system/lock-state, which is allowlisted while locked and derives its state from the same store header",
+      "configured": "encrypted"
+    },
+    {
+      "state": "B",
+      "url": "http://127.0.0.1:8002",
+      "when": "before-walk",
+      "detected": "encrypted",
+      "via": "lock-state",
+      "lock_state": "locked",
+      "driver": true,
+      "reason": "doctor was unavailable (HTTPError: HTTP Error 503: Service Unavailable); read from /api/system/lock-state, which is allowlisted while locked and derives its state from the same store header",
+      "configured": "encrypted"
+    },
+    {
+      "state": "C",
+      "url": "http://127.0.0.1:8000",
+      "when": "before-walk",
+      "detected": "encrypted",
+      "via": "lock-state",
+      "lock_state": "locked",
+      "driver": true,
+      "reason": "doctor was unavailable (HTTPError: HTTP Error 503: Service Unavailable); read from /api/system/lock-state, which is allowlisted while locked and derives its state from the same store header",
+      "configured": "encrypted"
+    },
+    {
+      "state": "A",
+      "url": "http://127.0.0.1:8001",
+      "when": "after-walk",
+      "detected": "encrypted",
+      "via": "doctor",
+      "cipher": "4.12.0 community",
+      "driver": true,
+      "custody_log": "absent",
+      "configured": "encrypted"
+    },
+    {
+      "state": "B",
+      "url": "http://127.0.0.1:8002",
+      "when": "after-walk",
+      "detected": "encrypted",
+      "via": "doctor",
+      "cipher": "4.12.0 community",
+      "driver": true,
+      "custody_log": "absent",
+      "configured": "encrypted"
+    },
+    {
+      "state": "C",
+      "url": "http://127.0.0.1:8000",
+      "when": "after-walk",
+      "detected": "encrypted",
+      "via": "doctor",
+      "cipher": "4.12.0 community",
+      "driver": true,
+      "custody_log": "absent",
+      "configured": "encrypted"
+    }
+  ]
+}
