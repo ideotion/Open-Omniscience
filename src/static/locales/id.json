@@ -3403,5 +3403,18 @@
   "hosts": "host",
   "the full list is in the security notes": "daftar lengkapnya ada di catatan keamanan",
   "Where this will let the app connect:": "Ke mana ini akan mengizinkan aplikasi terhubung:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Sakelarnya ada, tetapi aplikasi tidak dapat menjangkaunya: titik akhir pengaturan menerima perubahan itu lalu membuangnya."
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Sakelarnya ada, tetapi aplikasi tidak dapat menjangkaunya: titik akhir pengaturan menerima perubahan itu lalu membuangnya.",
+  "Automatically filed newsletters": "Buletin yang diarsipkan otomatis",
+  "How this was decided": "Bagaimana ini diputuskan",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "Mengembalikan setiap buletin yang dilampirkan otomatis ke wadah impor dan menghapus catatan pelampiran. Buletin yang Anda arsipkan sendiri, dan yang ditolak oleh tangga penyelesaian, tidak pernah disentuh.",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "Kembalikan setiap buletin yang diarsipkan otomatis ke wadah impor? Buletin yang Anda arsipkan sendiri tidak disentuh, dan mengimpor ulang berkas .eml yang sama akan menjalankan pengarsipan lagi.",
+  "Removed the now-empty sources this filing had created": "Sumber yang dibuat pengarsipan ini dan kini kosong telah dihapus",
+  "Undo failed": "Gagal membatalkan",
+  "Undo the automatic filing": "Batalkan pengarsipan otomatis",
+  "filed under a publisher you already track": "diarsipkan di bawah penerbit yang sudah Anda pantau",
+  "filed under a new, DISABLED source for the sender's domain": "diarsipkan di bawah sumber baru yang DINONAKTIFKAN untuk domain pengirim",
+  "left in the import bucket (the sender could not be resolved without guessing)": "dibiarkan di wadah impor (pengirim tidak dapat ditentukan tanpa menebak)",
+  "newsletters moved back to the import bucket.": "buletin dikembalikan ke wadah impor.",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "tangga penentuan penerbit yang dijalankan saat impor: eTLD+1 dari Public Suffix List (inversi platform diterapkan lebih dulu), dicocokkan dengan sumber Anda yang ada berdasarkan domain persis, lalu lewat peta alias; jika tidak, didaftarkan sebagai sumber surel baru yang DINONAKTIFKAN. Pasti atau ditolak — tanpa pencocokan samar, tanpa kemiripan teks, dan penolakan membiarkan buletin di wadah impor",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "ini adalah PENEMPATAN, bukan penilaian atas penerbitnya: ia menyatakan bahwa sebuah buletin dikirim dari domain yang sudah dipantau korpus Anda, bukan bahwa keduanya sama-sama dapat dipercaya. Pembatalan memulihkan setiap penempatan otomatis dengan tepat, dan tidak menyentuh apa pun yang Anda arsipkan sendiri"
 }

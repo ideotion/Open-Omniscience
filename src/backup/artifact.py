@@ -324,11 +324,27 @@ def _drop_newsletter_rows(con) -> int:
     marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
     src_ids = [r[0] for r in cur.execute(
         f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
-    if not src_ids:
-        return 0
-    sq = ",".join("?" * len(src_ids))
-    art_ids = [r[0] for r in cur.execute(
-        f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
+    # SINCE THE WRITE-PATH AUTO-ATTACH (Q1151) THE BUCKET IS NO LONGER THE WHOLE SET, and
+    # getting this wrong is a PRIVACY regression, not a counting one: a user who unticks
+    # "include newsletters" would have every AUTO-ATTACHED newsletter body written into the
+    # backup anyway, because it now sits under its publisher's source. The column is the only
+    # record that those articles arrived by email.
+    #
+    # Column-tolerant on purpose: this runs against an arbitrary snapshot, including one taken
+    # by an older build that has no such column. Absent column -> bucket-only, which is
+    # exactly correct for a snapshot in which nothing was ever auto-attached.
+    has_col = any(
+        r[1] == "newsletter_attached_via" for r in cur.execute("PRAGMA table_info(articles)")
+    )
+    art_ids: list[int] = []
+    if src_ids:
+        sq = ",".join("?" * len(src_ids))
+        art_ids += [r[0] for r in cur.execute(
+            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
+    if has_col:
+        art_ids += [r[0] for r in cur.execute(
+            "SELECT id FROM articles WHERE newsletter_attached_via IS NOT NULL")]
+    art_ids = sorted(set(art_ids))
     if not art_ids:
         return 0
     tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]

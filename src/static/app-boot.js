@@ -106,6 +106,16 @@
       // DOM walker, but re-running loadLlmPrompts refreshes the JS-built bits + the
       // effective-prompt placeholders if the panel is open.
       try { if ($("set-models") && $("set-models").offsetParent !== null && typeof loadLlmPrompts === "function") loadLlmPrompts(); } catch (_e) {}
+      // The newsletter attach panel (Q1151) is built at render time from t()-resolved
+      // strings and a server-sent caveat, so nothing in it is reachable by the DOM walker.
+      // Re-render only when it is already on screen -- loadNewsletterAttach hides itself on
+      // an empty corpus, and re-fetching for a hidden panel would be a poll.
+      try {
+        const nl = $("nl-attach");
+        if (nl && nl.style.display !== "none" && typeof loadNewsletterAttach === "function") {
+          loadNewsletterAttach();
+        }
+      } catch (_e) {}
     });
 
     // Global shortcuts: dispatched from the user's (rebindable) bindings — Ctrl/⌘-K opens

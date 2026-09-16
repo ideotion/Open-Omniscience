@@ -1357,8 +1357,87 @@
           `${n(tl.trackers_flagged)} ${esc(t("tracker wrappers flagged"))}.</div>`;
         input.value = "";
         toast(t("Newsletters imported."), "ok");
+        // Q1151: say where the articles WENT, immediately and on this same screen -- but in
+        // the panel rather than in #nl-result, because #nl-result is written once and then
+        // frozen in whatever locale was active, and an announcement nobody can re-read in
+        // their own language is not much of an announcement.
+        _nlLastRun = tl;
+        loadNewsletterAttach();
       } catch (e) {
         $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+      } finally { btn.disabled = false; }
+    }
+
+
+    // ---- Q1151: the auto-attach ANNOUNCES itself, and stays undoable ---- //
+    // The 2026-06-15 ruling pairs the silent write-path attach with an import UI that says
+    // what it did and an undo for the automated placements. Both live here; neither is
+    // behind a toggle, because moving a user's articles between sources without telling
+    // them is exactly the thing the ruling refused to ship on its own.
+    // The last import's own tally, kept so the panel can re-render it after a language
+    // switch. Per-SESSION and deliberately not persisted: it describes one run the user just
+    // watched, and a stale "this run" line on a later visit would be a small lie.
+    let _nlLastRun = null;
+
+    function _attachTallyHtml(tl) {
+      if (!tl) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const n = (x) => (x || 0).toLocaleString();
+      const existing = tl.attached_existing || 0, fresh = tl.attached_new_source || 0;
+      const refused = tl.attach_refused || 0;
+      if (!existing && !fresh && !refused) return "";
+      const parts = [];
+      if (existing) parts.push(`<b>${n(existing)}</b> ${esc(t("filed under a publisher you already track"))}`);
+      if (fresh) parts.push(`<b>${n(fresh)}</b> ${esc(t("filed under a new, DISABLED source for the sender's domain"))}`);
+      // A refusal is a GAP, never a guess -- stated with the same weight as the attaches.
+      if (refused) parts.push(`${n(refused)} ${esc(t("left in the import bucket (the sender could not be resolved without guessing)"))}`);
+      return parts.join(" · ");
+    }
+
+    async function loadNewsletterAttach() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("nl-attach");
+      if (!host) return;
+      let d;
+      // Loopback, read-only, zero network -- never ensureOnline-gated.
+      try { d = await api("/api/newsletters/attach/summary"); } catch (e) { host.style.display = "none"; return; }
+      if (!d || !d.attached) { host.style.display = "none"; return; }
+      const n = (x) => (x || 0).toLocaleString();
+      const rows = (d.groups || []).map((g) =>
+        `<div class="vr"><span>${esc(g.source_name || g.source_domain || "—")}` +
+        `${g.source_enabled === false ? ` <span class="muted">${esc(t("disabled"))}</span>` : ""}</span>` +
+        `<b title="${esc(t("How this was decided"))}: ${esc(g.action || "")}${g.basis ? " · " + esc(g.basis) : ""}">${n(g.articles)}</b></div>`
+      ).join("");
+      // The server sends these in English; the UI renders them through the i18n engine so a
+      // caveat is never the one line on the screen the reader cannot read. (Informed consent
+      // is not informed in a language you do not speak.) An API consumer still gets English.
+      $("nl-attach-caveat").textContent = d.caveat ? t(d.caveat) : "";
+      $("nl-attach-caveat").title = d.method ? t(d.method) : "";
+      const lastRun = _attachTallyHtml(_nlLastRun);
+      $("nl-attach-body").innerHTML =
+        (lastRun ? `<div style="margin-bottom:6px">${lastRun}</div>` : "") +
+        `<div>${esc(t("Automatically filed newsletters"))}: <b>${n(d.attached)}</b></div>${rows}`;
+      host.style.display = "";
+    }
+
+    async function undoNewsletterAttach(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again."))) return;
+      btn.disabled = true;
+      try {
+        // Loopback POST, zero network.
+        const d = await api("/api/newsletters/attach/undo", { method: "POST" });
+        const n = (x) => (x || 0).toLocaleString();
+        toast(`${n(d.restored)} ${t("newsletters moved back to the import bucket.")}`, "ok");
+        $("nl-result").innerHTML =
+          `<b>${n(d.restored)}</b> ${esc(t("newsletters moved back to the import bucket."))}` +
+          ((d.sources_deleted || []).length
+            ? `<div class="muted" style="margin-top:5px">${esc(t("Removed the now-empty sources this filing had created"))}: ${esc(d.sources_deleted.join(", "))}</div>`
+            : "");
+        _nlLastRun = null;  // the run it described has just been reversed
+        await loadNewsletterAttach();
+      } catch (e) {
+        $("nl-result").innerHTML = `<span class="note err">${esc(t("Undo failed"))}: ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
 

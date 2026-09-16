@@ -3403,5 +3403,18 @@
   "hosts": "होस्ट",
   "the full list is in the security notes": "पूरी सूची सुरक्षा टिप्पणियों में है",
   "Where this will let the app connect:": "यह ऐप को कहाँ जुड़ने देगा:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "इसका ऑफ़-स्विच मौजूद है, पर ऐप उस तक नहीं पहुँच पाता: सेटिंग्स एंडपॉइंट बदलाव स्वीकार करता है और उसे त्याग देता है।"
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "इसका ऑफ़-स्विच मौजूद है, पर ऐप उस तक नहीं पहुँच पाता: सेटिंग्स एंडपॉइंट बदलाव स्वीकार करता है और उसे त्याग देता है।",
+  "Automatically filed newsletters": "स्वचालित रूप से वर्गीकृत न्यूज़लेटर",
+  "How this was decided": "यह कैसे तय हुआ",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "स्वचालित रूप से जोड़ी गई हर न्यूज़लेटर को वापस आयात-संग्रह में ले जाता है और जोड़ने का रिकॉर्ड मिटा देता है। जो न्यूज़लेटर आपने स्वयं वर्गीकृत कीं, और जिन्हें नियम-शृंखला ने अस्वीकार किया, उन्हें कभी नहीं छुआ जाता।",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "स्वचालित रूप से वर्गीकृत हर न्यूज़लेटर को वापस आयात-संग्रह में ले जाएँ? आपने स्वयं जो वर्गीकृत कीं, उन्हें नहीं छुआ जाएगा, और वही .eml फ़ाइलें दोबारा आयात करने पर वर्गीकरण फिर से चलेगा।",
+  "Removed the now-empty sources this filing had created": "इस वर्गीकरण द्वारा बनाए गए, अब खाली स्रोत हटा दिए गए",
+  "Undo failed": "पूर्ववत करना विफल",
+  "Undo the automatic filing": "स्वचालित वर्गीकरण पूर्ववत करें",
+  "filed under a publisher you already track": "उस प्रकाशक के अंतर्गत वर्गीकृत जिसे आप पहले से ट्रैक करते हैं",
+  "filed under a new, DISABLED source for the sender's domain": "भेजने वाले के डोमेन के लिए बनाए गए नए, निष्क्रिय स्रोत के अंतर्गत वर्गीकृत",
+  "left in the import bucket (the sender could not be resolved without guessing)": "आयात-संग्रह में ही छोड़ी गईं (अनुमान लगाए बिना भेजने वाले की पहचान नहीं हो सकी)",
+  "newsletters moved back to the import bucket.": "न्यूज़लेटर वापस आयात-संग्रह में ले जाई गईं।",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "आयात के समय चलने वाली प्रकाशक-निर्धारण शृंखला: Public Suffix List का eTLD+1 (पहले प्लेटफ़ॉर्म-उलटाव लागू करके), आपके मौजूदा स्रोतों से पहले सटीक डोमेन और फिर उपनाम-तालिका द्वारा मिलाया जाता है; अन्यथा एक नए, निष्क्रिय ईमेल स्रोत के रूप में दर्ज किया जाता है। या तो निश्चित, या अस्वीकार — कोई अस्पष्ट मिलान नहीं, कोई स्ट्रिंग-समानता नहीं, और अस्वीकृति न्यूज़लेटर को आयात-संग्रह में ही छोड़ देती है",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "यह एक स्थान-निर्धारण है, प्रकाशक पर कोई निर्णय नहीं: यह कहता है कि न्यूज़लेटर उस डोमेन से भेजी गई जिसे आपका संग्रह पहले से ट्रैक करता है, यह कभी नहीं कि दोनों समान रूप से विश्वसनीय हैं। पूर्ववत करने पर हर स्वचालित स्थान-निर्धारण ठीक वैसा ही बहाल हो जाता है, और आपने जो स्वयं वर्गीकृत किया उसे नहीं छुआ जाता"
 }

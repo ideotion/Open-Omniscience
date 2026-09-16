@@ -280,6 +280,7 @@ def init_db() -> None:
         ensure_article_identity_columns,
         ensure_article_ip_columns,
         ensure_article_keyword_indexed_column,
+        ensure_article_newsletter_attach_column,
         ensure_article_newsletter_list_id_column,
         ensure_article_quarantine_columns,
         ensure_article_source_revision_column,
@@ -340,6 +341,7 @@ def init_db() -> None:
     # The newsletter List-Id on articles (ingest provenance; self-heal, no backfill) --
     # the ruled stable key for a platform sender whose host names no publication.
     ensure_article_newsletter_list_id_column(engine)
+    ensure_article_newsletter_attach_column(engine)
     ensure_source_catalog_baseline_column(engine)
 
     ensure_hot_indexes(engine)

@@ -3403,5 +3403,18 @@
   "hosts": "хостов",
   "the full list is in the security notes": "полный список приведён в заметках по безопасности",
   "Where this will let the app connect:": "Куда это позволит приложению подключиться:",
-  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Его переключатель существует, но недоступен приложению: точка доступа настроек принимает изменение и отбрасывает его."
+  "Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.": "Его переключатель существует, но недоступен приложению: точка доступа настроек принимает изменение и отбрасывает его.",
+  "Automatically filed newsletters": "Автоматически распределённые рассылки",
+  "How this was decided": "Как это было решено",
+  "Move every automatically attached newsletter back to the import bucket and clear the attach record. Newsletters you filed yourself, and newsletters the ladder refused, are never touched.": "Возвращает все автоматически привязанные рассылки в корзину импорта и стирает запись о привязке. Рассылки, которые вы распределили сами, и те, которые правило отказалось привязывать, не затрагиваются.",
+  "Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again.": "Вернуть все автоматически распределённые рассылки в корзину импорта? Распределённые вами вручную не затрагиваются, а повторный импорт тех же файлов .eml снова выполнит распределение.",
+  "Removed the now-empty sources this filing had created": "Удалены ставшие пустыми источники, созданные этим распределением",
+  "Undo failed": "Не удалось отменить",
+  "Undo the automatic filing": "Отменить автоматическое распределение",
+  "filed under a publisher you already track": "отнесены к издателю, за которым вы уже следите",
+  "filed under a new, DISABLED source for the sender's domain": "отнесены к новому ОТКЛЮЧЁННОМУ источнику для домена отправителя",
+  "left in the import bucket (the sender could not be resolved without guessing)": "оставлены в корзине импорта (отправителя нельзя определить, не угадывая)",
+  "newsletters moved back to the import bucket.": "рассылок возвращено в корзину импорта.",
+  "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "правило определения издателя, применяемое при импорте: eTLD+1 из Public Suffix List (сначала применяется инверсия для платформ), сопоставляемый с вашими существующими источниками по точному домену, затем по таблице псевдонимов, иначе регистрируется новый ОТКЛЮЧЁННЫЙ почтовый источник. Детерминированно или отказ — никакого нечёткого сопоставления, никакого сходства строк, а при отказе рассылка остаётся в корзине импорта",
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "это РАЗМЕЩЕНИЕ, а не суждение об издателе: оно означает, что рассылка пришла с домена, за которым ваш корпус уже следит, но никогда — что оба одинаково надёжны. Отмена в точности восстанавливает каждое автоматическое размещение и не затрагивает ничего, что вы распределили сами"
 }
