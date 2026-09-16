@@ -373,6 +373,16 @@ def test_the_bundle_member_produces_a_real_report_not_a_degraded_stub():
     assert isinstance(body["basis"]["requested_sample"], int), (
         "the sample arrived as a Query sentinel, not an int"
     )
+    # E1 (2026-09-15): the ruling is not "a bundle member" -- it is a bundle member at
+    # SAMPLE = 400, because PROMPT_06 slice 3 reads this file to decide whether the
+    # month-name ban should become date-aware, and a decision taken on 40 draws is a
+    # different decision from one taken on 400. The isinstance check above proves the Query
+    # sentinel did not arrive; it is satisfied by ANY int, so on its own the ruled number
+    # was true of the code and asserted by nothing.
+    assert body["basis"]["requested_sample"] == 400, (
+        "E1 ships this member at sample=400; the bundle is passing "
+        f"{body['basis']['requested_sample']}"
+    )
     assert body["totals"]["occurrences"] >= 0
     assert body["basis"]["banned_tokens_known"] == len(banned_month_tokens())
     assert body["caveats"] and body["method"]
