@@ -65,13 +65,14 @@ def _guarded_run_query(
             raise RuntimeError(
                 f"non-JSON response (HTTP {resp.status_code}): {snippet!r}"
             ) from exc
-        if iso3_checks is not None:
-            # Recorded per COUNTRY, not per spec: one country is queried once per
-            # spec, and every one of those responses carries the same `?iso3`
-            # (it is bound off `?country`). Appending each would report one fact
-            # N times and make a single disagreement look like N of them.
-            if not any(r.get("country") == cc.strip().upper() for r in iso3_checks):
-                iso3_checks.append(iso3_crosscheck(payload, country_code=cc))
+        # Recorded per COUNTRY, not per spec: one country is queried once per
+        # spec, and every one of those responses carries the same `?iso3` (it is
+        # bound off `?country`). Appending each would report one fact N times and
+        # make a single disagreement look like N of them.
+        if iso3_checks is not None and not any(
+            r.get("country") == cc.strip().upper() for r in iso3_checks
+        ):
+            iso3_checks.append(iso3_crosscheck(payload, country_code=cc))
         return payload
 
     return run_query

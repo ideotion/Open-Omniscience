@@ -217,7 +217,10 @@ def test_the_tree_carries_no_country_bearing_filename_today() -> None:
         "a country-bearing filename builder appeared; register it in "
         f"_COUNTRY_FILENAME_HELPERS: {sorted(_by_country_argument())}"
     )
-    assert _COUNTRY_FILENAME_HELPERS == set()
+    assert sorted(_COUNTRY_FILENAME_HELPERS) == [], (
+        "the country set is populated, so the sweep above must find its members "
+        "too — the two lines are one statement about the same tree"
+    )
 
 
 def test_every_country_bearing_filename_goes_through_the_one_builder() -> None:

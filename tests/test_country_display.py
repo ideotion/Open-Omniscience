@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 
 from src.catalog.countries import (
+    _SPECIAL_ALPHA3_TO_CODE,
     ISO3_TO_ISO2,
     NON_ISO_ALPHA3,
     SPECIAL_ALPHA3,
-    _SPECIAL_ALPHA3_TO_CODE,
     country_display,
     country_display_code,
     normalize_country,
