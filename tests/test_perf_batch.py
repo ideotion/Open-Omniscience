@@ -355,9 +355,9 @@ def test_keyword_export_streams_valid_envelope(client, seeded):
 
 
 def test_keyword_export_cap_bounds_work_per_language(client, seeded, monkeypatch):
-    from src.api import diagnostics as d
+    from src.api.diagnostics import keywords as _diag_keywords
 
-    monkeypatch.setattr(d, "_MAX_KEYWORDS_PER_LANG", 1)
+    monkeypatch.setattr(_diag_keywords, "_MAX_KEYWORDS_PER_LANG", 1)
     body = json.loads(client.get("/api/diagnostics/keywords").content)
     per_lang = body["data"]["corpus"]["exported_per_language"]
     assert all(v <= 1 for v in per_lang.values())
@@ -371,16 +371,16 @@ def test_keyword_export_decoupled_from_interactive_deadline(client, seeded, monk
     crunching, which the maintainer's keyword policy forbids. It now carries its OWN
     budget (OO_KEYWORD_EXPORT_TIMEOUT_S, default 0 = no ceiling). Spy on the deadline
     so the contract holds regardless of corpus size."""
-    from src.api import diagnostics as d
+    from src.api.diagnostics import keywords as _diag_keywords
 
     seen: list = []
-    real = d.statement_deadline
+    real = _diag_keywords.statement_deadline
 
     def spy(session, seconds=None):
         seen.append(seconds)
         return real(session, seconds=seconds)
 
-    monkeypatch.setattr(d, "statement_deadline", spy)
+    monkeypatch.setattr(_diag_keywords, "statement_deadline", spy)
     # Even with the interactive deadline set absurdly low, the export completes:
     # it never consults OO_STATEMENT_TIMEOUT_S.
     monkeypatch.setenv("OO_STATEMENT_TIMEOUT_S", "0.0001")

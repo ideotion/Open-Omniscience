@@ -1,0 +1,1050 @@
+[
+ {
+  "path": "/api/diagnostics/keywords",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_log",
+  "endpoint": "keyword_log"
+ },
+ {
+  "path": "/api/diagnostics/keyword-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_selftest",
+  "endpoint": "keyword_selftest"
+ },
+ {
+  "path": "/api/diagnostics/enrich-sources",
+  "methods": [
+   "POST"
+  ],
+  "name": "enrich_sources",
+  "endpoint": "enrich_sources"
+ },
+ {
+  "path": "/api/diagnostics/enrich-source-types",
+  "methods": [
+   "POST"
+  ],
+  "name": "enrich_source_types",
+  "endpoint": "enrich_source_types"
+ },
+ {
+  "path": "/api/diagnostics/enrich-source-types/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "enrich_source_types_status",
+  "endpoint": "enrich_source_types_status"
+ },
+ {
+  "path": "/api/diagnostics/discover-sources",
+  "methods": [
+   "POST"
+  ],
+  "name": "discover_sources_endpoint",
+  "endpoint": "discover_sources_endpoint"
+ },
+ {
+  "path": "/api/diagnostics/discover-world",
+  "methods": [
+   "POST"
+  ],
+  "name": "discover_world_sources",
+  "endpoint": "discover_world_sources"
+ },
+ {
+  "path": "/api/diagnostics/discover-world/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "discover_world_status",
+  "endpoint": "discover_world_status"
+ },
+ {
+  "path": "/api/diagnostics/discover-world/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "discover_world_cancel",
+  "endpoint": "discover_world_cancel"
+ },
+ {
+  "path": "/api/diagnostics/ir-eval-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "ir_eval_selftest",
+  "endpoint": "ir_eval_selftest"
+ },
+ {
+  "path": "/api/diagnostics/perception-eval-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "perception_eval_selftest",
+  "endpoint": "perception_eval_selftest"
+ },
+ {
+  "path": "/api/diagnostics/perception-eval-live",
+  "methods": [
+   "POST"
+  ],
+  "name": "perception_eval_live",
+  "endpoint": "perception_eval_live"
+ },
+ {
+  "path": "/api/diagnostics/perception-eval-live/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "perception_eval_live_last",
+  "endpoint": "perception_eval_live_last"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_triage_selftest",
+  "endpoint": "keyword_triage_selftest"
+ },
+ {
+  "path": "/api/diagnostics/recursive-loop",
+  "methods": [
+   "GET"
+  ],
+  "name": "recursive_loop",
+  "endpoint": "recursive_loop"
+ },
+ {
+  "path": "/api/diagnostics/merge",
+  "methods": [
+   "GET"
+  ],
+  "name": "merge_diag",
+  "endpoint": "merge_diag"
+ },
+ {
+  "path": "/api/diagnostics/kpi",
+  "methods": [
+   "GET"
+  ],
+  "name": "kpi",
+  "endpoint": "kpi"
+ },
+ {
+  "path": "/api/diagnostics/search-timing",
+  "methods": [
+   "GET"
+  ],
+  "name": "search_timing",
+  "endpoint": "search_timing"
+ },
+ {
+  "path": "/api/diagnostics/run-timeline",
+  "methods": [
+   "GET"
+  ],
+  "name": "run_timeline",
+  "endpoint": "run_timeline"
+ },
+ {
+  "path": "/api/diagnostics/run-journal",
+  "methods": [
+   "GET"
+  ],
+  "name": "run_journal",
+  "endpoint": "run_journal"
+ },
+ {
+  "path": "/api/diagnostics/search-timing-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "search_timing_selftest",
+  "endpoint": "search_timing_selftest"
+ },
+ {
+  "path": "/api/diagnostics/ir-eval",
+  "methods": [
+   "GET"
+  ],
+  "name": "ir_eval",
+  "endpoint": "ir_eval"
+ },
+ {
+  "path": "/api/diagnostics/gold-builder/sample",
+  "methods": [
+   "GET"
+  ],
+  "name": "gold_builder_sample",
+  "endpoint": "gold_builder_sample"
+ },
+ {
+  "path": "/api/diagnostics/gold-builder/save",
+  "methods": [
+   "POST"
+  ],
+  "name": "gold_builder_save",
+  "endpoint": "gold_builder_save"
+ },
+ {
+  "path": "/api/diagnostics/bulletin-language",
+  "methods": [
+   "GET"
+  ],
+  "name": "bulletin_language",
+  "endpoint": "bulletin_language"
+ },
+ {
+  "path": "/api/diagnostics/bulletin-language-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "bulletin_language_selftest",
+  "endpoint": "bulletin_language_selftest"
+ },
+ {
+  "path": "/api/diagnostics/lemma-preview",
+  "methods": [
+   "GET"
+  ],
+  "name": "lemma_preview",
+  "endpoint": "lemma_preview"
+ },
+ {
+  "path": "/api/diagnostics/home-cards",
+  "methods": [
+   "GET"
+  ],
+  "name": "home_card_diagnostics",
+  "endpoint": "home_card_diagnostics"
+ },
+ {
+  "path": "/api/diagnostics/keyword-engine",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_engine",
+  "endpoint": "keyword_engine"
+ },
+ {
+  "path": "/api/diagnostics/power-profile",
+  "methods": [
+   "GET"
+  ],
+  "name": "power_profile",
+  "endpoint": "power_profile"
+ },
+ {
+  "path": "/api/diagnostics/power-profile-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "power_profile_selftest",
+  "endpoint": "power_profile_selftest"
+ },
+ {
+  "path": "/api/diagnostics/article-length",
+  "methods": [
+   "GET"
+  ],
+  "name": "article_length",
+  "endpoint": "article_length"
+ },
+ {
+  "path": "/api/diagnostics/month-occupancy",
+  "methods": [
+   "GET"
+  ],
+  "name": "month_occupancy",
+  "endpoint": "month_occupancy"
+ },
+ {
+  "path": "/api/diagnostics/non-article-scan",
+  "methods": [
+   "GET"
+  ],
+  "name": "non_article_scan",
+  "endpoint": "non_article_scan"
+ },
+ {
+  "path": "/api/diagnostics/criteria-calibration",
+  "methods": [
+   "GET"
+  ],
+  "name": "criteria_calibration",
+  "endpoint": "criteria_calibration"
+ },
+ {
+  "path": "/api/diagnostics/keyword-growth",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_growth",
+  "endpoint": "keyword_growth"
+ },
+ {
+  "path": "/api/diagnostics/leads-quality",
+  "methods": [
+   "GET"
+  ],
+  "name": "leads_quality",
+  "endpoint": "leads_quality"
+ },
+ {
+  "path": "/api/diagnostics/card-audit",
+  "methods": [
+   "GET"
+  ],
+  "name": "card_audit",
+  "endpoint": "card_audit"
+ },
+ {
+  "path": "/api/diagnostics/card-audit/preflight",
+  "methods": [
+   "GET"
+  ],
+  "name": "card_audit_preflight",
+  "endpoint": "card_audit_preflight"
+ },
+ {
+  "path": "/api/diagnostics/card-audit/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "card_audit_run",
+  "endpoint": "card_audit_run"
+ },
+ {
+  "path": "/api/diagnostics/card-audit/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "card_audit_status",
+  "endpoint": "card_audit_status"
+ },
+ {
+  "path": "/api/diagnostics/card-audit/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "card_audit_cancel",
+  "endpoint": "card_audit_cancel"
+ },
+ {
+  "path": "/api/diagnostics/card-audit/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "card_audit_download",
+  "endpoint": "card_audit_download"
+ },
+ {
+  "path": "/api/diagnostics/source-quality",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_quality",
+  "endpoint": "source_quality"
+ },
+ {
+  "path": "/api/diagnostics/source-audit",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_audit",
+  "endpoint": "source_audit"
+ },
+ {
+  "path": "/api/diagnostics/qualification-integrity",
+  "methods": [
+   "GET"
+  ],
+  "name": "qualification_integrity",
+  "endpoint": "qualification_integrity"
+ },
+ {
+  "path": "/api/diagnostics/source-qualification-export",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_qualification_export",
+  "endpoint": "source_qualification_export"
+ },
+ {
+  "path": "/api/diagnostics/source-audit-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_audit_selftest",
+  "endpoint": "source_audit_selftest"
+ },
+ {
+  "path": "/api/diagnostics/dates",
+  "methods": [
+   "GET"
+  ],
+  "name": "date_extraction_log",
+  "endpoint": "date_extraction_log"
+ },
+ {
+  "path": "/api/diagnostics/performance",
+  "methods": [
+   "GET"
+  ],
+  "name": "performance_report",
+  "endpoint": "performance_report"
+ },
+ {
+  "path": "/api/diagnostics/benchmark",
+  "methods": [
+   "GET"
+  ],
+  "name": "benchmark_report",
+  "endpoint": "benchmark_report"
+ },
+ {
+  "path": "/api/diagnostics/rollup-benchmark",
+  "methods": [
+   "GET"
+  ],
+  "name": "rollup_benchmark",
+  "endpoint": "rollup_benchmark"
+ },
+ {
+  "path": "/api/diagnostics/llm-bench",
+  "methods": [
+   "GET"
+  ],
+  "name": "llm_bench",
+  "endpoint": "llm_bench"
+ },
+ {
+  "path": "/api/diagnostics/llm-throughput",
+  "methods": [
+   "GET"
+  ],
+  "name": "llm_throughput",
+  "endpoint": "llm_throughput"
+ },
+ {
+  "path": "/api/diagnostics/ai-activity",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_activity",
+  "endpoint": "ai_activity"
+ },
+ {
+  "path": "/api/diagnostics/ai-activity-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_activity_selftest",
+  "endpoint": "ai_activity_selftest"
+ },
+ {
+  "path": "/api/diagnostics/llm-throughput-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "llm_throughput_selftest",
+  "endpoint": "llm_throughput_selftest"
+ },
+ {
+  "path": "/api/diagnostics/bulletin-preview",
+  "methods": [
+   "GET"
+  ],
+  "name": "bulletin_preview",
+  "endpoint": "bulletin_preview"
+ },
+ {
+  "path": "/api/diagnostics/source-coverage-benchmark",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_coverage_benchmark",
+  "endpoint": "source_coverage_benchmark"
+ },
+ {
+  "path": "/api/diagnostics/network",
+  "methods": [
+   "GET"
+  ],
+  "name": "network_preflight_log",
+  "endpoint": "network_preflight_log"
+ },
+ {
+  "path": "/api/diagnostics/columnar",
+  "methods": [
+   "GET"
+  ],
+  "name": "columnar_status",
+  "endpoint": "columnar_status"
+ },
+ {
+  "path": "/api/diagnostics/elections-floor",
+  "methods": [
+   "GET"
+  ],
+  "name": "elections_coverage_floor",
+  "endpoint": "elections_coverage_floor"
+ },
+ {
+  "path": "/api/diagnostics/freshness",
+  "methods": [
+   "GET"
+  ],
+  "name": "external_freshness",
+  "endpoint": "external_freshness"
+ },
+ {
+  "path": "/api/diagnostics/frontend-error",
+  "methods": [
+   "POST"
+  ],
+  "name": "report_frontend_error",
+  "endpoint": "report_frontend_error"
+ },
+ {
+  "path": "/api/diagnostics/session-forensics",
+  "methods": [
+   "GET"
+  ],
+  "name": "session_forensics_report",
+  "endpoint": "session_forensics_report"
+ },
+ {
+  "path": "/api/diagnostics/data-dir-persistence",
+  "methods": [
+   "GET"
+  ],
+  "name": "data_dir_persistence_report",
+  "endpoint": "data_dir_persistence_report"
+ },
+ {
+  "path": "/api/diagnostics/law-coverage",
+  "methods": [
+   "GET"
+  ],
+  "name": "law_coverage",
+  "endpoint": "law_coverage"
+ },
+ {
+  "path": "/api/diagnostics/law-ingest",
+  "methods": [
+   "GET"
+  ],
+  "name": "law_ingest",
+  "endpoint": "law_ingest"
+ },
+ {
+  "path": "/api/diagnostics/storage-footprint",
+  "methods": [
+   "GET"
+  ],
+  "name": "storage_footprint_report",
+  "endpoint": "storage_footprint_report"
+ },
+ {
+  "path": "/api/diagnostics/storage-composition",
+  "methods": [
+   "GET"
+  ],
+  "name": "storage_composition_report",
+  "endpoint": "storage_composition_report"
+ },
+ {
+  "path": "/api/diagnostics/windows-locks",
+  "methods": [
+   "GET"
+  ],
+  "name": "windows_locks_report",
+  "endpoint": "windows_locks_report"
+ },
+ {
+  "path": "/api/diagnostics/frontend-errors",
+  "methods": [
+   "GET"
+  ],
+  "name": "frontend_errors",
+  "endpoint": "frontend_errors"
+ },
+ {
+  "path": "/api/diagnostics/write-gate",
+  "methods": [
+   "GET"
+  ],
+  "name": "write_gate_report",
+  "endpoint": "write_gate_report"
+ },
+ {
+  "path": "/api/diagnostics/soak-window",
+  "methods": [
+   "GET"
+  ],
+  "name": "soak_window_report",
+  "endpoint": "soak_window_report"
+ },
+ {
+  "path": "/api/diagnostics/request-latency",
+  "methods": [
+   "GET"
+  ],
+  "name": "request_latency",
+  "endpoint": "request_latency"
+ },
+ {
+  "path": "/api/diagnostics/stall-forensics",
+  "methods": [
+   "GET"
+  ],
+  "name": "stall_forensics_report",
+  "endpoint": "stall_forensics_report"
+ },
+ {
+  "path": "/api/diagnostics/slow-queries",
+  "methods": [
+   "GET"
+  ],
+  "name": "slow_queries",
+  "endpoint": "slow_queries"
+ },
+ {
+  "path": "/api/diagnostics/schema-drift",
+  "methods": [
+   "GET"
+  ],
+  "name": "schema_drift_report",
+  "endpoint": "schema_drift_report"
+ },
+ {
+  "path": "/api/diagnostics/integrity",
+  "methods": [
+   "GET"
+  ],
+  "name": "corpus_integrity_report",
+  "endpoint": "corpus_integrity_report"
+ },
+ {
+  "path": "/api/diagnostics/debug-bundle",
+  "methods": [
+   "GET"
+  ],
+  "name": "debug_bundle",
+  "endpoint": "debug_bundle"
+ },
+ {
+  "path": "/api/diagnostics/all",
+  "methods": [
+   "GET"
+  ],
+  "name": "all_diagnostics",
+  "endpoint": "all_diagnostics"
+ },
+ {
+  "path": "/api/diagnostics/all-job",
+  "methods": [
+   "POST"
+  ],
+  "name": "all_diagnostics_job_start",
+  "endpoint": "all_diagnostics_job_start"
+ },
+ {
+  "path": "/api/diagnostics/all-job/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "all_diagnostics_job_status",
+  "endpoint": "all_diagnostics_job_status"
+ },
+ {
+  "path": "/api/diagnostics/all-job/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "all_diagnostics_job_download",
+  "endpoint": "all_diagnostics_job_download"
+ },
+ {
+  "path": "/api/diagnostics/all-job/volumes",
+  "methods": [
+   "GET"
+  ],
+  "name": "all_diagnostics_volumes",
+  "endpoint": "all_diagnostics_volumes"
+ },
+ {
+  "path": "/api/diagnostics/all-job/volumes/{name}",
+  "methods": [
+   "GET"
+  ],
+  "name": "all_diagnostics_volume_download",
+  "endpoint": "all_diagnostics_volume_download"
+ },
+ {
+  "path": "/api/diagnostics/p0-validation",
+  "methods": [
+   "POST"
+  ],
+  "name": "p0_validation_start",
+  "endpoint": "p0_validation_start"
+ },
+ {
+  "path": "/api/diagnostics/p0-validation/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "p0_validation_status",
+  "endpoint": "p0_validation_status"
+ },
+ {
+  "path": "/api/diagnostics/p0-validation/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "p0_validation_cancel",
+  "endpoint": "p0_validation_cancel"
+ },
+ {
+  "path": "/api/diagnostics/p0-validation/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "p0_validation_last",
+  "endpoint": "p0_validation_last"
+ },
+ {
+  "path": "/api/diagnostics/p0-validation/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "p0_validation_download",
+  "endpoint": "p0_validation_download"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "keyword_triage_run",
+  "endpoint": "keyword_triage_run"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_triage_status",
+  "endpoint": "keyword_triage_status"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "keyword_triage_cancel",
+  "endpoint": "keyword_triage_cancel"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_triage_last",
+  "endpoint": "keyword_triage_last"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage/proposal",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_triage_proposal",
+  "endpoint": "keyword_triage_proposal"
+ },
+ {
+  "path": "/api/diagnostics/keyword-triage/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "keyword_triage_download",
+  "endpoint": "keyword_triage_download"
+ },
+ {
+  "path": "/api/diagnostics/source-tags/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "source_tags_run",
+  "endpoint": "source_tags_run"
+ },
+ {
+  "path": "/api/diagnostics/source-tags/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_tags_status",
+  "endpoint": "source_tags_status"
+ },
+ {
+  "path": "/api/diagnostics/source-tags/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "source_tags_cancel",
+  "endpoint": "source_tags_cancel"
+ },
+ {
+  "path": "/api/diagnostics/source-tags/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_tags_last",
+  "endpoint": "source_tags_last"
+ },
+ {
+  "path": "/api/diagnostics/source-tags/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_tags_download",
+  "endpoint": "source_tags_download"
+ },
+ {
+  "path": "/api/diagnostics/source-tags-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "source_tags_selftest",
+  "endpoint": "source_tags_selftest"
+ },
+ {
+  "path": "/api/diagnostics/perception-extract/gate",
+  "methods": [
+   "GET"
+  ],
+  "name": "perception_extract_gate",
+  "endpoint": "perception_extract_gate"
+ },
+ {
+  "path": "/api/diagnostics/perception-extract/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "perception_extract_run",
+  "endpoint": "perception_extract_run"
+ },
+ {
+  "path": "/api/diagnostics/perception-extract/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "perception_extract_status",
+  "endpoint": "perception_extract_status"
+ },
+ {
+  "path": "/api/diagnostics/perception-extract/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "perception_extract_cancel",
+  "endpoint": "perception_extract_cancel"
+ },
+ {
+  "path": "/api/diagnostics/perception-extract/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "perception_extract_last",
+  "endpoint": "perception_extract_last"
+ },
+ {
+  "path": "/api/diagnostics/perception-extract/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "perception_extract_download",
+  "endpoint": "perception_extract_download"
+ },
+ {
+  "path": "/api/diagnostics/ai-check/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "ai_check_run",
+  "endpoint": "ai_check_run"
+ },
+ {
+  "path": "/api/diagnostics/ai-check/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_check_status",
+  "endpoint": "ai_check_status"
+ },
+ {
+  "path": "/api/diagnostics/ai-check/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "ai_check_cancel",
+  "endpoint": "ai_check_cancel"
+ },
+ {
+  "path": "/api/diagnostics/ai-check/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_check_last",
+  "endpoint": "ai_check_last"
+ },
+ {
+  "path": "/api/diagnostics/ai-check/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_check_download",
+  "endpoint": "ai_check_download"
+ },
+ {
+  "path": "/api/diagnostics/ai",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_diagnostics",
+  "endpoint": "ai_diagnostics"
+ },
+ {
+  "path": "/api/diagnostics/qualification-assist/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "qualification_assist_run",
+  "endpoint": "qualification_assist_run"
+ },
+ {
+  "path": "/api/diagnostics/qualification-assist/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "qualification_assist_last",
+  "endpoint": "qualification_assist_last"
+ },
+ {
+  "path": "/api/diagnostics/qualification-assist-selftest",
+  "methods": [
+   "GET"
+  ],
+  "name": "qualification_assist_selftest",
+  "endpoint": "qualification_assist_selftest"
+ },
+ {
+  "path": "/api/diagnostics/ai-coordinator/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "ai_coordinator_run",
+  "endpoint": "ai_coordinator_run"
+ },
+ {
+  "path": "/api/diagnostics/ai-coordinator/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "ai_coordinator_status",
+  "endpoint": "ai_coordinator_status"
+ },
+ {
+  "path": "/api/diagnostics/ai-coordinator/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "ai_coordinator_cancel",
+  "endpoint": "ai_coordinator_cancel"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/batch",
+  "methods": [
+   "POST"
+  ],
+  "name": "model_bench_build_batch",
+  "endpoint": "model_bench_build_batch"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/batch",
+  "methods": [
+   "GET"
+  ],
+  "name": "model_bench_batch",
+  "endpoint": "model_bench_batch"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/anchors",
+  "methods": [
+   "GET"
+  ],
+  "name": "model_bench_anchors",
+  "endpoint": "model_bench_anchors"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/anchors",
+  "methods": [
+   "POST"
+  ],
+  "name": "model_bench_save_anchors",
+  "endpoint": "model_bench_save_anchors"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/run",
+  "methods": [
+   "POST"
+  ],
+  "name": "model_bench_run",
+  "endpoint": "model_bench_run"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/status",
+  "methods": [
+   "GET"
+  ],
+  "name": "model_bench_status",
+  "endpoint": "model_bench_status"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/cancel",
+  "methods": [
+   "POST"
+  ],
+  "name": "model_bench_cancel",
+  "endpoint": "model_bench_cancel"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/last",
+  "methods": [
+   "GET"
+  ],
+  "name": "model_bench_last",
+  "endpoint": "model_bench_last"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/download",
+  "methods": [
+   "GET"
+  ],
+  "name": "model_bench_download",
+  "endpoint": "model_bench_download"
+ },
+ {
+  "path": "/api/diagnostics/model-bench/gates",
+  "methods": [
+   "GET"
+  ],
+  "name": "model_bench_gates",
+  "endpoint": "model_bench_gates"
+ }
+]
