@@ -9677,3 +9677,35 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   also showed the page's horizontal scroll at 375px is pre-existing (it is there with the
   dialog closed), which is why the measurement was taken in both states before anything was
   blamed on the change.
+
+- **THE ATTESTATION ENDPOINT IS OFFLINE IN EXACTLY THE STATE YOU BUILT IT TO ATTEST
+  (2026-09-16, Q1149, the encrypted click-through variant):** the runner's whole job in an
+  encrypted run is to say "this state really was encrypted at rest", and the app has one
+  endpoint whose whole job is to answer that from the FILE HEADER rather than from
+  configuration — `GET /api/system/doctor`. It is not in `ALLOWED_WHILE_LOCKED`. A locked
+  store is precisely what an encrypted run boots into, so the probe got a 503, recorded
+  `unknown`, and `--require-encrypted` would have REFUSED every genuinely encrypted run while
+  passing nothing. The failure is not that the endpoint is wrong; it is that **an attestation
+  surface is usually gated behind the very state it attests**, because the gate is written
+  against "the app is not usable yet" and attestation is the one thing that must be usable
+  then. The fix was already in the tree: `/api/system/lock-state` IS allowlisted while locked
+  and its `state` comes from the same header read (`app_lock_state` → `main_header_state` →
+  `state_for_header`), so it is the same fact in lock vocabulary rather than a weaker second
+  source — and the row records `via` so a reader never has to guess which one answered.
+  **FOUND BY RUNNING IT, NOT BY READING IT.** The first design was written from the endpoint's
+  docstring, which describes exactly the right behaviour and says nothing about the middleware
+  in front of it. One boot against a real encrypted store — seed with `OO_DB_PASSPHRASE` and
+  no `OO_DB_PLAINTEXT`, boot with NEITHER — printed `{"detail": "the database is locked",
+  "locked": true}` and settled it in seconds.
+  **AND THE PROBE MUST RUN TWICE, BEFORE AND AFTER THE WALK.** The before reading can only
+  come from `lock-state` (the store is locked, by construction); the after reading comes from
+  `doctor` and adds the engine's cipher. Keeping only the after row would make a store that
+  was ALREADY encrypted indistinguishable from one the run encrypted itself — and keeping only
+  the before row throws away the cipher. The pair is the evidence; either half alone is an
+  assertion.
+  **A SURPRISE THAT WAS MY OWN PROCESS, WORTH THE SAME DISCIPLINE.** A first live probe came
+  back `unlocked-encrypted` against what should have been a locked instance. Before recording
+  anything about the app, the server log said `address already in use`: a `kill` had not taken,
+  the new process had exited, and the probe had hit the OLD, already-unlocked server on that
+  port. A surprising measurement is a claim about the measurement setup until the setup has
+  been checked.

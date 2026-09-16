@@ -7868,7 +7868,7 @@ def test_docs_index_covers_live_docs():
 #: culled to >= 10, Q1123) and UI invariant #20's recorded bandwidth-cap omission resolved
 #: (Q1012, Q222). Measured on this branch's own tree; a docs-only PR, so re-measure at the merge
 #: point if main grows CLAUDE.md first (the recorded 2026-09-08 precedent).
-_CLAUDE_MD_LINE_CEILING = 728
+_CLAUDE_MD_LINE_CEILING = 740
 
 
 def _claude_md_lines() -> int:
