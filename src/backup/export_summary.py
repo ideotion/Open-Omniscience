@@ -295,9 +295,10 @@ def verify_sentence(verify: dict[str, Any]) -> str:
     if state == "verified":
         return f"Verified — all {total} volumes were re-read and matched their checksums."
     if state == "failed":
-        bad = ", ".join((verify or {}).get("bad") or []) or "unnamed volumes"
+        bad_volumes = list((verify or {}).get("bad") or [])
+        bad = ", ".join(bad_volumes) or "unnamed volumes"
         return (
-            f"NOT verified — the re-read found {len(((verify or {}).get('bad') or []))} of "
+            f"NOT verified — the re-read found {len(bad_volumes)} of "
             f"{total} volumes that no longer match their checksum: {bad}. "
             "Treat this backup as unreliable until it is re-written."
         )

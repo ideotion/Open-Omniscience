@@ -63,17 +63,28 @@ DISCLOSURE = (
 )
 
 
+def _in_period(period: Period):
+    """The ONE window filter: non-quarantined, on the coalesce(published, created) clock.
+
+    Both the article scan and the contributing-source scan select over it. They have to
+    agree — a report and its own evidence annex disagreeing about which sources
+    contributed would be a defect nothing else could catch — and two copies of a filter
+    are two things that can drift apart.
+    """
+    lo = datetime.combine(period.start, datetime.min.time())
+    hi = datetime.combine(period.end, datetime.min.time())
+    return and_(lo <= _CLOCK, _CLOCK < hi, Article.quarantined.isnot(True))
+
+
 def _period_article_ids(session, period: Period) -> list[int]:
     """Every non-quarantined article in the period, in a stable order.
 
     Ids only — the ids are small, and holding the full rows for a large period is
     exactly the whole-set materialisation this file exists to avoid.
     """
-    lo = datetime.combine(period.start, datetime.min.time())
-    hi = datetime.combine(period.end, datetime.min.time())
     rows = (
         session.query(Article.id)
-        .filter(and_(_CLOCK >= lo, _CLOCK < hi, Article.quarantined.isnot(True)))
+        .filter(_in_period(period))
         .order_by(Article.id)
         .all()
     )
@@ -89,12 +100,10 @@ def period_source_rows(session, period: Period) -> list[dict]:
     way; two definitions of that set is how a report and its own annex come to disagree
     about which licences apply to them.
     """
-    lo = datetime.combine(period.start, datetime.min.time())
-    hi = datetime.combine(period.end, datetime.min.time())
     rows = (
         session.query(Source.source_type, Source.domain)
         .join(Article, Article.source_id == Source.id)
-        .filter(and_(_CLOCK >= lo, _CLOCK < hi, Article.quarantined.isnot(True)))
+        .filter(_in_period(period))
         .distinct()
         .all()
     )
