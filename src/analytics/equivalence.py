@@ -45,6 +45,35 @@ _PATH = Path(__file__).resolve().parents[2] / "configs" / "keyword_equivalents.y
 # Read ALONGSIDE the curated file; a curated ring WINS on an id collision.
 _GENERATED_PATH = Path(__file__).resolve().parents[2] / "configs" / "keyword_rings_generated.yml"
 
+#: The LOCAL ring file's name inside the data directory. Not a module-level Path,
+#: because ``data_dir()`` re-reads the environment on every call while a module
+#: constant freezes at import -- the C7 trap, which would make a test (or an operator
+#: who moved their data folder) read rings from the folder they left behind.
+_LOCAL_RINGS_DIR = "rings"
+_LOCAL_RINGS_NAME = "keyword_rings_local.yml"
+
+
+def shipped_rings_paths() -> tuple[Path, ...]:
+    """The ring files that ship WITH the release, in read order (lowest precedence
+    first). Public because the backup carries them (Q409 = b) and a second copy of
+    these two paths in ``src/backup/`` is how a file gets added here and forgotten
+    there."""
+    return (_GENERATED_PATH, _PATH)
+
+
+def local_rings_path() -> Path:
+    """``<data dir>/rings/keyword_rings_local.yml`` -- the rings THIS install holds.
+
+    Distinct from the two SHIPPED files above because it is the operator's, not the
+    release's: it is where a restored backup's local rings land (Q409 = b, gate row K)
+    and where ``S04-06``'s auto-loaded Wikidata rings (Q406 ⛔ = b) will be written.
+    Nothing writes it yet; the loader reads it so the restore half can be exercised
+    before the writers exist.
+    """
+    from src.paths import data_dir
+
+    return data_dir() / _LOCAL_RINGS_DIR / _LOCAL_RINGS_NAME
+
 
 @dataclass(frozen=True)
 class Ring:
@@ -96,17 +125,45 @@ def _parse_rings(data: dict) -> list[Ring]:
 
 @lru_cache(maxsize=1)
 def load_rings() -> tuple[Ring, ...]:
-    """Parse the curated + the Wikidata-generated ring files (cached).
+    """Parse the local + curated + Wikidata-generated ring files (cached).
 
-    Missing/empty files -> no rings. The generated file is read FIRST and the
-    curated file SECOND, so a hand-curated ring of the same id OVERRIDES the
-    generated one (curation always wins)."""
+    Missing/empty files -> no rings. READ ORDER IS PRECEDENCE, lowest first, and a
+    later ring of the same id overrides an earlier one:
+
+        local (this install's own, restored or auto-loaded)
+        generated (shipped, from Wikidata labels)
+        curated (shipped, hand-vetted) -- curation always wins
+
+    THE LOCAL FILE READS FIRST ON PURPOSE, and it is how the gate's design note for
+    Q409 = b ("a restored backup's shipped rings must never override a newer release's
+    shipped rings") is kept BY CONSTRUCTION rather than by comparing versions. The
+    design note proposed carrying each ring file's version and letting the newer win;
+    that needs a version the ring files do not have, a comparison rule and a tie-break,
+    and it fails open the day any of the three is wrong. Precedence by SOURCE needs
+    none of them: a shipped ring beats a restored one whatever their dates, because the
+    shipped files are read last."""
     if not _enabled():
         return ()
     by_id: dict[str, Ring] = {}
-    for ring in _parse_rings(_read_yaml(_GENERATED_PATH)) + _parse_rings(_read_yaml(_PATH)):
-        by_id[ring.id] = ring
+    for path in (local_rings_path(), _GENERATED_PATH, _PATH):
+        for ring in _parse_rings(_read_yaml(path)):
+            by_id[ring.id] = ring
     return tuple(by_id.values())
+
+
+def invalidate_ring_caches() -> None:
+    """Drop every memoised view of the ring files.
+
+    Three ``lru_cache(maxsize=1)`` loaders sit on top of the files -- ``load_rings``,
+    ``_index`` and ``_multi_index`` -- and none of them has ever had a runtime
+    invalidation, because until now nothing could change a ring file while the app was
+    running. A RESTORE can (Q409 = b), so this exists and the restore calls it.
+    Clearing ``load_rings`` alone would leave the two indexes serving the old set,
+    which is the shape where a term resolves through one surface and not another.
+    """
+    load_rings.cache_clear()
+    _index.cache_clear()
+    _multi_index.cache_clear()
 
 
 @lru_cache(maxsize=1)

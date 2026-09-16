@@ -170,6 +170,18 @@ would leave the misleading framing while breaking the machinery that currently w
 ## Remove the legacy single-file backup RESTORE (2026-07-01, maintainer-flagged)
 
 > **Cross-reference (2026-09-07):** pairs with *"Legacy single-file import — scheduled for REMOVAL"* (2026-07-29) further down — the RESTORE half and the IMPORT half of one retirement. Verified 2026-09-07: single-file CREATE is already retired; `POST /legacy/restore` and the 2 GiB upload cap survive by design until the format is fully gone.
+>
+> **RULED 2026-09-15 — THE RESTORE HALF IS KEPT FOREVER (Q215 ⛔ = a), so the section below
+> is a RECORD of a 2026-07-01 flag, not a pending task.** The answer sheet settled it as the
+> docstring already committed: every legacy backup an operator holds must stay restorable,
+> which is also what `ACCEPTED_BACKUP_SCHEMAS` now makes structural (`S04-04`, 2026-09-16 —
+> a format bump that only ever ADDS to that set). Nothing in the list below was done, and
+> nothing in it should be done on the strength of this file alone.
+>
+> **The conflict is LISTED, not resolved (protocol rule (6)).** Register entry `C1` reads
+> «a, but wait for version 0.7» — a removal authorised for 0.7 — against Q215's keep-forever.
+> `RC02` ⛔ went out to ask and came back BLANK, so it stays PENDING and is never defaulted.
+> Until it is answered, Q215 = a governs and no 0.7 removal row exists.
 
 The size-capped single-file backup **create** was retired 2026-07-01 (the `POST
 /api/backup/v2` endpoint + the `v2Backup` UI are gone; backups are made by the unified
@@ -3017,6 +3029,16 @@ the tree before building).
 ## Legacy single-file import — scheduled for REMOVAL (maintainer ruled 2026-07-29)
 
 > **Cross-reference (2026-09-07):** pairs with *"Remove the legacy single-file backup RESTORE"* (2026-07-01) near the top of this file.
+>
+> **RULED 2026-09-15 — Q215 ⛔ = a KEEPS THE RESTORE HALF FOREVER, so this section is a
+> RECORD too.** The 2026-07-29 ruling («the legacy imports will soon be removed. no need to
+> touch them») was about not investing in them; the 2026-09-15 sheet answered the removal
+> itself, and answered keep. `S04-04` (2026-09-16) built on that and removed nothing —
+> `POST /api/backup/legacy/restore`, `restore_legacy_path` and the unified Import's
+> `kind: "legacy"` queue item all stand, and the format bump only ADDED to the set of
+> accepted schemas. Register entry `C1`'s 0.7 authorisation is in open CONFLICT with that
+> and `RC02` ⛔ came back blank, so the conflict is listed and stays PENDING — never
+> defaulted, and never resolved by a session that merely noticed it.
 
 **Ruling (verbatim intent): "the legacy imports will soon be removed. no need to touch them."**
 Recorded here so the removal is not lost and so no future session invests in that path.

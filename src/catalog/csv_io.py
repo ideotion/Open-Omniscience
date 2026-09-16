@@ -17,7 +17,7 @@ from __future__ import annotations
 import csv
 import io
 
-from src.catalog.countries import normalize_country
+from src.catalog.countries import normalize_country, to_iso2, to_iso3
 from src.catalog.normalize import registrable_domain
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -34,7 +34,20 @@ EXPORT_COLUMNS: list[str] = [
     "rate_limit_ms",
     "enabled",
     "reliability_score",
+    # Q313 = a (2026-09-15): for ONE release a CSV carries the country in BOTH forms,
+    # so an operator's spreadsheet, and anything downstream of it, keeps working across
+    # the alpha-2 -> alpha-3 storage move (Q301 = c; the storage half is 0.5 / S05-02).
+    # `country` stays the old, stored form and is what an import reads; `country_iso3`
+    # is derived from it on the way out. The OLD column is what drops in 0.5, not this
+    # one -- so nothing downstream has to change twice.
+    "country_iso3",
 ]
+
+#: Columns an IMPORT reads. Identical to the export set minus `country_iso3`, which is
+#: DERIVED: two columns for one fact would let a spreadsheet arrive saying `fr` in one
+#: and `DEU` in the other, and picking a winner silently is how an edit gets discarded.
+#: `parse_sources_csv` refuses that row by name instead.
+IMPORT_COLUMNS: list[str] = [c for c in EXPORT_COLUMNS if c != "country_iso3"]
 
 # Integer columns and their (lo, hi) clamps; out-of-range -> reported as an error.
 _INT_FIELDS = {
@@ -91,7 +104,17 @@ def template_csv() -> str:
             "reliability_score": 8,
         },
     ]
-    return write_csv(examples)
+    # The TEMPLATE documents what an import READS. `country_iso3` is derived on export
+    # and refused on import when it disagrees with `country`, so offering an operator a
+    # blank column to fill in would be offering them a way to be refused.
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=IMPORT_COLUMNS, extrasaction="ignore")
+    writer.writeheader()
+    from src.utils.security import csv_safe_cell
+
+    for r in examples:
+        writer.writerow({c: csv_safe_cell(r.get(c)) for c in IMPORT_COLUMNS})
+    return buf.getvalue()
 
 
 def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
@@ -107,6 +130,8 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
 
     # Case-insensitive header -> canonical column.
     colmap = {raw: raw.strip().lower() for raw in reader.fieldnames}
+    # `country_iso3` is read too -- not to be stored, but so a row where the two
+    # country columns DISAGREE can be refused rather than silently resolved.
     known = set(EXPORT_COLUMNS)
 
     rows: list[dict] = []
@@ -131,12 +156,38 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
         # Country: canonical lowercase ISO-2 via the one conversion layer —
         # accepts codes, full names and slugs; unrecognisable values are dropped
         # (never stored as junk).
+        iso3_raw = (rec.get("country_iso3") or "").strip()
         if "country" in out:
             cc = normalize_country(out["country"])
             if cc:
                 out["country"] = cc
             else:
                 out.pop("country")
+        # NOT an `elif`: the branch above can DROP an unrecognisable `country`, and an
+        # `elif` would then throw away a perfectly readable `country_iso3` in the same
+        # row -- leaving the source with no country at all although the operator stated
+        # one in a form we understand. So the fall-back is keyed on the RESULT ("is
+        # there a country now?"), never on which column happened to be present.
+        if "country" not in out and iso3_raw:
+            # Through `to_iso2`, not `normalize_country` -- measured,
+            # `normalize_country("DEU")` is None, because it resolves codes, NAMES and
+            # slugs and alpha-3 is none of the three. `to_iso2` is the alpha-3 converter
+            # and fails closed the same way, so an aggregate or an unknown code still
+            # yields nothing.
+            cc = to_iso2(iso3_raw)
+            if cc:
+                out["country"] = cc
+        if iso3_raw and "country" in out and to_iso3(out["country"]) != to_iso3(iso3_raw):
+            # TWO STATEMENTS OF ONE FACT THAT DISAGREE. Refused by name: picking
+            # `country` would discard an edit the operator made in the other column,
+            # and picking `country_iso3` would discard the one they made here. Compared
+            # through to_iso3 on BOTH sides, so `fr` vs `FRA` is agreement, not a
+            # conflict -- the recorded "normalise on both sides of a comparison" rule.
+            errors.append(
+                f"row {i}: country {out['country']!r} and country_iso3 {iso3_raw!r} "
+                "disagree; correct one of them (they are the same fact in two forms)"
+            )
+            continue
 
         bad = False
         for field, (lo, hi) in _INT_FIELDS.items():

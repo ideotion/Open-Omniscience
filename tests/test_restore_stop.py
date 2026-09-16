@@ -76,7 +76,16 @@ def test_the_abort_names_where_it_stopped(tmp_path):
         merge_corpus(staged, working, _BATCH_META, should_stop=lambda: True)
     msg = str(exc.value)
     assert "nothing was written" in msg
-    assert "keyword categories" in msg, "the exact step boundary it stopped at"
+    # The FIRST step's real name, read from the step list rather than hard-coded: an
+    # abort before any step has run stopped before step 1, and which table that is
+    # changes when a step is added ahead of it (`S04-04` put the country-code
+    # normaliser there, because it must run before every value-keyed join). The claim
+    # is unchanged -- the message names the exact boundary -- and a message that named
+    # no step, or a later one, still fails.
+    from src.backup.merge import _merge_steps
+
+    first = _merge_steps()[0][0]
+    assert first in msg, f"the exact step boundary it stopped at (expected {first!r})"
 
 
 def test_no_stop_hook_is_byte_identical(tmp_path):

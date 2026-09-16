@@ -3514,5 +3514,11 @@
   "of content": "内容",
   "on the drive": "在驱动器上",
   "written": "已写入",
-  "{n} more tables are empty in this backup.": "此备份中另有 {n} 个表为空。"
+  "{n} more tables are empty in this backup.": "此备份中另有 {n} 个表为空。",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "备份会记录每个来源上次返回的内容——也就是那些能让服务器回复\"没有变化\"，而不必重新发送整份订阅源的验证信息。信任这份记录，能让恢复后的安装避免重新下载它已经拥有的一切。",
+  "Trust the backup's scraping history": "信任备份的抓取历史记录",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "信任它会跳过重新抓取历史记录中显示已获取的内容；不信任它则会从头重新抓取所有内容。",
+  "Restoring a backup later": "稍后恢复备份",
+  "Trust a backup's scraping history by default": "默认信任备份的抓取历史记录",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信任它会跳过重新抓取历史记录中显示已获取的内容；不信任它则会从头重新抓取所有内容。您可以针对每次导入单独更改此设置。"
 }

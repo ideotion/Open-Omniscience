@@ -3514,5 +3514,11 @@
   "of content": "सामग्री",
   "on the drive": "ड्राइव पर",
   "written": "लिखी गई",
-  "{n} more tables are empty in this backup.": "इस बैकअप में {n} और तालिकाएँ खाली हैं।"
+  "{n} more tables are empty in this backup.": "इस बैकअप में {n} और तालिकाएँ खाली हैं।",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "बैकअप यह दर्ज करता है कि हर स्रोत ने आख़िरी बार क्या भेजा था — वे वैलिडेटर जो सर्वर को पूरा फ़ीड फिर से भेजने के बजाय \"कुछ नहीं बदला\" कहने देते हैं। इस रिकॉर्ड पर भरोसा करना ही रीस्टोर की गई इंस्टॉलेशन को वह सब कुछ दोबारा डाउनलोड करने से रोकता है जो उसके पास पहले से है।",
+  "Trust the backup's scraping history": "बैकअप के स्क्रैपिंग इतिहास पर भरोसा करें",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "इस पर भरोसा करने से इतिहास में पहले से फ़ेच बताई गई चीज़ें दोबारा फ़ेच नहीं की जातीं; भरोसा न करने पर सब कुछ शुरू से दोबारा फ़ेच किया जाता है।",
+  "Restoring a backup later": "बैकअप को बाद में पुनर्स्थापित करना",
+  "Trust a backup's scraping history by default": "बैकअप के स्क्रैपिंग इतिहास पर डिफ़ॉल्ट रूप से भरोसा करें",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "इस पर भरोसा करने से इतिहास में पहले से फ़ेच बताई गई चीज़ें दोबारा फ़ेच नहीं की जातीं; भरोसा न करने पर सब कुछ शुरू से दोबारा फ़ेच किया जाता है। आप इसे किसी भी एक इंपोर्ट के लिए बदल सकते हैं।"
 }

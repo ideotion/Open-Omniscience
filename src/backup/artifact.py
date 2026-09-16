@@ -45,7 +45,27 @@ from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.artifact")
 
-BACKUP_SCHEMA = "oo-backup-2"
+#: The format this build WRITES. Bumped 2026-09-16 (`oo-backup-2` -> `oo-backup-3`,
+#: gate row K) because one artifact gained members an older build would silently
+#: drop -- the ring files (Q409 = b), the tentative `keyword_translations` table
+#: (Q404) and the fetch/scrape-history member (the Q701 note) -- and because the
+#: restore path now normalises country codes on the way in (Q310).
+#:
+#: ONE BUMP, NEVER TWO. The volume-set container (`volumes.py`'s
+#: `_KNOWN_KINDS`) keeps its own independent sequence and is NOT bumped: its
+#: slicing, parity and volume manifest are byte-identical to `oo-volumes-2`, so
+#: bumping it would tell an older build it cannot read a set it can read
+#: perfectly well -- and the honest refusal belongs one layer in, where the
+#: members really did change. An older build reassembles a new volume set and
+#: then refuses the INNER manifest by name, which is the message an operator can
+#: act on ("upgrade the app"), rather than a container it cannot even open.
+BACKUP_SCHEMA = "oo-backup-3"
+
+#: Every format this build READS, forever (D7; Q215 ⛔ = a). Membership here is a
+#: promise, not a convenience: an operator whose only backup is older must never
+#: be stranded, so a literal only ever joins this tuple and never leaves it.
+#: Ordered oldest-first so the sequence reads as a history.
+ACCEPTED_BACKUP_SCHEMAS: tuple[str, ...] = ("oo-backup-2", "oo-backup-3")
 
 # Data-dir-relative state files carried by every artifact (gap analysis §2 --
 # the side files that previously lived OUTSIDE every backup ever taken).
@@ -361,6 +381,42 @@ def _drop_newsletter_rows(con) -> int:
     return len(art_ids)
 
 
+#: Where the ring members live inside the artifact. The SHIPPED half and the LOCAL
+#: half are separated in the NAME because they are restored by opposite rules, and a
+#: rule that depends on which file a member happens to be should be readable from the
+#: member itself rather than from a lookup somewhere else.
+_RINGS_SHIPPED_PREFIX = "rings/shipped/"
+_RINGS_LOCAL_PREFIX = "rings/local/"
+
+
+def _ring_members(base: Path) -> list[Member]:
+    """Every cross-language keyword ring this install holds (Q409 = b, gate row K).
+
+    "ALL rings, including shipped." Until now the rings lived in ``configs/`` and rode
+    no backup at all, so an artifact recorded a corpus without recording the vocabulary
+    that grouped it -- and a ring retired by a later release took the meaning of an old
+    backup's groupings with it.
+
+    The SHIPPED files are carried for exactly that reason and are never placed on
+    restore (see ``_restore_ring_members``); the LOCAL file is the operator's own and
+    is. Both are here because Q409 = b says all of them, and because a member that is
+    only ever evidence is still evidence.
+
+    Cost, measured rather than implied: 6.4 KB curated + 556 KB generated on the
+    shipped set as of 2026-09-16, against a 2 GiB single-file cap.
+    """
+    from src.analytics.equivalence import local_rings_path, shipped_rings_paths
+
+    out: list[Member] = []
+    for path in shipped_rings_paths():
+        if path.exists():
+            out.append(Member(f"{_RINGS_SHIPPED_PREFIX}{path.name}", "rings", path))
+    local = local_rings_path()
+    if local.exists():
+        out.append(Member(f"{_RINGS_LOCAL_PREFIX}{local.name}", "rings", local))
+    return out
+
+
 def _collect_members(
     include_keys: bool, tmp_dir: Path, include_newsletters: bool = True
 ) -> list[Member]:
@@ -382,6 +438,8 @@ def _collect_members(
         members.append(Member(_CUSTODY_DB, "custody", custody_snap))
 
     base = data_dir()
+    for m in _ring_members(base):
+        members.append(m)
     for name in _STATE_FILES:
         p = base / name
         if p.exists():
@@ -757,10 +815,11 @@ def _finalize_staged(
     check here, having passed the equivalent check upstream."""
     envelope = json.loads((staging / "manifest.json").read_text("utf-8"))
     manifest = envelope.get("manifest") or {}
-    if manifest.get("backup_schema") != BACKUP_SCHEMA:
+    schema = manifest.get("backup_schema")
+    if schema not in ACCEPTED_BACKUP_SCHEMAS:
         raise ArtifactError(
-            f"unsupported backup schema {manifest.get('backup_schema')!r} "
-            f"(this build reads {BACKUP_SCHEMA})"
+            f"unsupported backup schema {schema!r} "
+            f"(this build reads {', '.join(ACCEPTED_BACKUP_SCHEMAS)})"
         )
 
     # Verify the manifest signature with the EMBEDDED key: this proves integrity
@@ -793,7 +852,12 @@ def _finalize_staged(
 
     custody = staging / _CUSTODY_DB
     return StagedArtifact(
-        kind=BACKUP_SCHEMA,
+        # The schema the artifact ACTUALLY carries, never the one this build
+        # writes. It reaches `merge_batches.artifact_kind`, i.e. the operator's
+        # own record of what they restored; stamping every restore with the
+        # current literal would make an `oo-backup-2` restore read as an
+        # `oo-backup-3` one, and no later reader could tell them apart.
+        kind=schema,
         staging_dir=staging,
         corpus_path=staging / "corpus.db",
         custody_path=custody if custody.exists() else None,

@@ -47,6 +47,21 @@ def _display_name(country: str | None) -> str | None:
     return country_display_name(country)
 
 
+def _iso3(country: str | None) -> str | None:
+    """The DERIVED alpha-3 form of a stored country (Q313 = a, for one release).
+
+    Derived at the one place a row is built, never stored beside the alpha-2 value and
+    never editable on import: two independently writable columns for one fact is how an
+    operator's edit gets silently discarded. Fails closed -- an aggregate or a code we do
+    not recognise has no alpha-3, and an empty cell is the honest answer.
+    """
+    if not country:
+        return None
+    from src.catalog.countries import to_iso3
+
+    return to_iso3(country)
+
+
 def _source_to_row(s: Source) -> dict:
     return {
         "name": s.name,
@@ -54,6 +69,8 @@ def _source_to_row(s: Source) -> dict:
         "rss_url": s.rss_url,
         "source_type": s.source_type,
         "country": s.country,
+        # Q313 = a: both forms travel for one release; 0.5 (S05-02) drops the old one.
+        "country_iso3": _iso3(s.country),
         "language": s.language,
         "region": s.region,
         "tags": s.tags,
@@ -197,6 +214,7 @@ def list_sources(
                 "priority": s.priority,
                 "source_type": s.source_type,
                 "country": s.country,
+                "country_iso3": _iso3(s.country),  # Q313 = a: both forms for one release
                 "country_name": _display_name(s.country),
                 "language": s.language,
                 "article_count": _count(s),

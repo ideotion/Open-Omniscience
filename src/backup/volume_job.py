@@ -457,6 +457,7 @@ class VolumeBackupManager:
         working_copy: Path | None = None,
         hold_after_merge: bool = False,
         already_merged_digests: Collection[str] = (),
+        trust_fetch_history: bool | None = None,
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
         """Restore one artifact folder as a background job.
@@ -502,6 +503,11 @@ class VolumeBackupManager:
                     "working_copy": Path(working_copy) if working_copy is not None else None,
                     "hold_after_merge": bool(hold_after_merge),
                     "already_merged_digests": frozenset(already_merged_digests or ()),
+                    # The Q701-note per-import answer. None = "this import did not
+                    # choose", which run_restore resolves to the operator's stored
+                    # first-launch answer -- so a caller that sends nothing keeps
+                    # today's behaviour exactly.
+                    "trust_fetch_history": trust_fetch_history,
                 },
                 daemon=True,
                 name="volume-restore",
@@ -517,6 +523,7 @@ class VolumeBackupManager:
         corpus_passphrase,
         restore_fn,
         *,
+        trust_fetch_history: bool | None = None,
         working_copy: Path | None = None,
         hold_after_merge: bool = False,
         already_merged_digests: frozenset[str] = frozenset(),
@@ -776,6 +783,7 @@ class VolumeBackupManager:
                         staged,
                         commit=True,
                         allow_unverified=allow_unverified,
+                        trust_fetch_history=trust_fetch_history,
                         # Recorded WITH the merge, in its transaction, so the next
                         # import of these same bytes is answered in milliseconds
                         # instead of hours. None when unreadable -- an unknown

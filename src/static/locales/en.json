@@ -3514,5 +3514,11 @@
   "of content": "of content",
   "on the drive": "on the drive",
   "written": "written",
-  "{n} more tables are empty in this backup.": "{n} more tables are empty in this backup."
+  "{n} more tables are empty in this backup.": "{n} more tables are empty in this backup.",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.",
+  "Trust the backup's scraping history": "Trust the backup's scraping history",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.",
+  "Restoring a backup later": "Restoring a backup later",
+  "Trust a backup's scraping history by default": "Trust a backup's scraping history by default",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import."
 }

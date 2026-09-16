@@ -3514,5 +3514,11 @@
   "of content": "の内容",
   "on the drive": "ドライブ上",
   "written": "書き込み済み",
-  "{n} more tables are empty in this backup.": "このバックアップでは他に {n} 個のテーブルが空です。"
+  "{n} more tables are empty in this backup.": "このバックアップでは他に {n} 個のテーブルが空です。",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "バックアップは各ソースが最後に返した内容を記録します——サーバーが「変更なし」と答え、フィード全体を送り直さずに済むようにする検証情報のことです。この記録を信頼することが、復元したインストールがすでに持っているものをすべて再ダウンロードしてしまうのを防ぎます。",
+  "Trust the backup's scraping history": "バックアップの取得履歴を信頼する",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "信頼すると、履歴上ですでに取得済みとされている内容の再取得はスキップされます。信頼しない場合は、すべて最初から取得し直します。",
+  "Restoring a backup later": "後でバックアップを復元する",
+  "Trust a backup's scraping history by default": "バックアップの取得履歴をデフォルトで信頼する",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信頼すると、履歴上ですでに取得済みとされている内容の再取得はスキップされます。信頼しない場合は、すべて最初から取得し直します。インポートごとに個別に変更できます。"
 }

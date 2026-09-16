@@ -916,6 +916,36 @@
       host.innerHTML = lines.join("");
     }
 
+    // THE Q701-NOTE TRUST TOGGLE, import half. Seeded from the operator's stored
+    // first-launch answer so the control opens on the choice they already made, and
+    // overriding it here changes THIS import only -- the stored default is untouched,
+    // because an import is not the place to silently re-answer a setting.
+    async function _uxImTrustRow(applies) {
+      const row = document.getElementById("ux-imp-trust-row");
+      const box = document.getElementById("ux-imp-trust");
+      if (!row || !box) return;
+      row.style.display = applies ? "block" : "none";
+      if (!applies) return;
+      try {
+        const s = await api("/api/settings");
+        box.checked = s.trust_backup_fetch_history !== false;
+      } catch (e) {
+        // Unreadable settings: fall back to the SHIPPED default rather than to
+        // whatever the box happened to hold, so the control never shows a choice
+        // nobody made. Mirrors resolve_trust_fetch_history's own fallback.
+        box.checked = true;
+      }
+    }
+
+    // null when the row is hidden -- "this import did not choose", which the server
+    // resolves to the stored answer. Never a bool read off an invisible checkbox.
+    function _uxImTrust() {
+      const row = document.getElementById("ux-imp-trust-row");
+      const box = document.getElementById("ux-imp-trust");
+      if (!row || !box || row.style.display === "none") return null;
+      return !!box.checked;
+    }
+
     async function _uxImScan(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = (document.getElementById("ux-imp-src").value || "").trim();
@@ -953,6 +983,11 @@
         // A passphrase is needed for the encrypted corpus AND for legacy archives.
         const needsPass = corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0);
         document.getElementById("ux-imp-pass-row").style.display = needsPass ? "block" : "none";
+        // The Q701-note toggle: offered only when this scan found something that CAN
+        // carry a scraping history. `needsPass` is the same predicate for the same
+        // reason -- a corpus or legacy archive -- but it is read separately here so a
+        // future plaintext backup does not silently hide the toggle with the passphrase.
+        await _uxImTrustRow(corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0));
         document.getElementById("ux-imp-run").disabled = rows.length === 0;
         st.textContent = rows.length ? t("What do you want to import?") : "";
         _uxImFound = f; _uxImSrc = src;
@@ -989,11 +1024,17 @@
       // Each volume set lives in its OWN folder (the scan returns the exact dir the
       // manifest is in) -- queue each with THAT path, never the scanned parent.
       const items = [];
+      // The Q701-note answer for THIS import. Sent ONLY on the two kinds that carry a
+      // scraping history; a blobs or newsletters item gets no field at all, so the
+      // server sees `None` = "this import did not choose" and nothing is asserted on
+      // their behalf. `_uxImTrust()` reads the checkbox only when the row is really
+      // shown, so an unseen control can never speak for the operator.
+      const trust = _uxImTrust();
       if (corpus.length && cb("ux-i-corpus")) {
-        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")) });
+        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")), trust_fetch_history: trust });
       }
       if (legacy.length && cb("ux-i-legacy")) {
-        for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name });
+        for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name, trust_fetch_history: trust });
       }
       if (blobRoots.length && cb("ux-i-blobs")) {
         for (const br of blobRoots) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: br.categories });

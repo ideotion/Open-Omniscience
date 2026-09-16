@@ -14270,3 +14270,50 @@ A3(1) already used for the docket); or compress, which rule (5) protects these e
 without a ruling. **Nothing was decided and nothing was moved.** This entry and the
 Q823 one above it add ~4 KB between them, which is itself part of the problem and is not a
 reason to skip recording either.
+
+## 2026-09-16 — C1 CLOSED AS **KEPT** (Q215 ⛔ = a), and the conflict with it STAYS PENDING
+
+`S04-04` (the row-K format bump, branch `claude/backup-format-bump`) built on Q215 = a and
+**removed nothing**. C1 — the register's «a, but wait for version 0.7», read as authorising the
+legacy single-file restore's removal in 0.7 — is closed HERE as the 2026-09-07 investigation
+already found it on the code: the restore half is not a leftover but the unified Import's own
+legacy branch (`import_scan` → `ux-i-legacy` → `ImportQueue._run_legacy` → the SAME
+`restore_legacy_path` the endpoint calls), and `tests/test_unified_backup_ui.py` pins that chain
+under a data-safety docstring. The format bump makes the commitment structural rather than
+documentary: `ACCEPTED_BACKUP_SCHEMAS` is a SET a bump may only ADD to, pinned by
+`tests/test_backup_format_bump.py::test_every_format_this_build_ever_wrote_is_still_accepted`,
+and the CI fixture restore (`tests/test_restore_fixture_matrix.py`) drives an
+`oo-backup-2` artifact through the real legacy path on every run.
+
+Two documents that still read as pending removals were corrected in the same PR, as `PROMPT_07`
+S2 asked: `docs/FUTURE_DEVELOPMENTS.md`'s *"Remove the legacy single-file backup RESTORE"*
+(2026-07-01) and *"Legacy single-file import — scheduled for REMOVAL"* (2026-07-29) now carry the
+ruling and say plainly that they are RECORDS, not tasks.
+
+**THE CONFLICT IS LISTED, NEVER RESOLVED (protocol rule (6)).** C1's 0.7 authorisation and
+Q215's keep-forever still disagree; `RC02` ⛔ went out to ask and came back BLANK, so it stays
+PENDING and is never defaulted. Until the maintainer answers it, Q215 = a governs, no 0.7
+removal row exists, and nothing above should be read as deciding RC02. What a future removal
+would still need is unchanged from the 2026-09-07 entry: a decision about the operator whose
+only backup is a pre-volumes archive, since the unified Import is currently the thing that
+saves them.
+
+## 2026-09-16 — THE 0.5 ALPHA-3 FLIP HAS AN ORDERING PRECONDITION, MEASURED ON EVERY RESTORE
+
+Recorded as a **precondition for `S05-02`**, not a ruling. The restore normaliser
+(`src/backup/country_codes.py`, Q310 = a) rewrites the STAGED copy toward
+`CANONICAL_COUNTRY_FORM` and deliberately never touches the live corpus. An adversarial pass
+asked what happens on the day that constant flips to `alpha3`, and the answer was measured
+under simulation: with the constant flipped and a live corpus still on alpha-2, one law
+document came out of a restore as TWO rows while the report said "2 rows converted".
+
+**So the live rewrite must land BEFORE the constant flips, never after.** No automatic verdict
+is available to enforce that — a real corpus legitimately holds values the converter refuses
+(aggregates, the app's non-ISO jurisdictions, junk) and can be honestly mixed, so a threshold
+would either refuse good restores or miss bad ones. What shipped instead is the measurement:
+every restore's `_country_codes` block now carries `live_corpus_in_target_form` with the count
+of distinct stored spellings the normaliser WOULD rewrite in the live corpus (0 today), and a
+caveat naming this ordering when it is not 0. `tests/test_country_code_normaliser.py`'s
+`test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form` is the tripwire: a
+future session that flips the constant without rewriting the live corpus first gets a red test
+that says so.

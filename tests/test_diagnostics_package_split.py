@@ -39,6 +39,16 @@ def _live_table() -> list[dict]:
     ]
 
 
+#: Routes registered AFTER the Q1139 split, in registration order. Each is appended by a
+#: slice imported last in ``__init__.py``, so none of them moves a position the snapshot
+#: pins. Declared rather than folded into the snapshot: the snapshot's whole value is
+#: that it is the pre-split table and has never been retouched.
+_ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
+    # 2026-09-16, gate row K / Q310 = a: the country-code duplicate-key scan.
+    "country_code_duplicates",
+)
+
+
 def test_diagnostics_split_is_route_neutral():
     """Every path, method, name AND POSITION is what the pre-split module registered.
 
@@ -48,16 +58,31 @@ def test_diagnostics_split_is_route_neutral():
     the route order, and an alphabetical tidy-up of those imports would reorder the table
     without changing a single route. That is why `__init__.py` carries `# ruff: noqa: I001`.
 
-    IF YOU LEGITIMATELY ADD OR REMOVE A ROUTE: update the snapshot in the same commit, and
-    know what you are asserting -- this file exists to prove the SPLIT lost nothing, so a
-    snapshot edited in a commit that is not about a route change is the thing to question.
+    IF YOU LEGITIMATELY ADD A ROUTE: do NOT edit the snapshot. Import the new slice LAST
+    in ``__init__.py`` so the route lands at the END, and name it in
+    :data:`_ADDED_AFTER_THE_SPLIT` below. The snapshot then goes on meaning exactly what
+    it meant the day it was taken -- "this is the pre-split table, in order" -- which is
+    the claim this file exists to make, and which folding a new route into it would
+    quietly retire. A route that has to be inserted in the MIDDLE is the case to bring
+    to review: it moves positions the snapshot pins, and there is no honest way to
+    record that except by editing the snapshot and saying why.
+
+    Removing a route genuinely does need the snapshot edited, and that is the right
+    friction: it is the only change that can make the split lossy after the fact.
     """
     expected = json.loads(_SNAPSHOT.read_text(encoding="utf-8"))
     live = _live_table()
-    assert live == expected, (
+    head, tail = live[: len(expected)], live[len(expected):]
+    assert head == expected, (
         "the diagnostics route table moved. Compare element by element: a changed ORDER "
         "means the submodule import order in src/api/diagnostics/__init__.py was sorted; "
-        "a changed set means a route was added, removed or renamed."
+        "a changed set means a route was removed, renamed, or added somewhere other than "
+        "the end (import the new slice LAST)."
+    )
+    assert [r["endpoint"] for r in tail] == list(_ADDED_AFTER_THE_SPLIT), (
+        "a route was added after the split without being declared. Add its endpoint name "
+        "to _ADDED_AFTER_THE_SPLIT, in the order the routes register: "
+        f"live tail = {[r['endpoint'] for r in tail]}"
     )
 
 

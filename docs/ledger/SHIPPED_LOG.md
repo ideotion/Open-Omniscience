@@ -8079,3 +8079,90 @@ ran the renderer with a stub `t` (identity), the source tests checked the keys e
 i18n gates count unkeyed strings and cannot see an OVER-translated one. This is the recorded "a
 node harness proves the HTML and cannot see the page" lesson with the failure pointing the other
 way: not a string that failed to translate, but one that translated when it must not.
+
+## 2026-09-16 — `S04-04`, the backup-format bump: five lessons, four of them from code that was already green
+
+### A bulk `UPDATE` that hits a constraint rolls back EVERY row it touched, not the offending one
+
+The restore normaliser converted one country spelling per statement —
+`UPDATE ... SET country = 'fr' WHERE country = 'FRA'` — inside a SAVEPOINT, so a unique-constraint
+collision could not corrupt the staged corpus. That reasoning was right and the blast radius was
+not: SQLite's default `ON CONFLICT ABORT` undoes the WHOLE statement. Measured, with rows A and B
+colliding at one URL and an unrelated row C sharing A's SPELLING at a different URL: C was reverted
+too, then missed its OWN value-keyed join downstream, and the merge landed it as a second copy of a
+document the corpus already had — the exact duplicate the module exists to prevent, created by the
+module's own safety mechanism. The report said `rows_converted: 0` and the merge said
+`duplicate: 0`.
+
+**The rule: a per-value statement makes every row of that value share one fate.** When the fate is
+"rolled back", the rows that had no problem pay for the ones that did. The repair is to keep the
+bulk statement as the fast path and retry ROW BY ROW on the exception, each row in its own nested
+savepoint — the extra savepoints are paid only in the rare failure case, and a genuine collision is
+still reported rather than swallowed. The tell that this class exists at all: a report that says it
+changed nothing while the data plainly needed changing.
+
+### A UNIQUE constraint over nullable columns enforces nothing, so a declared identity can be a fiction
+
+`keyword_translations` states its cross-corpus identity as
+`UNIQUE (term, source_lang, target_lang, model, prompt_version)` — the schema answering the identity
+question instead of a handler remembering it, which is the 2026-08-03 owed-tables rule done right.
+Except `model` and `prompt_version` are nullable by design, and in SQLite NULL is DISTINCT from NULL
+inside a UNIQUE index. Measured: two byte-identical `INSERT OR IGNORE`s with both columns NULL
+produced TWO rows. The merge handler, which COALESCEs the same five columns, was therefore STRICTER
+than the schema it claimed to be reading — and the not-yet-written writer would have reached for
+`INSERT OR IGNORE` and been silently non-idempotent exactly when the provenance was unrecorded.
+
+**The rule: when a table's identity includes a nullable column, the UNIQUE constraint is a comment.**
+A unique EXPRESSION index over the COALESCEd columns is the enforcement
+(`CREATE UNIQUE INDEX ... (term, source_lang, target_lang, COALESCE(model,''), COALESCE(prompt_version,''))`),
+and it must live in the MODEL, not only the migration — `Base.metadata.create_all` makes the table
+at boot before any stamp moves, so an index declared only in the migration is missing on the common
+path. `alembic check` stays clean: SQLite cannot reflect expression indexes, so both sides skip them
+symmetrically (`ix_article_observed` has done this in this tree for a long time).
+And a test that reads `__table__.constraints` proves the constraint's SHAPE, never its ENFORCEMENT —
+it passes unchanged in the world where the constraint stops nothing.
+
+### A migration that creates a table must survive `create_all` having already made it — because the RESTORE path never calls `create_all`
+
+`Base.metadata.create_all` at boot materialises a missing TABLE before any stamp advances, so a
+new table's migration routinely arrives at a database that already has it. Measured without a
+guard: `alembic upgrade head` died with `table keyword_translations already exists`, leaving the
+stamp behind head. On the BOOT path that is survivable — `align_stamp_to_head` self-heals it. On the
+RESTORE path it is not: `upgrade_database_file` runs alembic straight at a staged artifact copy and
+never calls `create_all`, so an artifact from a machine in that state simply fails to restore.
+Eleven of this tree's table-creating migrations already guard with `_has_table`, and the closest
+sibling (`d0e1f2a3b4c5_ai_keyword_table`) says why in as many words. **Copy the sibling.**
+
+### A global `input { width: 100% }` silently stretches every checkbox, and no source test can see it
+
+Two new `<input type="checkbox">` elements rendered ~340–360 px wide, each label stranded at the far
+end of its row, because `app.css` styles `input, select, textarea { width: 100% }` and a bare
+checkbox inherits it. Every test passed: the markup was correct, the strings were keyed ×12, the
+node suite drove the real branches. It took a Chromium walk and LOOKING at the screenshot. The repo
+already carries the escape (`style="width:auto"`, as `#cust-ots` and `#set-rerun-guide` use) — the
+lesson is that nothing prompts you to reach for it, because the defect lives in a rule written
+somewhere else entirely. The CI-reachable guard asserts BOTH halves: that the stretching rule still
+exists (otherwise the escape is cargo cult a later reader would delete as noise) and that each
+checkbox carries the escape.
+
+### A fixture that seeds both sides identically proves nothing — and the gate's own acceptance clause was that fixture
+
+`test_the_scan_reports_zero_after_restoring_a_pre_migration_backup` was written to be the release
+gate's artifact: restore a pre-migration backup, scan for duplicates, assert 0. Both corpora were
+seeded with `"fr"`. So the scan answered 0 whether or not the normaliser ran — measured, by replacing
+the normaliser's body with `pass` and watching the test stay green while four of its neighbours went
+red. The same shape sat in two negative-space tests ("NULL stays NULL", "the exempt column is not
+rewritten"), which a no-op satisfies for free.
+
+**The rule, for any test whose subject is a TRANSFORMATION: the fixture must disagree with itself.**
+A negative assertion needs a live wire in the same fixture — a value that MUST change — or it is
+evidence that nothing happened, dressed as evidence that the right thing happened. And the check
+that finds this class is cheap and mechanical: stub the function under test to `pass` and run the
+file. Every test that stays green is telling you something.
+
+### A bare `from sqlalchemy import text` collides with a column named `text`
+
+Inside a declarative class body, `text: Mapped[str] = mapped_column(...)` shadows the module-level
+`text`, so `__table_args__` calls the MappedColumn and raises `TypeError: 'MappedColumn' object is
+not callable` at import. Alias it (`text as sql_text`). Cheap to fix, and the error message points
+nowhere near the import.

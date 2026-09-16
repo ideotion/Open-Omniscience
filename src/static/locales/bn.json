@@ -3514,5 +3514,11 @@
   "of content": "বিষয়বস্তু",
   "on the drive": "ড্রাইভে",
   "written": "লেখা হয়েছে",
-  "{n} more tables are empty in this backup.": "এই ব্যাকআপে আরও {n}টি টেবিল খালি।"
+  "{n} more tables are empty in this backup.": "এই ব্যাকআপে আরও {n}টি টেবিল খালি।",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "একটি ব্যাকআপ রেকর্ড করে রাখে প্রতিটি উৎস সর্বশেষ কী পাঠিয়েছিল — সেই ভ্যালিডেটরগুলো, যা সার্ভারকে পুরো ফিড আবার পাঠানোর বদলে \"কিছু বদলায়নি\" বলে উত্তর দিতে দেয়। সেই রেকর্ডে ভরসা করাই একটি পুনরুদ্ধার করা ইনস্টলেশনকে তার কাছে আগে থেকে থাকা সব কিছু আবার ডাউনলোড করা থেকে আটকায়।",
+  "Trust the backup's scraping history": "ব্যাকআপের স্ক্র্যাপিং ইতিহাসে ভরসা করুন",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "এতে ভরসা করলে ইতিহাস অনুযায়ী আগে থেকেই আনা জিনিসগুলো আবার আনা হয় না; ভরসা না করলে সবকিছু নতুন করে শুরু থেকে আনা হয়।",
+  "Restoring a backup later": "পরে একটি ব্যাকআপ পুনরুদ্ধার করা",
+  "Trust a backup's scraping history by default": "ব্যাকআপের স্ক্র্যাপিং ইতিহাসে ডিফল্টরূপে ভরসা করুন",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "এতে ভরসা করলে ইতিহাস অনুযায়ী আগে থেকেই আনা জিনিসগুলো আবার আনা হয় না; ভরসা না করলে সবকিছু নতুন করে শুরু থেকে আনা হয়। যেকোনো একটি আমদানির জন্য আপনি এটি বদলাতে পারেন।"
 }

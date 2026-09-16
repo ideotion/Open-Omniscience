@@ -65,6 +65,13 @@ class SettingsUpdate(BaseModel):
     # 1 (the default) is today's behaviour; higher is faster and less durable.
     # Rejected loudly outside 1..24 rather than clamped -- see save_settings.
     import_checkpoint_k: int | None = None
+    # TRUST THE BACKUP'S SCRAPING HISTORY (the Q701 note). Declared HERE as well as in
+    # the store and the writer because a settings key that exists in only two of the
+    # three is silently inert: pydantic drops an undeclared key, `exclude_unset=True`
+    # then returns {}, and the endpoint answers 200 having changed nothing -- an
+    # accepted-and-discarded consent decision, which is worse than a refusal
+    # (live-reproduced on `auto_track_signals`, 2026-09-16).
+    trust_backup_fetch_history: bool | None = None
 
 
 def _payload() -> dict:

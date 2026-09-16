@@ -423,6 +423,15 @@
           };
         });
       }
+      // The Q701-note toggle, install half. Seeded from the persisted setting so the
+      // box shows the shipped default (or a value a re-run of the guide already saved)
+      // rather than whatever the markup's `checked` attribute happened to be.
+      const trust = $("gw-trust-history");
+      if (trust) {
+        api("/api/settings").then((st) => {
+          trust.checked = st.trust_backup_fetch_history !== false;
+        }).catch(() => { /* unreadable: leave the shipped default, never a guess */ });
+      }
       _gwUpdateThemeNote();
     }
     function _gwUpdateThemeNote() {
@@ -445,6 +454,18 @@
         await api("/api/scheduler/config",
           { method: "PUT", body: JSON.stringify({ select_tags: select_tags, language_equilibrium: language_equilibrium }) });
       } catch (_e) { /* best-effort local settings write; never block the guide */ }
+      // The Q701-note answer. A SEPARATE store from the scheduler config because it is
+      // a different kind of thing -- what a future RESTORE may adopt, not what this
+      // install collects -- and a separate request so one failing write cannot take
+      // the other down with it. Both are loopback: /api/settings is a local read-write
+      // with no egress, so neither is ensureOnline-gated.
+      const trust = $("gw-trust-history");
+      if (trust) {
+        try {
+          await api("/api/settings",
+            { method: "PUT", body: JSON.stringify({ trust_backup_fetch_history: !!trust.checked }) });
+        } catch (_e) { /* best-effort local settings write; never block the guide */ }
+      }
     }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;

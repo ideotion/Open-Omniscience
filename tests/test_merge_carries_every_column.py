@@ -335,6 +335,17 @@ _PARSER_BLIND_SPOTS = {
         "no INSERT exists by design -- the maintainer ruled 2026-07-29 that the merge does "
         "NOT copy mentions and the post-swap re-index produces them from the article text"
     ),
+    "feed_fetch_state": (
+        "f-string COLUMN list, not table name: the carried set is read from ONE registry "
+        "(src/backup/fetch_history.py's FEED_FETCH_STATE_CARRIED) so the handler and the "
+        "operator-facing description cannot disagree, and flattening it to a literal to "
+        "satisfy this parser would trade a real property for a readable one. Covered "
+        "MORE strictly than the parser guard covers anything else, by "
+        "tests/test_fetch_history_member.py::test_the_carried_column_set_matches_the_model: "
+        "every column of the model is carried, is the primary key, or is named in the "
+        "OMITTED registry WITH a stated reason -- so a column added to FeedFetchState "
+        "after the handler was written fails that test rather than being silently dropped"
+    ),
 }
 
 
