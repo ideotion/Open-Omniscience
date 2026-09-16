@@ -45,14 +45,17 @@ translated title, so the layer is ×12 by construction.
 | Agenda (month + year views) | 32 alpha-3 tokens incl. `EUU` | same | same | same |
 | Library → World coverage | 218 country cells, **every one** with a hover name | ✓ | ✓ (see finding 2) | ✓ (see finding 2) |
 | Settings → Data (sources table) | `ISR`/Israel, `FRA`/France, `UGA`/Uganda; `eng`, `fra` | ✓ | `UGA`/**أوغندا** | `ISR`/**以色列**, `eng`/**英语** |
-| Settings → Data (country filter) | `Argentina (ARG) ·75` | ✓ | `أرمينيا (ARM) ·9` | `阿根廷 (ARG) ·75` |
+| Settings → Data (country filter) | `Argentina (ARG) ·75` | `Afrique du Sud (ZAF) ·60` | `أرمينيا (ARM) ·9` | `阿根廷 (ARG) ·75` |
+| Settings → Data (language filter) | `English (eng) ·2947` | `anglais (eng) ·2947`, `français (fra) ·331` | ✓ | ✓ |
 | Settings → Wikipedia (invariant #1) | `<select id="wiki-lang">`, 147 flat options, native name first | ✓ | ✓ | ✓ |
 | Map (`#tab-timemap`) | renders; signal detail needs a click-through with located signals | ✓ | ✓ | ✓ |
 | Governments → Countries / Map | **not walkable offline** | | | |
 | Markets | **not walkable offline** | | | |
 
-The country FILTER shows the name *and* the code on purpose: a checkbox label has no
-hover to layer a name into, which is ruling Q308 and why it is not a Q302 exception.
+Both FILTERS show the name *and* the code on purpose, ordered by the localised name: a
+checkbox label has no hover to layer a name into, which is ruling Q308 and why this is not
+a Q302 exception. The language filter reads the same way — `anglais (eng)` — so the two
+pickers share one grammar rather than each having its own.
 
 ### The two surfaces that could not be walked
 
