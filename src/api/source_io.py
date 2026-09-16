@@ -57,9 +57,15 @@ def _iso3(country: str | None) -> str | None:
     """
     if not country:
         return None
-    from src.catalog.countries import to_iso3
+    # DELEGATES since S04-05. The rule was `to_iso3`, which is right about aggregates
+    # and blanked Q303's four -- `eu`, `int`, `an` are values the catalogues really
+    # hold, and an export that reported "no alpha-3" for a code the UI displays two
+    # panels away is two answers to one fact. `country_payload_iso3` is that rule plus
+    # those four, and it is now the ONE definition of what a `country_iso3` field
+    # means, everywhere one is emitted.
+    from src.catalog.countries import country_payload_iso3
 
-    return to_iso3(country)
+    return country_payload_iso3(country)
 
 
 def _source_to_row(s: Source) -> dict:

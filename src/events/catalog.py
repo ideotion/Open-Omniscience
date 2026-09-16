@@ -21,6 +21,7 @@ from typing import cast
 
 import yaml
 
+from src.catalog.countries import country_query_forms
 from src.civic.elections import annotate as annotate_election
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "world_events.yml"
@@ -278,14 +279,17 @@ def agenda(
     ordered by next occurrence; movable events (no exact date) follow, alphabetically.
     """
     today = today or date.today()
-    cc = (country or "").upper() or None
+    # Both forms (Q301 step 1). Compared as a SET of accepted spellings rather than
+    # by normalising the needle, so an event row stored as `int` still matches `int`
+    # while also matching the `INT` the agenda now displays.
+    _cc_forms = {f.upper() for f in country_query_forms(country)}
     items = []
     for e in load_events():
         if category and e["category"] != category:
             continue
         if calendar and e["calendar"] != calendar:
             continue
-        if cc and (e["country"] or "").upper() != cc:
+        if _cc_forms and (e["country"] or "").upper() not in _cc_forms:
             continue
         if tag and tag not in e["tags"]:
             continue

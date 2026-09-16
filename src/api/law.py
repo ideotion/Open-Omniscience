@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import country_payload_iso3, country_query_forms
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
 
@@ -108,6 +109,13 @@ def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict
         # stated -- never guessed. Absent for most pre-S4b rows (honestly None).
         "language": doc.language,
         "country": doc.country,
+        # Both alpha-3 forms, because a law row carries TWO country-shaped facts and
+        # they are not the same claim: `jurisdiction` is the legal system the document
+        # belongs to (`uk`, `eu`, `int`), `country` is the catalogue's own assertion
+        # about where it comes from. Q303 names GBR for the `uk` jurisdiction, which is
+        # why the two can legitimately differ on one row.
+        "country_iso3": country_payload_iso3(doc.country),
+        "jurisdiction_iso3": country_payload_iso3(doc.jurisdiction),
         "has_baseline": doc.baseline_text is not None,
         "last_checked_at": doc.last_checked_at.isoformat() if doc.last_checked_at else None,
         "last_status": doc.last_status,
@@ -155,7 +163,10 @@ def law_documents(
     """List tracked legal documents (optionally by jurisdiction)."""
     q = db.query(LawDocument)
     if jurisdiction:
-        q = q.filter(LawDocument.jurisdiction == jurisdiction)
+        # BOTH forms, and this is the case that makes the widening necessary rather
+        # than tidy: Q303 displays `GBR` for a row stored as `uk`, so an operator can
+        # read the code off the screen, paste it here, and must not get an empty list.
+        q = q.filter(LawDocument.jurisdiction.in_(country_query_forms(jurisdiction)))
     docs = q.order_by(LawDocument.jurisdiction, LawDocument.id).all()
     rev_counts: dict[int, int] = {
         doc_id: n

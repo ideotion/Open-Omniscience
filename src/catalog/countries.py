@@ -1011,3 +1011,86 @@ def country_filename(stem: str, country: str | None, extension: str) -> str:
     if bad:
         raise ValueError(f"unsafe characters in filename stem/extension: {sorted(bad)}")
     return f"{st}_{code}{ext}"
+
+
+def country_payload_iso3(value: str | None) -> str | None:
+    """The alpha-3 a JSON/CSV payload carries beside a stored ``country`` (Q313 = a).
+
+    NOT the same rule as :func:`country_display_code`, and the difference is the point.
+    A SCREEN degrades loudly: an unreadable value renders as itself, because blanking
+    it would claim the source has no country. A PAYLOAD fails CLOSED: another program
+    reads that column, and a junk value in a typed field is worse than a gap -- there
+    is nothing downstream to notice it the way a person notices `floop` in a table.
+
+    So an aggregate or an unrecognised code gets ``None`` here and its raw self on
+    screen, and both are the honest answer to their own question.
+
+    It DOES cover Q303's four, which plain ``to_iso3`` refuses because they are not ISO
+    countries: ``eu``, ``int``, ``xk`` and ``an`` are values the catalogues really hold,
+    the ruling names their alpha-3 spellings, and a payload that blanked them would
+    report "we have no alpha-3 for this" about a code the UI is displaying two panels
+    away.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    direct = to_iso3(raw)
+    if direct:
+        return direct
+    code = normalize_country(raw)
+    if code is None:
+        return None
+    # `uk` is the law catalogue's jurisdiction spelling and is NOT an ISO alpha-2, so
+    # `to_iso3` refuses it above -- but Q303 names GBR for exactly this case, and a
+    # payload that answered None here would report "no alpha-3" for the jurisdiction
+    # the ruling singles out. Measured before this branch existed: `uk` came back None.
+    # Only reached through `normalize_country`, so it inherits the fail-closed guard
+    # and an aggregate still cannot arrive this way.
+    return SPECIAL_ALPHA3.get(code) or to_iso3(code)
+
+
+def country_query_forms(value: str | None) -> list[str]:
+    """Every STORED spelling one filter input could legitimately mean.
+
+    Ruling Q301 step 1 asks that "every parameter accepts both forms". The naive
+    reading -- run the input through ``normalize_country`` and compare -- is wrong for
+    the law catalogue and would have broken a working filter: ``jurisdiction`` really
+    holds ``uk``, and ``normalize_country("uk")`` is ``gb``, so normalising the needle
+    would make it match NOTHING while the column sat there full of ``uk`` rows. That
+    is the recorded one-sided-normalisation defect, where lowercasing a needle against
+    a case-sensitive column left a domain unrefusable by every spelling including its
+    own.
+
+    So this WIDENS and never narrows: the input as given, its canonical alpha-2, and
+    its alpha-3 -- all of them, so a filter matches whichever spelling the column
+    happens to hold. An unresolvable input yields just itself, which keeps an exact
+    match working and refuses to invent a second thing it might have meant.
+
+    Returns lowercase forms plus the UPPERCASE alpha-3, because a column may hold
+    either (``Source.country`` is lowercase alpha-2; ``StatFigure.ref_area`` is
+    uppercase alpha-3) and a caller should not have to know which.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return []
+    forms = {raw, raw.lower()}
+    code = normalize_country(raw)
+    if code:
+        forms.add(code)
+    iso3 = country_payload_iso3(raw)
+    if iso3:
+        forms.add(iso3)
+        forms.add(iso3.lower())
+    # THE ROUND TRIP, and it does not fall out of the above. Q303 displays `GBR` for
+    # a law row stored as `uk`, so an operator can read `GBR` off the screen and paste
+    # it into the filter -- and without this branch that input resolves to `gb`,
+    # `gbr`, `GBR` and matches NOTHING, because the column holds `uk`. Measured before
+    # this existed. So every SHORT alias the name index maps to the same country joins
+    # the set: `uk` for GBR, `usa` for USA, `drc` for CD.
+    #
+    # Short only. A full name ("united kingdom") is a legitimate key in that index and
+    # is never what a country COLUMN holds, so admitting it would pad every query with
+    # values nothing can match.
+    if code:
+        forms.update(k for k, v in _name_index().items() if v == code and len(k) <= 3)
+    return sorted(forms)
