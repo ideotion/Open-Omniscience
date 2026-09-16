@@ -25,6 +25,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import diagnostics as D
+from src.api.diagnostics import bundle as _diag_bundle
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,7 +55,7 @@ def diag_dir(tmp_path, monkeypatch):
     a route that did would need every one passed explicitly."""
     d = tmp_path / "diagnostics"
     d.mkdir()
-    monkeypatch.setattr(D, "_all_diagnostics_dir", lambda: d)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_dir", lambda: d)
     return d
 
 
@@ -78,8 +79,7 @@ def _archive(d: Path, name: str, *, mtime: float, body: bytes = b"PK\x03\x04zip"
 def test_the_running_jobs_own_result_is_served_when_it_has_one(diag_dir, monkeypatch):
     """The pre-existing path, unchanged: a completed job serves the file it published."""
     mine = _archive(diag_dir, "oo-all-diagnostics-20260810-120000.zip", mtime=1000)
-    monkeypatch.setattr(
-        D, "_ALL_DIAG_JOB", _job("done", path=str(mine), filename=mine.name, bytes=9)
+    monkeypatch.setattr(_diag_bundle, "_ALL_DIAG_JOB", _job("done", path=str(mine), filename=mine.name, bytes=9)
     )
     resp = D.all_diagnostics_job_download()
     assert Path(resp.path) == mine
@@ -88,7 +88,7 @@ def test_the_running_jobs_own_result_is_served_when_it_has_one(diag_dir, monkeyp
 def test_a_finished_archive_survives_the_process_that_built_it(diag_dir, monkeypatch):
     """THE FIX. The job object is gone (app restarted); the archive is right there."""
     on_disk = _archive(diag_dir, "oo-all-diagnostics-20260810-120000.zip", mtime=1000)
-    monkeypatch.setattr(D, "_ALL_DIAG_JOB", _job("idle"))
+    monkeypatch.setattr(_diag_bundle, "_ALL_DIAG_JOB", _job("idle"))
 
     resp = D.all_diagnostics_job_download()
 
@@ -101,7 +101,7 @@ def test_a_finished_archive_survives_the_process_that_built_it(diag_dir, monkeyp
 def test_the_newest_archive_wins(diag_dir, monkeypatch):
     _archive(diag_dir, "oo-all-diagnostics-20260809-090000.zip", mtime=1000)
     newer = _archive(diag_dir, "oo-all-diagnostics-20260810-120000.zip", mtime=2000)
-    monkeypatch.setattr(D, "_ALL_DIAG_JOB", _job("idle"))
+    monkeypatch.setattr(_diag_bundle, "_ALL_DIAG_JOB", _job("idle"))
     assert Path(D.all_diagnostics_job_download().path) == newer
 
 
@@ -114,7 +114,7 @@ def test_a_stale_archive_is_never_served_as_a_running_builds_output(diag_dir, mo
     perfectly readable archive is sitting next to it.
     """
     _archive(diag_dir, "oo-all-diagnostics-20260809-090000.zip", mtime=1000)
-    monkeypatch.setattr(D, "_ALL_DIAG_JOB", _job("running"))
+    monkeypatch.setattr(_diag_bundle, "_ALL_DIAG_JOB", _job("running"))
 
     with pytest.raises(HTTPException) as exc:
         D.all_diagnostics_job_download()
@@ -125,7 +125,7 @@ def test_a_part_file_is_never_served(diag_dir, monkeypatch):
     """An in-flight or abandoned build. Serving a truncated zip to someone already trying
     to diagnose something is the worst available answer."""
     _archive(diag_dir, "oo-all-diagnostics-20260810-120000.zip.part", mtime=2000)
-    monkeypatch.setattr(D, "_ALL_DIAG_JOB", _job("idle"))
+    monkeypatch.setattr(_diag_bundle, "_ALL_DIAG_JOB", _job("idle"))
 
     with pytest.raises(HTTPException) as exc:
         D.all_diagnostics_job_download()
@@ -134,7 +134,7 @@ def test_a_part_file_is_never_served(diag_dir, monkeypatch):
 
 
 def test_nothing_on_disk_still_404s(diag_dir, monkeypatch):
-    monkeypatch.setattr(D, "_ALL_DIAG_JOB", _job("idle"))
+    monkeypatch.setattr(_diag_bundle, "_ALL_DIAG_JOB", _job("idle"))
     with pytest.raises(HTTPException) as exc:
         D.all_diagnostics_job_download()
     assert exc.value.status_code == 404
@@ -142,7 +142,7 @@ def test_nothing_on_disk_still_404s(diag_dir, monkeypatch):
 
 def test_a_missing_directory_is_a_none_not_a_crash(monkeypatch, tmp_path):
     """The helper degrades: a diagnostics dir that cannot be listed is an absence."""
-    monkeypatch.setattr(D, "_all_diagnostics_dir", lambda: tmp_path / "nope")
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_dir", lambda: tmp_path / "nope")
     assert D._newest_all_diagnostics_archive() is None
 
 
