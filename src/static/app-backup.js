@@ -17,9 +17,31 @@
    not, and the failure is a TDZ error at load rather than anything a reader would
    spot in review. Add new code inside the module it belongs to.
 */
+    // The dated export folder THIS export is writing into (R5; Q210-Q213). Allocated
+    // ONCE per run by the server and then handed to BOTH phases, because a name computed
+    // separately in each phase would give two folders whenever an export crosses a minute
+    // boundary -- and neither of them would be the one the panel names. Also what a RESUME
+    // must go back to: re-reading the destination box would allocate a SECOND folder and
+    // orphan the paused one, which is the resumable-job class of defect where the extra
+    // state quietly drops on the way back in.
+    let _uxExportDir = null;
+    //: The facts the completion panel last drew, so a language switch can redraw them.
+    let _uxExportFacts = null;
+    document.addEventListener("oo:langchange", () => {
+      // Only when a panel is actually on screen: re-rendering into a hidden host would
+      // resurrect a previous export's panel the next time the dialog opens.
+      const host = document.getElementById("ux-summary");
+      if (!host || !host.innerHTML || !_uxExportFacts) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _uxRenderExportPanel(_uxExportFacts, t);
+    });
+
     async function openUnifiedExport() {
       const dlg = document.getElementById("ux-export");
       document.getElementById("ux-progress").textContent = "";
+      const sum = document.getElementById("ux-summary");
+      if (sum) sum.innerHTML = "";
+      _uxExportFacts = null;
       document.getElementById("ux-run").disabled = false;
       dlg.showModal();
       await _uxLoadInventory();
@@ -55,6 +77,11 @@
       } catch (e) { /* best-effort */ }
       if (!shown) return;
       const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
+      // Recover the folder BEFORE the branch: a PAUSED export resumed after a page
+      // reload must re-enter the folder it paused in, and the only place that survives
+      // the reload is the job manager's own dest. Setting it only on the completed
+      // branch would leave a reloaded resume allocating a fresh folder.
+      _uxExportDir = shown.dest || null;
       if (shown.state === "paused") {
         // Audit finding 2026-07-17 (M8): a reopened dialog used to print "paused" text
         // with NO way to resume -- _uxPhase (which endpoint a resume must target) stayed
@@ -65,8 +92,140 @@
         _uxPhase = phase;
         _uxShowPaused(prog, bar, pauseBtn, t);
       } else {
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)} (${esc(t("last completed export"))})`;
+        // A completed export: the panel a reopened dialog shows is the same panel the
+        // run itself ended on, built from the same server-side facts rather than from a
+        // remembered sentence.
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span style="overflow-wrap:anywhere">${esc(dest)}</span> (${esc(t("last completed export"))})`;
+        if (dest) {
+          try {
+            const facts = await api("/api/backup/export-summary?dir=" + encodeURIComponent(dest));
+            _uxRenderExportPanel(facts, t);
+          } catch (e) { /* best-effort: the completion line stands on its own */ }
+        }
       }
+    }
+
+    // ONE renderer for the completion panel (R4; Q208 = a). The facts come from
+    // /api/backup/export-summary, which is the SAME function BACKUP_SUMMARY.md renders
+    // from -- so the screen and the file on the drive cannot disagree about a number.
+    // Nothing here is computed from the request the page made; a panel that quoted its
+    // own inputs back would report what was asked for, not what happened.
+    function _uxRenderExportPanel(facts, t) {
+      const host = document.getElementById("ux-summary");
+      if (!host || !facts) return;
+      // Kept so a live language switch can redraw the SAME facts (the panel is
+      // data-i18n-dyn, so the DOM walker will not do it -- deliberately, because the
+      // walker would translate the table NAMES, which are data).
+      _uxExportFacts = facts;
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const v = facts.volumes || {}, el = facts.elapsed || {}, sch = facts.schema || {};
+      const enc = facts.encryption || {};
+      const dash = "—";
+      const bytes = (n) => (n == null ? dash : humanBytes(n));
+      const secs = (n) => (n == null ? null : (n < 90 ? `${n.toFixed(1)} ${t("s")}` : `${Math.round(n / 60)} ${t("min")}`));
+      const rows = [];
+      const row = (label, value, title) =>
+        rows.push(`<div class="row" style="gap:6px;align-items:baseline"><span class="muted" style="min-width:150px"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span><span>${value}</span></div>`);
+
+      // 1-2. volumes and the bytes they occupy.
+      if (facts.corpus_included) {
+        row(t("Encrypted volumes"), `${esc(String(v.count == null ? dash : v.count))} · ${esc(bytes(v.bytes))} ${esc(t("on the drive"))} · ${esc(bytes(v.plaintext_bytes))} ${esc(t("of content"))}`);
+        row(t("Parity (corruption recovery)"), esc(v.parity ? t("written") : t("none")));
+      } else {
+        row(t("Encrypted volumes"), esc(t("none — no corpus was selected for this export")));
+      }
+      // 3. per-table counts, articles FIRST (the ruled headline unit).
+      const tables = facts.tables || [];
+      const filled = tables.filter((r) => r.rows > 0);
+      const empty = tables.length - filled.length;
+      if (tables.length) {
+        const cells = filled.map((r) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(r.name)}</b> ${esc(String(r.rows))}</span>`).join("");
+        const more = empty ? `<div class="muted" style="font-size:11px">${esc(tf("{n} more tables are empty in this backup.", { n: empty }))}</div>` : "";
+        row(t("Rows per table"), `<div style="display:flex;flex-wrap:wrap">${cells}</div>${more}`,
+            t("The counts the export measured while it streamed the corpus, articles first."));
+      }
+      // 4. files copied, per category.
+      const files = facts.files || [];
+      if (files.length) {
+        row(t("Files copied"), files.map((c) => `<span class="pill" style="margin:0 4px 4px 0"><b>${esc(c.category)}</b> ${esc(String(c.files))} · ${esc(bytes(c.bytes))}</span>`).join(""));
+      } else {
+        row(t("Files copied"), esc(t("none")));
+      }
+      // 5. elapsed -- an unmeasured span says so; it never renders as zero.
+      const corpusS = secs(el.corpus_s), filesS = secs(el.files_s);
+      row(t("Elapsed"),
+          `${esc(corpusS || dash)} <span class="muted">${esc(t("corpus"))}</span>` +
+          (files.length ? ` · ${esc(filesS || t("not recorded"))} <span class="muted">${esc(t("files"))}</span>` : ""),
+          el.files_s_reason || "");
+      // 6-9. destination, encryption, schema, app version.
+      // A filesystem path is ONE unbreakable token, and the dated folder made it longer:
+      // measured at 390px it ran 165px past the viewport with no way to read its end.
+      // `anywhere` rather than `break-word` because there is no space to break at.
+      row(t("Destination"), `<code style="overflow-wrap:anywhere">${esc(facts.destination || "")}</code>`);
+      row(t("Encryption"),
+          esc(enc.corpus_encrypted == null
+              ? dash
+              : (enc.corpus_encrypted ? t("corpus encrypted at rest inside the backup") : t("corpus stored unencrypted in this backup"))) +
+          (files.length ? ` · ${esc(t("copied files are not encrypted"))}` : ""),
+          enc.note || "");
+      row(t("Schema version"), esc(`${sch.backup_schema || dash} · ${sch.container || dash} · ${t("database")} ${sch.alembic_rev || dash}`));
+      row(t("App version"), esc(facts.app_version || dash));
+      // 10. the licence lines that apply (Q1008 = a).
+      const lic = facts.attribution || [];
+      if (facts.attribution_error) {
+        // The visible sentence is keyed; the backend's own words (which name the ruling
+        // and the tables) ride the hover as technical detail rather than as the caveat.
+        row(t("Licences"),
+            `<span class="note err" title="${esc(facts.attribution_error)}">${esc(t("The attribution lines could not be completed — a licence question is unanswered, so this backup is reported without them."))}</span>`);
+      } else if (lic.length) {
+        row(t("Licences"),
+            lic.map((l) => `<div title="${esc(tf("applies because: {signal}", { signal: l.because }))}">${esc(l.text)}</div>`).join(""));
+      } else {
+        row(t("Licences"), `<span class="muted">${esc(t("no attribution line applies to what this backup holds"))}</span>`);
+      }
+
+      const verify = facts.verify || {};
+      host.innerHTML =
+        `<div class="note ${verify.state === "verified" ? "" : "err"}" style="margin-top:8px"${_uxVerifyDetail(verify) ? ` title="${esc(_uxVerifyDetail(verify))}"` : ""}>${esc(_uxVerifySentence(verify, t))}</div>` +
+        `<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px;font-size:12px">${rows.join("")}</div>` +
+        `<div class="card-caveat" style="margin-top:6px;font-size:11px">${esc(t("Every export writes a new dated folder and every volume in it: nothing is reused from an earlier backup, so this folder's bytes were all written by this one pass."))}</div>` +
+        (facts.summary_path
+          ? `<div class="muted" style="margin-top:4px;font-size:11px;overflow-wrap:anywhere">${esc(t("A summary of these facts was written beside the backup:"))} <code>${esc(facts.summary_path)}</code></div>`
+          : "");
+    }
+
+    // The verify verdict as ONE sentence. The five not-verified cases stay apart: "off",
+    // "cancelled", "could not be re-read", "no result recorded" and "FAILED" are
+    // different facts, and a single missing "verified" would flatten the last one into
+    // the others.
+    //
+    // EVERY branch is a CLIENT-side keyed template, never the backend's own `reason`
+    // string. The job writes those in English, and this is a caveat surface, which ships
+    // x12 by the informed-consent non-negotiable — piping a backend sentence here would
+    // render English under an Arabic heading. The backend's raw wording is still
+    // available, as the technical DETAIL on the hover (_uxVerifyDetail), which is the
+    // layering the convention asks for rather than a discarded fact.
+    function _uxVerifySentence(verify, t) {
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const bad = verify.bad || [];
+      if (verify.state === "verified") return tf("Verified — all {total} volumes were re-read and matched their checksums.", { total: verify.total });
+      if (verify.state === "failed") return tf("NOT verified — {n} of {total} volumes no longer match their checksum: {names}. Treat this backup as unreliable until it is written again.", { n: bad.length, total: verify.total, names: bad.join(", ") });
+      if (verify.state === "off") return t("Not verified — verify-after-write was turned off for this export.");
+      if (verify.state === "stopped") return t("Not verified — the re-read was cancelled. The volumes were written, but they were not read back.");
+      if (verify.state === "unavailable") return t("Not verified — the volume set could not be read back off the destination.");
+      return t("Not verified — this export recorded no verify result.");
+    }
+
+    //: The backend's own English `reason`/`method` wording, for the hover. Kept BESIDE
+    //: the translated sentence rather than instead of it: it names the exact mechanism
+    //: (which volumes, compared against what) and is the thing an operator quotes when
+    //: something is wrong.
+    function _uxVerifyDetail(verify) {
+      return [verify.reason, verify.method].filter(Boolean).join(" · ");
     }
 
     async function _uxLoadInventory() {
@@ -80,8 +239,28 @@
         // "Everything" is the default: a present category (count > 0) is CHECKED so a
         // backup includes the whole corpus + wiki + maps + models unless the user
         // unticks one (field ask 2026-07-02). Absent categories are disabled.
-        const opt = (id, label, d) =>
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "checked" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+        // Q219 = a: the size an export would ACTUALLY write for this member, shown
+        // BEFORE the export starts. `d.bytes` is the sum over the member's categories,
+        // so a tick that carries two stores shows both; the per-store split rides the
+        // hover (the layered-disclosure convention, invariant #17) rather than crowding
+        // the row.
+        const opt = (id, label, d) => {
+          const parts = Object.entries(d.breakdown || {}).filter(([, x]) => (x.count || 0) > 0);
+          const title = parts.length > 1
+            ? parts.map(([k, x]) => `${k}: ${x.count || 0} · ${humanBytes(x.bytes || 0)}`).join(" · ")
+            : "";
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${(d.count || 0) > 0 ? "checked" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+        };
+        // ONE ordered list from the server drives the rows AND the categories each one
+        // exports (`data-cats`), so a lane that lands later becomes a row with a real
+        // size by appending one entry to src/backup/inventory.py -- with no second
+        // mapping here to forget to keep in step. The legacy per-key fallback stays for
+        // a server that predates the list.
+        const members = inv.members || [
+          { key: "models", label: "LLM models", categories: ["models", "hf_models"], ...(inv.models || {}) },
+          { key: "maps", label: "Offline maps", categories: ["osm_regions"], ...(inv.maps || {}) },
+          { key: "wiki", label: "Wikipedia dumps", categories: ["wiki_dumps"], ...(inv.wiki || {}) },
+        ];
         // The corpus is CHECKED by default (a backup still means everything unless the
         // user says otherwise) but no longer `disabled`: it was un-untickable, so the
         // only way to copy models/maps/dumps was to re-encrypt and re-write the whole
@@ -92,9 +271,7 @@
         // restores exactly as it is written.
         box.innerHTML =
           `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
-          opt("models", t("LLM models"), inv.models || {}) +
-          opt("maps", t("Offline maps"), inv.maps || {}) +
-          opt("wiki", t("Wikipedia dumps"), inv.wiki || {}) +
+          members.map((m) => opt(m.key, t(m.label), m)).join("") +
           // S6.2: the same three categories, one artifact instead of two things. Not a
           // better option -- a different trade, so it is a choice and the hover says what
           // it costs. Disabled without a corpus because there would be no artifact to
@@ -109,6 +286,15 @@
       }
     }
 
+    //: Every rendered opt-in member row (the corpus is not one -- it is always offered
+    //: and has its own box). Carries `data-cats` = the folder-backup categories the
+    //: member exports, which is the ONE mapping both the "inside" logic and the run read.
+    function _uxMemberBoxes() {
+      const box = document.getElementById("ux-checklist");
+      if (!box) return [];
+      return Array.from(box.querySelectorAll("input[type=checkbox][data-cats]"));
+    }
+
     // The "inside" choice only means something when there IS an artifact and there ARE
     // files to put in it. Rather than silently ignoring the box in the other cases, it is
     // disabled and unticked, so what the run will do is what the dialog shows.
@@ -116,10 +302,9 @@
       const inside = document.getElementById("ux-c-inside");
       if (!inside) return;
       const corpus = document.getElementById("ux-c-corpus");
-      const any = ["models", "maps", "wiki"].some((k) => {
-        const el = document.getElementById("ux-c-" + k);
-        return el && el.checked;
-      });
+      // Read the rendered member rows rather than a hardcoded key list, so a lane added
+      // to the server's member list is counted here without a second edit.
+      const any = _uxMemberBoxes().some((el) => el.checked);
       const usable = (!corpus || corpus.checked) && any;
       inside.disabled = !usable;
       if (!usable) inside.checked = false;
@@ -347,17 +532,22 @@
       return _uxPoll(statusUrl, kind, ui);
     }
 
-    async function _uxRun(btn) {
+    async function _uxRun(btn, resumeDir) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const dest = (document.getElementById("ux-dest").value || "").trim();
-      if (!dest) { toast(t("Enter a destination folder first."), "err"); return; }
+      const parent = (document.getElementById("ux-dest").value || "").trim();
+      if (!parent) { toast(t("Enter a destination folder first."), "err"); return; }
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
+      // Which folder-backup categories a ticked member carries comes from the member
+      // itself (`data-cats`, written by the inventory), never from a list repeated here:
+      // the "LLM models" tick has always exported BOTH model stores, and a mapping kept
+      // in two places is how the size shown beside it came to count only one of them.
       const blobs = [];
-      if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) { blobs.push("models"); blobs.push("hf_models"); }
-      if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
-      if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
+      for (const el of _uxMemberBoxes()) {
+        if (!el.checked) continue;
+        for (const c of (el.dataset.cats || "").split(",")) { if (c) blobs.push(c); }
+      }
       // A corpus-less export is now a first-class choice, so neither half is assumed:
       // refuse an empty selection outright rather than writing a destination folder that
       // looks like a backup and holds nothing.
@@ -378,13 +568,41 @@
       if (wantCorpus && !pass) {
         toast(t("Enter a passphrase for the encrypted corpus."), "err"); return;
       }
+      // Q218 = a: default ON, and re-read from the box on every start -- including a
+      // RESUME, which must re-supply every control it carries rather than leaning on a
+      // default. A resumable job that only re-passes its cursor is where a data-safety
+      // control silently flips.
+      const vBox = document.getElementById("ux-verify");
+      const verifyAfterWrite = !vBox || vBox.checked;
       btn.disabled = true;
+      const sumHost = document.getElementById("ux-summary");
+      if (sumHost) sumHost.innerHTML = "";
       if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
+      // THE DATED FOLDER (R5; Q210-Q213). Allocated once, server-side, BEFORE either
+      // phase, so both write into the same folder and the panel names the folder that
+      // exists. A resume goes back to the folder it paused in -- allocating a second one
+      // would orphan the first, along with the volumes already in it.
+      let dest = resumeDir || null;
+      if (!dest) {
+        prog.innerHTML = `<span class="muted">${esc(t("Preparing the export folder…"))}</span>`;
+        try {
+          const made = await api("/api/backup/export-folder", { method: "POST", body: JSON.stringify({ parent }) });
+          dest = made.dir;
+        } catch (e) {
+          prog.innerHTML = `<span class="note err">${esc(t("Could not create the export folder:"))} ${esc(e.message || e)}</span>`;
+          btn.disabled = false;
+          if (pauseBtn) pauseBtn.style.display = "none";
+          return;
+        }
+      }
+      _uxExportDir = dest;
       try {
         if (wantCorpus) {
           _uxPhase = "volumes";
           const s1 = await _uxStartThenPoll(
-            () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify(inside ? { dest, passphrase: pass, include_blobs: blobs } : { dest, passphrase: pass }) }),
+            () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify(inside
+              ? { dest, passphrase: pass, include_blobs: blobs, verify_after_write: verifyAfterWrite }
+              : { dest, passphrase: pass, verify_after_write: verifyAfterWrite }) }),
             "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") },
             { mode: "backup", dest });
           if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
@@ -423,9 +641,21 @@
         if (blobs.includes("models")) included.push(t("LLM models"));
         if (blobs.includes("osm_regions")) included.push(t("Offline maps"));
         if (blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)}`
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span style="overflow-wrap:anywhere">${esc(dest)}</span>`
           + `<div class="muted" style="font-size:12px;margin-top:2px">`
           + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>`;
+        // BACKUP_SUMMARY.md is written LAST (Q209 = a), after both phases and after the
+        // verify-after-write pass -- which is what lets it carry the verify verdict
+        // rather than promise one. A failure HERE is not a failed backup: the bytes are
+        // on the drive and verified, so it degrades to a named note beside a completion
+        // line that stands, never to "Backup failed".
+        try {
+          const written = await api("/api/backup/export-summary", { method: "POST", body: JSON.stringify({ dir: dest }) });
+          _uxRenderExportPanel({ ...(written.facts || {}), summary_path: written.summary_path }, t);
+        } catch (e) {
+          if (sumHost) sumHost.innerHTML = `<div class="note err" style="margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
+          console.error("ux summary", e);
+        }
       } catch (e) {
         _uxPhase = null;
         if (bar) bar.style.display = "none";
@@ -474,7 +704,7 @@
           if (s && s.state === "paused") { _uxShowPaused(prog, bar, btn, t); return; }
           _uxPhase = null;
           if (bar) bar.style.display = "none"; btn.style.display = "none";
-          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc((document.getElementById("ux-dest").value || "").trim())}`;
+          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(_uxExportDir || (document.getElementById("ux-dest").value || "").trim())}`;
         } catch (e) {
           _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
           prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
@@ -482,8 +712,10 @@
         return;
       }
       // Volumes phase: re-running the flow continues the corpus from its resume log,
-      // then does any selected large-data blobs.
-      _uxRun(document.getElementById("ux-run"));
+      // then does any selected large-data blobs -- INSIDE the folder this export already
+      // allocated. Without that argument the re-entry would read the destination box and
+      // allocate a fresh dated folder, leaving the paused volumes behind in the old one.
+      _uxRun(document.getElementById("ux-run"), _uxExportDir);
     }
 
     // ---- Unified Import dialog (folder discovery) -------------------------- //

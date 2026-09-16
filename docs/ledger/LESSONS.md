@@ -10036,3 +10036,41 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   usual "it fixes itself on the next tick" did not apply. **GENERAL FORM: every `tf()`-built
   surface needs an `oo:langchange` re-render, and the ones repainted by a loop need it MORE,
   not less, because the loop ends.**
+
+## 2026-09-16 — A STRING-MATCHING i18n WALKER WILL TRANSLATE YOUR DATA, and only a rendered page in a non-Latin locale shows it
+
+**Found by the click-through, in the one locale that makes it unmissable.** `S04-03`'s export
+completion panel lists per-table row counts, `articles` first. The Arabic walk rendered the
+facts table as **`مقالة 24 · مصادر 6404 · source_qualification_attempts 6400`** — the first two
+table NAMES translated, the third not. Nothing in the panel asked for that: `i18n.js`'s DOM
+walker translates any text node whose trimmed content **exactly matches a key**, and `articles`,
+`sources` and `keywords` are all legitimate chrome keys elsewhere in the app. So a table name
+that happens to collide with a UI word gets translated and a table name that does not, does not
+— and the resulting table claims the corpus holds a table called `مقالة`, which it does not.
+
+**THE GENERAL FORM.** A walker that matches on VALUE cannot distinguish chrome from data,
+because the distinction is not in the string, it is in the string's role. Any surface that
+renders identifiers — table names, column names, source domains, model tags, file names, keyword
+terms — is one collision away from a fabricated identifier, and the collision is invisible in a
+diff, invisible in a DOM-level test, and invisible in every Latin-script locale where a
+translated word often looks like the original. `articles` → `articles` in French reads exactly
+like nothing happened. The repository's own rule was already written down — "the same discipline
+as translating chrome but never data", in `tf()`'s docstring — but the rule lives with the
+helper you call deliberately, while the walker runs over everything you did not mark.
+
+**THE FIX IS THE EXISTING OPT-OUT, AND IT COSTS A SECOND THING.** `data-i18n-dyn` on the
+container makes the walker skip the subtree; the panel then translates itself through `t()`/
+`tf()`, which it was already doing. Two consequences worth knowing before reaching for it:
+(a) the opt-out ALSO closes a latent poisoning bug the walker's own comment documents — the
+walker caches first-seen text as "the original English", so a panel that renders in French and
+is then walked would be frozen in French for every other language; (b) opting out means nothing
+repaints the panel on a live language switch, so the surface must keep its rendered facts and
+re-render on `oo:langchange` — which is a third place the data/chrome split has to be got right,
+and is why the facts are retained rather than the HTML.
+
+**WHAT ACTUALLY FOUND IT, stated because it is the cheap part:** printing the rendered panel
+text in `ar` and reading it. No assertion in the slice would have caught this — the node suite
+ran the renderer with a stub `t` (identity), the source tests checked the keys exist, and the
+i18n gates count unkeyed strings and cannot see an OVER-translated one. This is the recorded "a
+node harness proves the HTML and cannot see the page" lesson with the failure pointing the other
+way: not a string that failed to translate, but one that translated when it must not.

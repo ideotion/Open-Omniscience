@@ -60,15 +60,58 @@ def test_blob_categories_are_mapped_and_default_zero(db, monkeypatch):
     )
     monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
     out = inv.backup_inventory(db)
-    assert out["models"] == {"count": 3, "bytes": 900}
-    assert out["maps"] == {"count": 1, "bytes": 500}   # osm_regions -> maps
-    assert out["wiki"] == {"count": 0, "bytes": 0}     # absent -> zero
+    assert (out["models"]["count"], out["models"]["bytes"]) == (3, 900)
+    assert (out["maps"]["count"], out["maps"]["bytes"]) == (1, 500)   # osm_regions -> maps
+    assert (out["wiki"]["count"], out["wiki"]["bytes"]) == (0, 0)     # absent -> zero
+
+
+def test_the_models_member_sizes_BOTH_stores_because_one_tick_exports_both(db, monkeypatch):
+    """The size shown before an export must be the size the export would write.
+
+    One "LLM models" tick has always exported the Ollama store AND the Hugging Face
+    cache, but the figure beside it counted only the first — so a 40 GB HF cache was
+    invisible at exactly the moment Q219 = a exists to make it visible.
+    """
+    monkeypatch.setattr(
+        inv, "_blob_totals",
+        lambda: {
+            "models": {"count": 3, "bytes": 900},
+            "hf_models": {"count": 1, "bytes": 50_000},
+        },
+    )
+    monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
+    out = inv.backup_inventory(db)
+    assert out["models"]["bytes"] == 50_900, "the HF cache must be inside the number"
+    assert out["models"]["count"] == 4
+    # Both stores stay NAMED, so "which of these is the big one" is still answerable.
+    assert out["models"]["breakdown"]["hf_models"]["bytes"] == 50_000
+    assert out["models"]["breakdown"]["models"]["bytes"] == 900
+
+
+def test_every_member_names_the_categories_its_tick_exports(db, monkeypatch):
+    """Q219's hook: ONE list drives the rows, their sizes and what a tick writes.
+
+    The categories a member declares are the ones its size sums over AND the ones the
+    export sends — a member whose two are out of step is exactly how the understated
+    models figure happened, so the shape is pinned rather than the spelling.
+    """
+    monkeypatch.setattr(inv, "_blob_totals", lambda: {})
+    monkeypatch.setattr(inv, "_db_bytes", lambda: 0)
+    out = inv.backup_inventory(db)
+    keys = [m["key"] for m in out["members"]]
+    assert keys == ["models", "maps", "wiki"], keys
+    for m in out["members"]:
+        assert m["categories"], f"{m['key']} exports nothing"
+        assert set(m["breakdown"]) == set(m["categories"]), (
+            f"{m['key']}'s size is summed over a different set than it exports"
+        )
+        assert m["label"], "a member needs an English label for the locale files to key on"
 
 
 def test_no_session_still_returns_blob_inventory(monkeypatch):
     monkeypatch.setattr(inv, "_blob_totals", lambda: {"wiki_dumps": {"count": 2, "bytes": 7}})
     monkeypatch.setattr(inv, "_db_bytes", lambda: 42)
     out = inv.backup_inventory(None)
-    assert out["wiki"] == {"count": 2, "bytes": 7}
+    assert (out["wiki"]["count"], out["wiki"]["bytes"]) == (2, 7)
     assert out["corpus"]["bytes"] == 42
     assert "breakdown" not in out["corpus"]  # no session -> no counts, no crash

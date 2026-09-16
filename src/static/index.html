@@ -3040,11 +3040,22 @@
       <div style="margin-top:10px"><label for="ux-dest">Destination folder (on this machine / a mounted drive)</label>
         <div class="row" style="gap:6px"><input id="ux-dest" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-dest', true)">Browse…</button></div></div>
+      <div class="hint" style="margin-top:4px" title="The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.">Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup.</div>
       <div style="margin-top:6px"><label for="ux-pass">Passphrase — encrypts the corpus (no recovery for a lost passphrase)</label>
         <input id="ux-pass" type="password" style="width:100%"></div>
+      <label class="switch" style="margin-top:8px" title="Every volume is read back off the destination and its checksum checked against the one recorded when it was written. It reads every byte a second time, which roughly doubles the time an export takes on a slow drive — and it is the only thing that catches a drive that accepted the write and stored something else."><input type="checkbox" id="ux-verify" checked> Re-read every volume after writing and check it (verify)</label>
       <div class="hint" style="margin-top:6px">The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.</div>
+      <div class="hint" style="margin-top:2px">Every export writes a full new backup — nothing is reused from an earlier one, so it costs the time and the space of everything you selected.</div>
       <progress id="ux-bar" style="width:100%;margin-top:8px;display:none"></progress>
       <div id="ux-progress" class="hint" style="margin-top:4px"></div>
+      <!-- data-i18n-dyn: the completion panel renders ITSELF in the active language
+           (every string in it goes through t()/tf()), and it carries DATA the walker
+           must never touch — a table NAME is data, and the string-matching walker
+           happily rendered `articles` as `مقالة` in the facts table, which claims a
+           table that does not exist. The opt-out also avoids the walker caching an
+           already-translated render as "the original English", which freezes a node in
+           whichever language it first drew in. Re-rendered on oo:langchange below. -->
+      <div id="ux-summary" data-i18n-dyn></div>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
         <button class="secondary" onclick="document.getElementById('ux-export').close()">Close</button>
         <button id="ux-pause" class="secondary" style="display:none" onclick="_uxPauseResume(this)">Pause</button>

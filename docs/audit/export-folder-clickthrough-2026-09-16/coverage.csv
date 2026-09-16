@@ -1,0 +1,51 @@
+surface,axis,result,note
+locale_en,direction,verified,dir=ltr
+export_dialog_en,opens-from-settings,verified,open=True
+export_dialog_en,member-sizes-before-the-export,verified,Corpus · (24 articles · 6404 sources · 10 dates · 607 keywords · 5.8 MB) · LLM models · (0 · 0 B) · Offline maps · (0 · 0 B) · Wikipedia dumps · (0 · 
+export_dialog_en,members-carry-their-categories,verified,"ux-c-models=models,hf_models | ux-c-maps=osm_regions | ux-c-wiki=wiki_dumps"
+export_dialog_en,dated-folder-stated,verified,"Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup."
+export_dialog_en,verify-default-on,verified,checked=True · Re-read every volume after writing and check it (verify)
+export_panel_en,renders-after-a-real-export,verified,Verified — all 4 volumes were re-read and matched their checksums. · Encrypted volumes · 4 · 11.6 MB on the drive · 5.8 MB of content · Parity (corruption recovery) · written · Rows per table · articles 24 · sources 6404
+export_panel_en,verify-verdict-visible,verified,Verified — all 4 volumes were re-read and matched their checksums.
+export_panel_en,ruled-fields-present,verified,Encrypted volumes 4 · 11.6 MB on the drive · 5.8 MB of content || Parity (corruption recovery) written || Rows per table articles 24 sources 6404 source_qualification_attempts 6400 keyword_mentions 1551 keywords 607 keyword_supergroup_members 538 keyword_supergroups 77 law_documents 23 article_menti
+export_panel_en,summary-file-named,verified,/tmp/claude-0/-home-user-Open-Omniscience/3c715d31-5d5e-518b-85f8-01fee7c9c964/scratchpad/drive/202609161718_OpenOmniscience_Backup
+export_panel_en,recovered-after-a-page-reload,verified,Verified — all 4 volumes were re-read and matched their checksums. · Encrypted volumes · 4 · 11.6 MB on the drive · 5.8 MB of content · Parity (corruption recovery) · written · Rows per table · articl
+export_panel_en,renders-in-the-active-locale,verified,"English source text, which this locale does not change"
+export_panel_en,table-names-are-data-and-stay-untranslated,verified,raw table names present in the facts table
+export_dialog_en,renders-in-the-active-locale,verified,"English source text, which this locale does not change"
+locale_fr,direction,verified,dir=ltr
+export_dialog_fr,opens-from-settings,verified,open=True
+export_dialog_fr,member-sizes-before-the-export,verified,Corpus · (24 articles · 6404 sources · 10 dates · 607 mots-clés · 5.8 MB) · modèles LLM · (0 · 0 B) · Cartes hors ligne · (0 · 0 B) · Dumps Wikipédia 
+export_dialog_fr,members-carry-their-categories,verified,"ux-c-models=models,hf_models | ux-c-maps=osm_regions | ux-c-wiki=wiki_dumps"
+export_dialog_fr,dated-folder-stated,verified,"Chaque export crée ici son propre dossier daté, nommé par exemple 202609121045_OpenOmniscience_Backup."
+export_dialog_fr,verify-default-on,verified,checked=True · Relire chaque volume après l'écriture et le vérifier
+export_panel_fr,renders-after-a-real-export,verified,Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle. · Volumes chiffrés · 4 · 11.6 MB sur le disque · 5.8 MB de contenu · Parité (récupération en cas de corruption) · écrite · Lignes p
+export_panel_fr,verify-verdict-visible,verified,Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle.
+export_panel_fr,ruled-fields-present,verified,Volumes chiffrés 4 · 11.6 MB sur le disque · 5.8 MB de contenu || Parité (récupération en cas de corruption) écrite || Lignes par table articles 24 sources 6404 source_qualification_attempts 6400 keyword_mentions 1551 keywords 607 keyword_supergroup_members 538 keyword_supergroups 77 law_documents 2
+export_panel_fr,summary-file-named,verified,/tmp/claude-0/-home-user-Open-Omniscience/3c715d31-5d5e-518b-85f8-01fee7c9c964/scratchpad/drive/202609161718_OpenOmniscience_Backup_2
+export_panel_fr,recovered-after-a-page-reload,verified,Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle. · Volumes chiffrés · 4 · 11.6 MB sur le disque · 5.8 MB de contenu · Parité (récupération en cas de corruption)
+export_panel_fr,renders-in-the-active-locale,verified,no English chrome left; 11 strings checked against fr.json
+export_panel_fr,table-names-are-data-and-stay-untranslated,verified,raw table names present in the facts table
+export_dialog_fr,renders-in-the-active-locale,verified,no English chrome left
+locale_ar,direction,verified,dir=rtl
+export_dialog_ar,opens-from-settings,verified,open=True
+export_dialog_ar,member-sizes-before-the-export,verified,المجموعة · (24 مقالة · 6404 مصادر · 10 تواريخ · 607 كلمات مفتاحية · 5.8 MB) · نماذج LLM · (0 · 0 B) · خرائط دون اتصال · (0 · 0 B) · تفريغات ويكيبيديا 
+export_dialog_ar,members-carry-their-categories,verified,"ux-c-models=models,hf_models | ux-c-maps=osm_regions | ux-c-wiki=wiki_dumps"
+export_dialog_ar,dated-folder-stated,verified,كل عملية تصدير تُنشئ هنا مجلدها المؤرَّخ الخاص، باسم مثل 202609121045_OpenOmniscience_Backup.
+export_dialog_ar,verify-default-on,verified,checked=True · إعادة قراءة كل وحدة بعد كتابتها والتحقق منها
+export_panel_ar,renders-after-a-real-export,verified,تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها. · الوحدات المشفّرة · 4 · 11.6 MB على المحرك · 5.8 MB من المحتوى · التكافؤ (استرداد التلف) · مكتوب · الصفوف لكل جدول · articles 24 · sources 6404 · source_quali
+export_panel_ar,verify-verdict-visible,verified,تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها.
+export_panel_ar,ruled-fields-present,verified,الوحدات المشفّرة 4 · 11.6 MB على المحرك · 5.8 MB من المحتوى || التكافؤ (استرداد التلف) مكتوب || الصفوف لكل جدول articles 24 sources 6404 source_qualification_attempts 6400 keyword_mentions 1551 keywords 607 keyword_supergroup_members 538 keyword_supergroups 77 law_documents 23 article_mentioned_date
+export_panel_ar,summary-file-named,verified,/tmp/claude-0/-home-user-Open-Omniscience/3c715d31-5d5e-518b-85f8-01fee7c9c964/scratchpad/drive/202609161719_OpenOmniscience_Backup
+export_panel_ar,recovered-after-a-page-reload,verified,تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها. · الوحدات المشفّرة · 4 · 11.6 MB على المحرك · 5.8 MB من المحتوى · التكافؤ (استرداد التلف) · مكتوب · الصفوف لكل جدول · articles 24 · sources
+export_panel_ar,renders-in-the-active-locale,verified,no English chrome left; 11 strings checked against ar.json
+export_panel_ar,table-names-are-data-and-stay-untranslated,verified,raw table names present in the facts table
+export_dialog_ar,renders-in-the-active-locale,verified,no English chrome left
+export_panel_phone,nothing-in-the-dialog-overflows-390px,verified,no element past the viewport
+export_panel_phone,the-last-fact-row-is-reachable,verified,dialog scrollable=True · 10 fact rows
+page_390px,horizontal-overflow-is-PRE-EXISTING-and-not-this-slice,reported,"page overflows: True · outside the dialog: home-tier +56px, SPAN +56px"
+drive,one-dated-folder-per-export,verified,4 folders for 4 exports · 202609161718_OpenOmniscience_Backup · 202609161718_OpenOmniscience_Backup_2 · 202609161719_OpenOmniscience_Backup · 202609161719_OpenOmniscience_Backup_2
+drive,contents-of-202609161718_OpenOmniscience_Backup,verified,BACKUP_SUMMARY.md · par-00001.oopar · volumes.json
+drive,contents-of-202609161718_OpenOmniscience_Backup_2,verified,BACKUP_SUMMARY.md · par-00001.oopar · volumes.json
+drive,contents-of-202609161719_OpenOmniscience_Backup,verified,BACKUP_SUMMARY.md · par-00001.oopar · volumes.json
+drive,contents-of-202609161719_OpenOmniscience_Backup_2,verified,BACKUP_SUMMARY.md · par-00001.oopar · volumes.json

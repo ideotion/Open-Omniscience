@@ -1262,6 +1262,32 @@ Official **figures** are not here at all — they are data, so they live under
   (models / maps / dumps) are copied **as-is**. There is **no size cap** and the archive is
   never held whole in RAM. The passphrase has **no recovery** — a lost passphrase means the
   corpus backup can't be opened.
+  - **Each export makes its own dated folder.** The destination you pick is the PARENT:
+    inside it, every export creates `YYYYMMDDHHMM_OpenOmniscience_Backup` — the local date
+    and time the export started, so the folders sort in the order you made them. A second
+    export in the same minute gets `_2`, `_3` and so on. An existing folder is **never
+    written into**, so an earlier backup on the same drive cannot be damaged by a later one.
+  - **Every export is a full new backup.** Nothing is reused from an earlier one, so an
+    export costs the time and the space of everything you selected — and in exchange every
+    byte in that folder was written by that one pass.
+  - **Verify after writing** (on by default). When the last volume lands, every volume is
+    read back off the destination and its checksum compared with the one recorded when it
+    was written. It reads every byte a second time, which roughly doubles how long an
+    export takes on a slow drive; it is the only thing that catches a drive that accepted
+    the write and stored something else. The completion panel then reads **"Verified"** —
+    and if it does not, it says which of the four reasons applies: verification was turned
+    off, it was cancelled, the set could not be re-read, or it **failed** and names the
+    volumes.
+  - **`BACKUP_SUMMARY.md`** is written beside `volumes.json` at the end of every export:
+    the same facts the completion panel shows — volumes, bytes, rows per table with
+    articles first, files copied per category, elapsed, destination, encryption state,
+    schema and app versions, the verify result, and the attribution lines that apply to
+    what the backup holds. It is there so the folder explains itself on a removable drive
+    years later, when the panel that stated all this is long gone. It is a description,
+    not a signature: `volumes.json` carries the per-volume checksums that prove the bytes.
+  - **Exports are never scheduled.** There is no automatic or timed export and none is
+    planned — an export is a **deliberate act**, because it writes your corpus somewhere
+    you chose, at a moment you chose.
   **Import…** points at a folder, finds what's importable inside it (a backup to restore,
   large data, or newsletters), and restores it. **Restore is additive-only** — it
   **complements** your corpus and **never replaces** it: nothing you already have is

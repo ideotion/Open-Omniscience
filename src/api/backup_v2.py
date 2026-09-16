@@ -455,6 +455,10 @@ class VolumeBackupBody(BaseModel):
     # S6.2: large public categories to carry INSIDE the artifact rather than copied
     # alongside it. Empty = the behaviour that shipped, byte for byte.
     include_blobs: list[str] = []
+    # Q218 = a: re-read every volume after writing and check its checksum. Default ON,
+    # here as well as in the manager, so a caller that never went through the dialog
+    # gets the ruled behaviour rather than the cheaper one.
+    verify_after_write: bool = True
 
 
 class VolumeRestoreBody(BaseModel):
@@ -495,6 +499,7 @@ def volume_backup_start(body: VolumeBackupBody) -> dict:
             include_newsletters=body.include_newsletters,
             parity_fraction=body.parity_fraction,
             include_blobs=body.include_blobs,
+            verify_after_write=body.verify_after_write,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -569,6 +574,110 @@ def volume_backup_pause() -> dict:
 #  the single exclusive collection window and the Stop all live here rather than in
 #  the browser, so a page reload no longer decapitates a running import.
 # --------------------------------------------------------------------------- #
+class ExportFolderBody(BaseModel):
+    """The PARENT the operator chose; the dated folder is allocated under it."""
+
+    parent: str
+
+
+class ExportSummaryBody(BaseModel):
+    dir: str
+
+
+@router.post("/export-folder")
+def export_folder_allocate(body: ExportFolderBody) -> dict:
+    """Create the dated export folder for ONE export and return its path (R5; Q210–Q213).
+
+    Called once per export, BEFORE either phase starts, so the encrypted volumes and
+    the copied large-data files land in the same folder. Computing the name in each
+    phase instead would give two folders whenever an export crosses a minute boundary,
+    and neither of them would be the one the panel names.
+
+    The allocation is an exclusive ``mkdir``: this can only ever return a directory
+    that did not exist a moment ago, so it can never adopt a folder that already holds
+    somebody's backup (Q213 = c, no reuse of a previous export, is a property of the
+    folder rather than a flag anyone has to remember to pass).
+    """
+    from src.backup.export_folder import ExportFolderError, allocate_export_folder
+
+    try:
+        d = allocate_export_folder(body.parent)
+    except ExportFolderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"dir": str(d), "name": d.name, "parent": str(d.parent)}
+
+
+def _export_summary_facts(dirname: str) -> dict:
+    from src.backup.export_summary import export_facts
+    from src.backup.volume_job import get_volume_manager
+
+    return export_facts(dirname, volume_status=get_volume_manager().status())
+
+
+def _is_export_destination(dirname: str) -> bool:
+    """Whether a backup job actually wrote to this folder in this process.
+
+    The write below is refused for anything else. Not a security boundary (the app is
+    loopback-only and every other endpoint here takes a server-side path), but a
+    correctness one: a summary file describes the export that made a folder, so
+    writing one into a folder no export wrote to would produce a document whose
+    every fact is about something else.
+    """
+    from pathlib import Path
+
+    from src.backup.folder_backup import get_folder_manager
+    from src.backup.volume_job import get_volume_manager
+
+    try:
+        target = Path(dirname).resolve()
+    except OSError:
+        return False
+    for st in (get_volume_manager().status(), get_folder_manager().status()):
+        if st.get("mode") != "backup" or not st.get("dest"):
+            continue
+        try:
+            if Path(str(st["dest"])).resolve() == target:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+@router.get("/export-summary")
+def export_summary_read(folder: str = Query(..., alias="dir")) -> dict:
+    """The completion panel's facts for an export folder — READ ONLY (R4; Q208 = a).
+
+    The same :func:`~src.backup.export_summary.export_facts` the written file renders
+    from, so a reopened dialog and the file on the drive cannot disagree.
+    """
+    return _export_summary_facts(folder)
+
+
+@router.post("/export-summary")
+def export_summary_write(body: ExportSummaryBody) -> dict:
+    """Write ``BACKUP_SUMMARY.md`` beside ``volumes.json`` and return the facts (Q209 = a).
+
+    Called LAST, after both phases and after the verify-after-write pass, which is
+    what lets the file carry the verify verdict rather than promising one.
+    """
+    from src.backup.export_summary import SUMMARY_NAME, write_backup_summary
+
+    if not _is_export_destination(body.dir):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{body.dir} is not the destination of a backup this app ran — "
+                "refusing to write a summary describing an export that did not happen."
+            ),
+        )
+    facts = _export_summary_facts(body.dir)
+    try:
+        path = write_backup_summary(body.dir, facts)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot write {SUMMARY_NAME}: {exc}") from exc
+    return {"summary_path": str(path), "facts": facts}
+
+
 class ImportQueueItem(BaseModel):
     kind: str
     path: str

@@ -219,6 +219,7 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     if edition.get("caveat"):
         out += [f"> {T.t(edition['caveat'])}", ""]
     out += _md_disclosures(edition, T)
+    out += _md_attribution(edition, T)
     out += [
         "---",
         "",
@@ -233,6 +234,36 @@ def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = 
     if disclosure:
         out[lang_at:lang_at] = [f"*{disclosure}*", ""]
     return "\n".join(out)
+
+
+def _md_attribution(edition: dict, T: Translator) -> list[str]:
+    """The licence lines that apply to this edition (Q1008 = a).
+
+    Read off the RECORD, never recomputed: an edition downloaded again next year must
+    carry the lines that applied when it was made. A record with no ``attribution`` key
+    at all (one written before this existed) renders NOTHING rather than an empty
+    heading — "this document does not say" and "this document says none apply" are
+    different facts, and a heading over no lines reads as the second while meaning the
+    first.
+    """
+    if "attribution" not in edition:
+        return []
+    lines = edition.get("attribution") or []
+    out = [f"## {T.t('Attribution')}", ""]
+    if not lines:
+        out += [
+            T.t(
+                "No third-party licence line applies to the sources that contributed to "
+                "this edition."
+            ),
+            "",
+        ]
+        return out
+    # The line TEXT is a licence statement, so it is reproduced verbatim rather than
+    # translated: a translated licence name is a different claim about the terms.
+    out += [f"- {line.get('text', '')}" for line in lines]
+    out.append("")
+    return out
 
 
 def _introduction_lines(edition: dict, T: Translator) -> list[str]:

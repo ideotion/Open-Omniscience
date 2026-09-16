@@ -42,6 +42,7 @@ from typing import Any
 
 from sqlalchemy import and_, func
 
+from src.backup.attribution import attribution_dicts, signals_from_sources
 from src.bulletin.period import Period
 from src.database.models import Article, Source
 
@@ -77,6 +78,27 @@ def _period_article_ids(session, period: Period) -> list[int]:
         .all()
     )
     return [int(r[0]) for r in rows]
+
+
+def period_source_rows(session, period: Period) -> list[dict]:
+    """The DISTINCT sources that contributed a non-quarantined article in the period.
+
+    Two small columns over a join, distinct — never the article rows themselves, which
+    is the whole-set materialisation this module avoids everywhere else. Shared with the
+    bulletin so the report and its evidence archive measure "what contributed" the same
+    way; two definitions of that set is how a report and its own annex come to disagree
+    about which licences apply to them.
+    """
+    lo = datetime.combine(period.start, datetime.min.time())
+    hi = datetime.combine(period.end, datetime.min.time())
+    rows = (
+        session.query(Source.source_type, Source.domain)
+        .join(Article, Article.source_id == Source.id)
+        .filter(and_(_CLOCK >= lo, _CLOCK < hi, Article.quarantined.isnot(True)))
+        .distinct()
+        .all()
+    )
+    return [{"source_type": st, "domain": dom} for st, dom in rows]
 
 
 def evidence_plan(session, period: Period, *, dest: str | os.PathLike | None = None) -> dict:
@@ -203,6 +225,36 @@ def _readme(edition: dict, period: Period, article_count: int) -> str:
             _toc(edition),
         ]
     )
+
+
+def _attribution_markdown(lines: list[dict]) -> str:
+    """``ATTRIBUTION.md`` for the evidence archive.
+
+    An EMPTY list still writes the file, because "no third-party licence applies to what
+    is in here" is a finding a reader needs, and a missing file reads as a step that was
+    forgotten. What it must never do is name a licence for content the archive does not
+    hold.
+    """
+    out = [
+        "# Attribution",
+        "",
+        "These are the licence lines that apply to the material in this archive, and",
+        "only those — each is listed with the measured reason it applies.",
+        "",
+    ]
+    if not lines:
+        out += [
+            "No third-party licence line applies to the sources that contributed to this",
+            "archive. That is a statement about these contents, not a grant: the articles",
+            "themselves remain the property of their publishers, and this archive is a",
+            "research record rather than a redistribution licence.",
+            "",
+        ]
+    else:
+        for line in lines:
+            out += [f"- {line['text']}", f"  - applies because: `{line['because']}`"]
+        out.append("")
+    return "\n".join(out)
 
 
 def build_evidence_archive(
@@ -335,6 +387,17 @@ def build_evidence_archive(
                     [srcs[s] for s in sorted(contributed) if s in srcs], indent=2, default=str
                 ),
             )
+            # THE LICENCE LINES THAT APPLY (Q1008 = a), measured against the sources that
+            # actually CONTRIBUTED to this archive rather than against the corpus. A
+            # CC BY-SA line on a ZIP holding no Wikipedia text is not caution, it is a
+            # false statement about the contents — and it teaches a reader to skip the
+            # block. Written as its own member so the person who opens this file years
+            # from now finds the terms beside the articles, not in a panel that is long
+            # gone; also carried in the manifest so a tool can read it.
+            attribution = attribution_dicts(
+                signals_from_sources(srcs[s] for s in sorted(contributed) if s in srcs)
+            )
+            _add(zf, "ATTRIBUTION.md", _attribution_markdown(attribution))
             # The manifest describes every member EXCEPT itself — a file cannot
             # carry its own hash. Said plainly rather than left to be noticed.
             zf.writestr(
@@ -348,6 +411,7 @@ def build_evidence_archive(
                         "articles_expected": len(ids),
                         "complete": not cancelled,
                         "disclosure": DISCLOSURE,
+                        "attribution": attribution,
                         "note": (
                             "manifest.json is not listed in its own members — a file "
                             "cannot contain its own hash"
@@ -375,6 +439,7 @@ def build_evidence_archive(
     return {
         "path": str(final),
         "filename": name,
+        "attribution": attribution,
         "articles": written,
         "articles_expected": len(ids),
         "complete": written == len(ids),
