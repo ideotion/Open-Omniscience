@@ -1307,8 +1307,70 @@
         row("Memory", _fmtBytes(p.rss_bytes)) +
         row("Scraping ↓", (dl == null ? "—" : _fmtBytes(dl) + "/s") +
             ` <span class="muted">· total ${_fmtBytes(sc.bytes_total)} · ${sc.fetches_total||0}×</span>`);
-      $("vitals-body").innerHTML = nowHtml + planHtml + rateHtml + sysHtml;
+      $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml;
       $("vitals-note").innerHTML = "";
+    }
+    // S04-13 S1 (Q1012 = a). The per-PROCESS bandwidth budget, drawn where the
+    // question is asked. The figures are composed server-side by ONE module
+    // (src/scheduler/process_budget) from the governor's own knobs — there is no
+    // second target here or anywhere else, which is the whole ruling.
+    //
+    // WHAT IT DELIBERATELY DOES NOT DRAW, and why each refusal is not a "—":
+    //   * No pass running (or a payload predating this field) renders NOTHING. A
+    //     budget row over an idle app is a measurement of nothing.
+    //   * An unmeasurable download contributes NO row, never a 0. "No download is
+    //     running", "it started a second ago" and "its bytes stopped" are three
+    //     different facts and the samplers already tell them apart; summing any of
+    //     them into a zero is the fabricated measurement this whole chain refuses.
+    //   * A partial total says so IN WORDS, because a lower bound presented as a
+    //     total is the same fabrication pointing the other way.
+    //
+    // UNITS: kbit/s (kilobits, decimal) — the unit `collect_target_kbps` is really
+    // in, and the one the Settings speed slider already prints. NOTE for whoever
+    // reads this next: the TOP-BAR knob's hover and two toasts in app-sources.js
+    // call the same value "500 KiB/s", which is wrong by 8.192x. That is a
+    // pre-existing defect recorded in the queue, not one to copy here.
+    //
+    // The prose is composed HERE from keyed templates, never piped from the
+    // server's own `budget_reason`: a backend `reason` field is English, and a
+    // caveat surface ships x12.
+    function _budgetHtml(a) {
+      const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (s => s);
+      const tf = (window.OOI18N && window.OOI18N.tf)
+        ? window.OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const b = a && a.collect_perf && a.collect_perf.process_budget;
+      if (!b) return "";
+      const rows = [];
+      const row = (k, val) =>
+        `<div class="vr"><span>${esc(k)}</span><b>${esc(val)}</b></div>`;
+      rows.push(row(t9("Budget"), b.budget_kbps == null
+        ? t9("Maximum — no ceiling")
+        : tf("{rate} kbit/s", { rate: b.budget_kbps })));
+      if (b.process_kbps != null) {
+        rows.push(row(t9("Measured (whole process)"),
+          tf("{rate} kbit/s", { rate: b.process_kbps })));
+      }
+      // Drawn ONLY when a download is genuinely measuring. Its absence is the
+      // honest state, and the note below says which kind of absence it is.
+      if (b.downloads_measured && b.downloads_kbps != null) {
+        rows.push(row(t9("of which file downloads"),
+          tf("{rate} kbit/s", { rate: b.downloads_kbps })));
+      }
+      const notes = [];
+      if (b.over_budget && b.downloads_measured && b.downloads_kbps != null
+          && b.budget_kbps != null && b.downloads_kbps > b.budget_kbps) {
+        // The governor's only lever is the collector's fetch permits, so say so
+        // rather than let an operator read one-worker collection as a broken
+        // collector.
+        notes.push(tf("A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.",
+          { rate: b.downloads_kbps, budget: b.budget_kbps }));
+      }
+      if (b.partial) {
+        notes.push(t9("Some downloads cannot be measured yet, so this figure is a lower bound."));
+      }
+      notes.push(t9("The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter."));
+      return `<div class="vsect">${esc(t9("Collection speed"))}</div>` + rows.join("") +
+        notes.map(n => `<div class="vnote">${esc(n)}</div>`).join("");
     }
     // ---- T9: the visible-jobs section of the task manager ---- //
     let _jobsData = null;

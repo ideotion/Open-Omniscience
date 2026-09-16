@@ -22,6 +22,65 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
+  found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
+  `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes
+  `(bytes) * 8 / 1000 / dt` and `app-sources.js:844`'s own comment says "kbps = kilobits/s".
+  The Settings speed slider agrees — it renders `500 kbps` (`#sch-speed-val`). But the TOP-BAR
+  knob's hover and two toasts call the same value **"500 KiB/s"** (`app-sources.js:940,941,961`),
+  and `index.html:130`'s comment does too. 500 kbit/s is 61.0 KiB/s, so those four strings
+  overstate the operator's own setting by a factor of 8.192.
+  **WHY IT IS RECORDED RATHER THAN FIXED.** It is pre-existing, it is outside the six rulings
+  S04-13 implements, and the brief scopes this slice's i18n work to Q1126's one string — so
+  correcting it means re-keying three translated strings x12, which belongs to a slice that has
+  budgeted for it. The new budget panel deliberately does NOT copy the mistake: it renders
+  `kbit/s`, agreeing with the slider, which is the surface that was already right.
+  **CLAUDE.md invariant #4 CARRIES THE SAME WRONG UNIT** ("target 500 KiB/s"), so the correction
+  is a constitution edit and wants the maintainer's own word on the wording.
+  **WHAT A FIX COSTS, measured:** three keys x 12 locales, re-keyed (never a new key beside the
+  old one, per the recorded orphan rule), plus the invariant text.
+
+- **THE GOVERNOR REPORTED "in-band" WHILE 160x OVER TARGET AT THE PERMIT FLOOR — pre-existing,
+  FIXED here because S04-13 S1 is what makes it reachable (2026-09-16).** `bandwidth.py`'s target
+  branch had a guard for the symmetric LOW-side case, with a comment saying exactly why
+  ("`in-band` would claim the rate is where it should be, which is the opposite of what is
+  happening") — and no twin on the HIGH side, so a governor pinned at 1 permit and still far above
+  target fell into the bare `else` and reported that the rate was fine. Reproduced against the real
+  class: seed 4, target 500, fed 80000 kbit/s — three ticks of `above-target` down to the floor,
+  then `in-band` for ever. It was hard to reach while the governor saw only the collector's own
+  achievable rate; composing the WHOLE PROCESS into it (Q1012) makes a bulk download hold that
+  state for its whole duration. Now `above-target-at-floor`. Found by an adversarial pass and
+  hand-re-verified before the fix, per the 06-audit false-positive rule.
+
+- **A WeakSet ADD RACES ITS OWN SNAPSHOT, AND THE `try` WAS ONE LINE TOO NARROW — my own new code,
+  found by an adversarial pass and live-reproduced, fixed 2026-09-16.** `process_download_rate()`
+  iterates a module-level `WeakSet` of rate registries. Removals are safe (the stdlib defers them
+  through `_IterationGuard`) but `add()` writes straight through, so constructing a registry while
+  the budget is being read raises `RuntimeError: Set changed size during iteration` — reproduced
+  in about a second of real contention against the real constructor and the real reader. The raise
+  happened at `list(_REGISTRIES)`, i.e. OUTSIDE the per-registry `try`, so it escaped
+  `process_download_rate`, escaped `compose`, and was swallowed only by the perf monitor's
+  outermost DEBUG handler: that tick contributed no sample AND the governor was never asked to
+  observe. A lock, not a wider `except` — catching it would still lose the tick. The window is
+  narrow (both registries are lazy singletons, so at most twice per process) and it is exactly the
+  scenario this slice is about: a bulk download starting while a pass runs.
+
+- **THE 180 s INLINE-WAIT CAP IS A CHOSEN NUMBER, NOT A DERIVED ONE (Q1013 = a, 2026-09-16).**
+  The ruling says "a few minutes" and leaves the value to the slice. 180 s was picked against the
+  2026-09-10 candidate-kit run's own measurements — per-row elapsed p50 16 s, p95 35 s, p99 138 s —
+  so it clips only the tail a long declared `Crawl-delay` explains and leaves every ordinary polite
+  wait untouched. `OO_CRAWL_DELAY_MAX_WAIT` overrides it; a zero or negative override falls back to
+  the default rather than refusing every host. Revisable, and recorded as chosen so the next reader
+  does not mistake it for a measurement.
+
+- **RC15 IS STILL BLANK, AND S04-13 BUILT ON THE ASSUMPTION (2026-09-16).** Q1148's figures
+  (1,000/hour loopback, 100 otherwise) shipped on the recorded ASSUMPTION (a) — that register L4's
+  «adapt the rate limit to what's most ethical» means this app's own loopback guard rather than the
+  per-host egress politeness. Q1013's egress politeness was implemented in the same slice and is
+  untouched by that reading. Writing `b` at `ANSWER RC15` moves the change onto Crawl-delay and the
+  per-host floor; `c` reaches both. Recorded so that a later reading is a REVERSAL rather than a
+  discovery.
+
 - **THREE DEFAULT-ON RIDE-ALONGS CANNOT BE SWITCHED OFF, FOR TWO DIFFERENT REASONS — found while
   building the `docs/SECURITY.md` enumeration (row H, Q1001/Q1002), live-reproduced 2026-09-16.
   NEEDS A RULING ON WHERE THE FIX LANDS; nothing was changed in the code here.** The enumeration

@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama no está en ejecución. Haga clic en la etiqueta de IA de la barra superior para iniciarlo; sus modelos instalados aparecerán aquí en cuanto responda.",
   "Ollama was already running.": "Ollama ya estaba en ejecución.",
   "Ollama was launched — it may still be starting.": "Ollama se ha lanzado — puede que aún esté arrancando.",
-  "Online — click to go offline (airplane mode); stops all collection.": "En línea — haga clic para desconectar (modo avión); detiene toda la recopilación.",
   "Open the analysis from a keyword or a search first.": "Abra primero el análisis desde una palabra clave o una búsqueda.",
   "Order articles by how often the searched keyword appears in each.": "Ordenar los artículos según la frecuencia con la que aparece en cada uno la palabra clave buscada.",
   "PDFs imported.": "PDF importados.",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "dejados en el contenedor de importación (el remitente no pudo resolverse sin adivinar)",
   "newsletters moved back to the import bucket.": "boletines devueltos al contenedor de importación.",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "la escalera de resolución de editor aplicada al importar: un eTLD+1 de la Public Suffix List (con la inversión de plataforma aplicada primero), comparado con sus fuentes existentes por dominio exacto y luego por el mapa de alias; si no, se registra como una fuente de correo nueva y DESACTIVADA. Determinista o rechazado: sin coincidencias difusas, sin similitud de cadenas, y un rechazo deja el boletín en el contenedor de importación",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "esto es una UBICACIÓN, no un juicio sobre el editor: dice que un boletín se envió desde un dominio que su corpus ya sigue, nunca que ambos sean igual de fiables. Deshacer restaura con exactitud cada ubicación automática y no toca nada que haya archivado usted"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "esto es una UBICACIÓN, no un juicio sobre el editor: dice que un boletín se envió desde un dominio que su corpus ya sigue, nunca que ambos sean igual de fiables. Deshacer restaura con exactitud cada ubicación automática y no toca nada que haya archivado usted",
+  "Collection speed": "Velocidad de recopilación",
+  "Budget": "Presupuesto",
+  "Measured (whole process)": "Medido (todo el proceso)",
+  "of which file downloads": "de las cuales descargas de archivos",
+  "Maximum — no ceiling": "Máximo — sin límite",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Una descarga de archivo por sí sola está usando {rate} kbit/s del presupuesto de {budget} kbit/s — reducir la recopilación no puede recuperarlo.",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "Algunas descargas aún no se pueden medir, así que esta cifra es un límite inferior.",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Todo el proceso está limitado a esta velocidad — las solicitudes del recolector más cada descarga de archivo — medida por la propia aplicación, nunca por un contador de red del sistema."
 }

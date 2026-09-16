@@ -242,6 +242,22 @@ class BandwidthGovernor:
                 new, reason = min(top, cur + 1), "below-target"
             elif measured_kbps > hi and cur > 1:
                 new, reason = max(1, cur - 1), "above-target"
+            elif measured_kbps > hi:
+                # THE HIGH-SIDE TWIN of the branch below, which was missing (found
+                # by an adversarial pass on S04-13 S1 and reproduced: at the floor,
+                # 160x over target, this reported "in-band"). Above target AND
+                # unable to cut any further -- "in-band" claims the rate is where it
+                # should be, which is the opposite of what is happening, exactly as
+                # the comment below says for the mirror case.
+                #
+                # It became easy to reach when the governor started observing the
+                # WHOLE PROCESS (Q1012): a bulk download can sit far above the
+                # target for its whole duration, where the collector's own rate
+                # rarely could. The permit count is genuinely at its floor and that
+                # is correct -- the lever has been pulled all the way -- so only the
+                # WORD was wrong, which is the cheaper half to fix and the one a
+                # reader of the perf log acts on.
+                new, reason = cur, "above-target-at-floor"
             elif measured_kbps < lo and held_by_learned and cur >= top:
                 # Below target AND unable to climb: "in-band" would claim the rate is
                 # where it should be, which is the opposite of what is happening.

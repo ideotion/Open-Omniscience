@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama غير مُشغَّل. انقر على رمز الذكاء الاصطناعي في الشريط العلوي لتشغيله؛ وستظهر نماذجك المثبَّتة هنا بمجرد استجابته.",
   "Ollama was already running.": "كان Ollama قيد التشغيل بالفعل.",
   "Ollama was launched — it may still be starting.": "تم تشغيل Ollama — قد يكون لا يزال في طور البدء.",
-  "Online — click to go offline (airplane mode); stops all collection.": "متصل — انقر للانتقال إلى وضع عدم الاتصال (وضع الطيران)؛ يوقف كل عمليات الجمع.",
   "Open the analysis from a keyword or a search first.": "افتح التحليل أولاً من كلمة مفتاحية أو من بحث.",
   "Order articles by how often the searched keyword appears in each.": "ترتيب المقالات حسب عدد مرات ورود الكلمة المفتاحية المبحوث عنها في كل منها.",
   "PDFs imported.": "تم استيراد ملفات PDF.",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "بقيت في حاوية الاستيراد (تعذّر تحديد المُرسِل دون تخمين)",
   "newsletters moved back to the import bucket.": "نشرة بريدية أُعيدت إلى حاوية الاستيراد.",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "سلّم تحديد الناشر المطبَّق عند الاستيراد: نطاق eTLD+1 من Public Suffix List (مع تطبيق انعكاس المنصّات أولًا)، يُقارَن بمصادرك الحالية بالنطاق المطابق تمامًا ثم بجدول الأسماء البديلة، وإلا يُسجَّل كمصدر بريد جديد مُعطَّل. إمّا نتيجة قاطعة وإمّا رفض — لا مطابقة تقريبية ولا تشابه نصوص، والرفض يُبقي النشرة في حاوية الاستيراد",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "هذا تصنيفٌ للمكان، لا حكمٌ على الناشر: فهو يقول إن النشرة أُرسلت من نطاق يتابعه مجموعك أصلًا، ولا يقول أبدًا إن الاثنين متساويان في الموثوقية. والتراجع يعيد كل تصنيف تلقائي بدقة، ولا يمسّ شيئًا صنّفته بنفسك"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "هذا تصنيفٌ للمكان، لا حكمٌ على الناشر: فهو يقول إن النشرة أُرسلت من نطاق يتابعه مجموعك أصلًا، ولا يقول أبدًا إن الاثنين متساويان في الموثوقية. والتراجع يعيد كل تصنيف تلقائي بدقة، ولا يمسّ شيئًا صنّفته بنفسك",
+  "Collection speed": "سرعة الجمع",
+  "Budget": "الميزانية",
+  "Measured (whole process)": "مقاس (العملية بأكملها)",
+  "of which file downloads": "منها تنزيلات الملفات",
+  "Maximum — no ceiling": "الحد الأقصى — بلا سقف",
+  "{rate} kbit/s": "⁨{rate} kbit/s⁩",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "تنزيل ملف وحده يستخدم ⁨{rate} kbit/s⁩ من الميزانية البالغة ⁨{budget} kbit/s⁩ — تقليل الجمع لا يمكنه استرجاعه.",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "بعض التنزيلات لا يمكن قياسها بعد، لذا هذا الرقم حدّ أدنى فقط.",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "تخضع العملية بأكملها لهذا المعدّل — عمليات جلب المُجمِّع إضافة إلى كل تنزيل ملف — مقاسة من قِبل التطبيق نفسه، وليست أبدًا عداد شبكة النظام."
 }

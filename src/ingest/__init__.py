@@ -131,6 +131,37 @@ class RobotsUnavailable(FetchError):
         self.cause = cause
 
 
+class CrawlDelayDeferred(FetchError):
+    """The host's own ``Crawl-delay`` puts the next allowed fetch too far out to wait
+    for inline (S04-13 S2; RULED 2026-09-15, answer sheet Q1013 = a).
+
+    DELIBERATELY NOT A :class:`FetchFailed`. Nothing failed: the host asked us to wait
+    and we are respecting that, so a caller counting this as a source failure would
+    back the source off, or disqualify it, for doing exactly what it said it wanted.
+    It is a DEFERRAL and the collector counts it in its own bucket.
+
+    WHAT IT REPLACED, and the arithmetic that made it necessary (measured 2026-09-10 on
+    the candidate kit's first live run): ``EthicalFetcher`` sleeps the declared delay
+    before EVERY request, so one host costs ``delay x requests``, uncapped -- three
+    hosts took 5409 s, 3621 s and 1829 s of a single run, and the pool could not end
+    until its slowest member did. Refusing the wait alone would not have fixed it,
+    because ``make_fetcher`` builds a fresh fetcher per collection pass and the
+    in-memory ``_last_request`` goes with it: a host declaring ``Crawl-delay: 3600``
+    would have been re-fetched on the very next pass, every pass, which is worse than
+    no politeness at all. Hence the PERSISTED next-allowed-at this exception is the
+    refusal half of.
+
+    ``not_before`` is WALL-CLOCK (``time.time()``), because it is compared across
+    processes; ``delay_s`` is the host's own declared figure.
+    """
+
+    def __init__(self, message: str, *, netloc: str, delay_s: float, not_before: float) -> None:
+        super().__init__(message)
+        self.netloc = netloc
+        self.delay_s = delay_s
+        self.not_before = not_before
+
+
 class FetchFailed(FetchError):
     """The page itself could not be fetched, or was not usable HTML."""
 
@@ -339,6 +370,140 @@ def _persist_robots_entry(
             tmp.replace(path)
     except Exception:  # noqa: BLE001 - persistence is an optimisation, never required
         _LOG.debug("robots cache persistence failed for %s", host_key, exc_info=True)
+
+
+# --------------------------------------------------------------------------- #
+# PER-HOST NEXT-ALLOWED-AT (S04-13 S2; RULED 2026-09-15, answer sheet Q1013 = a)
+#
+# "Persist a per-host next-allowed-at beside the robots cache; refuse an inline wait
+# beyond a few minutes with a named deferral counted as its own bucket."
+#
+# WHY IT MUST BE PERSISTED, in one sentence: ``make_fetcher`` builds a NEW
+# EthicalFetcher once per collection pass, so the in-memory ``_last_request`` is
+# thrown away between passes -- and a refusal without a persisted stamp would
+# therefore re-fetch a ``Crawl-delay: 3600`` host on every single pass, turning the
+# refusal into a louder version of the impoliteness it exists to stop.
+#
+# WALL-CLOCK, never monotonic, for exactly the reason the robots sidecar states
+# above: a monotonic value written by one process is meaningless read back by
+# another. The two frames never meet -- the in-memory path compares monotonic
+# stamps, this one compares wall stamps, and only the resulting WAIT (a duration,
+# frame-independent) is compared between them.
+#
+# THERE IS DELIBERATELY NO "FORGET" / FORCE PATH. The recorded lesson that a
+# backoff is a cache an operator's "do it again" will hit is about a DIAGNOSTIC
+# retry, where re-asking is the whole point. This is not that: the stamp records a
+# host's own stated wish, and an override would be evading it -- the same category
+# as the Tor->clearnet fallback and the robots workaround the non-negotiables
+# already forbid. A stamp lapses by TIME passing, and by nothing else.
+# --------------------------------------------------------------------------- #
+_HOST_SCHEDULE_LOCK = threading.Lock()
+
+#: Bound the sidecar the same way the robots cache is bounded.
+_HOST_SCHEDULE_MAX = 4096
+
+#: THE CAP ("a few minutes"), and the measurement behind the value. The
+#: candidate-kit run of 2026-09-10 recorded per-row elapsed at p50 16 s, p95 35 s
+#: and p99 138 s, so a 180 s ceiling clips only the tail that a long declared
+#: ``Crawl-delay`` explains and leaves every ordinary polite wait untouched.
+#: Revisable: it is published in the PR as a chosen value, not a derived one.
+_CRAWL_DELAY_MAX_WAIT_S = 180.0
+
+
+def _crawl_delay_max_wait_s() -> float:
+    try:
+        value = float(os.getenv("OO_CRAWL_DELAY_MAX_WAIT", "") or _CRAWL_DELAY_MAX_WAIT_S)
+    except (TypeError, ValueError):
+        return _CRAWL_DELAY_MAX_WAIT_S
+    # A zero or negative ceiling would refuse EVERY host, including the ones whose
+    # politeness costs a second -- a misconfiguration must degrade to the default
+    # rather than to a silent total stop.
+    return value if value > 0 else _CRAWL_DELAY_MAX_WAIT_S
+
+
+def _host_schedule_path() -> Path:
+    from src.paths import data_dir
+
+    return data_dir() / "host_schedule.json"
+
+
+def _host_schedule_persist_enabled() -> bool:
+    return os.environ.get("OO_HOST_SCHEDULE_PERSIST", "1") != "0"
+
+
+def _load_host_schedule(
+    path: Path, *, now_wall: float | None = None
+) -> dict[str, tuple[float, float]]:
+    """``{netloc: (next_allowed_at_wall, declared_delay_s)}``, dropping lapsed stamps.
+
+    THE DELAY IS CARRIED, not just the deadline, and that is not bookkeeping. A
+    fetcher built for a NEW pass has an empty robots cache, so it cannot re-derive
+    the host's declared ``Crawl-delay`` before it has fetched robots.txt again --
+    and a refusal that reports the courtesy interval it fell back to (``1 s``)
+    instead of the host's real ``3600`` would be a fabricated number inside the one
+    sentence whose whole job is to say why the fetch did not happen. Caught by
+    driving a second fetcher against a stamp the first one wrote.
+
+    A lapsed stamp is simply absent, which is byte-identical in effect to a fresh
+    process: the next fetch is allowed and re-stamps. A corrupt sidecar starts
+    empty rather than raising -- politeness degrades to the in-memory interval,
+    which is the same floor that applied before this existed.
+    """
+    if not path.exists():
+        return {}
+    wall_now = time.time() if now_wall is None else now_wall
+    try:
+        raw = json.loads(path.read_text("utf-8")) or {}
+    except Exception:  # noqa: BLE001 - a corrupt sidecar must never break a pass
+        return {}
+    out: dict[str, tuple[float, float]] = {}
+    for netloc, entry in raw.items():
+        try:
+            not_before = float(entry["not_before"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        try:
+            delay_s = float(entry.get("delay_s") or 0.0)
+        except (TypeError, ValueError):
+            delay_s = 0.0
+        if not_before > wall_now:
+            out[str(netloc)] = (not_before, delay_s)
+    return out
+
+
+def _persist_host_schedule(path: Path, netloc: str, not_before: float, delay_s: float) -> None:
+    """Best-effort read-modify-write of ONE host's next-allowed-at.
+
+    Never raises into the fetch path: a write failure means the next pass falls back
+    to the in-memory interval for this host, which is the behaviour that existed
+    before this sidecar and is still polite, merely less so across a restart.
+    """
+    try:
+        with _HOST_SCHEDULE_LOCK:
+            raw: dict = {}
+            if path.exists():
+                try:
+                    raw = json.loads(path.read_text("utf-8")) or {}
+                except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
+                    raw = {}
+            raw[netloc] = {"not_before": float(not_before), "delay_s": float(delay_s)}
+            if len(raw) > _HOST_SCHEDULE_MAX:
+                # Evict the entries that lapse SOONEST: they are the ones whose loss
+                # costs least (they were about to be allowed anyway), where dropping a
+                # far-future stamp would silently re-permit the very host that asked
+                # hardest to be left alone.
+                ordered = sorted(
+                    raw.items(),
+                    key=lambda kv: (kv[1] or {}).get("not_before", 0)
+                    if isinstance(kv[1], dict)
+                    else 0,
+                )
+                raw = dict(ordered[-_HOST_SCHEDULE_MAX:])
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(raw), "utf-8")
+            tmp.replace(path)
+    except Exception:  # noqa: BLE001 - persistence is an optimisation, never required
+        _LOG.debug("host schedule persistence failed for %s", netloc, exc_info=True)
 
 
 def _env_cap(name: str, default: int, *, floor: int) -> int:
@@ -633,6 +798,11 @@ class EthicalFetcher:
         #: not hand a host that refused fifty times a fresh one-hour clock.
         self._robots_fails: dict[str, int] = {}
         self._last_request: dict[str, float] = {}
+        #: netloc -> WALL-CLOCK next-allowed-at, for hosts that declare a
+        #: ``Crawl-delay`` (S04-13 S2, Q1013 = a). Loaded from the sidecar in
+        #: __init__ below, so a fresh per-pass fetcher inherits what the previous
+        #: pass promised instead of re-asking a long-delay host immediately.
+        self._host_schedule: dict[str, tuple[float, float]] = {}
         # C8: short-TTL DNS cache for the path that still resolves locally (a
         # remote-resolving SOCKS proxy skips this entirely -- see
         # _is_remote_resolving_proxy). host -> (getaddrinfo results, expiry).
@@ -667,6 +837,18 @@ class EthicalFetcher:
                 self._robots_cause.update(_persisted_robots_causes(self._robots_cache_path))
                 self._robots_fails.update(_persisted_robots_fails(self._robots_cache_path))
             except Exception:  # noqa: BLE001 - a bad cache load must never break construction
+                pass
+
+        # S04-13 S2 (Q1013 = a): the per-host next-allowed-at, "beside the robots
+        # cache" both in the ruling's words and on disk. Derived from the same
+        # injectable path so a test that redirects the robots sidecar redirects this
+        # one too -- two independently-injected paths is how a fixture ends up
+        # writing half its state into the real data_dir().
+        self._host_schedule_path = self._robots_cache_path.with_name("host_schedule.json")
+        if _host_schedule_persist_enabled():
+            try:
+                self._host_schedule.update(_load_host_schedule(self._host_schedule_path))
+            except Exception:  # noqa: BLE001 - a bad load must never break construction
                 pass
 
     def _host_lock(self, netloc: str) -> threading.Lock:
@@ -1494,7 +1676,22 @@ class EthicalFetcher:
     # -- rate limiting ----------------------------------------------------- #
 
     def _respect_rate_limit(self, netloc: str, host_key: str) -> None:
+        """Wait out this host's interval, or REFUSE when the wait is too long.
+
+        S04-13 S2 (Q1013 = a). Two stamps decide the wait and they live in different
+        clock frames on purpose (see the module-level block): ``_last_request`` is
+        this process's monotonic record, the sidecar is a wall-clock record that
+        survives the per-pass fetcher rebuild. Only the resulting DURATIONS are
+        compared, which is frame-independent, and the longer one wins -- a host is
+        never fetched earlier than either stamp allows.
+
+        Beyond the cap the wait is refused by name rather than slept. The refusal is
+        a DEFERRAL, not a failure of the source: the stamp is still written, so the
+        next pass knows when this host becomes available instead of re-asking it
+        immediately and paying the same wait again.
+        """
         interval = self.min_interval_s
+        declared_delay = 0.0
         cached = self._robots.get(host_key)
         if cached and cached[0] is not None:
             try:
@@ -1502,10 +1699,66 @@ class EthicalFetcher:
             except Exception:
                 delay = None
             if delay:
-                interval = max(interval, float(delay))
+                declared_delay = float(delay)
+                interval = max(interval, declared_delay)
 
+        wait = 0.0
         last = self._last_request.get(netloc)
         if last is not None:
             elapsed = self._now() - last
             if elapsed < interval:
-                self._sleep(interval - elapsed)
+                wait = interval - elapsed
+
+        # The persisted stamp, in its own frame. A host we have not fetched in THIS
+        # process still owes whatever a previous pass promised it -- and the delay it
+        # DECLARED, so a refusal on a fresh fetcher names the host's real figure
+        # rather than the courtesy interval this instance happens to have fallen
+        # back to.
+        persisted_wait = 0.0
+        stamp = self._host_schedule.get(netloc)
+        if stamp is not None:
+            not_before, persisted_delay = stamp
+            persisted_wait = max(0.0, not_before - time.time())
+            if persisted_delay > declared_delay:
+                declared_delay = persisted_delay
+                interval = max(interval, persisted_delay)
+        wait = max(wait, persisted_wait)
+
+        if wait <= 0:
+            self._stamp_host_schedule(netloc, interval, declared_delay)
+            return
+
+        cap = _crawl_delay_max_wait_s()
+        if wait > cap:
+            # Write the stamp BEFORE raising. A deferral that forgot when the host
+            # becomes free would send the next pass straight back into the same
+            # refusal, which is the "refuse and retry next pass" failure this whole
+            # sidecar exists to prevent.
+            resume_at = self._stamp_host_schedule(netloc, wait, declared_delay)
+            raise CrawlDelayDeferred(
+                f"Crawl-delay {declared_delay or interval:g} s: not before "
+                f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}",
+                netloc=netloc,
+                delay_s=declared_delay or interval,
+                not_before=resume_at,
+            )
+        self._sleep(wait)
+        self._stamp_host_schedule(netloc, interval, declared_delay)
+
+    def _stamp_host_schedule(self, netloc: str, interval: float, declared_delay: float) -> float:
+        """Record when this host may next be fetched, and return that wall time.
+
+        Only a host that DECLARES a ``Crawl-delay`` is persisted. The ordinary
+        one-second courtesy interval needs no sidecar -- it has always been shorter
+        than the gap between two passes touching one host, so writing it would add a
+        4096-entry file write per fetch to record a constraint that can never bind.
+        """
+        resume_at = time.time() + max(0.0, interval)
+        if declared_delay <= 0:
+            return resume_at
+        self._host_schedule[netloc] = (resume_at, declared_delay)
+        if _host_schedule_persist_enabled():
+            _persist_host_schedule(
+                self._host_schedule_path, netloc, resume_at, declared_delay
+            )
+        return resume_at

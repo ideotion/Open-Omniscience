@@ -197,8 +197,12 @@ jobs:
       # strings were introduced by this pass -- they were always there and always
       # untranslated; the count finally says so. See scripts/i18n_report.py's
       # _reader_template_html / _aux_inline_js / _aux_js docstrings for each fix.
+      # 470 -> 469: S04-13 S1 keyed the task manager's new per-process budget panel
+      # in the same PR that added it, and the script's own "the ratchet can now be
+      # lowered" line is an instruction rather than a compliment -- slack left here
+      # is a free slot for the next drift to land in unseen.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 470
+        run: python scripts/i18n_report.py --max-untranslatable 469
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says

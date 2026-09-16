@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import threading
 import time
+import weakref
 from collections import deque
 
 #: How far back a rate may look. Long enough to smooth a 1 MiB chunk boundary,
@@ -203,6 +204,36 @@ class RateSampler:
             self._samples.popleft()
 
 
+#: Every ``RateRegistry`` built in this process, so the per-process budget can
+#: enumerate the file downloads without reaching into the two job managers that
+#: own them. A WEAK set: a manager that is garbage-collected takes its registry
+#: with it, and a stale entry would otherwise keep reporting a download that no
+#: longer exists.
+#:
+#: This is deliberately NOT a second measurement. The bytes are still counted by
+#: the worker that receives them, exactly as this module's header requires; the
+#: registry-of-registries only makes the owners' OWN numbers enumerable from one
+#: place, which is what "per-process" needs and what a machine-wide network gauge
+#: would get wrong (a NIC counter sees every other tenant's traffic as ours).
+_REGISTRIES: weakref.WeakSet = weakref.WeakSet()
+
+#: Guards ADDING to the set against SNAPSHOTTING it. Removals need no guard --
+#: ``WeakSet`` already defers those through its own ``_IterationGuard`` -- but
+#: ``add()`` writes straight through, so a registry constructed on one thread while
+#: another is taking the snapshot raises ``RuntimeError: Set changed size during
+#: iteration``. Live-reproduced against the real constructor and the real reader
+#: (not a lookalike) in about a second of contention.
+#:
+#: The raise lands OUTSIDE the per-registry try/except below -- it happens while the
+#: loop is being entered, not inside it -- so it escapes ``process_download_rate``,
+#: escapes ``compose``, and is swallowed only by the perf monitor's outermost
+#: DEBUG-level handler: that tick contributes no sample AND the governor is never
+#: asked to observe. A lock is the fix rather than a wider ``except`` because
+#: catching it would still lose the tick, and the window is real: a bulk download
+#: starting while a collection pass runs is the exact scenario this slice is about.
+_REGISTRIES_LOCK = threading.Lock()
+
+
 class RateRegistry:
     """One sampler per download key, shared by the wiki-dump and OSM managers.
 
@@ -215,6 +246,8 @@ class RateRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._by_key: dict[str, RateSampler] = {}
+        with _REGISTRIES_LOCK:
+            _REGISTRIES.add(self)
 
     def start(self, key: str, downloaded_bytes: int = 0) -> RateSampler:
         with self._lock:
@@ -240,3 +273,81 @@ class RateRegistry:
             # zero", and distinct from "stalled".
             return {"measured": False, "reason": "not measured in this session"}
         return s.snapshot(**kw)
+
+    # -- process-wide aggregation (S04-13 S1) ------------------------------- #
+
+    def live_rates(self) -> list[dict]:
+        """Every sampler's snapshot, measured or not.
+
+        Used by the per-process budget to sum the bytes THIS PROCESS is pulling
+        through its file downloads. The refusals are the samplers' own -- this
+        adds no judgement of its own, and in particular never turns an
+        unmeasurable sampler into a zero.
+        """
+        with self._lock:
+            samplers = list(self._by_key.items())
+        return [dict(s.snapshot(), key=k) for k, s in samplers]
+
+
+
+
+def process_download_rate() -> dict:
+    """Bytes/s this process is pulling through its FILE downloads, right now.
+
+    Sums only the samplers that are genuinely measuring. The result distinguishes
+    three states that a single number cannot:
+
+      * ``measured: True``  -- at least one download is measurable; ``bytes_per_s``
+        is the sum over those, and ``unmeasured`` names the ones left out.
+      * ``measured: False`` with ``reason`` -- downloads exist but none of them can
+        be measured yet (all too young, all stalled, all just restarted).
+      * ``measured: False, idle: True`` -- there are no downloads at all, which is a
+        real observation and NOT the same as an unmeasurable one.
+
+    ``bytes_per_s`` is therefore a LOWER BOUND on what the process is pulling
+    whenever ``unmeasured`` is non-empty. For a BUDGET -- a ceiling -- a lower
+    bound is the safe direction to act on: if what we could measure already
+    exceeds the ceiling, the true total certainly does. The opposite reading
+    (treating an unmeasurable download as zero) is the fabricated measurement
+    this module exists to refuse, so the count is published beside the sum.
+    """
+    total = 0.0
+    measured_n = 0
+    unmeasured: list[dict] = []
+    with _REGISTRIES_LOCK:
+        registries = list(_REGISTRIES)
+    for reg in registries:
+        try:
+            rows = reg.live_rates()
+        except Exception:  # noqa: BLE001 - a faulty registry must not blank the budget
+            continue
+        for row in rows:
+            if row.get("measured"):
+                total += float(row.get("bytes_per_s") or 0.0)
+                measured_n += 1
+            else:
+                unmeasured.append(
+                    {"key": row.get("key"), "reason": row.get("reason") or "unmeasured"}
+                )
+    if measured_n:
+        return {
+            "measured": True,
+            "bytes_per_s": round(total, 1),
+            "downloads_measured": measured_n,
+            "unmeasured": unmeasured,
+            "method": METHOD,
+        }
+    if unmeasured:
+        return {
+            "measured": False,
+            "reason": "downloads are running but none is measurable yet",
+            "downloads_measured": 0,
+            "unmeasured": unmeasured,
+        }
+    return {
+        "measured": False,
+        "idle": True,
+        "reason": "no file download is running",
+        "downloads_measured": 0,
+        "unmeasured": [],
+    }

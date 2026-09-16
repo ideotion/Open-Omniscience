@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama नहीं चल रहा है। इसे शुरू करने के लिए ऊपर की पट्टी में AI चिह्न पर क्लिक करें; उत्तर मिलते ही आपके इंस्टॉल किए मॉडल यहाँ दिखाई देंगे।",
   "Ollama was already running.": "Ollama पहले से ही चल रहा था।",
   "Ollama was launched — it may still be starting.": "Ollama शुरू किया गया — संभव है कि वह अभी भी आरंभ हो रहा हो।",
-  "Online — click to go offline (airplane mode); stops all collection.": "ऑनलाइन — ऑफ़लाइन (हवाई जहाज़ मोड) होने के लिए क्लिक करें; इससे सारा संग्रह रुक जाता है।",
   "Open the analysis from a keyword or a search first.": "पहले किसी कीवर्ड या खोज से विश्लेषण खोलें।",
   "Order articles by how often the searched keyword appears in each.": "लेखों को इस आधार पर क्रमबद्ध करें कि खोजा गया कीवर्ड प्रत्येक में कितनी बार आता है।",
   "PDFs imported.": "PDF आयात कर लिए गए।",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "आयात-संग्रह में ही छोड़ी गईं (अनुमान लगाए बिना भेजने वाले की पहचान नहीं हो सकी)",
   "newsletters moved back to the import bucket.": "न्यूज़लेटर वापस आयात-संग्रह में ले जाई गईं।",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "आयात के समय चलने वाली प्रकाशक-निर्धारण शृंखला: Public Suffix List का eTLD+1 (पहले प्लेटफ़ॉर्म-उलटाव लागू करके), आपके मौजूदा स्रोतों से पहले सटीक डोमेन और फिर उपनाम-तालिका द्वारा मिलाया जाता है; अन्यथा एक नए, निष्क्रिय ईमेल स्रोत के रूप में दर्ज किया जाता है। या तो निश्चित, या अस्वीकार — कोई अस्पष्ट मिलान नहीं, कोई स्ट्रिंग-समानता नहीं, और अस्वीकृति न्यूज़लेटर को आयात-संग्रह में ही छोड़ देती है",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "यह एक स्थान-निर्धारण है, प्रकाशक पर कोई निर्णय नहीं: यह कहता है कि न्यूज़लेटर उस डोमेन से भेजी गई जिसे आपका संग्रह पहले से ट्रैक करता है, यह कभी नहीं कि दोनों समान रूप से विश्वसनीय हैं। पूर्ववत करने पर हर स्वचालित स्थान-निर्धारण ठीक वैसा ही बहाल हो जाता है, और आपने जो स्वयं वर्गीकृत किया उसे नहीं छुआ जाता"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "यह एक स्थान-निर्धारण है, प्रकाशक पर कोई निर्णय नहीं: यह कहता है कि न्यूज़लेटर उस डोमेन से भेजी गई जिसे आपका संग्रह पहले से ट्रैक करता है, यह कभी नहीं कि दोनों समान रूप से विश्वसनीय हैं। पूर्ववत करने पर हर स्वचालित स्थान-निर्धारण ठीक वैसा ही बहाल हो जाता है, और आपने जो स्वयं वर्गीकृत किया उसे नहीं छुआ जाता",
+  "Collection speed": "संग्रह गति",
+  "Budget": "बजट",
+  "Measured (whole process)": "मापा गया (पूरी प्रक्रिया)",
+  "of which file downloads": "जिसमें से फ़ाइल डाउनलोड",
+  "Maximum — no ceiling": "अधिकतम — कोई सीमा नहीं",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "एक फ़ाइल डाउनलोड अकेले ही {budget} kbit/s के बजट में से {rate} kbit/s उपयोग कर रहा है — संग्रह घटाने से यह वापस नहीं मिल सकता।",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "कुछ डाउनलोड अभी मापे नहीं जा सकते, इसलिए यह आंकड़ा एक निचली सीमा है।",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "पूरी प्रक्रिया इसी दर तक सीमित है — कलेक्टर के फ़ेच अनुरोध और हर फ़ाइल डाउनलोड मिलाकर — जिसे ऐप स्वयं मापता है, कभी किसी सिस्टम नेटवर्क काउंटर से नहीं।"
 }

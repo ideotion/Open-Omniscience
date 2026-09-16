@@ -9833,3 +9833,42 @@ match; a Pamplona social club named the *Nuevo Casino Principal*; two English se
   holds a lock are all shared state a concurrent run will silently attribute to the diff. Before
   reporting a full-suite result, confirm nothing of yours is still listening — and if something
   was, the number to report is from the clean re-run, not from the run you are explaining away.
+
+- **A MUTANT CAN MAKE A TEST HANG INSTEAD OF FAIL, AND AN UNBOUNDED MATRIX THEN REPORTS
+  NOTHING AT ALL — the mutation harness needs a timeout and a THIRD verdict (2026-09-16,
+  S04-13 S2):** the recorded traps cover a mutation that does not apply (a silent no-op whose
+  green run reads like a dead guard), a selector matching zero tests, and a mutant that breaks
+  the module's syntax (a collection error an exit-code-only harness scores as a kill). This is
+  the fourth shape and it is the loudest: neutering the Crawl-delay cap (`if wait > cap:` →
+  `if False:`) meant the production code did what it is supposed to do when the wait is
+  legitimate — it SLEPT, for the fixture's declared 3600 seconds. The matrix wedged for
+  twenty-five minutes with an empty output file, the `finally` that restores the file never
+  ran, and the tree was left MUTATED with the `.mutbak` beside it. **THE TREE BEING LEFT
+  MUTATED IS THE expensive half**: a killed harness does not clean up, so "restore from the
+  copy and VERIFY the restore" is not belt-and-braces, it is the only thing between a wedged
+  run and a mutant committed by the next `git add`. Verified here by grepping for the mutant
+  text and re-running the suite, not by trusting the `finally`.
+  **THE FINDING ABOUT THE TEST IS WORTH MORE THAN THE FINDING ABOUT THE HARNESS.** The test
+  only ever completed quickly BECAUSE the code was right: it drove a second fetcher without
+  stubbing `_sleep`, so a correct cap raised before the sleep and a broken one slept for an
+  hour. **A guard that hangs on the defect it exists to catch cannot report it** — it converts
+  a red test into an indefinite wait, which is the one failure mode nobody reads as a failure.
+  The general form: for any test whose speed depends on a refusal firing, stub the slow thing
+  ANYWAY, so neutering the refusal produces a fast red rather than a hang. And give the matrix
+  a per-run timeout with its own verdict — a wedge is not a kill and must never be counted as
+  one. (Matrix afterwards: 12 mutants, 12 killed, 0 survived, 0 void.)
+
+- **A BRIEF'S STALENESS GUARD MUST RUN AGAINST THE CLAIMS IT INHERITS, NOT ONLY AGAINST THE
+  ANCHORS IT CHECKS (2026-09-16, S04-13 S6):** the brief re-verified its file/line anchors at
+  `main`@`7ca142e` and, in the same paragraph, repeated the 2026-09-06 register's sentence that
+  model weights are "the one downloaded artifact with no pin". Both halves were done carefully
+  and the conclusion was still wrong: `src/llm/weights_pin.py`, its refusing pull path and 19
+  passing tests landed in `16ff34f8` on 2026-09-07 — eight days BEFORE that anchor, and an
+  ancestor of it. The anchors all resolved, which is exactly what made the paragraph read as
+  verified. **An anchor that resolves proves the LINE exists; it says nothing about whether the
+  SENTENCE about it is still true.** The recorded guard is "is this already built?"; the
+  refinement is that a quoted claim from an earlier register is a claim with its own date, and
+  it needs its own check — one `git log --oneline -- <the file the ruling names>` would have
+  answered it in seconds. Cost here was small (the item was recorded VERIFIED-PRESENT rather
+  than rebuilt), and it would have been a whole duplicated slice had the tell not been an
+  existing file turning up under the exact path the brief said to create.

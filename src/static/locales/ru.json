@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama не запущена. Нажмите значок ИИ в верхней панели, чтобы запустить её; установленные модели появятся здесь, как только она ответит.",
   "Ollama was already running.": "Ollama уже была запущена.",
   "Ollama was launched — it may still be starting.": "Ollama запущена — возможно, она ещё стартует.",
-  "Online — click to go offline (airplane mode); stops all collection.": "В сети — нажмите, чтобы отключиться (режим полёта); останавливает весь сбор.",
   "Open the analysis from a keyword or a search first.": "Сначала откройте анализ из ключевого слова или поиска.",
   "Order articles by how often the searched keyword appears in each.": "Упорядочить статьи по тому, как часто в каждой встречается искомое ключевое слово.",
   "PDFs imported.": "PDF импортированы.",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "оставлены в корзине импорта (отправителя нельзя определить, не угадывая)",
   "newsletters moved back to the import bucket.": "рассылок возвращено в корзину импорта.",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "правило определения издателя, применяемое при импорте: eTLD+1 из Public Suffix List (сначала применяется инверсия для платформ), сопоставляемый с вашими существующими источниками по точному домену, затем по таблице псевдонимов, иначе регистрируется новый ОТКЛЮЧЁННЫЙ почтовый источник. Детерминированно или отказ — никакого нечёткого сопоставления, никакого сходства строк, а при отказе рассылка остаётся в корзине импорта",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "это РАЗМЕЩЕНИЕ, а не суждение об издателе: оно означает, что рассылка пришла с домена, за которым ваш корпус уже следит, но никогда — что оба одинаково надёжны. Отмена в точности восстанавливает каждое автоматическое размещение и не затрагивает ничего, что вы распределили сами"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "это РАЗМЕЩЕНИЕ, а не суждение об издателе: оно означает, что рассылка пришла с домена, за которым ваш корпус уже следит, но никогда — что оба одинаково надёжны. Отмена в точности восстанавливает каждое автоматическое размещение и не затрагивает ничего, что вы распределили сами",
+  "Collection speed": "Скорость сбора",
+  "Budget": "Бюджет",
+  "Measured (whole process)": "Измерено (весь процесс)",
+  "of which file downloads": "в том числе загрузки файлов",
+  "Maximum — no ceiling": "Максимум — без потолка",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Одна загрузка файла сама по себе использует {rate} kbit/s из бюджета {budget} kbit/s — снижение скорости сбора не может это восстановить.",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "Некоторые загрузки пока нельзя измерить, поэтому эта цифра — нижняя граница.",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Весь процесс ограничен этой скоростью — запросы сборщика плюс каждая загрузка файла — измеряется самим приложением, но никогда не системным счётчиком сети."
 }

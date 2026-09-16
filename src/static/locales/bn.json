@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama চলছে না। এটি চালু করতে উপরের বারে AI চিহ্নে ক্লিক করুন; সাড়া পাওয়া মাত্র আপনার ইনস্টল করা মডেলগুলি এখানে দেখা যাবে।",
   "Ollama was already running.": "Ollama আগে থেকেই চলছিল।",
   "Ollama was launched — it may still be starting.": "Ollama চালু করা হয়েছে — এটি এখনও শুরু হতে পারে।",
-  "Online — click to go offline (airplane mode); stops all collection.": "অনলাইন — অফলাইন (বিমান মোড) হতে ক্লিক করুন; এতে সব সংগ্রহ বন্ধ হয়ে যায়।",
   "Open the analysis from a keyword or a search first.": "প্রথমে কোনো কীওয়ার্ড বা অনুসন্ধান থেকে বিশ্লেষণটি খুলুন।",
   "Order articles by how often the searched keyword appears in each.": "অনুসন্ধান করা কীওয়ার্ডটি প্রতিটিতে কতবার আছে সেই অনুসারে নিবন্ধ সাজান।",
   "PDFs imported.": "PDF আমদানি করা হয়েছে।",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "আমদানি-সংগ্রহেই রাখা হয়েছে (অনুমান না করে প্রেরক শনাক্ত করা যায়নি)",
   "newsletters moved back to the import bucket.": "টি নিউজলেটার আমদানি-সংগ্রহে ফিরিয়ে আনা হয়েছে।",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "আমদানির সময় চালানো প্রকাশক-নির্ধারণ শৃঙ্খল: Public Suffix List-এর eTLD+1 (আগে প্ল্যাটফর্ম-বিপরীতকরণ প্রয়োগ করে), আপনার বিদ্যমান উৎসগুলির সঙ্গে প্রথমে হুবহু ডোমেন, তারপর উপনাম-তালিকা দিয়ে মেলানো হয়; নইলে একটি নতুন, নিষ্ক্রিয় ইমেল উৎস হিসেবে নিবন্ধিত হয়। হয় নিশ্চিত, নয় প্রত্যাখ্যান — কোনও আন্দাজি মিল নয়, কোনও স্ট্রিং-সাদৃশ্য নয়; প্রত্যাখ্যাত নিউজলেটার আমদানি-সংগ্রহেই থাকে",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "এটি একটি স্থাননির্ধারণ, প্রকাশক সম্পর্কে কোনও বিচার নয়: এটি বলে যে নিউজলেটারটি এমন একটি ডোমেন থেকে এসেছে যা আপনার সংগ্রহ আগে থেকেই অনুসরণ করে — কখনওই বলে না যে দুটি সমানভাবে নির্ভরযোগ্য। পূর্বাবস্থায় ফেরালে প্রতিটি স্বয়ংক্রিয় স্থাননির্ধারণ হুবহু ফিরে আসে, আর আপনি নিজে যা শ্রেণিবদ্ধ করেছেন তাতে হাত দেওয়া হয় না"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "এটি একটি স্থাননির্ধারণ, প্রকাশক সম্পর্কে কোনও বিচার নয়: এটি বলে যে নিউজলেটারটি এমন একটি ডোমেন থেকে এসেছে যা আপনার সংগ্রহ আগে থেকেই অনুসরণ করে — কখনওই বলে না যে দুটি সমানভাবে নির্ভরযোগ্য। পূর্বাবস্থায় ফেরালে প্রতিটি স্বয়ংক্রিয় স্থাননির্ধারণ হুবহু ফিরে আসে, আর আপনি নিজে যা শ্রেণিবদ্ধ করেছেন তাতে হাত দেওয়া হয় না",
+  "Collection speed": "সংগ্রহের গতি",
+  "Budget": "বাজেট",
+  "Measured (whole process)": "মাপা (সম্পূর্ণ প্রক্রিয়া)",
+  "of which file downloads": "যার মধ্যে ফাইল ডাউনলোড",
+  "Maximum — no ceiling": "সর্বোচ্চ — কোনো সীমা নেই",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "একটি ফাইল ডাউনলোড একাই {budget} kbit/s বাজেটের মধ্যে {rate} kbit/s ব্যবহার করছে — সংগ্রহ কমালে তা পুনরুদ্ধার করা যাবে না।",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "কিছু ডাউনলোড এখনো মাপা যায় না, তাই এই সংখ্যাটি একটি নিম্ন সীমা মাত্র।",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "সম্পূর্ণ প্রক্রিয়াটি এই হারের মধ্যে সীমাবদ্ধ — কালেক্টরের ফেচ এবং প্রতিটি ফাইল ডাউনলোড — এই অ্যাপ নিজে যা মাপে, কখনও সিস্টেম নেটওয়ার্ক কাউন্টার নয়।"
 }
