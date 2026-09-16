@@ -22,6 +22,36 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **`tests/test_import_lifecycle_stages.py` IS ORDER- OR ENVIRONMENT-DEPENDENT ON CI, PROVEN BY
+  SAME-COMMIT DIVERGENCE — found while driving `S04-05` (PR #1147) to green, NOT fixed there
+  (S04-02's code, gate row I; fixing it inside a display PR would widen it into a slice it does
+  not own).** Two tests in that file assert OPPOSITE things about the boot re-index auto-resume,
+  and each has now failed on a different CI run while the other passed:
+  `test_the_boot_resume_declines_under_its_own_opt_out` (`OO_REINDEX_AUTORESUME=0` must decline)
+  failed on **`main`@`be658809`** in `Core-only install`, and
+  `test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot` ("boot must START the
+  drain, not merely report the backlog") failed on **PR #1147@`7adcfec6`** in
+  `Portability observation (macos-latest)`.
+
+  **THE EVIDENCE IS NOT AN INFERENCE.** `7adcfec6` was built TWICE (a `push` run and a
+  `pull_request` run): job `104995183603` in run `35155893710` **FAILED** and job `104995192615`
+  in run `35155898679` **SUCCEEDED** — the same job, on the same commit, with the same code,
+  in opposite directions. "Flake" is not a root cause anywhere else in this ledger and it is not
+  one here either; what is established is that the OUTCOME does not depend on the diff. The file
+  passes 3/3 locally and inside a full local suite of 11,212.
+
+  **What the shapes suggest, for whoever takes it:** one test drives the boot path through
+  `monkeypatch.setenv("OO_REINDEX_AUTORESUME", "0")` (line 354) and the other spawns a
+  SUBPROCESS with `{**os.environ, …}` and `e.pop("OO_REINDEX_AUTORESUME", None)` (line 463).
+  A subprocess reading a parent environment mid-mutation, or a module-level flag surviving
+  between them, would produce exactly this alternation. That is a hypothesis, not a diagnosis —
+  it wants a reproduction under `-p randomly` with a recorded seed, which is its own task.
+
+  **Not blocking today:** the macOS lane is `continue-on-error: true` (an observation lane that
+  graduates to required when green), and `Core-only install` — which is NOT observational —
+  passed on `7adcfec6` in both runs. It becomes blocking the day the portability lane graduates,
+  and it is already costing the `Core-only install` lane a false red on `main`.
+
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes
