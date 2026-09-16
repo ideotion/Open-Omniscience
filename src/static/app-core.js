@@ -784,6 +784,130 @@
         return r.online;
       } catch (e) { toast(e.message, "err"); return false; }
     }
+    // ---- the consent popup's per-lane host disclosure (Q1001 + Q1002) ------
+    // The operator makes ONE decision here (invariant #14: one popup, one
+    // ensureOnline), so this is where they are told what that decision reaches.
+    // The hosts come from window.OO_NET_LANES -- the SAME table
+    // docs/SECURITY.md is pinned against by
+    // tests/test_security_endpoint_enumeration.py, so the popup and the security
+    // notes cannot say different things.
+    //
+    // WHAT GOES WHERE. The BODY names the lanes, because "which of these is on"
+    // is the decision; the HOVER carries each lane's hosts, because fourteen host
+    // lists would bury the decision. That is layering (invariant #17), not
+    // hiding: the two hints below the list -- the public-address one and the
+    // "this is not a hardware switch" one -- stay visible, as the
+    // informed-consent non-negotiable requires.
+    //
+    // ABSENT IS NOT OFF. If a settings read fails, the lane says so in words
+    // rather than rendering as off: "we could not check" and "it is off" are
+    // opposite answers to someone deciding whether to go online.
+    const _NET_STATE_ON = "on", _NET_STATE_OFF = "off",
+          _NET_STATE_ASK = "ask", _NET_STATE_UNKNOWN = "unknown";
+
+    function _laneState(lane, cfg) {
+      if (lane.trigger === "pass") return _NET_STATE_ON;
+      if (lane.trigger === "click") return _NET_STATE_ASK;
+      if (lane.noOptOut && lane.trigger === "ride-along") return _NET_STATE_ON;
+      const src = cfg[lane.settingFrom];
+      if (!lane.setting || src === undefined) return _NET_STATE_ON;
+      if (src === null) return _NET_STATE_UNKNOWN;           // the read failed
+      const v = src[lane.setting];
+      if (v === undefined || v === null) return _NET_STATE_UNKNOWN;
+      if (lane.settingOn !== undefined) {
+        return v === lane.settingOn ? _NET_STATE_ON : _NET_STATE_OFF;
+      }
+      if (typeof v === "number") return v > 0 ? _NET_STATE_ON : _NET_STATE_OFF;
+      return v ? _NET_STATE_ON : _NET_STATE_OFF;
+    }
+
+    // What the lane reaches, as ONE translated sentence for the #oo-tip bubble.
+    // Host names are literal tokens and stay verbatim; every word around them is
+    // translated, because a hover is a caveat surface and this project's caveats
+    // ship in twelve locales.
+    function _laneHostTitle(lane) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const parts = [];
+      if (lane.hosts && lane.hosts.length) parts.push(lane.hosts.join(" · "));
+      if (lane.hostsFrom) {
+        parts.push(String(lane.hostCount) + " " + t("hosts") + " — " +
+                   t("the full list is in the security notes"));
+      }
+      if (!parts.length) parts.push(t("a host you name yourself — nothing is bundled"));
+      if (lane.fetcher === false) {
+        parts.push(t("Not through this app's fetcher or proxy."));
+      }
+      if (lane.noOptOut) {
+        parts.push(t("Always on: the code reads a switch that does not exist yet, so this cannot be turned off today."));
+      }
+      if (lane.settingUnreachable) {
+        parts.push(t("Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it."));
+      }
+      return parts.join(" — ");
+    }
+
+    function _laneLine(lane) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const n = (lane.hosts && lane.hosts.length) || lane.hostCount || 0;
+      // "n=" rather than "N hosts": the house convention for a count (invariant
+      // #16), and it sidesteps a plural this app has no framework for -- the
+      // sibling `${n} ${t("sources")}` sites all render "1 sources" today. The
+      // hover spells the number out in words, where the only lanes that reach it
+      // are the two classes, whose counts are never 1.
+      const count = n ? ` <span class="muted">n=${n}</span>` : "";
+      return `<div><span title="${esc(_laneHostTitle(lane))}">${esc(t(lane.label))}</span>${count}</div>`;
+    }
+
+    function _renderNetLanes(cfg) {
+      const box = document.getElementById("net-consent-lanes");
+      if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const lanes = window.OO_NET_LANES || [];
+      if (!lanes.length) {           // never a silent empty box
+        box.innerHTML = `<div class="muted">${esc(t("The host table could not be read."))}</div>`;
+        return;
+      }
+      const by = {on: [], ask: [], off: [], unknown: []};
+      lanes.forEach((l) => by[_laneState(l, cfg)].push(l));
+      const out = [];
+      if (by.on.length) {
+        out.push(`<div class="muted" style="margin-top:2px">${esc(t("Runs on every collection pass:"))}</div>`);
+        out.push(by.on.map(_laneLine).join(""));
+      }
+      if (by.ask.length) {
+        out.push(`<div class="muted" style="margin-top:6px">${esc(t("Only when you ask for it:"))}</div>`);
+        out.push(by.ask.map(_laneLine).join(""));
+      }
+      if (by.off.length) {
+        out.push(`<div class="muted" style="margin-top:6px">${esc(t("Switched off right now:"))}</div>`);
+        out.push(by.off.map(_laneLine).join(""));
+      }
+      if (by.unknown.length) {
+        out.push(`<div class="muted" style="margin-top:6px">${esc(t("Could not read whether these are on:"))}</div>`);
+        out.push(by.unknown.map(_laneLine).join(""));
+      }
+      const proxy = cfg.safety && cfg.safety.http_proxy;
+      out.push(`<div class="hint" style="margin-top:6px">` + esc(
+        proxy ? t("Fetches ride the proxy you configured; a lane never falls back to the clear internet on its own.")
+              : t("No proxy is configured, so fetches go direct — the hosts above see your address.")
+      ) + `</div>`);
+      box.innerHTML = out.join("");
+      // No marking call is needed: app-boot.js's MutationObserver adds
+      // .oo-tip-target to every [title] that enters the DOM, which is exactly
+      // what invariant #17 means by "the convention cannot be forgotten".
+    }
+
+    // Three loopback reads, in parallel, each degrading to null -- which renders
+    // as "could not read", never as "off". They egress nothing, so they are not
+    // themselves gated (invariant #14e is about calls that LEAVE the machine).
+    async function _netConsentConfig() {
+      const one = (path) => api(path).catch(() => null);
+      const [scheduler, safety, custody] = await Promise.all([
+        one("/api/scheduler/config"), one("/api/safety/settings"), one("/api/custody/settings"),
+      ]);
+      return {scheduler, safety, custody};
+    }
+
     async function ensureOnline(reason, opts) {
       opts = opts || {};
       try {
@@ -795,6 +919,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dlg = document.getElementById("net-consent");
       dlg.querySelector("#net-consent-reason b").textContent = reason;
+      const lanesBox = document.getElementById("net-consent-lanes");
+      if (lanesBox) lanesBox.textContent = "…";
+      _netConsentConfig().then(_renderNetLanes).catch(() => _renderNetLanes({}));
       const box = document.getElementById("net-consent-ifaces");
       box.textContent = "…";
       api("/api/system/interfaces").then(d => {

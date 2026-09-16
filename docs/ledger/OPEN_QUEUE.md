@@ -22,6 +22,38 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THREE DEFAULT-ON RIDE-ALONGS CANNOT BE SWITCHED OFF, FOR TWO DIFFERENT REASONS — found while
+  building the `docs/SECURITY.md` enumeration (row H, Q1001/Q1002), live-reproduced 2026-09-16.
+  NEEDS A RULING ON WHERE THE FIX LANDS; nothing was changed in the code here.** The enumeration
+  had to state, per lane, how each outbound path is switched off. Reading each one instead of
+  trusting the document turned up three that cannot be.
+  **SHAPE 1 — the field does not exist (calendars, law).** `src/scheduler/runner.py:1248,1250` gate
+  those two ride-alongs on `getattr(settings, "auto_import_calendars", True)` and
+  `getattr(settings, "auto_track_law", True)`. `SchedulerSettings` has 28 fields and defines
+  NEITHER (verified with `dataclasses.fields`), so the `getattr` default always wins. The opt-out
+  reads like a setting in the source and is a constant `True` at runtime.
+  **SHAPE 2 — the field exists and the API cannot reach it (hazard feeds), which is worse.**
+  `auto_track_signals` IS a `SchedulerSettings` field and `save_settings` honours it
+  (`settings.py:382`) — but `SchedulerConfigUpdate`, the Pydantic model `PUT /api/scheduler/config`
+  validates against, does not declare it, so `model_dump(exclude_unset=True)` returns `{}` and the
+  endpoint answers **200 having changed nothing**. MEASURED: `PUT {"auto_track_signals": false}`
+  → HTTP 200, read-back `true`. A refusal is honest; an accepted-and-discarded consent control
+  tells the operator their opt-out worked when it did not. `docs/SECURITY.md` has named that route
+  as the hazard feeds' opt-out for months, and CLAUDE.md invariant #14's own text names it too.
+  **WHAT THIS SESSION DID AND DID NOT DO.** Did: corrected the enumeration to state all three
+  plainly, and made the consent hover say it per lane (`noOptOut` and `settingUnreachable` in
+  `src/static/net-hosts.js`, two distinct strings because they are two distinct facts), with
+  `tests/test_security_endpoint_enumeration.py` pinning each disclosure to the cause so it must
+  come down in the same diff as the fix. Did NOT: add the fields. Shape 2 is one declaration line
+  in `src/api/scheduler.py`; shape 1 is two dataclass fields plus their `_coerce_bool` wiring — but
+  all three are settings-API and UI work outside this slice's stated file scope
+  (`S04-01` §0), and they want a Settings-panel toggle to go with them rather than a bare field.
+  **THE QUESTION FOR THE MAINTAINER:** row T (`S04-13`, network budgets and politeness) is the
+  natural home and would fix all three together with their toggles; row U (`S04-14`, the small
+  rulings) is the alternative if only the one-line API fix is wanted now. A third reading is that
+  shape 2 is severe enough to be its own hotfix, since it is the only one that reports success.
+  Nothing is assumed here; the enumeration and the hover tell the truth in the meantime.
+
 - **THE RC CONFIRMATION ROUND CAME BACK UNANSWERED — 0 OF 22 `ANSWER` LINES CARRY A LETTER (processed
   2026-09-15; NOTHING RESOLVED BY THE SESSION; docs-only).** THE PRIMARY RECORD is the round itself, still
   open and still answerable in place:

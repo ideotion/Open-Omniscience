@@ -29,9 +29,8 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   The table is the **full set of endpoints the app can reach**, grouped by lane, derived
   from the tree rather than from memory — the sweep that produced it is quoted under *How
   this list is kept true*. Every PR that adds a host adds it **here and to the consent
-  popup's hover in the same diff** — enforced by
-  `tests/test_security_endpoint_enumeration.py`, which lands with that hover in the second
-  PR of this slice. Last checked **2026-09-16**.
+  popup's hover in the same diff**; `tests/test_security_endpoint_enumeration.py` fails
+  otherwise. Last checked **2026-09-16**.
 
   **One consent, many hosts.** Every offline→online transition passes the ONE consent
   popup (`ensureOnline`, UI invariant #14), whose hover lists exactly the hosts below,
@@ -143,11 +142,10 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   none of them** — and `src/ingest/crawl.py:149` still reaches every one at
   `https://<domain>`. Any future guard that greps only for URLs inherits that blindness.
 
-  `tests/test_security_endpoint_enumeration.py` will re-run that sweep on every CI run and
-  fail when a host literal in the tree is absent from this table, when a URL-bearing config
-  file is not named here, or when this table and the consent popup's hover disagree. Every
-  exemption in it states its reason in a sentence a reviewer can disagree with. It arrives
-  with the hover, in the second PR of this slice; this PR is the enumeration itself.
+  `tests/test_security_endpoint_enumeration.py` re-runs that sweep on every CI run and
+  fails when a host literal in the tree is absent from this table, when a URL-bearing
+  config file is not named here, or when this table and the consent popup's hover disagree.
+  Every exemption in that test states its reason in a sentence a reviewer can disagree with.
 
 ## Data at rest & airplane mode
 
