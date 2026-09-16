@@ -7922,3 +7922,70 @@ D8). Docs-only; `CLAUDE.md` untouched.
   holds a lock are all shared state a concurrent run will silently attribute to the diff. Before
   reporting a full-suite result, confirm nothing of yours is still listening — and if something
   was, the number to report is from the clean re-run, not from the run you are explaining away.
+
+- **A MUTANT CAN MAKE A TEST HANG INSTEAD OF FAIL, AND AN UNBOUNDED MATRIX THEN REPORTS
+  NOTHING AT ALL — the mutation harness needs a timeout and a THIRD verdict (2026-09-16,
+  S04-13 S2):** the recorded traps cover a mutation that does not apply (a silent no-op whose
+  green run reads like a dead guard), a selector matching zero tests, and a mutant that breaks
+  the module's syntax (a collection error an exit-code-only harness scores as a kill). This is
+  the fourth shape and it is the loudest: neutering the Crawl-delay cap (`if wait > cap:` →
+  `if False:`) meant the production code did what it is supposed to do when the wait is
+  legitimate — it SLEPT, for the fixture's declared 3600 seconds. The matrix wedged for
+  twenty-five minutes with an empty output file, the `finally` that restores the file never
+  ran, and the tree was left MUTATED with the `.mutbak` beside it. **THE TREE BEING LEFT
+  MUTATED IS THE expensive half**: a killed harness does not clean up, so "restore from the
+  copy and VERIFY the restore" is not belt-and-braces, it is the only thing between a wedged
+  run and a mutant committed by the next `git add`. Verified here by grepping for the mutant
+  text and re-running the suite, not by trusting the `finally`.
+  **THE FINDING ABOUT THE TEST IS WORTH MORE THAN THE FINDING ABOUT THE HARNESS.** The test
+  only ever completed quickly BECAUSE the code was right: it drove a second fetcher without
+  stubbing `_sleep`, so a correct cap raised before the sleep and a broken one slept for an
+  hour. **A guard that hangs on the defect it exists to catch cannot report it** — it converts
+  a red test into an indefinite wait, which is the one failure mode nobody reads as a failure.
+  The general form: for any test whose speed depends on a refusal firing, stub the slow thing
+  ANYWAY, so neutering the refusal produces a fast red rather than a hang. And give the matrix
+  a per-run timeout with its own verdict — a wedge is not a kill and must never be counted as
+  one. (Matrix afterwards: 12 mutants, 12 killed, 0 survived, 0 void.)
+
+- **A BRIEF'S STALENESS GUARD MUST RUN AGAINST THE CLAIMS IT INHERITS, NOT ONLY AGAINST THE
+  ANCHORS IT CHECKS (2026-09-16, S04-13 S6):** the brief re-verified its file/line anchors at
+  `main`@`7ca142e` and, in the same paragraph, repeated the 2026-09-06 register's sentence that
+  model weights are "the one downloaded artifact with no pin". Both halves were done carefully
+  and the conclusion was still wrong: `src/llm/weights_pin.py`, its refusing pull path and 19
+  passing tests landed in `16ff34f8` on 2026-09-07 — eight days BEFORE that anchor, and an
+  ancestor of it. The anchors all resolved, which is exactly what made the paragraph read as
+  verified. **An anchor that resolves proves the LINE exists; it says nothing about whether the
+  SENTENCE about it is still true.** The recorded guard is "is this already built?"; the
+  refinement is that a quoted claim from an earlier register is a claim with its own date, and
+  it needs its own check — one `git log --oneline -- <the file the ruling names>` would have
+  answered it in seconds. Cost here was small (the item was recorded VERIFIED-PRESENT rather
+  than rebuilt), and it would have been a whole duplicated slice had the tell not been an
+  existing file turning up under the exact path the brief said to create.
+
+- **TWO RECORDS OF ONE CONSTRAINT WILL DISAGREE THE MOMENT ANYTHING MOVES ONE OF THEM — and
+  "I only compare durations, so the frames don't matter" is the reasoning that ships it
+  (2026-09-16, S04-13 S2, PR #1142).** The new persisted per-host stamp was consulted for
+  EVERY host alongside the in-memory `_last_request`, with `max()` picking the longer wait —
+  written deliberately, with a docstring explaining that the two live in different clock
+  frames *on purpose* and that comparing the resulting DURATIONS is frame-independent. The
+  durations are frame-independent. What is not is the amount each clock has ADVANCED: under an
+  injected test clock the monotonic record had moved 2 s and the wall-clock stamp 0.1 ms, so a
+  fetcher owing 8 s of a 10 s `Crawl-delay` slept 10. **Both readings were internally correct**,
+  which is what made it hard to see and what makes the class worth naming: the bug was not an
+  arithmetic error in either record, it was having two. In production the frames tick together,
+  so the second record was pure redundancy — it could only ever be wrong, never right. The fix
+  was to narrow the sidecar to what the in-memory record genuinely cannot know (first contact in
+  this process; a declared delay a lapsed robots TTL has forgotten), which is the same "one
+  authority, never a second beside it" principle the slice's OWN S1 ruling (Q1012 = a) was
+  built on — applied to S1 and violated two files away in S2, in the same PR.
+  **THE REASON THIS WAS CAUGHT AT ALL:** `tests/test_rate_limit_timing.py` has pinned this
+  arithmetic since 0.0.8 and injects a fake clock *precisely because* the durations are the
+  thing worth asserting. It went red on a change that never mentioned it. The four new suites
+  written FOR this slice all passed — they assert which branch was taken and what was recorded,
+  deliberately never a duration (their own docstring says so), so none of them could see it.
+  A new test suite covers what its author thought of; an old one covers what someone else did.
+  **AND THE SAME SESSION HAD ALREADY LEARNED THE PRINCIPLE AND WRITTEN IT DOWN:** invariant
+  #20's own recorded omission says "a second, unrelated rate authority beside it is how two
+  surfaces come to disagree about one quantity". Knowing the rule is not the same as noticing
+  you are breaking it — the tell is structural and greppable (a `max()` or a `min()` over two
+  stored records of the same fact), not a matter of remembering harder.

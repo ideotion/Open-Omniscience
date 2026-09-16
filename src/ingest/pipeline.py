@@ -67,6 +67,7 @@ _BACKOFF_MAX_EXP = 20
 def _backoff_enabled() -> bool:
     return os.getenv("OO_FEED_BACKOFF", "1") != "0"
 from src.ingest import (
+    CrawlDelayDeferred,
     EthicalFetcher,
     FetchError,
     RobotsDisallowed,
@@ -84,6 +85,14 @@ class IngestResult(str, Enum):
     BLOCKED_ROBOTS = "blocked_robots"
     ROBOTS_UNAVAILABLE = "robots_unavailable"
     FETCH_FAILED = "fetch_failed"
+    # S04-13 S2 (Q1013 = a). The host declared a Crawl-delay whose next allowed
+    # moment is further out than we will wait inline. ITS OWN BUCKET, deliberately
+    # not folded into FETCH_FAILED: nothing failed and nothing is wrong with the
+    # source -- it asked to be left alone for a while and we agreed. Counting a
+    # deferral as a failure would feed the source-quality auditor and the
+    # qualification ladder a verdict about a host that was never judged, which is
+    # the recorded "we could not decide is not a decision" defect.
+    CRAWL_DELAY_DEFERRED = "crawl_delay_deferred"
     EXTRACT_FAILED = "extract_failed"
     # Skipped by the non-article filter (nav/index/tag/tool/wall page) — a distinct, counted
     # outcome (never a silent drop), reversible via OO_SKIP_NON_ARTICLES. See ingest/non_article.py.
@@ -130,6 +139,11 @@ def ingest_url(
         return IngestOutcome(url, IngestResult.BLOCKED_ROBOTS, detail=str(exc))
     except RobotsUnavailable as exc:
         return IngestOutcome(url, IngestResult.ROBOTS_UNAVAILABLE, detail=str(exc))
+    # BEFORE the generic FetchError below, which is its base class -- ordering is the
+    # whole mechanism here, and reversing it would silently re-file every deferral as
+    # a source failure with nothing to show it had happened.
+    except CrawlDelayDeferred as exc:
+        return IngestOutcome(url, IngestResult.CRAWL_DELAY_DEFERRED, detail=str(exc))
     except FetchError as exc:
         return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=str(exc))
 

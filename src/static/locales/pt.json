@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "O Ollama não está em execução. Clique na etiqueta de IA na barra superior para iniciá-lo; seus modelos instalados aparecerão aqui assim que ele responder.",
   "Ollama was already running.": "O Ollama já estava em execução.",
   "Ollama was launched — it may still be starting.": "O Ollama foi iniciado — pode ainda estar carregando.",
-  "Online — click to go offline (airplane mode); stops all collection.": "Online — clique para ficar offline (modo avião); interrompe toda a coleta.",
   "Open the analysis from a keyword or a search first.": "Abra primeiro a análise a partir de uma palavra-chave ou de uma busca.",
   "Order articles by how often the searched keyword appears in each.": "Ordenar os artigos pela frequência com que a palavra-chave buscada aparece em cada um.",
   "PDFs imported.": "PDFs importados.",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "deixadas no contentor de importação (o remetente não pôde ser resolvido sem adivinhar)",
   "newsletters moved back to the import bucket.": "newsletters devolvidas ao contentor de importação.",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "a cadeia de resolução de editor aplicada na importação: um eTLD+1 da Public Suffix List (com a inversão de plataforma aplicada primeiro), comparado com as suas fontes existentes por domínio exato e depois pelo mapa de aliases; caso contrário, registado como uma nova fonte de e-mail DESATIVADA. Determinista ou recusado — sem correspondência aproximada, sem semelhança de cadeias, e uma recusa deixa a newsletter no contentor de importação",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "isto é uma COLOCAÇÃO, não um juízo sobre o editor: diz que uma newsletter foi enviada de um domínio que o seu corpus já acompanha, nunca que os dois são igualmente fiáveis. Anular restaura exatamente cada colocação automática e não toca em nada que tenha arquivado você mesmo"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "isto é uma COLOCAÇÃO, não um juízo sobre o editor: diz que uma newsletter foi enviada de um domínio que o seu corpus já acompanha, nunca que os dois são igualmente fiáveis. Anular restaura exatamente cada colocação automática e não toca em nada que tenha arquivado você mesmo",
+  "Collection speed": "Velocidade de coleta",
+  "Budget": "Orçamento",
+  "Measured (whole process)": "Medido (processo completo)",
+  "of which file downloads": "das quais transferências de ficheiros",
+  "Maximum — no ceiling": "Máximo — sem limite",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Uma transferência de ficheiro, por si só, usa {rate} kbit/s do orçamento de {budget} kbit/s — reduzir a coleta não consegue recuperar isso.",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "Algumas transferências ainda não podem ser medidas, por isso este número é um limite inferior.",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "O processo completo é limitado a esta taxa — os pedidos do coletor mais cada transferência de ficheiro — medida pela própria aplicação, nunca por um contador de rede do sistema."
 }

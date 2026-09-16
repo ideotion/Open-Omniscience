@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama läuft nicht. Klicken Sie auf das KI-Symbol in der oberen Leiste, um es zu starten; Ihre installierten Modelle erscheinen hier, sobald es antwortet.",
   "Ollama was already running.": "Ollama lief bereits.",
   "Ollama was launched — it may still be starting.": "Ollama wurde gestartet — es startet möglicherweise noch.",
-  "Online — click to go offline (airplane mode); stops all collection.": "Online — klicken Sie, um offline zu gehen (Flugmodus); stoppt jede Erfassung.",
   "Open the analysis from a keyword or a search first.": "Öffnen Sie die Analyse zuerst über ein Schlüsselwort oder eine Suche.",
   "Order articles by how often the searched keyword appears in each.": "Artikel danach sortieren, wie oft das gesuchte Schlüsselwort in jedem vorkommt.",
   "PDFs imported.": "PDFs importiert.",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "im Import-Sammelordner belassen (der Absender war nicht ohne Raten aufzulösen)",
   "newsletters moved back to the import bucket.": "Newsletter zurück in den Import-Sammelordner verschoben.",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "die geregelte Herausgeber-Zuordnungskette beim Import: eine eTLD+1 aus der Public Suffix List (die Plattform-Umkehrung zuerst angewandt), abgeglichen mit Ihren vorhandenen Quellen über die exakte Domain, dann über die Alias-Tabelle, sonst als neue, DEAKTIVIERTE E-Mail-Quelle angelegt. Deterministisch oder verweigert — kein unscharfer Abgleich, keine Zeichenketten-Ähnlichkeit, und eine Verweigerung belässt den Newsletter im Import-Sammelordner",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "dies ist eine ZUORDNUNG, kein Urteil über den Herausgeber: sie besagt, dass ein Newsletter von einer Domain kam, die Ihr Korpus bereits verfolgt, niemals, dass beide gleich verlässlich sind. Das Rückgängigmachen stellt jede automatische Zuordnung exakt wieder her und lässt alles unberührt, was Sie selbst zugeordnet haben"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "dies ist eine ZUORDNUNG, kein Urteil über den Herausgeber: sie besagt, dass ein Newsletter von einer Domain kam, die Ihr Korpus bereits verfolgt, niemals, dass beide gleich verlässlich sind. Das Rückgängigmachen stellt jede automatische Zuordnung exakt wieder her und lässt alles unberührt, was Sie selbst zugeordnet haben",
+  "Collection speed": "Sammelgeschwindigkeit",
+  "Budget": "Budget",
+  "Measured (whole process)": "Gemessen (gesamter Prozess)",
+  "of which file downloads": "davon Downloads",
+  "Maximum — no ceiling": "Maximum — keine Obergrenze",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "Allein ein Download nutzt {rate} kbit/s des Budgets von {budget} kbit/s — die Sammelgeschwindigkeit zu drosseln kann das nicht zurückholen.",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "Manche Downloads können noch nicht gemessen werden, daher ist diese Zahl eine Untergrenze.",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "Der gesamte Prozess wird auf diese Rate begrenzt — die Abrufe des Collectors plus jeder Download — gemessen von der App selbst, nie von einem System-Netzwerkzähler."
 }

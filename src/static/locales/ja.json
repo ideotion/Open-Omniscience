@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama が実行されていません。上部バーの AI ピルをクリックして起動してください。応答があり次第、インストール済みのモデルがここに表示されます。",
   "Ollama was already running.": "Ollama はすでに実行中でした。",
   "Ollama was launched — it may still be starting.": "Ollama を起動しました — まだ起動処理中の場合があります。",
-  "Online — click to go offline (airplane mode); stops all collection.": "オンライン — クリックするとオフライン（機内モード）になり、すべての収集を停止します。",
   "Open the analysis from a keyword or a search first.": "先にキーワードまたは検索から分析を開いてください。",
   "Order articles by how often the searched keyword appears in each.": "検索したキーワードが各記事に出現する回数で並べ替えます。",
   "PDFs imported.": "PDF をインポートしました。",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "取り込み用のまとめ先に保留（推測せずに送信元を特定できませんでした）",
   "newsletters moved back to the import bucket.": "件のニュースレターを取り込み用のまとめ先に戻しました。",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "取り込み時に実行される発行元判定の手順：Public Suffix List の eTLD+1（プラットフォーム反転を先に適用）を、既存の情報源と完全一致ドメインで照合し、次に別名表で照合します。いずれにも当たらない場合は、新規の「無効」なメール情報源として登録します。確定するか拒否するかのどちらかで、あいまい一致も文字列類似度も使いません。拒否されたニュースレターは取り込み用のまとめ先に残ります",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "これは「振り分け」であって、発行元への評価ではありません。すでに追跡しているドメインから送られたという事実を示すだけで、両者が同じだけ信頼できるという意味ではありません。取り消すと自動振り分けはすべて正確に元へ戻り、ご自身で振り分けたものには一切触れません"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "これは「振り分け」であって、発行元への評価ではありません。すでに追跡しているドメインから送られたという事実を示すだけで、両者が同じだけ信頼できるという意味ではありません。取り消すと自動振り分けはすべて正確に元へ戻り、ご自身で振り分けたものには一切触れません",
+  "Collection speed": "収集速度",
+  "Budget": "予算",
+  "Measured (whole process)": "計測（プロセス全体）",
+  "of which file downloads": "うちファイルダウンロード",
+  "Maximum — no ceiling": "最大 — 上限なし",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "ファイルダウンロード1件だけで、{budget} kbit/sの予算のうち{rate} kbit/sを使用しています — 収集を減らしてもこれは取り戻せません。",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "一部のダウンロードはまだ計測できないため、この数値は下限です。",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "プロセス全体がこのレートに制限されています — コレクターのフェッチとすべてのファイルダウンロードを合わせたもの — アプリ自身が計測しており、システムのネットワークカウンターでは決してありません。"
 }

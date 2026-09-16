@@ -3204,8 +3204,15 @@
     <span class="coach-arrow" aria-hidden="true"></span>
     <div class="coach-body">You're offline. Switch off airplane mode to go online and start collecting.</div>
     <div class="coach-sub">You'll confirm before anything connects.</div>
+    <!-- Q1125 = a (S04-13 S4): "Both actions carry equal visual weight; 'Not now'
+         is not quieter than 'Go online'." "Not now" carried .secondary (a flatter
+         panel background, a 1px border and font-weight 500) against an unclassed
+         primary, so the coachmark was nudging an operator toward going online on a
+         surface whose entire subject is a network-consent decision. Staying offline
+         is a first-class answer here and now looks like one. The WORDS are
+         unchanged, and the consent popup this leads to is untouched. -->
     <div class="coach-actions">
-      <button class="secondary" id="net-coach-dismiss">Not now</button>
+      <button id="net-coach-dismiss">Not now</button>
       <button id="net-coach-go">Go online</button>
     </div>
   </div>

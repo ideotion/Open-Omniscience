@@ -35,6 +35,8 @@ import time
 from contextlib import suppress
 from datetime import UTC, datetime
 
+from src.scheduler import process_budget
+
 _LOG = logging.getLogger("monitoring.collect_perf")
 
 # Keep the rolling log bounded (newest lines win), like the other diagnostics
@@ -576,8 +578,17 @@ class CollectionMonitor:
             )
         loop_lagging = self._loop_lag_gate(loop_lagging, loop_fraction)
 
+        # S04-13 S1 (Q1012 = a): the governor is the ONE rate authority, and from here
+        # it reads the WHOLE process rather than the collector's share of it. Before
+        # this, a wiki-dump or OSM download pulling megabytes a second was invisible to
+        # the controller holding the process to the operator's target -- the knob
+        # described a part of the process without saying so. ``compose`` adds no target
+        # of its own; it derives the ceiling from this same governor's mode/target and
+        # sums the app's OWN samplers (never a machine-wide NIC gauge, which would be
+        # the recorded P4 defect in a different unit).
+        budget = process_budget.compose(self._gov, rate)
         new_permits, reason = self._gov.observe(
-            rate,
+            budget["process_kbps"],
             writer_saturated=writer_saturated,
             cpu_saturated=cpu_saturated,
             mem_low=mem_low,
@@ -627,7 +638,12 @@ class CollectionMonitor:
             "pass_id": self._pass_id,
             "elapsed_s": round(time.time() - self._started_at, 1),
             "mode": self._mode,
+            # The collector's OWN share, unchanged: this field has meant "what the
+            # fetcher pulled" since it was written, and redefining an existing key
+            # would make its own history incomparable with its future. The whole-process
+            # figure the governor now acts on is published BESIDE it, under its own name.
             "download_rate_kbps": rate,
+            "process_budget": budget,
             "target_kbps": getattr(self._gov, "target_kbps", None),
             "rate_mode": getattr(self._gov, "mode", None),
             "permits": permits,

@@ -671,9 +671,34 @@
     } else {
       if (plane) plane.setAttribute("fill", "none");
       b.style.color = "";
-      b.title = t("Online — click to go offline (airplane mode); stops all collection.");
+      // Q1126 = a (S04-13 S5). Was "stops all collection.", which is TRUE and
+      // WEAKER than what the switch actually does: the kill switch refuses every
+      // new network request process-wide, not only the collector's. The main UI has
+      // carried the stronger claim at app-core.js:652 for as long as both have
+      // existed, so two surfaces described one mechanism differently and the
+      // task manager's version under-promised the operator's own protection.
+      // Aligned to the same KEY, which is already translated in all twelve locales.
+      //
+      // No third state is needed HERE, unlike the offline branch above: the
+      // AI-install egress window only exists while the kill switch is ENGAGED, so
+      // the online title can never be painted while that exemption is open.
+      b.title = t("Online — click to go offline (airplane mode); every new network request will be refused.");
     }
   }
+  // The airplane hover is PAINTED, not markup, so the i18n DOM walker cannot reach
+  // it: `t()` is evaluated once, at paint time, and the result is an attribute value
+  // that no longer matches a key. On first load that is already correct (a French
+  // session paints French -- Chromium-verified), but a LIVE language switch left the
+  // title frozen in whatever locale the tab opened with.
+  //
+  // The app has always handled this for its own copy of the same button
+  // (app-core.js re-calls _paintNetwork from an `oo:langchange` listener, with the
+  // reason written above it); this page simply never registered. That is the
+  // recorded frozen-locale class on a render-once surface, and the recorded remedy
+  // is a listener rather than memory -- so here it is. Found while verifying
+  // Q1126 = a in a browser, on the string that ruling is about; it changes no copy
+  // and adds no key, and it is what makes "re-translated x12" true on BOTH paths.
+  document.addEventListener("oo:langchange", function () { paintAir(); });
   // Same direction-aware flash + toast as the app (maintainer 2026-06-21: the
   // airplane button must give identical visual feedback everywhere). #net-flash +
   // its .go-on/.go-off keyframes live in the shared app.css.

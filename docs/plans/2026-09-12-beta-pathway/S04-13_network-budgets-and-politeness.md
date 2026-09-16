@@ -58,8 +58,9 @@ floor; `c` would reach both.
   `make_fetcher` — the docket's politeness trap), the injectable `self._sleep = time.sleep` at `:654`,
   `_robots_cache_path` → `robots_cache.json` at `:203–206`, `_declares_crawl_delay` `:736`, `crawl_delay_for`
   `:754` — grep-verified. The docket entry (`OPEN_QUEUE.md` ~13273–13295) names the sleeping method
-  `_respect_rate_limit`; `grep -n "def _respect_rate_limit" src/ingest/__init__.py` finds nothing today —
-  locate the sleep site by the `_sleep` injection before changing it. The ride-along is
+  `_respect_rate_limit`. **CORRECTED 2026-09-16 (the executing session):** this brief said that grep
+  "finds nothing today"; it finds `def _respect_rate_limit(self, netloc: str, host_key: str)` at `:1496`,
+  called from `:913`. The method is exactly where the docket says it is. The ride-along is
   `advance_qualification` (`src/scheduler/runner.py:413` comment), the trial fetch `trial_fetch`
   (`src/catalog/qualification.py:230`).
 - The rate limit: one shared `Limiter` in `src/api/ratelimit.py`; 66 `@limiter.limit` decorators across
@@ -79,6 +80,15 @@ floor; `c` would reach both.
   identifier entry beside it at `:172`) — grep-verified; register D6: weights are "the one downloaded artifact
   with no pin". The pull path: `src/api/llm.py:789` `llm_pull`, `src/llm/pull_queue.py`,
   `src/llm/model_store.py`.
+  **CORRECTED 2026-09-16 (the executing session): S6 WAS ALREADY BUILT, and this brief is what said
+  otherwise.** `src/llm/weights_pin.py` (HF_REVISION_PINS + OLLAMA_DIGEST_PINS, `PinMismatch` refusing by
+  name), its wiring at `src/llm/pull_queue.py:116-144`, the blank-and-refusing registry `pin`, and
+  `tests/test_model_weights_pin.py` (19 passed) all landed in `16ff34f8` on **2026-09-07** — eight days
+  BEFORE this brief's own re-check anchor `7ca142e` (2026-09-15), and an ancestor of it. The brief quoted
+  the 2026-09-06 REGISTER's wording, which was true when written, instead of re-reading the tree it had
+  just anchored against. **The tell to reuse: a brief's staleness guard has to run against the claims it
+  INHERITS, not only against the anchors it checks** — an anchor that resolves proves the line exists, not
+  that the sentence about it is still true. Recorded VERIFIED-PRESENT; nothing was rebuilt.
 
 ## 3. Slices — what to build, in order
 

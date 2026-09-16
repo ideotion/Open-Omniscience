@@ -35,7 +35,13 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
-from src.ingest import EthicalFetcher, FetchError, RobotsDisallowed, RobotsUnavailable
+from src.ingest import (
+    CrawlDelayDeferred,
+    EthicalFetcher,
+    FetchError,
+    RobotsDisallowed,
+    RobotsUnavailable,
+)
 from src.ingest.pipeline import IngestResult, _exists, store_fetched
 from src.utils.url_utils import canonicalize_url
 
@@ -177,6 +183,11 @@ def crawl_source(
                 continue
             except RobotsUnavailable:
                 tally[IngestResult.ROBOTS_UNAVAILABLE.value] += 1
+                continue
+            # S04-13 S2: before the FetchError base class it inherits from, so a
+            # deferral is never tallied as a failure of the source.
+            except CrawlDelayDeferred:
+                tally[IngestResult.CRAWL_DELAY_DEFERRED.value] += 1
                 continue
             except FetchError:
                 tally[IngestResult.FETCH_FAILED.value] += 1

@@ -3315,7 +3315,6 @@
   "Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers.": "Ollama 未运行。点击顶栏的 AI 标签即可启动；它响应后，您已安装的模型会显示在这里。",
   "Ollama was already running.": "Ollama 本已在运行。",
   "Ollama was launched — it may still be starting.": "已启动 Ollama——它可能仍在启动中。",
-  "Online — click to go offline (airplane mode); stops all collection.": "在线——点击可切换到离线（飞行模式），并停止所有采集。",
   "Open the analysis from a keyword or a search first.": "请先从关键词或搜索打开分析。",
   "Order articles by how often the searched keyword appears in each.": "按所搜索关键词在每篇文章中出现的次数排序。",
   "PDFs imported.": "PDF 已导入。",
@@ -3416,5 +3415,14 @@
   "left in the import bucket (the sender could not be resolved without guessing)": "留在导入分组中（无法在不猜测的情况下判定发件方）",
   "newsletters moved back to the import bucket.": "封邮件通讯已移回导入分组。",
   "the ruled publisher ladder run at import time: a Public Suffix List eTLD+1 (with the platform inversion applied first) matched against your existing sources by exact domain, then by the alias map, else registered as a new DISABLED email source. Deterministic or refused -- no fuzzy matching, no string similarity, and a refusal leaves the newsletter in the import bucket": "导入时运行的出版方判定规则：取 Public Suffix List 的 eTLD+1（先应用平台反转），先按精确域名、再按别名表与您已有的来源比对；都不匹配则登记为一个新建的、已停用的邮件来源。要么确定，要么拒绝——不做模糊匹配，不做字符串相似度比较；被拒绝的邮件通讯留在导入分组中",
-  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "这是一次归档，不是对出版方的评判：它只说明这封邮件通讯来自您的语料库已经追踪的域名，绝不表示两者同样可靠。撤销会精确还原每一次自动归档，并且不会动您亲自归档的任何内容"
+  "this is a PLACEMENT, not a judgement about the publisher: it says a newsletter was sent from a domain your corpus already tracks, never that the two are equally reliable. Undo restores every automatic placement exactly, and touches nothing you filed yourself": "这是一次归档，不是对出版方的评判：它只说明这封邮件通讯来自您的语料库已经追踪的域名，绝不表示两者同样可靠。撤销会精确还原每一次自动归档，并且不会动您亲自归档的任何内容",
+  "Collection speed": "采集速度",
+  "Budget": "预算",
+  "Measured (whole process)": "实测（整个进程）",
+  "of which file downloads": "其中文件下载",
+  "Maximum — no ceiling": "最大 — 无上限",
+  "{rate} kbit/s": "{rate} kbit/s",
+  "A file download alone is using {rate} kbit/s of the {budget} kbit/s budget — reducing collection cannot recover it.": "单是一次文件下载，就已经在 {budget} kbit/s 预算中占用了 {rate} kbit/s — 降低采集速度无法收回这部分。",
+  "Some downloads cannot be measured yet, so this figure is a lower bound.": "部分下载暂时无法测量，因此这个数字是一个下限。",
+  "The whole process is held to this rate — the collector’s fetches plus every file download — measured by the app itself, never a system network counter.": "整个进程都被限制在这个速率之内 — 采集器的抓取请求加上每一次文件下载 — 由本应用自身测量，绝不是系统网络计数器。"
 }
