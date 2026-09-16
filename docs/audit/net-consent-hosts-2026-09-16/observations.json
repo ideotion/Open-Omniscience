@@ -1,0 +1,178 @@
+[
+  [
+    "kill switch engaged (offline)",
+    true
+  ],
+  [
+    "airplane engaged after stop",
+    true
+  ],
+  [
+    "auto_track_signals",
+    true
+  ],
+  [
+    "world_discovery_per_pass",
+    2
+  ],
+  [
+    "auto_track_law present in payload",
+    false
+  ],
+  [
+    "first-launch guide dismissed by clicking #gw-close",
+    true
+  ],
+  [
+    "airplane still engaged after dismissing the guide",
+    true
+  ],
+  [
+    "[en] lane block characters",
+    454
+  ],
+  [
+    "[en] dir attribute",
+    "ltr"
+  ],
+  [
+    "[en] lanes carrying a host hover",
+    14
+  ],
+  [
+    "en lane block text",
+    "'Runs on every collection pass:\\nPress collection n=9033\\nSource discovery n=2\\nLaw n=260\\nOfficial statistics n=3\\nMarkets & commodities n=4\\nCalendars n=14\\nHazard feeds n=2\\nOnly when you ask for it:\\nWikipedia / Wikimedia n=3\\nMaps / OpenStreetMap n=2\\nWeather n=1\\nLocal AI install & weights n=4\\nNewsletter mailbox\\nSwitched off right now:\\nDiscover by topic n=1\\nChain of custody n=3\\nNo proxy is configured, so fetches go direct — the hosts above see your address.'"
+  ],
+  [
+    "hover[Law]",
+    "'260 hosts — the full list is in the security notes — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today.'"
+  ],
+  [
+    "hover[Calendars]",
+    "'date.nager.at · www.openholidaysapi.org · www.officeholidays.com · www.calendarlabs.com · www.hebcal.com · litcal.johnromanodorazio.com · worldpublicholiday.com · fosdem.org · f1calendar.com · www.matchesio.com · www.rocketlaunch.live · pirate.monkeyness.com · raw.githubusercontent.com · jonamarkin.github.io — Always on: the code reads a switch that does not exist yet, so this cannot be turned off today.'"
+  ],
+  [
+    "hover[Hazard feeds]",
+    "'earthquake.usgs.gov · www.gdacs.org — Its off-switch exists but the app cannot reach it: the settings endpoint accepts the change and discards it.'"
+  ],
+  [
+    "hover[Newsletter mailbox]",
+    "\"a host you name yourself — nothing is bundled — Not through this app's fetcher or proxy.\""
+  ],
+  [
+    "hover[Chain of custody]",
+    "\"a.pool.opentimestamps.org · b.pool.opentimestamps.org · alice.btc.calendar.opentimestamps.org — Not through this app's fetcher or proxy.\""
+  ],
+  [
+    "hover[Wikipedia / Wikimedia]",
+    "'*.wikipedia.org · ores.wikimedia.org · dumps.wikimedia.org'"
+  ],
+  [
+    "en first hover",
+    "'9033 hosts — the full list is in the security notes'"
+  ],
+  [
+    "#oo-tip visible on hover",
+    true
+  ],
+  [
+    "#oo-tip text",
+    "'9033 hosts — the full list is in the security notes'"
+  ],
+  [
+    "[en] visible hints in the dialog",
+    3
+  ],
+  [
+    "[ar] lane block characters",
+    418
+  ],
+  [
+    "[ar] dir attribute",
+    "rtl"
+  ],
+  [
+    "[ar] lanes carrying a host hover",
+    14
+  ],
+  [
+    "[ar] visible hints in the dialog",
+    3
+  ],
+  [
+    "[zh] lane block characters",
+    209
+  ],
+  [
+    "[zh] dir attribute",
+    "ltr"
+  ],
+  [
+    "[zh] lanes carrying a host hover",
+    14
+  ],
+  [
+    "[zh] visible hints in the dialog",
+    3
+  ],
+  [
+    "after PUT: auto_track_signals",
+    true
+  ],
+  [
+    "source discovery moved to 'Switched off right now'",
+    true
+  ],
+  [
+    "hazards STAYS on despite the PUT (the unreachable opt-out)",
+    true
+  ],
+  [
+    "off-state lane block text",
+    "'Runs on every collection pass:\\nPress collection n=9033\\nLaw n=260\\nOfficial statistics n=3\\nMarkets & commodities n=4\\nCalendars n=14\\nHazard feeds n=2\\nOnly when you ask for it:\\nWikipedia / Wikimedia n=3\\nMaps / OpenStreetMap n=2\\nWeather n=1\\nLocal AI install & weights n=4\\nNewsletter mailbox\\nSwitched off right now:\\nSource discovery n=2\\nDiscover by topic n=1\\nChain of custody n=3\\nNo proxy is configured, so fetches go direct — the hosts above see your address.'"
+  ],
+  [
+    "restored world_discovery_per_pass",
+    2
+  ],
+  [
+    "375px: dialog height vs viewport",
+    "521px in 667px"
+  ],
+  [
+    "375px: dialog itself clipped",
+    false
+  ],
+  [
+    "375px: the BODY scrolls (by design)",
+    true
+  ],
+  [
+    "375px: 'Go online' is inside the viewport without scrolling",
+    true
+  ],
+  [
+    "375px: .hint blocks in the dialog",
+    3
+  ],
+  [
+    "375px: both STANDING caveats in normal flow, not display:none",
+    true
+  ],
+  [
+    "375px: dialog width",
+    "375px"
+  ],
+  [
+    "375px: page scrolls horizontally WITH the dialog open",
+    true
+  ],
+  [
+    "375px: the last caveat is on screen once the body is scrolled",
+    true
+  ],
+  [
+    "375px: page scrolls horizontally with the dialog CLOSED (pre-existing?)",
+    true
+  ]
+]

@@ -41,6 +41,7 @@ const SHELL = [
   "/static/app.css",
   "/static/i18n.js",
   "/static/sw-register.js",
+  "/static/net-hosts.js",
   "/static/ooviz.js",
   "/static/oosky.js",
   "/static/osmpbf.js",

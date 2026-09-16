@@ -7692,3 +7692,77 @@ D8). Docs-only; `CLAUDE.md` untouched.
   it against the real parser once, outside the committed test: the shipped guard then has no
   dependency, and the cross-check (9 shapes, 9 agreements, including the two the renderer
   actually produces) is what makes the hand-rolled rule trustworthy.
+- **A HOST SWEEP IS BLIND TO A HOST NOBODY EVER WROTE AS A URL — AND HERE THAT WAS A THIRD OF
+  THE REACH (2026-09-16, the `docs/SECURITY.md` enumeration, Q1001):** the brief's own method
+  was `grep -rnoE 'https?://…'` over `src/`, `configs/` and `scripts/`, and it is the obvious
+  one. `configs/markets_sources.yml` carries **112 sources as a bare `domain:` with no
+  `rss_url` at all** — zero `https://` literals in the entire file — and
+  `src/ingest/crawl.py:149` still reaches every one of them at `f"https://{source.domain}"`,
+  as do `src/monitoring/preflight.py:68` and `src/database/source_manager.py:919`. The file is
+  invisible to the sweep and fully reachable at runtime. MEASURED on the whole press class:
+  the URL sweep finds 4,816 hosts in `configs/sources.yml`, the `domain:` sweep finds 5,350,
+  and the union is 8,107 — the two halves overlap far less than they look like they should,
+  because a source's feed lives on `feeds.bbci.co.uk` while its domain is `bbc.co.uk` and both
+  get fetched. Across the five catalogues the honest count is 9,033, not 5,425.
+  **GENERAL FORM: when you enumerate what a program can reach, enumerate the SHAPES the
+  address can take before you enumerate the addresses. A scheme, a host and a path assembled
+  at the call site from three different columns is still an endpoint; the literal you grep for
+  is a convention, not the thing.** The guard that came out of this sweeps both halves and says
+  so in a comment, because the next person to widen it will reach for the URL regex first.
+- **A DOCUMENTED OPT-OUT CAN BE ACCEPTED WITH A 200 AND DISCARDED, AND PYDANTIC'S
+  `exclude_unset` IS HOW (2026-09-16, live-reproduced while writing the same enumeration):**
+  `auto_track_signals` is a real `SchedulerSettings` field, `save_settings` honours it, and
+  `docs/SECURITY.md` and CLAUDE.md invariant #14 have both named `PUT /api/scheduler/config`
+  as the way to turn the hazard-feed ride-along off — for months. `SchedulerConfigUpdate`, the
+  request model that endpoint validates against, does not declare the field. Pydantic drops an
+  undeclared key silently, `model_dump(exclude_unset=True)` returns `{}`, and the endpoint
+  answers **HTTP 200 having changed nothing**. Measured end to end: `PUT
+  {"auto_track_signals": false}` → 200, read-back `true`. **THE SEVERITY IS IN THE DIRECTION OF
+  FAILURE, not in the missing line.** A refusal is honest and a 422 would have been a bug
+  report; an accepted-and-discarded control tells the operator their consent decision took
+  effect when it did not, which is the same family as a fabricated measurement. **GENERAL
+  FORM: a settings key has THREE places to exist — the store, the writer, and the REQUEST MODEL
+  — and a key present in two of them is silently inert. When a document names a route as the
+  way to change something, drive that route and read the value back; the store honouring the
+  field proves nothing about the endpoint.** Two sibling ride-alongs failed the same test for a
+  simpler reason (`getattr(settings, "auto_import_calendars", True)` against a dataclass with
+  no such field), and the two shapes are worth telling apart: one has no switch, the other has
+  a switch wired to nothing.
+- **`[A-Za-z]{2,}$` IS NOT A TLD RULE, AND THE COUNT GUARD IS WHAT SAID SO (2026-09-16):** the
+  host-shape regex that separates a real host from the debris a URL grep produces
+  (`bihar`, `src{sid`, a bare `(`) ended its final label with `[A-Za-z]{2,}`. A punycode TLD
+  ends in a DIGIT — `configs/sources.yml` really does carry
+  `xn--80aaafcmcb6evaidf6r.xn--p1ai` — so the rule dropped one real host out of 9,033 with no
+  error and nothing to notice. What caught it was not a review: the class-lane count guard
+  re-measures the catalogues and asserts the stated number, and it reported 9,032 against a
+  9,033 the shipped sweep had produced with a different regex. **GENERAL FORM: a validity
+  rule for a name is a place to be wrong about the long tail, and the cheapest detector is a
+  SECOND count taken a different way — the disagreement is the finding, and a rule that
+  silently narrows what it accepts leaves no other trace.**
+- **A GUARD THAT PROVES A PAYLOAD EXISTS IS NOT A GUARD THAT ANYONE DRAWS IT — the render
+  boundary, one level smaller than the recorded cases (2026-09-16):** the consent hover sorts
+  lanes into four buckets and the honest one is `unknown` ("we could not read whether this is
+  on"), which must never render as `off`. The guard asserted `"by.unknown" in src`. Mutating
+  `if (by.unknown.length) {` → `if (false) {` **survived**, because the draw call
+  (`out.push(by.unknown.map(...))`) lives INSIDE the disabled block and still contains the
+  needle. The bucket was computed, named, and never shown. **GENERAL FORM: to guard that
+  something is rendered, pin the CONDITION that admits it to the output, not a token that
+  appears in the code the condition guards — a needle inside the disabled branch is satisfied
+  by the branch that no longer runs.** The fix asserts the exact `if (by.<bucket>.length) {`
+  line for all four buckets, and both re-mutations redden.
+- **A CONSENT DIALOG THAT GROWS MUST BE RE-MEASURED AT PHONE WIDTH, BECAUSE THE THING THAT
+  FALLS OFF IS THE DECISION (2026-09-16):** adding fourteen lane rows to `#net-consent` took it
+  from comfortable to **851px of content in a 667px viewport** at 375×667 — measured in
+  Chromium, not guessed. What ended up below the fold was not the new list: it was both
+  standing caveats AND both buttons, "Stay offline" and "Go online". A `<dialog>` with no
+  `max-height` does not scroll usefully, so the operator's own choice was unreachable, and this
+  project's informed-consent rule puts caveats *visible by default* — a caveat under an
+  invisible fold is a hidden caveat whatever the DOM says. The fix is the shape
+  `#guide-wizard` already uses: a scrolling BODY with the controls pinned outside it
+  (`max-height:58vh;overflow:auto`), which brought it to 521px in 667px with both buttons in
+  the viewport without scrolling. **GENERAL FORM: when you add rows to a modal, the regression
+  is never the rows — it is whatever was at the bottom. Measure at the smallest supported
+  width, and check reachability of the CONTROLS, not just presence in the DOM.** The same run
+  also showed the page's horizontal scroll at 375px is pre-existing (it is there with the
+  dialog closed), which is why the measurement was taken in both states before anything was
+  blamed on the change.
