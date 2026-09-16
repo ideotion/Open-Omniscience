@@ -18,6 +18,7 @@ stays unit-testable with no network.
 
 from __future__ import annotations
 
+from src.catalog.countries import to_iso3
 from src.catalog.normalize import to_entry
 
 WDQS_ENDPOINT = "https://query.wikidata.org/sparql"
@@ -37,8 +38,15 @@ def build_query(
     # Label language falls back to English so unlabelled-in-locale items still get a name.
     label_langs = f"{label_lang},en" if label_lang != "en" else "en"
     return (
-        "SELECT DISTINCT ?itemLabel ?website ?lang WHERE {\n"
+        # `?iso3` is P298, the ISO 3166-1 ALPHA-3 code, fetched as a CROSS-CHECK of
+        # this app's own alpha-2 -> alpha-3 table (ruling Q311 = a). It is OPTIONAL
+        # because not every country item carries P298, and an absent value must read
+        # as "Wikidata did not say" rather than as a disagreement. Nothing downstream
+        # is keyed on it: the query still selects on P297, so adding it cannot change
+        # which rows come back.
+        "SELECT DISTINCT ?itemLabel ?website ?lang ?iso3 WHERE {\n"
         f'  ?country wdt:P297 "{cc}" .\n'
+        "  OPTIONAL { ?country wdt:P298 ?iso3 . }\n"
         "  ?item wdt:P17 ?country ;\n"
         "        wdt:P856 ?website ;\n"
         "        wdt:P31/wdt:P279* ?type .\n"
@@ -74,3 +82,62 @@ def parse_results(
         if entry is not None:
             out.append(entry)
     return out
+
+
+def iso3_crosscheck(payload: dict, *, country_code: str) -> dict[str, object]:
+    """Compare Wikidata's P298 against this app's own alpha-3 for one country.
+
+    Ruling Q311 = a asks for P298 "as a cross-check", and a cross-check that SILENTLY
+    CORRECTS is not a cross-check -- it is a second, unreviewed source of truth for
+    the table `src/catalog/countries.py` ships. So this REPORTS and never repairs:
+    the caller logs the line, a human decides, and `ISO3_TO_ISO2` changes in a commit
+    somebody reviewed.
+
+    Three outcomes, kept apart because collapsing any two loses a fact:
+
+    * ``"agree"``    -- both said the same code.
+    * ``"disagree"`` -- both spoke and said different codes. The finding.
+    * ``"absent"``   -- Wikidata returned no P298 for this country (the property is
+      OPTIONAL and genuinely missing on some items), or we have no alpha-3 for the
+      code. An absence is NOT a disagreement; reading it as one would manufacture
+      upstream drift out of a short answer, and the row would then be the loudest
+      thing in a log about countries nobody has a problem with.
+
+    Reads the FIRST P298 binding present. Every row of one country's result set
+    carries the same `?iso3` (it is bound off `?country`, which the query pins to a
+    single item), so scanning further would re-read one fact N times.
+    """
+    bindings = (payload or {}).get("results", {}).get("bindings", [])
+    theirs: str | None = None
+    for b in bindings:
+        got = (b.get("iso3") or {}).get("value")
+        if got:
+            theirs = str(got).strip().upper()
+            break
+    ours = to_iso3(country_code)
+    if theirs is None or ours is None:
+        return {
+            "country": (country_code or "").strip().upper(),
+            "verdict": "absent",
+            "ours": ours,
+            "theirs": theirs,
+            "note": (
+                "Wikidata returned no P298 for this country"
+                if theirs is None
+                else "this app has no alpha-3 for this code"
+            ),
+        }
+    return {
+        "country": (country_code or "").strip().upper(),
+        "verdict": "agree" if theirs == ours else "disagree",
+        "ours": ours,
+        "theirs": theirs,
+        "note": (
+            ""
+            if theirs == ours
+            else (
+                f"Wikidata P298 says {theirs} where this app's table says {ours}; "
+                "reported, never auto-applied -- edit ISO3_TO_ISO2 deliberately"
+            )
+        ),
+    }

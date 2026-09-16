@@ -24,15 +24,24 @@ import urllib.parse
 from collections.abc import Callable, Iterable
 
 from src.catalog.build import generate_catalog, load_query_config
-from src.catalog.wikidata import WDQS_ENDPOINT, build_query
+from src.catalog.wikidata import WDQS_ENDPOINT, build_query, iso3_crosscheck
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 
 _TIMEOUT_S = 90
 _PROVENANCE = "wikidata-discovery"
 
 
-def _guarded_run_query(cfg: dict) -> Callable[[str, list[str]], dict]:
-    """Production transport: a guarded GET to the WDQS SPARQL endpoint per country."""
+def _guarded_run_query(
+    cfg: dict, iso3_checks: list[dict] | None = None
+) -> Callable[[str, list[str]], dict]:
+    """Production transport: a guarded GET to the WDQS SPARQL endpoint per country.
+
+    ``iso3_checks``, when given, collects the P298 cross-check verdict for each
+    country the run reaches (ruling Q311 = a). It is an out-parameter rather than a
+    return value because the transport's shape is fixed by ``generate_catalog``,
+    which owns the loop; a second pass would double every request, and this fact
+    arrives free in a response the run already paid for.
+    """
     from src.safety.fetcher import guarded_session
 
     def run_query(cc: str, type_qids: list[str]) -> dict:
@@ -42,7 +51,7 @@ def _guarded_run_query(cfg: dict) -> Callable[[str, list[str]], dict]:
             url, timeout=_TIMEOUT_S
         )
         try:
-            return resp.json()
+            payload = resp.json()
         except ValueError as exc:
             # S5 item 4 (field-feedback 2026-07-23): a non-JSON response body (a
             # rate-limit page, an error page, a truncated response) used to
@@ -56,6 +65,14 @@ def _guarded_run_query(cfg: dict) -> Callable[[str, list[str]], dict]:
             raise RuntimeError(
                 f"non-JSON response (HTTP {resp.status_code}): {snippet!r}"
             ) from exc
+        if iso3_checks is not None:
+            # Recorded per COUNTRY, not per spec: one country is queried once per
+            # spec, and every one of those responses carries the same `?iso3`
+            # (it is bound off `?country`). Appending each would report one fact
+            # N times and make a single disagreement look like N of them.
+            if not any(r.get("country") == cc.strip().upper() for r in iso3_checks):
+                iso3_checks.append(iso3_crosscheck(payload, country_code=cc))
+        return payload
 
     return run_query
 
@@ -85,7 +102,8 @@ def discover_sources(
     cfg = load_query_config()
     if per_spec_limit:
         cfg["limit"] = int(per_spec_limit)
-    runq = run_query or _guarded_run_query(cfg)
+    iso3_checks: list[dict] = []
+    runq = run_query or _guarded_run_query(cfg, iso3_checks)
 
     existing = {d for (d,) in session.query(Source.domain).all()}
     result = generate_catalog(runq, codes, cfg["specs"], existing_domains=existing)
@@ -104,4 +122,16 @@ def discover_sources(
             seen.add(dom)
             added += 1
         session.commit()
-    return {"added": added, "countries": codes, **result["stats"]}
+    # The cross-check REPORTS and never repairs (Q311 = a). Only disagreements ride
+    # in the summary: an `agree` is the expected case and an `absent` is Wikidata
+    # being quiet, and a diagnostic that always says something is one nobody reads.
+    # `iso3_checked` carries the DENOMINATOR, because "0 disagreements" over 0
+    # checks and over 200 are different facts.
+    disagreements = [r for r in iso3_checks if r.get("verdict") == "disagree"]
+    return {
+        "added": added,
+        "countries": codes,
+        "iso3_checked": len(iso3_checks),
+        "iso3_disagreements": disagreements,
+        **result["stats"],
+    }

@@ -963,3 +963,51 @@ def country_display(value: str | None) -> dict[str, str | None]:
     # the name. Never a guess, and never an empty string -- a blank cell reads as
     # "this source has no country", which is a different claim.
     return {"code": code, "name": raw, "kind": "unresolved", "note": None}
+
+
+# --- The filename rule (Q309 = a) ------------------------------------------ #
+#
+# "A filename carrying a country uses uppercase alpha-3." No file in the tree
+# carries a country code TODAY -- `osm_filename` keys on a Geofabrik REGION and
+# `dump_filename` on a Wikipedia EDITION, neither of which is a country -- so this
+# is a rule for the files the briefs put next on it (the per-country OSM extracts
+# of S05-04, the law bundles of S04-10). A rule with no instances is exactly the
+# kind that gets re-invented differently by each of them, which is why it ships
+# with a builder and a repo test rather than as a sentence in a design doc.
+
+#: Characters a country-bearing filename may contain beside the code. Deliberately
+#: tiny: a stem and an extension are ours to choose, so there is no reason to admit
+#: anything that could reach a path separator or a shell.
+_FILENAME_SAFE = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-_.")
+
+
+def country_filename(stem: str, country: str | None, extension: str) -> str:
+    """``laws`` + ``de`` + ``.jsonl`` -> ``laws_DEU.jsonl`` (ruling Q309 = a).
+
+    REFUSES rather than guesses. A country this module cannot resolve raises, because
+    the alternative is a file named for a code nobody can look up -- and a filename is
+    the one place a wrong code is permanent: it survives a re-index, it is what an
+    operator reads in a folder listing, and a later reader has no way to tell
+    ``laws_XX.jsonl`` from a country that once existed.
+
+    The code is UPPERCASE alpha-3, which is also what makes the rule checkable by
+    eye: every country-bearing name in ``data/`` looks the same, and anything that
+    does not is either a bug or one of the two REGISTERED non-country keys.
+    """
+    st = (stem or "").strip().lower()
+    ext = (extension or "").strip().lower()
+    if not st or not ext:
+        raise ValueError("a country filename needs both a stem and an extension")
+    if not ext.startswith("."):
+        ext = "." + ext
+    code = country_display_code(country)
+    if code is None or country_display(country)["kind"] == "unresolved":
+        raise ValueError(
+            f"refusing to name a file for an unresolvable country {country!r} -- "
+            "a filename is permanent and a code nobody can look up is worse than "
+            "no file"
+        )
+    bad = set(st + ext) - _FILENAME_SAFE
+    if bad:
+        raise ValueError(f"unsafe characters in filename stem/extension: {sorted(bad)}")
+    return f"{st}_{code}{ext}"
