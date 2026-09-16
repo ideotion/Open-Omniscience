@@ -66,6 +66,7 @@ def build_edition(
 
     edition = layer_a(session, period, rising_limit=rising_limit, target_lang=target_lang)
     edition["narration_requested"] = bool(narrate)
+    edition["attribution"] = _attribution(session, period)
 
     # The refusal is applied HERE rather than at the call site so exactly one place
     # composes the document's account of its own narration — the recorded defect was
@@ -150,6 +151,38 @@ def build_edition(
 
     attach_narration(edition)
     return edition
+
+
+def _attribution(session, period: Period) -> list[dict]:
+    """The licence lines that apply to THIS edition (Q1008 = a), recorded IN the record.
+
+    Measured from the sources that actually contributed to the period, and stored on the
+    edition rather than computed at render time: a bulletin downloaded again next year
+    must carry the lines that applied when it was made, not the ones that apply to
+    whatever the corpus holds by then. A record's account of itself does not drift.
+
+    Degrades to an empty list rather than costing the edition: a licence block is owed,
+    and a document that could not compute one is still a document — but a FAILURE is
+    recorded as such (an empty list from a failed query and an empty list from "nothing
+    third-party contributed" are kept apart by the ``attribution_error`` key).
+    """
+    from src.backup.attribution import (
+        PendingRulingError,
+        attribution_dicts,
+        signals_from_sources,
+    )
+    from src.bulletin.evidence import period_source_rows
+
+    try:
+        return attribution_dicts(signals_from_sources(period_source_rows(session, period)))
+    except PendingRulingError:
+        # The Q823 seam. Raised rather than swallowed by the module that knows why, and
+        # re-raised here: a bulletin whose attribution block would be silently short is
+        # not a bulletin this app may write.
+        raise
+    except Exception:  # noqa: BLE001 - the record survives a failed licence query
+        _LOG.warning("bulletin: could not compute the attribution lines", exc_info=True)
+        return []
 
 
 def attach_narration(edition: dict) -> dict:

@@ -14211,3 +14211,62 @@ until someone names who will call it. Here that is named: **S04-09's wiki map la
 brief's own sequencing note ("S04-09's wiki map layer and S04-05's alpha-3 display ride the
 seam this slice makes"). If that slice lands without needing it, the honest move is to delete
 the function rather than keep it warm.
+
+## 2026-09-16 — THE Q823 SEAM, AS THE EXPORT SLICE ACTUALLY MET IT (S04-03, three open details)
+
+`S04-03` shipped Q1008's attribution lines and stopped at Q823 ⛔ (ODbL). Stopping turned out
+to have three distinguishable parts, and only the first is what the brief anticipated.
+
+**1. No ODbL line anywhere, and the refusal is armed rather than merely absent.** No corpus
+table today holds OSM-derived rows, so "emit nothing" and "there is nothing to emit" are
+currently the same behaviour — which is exactly the shape that rots. `src/backup/attribution.py`
+therefore RAISES `PendingRulingError`, naming Q823, the moment an `osm_*` corpus table appears,
+rather than rendering an attribution block that is silently one line short. When `S05-04` lands
+the OSM lane, **the export, the bulletin and the evidence ZIP will refuse until Q823 is
+answered.** That is deliberate and it is the whole point of arming it now; it is also a thing
+the maintainer should know is waiting, because it will present as a broken export rather than
+as a question.
+
+**2. Geofabrik extracts ALREADY ride an export today, and were left alone.** The "Offline maps"
+tick copies the downloaded `osm_regions` `.pbf` files into the backup folder, and has for a
+long time. Those are upstream ODbL files carried byte for byte — not a derived database, which
+is what Q823's own context describes ("OSM-derived rows inside the corpus") — so no line is
+emitted for them and `osm_seam_blockers()` deliberately does NOT treat them as a blocker.
+**Removing that capability would be answering Q823 = b**, so the status quo stands and is
+stated here instead. If the maintainer reads a copied extract as "data leaving the machine" in
+the sense Q823 means, that is a one-line change and a ruling, not a session's call.
+
+**3. The `_OOS_` names in the bulletin were CHECKED and NOT renamed.** The brief's §6 reserves
+this, and the tree confirms the question is live: `src/bulletin/annexes.py:130`
+(`YYYYMMDD_OOS_Bulletin_<cadence>`), `src/bulletin/evidence.py:232`
+(`YYYYMMDD-OOS-<cadence>-evidence.zip`) and `src/bulletin/store.py:50` (the `_NAME_RE` that
+PARSES those names back) all carry the token Q212 = c spelled out for the backup folder.
+Q212 ruled the backup folder only. **Renaming them is not a rename**: `store.py:50`'s regex is
+how an operator's existing bulletin archive is read back, so a rename needs a
+both-shapes-accepted reader and a statement about what happens to files already on disk —
+which is a migration, not a token swap. Recorded, not done.
+
+## 2026-09-16 — THE CONSTITUTION HAS OUTGROWN ITS OWN ACHIEVABILITY BUDGET AGAIN (a question, not a ruling)
+
+Protocol rule (1), as amended 2026-09-07 under A3(2), requires `CLAUDE.md` and
+`docs/ledger/LESSONS.md` read IN FULL every session, and justifies that requirement with a
+measurement: **"Together they measure 573,850 bytes (2026-09-07, `wc -c` on the two)"**, set
+against the 1,417,956 `CLAUDE.md` alone had reached — the amendment's whole argument being that
+"read it in full" is only honest while it is achievable, because otherwise the rule "could only
+be obeyed by skimming, which is the failure mode it exists to prevent."
+
+**Measured today (2026-09-16, `wc -c` on the two): `CLAUDE.md` 58,201 + `LESSONS.md` 871,381 =
+929,582 bytes** — 1.62× the figure the amendment rested on, nine days later, with `LESSONS.md`
+alone now 1.52× the two-file budget. At this tree's density that is roughly 370k tokens for
+`LESSONS.md` by itself, which no single session context holds alongside the work.
+
+This session read it in full by splitting the file across six readers over disjoint line ranges
+and keeping their verbatim quotations of every entry touching this slice — which is coverage,
+and is not the same thing as one reader holding the whole constitution. **Recorded as a
+question because the answer is the maintainer's**: rule (1) is theirs, and the options visible
+from here each cost something real — re-amend the budget and accept split reading as the method;
+split `LESSONS.md` into a mandatory core plus a consulted-not-memorised remainder (the shape
+A3(1) already used for the docket); or compress, which rule (5) protects these entries from
+without a ruling. **Nothing was decided and nothing was moved.** This entry and the
+Q823 one above it add ~4 KB between them, which is itself part of the problem and is not a
+reason to skip recording either.

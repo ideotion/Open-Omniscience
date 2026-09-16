@@ -158,24 +158,54 @@ def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
     return m
 
 
-def verify_volume_set(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
+def verify_volume_set(
+    out_dir: str | os.PathLike[str],
+    *,
+    progress_cb: Callable[[dict[str, Any]], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
     """Check every volume's ciphertext SHA-256 against the manifest WITHOUT decrypting.
 
-    Returns ``{ok, bad, missing, total}`` — ``bad`` names volumes that are missing or
-    whose bytes no longer match (corruption/bit-rot), the exact set a re-copy or (slice
-    2) parity recovery must address."""
+    Returns ``{ok, bad, missing, total, checked}`` — ``bad`` names volumes that are
+    missing or whose bytes no longer match (corruption/bit-rot), the exact set a
+    re-copy or (slice 2) parity recovery must address.
+
+    ``progress_cb`` and ``should_stop`` exist for Q218's verify-after-write, which
+    re-reads every byte of a multi-gigabyte set off a removable drive: without
+    progress that pass reads as a hang at 100%, and without a stop the operator
+    cannot cancel the slowest part of their own export. ``should_stop`` raises
+    :class:`VolumeStopped` — the CALLER decides what a cancelled verification means,
+    because after a successful write it means "not re-read", never "not written".
+
+    ``checked`` counts the volumes actually hashed, so a stopped run cannot be
+    mistaken for a complete one by a reader who only looks at ``bad``."""
     m = load_manifest(out_dir)
     out = Path(out_dir)
     bad: list[str] = []
     missing: list[str] = []
+    total = len(m["volumes"])
+    checked = 0
     for v in m["volumes"]:
+        if should_stop is not None and should_stop():
+            raise VolumeStopped("stopped while verifying the volume set")
         p = out / v["name"]
         if not p.exists():
             bad.append(v["name"])
             missing.append(v["name"])
         elif _sha256_file(p) != v["sha256"]:
             bad.append(v["name"])
-    return {"ok": not bad, "bad": bad, "missing": missing, "total": len(m["volumes"])}
+        checked += 1
+        if progress_cb is not None:
+            progress_cb(
+                {"phase": "verifying", "volumes_verified": checked, "volumes_total": total}
+            )
+    return {
+        "ok": not bad,
+        "bad": bad,
+        "missing": missing,
+        "total": total,
+        "checked": checked,
+    }
 
 
 def read_volume_set(

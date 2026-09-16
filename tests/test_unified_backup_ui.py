@@ -328,8 +328,20 @@ def test_llm_models_are_integrated_not_a_separate_panel():
     # the separate .oomodels panel + its handlers are gone
     assert "<h2>Local LLM models (separate backup)</h2>" not in _HTML
     assert "modelsBackupExport" not in _APP and "modelsBackupImport" not in _APP
-    # models are now a category in the unified dialogs (export checklist + import scan)
-    assert "ux-c-models" in _APP  # export checklist item
+    # Models are now a MEMBER of the unified dialogs (export checklist + import scan).
+    # The checklist row ids are built from the server's member list rather than written
+    # out here (S04-03, Q219's member hook), so the anchor is the template plus the
+    # member declaration -- a literal "ux-c-models" would pin a spelling that no longer
+    # exists in the source and would go stale again the next time the list moves.
+    assert "ux-c-${id}" in _APP  # the checklist row template
+    from src.backup.inventory import _BLOB_MEMBERS
+
+    models = [m for m in _BLOB_MEMBERS if m[0] == "models"]
+    assert models, "the export inventory no longer offers an LLM-models member"
+    assert set(models[0][2]) == {"models", "hf_models"}, (
+        "the models member must carry BOTH stores -- the tick has always exported both, "
+        "and the size shown beside it is the sum over exactly this list"
+    )
     assert "b.models" in _APP  # import scan shows the models blobs
     assert 'models: "models"' in _APP  # import restores the models category (blob_roots mapping)
 

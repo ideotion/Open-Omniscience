@@ -117,6 +117,13 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
     "www.gnu.org":
         "the GPL-3.0 licence URL in this project's own file header, ~36 files. "
         "Written into source, never dereferenced",
+    "creativecommons.org":
+        "the canonical CC BY-SA 4.0 deed URL, written INSIDE the attribution line an "
+        "export, a bulletin and an evidence ZIP carry when Wikipedia text rides them "
+        "(Q1008 = a). Exactly the www.gnu.org shape one entry above: a licence URL "
+        "reproduced as part of a licence statement, so that a reader who opens the "
+        "folder years later can look the terms up. src/backup/attribution.py imports "
+        "nothing that can open a socket and dereferences nothing",
     "github.com":
         "this repository's own URL: the contact field of the bot User-Agent, the "
         "docs base URL, and citation strings. The UA value is SENT as a header; the "

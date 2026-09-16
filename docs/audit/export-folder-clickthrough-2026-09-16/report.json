@@ -1,0 +1,317 @@
+{
+  "schema": "oo-ui-clickthrough-1",
+  "started_at": "2026-09-16T17:19:18+00:00",
+  "findings": [
+    {
+      "id": "export-folder-and-panel-render-live",
+      "severity": "POSITIVE",
+      "surface": "export_dialog",
+      "title": "The dated export folder, the member sizes, the verify control and the completion panel render from a REAL export",
+      "detail": "4 real exports driven through Settings → Data & backup → Export in en, fr and ar (RTL), plus one at 390px: member sizes shown before the export starts, the dated-folder hint, verify-after-write on by default, a completion panel carrying the verify verdict and the ruled fields, and the panel recovered after a page reload. Each export made its own dated folder with BACKUP_SUMMARY.md beside volumes.json; four exports inside one minute produced _2, _3 and _4 with no folder written into twice. The facts table's TABLE NAMES stay untranslated in ar, which is the defect this walk found and the fix it verified.",
+      "evidence": "evidence/export_panel_en.png",
+      "new": true
+    }
+  ],
+  "coverage": [
+    {
+      "surface": "locale_en",
+      "axis": "direction",
+      "result": "verified",
+      "note": "dir=ltr"
+    },
+    {
+      "surface": "export_dialog_en",
+      "axis": "opens-from-settings",
+      "result": "verified",
+      "note": "open=True"
+    },
+    {
+      "surface": "export_dialog_en",
+      "axis": "member-sizes-before-the-export",
+      "result": "verified",
+      "note": "Corpus · (24 articles · 6404 sources · 10 dates · 607 keywords · 5.8 MB) · LLM models · (0 · 0 B) · Offline maps · (0 · 0 B) · Wikipedia dumps · (0 · "
+    },
+    {
+      "surface": "export_dialog_en",
+      "axis": "members-carry-their-categories",
+      "result": "verified",
+      "note": "ux-c-models=models,hf_models | ux-c-maps=osm_regions | ux-c-wiki=wiki_dumps"
+    },
+    {
+      "surface": "export_dialog_en",
+      "axis": "dated-folder-stated",
+      "result": "verified",
+      "note": "Each export makes its own dated folder here, named like 202609121045_OpenOmniscience_Backup."
+    },
+    {
+      "surface": "export_dialog_en",
+      "axis": "verify-default-on",
+      "result": "verified",
+      "note": "checked=True · Re-read every volume after writing and check it (verify)"
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "renders-after-a-real-export",
+      "result": "verified",
+      "note": "Verified — all 4 volumes were re-read and matched their checksums. · Encrypted volumes · 4 · 11.6 MB on the drive · 5.8 MB of content · Parity (corruption recovery) · written · Rows per table · articles 24 · sources 6404"
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "verify-verdict-visible",
+      "result": "verified",
+      "note": "Verified — all 4 volumes were re-read and matched their checksums."
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "ruled-fields-present",
+      "result": "verified",
+      "note": "Encrypted volumes 4 · 11.6 MB on the drive · 5.8 MB of content || Parity (corruption recovery) written || Rows per table articles 24 sources 6404 source_qualification_attempts 6400 keyword_mentions 1551 keywords 607 keyword_supergroup_members 538 keyword_supergroups 77 law_documents 23 article_menti"
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "summary-file-named",
+      "result": "verified",
+      "note": "/tmp/claude-0/-home-user-Open-Omniscience/3c715d31-5d5e-518b-85f8-01fee7c9c964/scratchpad/drive/202609161718_OpenOmniscience_Backup"
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "recovered-after-a-page-reload",
+      "result": "verified",
+      "note": "Verified — all 4 volumes were re-read and matched their checksums. · Encrypted volumes · 4 · 11.6 MB on the drive · 5.8 MB of content · Parity (corruption recovery) · written · Rows per table · articl"
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "renders-in-the-active-locale",
+      "result": "verified",
+      "note": "English source text, which this locale does not change"
+    },
+    {
+      "surface": "export_panel_en",
+      "axis": "table-names-are-data-and-stay-untranslated",
+      "result": "verified",
+      "note": "raw table names present in the facts table"
+    },
+    {
+      "surface": "export_dialog_en",
+      "axis": "renders-in-the-active-locale",
+      "result": "verified",
+      "note": "English source text, which this locale does not change"
+    },
+    {
+      "surface": "locale_fr",
+      "axis": "direction",
+      "result": "verified",
+      "note": "dir=ltr"
+    },
+    {
+      "surface": "export_dialog_fr",
+      "axis": "opens-from-settings",
+      "result": "verified",
+      "note": "open=True"
+    },
+    {
+      "surface": "export_dialog_fr",
+      "axis": "member-sizes-before-the-export",
+      "result": "verified",
+      "note": "Corpus · (24 articles · 6404 sources · 10 dates · 607 mots-clés · 5.8 MB) · modèles LLM · (0 · 0 B) · Cartes hors ligne · (0 · 0 B) · Dumps Wikipédia "
+    },
+    {
+      "surface": "export_dialog_fr",
+      "axis": "members-carry-their-categories",
+      "result": "verified",
+      "note": "ux-c-models=models,hf_models | ux-c-maps=osm_regions | ux-c-wiki=wiki_dumps"
+    },
+    {
+      "surface": "export_dialog_fr",
+      "axis": "dated-folder-stated",
+      "result": "verified",
+      "note": "Chaque export crée ici son propre dossier daté, nommé par exemple 202609121045_OpenOmniscience_Backup."
+    },
+    {
+      "surface": "export_dialog_fr",
+      "axis": "verify-default-on",
+      "result": "verified",
+      "note": "checked=True · Relire chaque volume après l'écriture et le vérifier"
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "renders-after-a-real-export",
+      "result": "verified",
+      "note": "Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle. · Volumes chiffrés · 4 · 11.6 MB sur le disque · 5.8 MB de contenu · Parité (récupération en cas de corruption) · écrite · Lignes p"
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "verify-verdict-visible",
+      "result": "verified",
+      "note": "Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle."
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "ruled-fields-present",
+      "result": "verified",
+      "note": "Volumes chiffrés 4 · 11.6 MB sur le disque · 5.8 MB de contenu || Parité (récupération en cas de corruption) écrite || Lignes par table articles 24 sources 6404 source_qualification_attempts 6400 keyword_mentions 1551 keywords 607 keyword_supergroup_members 538 keyword_supergroups 77 law_documents 2"
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "summary-file-named",
+      "result": "verified",
+      "note": "/tmp/claude-0/-home-user-Open-Omniscience/3c715d31-5d5e-518b-85f8-01fee7c9c964/scratchpad/drive/202609161718_OpenOmniscience_Backup_2"
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "recovered-after-a-page-reload",
+      "result": "verified",
+      "note": "Vérifiée — les 4 volumes ont tous été relus et correspondent à leurs sommes de contrôle. · Volumes chiffrés · 4 · 11.6 MB sur le disque · 5.8 MB de contenu · Parité (récupération en cas de corruption)"
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "renders-in-the-active-locale",
+      "result": "verified",
+      "note": "no English chrome left; 11 strings checked against fr.json"
+    },
+    {
+      "surface": "export_panel_fr",
+      "axis": "table-names-are-data-and-stay-untranslated",
+      "result": "verified",
+      "note": "raw table names present in the facts table"
+    },
+    {
+      "surface": "export_dialog_fr",
+      "axis": "renders-in-the-active-locale",
+      "result": "verified",
+      "note": "no English chrome left"
+    },
+    {
+      "surface": "locale_ar",
+      "axis": "direction",
+      "result": "verified",
+      "note": "dir=rtl"
+    },
+    {
+      "surface": "export_dialog_ar",
+      "axis": "opens-from-settings",
+      "result": "verified",
+      "note": "open=True"
+    },
+    {
+      "surface": "export_dialog_ar",
+      "axis": "member-sizes-before-the-export",
+      "result": "verified",
+      "note": "المجموعة · (24 مقالة · 6404 مصادر · 10 تواريخ · 607 كلمات مفتاحية · 5.8 MB) · نماذج LLM · (0 · 0 B) · خرائط دون اتصال · (0 · 0 B) · تفريغات ويكيبيديا "
+    },
+    {
+      "surface": "export_dialog_ar",
+      "axis": "members-carry-their-categories",
+      "result": "verified",
+      "note": "ux-c-models=models,hf_models | ux-c-maps=osm_regions | ux-c-wiki=wiki_dumps"
+    },
+    {
+      "surface": "export_dialog_ar",
+      "axis": "dated-folder-stated",
+      "result": "verified",
+      "note": "كل عملية تصدير تُنشئ هنا مجلدها المؤرَّخ الخاص، باسم مثل 202609121045_OpenOmniscience_Backup."
+    },
+    {
+      "surface": "export_dialog_ar",
+      "axis": "verify-default-on",
+      "result": "verified",
+      "note": "checked=True · إعادة قراءة كل وحدة بعد كتابتها والتحقق منها"
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "renders-after-a-real-export",
+      "result": "verified",
+      "note": "تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها. · الوحدات المشفّرة · 4 · 11.6 MB على المحرك · 5.8 MB من المحتوى · التكافؤ (استرداد التلف) · مكتوب · الصفوف لكل جدول · articles 24 · sources 6404 · source_quali"
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "verify-verdict-visible",
+      "result": "verified",
+      "note": "تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها."
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "ruled-fields-present",
+      "result": "verified",
+      "note": "الوحدات المشفّرة 4 · 11.6 MB على المحرك · 5.8 MB من المحتوى || التكافؤ (استرداد التلف) مكتوب || الصفوف لكل جدول articles 24 sources 6404 source_qualification_attempts 6400 keyword_mentions 1551 keywords 607 keyword_supergroup_members 538 keyword_supergroups 77 law_documents 23 article_mentioned_date"
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "summary-file-named",
+      "result": "verified",
+      "note": "/tmp/claude-0/-home-user-Open-Omniscience/3c715d31-5d5e-518b-85f8-01fee7c9c964/scratchpad/drive/202609161719_OpenOmniscience_Backup"
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "recovered-after-a-page-reload",
+      "result": "verified",
+      "note": "تم التحقق — أُعيدت قراءة الوحدات الـ4 جميعها وطابقت بصماتها. · الوحدات المشفّرة · 4 · 11.6 MB على المحرك · 5.8 MB من المحتوى · التكافؤ (استرداد التلف) · مكتوب · الصفوف لكل جدول · articles 24 · sources"
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "renders-in-the-active-locale",
+      "result": "verified",
+      "note": "no English chrome left; 11 strings checked against ar.json"
+    },
+    {
+      "surface": "export_panel_ar",
+      "axis": "table-names-are-data-and-stay-untranslated",
+      "result": "verified",
+      "note": "raw table names present in the facts table"
+    },
+    {
+      "surface": "export_dialog_ar",
+      "axis": "renders-in-the-active-locale",
+      "result": "verified",
+      "note": "no English chrome left"
+    },
+    {
+      "surface": "export_panel_phone",
+      "axis": "nothing-in-the-dialog-overflows-390px",
+      "result": "verified",
+      "note": "no element past the viewport"
+    },
+    {
+      "surface": "export_panel_phone",
+      "axis": "the-last-fact-row-is-reachable",
+      "result": "verified",
+      "note": "dialog scrollable=True · 10 fact rows"
+    },
+    {
+      "surface": "page_390px",
+      "axis": "horizontal-overflow-is-PRE-EXISTING-and-not-this-slice",
+      "result": "reported",
+      "note": "page overflows: True · outside the dialog: home-tier +56px, SPAN +56px"
+    },
+    {
+      "surface": "drive",
+      "axis": "one-dated-folder-per-export",
+      "result": "verified",
+      "note": "4 folders for 4 exports · 202609161718_OpenOmniscience_Backup · 202609161718_OpenOmniscience_Backup_2 · 202609161719_OpenOmniscience_Backup · 202609161719_OpenOmniscience_Backup_2"
+    },
+    {
+      "surface": "drive",
+      "axis": "contents-of-202609161718_OpenOmniscience_Backup",
+      "result": "verified",
+      "note": "BACKUP_SUMMARY.md · par-00001.oopar · volumes.json"
+    },
+    {
+      "surface": "drive",
+      "axis": "contents-of-202609161718_OpenOmniscience_Backup_2",
+      "result": "verified",
+      "note": "BACKUP_SUMMARY.md · par-00001.oopar · volumes.json"
+    },
+    {
+      "surface": "drive",
+      "axis": "contents-of-202609161719_OpenOmniscience_Backup",
+      "result": "verified",
+      "note": "BACKUP_SUMMARY.md · par-00001.oopar · volumes.json"
+    },
+    {
+      "surface": "drive",
+      "axis": "contents-of-202609161719_OpenOmniscience_Backup_2",
+      "result": "verified",
+      "note": "BACKUP_SUMMARY.md · par-00001.oopar · volumes.json"
+    }
+  ]
+}

@@ -65,7 +65,13 @@ def test_the_inside_choice_is_disabled_rather_than_ignored():
         "a disabled box must also be unticked, or a later re-enable restores a choice "
         "the operator never made"
     )
-    assert "corpus.checked" in sync and '"models", "maps", "wiki"' in sync
+    assert "corpus.checked" in sync
+    # The member list is no longer written out here: the helper reads the rendered
+    # member rows (S04-03, Q219's hook), so a lane added server-side is counted without
+    # a second edit. Anchor on the reader, not on the list it replaced.
+    assert "_uxMemberBoxes()" in sync, (
+        "the 'any member ticked?' test must read the rendered member rows"
+    )
 
 
 def test_ux_start_then_poll_re_throws_an_unrelated_masked_job():

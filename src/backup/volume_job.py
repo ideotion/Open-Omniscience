@@ -171,6 +171,26 @@ def _stage_phase_name(stage_name: str) -> str:
     return _STAGE_TO_PHASE.get(stage_name, stage_name)
 
 
+def _envelope_facts(envelope: dict | None) -> dict:
+    """The completion panel's facts, lifted out of the signed backup envelope.
+
+    Flat and small on purpose: this rides the status endpoint the UI polls once a
+    second for hours, so it carries the numbers Q208 names and not the signature,
+    the public key or the per-member list that would make a progress payload heavy
+    for no reader.
+    """
+    manifest = (envelope or {}).get("manifest") or {}
+    corpus = manifest.get("corpus") or {}
+    tables = corpus.get("tables") or {}
+    return {
+        "app_version": manifest.get("app_version"),
+        "backup_schema": manifest.get("backup_schema"),
+        "alembic_rev": manifest.get("alembic_rev"),
+        "encrypted": manifest.get("encrypted"),
+        "tables": {str(k): int(v or 0) for k, v in tables.items()},
+    }
+
+
 class VolumeBackupManager:
     """ONE volume backup OR restore at a time — you don't run two giant crypto+IO jobs
     concurrently. The destination directory is the durable artifact; a cancelled backup's
@@ -228,6 +248,7 @@ class VolumeBackupManager:
         include_newsletters: bool = True,
         parity_fraction: float = 0.1,
         include_blobs: list[str] | None = None,
+        verify_after_write: bool = True,
         _backup_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
@@ -254,6 +275,7 @@ class VolumeBackupManager:
                     include_newsletters,
                     parity_fraction,
                     include_blobs,
+                    verify_after_write,
                     _backup_fn,
                 ),
                 daemon=True,
@@ -262,8 +284,79 @@ class VolumeBackupManager:
             self._thread.start()
             return self.status()
 
+    def _verify_after_write(self, destp, enabled: bool) -> dict:
+        """Q218 = a: re-read every volume off the destination and check its checksum.
+
+        Default ON, and the price is real -- a second full read of a set that may
+        live on a slow removable drive. It buys the one failure class a write-side
+        checksum cannot see: a stick that ACCEPTED every write and stored something
+        else. The manifest is the reference, so this compares the bytes now on the
+        drive against the bytes the export believed it wrote.
+
+        FIVE OUTCOMES, kept apart on purpose, because "not verified" is not one fact:
+        ``verified`` (every volume re-read and matched), ``failed`` (named volumes no
+        longer match -- the backup is not to be trusted), ``off`` (the operator
+        turned it off), ``stopped`` (the operator cancelled the re-read) and
+        ``unavailable`` (the set could not be read back at all, e.g. a corpus-less
+        export that wrote no volume manifest). A single boolean would let the last
+        three read as the second, or worse, as the first.
+
+        A cancelled verification NEVER cancels the backup: the volumes are written
+        and the manifest is signed and swapped by the time this runs, so
+        :class:`VolumeStopped` is caught HERE rather than allowed to reach the
+        handler that deletes a partial set -- which would delete a complete one.
+        """
+        from src.backup.volumes import VolumeError, VolumeStopped, verify_volume_set
+
+        if not enabled:
+            return {
+                "state": "off",
+                "reason": "verify-after-write was turned off for this export",
+                "method": None,
+            }
+        method = (
+            "every volume re-read from the destination and its SHA-256 compared "
+            "against the signed manifest (no decryption)"
+        )
+
+        def _prog(p: dict) -> None:
+            self._on_prog({**p, "phase": "verifying"})
+
+        try:
+            res = verify_volume_set(destp, progress_cb=_prog, should_stop=self._stop.is_set)
+        except VolumeStopped:
+            return {
+                "state": "stopped",
+                "reason": (
+                    "the re-read was cancelled — the volumes were written, but they "
+                    "were not read back"
+                ),
+                "method": method,
+            }
+        except (VolumeError, OSError) as exc:
+            return {
+                "state": "unavailable",
+                "reason": f"the volume set could not be re-read: {exc}",
+                "method": method,
+            }
+        return {
+            "state": "verified" if res.get("ok") else "failed",
+            "bad": list(res.get("bad") or []),
+            "missing": list(res.get("missing") or []),
+            "total": res.get("total"),
+            "checked": res.get("checked"),
+            "method": method,
+        }
+
     def _run_backup(
-        self, destp, passphrase, include_newsletters, parity_fraction, include_blobs, backup_fn
+        self,
+        destp,
+        passphrase,
+        include_newsletters,
+        parity_fraction,
+        include_blobs,
+        verify_after_write,
+        backup_fn,
     ):
         from src.backup.volumes import VolumeStopped
 
@@ -290,9 +383,17 @@ class VolumeBackupManager:
                 progress_cb=self._on_prog,
                 include_blobs=include_blobs,
             )
+            kept = {k: v for k, v in summary.items() if k != "envelope"}
+            # The envelope itself stays out of the polled status (it carries the
+            # signature and the public key, which a progress payload has no business
+            # repeating) -- but the FACTS inside it are exactly what Q208's completion
+            # panel lists, and throwing them away here is why the export used to end
+            # in one line. Lifted into a small, flat block instead.
+            kept["facts"] = _envelope_facts(summary.get("envelope"))
+            kept["verify"] = self._verify_after_write(destp, verify_after_write)
             with self._lock:
                 self._state = "done"
-                self._summary = {k: v for k, v in summary.items() if k != "envelope"}
+                self._summary = kept
                 self._progress = {**self._progress, "phase": "done"}
             runlog.end(
                 "ok",
