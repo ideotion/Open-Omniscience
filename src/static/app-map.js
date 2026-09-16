@@ -173,7 +173,7 @@
         const r = (1.5 + 4*Math.sqrt(m/maxM)).toFixed(1);
         const terms = (c.top||[]).map(t=>t.term+" "+t.mentions).join(", ");
         return `<g><circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.75">
-            <title>${esc(c.name)}${c.country?" ("+esc(c.country)+")":""}: ${esc(terms)}</title></circle>
+            <title>${esc(c.name)}${c.country?" ("+esc(ooCountryCode(c.country))+" — "+esc(ooCountryName(c.country, c.country))+")":""}: ${esc(terms)}</title></circle>
           <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
       }).join("");
       if (!placed.length)
@@ -1169,7 +1169,7 @@
         else v = r[dim.id];
         if (v != null && isFinite(v)) {
           values[r.country] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : names[r.country] });
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[r.country]) });
         }
       });
       const nWith = Object.keys(values).length;
@@ -1186,7 +1186,7 @@
       const serverPoints = (_ooMapServerOn && _ooMapServerLoc && Array.isArray(_ooMapServerLoc.countries))
         ? _ooMapServerLoc.countries.filter(c => c.lat != null && c.lon != null)
             .map(c => ({ lat: c.lat, lon: c.lon, value: c.articles,
-                         label: (names[c.country] || (c.country || "").toUpperCase()) })) : [];
+                         label: (names[c.country] || ooCountryCode(c.country)) })) : [];
       let serverMeta = "";
       if (_ooMapServerOn && _ooMapServerLoc) {
         caveat += `  ${_ooMapServerLoc.caveat || t("Server location is our vantage point (CDN edge / anycast), not the publisher's origin; unavailable over Tor.")}`;
@@ -1341,7 +1341,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
       const iso = (row.country || "").toLowerCase();
-      const name = ooRegionName(iso, row.name || row.country);
+      // The heading of a panel the reader OPENED: the code identifies it and the
+      // title carries the name, which is the ordinary Q302 pair.
+      const name = ooCountryCode(iso) || ooRegionName(iso, row.name || row.country);
       const line = (label, v, extra) => (v != null && isFinite(v))
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
       const tone = (row.sentiment != null && isFinite(row.sentiment))
@@ -1417,7 +1419,7 @@
           <span class="pill">${esc(s.kind === "hazard" ? hazardTypeLabel(s.hazard_type) : kindLabel(s.kind))}</span> ${conf} ${geo}
         </div>
         <div class="muted" style="margin-top:5px;font-size:13px">
-          ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
+          ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${ooCountryCell(s.country)})` : ""}
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
           ${s.magnitude != null ? ` · <b>M${esc(fmtNum(s.magnitude, 1))}</b>` : ""}
         </div>
@@ -1582,7 +1584,7 @@
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
         const rowsFor = (areas, label) => areas.length
           ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
-              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${esc(a.country)}</span>`:""}</td><td>` +
+              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
               a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
               `</td></tr>`).join("")
           : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
@@ -2007,7 +2009,7 @@
         const rows = ags.map(a => `<tr>
             <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
             <td>${esc(scope(a.scope))}</td>
-            <td>${a.country ? esc(String(a.country).toUpperCase()) : "<span class=\"muted\">—</span>"}</td>
+            <td>${a.country ? ooCountryCell(a.country) : "<span class=\"muted\">—</span>"}</td>
             <td>${esc(a.region || "")}</td>
             <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
           </tr>`).join("");
@@ -2219,7 +2221,7 @@
           // just for being big). Honest refusal + the comparable values as a ranked list.
           const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
             .sort((a, b) => b.value - a.value).slice(0, 30)
-            .map(c => `<tr><td>${esc(ooRegionName(iso2By[c.area] || "", c.area))}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
+            .map(c => `<tr><td>${ooCountryCell(iso2By[c.area] || c.area)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
           host.innerHTML = `<div class="note">${esc(cd.refusalReason || "")}</div>`
             + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
           if (meta) meta.textContent = cd.caveat + multi;
@@ -2254,7 +2256,7 @@
         const subs = d.subscriptions || [];
         if (!subs.length) { box.innerHTML = `<div class="muted">Nothing tracked yet — fetch a figure above to start tracking it.</div>`; return; }
         const rows = subs.map(s => {
-          const what = s.indicator ? esc(s.indicator) + (s.country ? " · " + esc(String(s.country).toUpperCase()) : "")
+          const what = s.indicator ? esc(s.indicator) + (s.country ? " · " + ooCountryCell(s.country) : "")
                                    : esc(s.dataset || "");
           const last = s.last_fetched_at ? fmtDateTime(s.last_fetched_at) : "never";
           return `<tr>

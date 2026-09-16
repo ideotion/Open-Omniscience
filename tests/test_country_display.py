@@ -264,3 +264,25 @@ def test_every_language_in_the_shipped_catalogues_resolves() -> None:
         "an exempted language code has left the catalogues; drop it from the set "
         f"rather than leaving a permanent excuse: {sorted(known_639_3_only - codes)}"
     )
+
+
+def test_the_browser_helper_is_driven_for_real_in_node() -> None:
+    """The half no source grep can do.
+
+    ``tests/country_display_node_test.js`` EXECUTES the shipped helpers and reads the
+    rendered HTML back, because a source guard cannot tell "the code is visible and
+    the name is in the title" from its exact inverse -- ``ooCountryCell`` mentions
+    both whichever way round it puts them. Two real defects in this slice's own code
+    were found by that run and by nothing else: ``ISO3_TO_ISO2`` is keyed lowercase,
+    so the first cut filed every real country as ``unresolved``; and ``ooCountryFlag``
+    dropped ``agFlag``'s empty guard, which would have drawn a globe -- "an entity
+    with no flag" -- on every row that simply has no country.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ["node", str(_ROOT / "tests" / "country_display_node_test.js")],
+        capture_output=True, text=True, timeout=180, check=False,
+    )
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "country_display_node_test.js: OK" in proc.stdout, proc.stdout

@@ -108,14 +108,17 @@
         catch (e) { rows = []; }
       }
       const codes = [...new Set(rows.map(r => r.country))].sort(
-        (a, b) => ooRegionName(a, a).localeCompare(ooRegionName(b, b)));
+        ooCountryCompare);
       if (!codes.length) {
         sel.innerHTML = "";
         $("gov-country-data").innerHTML =
           `<div class="muted">${esc(t("Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now."))}</div>`;
         return;
       }
-      sel.innerHTML = codes.map(c => `<option value="${esc(c)}">${esc(ooRegionName(c, c))}</option>`).join("");
+      // Q308 for a picker: ordered by localised NAME with the code as the secondary
+      // column. An <option> has no usable hover, so both are visible here where an
+      // ordinary cell shows the code alone (Q302).
+      sel.innerHTML = codes.map(c => `<option value="${esc(c)}">${esc(_govPickLabel(c))}</option>`).join("");
       loadGovCountry(codes[0]);
     }
     async function loadGovCountry(iso) {
@@ -200,12 +203,12 @@
         if (rows.length) break;
       }
       _govCountryCodes = [...new Set(rows.map(r => r.country))]
-        .sort((a, b) => ooRegionName(a, a).localeCompare(ooRegionName(b, b)));
+        .sort(ooCountryCompare);
       return _govCountryCodes;
     }
     function _govCountryOptions(codes, selected) {
       return codes.map(c =>
-        `<option value="${esc(c)}"${c === selected ? " selected" : ""}>${esc(ooRegionName(c, c))}</option>`
+        `<option value="${esc(c)}"${c === selected ? " selected" : ""}>${esc(_govPickLabel(c))}</option>`
       ).join("");
     }
     function _govEmptyStore(t) {
@@ -217,8 +220,19 @@
     // visible, and the full roster rides the translated #oo-tip hover (invariant #17).
     // Ruling 44 is satisfied regardless — the missing members travel in the PAYLOAD,
     // which is what an export quotes; this only decides how many fit on one screen.
+    // ONE label for every country <option> in this tab, so the two pickers cannot
+    // drift into showing a country two ways on one screen.
+    function _govPickLabel(code) {
+      const c = ooCountryCode(code), name = ooCountryName(code, "");
+      return name && name !== c ? `${name} (${c})` : c;
+    }
+
     function _govNames(codes, head) {
-      const all = (codes || []).map(c => String(c).toUpperCase());
+      // A ROSTER of member codes -- an aggregate's membership, the suspended list,
+      // the min/max holder. These are codes by nature (a list of 27 country names
+      // is unreadable in a sentence), so they become alpha-3 and nothing else
+      // changes about the shape.
+      const all = (codes || []).map(c => ooCountryCode(c) || String(c).toUpperCase());
       head = head || 8;
       return {
         full: all.join(", "),
@@ -258,7 +272,9 @@
       } catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load these countries."))}</div>`; return; }
       const byId = (d) => { const m = {}; (d.indicators || []).forEach(i => { m[i.id] = i; }); return m; };
       const ma = byId(da), mb = byId(dbb);
-      const nameA = ooRegionName(da.iso2 || a, a), nameB = ooRegionName(dbb.iso2 || b, b);
+      // A <th> carries no reliable hover either, so the compare headers take the
+      // picker form: the name a reader recognises, with the code that identifies it.
+      const nameA = _govPickLabel(da.iso2 || a), nameB = _govPickLabel(dbb.iso2 || b);
       // One row per indicator, grouped by category — the same vocabulary as the
       // Countries grid, so a reader moving between the two surfaces reads one layout.
       const cats = {};
@@ -439,7 +455,7 @@
           }))
         + (roster.suspended && roster.suspended.length
             ? ` <span class="warn">` + esc(_govTf("Suspended ({n}): {who}", {
-                n: roster.suspended.length, who: roster.suspended.join(", ").toUpperCase()})) + `</span>`
+                n: roster.suspended.length, who: roster.suspended.map(c => ooCountryCode(c) || c).join(", ")})) + `</span>`
             : "")
         + (roster.undated_members && roster.undated_members.length
             ? ` <span class="warn">` + esc(_govTf("Carried without a sourced accession date: {n}", {
@@ -479,8 +495,8 @@
         ? `<div class="gov-grp-spread">` + esc(_govTf(
             "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})", {
               n: spread.n,
-              min: _govFmt(spread.min, agg.unit), minArea: (spread.min_area || "").toUpperCase(),
-              max: _govFmt(spread.max, agg.unit), maxArea: (spread.max_area || "").toUpperCase(),
+              min: _govFmt(spread.min, agg.unit), minArea: ooCountryCode(spread.min_area || ""),
+              max: _govFmt(spread.max, agg.unit), maxArea: ooCountryCode(spread.max_area || ""),
             })) + `</div>`
         : "");
 
@@ -565,7 +581,10 @@
       await ooMap(host, {
         values, names,
         scale: "sequential", label: meta.label || "", unit: meta.unit || "",
-        valueLabel: (iso, v) => `${ooRegionName(iso, iso)}: ${_govFmt(v, meta.unit)}`,
+        // A map tooltip IS the hover Q302 puts the name in, and it is also what a
+        // screen reader is handed -- so the NAME stays here deliberately, with the
+        // code beside it so the two readings agree.
+        valueLabel: (iso, v) => `${ooCountryCode(iso)} · ${ooCountryName(iso, iso)}: ${_govFmt(v, meta.unit)}`,
         caveat: data.caveat || "",
         onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
           if (_govSubtabs) _govSubtabs.select("countries");
@@ -689,7 +708,7 @@
         }
         box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.changes.map(ch =>
           `<div class="panel" style="background:var(--panel2); margin-top:8px">
-            <b>${esc(ch.jurisdiction.toUpperCase())}</b> · ${esc(ch.title)}
+            <b>${ooCountryCell(ch.jurisdiction)}</b> · ${esc(ch.title)}
             <span class="pill ${ch.flagged?'warn':''}">${ch.delta_bytes>0?'+':''}${ch.delta_bytes} bytes</span>
             ${(ch.flag_reasons||[]).length?'<span class="hint">'+ch.flag_reasons.map(esc).join(', ')+'</span>':''}
             <div class="hint" style="margin-top:4px">${ch.observed_at?fmtDateTime(ch.observed_at):''} ·
@@ -756,7 +775,7 @@
         d.documents.forEach(x => { _lawDocsById[x.id] = x; });
         tbl.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Status</th><th>Changes</th><th></th></tr></thead><tbody>" +
           d.documents.map(x =>
-            `<tr${x.watched?'':' style="opacity:.55"'}><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
+            `<tr${x.watched?'':' style="opacity:.55"'}><td>${ooCountryCell(x.jurisdiction)}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
               <td>${lawVerdictBadge(x)}${x.watched?'':' <span class="pill">'+esc(tr("not tracked"))+'</span>'}</td>
               <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
               <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>

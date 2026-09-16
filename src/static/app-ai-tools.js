@@ -29,7 +29,7 @@
           r.candidates.map(c => {
             const ev = c.channel === "citation"
               ? `cited by ${esc(c.evidence.distinct_citing_articles)} of your articles`
-              : `catalog entry for ${esc((c.evidence.country || "").toUpperCase())} (you have ${esc(c.evidence.your_sources_there)} there)`;
+              : `catalog entry for ${ooCountryCell(c.evidence.country)} (you have ${esc(c.evidence.your_sources_there)} there)`;
             return `<tr><td>${esc(c.domain)}</td><td>${esc(c.channel)}</td><td>${ev}</td>` +
               `<td>${esc((c.first_seen || "").slice(0, 10))}</td>` +
               `<td><button class="secondary tiny" onclick="candidateAct(${c.id}, 'promote')">Promote (disabled)</button> ` +

@@ -884,7 +884,18 @@ def test_language_codes_shown_as_full_names_via_cldr():
     assert "function ooLangName(code, fallback)" in app, "the ooLangName CLDR helper is gone"
     assert 'new Intl.DisplayNames([ui], { type: "language" })' in app
     # Applied at the sources table language cell (re-renders live on oo:langchange).
-    assert "ooLangName(s.language" in app
+    # AMENDED for Q306 = b: the cell now shows the ISO 639-2/3 code with the full
+    # language name in the hover, through the one renderer. `ooLangName` itself is
+    # UNCHANGED as the CLDR lookup and is still asserted above -- what moved is that
+    # it is reached through `ooLangStorage`, because `Intl.DisplayNames({type:
+    # "language"})` wants a BCP-47 tag and hands `fra` straight back.
+    assert "ooLangCell(s.language)" in app, (
+        "the sources table language cell must render through the one language helper"
+    )
+    assert "ooLangStorage" in app, (
+        "Q306: ooLangName must be reached through the 639-2/3 -> 639-1 derivation, or "
+        "a three-letter code is silently returned unchanged"
+    )
 
 
 def test_network_polish_go_online_green_dynamic_title_and_panic_i18n():
@@ -3513,7 +3524,33 @@ def test_agenda_category_chips_and_country_flags():
     assert "AG.categories = [...new Set((fac.categories" in html, (
         "categories must be data-driven from the catalog facets"
     )
-    assert "${agFlag(x)} ${esc(x)}" in html, "country options must show the flag emoji beside the ISO-2 code"
+    # AMENDED for ruling Q301 step 1 / Q302 / Q307 / Q308. The old form was
+    # `${agFlag(x)} ${esc(x)}` -- a flag beside the raw ISO-2. The flag STAYS (Q307
+    # keeps it, derived internally), and the code beside it is now alpha-3 with the
+    # localised name, ordered by that name (Q308 rules pickers specifically: an
+    # <option> carries no usable hover, so the layered Q302 form is unavailable and
+    # both are visible). Asserted as the three properties rather than as one literal,
+    # so a re-spelling of the template does not redden a guard about display.
+    assert "agFlag(x)" in html, "Q307: the agenda country options keep the flag emoji"
+    assert "ooCountryCode(x)" in html and "ooCountryName(x" in html, (
+        "the agenda country picker must show the alpha-3 code and the localised name"
+    )
+    assert "sort(ooCountryCompare)" in html, (
+        "Q308: a country picker is ordered by localised name, through the one comparator"
+    )
+    # SCOPED to the country picker. The first draft asserted this over the whole
+    # file and failed against correct code, on the TAG picker eight lines down,
+    # which renders a raw tag and always should -- the recorded non-unique-needle
+    # trap, in a guard written to catch a display change.
+    _country_picker = html[html.index('$("agenda-country").innerHTML'):]
+    _country_picker = _country_picker[: _country_picker.index('$("agenda-tag")')]
+    assert "${esc(x)}</option>" not in _country_picker, (
+        "the raw stored code must no longer be the country option's visible label"
+    )
+    assert 'value="${esc(x)}"' in _country_picker, (
+        "the option VALUE must stay the stored code -- a picker that changed what it "
+        "submits would silently break every filter reading it"
+    )
     assert ".ag-catchip" in html, "the category chips need their styling"
     # the future "religious" category is pre-keyed so its chip is born translated
     import json
@@ -5736,7 +5773,23 @@ def test_sources_have_multi_select_dropdown_filters():
     # needles matched the helpers' OWN declarations plus ~25 unrelated call sites, so
     # the labelers could have been dropped from the facet dropdowns entirely.
     _facets = _js_function_body(app, "loadSrcFacets")
-    assert "ooLangName(" in _facets and "ooRegionName(" in _facets
+    # AMENDED for Q301 step 1 / Q308. The localised name is still on the label -- a
+    # checkbox has no usable hover, so a picker shows the name AND the code, which is
+    # what Q308 asks for in as many words ("by localised name, the code as a
+    # secondary column"). What changed is WHICH helper supplies each half: the name
+    # now comes through `ooCountryName`/`ooLangDisplayName`, which derive the form
+    # `Intl.DisplayNames` actually accepts, and the code through `ooCountryCode`/
+    # `ooLangCode`. The old direct `ooRegionName(k, k)` would hand an alpha-3 to a
+    # lookup that takes alpha-2 only and get the input back, silently.
+    assert "ooLangDisplayName(" in _facets and "ooCountryName(" in _facets, (
+        "the facet labels must still carry the localised name (#19, Q308)"
+    )
+    assert "ooLangCode(" in _facets and "ooCountryCode(" in _facets, (
+        "Q308: the code rides beside the name as the secondary column"
+    )
+    assert "ooCountryCompare" in _facets, (
+        "Q308: the country facet is ordered by localised name"
+    )
     # Backends: the facets endpoint + multi-value filtering on both list endpoints.
     sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
     assert '@router.get("/facets"' in sm, "a /api/sources/facets endpoint must exist"
@@ -6164,10 +6217,27 @@ def test_auto_update_note_removed_and_country_names_localized():
         "the redundant auto-update note is back (#15)"
     )
     app = app_js()
-    # The source-profile "Country:" fact + the map-mention readout show the localized
-    # name, not the raw uppercased 2-letter code.
-    assert 'ooRegionName(meta.country, meta.country.toUpperCase())' in app
-    assert 'ooRegionName(m.country, m.country)' in app
+    # AMENDED for ruling Q302's NOTE, which INVERTS what this guard used to pin.
+    # #19 asked for the localised NAME where a raw uppercased alpha-2 had been, and
+    # that was right at the time. Q302 as the maintainer wrote it now puts the CODE
+    # on screen and the NAME in the hover -- so the name is still there, and it is
+    # in the `title` rather than in the cell. Both sites go through the one renderer,
+    # which is what stops the pair being re-derived per surface.
+    #
+    # Written as a BEHAVIOURAL claim about the renderer rather than as a second
+    # literal: `ooCountryCell` is driven for real in
+    # tests/country_display_node_test.js, where "code visible, name in title" is
+    # asserted against the rendered HTML -- which is the one thing a substring in
+    # this file cannot distinguish from its exact inverse.
+    assert "ooCountryCell(meta.country)" in app, (
+        "the source-profile Country: fact must render through the one country helper"
+    )
+    assert "ooCountryCell(m.country)" in app, (
+        "the map-mention readout must render through the one country helper"
+    )
+    assert "function ooCountryCell(value, opts)" in app, (
+        "the one country renderer is gone; every surface would re-derive the pair"
+    )
 
 
 def test_server_side_folder_picker_wired():

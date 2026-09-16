@@ -500,7 +500,7 @@
             + `${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</button>` : "";
         const rows = (d.countries || []).filter(c => c.country)
           .map(c => `<tr style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
-            + `<td>${esc(names[c.country] || c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
+            + `<td>${ooCountryCell(c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
         const tbl = rows
           ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
         // Item #8: an honest per-country dumbbell (articles vs mentions) above the table.
@@ -1015,7 +1015,7 @@
           return;
         }
         const rows = clusters.map(c => {
-          const place = esc(c.place || "—") + (c.place_country ? ` <span class="muted">(${esc(c.place_country)})</span>` : "");
+          const place = esc(c.place || "—") + (c.place_country ? ` <span class="muted">(${ooCountryCell(c.place_country)})</span>` : "");
           const win = esc((c.window_start || "").slice(0, 10)) + " → " + esc((c.window_end || "").slice(0, 10));
           const srcNames = (c.source_names || []).map(esc).join(", ");
           const srcShown = srcNames.length > 160 ? srcNames.slice(0, 160) + "…" : srcNames;
