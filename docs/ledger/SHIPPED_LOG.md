@@ -7766,6 +7766,76 @@ D8). Docs-only; `CLAUDE.md` untouched.
   also showed the page's horizontal scroll at 375px is pre-existing (it is there with the
   dialog closed), which is why the measurement was taken in both states before anything was
   blamed on the change.
+- **SPLITTING A MODULE INTO A PACKAGE BREAKS THREE THINGS A GREEN TARGETED RUN CANNOT SEE, AND
+  ALL THREE FAIL TOWARD "FINE" (2026-09-16, Q1139, `src/api/diagnostics.py` → 18 slices):** the
+  recorded 2026-08-20 `app.js` lesson says a split turns every NEGATIVE assertion vacuous at
+  every site at once, and this repo had already acted on it — `tests/diagnostics_source.py`
+  was built a week ahead, explicitly "the first commit of the split", concatenating whatever
+  the path turns out to be. That closed the assertion hazard completely and left three
+  others, each of which really fired here.
+  **(a) `pathlib.Path(__file__)` SILENTLY NARROWS.** `_diagnostics_coverage_report` recomputed
+  the all-diagnostics route-vs-member comparison from its own module's source. After the split
+  `__file__` is ONE SLICE, so it saw 28 of 131 routes — and the sibling read
+  `Path(__file__).parent / "integrity.py"` now pointed inside the package instead of at
+  `src/api/`. The report is the one artifact whose entire job is to say the bundle lost
+  nothing; it would have shipped saying `complete` about a route set it could no longer see.
+  Any reader built on `__file__` in a module that becomes a package needs a package-wide
+  reader, and the honest floor is to RAISE when it finds nothing (an empty read passes every
+  comparison).
+  **(b) A `monkeypatch.setattr` ON THE PACKAGE IS A NO-OP, AND THE OBVIOUS REPOINT RULE IS
+  WRONG.** 38 sites patched names on the module. A package `__init__` re-exports a name; the
+  submodule that READS it keeps its own global, so the double never arrives. The rule that
+  looks right — "patch the module that DEFINES the name" — is right only when the definer is
+  also the reader: `bundle.py` does `from .evals import merge_diag`, which binds a COPY, so
+  patching `evals` left `bundle`'s copy untouched and the test failed against correct code.
+  **Patch the module whose code reads the name.** Closed with a ratchet that fails on the next
+  package-level `setattr`, since a list of 38 fixed sites is complete exactly once.
+  **(c) A PACKAGE RE-EXPORTS WHAT ITS SLICES DEFINE, NEVER WHAT THE OLD MODULE IMPORTED.**
+  `d.JSONResponse` and `d.statement_deadline` were tests reaching through the module namespace
+  for a third-party symbol — legal on a module, `AttributeError` on a package. Sweep for them
+  by DIFFING the old module's imported names against the package's defined names; a grep for
+  the alias alone cannot tell the two apart.
+  **AND THE RATCHET READING TAKEN MID-CHANGE IS NOT THE READING THAT COUNTS.** I measured the
+  advisory-ruff lane at 442 (under its 446 ceiling), added a test file and two helpers, and it
+  was 447 — over. Only measuring the BASE in a detached worktree (`origin/main` = 445) said
+  which findings were mine: two, both in files I had just written. The delta is the only
+  number that answers "whose finding is this", and it must be taken after the LAST edit, not
+  the last edit to `src/`.
+
+- **A REALITY CHECK CAN BE WRONG, AND THE ONE YOU ARE RE-DOING PROBABLY IS — SO DATE THE
+  STATUS LINE INSTEAD OF EDITING THE CLAIM (2026-09-16, Q1141 = a / A4 = b, all 51 sections
+  of `docs/FUTURE_DEVELOPMENTS.md`):** the document already carried a 2026-09-07 pass, so the
+  cheap reading was "re-check the sections that pass did not reach". That reading is what the
+  pass found to be false. **Two of the 2026-09-07 banners were wrong the day they were
+  written**, not stale since: the Lunar-effects banner called the testing framework
+  "designed-only" while `src/analytics/lunar.py` had carried the whole thing since 2026-07-03
+  (and a further pre-registration control shipped 2026-09-09 — *two days after* that banner),
+  and the Open-Meteo banner listed "signal-keywords" as remaining when they had shipped
+  2026-07-03/07-08. A previous check is EVIDENCE, never a boundary: re-read what it asserted,
+  not only what it skipped.
+  **AND THIS IS THE ARGUMENT FOR THE FORM A4 RULED.** Had 2026-09-07 overwritten the original
+  claims rather than annotating them, its two errors would be indistinguishable today from
+  correct corrections — there would be nothing to compare against the tree. A dated status line
+  keeps the original claim, the first verdict and the second verdict all visible and all
+  attributable, and it is the reason this pass could find the error at all. The cost is a
+  document that grows; the alternative is a document that lies with more confidence each pass.
+  **THE NUMBERS THAT NO AMOUNT OF READING WILL SETTLE.** One section claimed 73% catalog
+  coverage and 49% located; the 2026-09-07 banner beside it claimed different figures. Both are
+  documents. `scripts/catalog_coverage_report.py` exists, takes seconds, and answers **5,546
+  domains / 4,059 located (73.2%) / Missing (51)** — neither of them. When a claim names a
+  quantity the repo can COMPUTE, computing it is not extra diligence, it is the only way to
+  avoid picking a winner between two equally confident documents.
+  **THE READ/VERIFY SPLIT THAT MADE IT AFFORDABLE.** Six parallel readers (one per ~10
+  sections) returned `claim → tree evidence` pairs; every load-bearing claim was then
+  hand-re-verified by grep before a single edit, per the recorded 06-audit false-positive
+  lesson. Of the claims that came back, several did not survive that second pass — the readers
+  are a search tool, not a witness. **AND TWO OF A4'S THREE CLAUSES TURNED OUT TO BE ALREADY
+  DONE** (the four embedded ledgers were already archived under
+  `docs/archive/future-developments/` behind a pointer; the three duplicate pairs were already
+  cross-linked and explicitly unmerged). Re-verifying and recording "already satisfied" is the
+  completion of a ruling. Re-doing it would have been churn, and merging the pairs would have
+  broken protocol rule (5).
+
 
 - **THE ATTESTATION ENDPOINT IS OFFLINE IN EXACTLY THE STATE YOU BUILT IT TO ATTEST
   (2026-09-16, Q1149, the encrypted click-through variant):** the runner's whole job in an

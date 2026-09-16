@@ -30,6 +30,7 @@ import zipfile
 import pytest
 
 import src.api.diagnostics as d
+from src.api.diagnostics import bundle as _diag_bundle
 import src.scheduler.runner as R
 
 
@@ -180,8 +181,8 @@ def test_the_sync_route_takes_the_hold(clean_window, monkeypatch):
         seen["excl"] = kw.get("exclusive")
         return []
 
-    monkeypatch.setattr(d, "_all_diagnostics_members", lambda db: [])
-    monkeypatch.setattr(d, "_write_all_diagnostics_zip", _spy)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_members", lambda db: [])
+    monkeypatch.setattr(_diag_bundle, "_write_all_diagnostics_zip", _spy)
     assert R.exclusive_window_open() is False, "anti-vacuity: the window starts closed"
     d.all_diagnostics(db=None)
     assert seen["open"] is True, "the sync route must hold the machine while it builds"
@@ -202,9 +203,9 @@ def test_the_background_job_takes_the_hold(clean_window, monkeypatch, tmp_path):
         seen["excl"] = kw.get("exclusive")
         return []
 
-    monkeypatch.setattr(d, "_all_diagnostics_dir", lambda: tmp_path)
-    monkeypatch.setattr(d, "_all_diagnostics_members", lambda db: [])
-    monkeypatch.setattr(d, "_write_all_diagnostics_zip", _spy)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_dir", lambda: tmp_path)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_members", lambda db: [])
+    monkeypatch.setattr(_diag_bundle, "_write_all_diagnostics_zip", _spy)
     monkeypatch.setattr(S, "session_scope", lambda: contextlib.nullcontext(None))
 
     class _Ctx:
@@ -332,8 +333,8 @@ def test_the_member_delta_is_current_rss_not_the_high_water_mark(monkeypatch):
     that has already done something bigger), so the OLD ``ru_maxrss`` delta is 0 for this
     member however much it really allocated. The current-RSS delta still moves."""
     probe = _ScriptedProbe([1_000, 1_500])
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: 9_000_000)  # a peak already set
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 9_000_000)  # a peak already set
 
     results = _run_bundle([("m.json", lambda: {"x": 1})])
     assert results[0]["rss_delta_kb"] == 500
@@ -347,8 +348,8 @@ def test_the_peak_rise_keeps_its_own_name(monkeypatch):
     process past its all-time peak" -- must not share one field."""
     probe = _ScriptedProbe([1_000, 1_200])
     peaks = iter([5_000, 5_300])
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: next(peaks))
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: next(peaks))
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
     assert entry["rss_delta_kb"] == 200
@@ -360,8 +361,8 @@ def test_an_unreadable_probe_omits_the_delta_rather_than_publishing_zero(monkeyp
     """A fabricated 0 would read as "this member allocated nothing"."""
     probe = _ScriptedProbe([None, None])
     probe.basis = "unavailable"
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: None)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: None)
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
     assert "rss_delta_kb" not in entry
@@ -379,7 +380,7 @@ def test_the_probe_is_resolved_once_not_per_reading(monkeypatch):
         made.append(1)
         return real()
 
-    monkeypatch.setattr(d, "_RssProbe", _counting)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", _counting)
     _run_bundle([(f"m{i}.json", (lambda i=i: {"i": i})) for i in range(5)])
     assert made == [1], f"the probe must be built exactly once per run, was {len(made)}"
 
@@ -400,8 +401,8 @@ def test_a_heavy_member_is_trimmed_and_the_release_is_measured(monkeypatch):
     arenas back -- otherwise it may be allocator noise."""
     big = d._ALL_DIAG_TRIM_AFTER_KB + 1
     probe = _ScriptedProbe([1_000, 1_000 + big, 1_000])  # before, after, post-trim
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: 1)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 1)
     monkeypatch.setattr("src.scheduler.hygiene._malloc_trim", lambda: True)
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
@@ -414,8 +415,8 @@ def test_a_light_member_is_not_trimmed(monkeypatch):
     putting an arena walk on the wall clock ~59 times and reporting a freed figure for
     members that allocated nothing."""
     probe = _ScriptedProbe([1_000, 1_010, 1_000])
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: 1)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 1)
     monkeypatch.setattr("src.scheduler.hygiene._malloc_trim", lambda: True)
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
@@ -427,8 +428,8 @@ def test_an_unmeasurable_release_reports_none_never_zero(monkeypatch):
     says the release could not be read, which is the truth."""
     big = d._ALL_DIAG_TRIM_AFTER_KB + 1
     probe = _ScriptedProbe([1_000, 1_000 + big, None])  # the post-trim read fails
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: 1)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 1)
     monkeypatch.setattr("src.scheduler.hygiene._malloc_trim", lambda: True)
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]
@@ -440,8 +441,8 @@ def test_a_refused_trim_is_not_reported_as_a_release(monkeypatch):
     nothing was returned to the OS and nothing may claim it was."""
     big = d._ALL_DIAG_TRIM_AFTER_KB + 1
     probe = _ScriptedProbe([1_000, 1_000 + big, 1_000])
-    monkeypatch.setattr(d, "_RssProbe", lambda: probe)
-    monkeypatch.setattr(d, "_rss_peak_kb", lambda: 1)
+    monkeypatch.setattr(_diag_bundle, "_RssProbe", lambda: probe)
+    monkeypatch.setattr(_diag_bundle, "_rss_peak_kb", lambda: 1)
     monkeypatch.setattr("src.scheduler.hygiene._malloc_trim", lambda: False)
 
     entry = _run_bundle([("m.json", lambda: {"x": 1})])[0]

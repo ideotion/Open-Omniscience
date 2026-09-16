@@ -26,9 +26,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from src.monitoring import storage as storage_mod
 from src.monitoring.storage import storage_composition
-from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 
 def _dbstat_available() -> bool:
@@ -219,14 +219,14 @@ def test_rides_the_debug_bundle_and_the_all_diagnostics_zip(db):
     """The member must reach the operator's export channels: the /all zip member list
     (behavioral) and the debug bundle's _safe(...) set (source-pinned — the bundle
     itself needs the full app runtime)."""
-    from pathlib import Path
-
     import src.api.diagnostics as diag
+    from tests.diagnostics_source import diagnostics_source
 
     names = [n for n, _fn in diag._all_diagnostics_members(db)]
     assert "storage-composition.json" in names
 
-    src_text = Path(diag.__file__).read_text(encoding="utf-8")
+    # Q1139 split: read the whole package, not the package's __init__.
+    src_text = diagnostics_source()
     # S8: the bundle member is individually guarded + budgeted via _member (db_bound so a
     # runaway dbstat scan is deadline-interrupted, never stalls the bundle).
     assert '"storage_composition": _member(' in src_text

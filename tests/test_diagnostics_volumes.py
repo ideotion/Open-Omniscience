@@ -333,11 +333,11 @@ def test_the_cap_is_env_tunable_and_floored_against_a_zero(monkeypatch):
 @pytest.fixture
 def _diag_dir(tmp_path, monkeypatch):
     """Point the diagnostics archive directory at a tmp dir for the route tests."""
-    from src.api import diagnostics as d
+    from src.api.diagnostics import bundle as _diag_bundle
 
     root = tmp_path / "diagnostics"
     root.mkdir()
-    monkeypatch.setattr(d, "_all_diagnostics_dir", lambda: root)
+    monkeypatch.setattr(_diag_bundle, "_all_diagnostics_dir", lambda: root)
     return root
 
 
