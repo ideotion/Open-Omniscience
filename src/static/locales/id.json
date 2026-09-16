@@ -3514,5 +3514,11 @@
   "of content": "isi",
   "on the drive": "di drive",
   "written": "ditulis",
-  "{n} more tables are empty in this backup.": "{n} tabel lainnya kosong dalam cadangan ini."
+  "{n} more tables are empty in this backup.": "{n} tabel lainnya kosong dalam cadangan ini.",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "Cadangan mencatat apa yang terakhir kali dikirim oleh setiap sumber — validator yang memungkinkan server menjawab \"tidak ada perubahan\" alih-alih mengirim ulang seluruh feed. Mempercayai catatan itulah yang mencegah instalasi yang dipulihkan mengunduh ulang semua yang sudah dimilikinya.",
+  "Trust the backup's scraping history": "Percayai riwayat scraping cadangan",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Mempercayainya berarti melewati pengunduhan ulang untuk hal yang menurut riwayat sudah pernah diambil; tidak mempercayainya berarti mengunduh ulang semuanya dari awal.",
+  "Restoring a backup later": "Memulihkan cadangan nanti",
+  "Trust a backup's scraping history by default": "Percayai riwayat scraping cadangan secara default",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Mempercayainya berarti melewati pengunduhan ulang untuk hal yang menurut riwayat sudah pernah diambil; tidak mempercayainya berarti mengunduh ulang semuanya dari awal. Anda dapat mengubah ini untuk setiap impor secara terpisah."
 }

@@ -3514,5 +3514,11 @@
   "of content": "من المحتوى",
   "on the drive": "على المحرك",
   "written": "مكتوب",
-  "{n} more tables are empty in this backup.": "{n} جداول أخرى فارغة في هذه النسخة."
+  "{n} more tables are empty in this backup.": "{n} جداول أخرى فارغة في هذه النسخة.",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "تسجّل النسخة الاحتياطية آخر ما قدّمه كل مصدر — أدوات التحقق التي تتيح للخادم الرد بعبارة «لم يتغيّر شيء» بدلاً من إرسال التغذية بأكملها من جديد. الوثوق بهذا السجل هو ما يمنع التثبيت المستعاد من إعادة تنزيل كل ما لديه بالفعل.",
+  "Trust the backup's scraping history": "الوثوق بسجلّ الجلب الخاص بالنسخة الاحتياطية",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر.",
+  "Restoring a backup later": "استعادة نسخة احتياطية لاحقًا",
+  "Trust a backup's scraping history by default": "الوثوق افتراضيًا بسجلّ الجلب الخاص بالنسخة الاحتياطية",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر. يمكنك تغيير هذا الخيار لأي عملية استيراد بمفردها."
 }

@@ -132,6 +132,24 @@ class AppSettings:
     # decides -- this is the stored value it prefers, and its default is kept
     # equal to CHECKPOINT_K_DEFAULT there by a test rather than by memory.
     import_checkpoint_k: int = 3
+    # TRUST THE BACKUP'S SCRAPING HISTORY (the Q701 NOTE, 2026-09-15; gate row K).
+    # The note asks that "web fetch/web scrapping history should be backed-up, and at
+    # install and import, users should be given the choice to trust or not the
+    # history". This is that choice's persisted default -- offered at first launch and
+    # overridable per import. TRUE means a restore ADOPTS the incoming corpus's fetch
+    # state (per-feed ETag / Last-Modified / backoff), so the next collection pass asks
+    # each feed conditionally instead of re-downloading it; FALSE discards it, so every
+    # feed is re-fetched from scratch.
+    #
+    # THE DEFAULT IS A LABELLED ASSUMPTION, not a ruling. The note gives the CHOICE and
+    # says nothing about the default, and brief S04-04 SS6 forbids this slice deciding
+    # it. TRUE is shipped because it is the behaviour the note's own motivation asks
+    # for ("so that a fresh install with an old backup doesn't re-download the same
+    # pages"), and because what it risks is bounded: a stale ETag costs at most one
+    # unchanged pass per feed, and `skip_until` is capped at BACKOFF_CAP_S (~6 h), so
+    # an adopted backoff always expires. Flipping it is this one literal; both settings
+    # are pinned by tests, so the flip cannot silently change what the app claims.
+    trust_backup_fetch_history: bool = True
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -265,21 +283,22 @@ def load_settings() -> AppSettings:
     if not isinstance(llm_allow_impractical_hw, bool):
         llm_allow_impractical_hw = defaults.llm_allow_impractical_hw
 
-    # The coordinator's master switch + its per-sweep membership flags. Same
-    # read-then-type-check shape as every sibling boolean: a stored non-boolean is
-    # ignored in favour of the documented default rather than coerced into a
-    # meaning it never had.
-    _ai_flags = {}
+    # The coordinator's master switch + its per-sweep membership flags, and the
+    # restore trust toggle. Same read-then-type-check shape as every sibling boolean:
+    # a stored non-boolean is ignored in favour of the documented default rather than
+    # coerced into a meaning it never had.
+    _bool_flags = {}
     for _name in (
         "ai_background_enabled",
         "ai_sweep_keyword_triage",
         "ai_sweep_source_tags",
         "ai_sweep_perception_extract",
+        "trust_backup_fetch_history",
     ):
         _val = raw.get(_name, getattr(defaults, _name))
         if not isinstance(_val, bool):
             _val = getattr(defaults, _name)
-        _ai_flags[_name] = _val
+        _bool_flags[_name] = _val
 
     llm_backend = raw.get("llm_backend", defaults.llm_backend)
     if llm_backend not in ("auto", "ollama", "vllm"):
@@ -321,7 +340,7 @@ def load_settings() -> AppSettings:
         llm_backend=llm_backend,
         llm_model_vllm=str(llm_model_vllm) if llm_model_vllm else None,
         llm_allow_impractical_hw=llm_allow_impractical_hw,
-        **_ai_flags,
+        **_bool_flags,
     )
 
 
@@ -426,6 +445,10 @@ def save_settings(updates: dict) -> AppSettings:
         "ai_sweep_keyword_triage",
         "ai_sweep_source_tags",
         "ai_sweep_perception_extract",
+        # The Q701-note trust toggle joins them: a truthy STRING must not be able to
+        # make a restore adopt somebody else's fetch history, which is a decision about
+        # what this machine will and will not go and download.
+        "trust_backup_fetch_history",
     ):
         if _name in updates and updates[_name] is not None:
             _val = updates[_name]

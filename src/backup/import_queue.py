@@ -418,6 +418,15 @@ class ImportQueueManager:
                         True if raw.get("include_newsletters") is None
                         else raw.get("include_newsletters")
                     ),
+                    # The Q701-note per-import answer. THREE-STATE on purpose: None
+                    # means the operator did not choose for this import, which falls
+                    # back to their first-launch answer. Coercing it to a bool here
+                    # would turn "did not choose" into "chose False" and silently
+                    # discard a history they had already said to trust.
+                    "trust_fetch_history": (
+                        None if raw.get("trust_fetch_history") is None
+                        else bool(raw.get("trust_fetch_history"))
+                    ),
                     "state": "queued",
                     "started_at": None,
                     "ended_at": None,
@@ -947,6 +956,7 @@ class ImportQueueManager:
             working_copy=working_copy, hold_after_merge=hold,
             already_merged_digests=already,
             allow_unverified=bool(item.get("allow_unverified")),
+            trust_fetch_history=item.get("trust_fetch_history"),
         )
         st = self._await(mgr.status, mgr.cancel)
         summary = st.get("summary") or {}
@@ -979,6 +989,7 @@ class ImportQueueManager:
             # caller that sends neither gets today's behaviour unchanged.
             allow_unverified=bool(item.get("allow_unverified")),
             include_newsletters=bool(item.get("include_newsletters", True)),
+            trust_fetch_history=item.get("trust_fetch_history"),
         )
 
     def _run_blobs(self, item: dict) -> dict:

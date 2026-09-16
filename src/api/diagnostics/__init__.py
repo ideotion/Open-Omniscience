@@ -203,6 +203,7 @@ from .bundle import (
     _all_diagnostics_worker,
     _bundle_exclusive_window,
     _corpus_counters_safe,
+    _country_code_scan,
     _cpu_model_safe,
     _debug_bundle_member_budget_s,
     _diagnostics_coverage_report,
@@ -316,6 +317,14 @@ from .model_bench import (
     model_bench_status,
 )
 
+# LAST, and deliberately so (2026-09-16, gate row K). `@router.<verb>` fires at import
+# time, so importing a new slice here APPENDS its route and moves none of the 131 the
+# split guard pins by position. A slice inserted anywhere else would renumber the table
+# and make that guard's diff unreadable.
+from .country_codes import (
+    country_code_duplicates,
+)
+
 __all__ = [
     "AiCheckRunBody",
     "CardAuditRunBody",
@@ -373,6 +382,7 @@ __all__ = [
     "_bundle_exclusive_window",
     "_card_audit_worker",
     "_corpus_counters_safe",
+    "_country_code_scan",
     "_cpu_model_safe",
     "_debug_bundle_member_budget_s",
     "_diagnostics_coverage_report",
@@ -445,6 +455,7 @@ __all__ = [
     "card_audit_status",
     "columnar_status",
     "corpus_integrity_report",
+    "country_code_duplicates",
     "criteria_calibration",
     "data_dir_persistence_report",
     "date_extraction_log",

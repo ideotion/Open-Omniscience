@@ -190,6 +190,7 @@ def restore_legacy_path(
     *,
     include_newsletters: bool = True,
     allow_unverified: bool = False,
+    trust_fetch_history: bool | None = None,
     should_stop=None,
 ) -> dict:
     """The legacy single-file restore, callable WITHOUT a request.
@@ -219,6 +220,10 @@ def restore_legacy_path(
                 staged,
                 commit=True,
                 allow_unverified=allow_unverified,
+                # The Q701-note answer for THIS import; None falls back to the stored
+                # first-launch choice inside run_restore, so the endpoint wrapper that
+                # sends nothing is byte-identical to today.
+                trust_fetch_history=trust_fetch_history,
                 should_stop=should_stop,
                 # The import queue holds ONE exclusive window across the whole run, so
                 # a restore driven from it owns the machine: the whole-corpus snapshots
@@ -691,6 +696,12 @@ class ImportQueueItem(BaseModel):
     # 2026-09-16 `auto_track_signals` lesson records.
     allow_unverified: bool = False
     include_newsletters: bool = True
+    # "Trust the backup scrapping history" for THIS import (the Q701 note). Declared
+    # for the same reason as the two above, and NULLABLE rather than defaulted: None
+    # means "this import did not choose", which resolves to the operator's stored
+    # first-launch answer. A `bool = True` default here would make every caller that
+    # omits the field assert a choice it never made.
+    trust_fetch_history: bool | None = None
 
 
 class ImportQueueBody(BaseModel):

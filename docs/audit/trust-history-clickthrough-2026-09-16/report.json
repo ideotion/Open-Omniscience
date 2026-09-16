@@ -1,0 +1,76 @@
+{
+  "steps": [
+    {
+      "step": "wizard/en",
+      "visible": true,
+      "checked": true,
+      "dir": null,
+      "data_step": "sources",
+      "checkbox_px": 13,
+      "label": "Trust a backup's scraping history by default",
+      "note_len": 167,
+      "note": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.",
+      "hover_len": 242,
+      "label_matches": true
+    },
+    {
+      "step": "wizard/fr",
+      "visible": true,
+      "checked": true,
+      "dir": "ltr",
+      "data_step": "sources",
+      "checkbox_px": 13,
+      "label": "Faire confiance par défaut à l'historique de collecte d'une sauvegarde",
+      "note_len": 208,
+      "note": "Lui faire confiance évite de retélécharger ce que l'historique indique avoir déjà été récupéré ; ne pas lui faire confiance retélécharge tout depuis le début. Vous pouvez modifier ce choix pour chaque import.",
+      "hover_len": 307,
+      "label_matches": true
+    },
+    {
+      "step": "wizard/ar",
+      "visible": true,
+      "checked": true,
+      "dir": "rtl",
+      "data_step": "sources",
+      "checkbox_px": 13,
+      "label": "الوثوق افتراضيًا بسجلّ الجلب الخاص بالنسخة الاحتياطية",
+      "note_len": 152,
+      "note": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر. يمكنك تغيير هذا الخيار لأي عملية استيراد بمفردها.",
+      "hover_len": 224,
+      "label_matches": true
+    },
+    {
+      "step": "import/before-scan",
+      "trust_row_visible": false
+    },
+    {
+      "step": "import/after-scan",
+      "trust_row_visible": true,
+      "checked": true,
+      "label": "Trust the backup's scraping history",
+      "checkbox_px": 13,
+      "note": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.",
+      "found": ""
+    },
+    {
+      "step": "import/three-states",
+      "unchecked": false,
+      "checked": true,
+      "hidden": null
+    },
+    {
+      "step": "import/fr",
+      "label": "Faire confiance à l'historique de collecte de la sauvegarde",
+      "note": "Lui faire confiance évite de retélécharger ce que l'historique indique avoir déjà été récupéré ; ne pas lui faire confiance retélécharge tout depuis le début.",
+      "label_matches": true
+    },
+    {
+      "step": "import/ar",
+      "label": "الوثوق بسجلّ الجلب الخاص بالنسخة الاحتياطية",
+      "note": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر.",
+      "label_matches": true
+    }
+  ],
+  "pageerrors": [],
+  "ok": true
+}

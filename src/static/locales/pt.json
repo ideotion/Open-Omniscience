@@ -3514,5 +3514,11 @@
   "of content": "de conteúdo",
   "on the drive": "na unidade",
   "written": "escrita",
-  "{n} more tables are empty in this backup.": "{n} outras tabelas estão vazias nesta cópia."
+  "{n} more tables are empty in this backup.": "{n} outras tabelas estão vazias nesta cópia.",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "Um backup registra o que cada fonte forneceu pela última vez — os validadores que permitem que um servidor responda \"nada mudou\" em vez de reenviar todo o feed. Confiar nesse registro é o que impede que uma instalação restaurada baixe novamente tudo o que já tem.",
+  "Trust the backup's scraping history": "Confiar no histórico de coleta do backup",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Confiar nele evita baixar novamente o que o histórico indica já ter sido obtido; não confiar nele baixa tudo novamente do zero.",
+  "Restoring a backup later": "Restaurar um backup mais tarde",
+  "Trust a backup's scraping history by default": "Confiar por padrão no histórico de coleta de um backup",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Confiar nele evita baixar novamente o que o histórico indica já ter sido obtido; não confiar nele baixa tudo novamente do zero. Você pode alterar isso para qualquer importação específica."
 }

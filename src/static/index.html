@@ -3026,6 +3026,18 @@
            decides. Filled by _uxImCheckpointNote from the queue's own resolved K, so
            it can never disagree with the number the run will actually use. -->
       <p id="ux-imp-checkpoint" class="note" style="margin-top:8px"></p>
+      <!-- The Q701 NOTE's import-time half. Shown only once the scan has found a
+           corpus or legacy backup, because a .eml or large-data import carries no
+           scraping history and a toggle over nothing is a control that claims a
+           capability it does not have. Starts from the operator's first-launch
+           answer and overrides it for THIS import only. -->
+      <div id="ux-imp-trust-row" style="display:none;margin-top:8px">
+        <label style="display:flex;gap:8px;align-items:flex-start">
+          <input type="checkbox" id="ux-imp-trust" style="width:auto"
+                 title="A backup records what each source last served — the validators that let a server answer &quot;nothing changed&quot; instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.">
+          <span>Trust the backup's scraping history</span></label>
+        <p class="note" id="ux-imp-trust-note" style="margin:4px 0 0">Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.</p>
+      </div>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
         <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>
         <button id="ux-imp-bg" class="secondary" style="display:none" onclick="_uxImBackground()">Continue in background</button>
@@ -3301,6 +3313,18 @@
            title="A cadence preference — the emphasized languages are collected more often. It orders the rotation; it never stops the others (ordering, never exclusion).">
           Collect these more often. Leave all off for an even rotation across languages.</p>
         <div id="gw-emph-langs" class="gw-langs" role="group" aria-label="Emphasize languages"></div>
+        <!-- The Q701 NOTE's install-time half: "at install and import, users should be
+             given the choice to trust or not the history with a 'trust the backup
+             scrapping history' toggle". Here it sets the DEFAULT a future import
+             starts from; the import dialog carries the same toggle for one import.
+             The caveat is VISIBLE, never behind the hover (informed consent), and the
+             hover carries the long form per invariant #17. -->
+        <div class="vsect" style="margin-top:14px">Restoring a backup later</div>
+        <label style="display:flex;gap:8px;align-items:flex-start;margin-top:4px">
+          <input type="checkbox" id="gw-trust-history" checked style="width:auto"
+                 title="A backup records what each source last served — the validators that let a server answer &quot;nothing changed&quot; instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.">
+          <span>Trust a backup's scraping history by default</span></label>
+        <p class="note" id="gw-trust-note" style="margin:4px 0 0">Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.</p>
       </section>
       <!-- Step: Finish / start collecting. The consent info (local interface IPs +
            the same disclosure #net-consent shows) is now INLINE here -- product

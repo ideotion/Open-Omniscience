@@ -49,6 +49,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.backup.artifact import StagedArtifact
+from src.backup.fetch_history import resolve_trust_fetch_history
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.merge")
@@ -587,8 +588,15 @@ def prepare_staged_corpus(
             "artifact failed its own manifest hashes -- refusing to merge: "
             + "; ".join(staged.hash_failures)
         )
+    # Every SIGNED artifact format, not one literal. A bump that left this reading
+    # `== "oo-backup-2"` would silently stop demanding a verified signature on the
+    # newest format -- the gate failing OPEN on exactly the artifacts this build
+    # writes. The legacy bare-SQLite / .ooenc kinds carry no manifest to sign and
+    # are correctly outside it.
+    from src.backup.artifact import ACCEPTED_BACKUP_SCHEMAS
+
     if (
-        staged.kind == "oo-backup-2"
+        staged.kind in ACCEPTED_BACKUP_SCHEMAS
         and staged.signature_state != "verified"
         and not allow_unverified
     ):
@@ -1510,6 +1518,7 @@ def merge_corpus(
     cache_mb: int | None = None, should_stop: Callable[[], bool] | None = None,
     step_cb: Callable[[int, int, str, float], None] | None = None,
     stmt_cb: Callable[[int, str, str, float, bool], None] | None = None,
+    trust_fetch_history: bool = True,
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
     batch_id). The working copy is disposable; the live DB is never touched.
@@ -1600,6 +1609,11 @@ def merge_corpus(
             ),
         )
         batch_id = int(cur.lastrowid or 0)
+
+        # The operator's answer to "trust the backup scrapping history?" (Q701 note),
+        # handed to `_merge_fetch_history` through the per-connection options table.
+        # Set here, ONCE, so the step cannot read it from two places and disagree.
+        _set_merge_option(con, "trust_fetch_history", "1" if trust_fetch_history else "0")
 
         steps = _merge_steps()
         # The FTS insert trigger is suspended across the steps and the index is
@@ -1725,6 +1739,13 @@ _MERGE_HANDLED = {
     # unmerged with its question stated rather than guessed at. The maintainer ruled all
     # five that day; each handler's docstring records its identity and why.
     "watches", "watch_matches", "ai_custom_prompt", "ai_keyword", "law_revision_summaries",
+    # 2026-09-16, Q404 🔒 = a (gate row K): the tentative LLM translation tier. Its
+    # cross-corpus identity is the schema's own `uq_keyword_translation`, recorded in
+    # `_merge_ai_layer`'s docstring beside the two it deliberately differs from.
+    "keyword_translations",
+    # 2026-09-16, the Q701 note: the per-feed fetch history, adopted only where this
+    # corpus has no row of its own and only when the operator trusted it.
+    "feed_fetch_state",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -1782,7 +1803,12 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     "article_entities": "purely derived, no human channel; rebuilt by index_article",
     # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
     "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
-    "feed_fetch_state": "per-feed ETag/Last-Modified + backoff, re-learned on the next pass",
+    # `feed_fetch_state` LEFT THIS LIST on 2026-09-16 (the Q701 note, gate row K). The
+    # reading above -- per-machine, self-healing, re-learned next pass -- was correct
+    # about the mechanism and was overturned as a POLICY: re-learning it costs a full
+    # re-download of every feed on the first pass after a fresh-install restore, which
+    # is exactly what the note forbids. It now has a handler (`_merge_fetch_history`)
+    # whose adoption the operator's trust toggle gates.
     "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
     # (c) GENUINELY OWED A HANDLER: not recomputable from the corpus, not per-machine, and
     # dropped by a fresh-install restore. The four with a unique constraint the SCHEMA
@@ -1882,6 +1908,14 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
     handlers join the ``temp.map_*`` tables their parents build.
     """
     return (
+        # FIRST, and the order is the whole point (Q310 = a): every handler below
+        # that COPIES or ADOPTS a country value -- `_merge_sources`'s INSERT,
+        # `_adopt_article_metadata`'s adoptable `country`
+        # (`_ADOPTABLE_ARTICLE_COLUMNS`) -- must see the incoming corpus already in
+        # the store's canonical form, or an old backup's `fr` lands beside a migrated
+        # `FRA` and the two never dedupe. See `src/backup/country_codes.py` for which
+        # columns are in scope, and for the two that deliberately are not.
+        ("country codes", _normalise_country_codes),
         ("keyword categories", _merge_keyword_categories),
         ("sources", _merge_sources),
         ("articles", _merge_articles),
@@ -1906,6 +1940,11 @@ def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
         # temp.map_articles it joins.
         ("watches", _merge_watches),
         ("AI layer", _merge_ai_layer),
+        # 2026-09-16, the Q701 note. After `sources`, whose temp.map_sources it joins.
+        # ALWAYS a step, even when the operator untrusted the history: a restore that
+        # adopted nothing because they said not to, and a restore that had nothing to
+        # adopt, are different facts, and only a step that runs can report which.
+        ("fetch history", _merge_fetch_history),
     )
 
 
@@ -1937,6 +1976,112 @@ def _unmerged_tables(con: sqlite3.Connection) -> tuple[dict[str, int], list[str]
         if n:
             out[name] = n
     return out, rejected
+
+
+#: The per-connection channel `merge_corpus` uses to hand a step an option the caller
+#: chose. A `temp` table rather than a parameter because `_merge_steps()` is read and
+#: monkeypatched as a zero-argument function in several suites, and a `sqlite3.Connection`
+#: is a C type that accepts no attributes -- so this is the one place left that is
+#: explicit, per-connection (never process-global) and readable by a test.
+_MERGE_OPTIONS_DDL = "CREATE TEMP TABLE IF NOT EXISTS merge_options (key TEXT PRIMARY KEY, value TEXT)"
+
+
+def _set_merge_option(con, key: str, value: str) -> None:
+    con.execute(_MERGE_OPTIONS_DDL)
+    con.execute("INSERT OR REPLACE INTO temp.merge_options (key, value) VALUES (?, ?)", (key, value))
+
+
+def _merge_option(con, key: str, default: str) -> str:
+    try:
+        row = con.execute(
+            "SELECT value FROM temp.merge_options WHERE key = ?", (key,)
+        ).fetchone()
+    except Exception:  # noqa: BLE001 - a missing options table means "nobody set one"
+        return default
+    return default if row is None else str(row[0])
+
+
+def _merge_fetch_history(con, batch_id, results) -> None:
+    """Adopt the incoming corpus's fetch history -- or say plainly that we did not.
+
+    The Q701 note (gate row K): the history of everything the app downloads rides the
+    backup so a fresh install restored from an old backup does not re-download the same
+    pages, WITH the operator's choice to trust it or not. ``src/backup/fetch_history.py``
+    is the registry and the reasoning; this is the merge half.
+
+    THE ADOPTION RULE IS FILL-A-GAP, NEVER OVERWRITE. A local ``feed_fetch_state`` row
+    is this machine's own observation of that feed; the other instance's is not a fact
+    about this one. So a row is adopted only where the local source has none -- which is
+    every row on the fresh-install restore the note is about, and no row on a machine
+    that has been collecting. That is the same "fill a local NULL, never overwrite a
+    local value" rule the qualification and article-metadata adoptions already use.
+    """
+    from src.backup.fetch_history import FEED_FETCH_STATE_CARRIED
+
+    trusted = _merge_option(con, "trust_fetch_history", "1") == "1"
+    r = DomainResult()
+    available = _count(con, "SELECT COUNT(*) FROM inc.feed_fetch_state")
+    if not trusted:
+        # Nothing is copied, and the count of what was ON OFFER is published: an
+        # operator who untrusted a history needs to see what they declined, and a
+        # bare zero cannot tell "you said no" from "there was nothing there".
+        results["_fetch_history"] = {
+            "trusted": False,
+            "available": available,
+            "adopted": 0,
+            "method": (
+                "the operator did not trust this backup's scraping history, so no "
+                "per-feed fetch state was adopted and every feed will be re-fetched "
+                "from scratch on the next pass"
+            ),
+        }
+        results["feed_fetch_state"] = r
+        return
+
+    cols = ", ".join(FEED_FETCH_STATE_CARRIED)
+    icols = ", ".join(f"i.{c}" for c in FEED_FETCH_STATE_CARRIED)
+    key = "t.source_id = ms.new"
+    r.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.feed_fetch_state i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " JOIN temp.map_sources ms ON ms.old = i.source_id"
+        f" WHERE EXISTS (SELECT 1 FROM feed_fetch_state t WHERE {key})",
+    )
+    # OR IGNORE for the reason the article-keyword links use it: map_sources can
+    # collapse two incoming sources onto one local row, so two incoming rows can
+    # target the same PK within THIS statement, which a NOT EXISTS guard (a check
+    # against the PRE-statement table) cannot see.
+    r.new = _insert_tracked(
+        con, batch_id, "feed_fetch_state",
+        f"INSERT OR IGNORE INTO feed_fetch_state (source_id, {cols})"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" SELECT ms.new, {icols}"
+        " FROM inc.feed_fetch_state i JOIN temp.map_sources ms ON ms.old = i.source_id"
+        f" WHERE NOT EXISTS (SELECT 1 FROM feed_fetch_state t WHERE {key})",
+    )
+    results["feed_fetch_state"] = r
+    results["_fetch_history"] = {
+        "trusted": True,
+        "available": available,
+        "adopted": r.new,
+        "method": (
+            "per-feed conditional-GET validators and backoff adopted for feeds this "
+            "corpus had no state for; a local row always wins, and last_checked_at is "
+            "left empty because it records which machine did the checking"
+        ),
+    }
+
+
+def _normalise_country_codes(con, batch_id, results) -> None:
+    """Merge step 1 (Q310 = a): canonicalise the incoming corpus's country codes.
+
+    Publishes its account under the underscore key ``_country_codes`` -- the same
+    non-table diagnostic-block convention ``_unmerged_tables`` uses -- so a restore
+    report states what was converted, what the converter refused and what collided,
+    rather than the merge quietly rewriting values nobody is told about.
+    """
+    from src.backup.country_codes import normalise_staged_country_codes
+
+    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc")
 
 
 def _merge_keyword_categories(con, batch_id, results) -> None:
@@ -3210,6 +3355,17 @@ def _merge_ai_layer(con, batch_id, results) -> None:
     every term in the corpus on each prompt re-tune, and this is the largest of the five
     tables. What that loses is which prompt revision said it -- the least load-bearing part
     of the record, and the honest trade for not multiplying the table.
+
+    ``keyword_translations`` (Q404 🔒 = a, 2026-09-15) -> the FULL tuple
+    (term, source_lang, target_lang, model, prompt_version), which is the SCHEMA's own
+    answer: ``uq_keyword_translation``. Note this is the OPPOSITE choice to
+    ``ai_keyword``'s above, and deliberately so. There, ``prompt_version`` is dropped
+    because including it would multiply the corpus's largest table on every re-tune;
+    here the table is a few thousand terms and the prompt version is half the
+    provenance of a value the UI must label "≈" -- a translation is shown to a reader
+    AS text, so which prompt produced it is what makes the label checkable. Keying on
+    the full tuple also makes the insert a pure dedupe: it can add a row, and it can
+    never replace a local one.
     """
     p = DomainResult()
     p_key = "m.output_kind = i.output_kind AND m.prompt_text = i.prompt_text"
@@ -3251,6 +3407,32 @@ def _merge_ai_layer(con, batch_id, results) -> None:
         f" WHERE NOT EXISTS (SELECT 1 FROM ai_keyword t WHERE {k_key})",
     )
     results["ai_keyword"] = k
+
+    # The tentative translation tier (Q404). No FK and no id map: the identity is the
+    # value tuple, so it needs no parent step. COALESCE on the two NULLABLE members of
+    # the key, because `x = NULL` is NULL in SQL and an un-COALESCEd comparison would
+    # make every row with a NULL model read as "not present" and re-insert on every
+    # restore -- the duplicate this whole slice exists to prevent, one table over.
+    tr = DomainResult()
+    tr_key = (
+        "t.term = i.term AND t.source_lang = i.source_lang AND t.target_lang = i.target_lang"
+        " AND COALESCE(t.model,'') = COALESCE(i.model,'')"
+        " AND COALESCE(t.prompt_version,'') = COALESCE(i.prompt_version,'')"
+    )
+    tr.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.keyword_translations i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" WHERE EXISTS (SELECT 1 FROM keyword_translations t WHERE {tr_key})",
+    )
+    tr.new = _insert_tracked(
+        con, batch_id, "keyword_translations",
+        "INSERT OR IGNORE INTO keyword_translations (term, source_lang, target_lang,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " text, model, prompt_version, created_at)"
+        " SELECT i.term, i.source_lang, i.target_lang, i.text, i.model, i.prompt_version,"
+        " i.created_at FROM inc.keyword_translations i"
+        f" WHERE NOT EXISTS (SELECT 1 FROM keyword_translations t WHERE {tr_key})",
+    )
+    results["keyword_translations"] = tr
 
 
 def _merge_statistics(con, batch_id, results) -> None:
@@ -3295,7 +3477,17 @@ def _merge_statistics(con, batch_id, results) -> None:
     sub = DomainResult()
     sub_key = (
         "t.source = i.source AND t.indicator = i.indicator"
-        " AND COALESCE(t.country,'') = COALESCE(i.country,'')"
+        # CASE-FOLDED, and only here in the COMPARISON -- the stored value is never
+        # rewritten, because it is the World Bank API's own parameter, replayed verbatim
+        # on the next fetch (Q311 keeps external contracts as they are, which is why
+        # `stat_subscriptions.country` is exempt from the restore normaliser). But the
+        # value reaches this column through a free-text box (`#statfig-country`,
+        # placeholder "FR or all") that neither trims case nor converts form, so two
+        # installs typing "FR" and "fr" hold the SAME subscription in two spellings.
+        # Measured before this fold: merging them produced two rows and reported
+        # `duplicate: 0`. Folding the comparison collapses them and keeps whichever
+        # spelling the local machine already had. The literal "all" folds to itself.
+        " AND COALESCE(UPPER(t.country),'') = COALESCE(UPPER(i.country),'')"
         " AND COALESCE(t.dataset,'') = COALESCE(i.dataset,'')"
         " AND COALESCE(t.params_json,'') = COALESCE(i.params_json,'')"
         " AND COALESCE(t.agency,'') = COALESCE(i.agency,'')"
@@ -3958,7 +4150,105 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         local.chmod(0o600)
         keys["restored"].append(name)
     report["keys"] = keys
+
+    report["rings"] = _restore_ring_members(staged, base)
     return report
+
+
+def _restore_ring_members(staged: StagedArtifact, base: Path) -> dict:
+    """Place the artifact's LOCAL rings; carry its SHIPPED rings without placing them.
+
+    Q409 = b puts every ring in the backup. They come back by two opposite rules,
+    because they are two different kinds of thing:
+
+    * A **local** ring file is the operator's own (``S04-06``'s auto-loaded Wikidata
+      rings, and anything a future session adds). It is restored into
+      ``<data dir>/rings/`` under the standing additive rule -- never over an existing
+      local file, temp-then-rename so an interrupted placement leaves nothing
+      half-written for the loader to parse.
+    * A **shipped** ring file belongs to a RELEASE, and the release you are running is
+      the one whose rings are correct for it. Placing an old backup's copy would be the
+      exact regression the gate's design note names ("a restored backup's shipped rings
+      must never override a newer release's shipped rings"), so it is carried, counted
+      and reported -- an old artifact still RECORDS the vocabulary that produced its
+      groupings, which is what makes its groupings readable years later -- and never
+      written anywhere. Reported rather than silently skipped, because "we chose not to
+      place this" and "there was nothing to place" are different facts.
+
+    The member NAME is a filesystem path here, so it passes the same
+    ``_require_safe_manifest_names`` guard every other member does, on the verify path
+    AND the restore path -- one guard, not a second one written for this member.
+    ``_safe_ring_target`` re-checks containment anyway, because a guard reached from
+    somewhere else is not a guard on this function.
+    """
+    from src.backup.artifact import _RINGS_LOCAL_PREFIX, _RINGS_SHIPPED_PREFIX
+
+    out: dict = {
+        "restored": [],
+        "kept_local": [],
+        "carried_not_placed": [],
+        "refused": [],
+        "method": (
+            "local rings are placed additively into <data dir>/rings/; shipped rings "
+            "are carried as a record and never override the running release's own"
+        ),
+    }
+    placed_any = False
+    for name, path in staged.member_paths("rings"):
+        if name.startswith(_RINGS_SHIPPED_PREFIX):
+            out["carried_not_placed"].append(name)
+            continue
+        if not name.startswith(_RINGS_LOCAL_PREFIX):
+            # An unknown ring-member shape: refused BY NAME rather than guessed at.
+            out["refused"].append({"name": name, "reason": "unknown ring member prefix"})
+            continue
+        target = _safe_ring_target(base, name[len(_RINGS_LOCAL_PREFIX):])
+        if target is None:
+            out["refused"].append({"name": name, "reason": "unsafe ring member name"})
+            continue
+        if target.exists():
+            out["kept_local"].append(name)
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".tmp")
+            tmp.write_bytes(path.read_bytes())
+            os.replace(tmp, target)
+        except OSError as exc:
+            out["refused"].append({"name": name, "reason": f"write failed: {exc}"})
+            continue
+        out["restored"].append(name)
+        placed_any = True
+
+    if placed_any:
+        # A ring file changed under three lru_cache(maxsize=1) loaders that have never
+        # had a runtime invalidation, because nothing could change one while the app
+        # ran. Clearing only load_rings() would leave _index/_multi_index serving the
+        # old set, so a term would resolve on one surface and not another.
+        try:
+            from src.analytics.equivalence import invalidate_ring_caches
+
+            invalidate_ring_caches()
+            out["caches_invalidated"] = True
+        except Exception:  # noqa: BLE001 - a cache clear must never undo a committed restore
+            _LOG.warning("ring cache invalidation after restore failed", exc_info=True)
+            out["caches_invalidated"] = False
+    return out
+
+
+def _safe_ring_target(base: Path, rel: str) -> Path | None:
+    """``<data dir>/rings/<rel>`` when ``rel`` really stays inside it, else ``None``.
+
+    Containment by ``is_relative_to``, never a string prefix: a sibling directory
+    shares one (``…/rings-old`` starts with ``…/rings``), which is the recorded
+    containment trap."""
+    root = (base / "rings").resolve()
+    if not rel or rel.startswith("/") or "\\" in rel:
+        return None
+    candidate = (root / rel).resolve()
+    if not candidate.is_relative_to(root):
+        return None
+    return candidate
 
 
 def _refresh_event_mirror(side_files: dict) -> dict | None:
@@ -4927,6 +5217,7 @@ def run_restore(
     source_digest: str | None = None,
     working_copy: Path | None = None,
     hold_after_merge: bool = False,
+    trust_fetch_history: bool | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -5128,6 +5419,13 @@ def run_restore(
         # import, never a skipped one.
         "source_digest": source_digest,
     }
+    # The Q701-note trust answer, resolved ONCE per restore (the per-import override
+    # if the operator made one for this import, else their first-launch answer) and
+    # recorded in `meta` so the import report says which choice produced the result.
+    # Resolved here rather than inside the merge step so a preview and its commit
+    # cannot answer differently.
+    _trust_history = resolve_trust_fetch_history(trust_fetch_history)
+    meta["trust_fetch_history"] = _trust_history
     # Wrap the caller's own progress_cb so EACH of the 14 merge steps also gets
     # its own per-step timing (into "merge_step:<name>"), with NO change to
     # merge_corpus's internals — it already wraps every progress_cb call in its
@@ -5206,6 +5504,7 @@ def run_restore(
             staged.corpus_path, working, meta,
             progress_cb=_timed_progress_cb, cache_mb=merge_cache_mb,
             should_stop=should_stop, step_cb=_step_tick, stmt_cb=_stmt_tick,
+            trust_fetch_history=_trust_history,
         )
     # Per-statement rollup into the import report: the SUM per statement, so a
     # step whose cost is spread over several executions is still attributable.

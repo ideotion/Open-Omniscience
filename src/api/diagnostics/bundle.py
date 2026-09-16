@@ -653,6 +653,14 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
+        # The Q310 duplicate-key scan (gate row K's artifact). It calls the SCAN, not
+        # the endpoint: importing a diagnostics slice from here would register that
+        # slice's route at THIS module's import position, and the Q1139 split guard
+        # pins every route's position (it caught exactly that, by name). Both callers
+        # go through `scan_live_corpus`, so there is one path and one schema. One
+        # GROUP BY per country column, under the DB member deadline the wrapper
+        # already applies.
+        ("country-code-duplicates.json", lambda: _country_code_scan(db)),
         # transversal audit 09 (2026-07-25), C2: fold the local fixity audit in, as
         # 08's own Action Plan C2 originally asked ("fold a fixity pass into the
         # gate-row-3 diagnostics bundle rather than treating it as a separate ask").
@@ -1084,6 +1092,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/slow-queries": "slow-queries.json",
     "/schema-drift": "schema-drift.json",
     "/integrity": "corpus-integrity.json",
+    "/country-code-duplicates": "country-code-duplicates.json",
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
@@ -1214,6 +1223,17 @@ def _diagnostics_coverage_report() -> dict:
         }
     except Exception as exc:  # noqa: BLE001 - a coverage-recompute glitch must not sink the run
         return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+def _country_code_scan(db) -> dict:
+    """The Q310 duplicate-key scan as a bundle member.
+
+    A named function rather than an inline import so the lambda above reads as one
+    call, and so a test can monkeypatch THIS name to prove the member is wired (the
+    recorded "a test of a helper is not a test of its wiring" gap)."""
+    from src.backup.country_codes import scan_live_corpus
+
+    return scan_live_corpus(db)
 
 
 def _corpus_counters_safe(db) -> dict:

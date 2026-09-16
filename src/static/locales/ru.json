@@ -3514,5 +3514,11 @@
   "of content": "содержимого",
   "on the drive": "на диске",
   "written": "записана",
-  "{n} more tables are empty in this backup.": "Ещё {n} таблиц пусты в этой копии."
+  "{n} more tables are empty in this backup.": "Ещё {n} таблиц пусты в этой копии.",
+  "A backup records what each source last served — the validators that let a server answer \"nothing changed\" instead of sending the whole feed again. Trusting that record is what stops a restored install re-downloading everything it already has.": "Резервная копия сохраняет то, что каждый источник отдавал последний раз, — валидаторы, которые позволяют серверу ответить «ничего не изменилось» вместо повторной отправки всей ленты. Именно доверие этой записи не даёт восстановленной установке заново скачивать всё, что у неё уже есть.",
+  "Trust the backup's scraping history": "Доверять истории сбора данных резервной копии",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля.",
+  "Restoring a backup later": "Восстановление резервной копии позже",
+  "Trust a backup's scraping history by default": "Доверять истории сбора данных резервной копии по умолчанию",
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля. Это можно изменить для любого отдельного импорта."
 }

@@ -53,6 +53,11 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
+
+# ALIASED, never imported as a bare `text`: `KeywordTranslation` has a COLUMN called
+# `text`, and inside a class body the attribute shadows the module-level name, so
+# `__table_args__` would call the MappedColumn. Measured, as a TypeError at import.
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import DeclarativeBase, Mapped, backref, mapped_column, relationship
 
 # Engine, session lifecycle, and the FastAPI dependency live in session.py and
@@ -1832,6 +1837,92 @@ class KeywordTag(Base):
 
     def __repr__(self) -> str:
         return f"<KeywordTag(kw={self.keyword_id} {self.axis}={self.tag} [{self.source}])>"
+
+
+class KeywordTranslation(Base):
+    """A TENTATIVE keyword translation produced by a local model — never the index.
+
+    Q404 🔒 = a (2026-09-15, gate row K): the LLM fallback tier the 2026-06-19
+    "Wikidata rings + LLM fallback" ruling created has until now lived only in
+    ``src/ai_layer/translate.py``'s process-global cache — 5,000 entries lost on every
+    restart, and carried by no backup. This is its durable home, and it rides the
+    artifact.
+
+    **ALWAYS ≈, NEVER THE TRUSTED INDEX.** A row here is one model's answer, recorded
+    with the provenance needed to judge it (``model``, ``prompt_version``), not a fact
+    about the language. The VERIFIED ring translation always wins;
+    ``translate_keywords`` already skips any term a ring covers, and nothing in the
+    keyword index reads this table. A reader that renders one of these owes the
+    tentative tier label (Q403's three-tier ladder, brief ``S04-06``).
+
+    **CROSS-CORPUS IDENTITY, STATED** (the 2026-08-03 owed-tables rule — a table whose
+    identity the schema cannot answer must not have one invented silently). It is the
+    FULL tuple ``(term, source_lang, target_lang, model, prompt_version)``, i.e. the
+    ``stat_figures`` vintage shape rather than the "one current translation" shape.
+    Two reasons, and the second is the load-bearing one: a different model or prompt
+    version is a DIFFERENT measurement and collapsing them would silently pick a winner
+    between two answers nobody compared; and with the full tuple the merge is a pure
+    ``WHERE NOT EXISTS`` dedupe that can never overwrite a local row with a foreign
+    one. A display surface that needs exactly one answer picks the newest
+    ``created_at`` and says so — a rule at the read, where it is visible, rather than a
+    deletion at the write, where it is not.
+
+    **COLUMN NAMING.** The ruling names the columns "term, source lang, target lang,
+    text, model, prompt version, created". They are here verbatim in substance;
+    ``created`` is spelled ``created_at`` because every other table in this schema does
+    and one exception is a thing every future reader has to remember. ``term`` is the
+    NORMALISED source term (``equivalence._norm``: whitespace-collapsed, casefolded),
+    matching the key ``src/ai_layer/translate.py``'s cache already uses, so the two
+    cannot disagree about what "the same term" means.
+
+    **WRITERS LIVE IN ``S04-06``** (the ladder slice), deliberately not here: this
+    slice owns the table, the migration and the merge handler, so the format bump
+    carries it and the writers land on a schema that already restores.
+    """
+
+    __tablename__ = "keyword_translations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    term: Mapped[str] = mapped_column(String(200), nullable=False)  # normalised source term
+    source_lang: Mapped[str] = mapped_column(String(16), nullable=False)  # ISO-639, lowercase
+    target_lang: Mapped[str] = mapped_column(String(16), nullable=False)  # ISO-639, lowercase
+    text: Mapped[str] = mapped_column(Text, nullable=False)  # the tentative translation
+    model: Mapped[str | None] = mapped_column(String(120))  # e.g. "granite4.1:3b"
+    prompt_version: Mapped[str | None] = mapped_column(String(40))  # TRANSLATE_PROMPT_VERSION
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        # The identity above, as a constraint the SCHEMA states rather than a
+        # convention a handler remembers.
+        UniqueConstraint(
+            "term", "source_lang", "target_lang", "model", "prompt_version",
+            name="uq_keyword_translation",
+        ),
+        # ...AND THE SAME IDENTITY, NULL-SAFE. In SQLite a UNIQUE constraint treats
+        # NULL as distinct from NULL, so the constraint above stops nothing at all when
+        # `model` and `prompt_version` are unset -- and they are nullable by design.
+        # MEASURED: two byte-identical `INSERT OR IGNORE`s with both NULL produced TWO
+        # rows. That would have made the DB's declared identity disagree with the merge
+        # handler's, which COALESCEs the same five columns, and handed `S04-06`'s writer
+        # a footgun: the obvious idiom silently fails to be idempotent exactly when the
+        # provenance is unrecorded. This expression index makes the schema enforce what
+        # the constraint above only declares.
+        Index(
+            "uq_keyword_translation_nullsafe",
+            sql_text("term"), sql_text("source_lang"), sql_text("target_lang"),
+            sql_text("COALESCE(model,'')"), sql_text("COALESCE(prompt_version,'')"),
+            unique=True,
+        ),
+        # The lookup every reader makes: "is there a tentative translation of this
+        # term into this language?"
+        Index("ix_keyword_translations_lookup", "term", "source_lang", "target_lang"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<KeywordTranslation({self.source_lang}->{self.target_lang} "
+            f"{self.term!r} ~= {self.text!r})>"
+        )
 
 
 class ArticleMentionedPlace(Base):
