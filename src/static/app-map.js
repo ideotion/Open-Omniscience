@@ -211,7 +211,16 @@
     // stay as their language-neutral codes.
     const _ooRegionDN = {};
     function ooRegionName(code, fallback) {
-      const cc = (code || "").trim().toUpperCase();
+      // ALPHA-2 IS DERIVED, NEVER ASSUMED (ruling Q301 step 1). Every surface now
+      // shows alpha-3, and `Intl.DisplayNames({type:"region"})` accepts alpha-2 and
+      // M49 ONLY -- handed `FRA` it does not throw, it returns `FRA`, so the miss is
+      // silent and reads as "CLDR has no name for this country". `ooCountryAlpha2`
+      // (app-core.js) is the one place a code changes shape; this call is what lets
+      // the ~30 existing call sites keep passing whatever form they hold.
+      const src = (code || "").trim();
+      if (!src) return fallback || "";
+      const a2 = (typeof ooCountryAlpha2 === "function") ? ooCountryAlpha2(src) : "";
+      const cc = (a2 || src).toUpperCase();
       if (!cc) return fallback || "";
       const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
@@ -226,8 +235,15 @@
     // an unknown/structurally-invalid tag. Re-derives on oo:langchange (same as names).
     const _ooLangDN = {};
     function ooLangName(code, fallback) {
-      const lc = (code || "").trim();
-      if (!lc) return fallback || "";
+      // The language twin of the derivation above (Q306 = b). `Intl.DisplayNames
+      // ({type:"language"})` wants a BCP-47 tag, so a 639-2/3 code (`fra`) comes
+      // straight back unchanged -- the same silent miss. `ooLangStorage` returns ""
+      // for a 639-3 code with no 639-1 equivalent (`pcm`, `yue`, `tet` are real
+      // catalogue values), and the original is then tried as-is: some of those ARE
+      // valid BCP-47 subtags, so asking is strictly better than refusing.
+      const src = (code || "").trim();
+      if (!src) return fallback || "";
+      const lc = ((typeof ooLangStorage === "function") ? ooLangStorage(src) : "") || src;
       const ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         if (!_ooLangDN[ui]) _ooLangDN[ui] = new Intl.DisplayNames([ui], { type: "language" });

@@ -728,6 +728,19 @@ def _name_index() -> dict[str, str]:
     return index
 
 
+#: Q303's four alpha-3 spellings, mapped back to the codes the store holds. Defined
+#: here, above `normalize_country`, because the way IN needs it; `SPECIAL_ALPHA3` -- the
+#: way OUT -- is defined with the rest of the display layer at the end of this module,
+#: and `tests/test_country_display.py` asserts the two are exact inverses. One table
+#: would be tidier; two that a test proves cannot disagree is what actually holds.
+_SPECIAL_ALPHA3_TO_CODE: dict[str, str] = {
+    "EUU": "eu",
+    "INT": "int",
+    "XKX": "xk",
+    "ANT": "an",
+}
+
+
 def normalize_country(value: str | None) -> str | None:
     """Canonicalise any country representation to a lowercase ISO-2 code.
 
@@ -741,7 +754,37 @@ def normalize_country(value: str | None) -> str | None:
     low = raw.lower()
     if low in ISO_3166_1_ALPHA2 or low in SPECIAL_CODES:
         return low
-    return _name_index().get(_slug(raw))
+    named = _name_index().get(_slug(raw))
+    if named is not None:
+        return named
+    # ALPHA-3 LAST, and the order is the point (ruling Q301 step 1: "every parameter
+    # accepts both forms"). A NAME always wins, so no answer this function already
+    # gives can change. Measured rather than assumed, in both directions: exactly
+    # three 3-letter keys exist in the name index (`drc`, `uae`, `usa`), only `usa`
+    # is also an alpha-3, and it resolves to `us` either way -- so today the order
+    # is unobservable. It is written this way because the name index is hand-edited
+    # and a future 3-letter alias would otherwise silently change meaning.
+    #
+    # FAIL-CLOSED is inherited, not re-implemented: `to_iso2` admits a 3-letter code
+    # only when it is a recognised country, so `HIC`, `WLD` and `EUU` still come back
+    # None here and an aggregate can never become a country by arriving through this
+    # door. A 4+-letter string cannot reach `to_iso2`'s alpha-3 branch at all.
+    direct = to_iso2(raw)
+    if direct is not None:
+        return direct
+    # THE DISPLAY LAYER'S OWN OUTPUT MUST COME BACK IN. Once a surface shows `EUU`,
+    # an operator can copy it into a filter box -- and `to_iso2` refuses all four of
+    # Q303's codes, because they are not ISO countries, so the parameter would
+    # silently match nothing while the screen it was copied from said `EUU`. This
+    # function is the CORPUS normaliser and already accepts `eu`, `int`, `xk` and
+    # `an` a few lines above; admitting their alpha-3 spellings adds nothing to the
+    # accepted SET, only a second spelling of a value already in it.
+    #
+    # `to_iso2` is deliberately NOT changed. It is the STATISTICS guard, and the two
+    # disagree about `eu` on purpose: in a `ref_area` it is the World Bank aggregate,
+    # here it is EUR-Lex's country. Widening the guard instead of this function is
+    # how `XD` reached the Governments dropdown in the first place.
+    return _SPECIAL_ALPHA3_TO_CODE.get(raw.upper())
 
 
 def country_display_name(value: str | None) -> str | None:
@@ -763,3 +806,160 @@ def continent_of(value: str | None) -> str | None:
     """Continent bucket for a code/name; ``None`` if unknown or supranational."""
     code = normalize_country(value)
     return CONTINENT_OF.get(code) if code else None
+
+
+# ===================================================================== #
+#  The DISPLAY layer (ruling Q301 = c step 1, Q302's note, Q303)         #
+# ===================================================================== #
+#
+# WHAT CHANGED AND WHAT DID NOT. Storage stays lowercase alpha-2 (the 0.09
+# ruling, restated in this module's header); the six ``String(2)`` columns are
+# untouched. What moves is what a PERSON SEES: every surface that shows a
+# country now shows the UPPERCASE alpha-3 CODE, with the full country name in
+# the hover bubble (invariant #17). That is Q302 as the maintainer wrote it --
+# the option they picked was labelled "name only, the code in the hover" and the
+# note beside it inverts the label, so the note is the ruling and the label is
+# context.
+#
+# WHY THIS IS NOT ``to_iso3`` WITH A ``.upper()``. ``to_iso2``/``to_iso3`` answer
+# "is this a COUNTRY?", and they fail closed against statistical aggregates on
+# purpose, which is what keeps ``XD`` off the choropleth. The display layer
+# answers a different and WIDER question -- "this value is stored in a country
+# column; how do I render it?" -- and that value space legitimately includes the
+# four SPECIAL_CODES (``eu`` EUR-Lex, ``int`` WIPO/UN, ``xk`` Kosovo, ``an`` a
+# live holiday feed), which ``to_iso3`` refuses BY DESIGN. Routing display
+# through the country guard would silently blank four real, shipped values;
+# routing the guard through display would let an aggregate become a nation.
+# They are two questions and they get two functions.
+
+#: The four values SPECIAL_CODES holds, in the alpha-3 form Q303 ruled. ``xk``
+#: would resolve through ``ISO2_TO_ISO3`` anyway (the World Bank's ``XKX`` is in
+#: the table); it is listed here so the disclosed set is one object a reader can
+#: check against the ruling, rather than three entries plus an implicit fourth.
+SPECIAL_ALPHA3: dict[str, str] = {
+    "eu": "EUU",
+    "int": "INT",
+    "xk": "XKX",
+    "an": "ANT",
+}
+
+#: Why each of those is not an ISO 3166-1 alpha-3 country code. Q303 asks for the
+#: hover to say "not an ISO code"; a bare four-word disclaimer says THAT but not
+#: WHY, and the four are not-ISO for four different reasons -- a World Bank
+#: convention, a withdrawn assignment and an app invention are different facts
+#: about how much a reader should trust the code. The short marker and the reason
+#: are therefore separate strings: the marker is the visible constant, the reason
+#: is the layered detail.
+NON_ISO_ALPHA3: dict[str, str] = {
+    "EUU": "the World Bank's code for the European Union",
+    "XKX": "the World Bank's code for Kosovo",
+    "ANT": "withdrawn in 2010 with the Netherlands Antilles; legacy rows only",
+    "INT": "defined by this app for an international body",
+}
+
+#: What a surface prints beside a non-ISO code. English here; the UI keys it and
+#: the bulletin's translator resolves it, so the twelve locales carry it once.
+NOT_AN_ISO_CODE = "not an ISO code"
+
+#: Three-state classification of a rendered country value, so a caller never has
+#: to re-derive it from the shape of the string:
+#:
+#: * ``"iso"``       -- ``code`` is an ISO 3166-1 alpha-3 country code.
+#: * ``"non-iso"``   -- we recognised the value and it has no ISO alpha-3
+#:                      (Q303's four); ``note`` says why, and it is DISCLOSED.
+#: * ``"unresolved"`` -- we could not read it. ``code`` is the raw value, shown
+#:                      as-is so legacy or junk data degrades loudly instead of
+#:                      vanishing, and ``name`` is that same raw value rather
+#:                      than an invented one.
+#:
+#: One field rather than two booleans, because two booleans can disagree and a
+#: reader then has to decide which one is authoritative.
+COUNTRY_DISPLAY_KINDS: tuple[str, ...] = ("iso", "non-iso", "unresolved")
+
+
+def country_display_code(value: str | None) -> str | None:
+    """UPPERCASE alpha-3 for any stored country representation -- the on-screen form.
+
+    Accepts everything ``normalize_country`` does (alpha-2, full names, catalog
+    slugs, ``USA``/``UK``), plus an alpha-3 that is already in the target form.
+    ``uk`` -- the law catalogue's jurisdiction value -- comes back ``GBR``, which
+    is Q303's named case and is reached through ``normalize_country``'s existing
+    alias rather than through a second table.
+
+    Returns ``None`` only for an empty value. An UNRECOGNISED value comes back
+    stripped but otherwise unchanged, matching ``country_display_name``'s
+    long-standing contract: junk stays visible rather than being masked by a
+    fabricated code. Use :func:`country_display` when the caller needs to tell
+    the two apart.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    code = normalize_country(raw)
+    if code is not None:
+        special = SPECIAL_ALPHA3.get(code)
+        if special:
+            return special
+        iso3 = to_iso3(code)
+        if iso3:
+            return iso3
+    # Already alpha-3? ``to_iso3`` passes a recognised one through and fails
+    # closed on an aggregate, so ``HIC`` and ``WLD`` do not arrive here as
+    # nations -- they fall to the raw-value branch below and are labelled
+    # ``unresolved``, which is the honest answer for a country surface.
+    direct = to_iso3(raw)
+    if direct:
+        return direct
+    upper = raw.upper()
+    if upper in NON_ISO_ALPHA3:
+        return upper
+    return raw
+
+
+def country_display(value: str | None) -> dict[str, str | None]:
+    """Everything a surface needs to render one country, resolved once.
+
+    ``{"code", "name", "kind", "note"}`` -- the code for the screen, the full
+    country name for the hover, the three-state ``kind`` above, and the
+    "not an ISO code" reason when there is one (``None`` otherwise, never an
+    empty string: an absent disclosure and a blank one are different facts).
+
+    THE NAME IS ENGLISH, and that is a stated gap rather than an oversight.
+    ``COUNTRY_NAMES`` is an English table and this repository ships no localised
+    country-name source; picking one (a vendored CLDR subset, a new dependency,
+    3,000 new locale keys) is a data decision the maintainer has not taken
+    (brief ``S04-05`` SS6). Server-rendered callers pass this name through their own
+    translator -- the bulletin's ``Translator.t`` keys on the English string and
+    REPORTS every gap -- so the localisation arrives the day the catalogues carry
+    it, with no change here and no fabricated name in the meantime. The browser
+    has its own CLDR and does not use this path.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return {"code": None, "name": None, "kind": "unresolved", "note": None}
+    code = country_display_code(raw)
+    assert code is not None  # non-empty input always yields a code or the raw value
+    upper = code.upper()
+    if upper in NON_ISO_ALPHA3:
+        return {
+            "code": upper,
+            "name": country_display_name(raw),
+            "kind": "non-iso",
+            "note": NON_ISO_ALPHA3[upper],
+        }
+    # ``ISO3_TO_ISO2`` is keyed LOWERCASE (the module stores every code that way and
+    # upper-cases only on the way out), so this comparison must lower the code it is
+    # testing. Getting that wrong filed every real country as ``unresolved`` -- caught
+    # by printing the helper's answer for ``fr``, not by a test, because a test written
+    # in the same hour would have asserted the same wrong shape.
+    if upper.lower() in ISO3_TO_ISO2:
+        return {
+            "code": upper,
+            "name": country_display_name(raw),
+            "kind": "iso",
+            "note": None,
+        }
+    # Unrecognised: the raw value is what goes on screen AND what stands in for
+    # the name. Never a guess, and never an empty string -- a blank cell reads as
+    # "this source has no country", which is a different claim.
+    return {"code": code, "name": raw, "kind": "unresolved", "note": None}

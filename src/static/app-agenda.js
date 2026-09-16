@@ -978,9 +978,16 @@
     // convention, never the sole label (flags ≠ identity; some entities have none,
     // and emoji flags render inconsistently on some platforms).
     function agFlag(cc) {
+      // Q307: the emoji is DERIVED from the alpha-2, which is itself derived from
+      // whatever form the code arrives in. The old body gated on /^[A-Z]{2}$/ and
+      // fell through to the globe for anything else -- correct while every code was
+      // alpha-2, and it would have silently globed EVERY country the moment the
+      // agenda started showing alpha-3. `ooCountryFlag` (app-core.js) owns the
+      // derivation now, so the flag and the code on screen cannot disagree.
       if (!cc) return "";
-      cc = cc.toUpperCase();
-      if (/^[A-Z]{2}$/.test(cc)) return String.fromCodePoint(...[...cc].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65));
+      if (typeof ooCountryFlag === "function") return ooCountryFlag(cc);
+      const up = String(cc).toUpperCase();
+      if (/^[A-Z]{2}$/.test(up)) return String.fromCodePoint(...[...up].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65));
       return "\u{1F310}";   // globe for INT / non-ISO entities
     }
     function agLocale() { return document.documentElement.lang || "en"; }
