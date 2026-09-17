@@ -890,9 +890,17 @@ class QueryExpander:
                 "(configs/keyword_rings_generated.yml); a term denoting several concepts is "
                 "NOT expanded and its senses are listed instead"
             ),
+            # NO COUNT IN THE SENTENCE, and that is the fix rather than the wording.
+            # It read "Rings cover 698 concepts" -- a number baked into prose, which goes
+            # stale the moment the ring file grows AND makes the sentence unkeyable, since
+            # a locale key must match verbatim. A Chromium walk (2026-09-17) found this
+            # caveat rendered in ENGLISH in ar, zh, ja and hi while every other string on
+            # the rail was translated: it is server prose, and the client had no key for
+            # it. The count belongs in a payload field that reports counts; a caveat that
+            # carries one cannot be translated and cannot stay true.
             "caveat": (
                 "This search matched the concept in every language the ring covers, not only "
-                "the words you typed. Rings cover 698 concepts, so most terms are unaffected."
+                "the words you typed. Most terms are in no ring and are unaffected."
             ),
         }
         if any_capped:

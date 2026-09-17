@@ -1,0 +1,256 @@
+{
+  "url": "http://127.0.0.1:8010",
+  "term": "climate",
+  "locales": [
+    {
+      "locale": "en",
+      "dir": "ltr",
+      "lang_applied": "en",
+      "rail_on_screen": true,
+      "rail_text": "climate also matched as the concept “climate” — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\nCount each form\nThis search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected. Show only the words I typed",
+      "caveat_line": "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected. Show only the words I typed",
+      "rail_has_latin_default": false,
+      "article_rows": 50,
+      "rows_with_language_cell": 50,
+      "columns": [
+        "TITLE",
+        "SOURCE",
+        "LANGUAGE",
+        "PUBLISHED",
+        "TOP KEYWORD"
+      ],
+      "rail_buttons": [
+        "Count each form",
+        "Show only the words I typed"
+      ],
+      "count_trigger_present": true,
+      "form_counts_text": "climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 160 articles in total, counted once each These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.",
+      "form_counts_rendered": true,
+      "cap": {
+        "url_after_off": "http://127.0.0.1:8010/?analyze=climate&cap=0#analyze",
+        "url_carries_cap0": true,
+        "rail_after_off": "climate also matched as the concept “climate” — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\nCount each form\nSearching every form of the concept. Limit the search to the most",
+        "url_after_on": "http://127.0.0.1:8010/?analyze=climate#analyze",
+        "cap0_cleared": true
+      },
+      "expand_off_url_carries": true,
+      "narrowed_rail_text": "Showing only the words you typed. Search the concept in every language",
+      "total_narrowed": 156,
+      "total_widened": 160,
+      "expand0_cleared": true,
+      "grouped_headings": 5,
+      "rows_when_grouped": 50,
+      "overflow_px": 0
+    },
+    {
+      "locale": "ar",
+      "dir": "rtl",
+      "lang_applied": "ar",
+      "rail_on_screen": true,
+      "rail_text": "طوبق climate أيضًا بوصفه المفهوم «climate» — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\nاحسب كل صيغة\nطابق هذا البحث المفهوم في كل لغة تغطيها الحلقة، وليس الكلمات التي كتبتها فقط. معظم المصطلحات لا تنتمي إلى أي حلقة ولا تتأثر بذلك. عرض الكلمات التي كتبتها فقط",
+      "caveat_line": "طابق هذا البحث المفهوم في كل لغة تغطيها الحلقة، وليس الكلمات التي كتبتها فقط. معظم المصطلحات لا تنتمي إلى أي حلقة ولا تتأثر بذلك. عرض الكلمات التي كتبتها فقط",
+      "rail_has_latin_default": false,
+      "article_rows": 50,
+      "rows_with_language_cell": 50,
+      "columns": [
+        "العنوان",
+        "المصدر",
+        "اللغة",
+        "نُشِر",
+        "الكلمة المفتاحية الأبرز"
+      ],
+      "rail_buttons": [
+        "احسب كل صيغة",
+        "عرض الكلمات التي كتبتها فقط"
+      ],
+      "count_trigger_present": true,
+      "form_counts_text": "climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 160 مقالاً إجمالاً، كل واحد محسوب مرة واحدة هذه الأرقام متداخلة: المقال الذي يحمل صيغتين من صيغ المفهوم يُحسب تحت كل واحدة منهما، ويُحسب مرةً واحدة فقط في الإجمالي، لذلك لا يساوي مجموع أرقام الصيغ هذا الإجمالي.",
+      "form_counts_rendered": true,
+      "cap": {
+        "url_after_off": "http://127.0.0.1:8010/?analyze=climate&cap=0#analyze",
+        "url_carries_cap0": true,
+        "rail_after_off": "طوبق climate أيضًا بوصفه المفهوم «climate» — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\nاحسب كل صيغة\nالبحث عن جميع صيغ المفهوم. حصر البحث في الصيغ الأكثر ذكرًا\nطابق هذا الب",
+        "url_after_on": "http://127.0.0.1:8010/?analyze=climate#analyze",
+        "cap0_cleared": true
+      },
+      "expand_off_url_carries": true,
+      "narrowed_rail_text": "يتم عرض الكلمات التي كتبتها فقط. البحث عن المفهوم بكل اللغات",
+      "total_narrowed": 156,
+      "total_widened": 160,
+      "expand0_cleared": true,
+      "grouped_headings": 5,
+      "rows_when_grouped": 50,
+      "overflow_px": 0
+    },
+    {
+      "locale": "zh",
+      "dir": "ltr",
+      "lang_applied": "zh",
+      "rail_on_screen": true,
+      "rail_text": "climate 也作为概念“climate”被匹配 — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\n统计每个词形\n这次搜索匹配的是该概念在语义环覆盖的所有语言，而不仅是你输入的词。大多数词语不在任何语义环中，不受影响。 仅显示我输入的词",
+      "caveat_line": "这次搜索匹配的是该概念在语义环覆盖的所有语言，而不仅是你输入的词。大多数词语不在任何语义环中，不受影响。 仅显示我输入的词",
+      "rail_has_latin_default": false,
+      "article_rows": 50,
+      "rows_with_language_cell": 50,
+      "columns": [
+        "标题",
+        "信源",
+        "语言",
+        "发布时间",
+        "最常出现的关键词"
+      ],
+      "rail_buttons": [
+        "统计每个词形",
+        "仅显示我输入的词"
+      ],
+      "count_trigger_present": true,
+      "form_counts_text": "climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 共 160 篇文章，每篇只计一次 这些数字有重叠：同时包含该概念两种词形的文章会分别计入这两种词形，但在总数中只计一次，因此各词形的数字相加并不等于总数。",
+      "form_counts_rendered": true,
+      "cap": {
+        "url_after_off": "http://127.0.0.1:8010/?analyze=climate&cap=0#analyze",
+        "url_carries_cap0": true,
+        "rail_after_off": "climate 也作为概念“climate”被匹配 — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\n统计每个词形\n正在搜索该概念的所有词形。 将搜索限制在被提及最多的词形\n这次搜索匹配的是该概念在语义环覆盖的所有语言，而不仅是你输入的词。大多数词语不在任何语义环中，不受影响。 仅显示我输入的词",
+        "url_after_on": "http://127.0.0.1:8010/?analyze=climate#analyze",
+        "cap0_cleared": true
+      },
+      "expand_off_url_carries": true,
+      "narrowed_rail_text": "仅显示你输入的词。 在所有语言中搜索该概念",
+      "total_narrowed": 156,
+      "total_widened": 160,
+      "expand0_cleared": true,
+      "grouped_headings": 5,
+      "rows_when_grouped": 50,
+      "overflow_px": 0
+    },
+    {
+      "locale": "ja",
+      "dir": "ltr",
+      "lang_applied": "ja",
+      "rail_on_screen": true,
+      "rail_text": "climate は概念「climate」としても一致しました — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\n各語形を集計\nこの検索は、入力した語だけでなく、リングが含むすべての言語でこの概念に一致しました。ほとんどの語はどのリングにも属さず、影響を受けません。 入力した語だけを表示",
+      "caveat_line": "この検索は、入力した語だけでなく、リングが含むすべての言語でこの概念に一致しました。ほとんどの語はどのリングにも属さず、影響を受けません。 入力した語だけを表示",
+      "rail_has_latin_default": false,
+      "article_rows": 50,
+      "rows_with_language_cell": 50,
+      "columns": [
+        "タイトル",
+        "情報源",
+        "言語",
+        "公開日",
+        "最頻出キーワード"
+      ],
+      "rail_buttons": [
+        "各語形を集計",
+        "入力した語だけを表示"
+      ],
+      "count_trigger_present": true,
+      "form_counts_text": "climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · 合計 160 件の記事、それぞれ1回ずつ数えられます これらの数字は重複します。この概念の2つの語形を含む記事は、それぞれの語形の下で数えられますが、合計では一度だけ数えられます。そのため、語形ごとの数字を足しても、その合計にはなりません。",
+      "form_counts_rendered": true,
+      "cap": {
+        "url_after_off": "http://127.0.0.1:8010/?analyze=climate&cap=0#analyze",
+        "url_carries_cap0": true,
+        "rail_after_off": "climate は概念「climate」としても一致しました — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\n各語形を集計\n概念のすべての語形を検索中。 検索を最も多く言及された語形に限定\nこの検索は、入力した語だけでなく、リングが含むすべての言語でこの概念に一致しました。ほとんどの語はどのリングにも",
+        "url_after_on": "http://127.0.0.1:8010/?analyze=climate#analyze",
+        "cap0_cleared": true
+      },
+      "expand_off_url_carries": true,
+      "narrowed_rail_text": "入力した語のみを表示しています。 すべての言語でこの概念を検索",
+      "total_narrowed": 156,
+      "total_widened": 160,
+      "expand0_cleared": true,
+      "grouped_headings": 5,
+      "rows_when_grouped": 50,
+      "overflow_px": 0
+    },
+    {
+      "locale": "hi",
+      "dir": "ltr",
+      "lang_applied": "hi",
+      "rail_on_screen": true,
+      "rail_text": "climate को “climate” अवधारणा के रूप में भी मिलाया गया — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\nहर रूप गिनें\nयह खोज उस अवधारणा से हर उस भाषा में मिली जिसे रिंग ढकती है, न कि केवल आपके द्वारा लिखे गए शब्दों से। अधिकतर शब्द किसी रिंग में नहीं हैं और उन पर कोई असर नहीं पड़ता। केवल वे शब्द दिखाएँ जो मैंने लिखे",
+      "caveat_line": "यह खोज उस अवधारणा से हर उस भाषा में मिली जिसे रिंग ढकती है, न कि केवल आपके द्वारा लिखे गए शब्दों से। अधिकतर शब्द किसी रिंग में नहीं हैं और उन पर कोई असर नहीं पड़ता। केवल वे शब्द दिखाएँ जो मैंने लिखे",
+      "rail_has_latin_default": false,
+      "article_rows": 50,
+      "rows_with_language_cell": 50,
+      "columns": [
+        "शीर्षक",
+        "स्रोत",
+        "भाषा",
+        "प्रकाशित",
+        "शीर्ष कीवर्ड"
+      ],
+      "rail_buttons": [
+        "हर रूप गिनें",
+        "केवल वे शब्द दिखाएँ जो मैंने लिखे"
+      ],
+      "count_trigger_present": true,
+      "form_counts_text": "climate 156 · climat 3 · clima 1 · klima 1 · klimaat 0 · климат 0 · مناخ 0 · कुल 160 लेख, प्रत्येक को एक बार गिना गया ये आंकड़े ओवरलैप करते हैं: संकल्पना के दो रूपों वाला कोई लेख उन दोनों रूपों में अलग-अलग गिना जाता है, लेकिन कुल में केवल एक ही बार गिना जाता है, इसलिए हर रूप के आंकड़े जोड़ने पर कुल के बराबर नहीं आते।",
+      "form_counts_rendered": true,
+      "cap": {
+        "url_after_off": "http://127.0.0.1:8010/?analyze=climate&cap=0#analyze",
+        "url_carries_cap0": true,
+        "rail_after_off": "climate को “climate” अवधारणा के रूप में भी मिलाया गया — en: climate · fr: climat · de: klima · es: clima · it: clima · pt: clima · nl: klimaat · ar: مناخ · ru: климат\nहर रूप गिनें\nसंकल्पना के सभी रूप खोजे जा रहे हैं। खोज को सबसे अधिक उल्लिख",
+        "url_after_on": "http://127.0.0.1:8010/?analyze=climate#analyze",
+        "cap0_cleared": true
+      },
+      "expand_off_url_carries": true,
+      "narrowed_rail_text": "केवल आपके द्वारा लिखे गए शब्द दिखाए जा रहे हैं। इस अवधारणा को सभी भाषाओं में खोजें",
+      "total_narrowed": 156,
+      "total_widened": 160,
+      "expand0_cleared": true,
+      "grouped_headings": 5,
+      "rows_when_grouped": 50,
+      "overflow_px": 0
+    }
+  ],
+  "surfaces": [
+    {
+      "surface": "search",
+      "locale": "en",
+      "errors": [],
+      "dir": "ltr"
+    },
+    {
+      "surface": "insights",
+      "locale": "en",
+      "errors": [],
+      "dir": "ltr"
+    },
+    {
+      "surface": "observatory",
+      "locale": "en",
+      "errors": [],
+      "dir": "ltr"
+    },
+    {
+      "surface": "map",
+      "locale": "en",
+      "errors": [],
+      "dir": "ltr"
+    },
+    {
+      "surface": "search",
+      "locale": "ar",
+      "errors": [],
+      "dir": "rtl"
+    },
+    {
+      "surface": "insights",
+      "locale": "ar",
+      "errors": [],
+      "dir": "rtl"
+    },
+    {
+      "surface": "observatory",
+      "locale": "ar",
+      "errors": [],
+      "dir": "rtl"
+    },
+    {
+      "surface": "map",
+      "locale": "ar",
+      "errors": [],
+      "dir": "rtl"
+    }
+  ]
+}

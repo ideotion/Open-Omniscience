@@ -46,6 +46,11 @@
       // second enumerator, and the two guards that inspect this event already walk every
       // handler for exactly that reason.
       try { if (typeof ooKwRepaintOnLangChange === "function") ooKwRepaintOnLangChange(); } catch (_e) {}
+      // S04-07: the analysis window's cross-language rail is the same frozen-locale
+      // class -- its sentences are built at render time from a tf() frame plus server
+      // prose, so the walker cannot reach them. It redraws from the payload it already
+      // has and NEVER fetches, so a switch cannot re-run a search behind the reader.
+      try { if (typeof _anRepaintXLang === "function") _anRepaintXLang(); } catch (_e) {}
       try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
       // World-map lens desc + story chips are rendered at render time (kindLabel/t), so
       // re-render them too so the whole map surface tracks the new locale (field-test Item 6).
@@ -377,11 +382,17 @@
         // localStorage token, taken and deleted here) so the new window can show WHICH
         // Lead it came from and on what basis. Absent -> no header, never an invented one.
         const prov = _anProvTake(sp.get("prov"));
+        // Q504: the cross-language lens travels in the link, so a shared "?analyze=climat
+        // &expand=0" opens the search the sender was actually looking at rather than the
+        // default one. It rides as part of the SEED, not as a setting applied beside it:
+        // the spawned tab's own _anApplySeed would otherwise overwrite it a moment later
+        // and rewrite the URL without it.
+        const lens = _anReadLensFromUrl();
         if (corpus) {
           const ids = corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
-          if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov);
+          if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov, lens);
         } else if (analyze) {
-          openAnalysisFor(analyze, prov ? {prov} : undefined);
+          openAnalysisFor(analyze, (prov || lens) ? {prov, lens} : undefined);
         }
         // Deep-link a specific analysis subtab (?tab=keywords from an in-article
         // keyword click). _anSubtabs is wired just AFTER this IIFE, so stash the

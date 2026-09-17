@@ -120,6 +120,10 @@
           // Ruling 16: the Lead's provenance is part of the seed, so a reload does not
           // silently drop the header and leave the analysis looking self-originated.
           prov: tb.prov || null,
+          // Q504: the cross-language lens is part of the seed too. Without it a reader
+          // who narrowed a tab to the words they typed got the widened search back on
+          // the next reload, with nothing to say the view had changed under them.
+          lens: tb.lens || null,
         }));
         localStorage.setItem(_AN_TABS_KEY, JSON.stringify({tabs: slim, active: _anActiveId}));
       } catch (_e) { /* private mode — tabs just won't persist */ }
@@ -158,6 +162,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anIds = (tb.kind === "ids" && Array.isArray(tb.ids)) ? tb.ids.slice(0, 5000) : null;
       _anCommodity = tb.commodity || null;
+      // The lens belongs to the TAB: switching between two analyses must not carry one
+      // reader's narrowing onto the other's corpus.
+      _anApplyLensSeed(tb.lens);
+      _anWriteLensToUrl();
       _anFillLangSelect();   // ensure the language <select> is built before seeding it
       $("an-adv-query").value = tb.query || "";
       $("an-adv-source").value = tb.src || "";
@@ -271,16 +279,16 @@
     }
     // Open the analysis window over an EXACT article set (echo / convergence / a card's
     // precise selection). The corpus is exactly these ids, not a re-run search.
-    function openAnalysisForIds(ids, label, prov) {
+    function openAnalysisForIds(ids, label, prov, lens) {
       _anSpawn({kind: "ids", ids: Array.isArray(ids) ? ids.slice(0, 5000) : [], label: label || "",
-                query: "", prov: prov || null});
+                query: "", prov: prov || null, lens: lens || null});
     }
     // Open the analysis window seeded with a query (omnibar Enter, keyword/card click).
     // A commodity click carries {commodity:{symbol,name,unit}} for the Price subtab.
     function openAnalysisFor(query, opts) {
       const q = (query || "").trim();
       _anSpawn({kind: "query", query: q, label: q, commodity: (opts && opts.commodity) || null,
-                prov: (opts && opts.prov) || null});
+                prov: (opts && opts.prov) || null, lens: (opts && opts.lens) || null});
     }
     // Retired #corpus-win modal -> a keyword now spawns its own analysis tab (one
     // surface). All openCorpus call sites get the spawn behaviour for free.
@@ -517,18 +525,40 @@
       }
       return out.slice(0, 8);
     }
+    // The Trend tab builds its URLs from a TERM, not from the params object, so the lens
+    // `loadAnalysis` applied does not travel with them on its own. This lifts it back off
+    // those params as a suffix. Without it the Trend tab charts the literal term while
+    // the Articles list beside it counts the concept -- the exact disagreement Q501
+    // exists to remove, one tab further along than the one that was fixed first.
+    function _anLensSuffix(p) {
+      if (!p || !p.get) return "";
+      const out = new URLSearchParams();
+      ["expand", "literal_cap", "ui_lang"].forEach((k) => {
+        const v = p.get(k); if (v != null) out.set(k, v);
+      });
+      // A pin is `term:ring_id`, so one aimed at the typed term simply does not apply to
+      // a related keyword -- the server reports it rather than silently widening.
+      (p.getAll ? p.getAll("sense") : []).forEach((v) => out.append("sense", v));
+      const qs = out.toString();
+      return qs ? "&" + qs : "";
+    }
     async function renderAnTrend(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("an-trend"); if (!host) return;
       const term = (p && p.get && p.get("query")) || anQuery() || "";
-      if (_anTrend.key === term && _anTrend.counts.length) { drawAnTrend(); return; }   // cached on this term
+      const lens = _anLensSuffix(p);
+      // Cached on the term AND THE LENS. Keyed on the term alone, a reader who narrowed
+      // to the words they typed would be handed the widened chart straight from the
+      // cache -- which reads as the toggle being broken rather than as a stale cache.
+      const key = term + "\u0000" + lens;
+      if (_anTrend.key === key && _anTrend.counts.length) { drawAnTrend(); return; }
       if (!term) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`; return; }
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      _anTrend.key = term; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts";
+      _anTrend.key = key; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts";
       try {
         const [main, assoc] = await Promise.all([
-          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term)).catch(() => null),
-          api("/api/insights/associations?term=" + encodeURIComponent(term) + "&limit=8").catch(() => null),
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term) + lens).catch(() => null),
+          api("/api/insights/associations?term=" + encodeURIComponent(term) + "&limit=8" + lens).catch(() => null),
         ]);
         const series = [];
         if (main && main.resolved && (main.points || []).length)
@@ -538,7 +568,7 @@
           .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
         const palette = ["var(--ok)", "var(--warn)", "#6ea8fe", "#c084fc"];
         const relTrends = await Promise.all(rel.map(rt =>
-          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt)).catch(() => null)));
+          api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
             series.push({ label: rel[i], unit: t("articles"), color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
@@ -1104,37 +1134,148 @@
     // (R2a: the reader picks the sense). Keyed on the NORMALIZED term the payload
     // publishes, so the key the UI sends is the key the ring index is built on.
     let _anSenses = {};
+    // Q503's NOTE: the reader may switch the 40-form fan-out cap OFF. ON by default, as
+    // the ruling asks. A THIRD lens value beside the two above, because "search every
+    // language" and "search every FORM of every language" are different questions.
+    let _anCap = true;
+    // Grouped or interleaved (Q508's note). Interleaved by date is the ruled default;
+    // the group-by is the note's addition, and it is a VIEW over the same rows -- it
+    // never changes which articles matched.
+    let _anGroupByLang = false;
+    // The last payload the expansion rail was drawn from — see `_anRepaintXLang`.
+    let _anLastCross = null;
+    // Registered in app-boot's ONE `oo:langchange` listener (never a second listener:
+    // a second enumerator is a second thing to forget). Redraws the rail IN PLACE from
+    // the retained payload — no fetch, and nothing else on the page moves.
+    function _anRepaintXLang() {
+      const host = $("an-xlang");
+      if (!host || !_anLastCross) return;
+      const html = _crossLangNotice(_anLastCross.cross, _anLastCross.narrowed, _anLastCross.capOff);
+      if (!html) { host.outerHTML = ""; return; }
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      const next = tmp.firstElementChild;
+      if (next) host.replaceWith(next);
+    }
+
+    // ONE lens, applied to EVERY request the analysis window makes -- the Articles list
+    // AND each tab's own endpoint. Before this, `_articleQuery` carried the lens and the
+    // insights fetches built their URLs straight from the captured params, so flipping
+    // the toggle changed the Articles tab and nothing else: the two halves of one window
+    // answered about different concepts while looking like one view. Q501's whole point
+    // is that they cannot.
+    function _anApplyLens(q) {
+      // IDEMPOTENT. `loadAnalysis` applies the lens once to the params every tab reads,
+      // and `_articleQuery` applies it again to its own copy -- so `sense`, which is
+      // APPENDED rather than set, has to be cleared first or a second pass doubles every
+      // pin and the server sees each choice twice.
+      q.delete("expand"); q.delete("literal_cap"); q.delete("ui_lang"); q.delete("sense");
+      // An id-seeded corpus is an exact set with no term to widen, so sending the lens
+      // would offer a choice that does not exist.
+      if (!q.get("query")) return q;
+      if (!_anExpand) q.set("expand", "false");
+      if (!_anCap) q.set("literal_cap", "false");
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
+      if (lang) q.set("ui_lang", lang);
+      // Repeatable, one per chosen term. Sending a sense with expansion off would be
+      // meaningless (nothing is expanded), so it rides inside the same guard.
+      if (_anExpand) {
+        Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
+      }
+      return q;
+    }
     function _articleQuery(p) {
       const q = new URLSearchParams(p);
       const seeded = q.get("article_ids");
       if (seeded) { q.set("ids", seeded); q.delete("article_ids"); }
-      // Only ever sent for a TEXT query: an id-seeded corpus is an exact set and there is
-      // no term to widen, so sending it would suggest a choice that does not exist.
-      if (q.get("query")) {
-        if (!_anExpand) q.set("expand", "false");
-        const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
-        if (lang) q.set("ui_lang", lang);
-        // Repeatable, one per chosen term. Sent even when expansion is off would be
-        // meaningless (nothing is expanded), so it rides inside the same guard.
-        if (_anExpand) {
-          Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
-        }
-      }
-      return q;
+      return _anApplyLens(q);
+    }
+    // The lens as a SEED value: persisted with the tab and round-tripped through the URL
+    // (Q504). `senses` is a small {term: ring_id} map and `expand`/`cap` are booleans, so
+    // all three inline in a query string -- no need for the localStorage-token shape the
+    // provenance payload uses, and a link a reader sends someone else then opens the same
+    // search rather than the default one.
+    function _anLensSeed() {
+      return {expand: _anExpand, cap: _anCap, senses: Object.assign({}, _anSenses)};
+    }
+    function _anApplyLensSeed(seed) {
+      const L = seed || {};
+      // `!== false` rather than truthiness: a seed written before this shipped carries
+      // NEITHER key, and an absent lens means the DEFAULT (both on), not "off".
+      _anExpand = L.expand !== false;
+      _anCap = L.cap !== false;
+      _anSenses = (L.senses && typeof L.senses === "object") ? Object.assign({}, L.senses) : {};
+    }
+    // Q504: the lens lives in the URL as well as in the tab, so a reload, a Back and a
+    // shared link all reproduce the search rather than the default. Written with
+    // replaceState -- flipping a lens is not a navigation, and pushing one would make
+    // Back undo a toggle instead of leaving the tab.
+    function _anWriteLensToUrl() {
+      try {
+        const sp = new URLSearchParams(location.search);
+        if (_anExpand) sp.delete("expand"); else sp.set("expand", "0");
+        if (_anCap) sp.delete("cap"); else sp.set("cap", "0");
+        sp.delete("sense");
+        // The pins are written EVEN WITH EXPANSION OFF, and that is not the same rule as
+        // `_anApplyLens`'s. The URL is STATE, the request is an ACTION: a pin is
+        // meaningless to send when nothing is being expanded, but it is still the sense
+        // this reader chose, and `_anLensSeed` (the tab's own persistence) keeps it
+        // unconditionally. Gating it here too would leave the two persistence paths
+        // disagreeing -- a reload would restore the pin and a shared link would not.
+        Object.keys(_anSenses).forEach((k) => sp.append("sense", k + ":" + _anSenses[k]));
+        const qs = sp.toString();
+        history.replaceState(null, "", (qs ? "?" + qs : location.pathname) + location.hash);
+      } catch (_e) { /* a hostile history state must never break a toggle */ }
+    }
+    // The other direction, and PURE (a query string -> a lens seed, or null when the URL
+    // carries no lens at all). It deliberately does NOT assign the globals: a deep link's
+    // lens has to become the SEED of the tab the link opens, not a setting applied beside
+    // it -- otherwise `_anApplySeed` would immediately overwrite it with the new tab's
+    // (absent) lens and `_anWriteLensToUrl` would erase it from the URL in the same
+    // breath, which is exactly what the first version of this did.
+    function _anParseLens(search) {
+      const sp = new URLSearchParams(search || "");
+      if (!sp.has("expand") && !sp.has("cap") && !sp.has("sense")) return null;
+      const senses = {};
+      // A pin is validated SERVER-side against the rings the term already belongs to
+      // (a stale or hand-edited one is reported, never applied), so the only thing to
+      // do here is refuse a malformed pair rather than guess at it.
+      sp.getAll("sense").forEach((raw) => {
+        const i = String(raw).lastIndexOf(":");
+        if (i <= 0) return;
+        const term = String(raw).slice(0, i).trim().toLowerCase();
+        const ring = String(raw).slice(i + 1).trim();
+        if (term && ring) senses[term] = ring;
+      });
+      return {expand: sp.get("expand") !== "0", cap: sp.get("cap") !== "0", senses};
+    }
+    function _anReadLensFromUrl() {
+      try { return _anParseLens(location.search); } catch (_e) { return null; }
     }
 
     // The R1 honesty rail, rendered by default: expansion changed WHICH articles matched,
     // so the surface says so, names the concept and its per-language members, and offers
     // one click back to the literal term. PURE (payload -> html) so it can be driven in
     // node without a browser — the render is the disclosure, so it is worth testing.
-    function _crossLangNotice(cross, narrowed) {
+    function _crossLangNotice(cross, narrowed, capOff) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (narrowed) {
         return `<div class="hint" id="an-xlang">${esc(t("Showing only the words you typed."))} `
           + `<button type="button" class="linkish" onclick="_anSetExpand(true)">`
           + `${esc(t("Search the concept in every language"))}</button></div>`;
       }
-      if (!cross) return "";
+      if (!cross) {
+        // The cap is a lens the READER set, so its state is known here even when the
+        // payload has nothing to disclose -- and a reader who turned the limit off and
+        // then searched a term that touches no ring would otherwise have no way back to
+        // the default, with nothing on screen to say the lens was still on.
+        if (capOff) {
+          return `<div class="hint" id="an-xlang">${esc(t("Searching every form of the concept."))} `
+            + `<button type="button" class="linkish" onclick="_anSetCap(true)">`
+            + `${esc(t("Limit the search to the most-mentioned forms"))}</button></div>`;
+        }
+        return "";
+      }
       // A sentence carrying a VALUE cannot be keyed as a whole (the term and the concept
       // vary), so the FRAME is a keyable {placeholder} template and the data is
       // interpolated after translation — OOI18N.tf, the composite-string discipline.
@@ -1181,29 +1322,147 @@
           parts.push(`<div>${esc(term.term)}${missNote(term)}</div>`);
         }
       }
-      if (!parts.length) return "";
+      if (!parts.length && !capOff) return "";
       const back = cross.expanded
         ? ` <button type="button" class="linkish" onclick="_anSetExpand(false)">`
           + `${esc(t("Show only the words I typed"))}</button>`
         : "";
-      return `<div class="hint" id="an-xlang" title="${esc(cross.caveat || "")}">`
-        + parts.join("") + `<div class="muted">${esc(cross.caveat || "")}${back}</div></div>`;
+      // Q503's NOTE, both ways round. The payload says `capped` only when a cap actually
+      // BIT -- so the sentence that offers to lift it comes from the payload, and the one
+      // that offers to restore it comes from the reader's own lens, because with the cap
+      // off there is nothing for the server to report. The two are never both drawn.
+      let cap = "";
+      if (cross.capped) {
+        cap = `<div class="muted">${esc(cross.cap_caveat ? t(cross.cap_caveat) : "")} `
+          + `<button type="button" class="linkish" onclick="_anSetCap(false)">`
+          + `${esc(t("Search every form"))}</button></div>`;
+      } else if (capOff) {
+        cap = `<div class="muted">${esc(t("Searching every form of the concept."))} `
+          + `<button type="button" class="linkish" onclick="_anSetCap(true)">`
+          + `${esc(t("Limit the search to the most-mentioned forms"))}</button></div>`;
+      }
+      // Q509: how many articles each FORM matches. LAZY -- it is N counts over the corpus,
+      // so it is a click, never part of the search. One trigger per expanded term, because
+      // the endpoint answers about one term; `_anFormCounts` writes into the slot below it.
+      const counts = (cross.terms || []).filter((x) => x.expanded).map((x) =>
+        `<div class="muted" style="margin-top:4px">`
+        + `<button type="button" class="linkish"`
+        + ` onclick="_anFormCounts(${esc(JSON.stringify(x.term))}, ${esc(JSON.stringify(x.normalized || x.term))})"`
+        + ` title="${esc(t("Counts the articles each form of the concept matches. It runs no new search on this list."))}">`
+        + `${esc(t("Count each form"))}</button>`
+        + `<span id="an-xforms-${esc(_anSlug(x.normalized || x.term))}"></span></div>`).join("");
+      // The caveat is SERVER prose, so it goes through `t()` exactly as the Lead's own
+      // caveat does in `_anRenderProvenance`. Without it the rail reads in English on a
+      // page whose every other string is translated -- measured in ar/zh/ja/hi.
+      const cav = cross.caveat ? t(cross.caveat) : "";
+      return `<div class="hint" id="an-xlang" title="${esc(cav)}">`
+        + parts.join("") + counts + cap
+        + `<div class="muted">${esc(cav)}${back}</div></div>`;
+    }
+    // A DOM-id-safe slug for a term that may be Arabic, Japanese or hyphenated. Not a
+    // hash: the id has to be reproducible from the same term on the next render, and
+    // collisions only matter within one notice (a handful of terms).
+    function _anSlug(s) {
+      return String(s == null ? "" : s).replace(/[^a-zA-Z0-9_-]/g, (c) =>
+        "u" + c.codePointAt(0).toString(36));
+    }
+    // PURE (payload -> html), so the sentence that carries the numbers is testable without
+    // a browser. THREE things it may never do, each one a way this readout could lie:
+    //   * present the per-form figures as parts of a whole -- they OVERLAP (an article
+    //     carrying two forms is counted under each), so the payload's caveat travels with
+    //     them and the total is labelled as the distinct count;
+    //   * print a 0 for a form the server could not count -- that is a different fact, and
+    //     the payload marks it `unmeasured` for exactly this reason;
+    //   * let the measured list read as the whole concept when the cap bit -- so
+    //     "N of M forms" is stated whenever those two numbers differ.
+    function _anFormCountsHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      if (!d || !Array.isArray(d.forms) || !d.forms.length) {
+        return ` <span class="muted">${esc(t("No forms to count."))}</span>`;
+      }
+      // The app-wide shared formatter (the units/precision ruling), guarded the same way
+      // the price chart above guards it -- these are integer article counts, so 0 decimals.
+      const n = (x) => (typeof fmtNum === "function" ? fmtNum(x, 0) : String(x));
+      const chips = d.forms.map((f) => (f.articles == null)
+        ? `<span class="muted" title="${esc(f.unmeasured ? t(f.unmeasured) : t("This form could not be counted."))}">`
+          + `${esc(f.form)} —</span>`
+        : `<span>${esc(f.form)} <b>${esc(n(f.articles))}</b></span>`).join(" · ");
+      let out = ` ${chips}`;
+      if (d.total != null) {
+        out += ` <span>· ${esc(tf("{n} articles in total, counted once each",
+          { n: n(d.total) }))}</span>`;
+      }
+      if (d.total_forms != null && d.measured_forms != null && d.total_forms !== d.measured_forms) {
+        out += ` <span class="muted">· ${esc(tf("{n} of {total} forms counted",
+          { n: n(d.measured_forms), total: n(d.total_forms) }))}</span>`;
+      }
+      if (d.caveat) out += ` <span class="muted">${esc(t(d.caveat))}</span>`;
+      return out;
+    }
+    async function _anFormCounts(term, key) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const q = new URLSearchParams({ term: String(term || "") });
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
+      if (lang) q.set("ui_lang", lang);
+      if (!_anCap) q.set("literal_cap", "false");
+      // The counts must describe the SAME resolution the list ran, so the sense pins ride
+      // along: without them a pinned term would be counted across every sense it has.
+      Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
+      const slot = $("an-xforms-" + _anSlug(key == null ? term : key));
+      if (slot) slot.innerHTML = ` <span class="muted">${esc(t("Counting…"))}</span>`;
+      try {
+        const d = await api("/api/insights/concept-forms?" + q.toString());
+        if (slot) slot.innerHTML = _anFormCountsHtml(d);
+      } catch (_e) {
+        // A failed count says so. Blanking the trigger would read as "there is nothing
+        // to count", which is a different answer from "it could not be counted".
+        if (slot) slot.innerHTML = ` <span class="muted">${esc(t("The forms could not be counted."))}</span>`;
+      }
+    }
+    // THE LENS NOW RE-RUNS THE WHOLE WINDOW, and the comment above `_anExpand` used to
+    // say the opposite for a good reason that has since expired: the flag was a lens on
+    // the ARTICLES LIST alone, so re-running the analysis would have been wasted work.
+    // It now decides which articles EVERY tab describes, so re-running only the list
+    // would leave the Keywords, mind map, When/Where/Who, Links, Sentiment and Sources
+    // tabs answering about the previous lens with nothing on screen to say so.
+    function _anRerunForLens() {
+      _anSaveLensOnTab();
+      _anWriteLensToUrl();
+      if (_anLastParams) loadAnalysis(_anLastParams);
+      else if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    function _anSaveLensOnTab() {
+      const tb = _anTabs.find((x) => x.id === _anActiveId);
+      if (tb) { tb.lens = _anLensSeed(); _anSaveTabs(); }
     }
     function _anSetExpand(on) {
       _anExpand = !!on;
-      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+      _anRerunForLens();
+    }
+    // Q503's NOTE: the reader turns the 40-form fan-out cap off (and back on).
+    function _anSetCap(on) {
+      _anCap = !!on;
+      _anRerunForLens();
+    }
+    // Q508's NOTE: group the SAME rows by language, or leave them interleaved by date
+    // (the ruled default). A VIEW, so it re-renders the list and never re-runs a search.
+    function _anSetGroupByLang(on) {
+      _anGroupByLang = !!on;
+      if (_anArtParams) _anLoadArticles(_anArtParams, _anArtPage || 0);
     }
     // R2a: the reader picks the sense, and the pick survives paging and re-sorting
     // because it lives in the query the list rebuilds from, not in the rendered notice.
     function _anPickSense(term, ringId) {
       if (!term || !ringId) return;
       _anSenses[term] = ringId;
-      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+      _anRerunForLens();
     }
     function _anClearSense(term) {
       if (!term) return;
       delete _anSenses[term];
-      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+      _anRerunForLens();
     }
 
     // A sortable column header. `field` is the /api/articles sort_by value; the arrow
@@ -1218,6 +1477,74 @@
         + `onclick="_anSortBy('${field}')" title="${esc(t("Sort by this column"))}">`
         + `${esc(label)}${arrow}</button></th>`;
     }
+    // Q508: a language chip on EVERY row. PURE (article -> html) so it can be driven in
+    // node. Three states, kept apart because they are three different facts:
+    //   * the source ASSERTED a language -> show it plainly;
+    //   * the source asserted nothing and the app DEDUCED one -> show it marked as
+    //     deduced, with the caveat in the hover (the app's own reading, never the
+    //     publisher's claim);
+    //   * neither -> an em dash, never a guess and never a blank cell that reads as "en".
+    function _anLangCell(a) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // `ooLangCell` and nothing else, unguarded, exactly as every other surface calls
+      // it: Q302 says the CODE is what is displayed and the localised name is the hover,
+      // and a local fallback that printed the raw value would be a second, quieter answer
+      // to that question sitting beside the one the ruling names.
+      if (a && a.language) return ooLangCell(a.language);
+      if (a && a.detected_language) {
+        return `<span class="muted" title="${esc(t("Language deduced offline — the source did not tag it."))}">`
+          + `${ooLangCell(a.detected_language)} <span class="muted">${esc(t("deduced"))}</span></span>`;
+      }
+      return '<span class="muted">—</span>';
+    }
+    // The ruled DEFAULT is interleaved by date; this is the note's addition. It groups the
+    // SAME rows that are already on screen -- it issues no request and changes no total,
+    // so a reader flipping it can never end up looking at a different set.
+    function _anGroupByLangControl() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // A SEGMENTED PAIR with stable labels, the same grammar the Trend tab's view
+      // switch already uses -- not one button whose label flips. A flipping label has to
+      // name the action ("Interleave by date") while `aria-pressed` describes the state,
+      // so a screen reader announces "Interleave by date, pressed" about a view the
+      // reader is not in. Two labelled options, each pressed or not, say the same thing
+      // to both readers.
+      const seg = (on, mode, label) => `<button type="button" class="ghost tiny${on ? " on" : ""}"`
+        + ` aria-pressed="${on ? "true" : "false"}" onclick="_anSetGroupByLang(${mode})"`
+        + ` title="${esc(t("Groups the articles already listed. It runs no new search and changes no count."))}">`
+        + `${esc(label)}</button>`;
+      return `<div class="row" style="gap:6px;align-items:center;margin-top:6px">`
+        + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>`
+        + seg(!_anGroupByLang, "false", t("Interleave by date"))
+        + seg(_anGroupByLang, "true", t("Group by language"))
+        + `</div>`;
+    }
+    // Groups the rendered rows under one heading per language, in DESCENDING row count so
+    // the reader meets the languages this corpus actually carries first, with ties broken
+    // alphabetically so two runs over one corpus produce the same order.
+    function _anGroupRowsByLanguage(items, rowHtml) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const buckets = new Map();
+      items.forEach((a, i) => {
+        // An article whose language is neither asserted nor deduced gets its OWN bucket
+        // rather than being filed under a plausible one -- the grouped view must not
+        // invent a language the row itself refuses to claim.
+        const key = (a && a.language) || (a && a.detected_language) || "";
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(rowHtml[i]);
+      });
+      const order = [...buckets.keys()].sort((x, y) => {
+        const d = buckets.get(y).length - buckets.get(x).length;
+        return d !== 0 ? d : String(x).localeCompare(String(y));
+      });
+      return order.map((k) => {
+        const n = buckets.get(k).length;
+        const label = k ? ooLangCell(k) : `<span class="muted">${esc(t("Language not recorded"))}</span>`;
+        return `<tr class="an-lang-group"><td colspan="5"><b>${label}</b>`
+          + ` <span class="muted">${esc(t("{n} articles").replace("{n}", n))}</span></td></tr>`
+          + buckets.get(k).join("");
+      }).join("");
+    }
+
     async function _anLoadArticles(p, page) {
       // The list renders into an-art-list, INSIDE an-articles -- the sort bar above it
       // is static markup and must survive a re-render (it is what triggered this one).
@@ -1243,7 +1570,7 @@
         const kwc = _anKwForCount;
         const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
         if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
-        const rows = (d.results || []).map((a) => {
+        const rowHtml = (d.results || []).map((a) => {
           // Small, discrete per-article keyword count beside the title (counts only).
           const badge = (kwc && a.keyword_count != null)
             ? ` <span class="muted" style="font-size:.82em" title="${esc(t("Mentions of") + " “" + kwc + "” " + t("in this article"))}">×${a.keyword_count}</span>`
@@ -1267,22 +1594,41 @@
           }
           return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
           + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}</td>`
-          + `<td>${esc(a.source || "")}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+          // `_toneChip`, not `_anToneChip`: the Language column below now carries the
+          // deduced-language half, and the split exists precisely so a surface that
+          // already shows the language renders the tone without repeating it.
+          + `<td>${esc(a.source || "")}${_toneChip(a)}</td>`
+          + `<td>${_anLangCell(a)}</td>`
+          + `<td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
           + `<td>${top}</td></tr>`;
-        }).join("");
+        });
+        const rows = _anGroupByLang ? _anGroupRowsByLanguage(d.results || [], rowHtml) : rowHtml.join("");
         const pager = _anArtPager(total, pages);
         // RULING 22: the "source ↗" column and the per-row Summarize / Translate buttons
         // are gone -- the reader carries both (its "Original source:" line shows the FULL
         // url, and its Summary / Translation tabs run the same local model on the same
         // article), so this is an absorption, not a removal. Nothing was lost: the bulk
         // Summarize all / Translate all actions are untouched in the export bar below.
+        // Retained so a LANGUAGE SWITCH can redraw the rail without re-running the
+        // search: the rail's text is derived at render time (a tf() frame plus server
+        // prose through t()), so the i18n DOM walker cannot reach it and it would
+        // otherwise stay frozen in whichever locale painted it first -- the recorded
+        // frozen-locale class, of which this would have been the next member.
+        _anLastCross = {cross: d.cross_language || null,
+                        narrowed: !_anExpand && !!q.get("query"),
+                        capOff: !_anCap && !!q.get("query")};
         arts.innerHTML = _anArtControls(d)
-          + _crossLangNotice(d.cross_language, !_anExpand && !!q.get("query"))
+          + _crossLangNotice(d.cross_language, !_anExpand && !!q.get("query"), !_anCap && !!q.get("query"))
           + `<div id="an-art-facets"></div>`
-          + `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
+          // `an-art-total` is the ONE number a reader takes away from this list, and it
+          // had no anchor: a walk trying to read it had to guess which `.hint` on the
+          // surface it was, and the expansion rail above carries that class too.
+          + `<div class="hint" id="an-art-total"><b>${total.toLocaleString()}</b> ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
           + pager
+          + _anGroupByLangControl()
           + `<table style="margin-top:6px"><tr>`
           + _anTh("title", t("Title")) + _anTh("source", t("Source"))
+          + _anTh("language", t("Language"))
           + _anTh("date", t("Published")) + _anTh("top_keyword", t("Top keyword"))
           + `</tr>${rows}</table>`
           + pager;
@@ -1331,6 +1677,20 @@
     }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Q501/Q516: apply the lens ONCE, here, to the params EVERY tab below reads -- the
+      // keywords chips, the mind map's graph, When/Where/Who, Links, Sentiment, Sources
+      // and the lazy Trend/Related/Competitive renderers that read `_anLastParams`.
+      // Before this the lens travelled only through `_articleQuery`, so flipping the
+      // toggle changed the Articles tab and left every other tab describing a different
+      // concept while looking like one view.
+      p = _anApplyLens(new URLSearchParams(p));
+      // THE BOOT RACE, measured in Chromium (2026-09-17): walking straight to an analysis
+      // deep link in `hi` rendered the expansion rail's frame in ENGLISH while ar, zh and
+      // ja came out translated — the analysis fetch simply beat the locale fetch, and
+      // which locale loses is a matter of file size and timing. `OOI18N.ready` is the
+      // promise this project added for exactly this, and it is a promise rather than an
+      // event so that asking late still works.
+      try { if (window.OOI18N && OOI18N.ready) await OOI18N.ready; } catch (_e) { /* never block a render */ }
       const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;

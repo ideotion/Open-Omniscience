@@ -39,6 +39,9 @@ const src = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,"
   + "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n"
   + "var window = {};\n"
   + extract("_crossLangNotice") + "\n"
+  // `_anSlug` builds the per-term id the Q509 count-trigger writes into. It is REAL, not
+  // shimmed: a shim would let the renderer emit an id nothing could ever find again.
+  + extract("_anSlug") + "\n"
   + "module.exports = { _crossLangNotice };";
 const { _crossLangNotice } = (() => {
   const m = { exports: {} };

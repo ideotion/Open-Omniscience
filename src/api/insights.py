@@ -1607,6 +1607,111 @@ def _concept_for(db, term, *, expand, ui_lang, sense, literal_cap):
         return None
 
 
+@router.get("/concept-forms")
+def insights_concept_forms(
+    term: str,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(description="Q503: measure only the 40 forms the search actually used"),
+    ] = True,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Q509 — how many articles each FORM of the concept matches, plus the single total.
+
+    *"climate 120 · climat 45 · Klima 30 · …"* — the ruling's own example, and its NOTE
+    adds the single total beside it. This is that, and three things about it are the
+    whole point.
+
+    **THE COUNTS SHARE THE ARTICLES LIST'S DENOMINATOR.** Each form is counted with the
+    same ``search_total`` the list's own total comes from, over the same quarantine gate,
+    so a reader adding a form's figure to the total is comparing like with like. The
+    cheaper route — summing ``keyword_mentions`` per form — would have been one indexed
+    query instead of N, and it counts a DIFFERENT thing (extracted terms, not full-text
+    matches), so it would have put two same-sounding quantities on one line.
+
+    **THE PER-FORM FIGURES OVERLAP AND THE TOTAL DOES NOT.** An article carrying both
+    ``climate`` and ``climat`` is counted under each form and ONCE in ``total``, so the
+    forms do not add up to it. Said in the payload, not left to the reader.
+
+    **IT IS LAZY AND BOUNDED.** N counts per call, so it is never on the search path: a
+    surface asks for it when a reader opens the chip. With the cap on it measures exactly
+    the forms the search used; with the cap off it measures every form, and either way
+    ``measured_forms`` and ``total_forms`` are both stated so the list can never be read
+    as the whole concept when it is not.
+    """
+    from src.database.fts import search_total
+
+    ck = q.resolve_concept_keywords(
+        db, term, ui_lang=ui_lang, sense=sense, expand=True,
+        cap=-1 if literal_cap else None,
+    )
+    concept = ck.concept
+    # The ring's own language for each form (a Wikidata statement), not the stored
+    # Keyword.language (first-write-wins) -- the same choice concept_block documents.
+    lang_of: dict[str, str] = {}
+    applied = concept.expansion.applied
+    if applied is not None:
+        for lg, t in applied.members:
+            lang_of.setdefault(t, lg)
+
+    def _count(one: str) -> int | None:
+        try:
+            return search_total(db, one, exclude_quarantined=True)
+        except Exception:  # noqa: BLE001 - one unreadable form must not blank the chip
+            return None
+
+    forms = []
+    for lit in concept.literals:
+        n = _count(lit)
+        row: dict[str, Any] = {"form": lit, "language": lang_of.get(str(lit).casefold())}
+        # An unreadable form is ABSENT with a reason, never a 0: a zero here would read
+        # as "this corpus has nothing in that language", a different fact entirely.
+        if n is None:
+            row["unmeasured"] = "this form could not be counted"
+        else:
+            row["articles"] = int(n)
+        forms.append(row)
+    forms.sort(key=lambda r: (-(r.get("articles") or 0), str(r["form"])))
+
+    total = None
+    try:
+        total = search_total(db, term, exclude_quarantined=True, expand=concept)
+    except Exception:  # noqa: BLE001
+        total = None
+
+    out: dict[str, Any] = {
+        "term": term,
+        "forms": forms,
+        "measured_forms": len(forms),
+        "total_forms": concept.total_forms,
+        "capped": concept.cap_applied,
+        "ordering": concept.ordering,
+        "method": (
+            "each form counted with the SAME full-text count the Articles list's own total "
+            "comes from, over the same quarantine gate; the language of a form is the ring's "
+            "own (a Wikidata statement), not the stored Keyword.language"
+        ),
+        "caveat": (
+            "These figures overlap: an article carrying two forms of the concept is counted "
+            "under each of them and ONCE in the total, so the per-form numbers do not add up "
+            "to it."
+        ),
+    }
+    if total is not None:
+        out["total"] = int(total)
+    if concept.cap_applied:
+        out["forms_not_measured"] = concept.total_forms - concept.searched_forms
+    return out
+
+
 @router.get("/trend")
 def insights_trend(
     term: str,

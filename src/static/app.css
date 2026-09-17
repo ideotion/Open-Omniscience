@@ -450,6 +450,23 @@
     button.danger:hover { background:color-mix(in srgb, var(--err) 14%, transparent); filter:none; }
     button.tiny { padding:3px 9px; margin-top:0; font-size:12px; font-weight:500; }
     button.ghost { background:transparent; color:var(--fg-soft); }
+    /* An inline control that belongs to a SENTENCE rather than to the page -- the
+       cross-language rail's way back to the literal term, its sense picks, the fan-out
+       cap switch and the per-form count trigger all sit inside running text.
+       They have carried `class="linkish"` since the day they shipped and NOTHING in this
+       file styled it, so all nine fell through to the primary `button` rule above: a
+       stack of filled accent blocks where the author wrote a link, one of them landing
+       mid-sentence and breaking the caveat's line in half. Measured in Chromium
+       (2026-09-17, `S04-07` PR 2) -- a class that styles nothing is invisible to every
+       test in the tree and obvious in one screenshot.
+       UNDERLINED, never colour alone: colour is not an affordance for a reader who
+       cannot distinguish it, and these controls are the ones the informed-consent rules
+       depend on being findable. */
+    button.linkish { background:transparent; color:var(--accent); border:0; padding:0;
+      margin:0; font:inherit; font-weight:500; text-decoration:underline;
+      text-underline-offset:2px; cursor:pointer; }
+    button.linkish:hover { filter:none; text-decoration-thickness:2px; }
+    button.linkish:active { transform:none; }
     /* anchor styled as a primary action button (used by recipe "Open investigation") */
     a.btnlike { display:inline-block; background:var(--accent); color:var(--accent-fg, #fff);
       border-radius:8px; text-decoration:none; cursor:pointer; }

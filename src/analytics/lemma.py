@@ -113,6 +113,53 @@ def extraction_lemma_enabled() -> bool:
     return _simplemma is not None and os.getenv("OO_EXTRACT_LEMMA", "1") == "1"
 
 
+#: Our OWN lemmatiser, and the reason it exists rather than the module-level
+#: ``simplemma.lemmatize`` this used to call.
+#:
+#: **MEASURED, 2026-09-17 (`S04-07` PR 2), after a per-form readout over a 120-form ring
+#: took 49 seconds on a THREE-ARTICLE corpus.** ``simplemma.lemmatize`` delegates to one
+#: process-wide legacy lemmatiser whose ``DefaultDictionaryFactory`` caches loaded
+#: dictionaries in an LRU of **eight**. :data:`LEMMA_LANGS` has **nine** entries, and
+#: :func:`src.analytics.queries._resolve_by_lemma` asks for a term's lemma under EVERY one
+#: of them in turn — so each call evicts the dictionary the next call is about to need.
+#: The hit rate is not merely poor, it is exactly ZERO, and every single lemmatisation
+#: re-reads a dictionary from disk. One language fewer and the cost vanishes; one more and
+#: nothing changes. That is the shape of the defect: not a slow library, a cache
+#: dimensioned one slot under the working set, which is invisible at any smaller language
+#: count and does not degrade gracefully — it falls off a cliff.
+#:
+#: So the factory is sized from ``LEMMA_LANGS`` ITSELF rather than to a number someone has
+#: to remember to raise: adding a tenth language must not silently re-introduce this.
+#: The headroom is deliberate but not load-bearing — the property is "at least as many
+#: slots as languages we ask for", and the test asserts that, not the constant.
+#:
+#: Lazy, because building it loads nothing until a lemma is actually wanted, and a
+#: module-level construction would put dictionary I/O in the import path of everything
+#: that touches extraction. Falls back to the module function if this ``simplemma``
+#: exposes a different surface: a slow lemma is worth having, a crash is not.
+_LEMMATIZER: object | None = None
+
+
+def _lemmatizer():  # noqa: ANN202 - a simplemma Lemmatizer, or the module itself
+    """The shared lemmatiser, built once, with room for every language we ask about."""
+    global _LEMMATIZER
+    if _LEMMATIZER is None:
+        try:
+            from simplemma import Lemmatizer
+            from simplemma.strategies import DefaultDictionaryFactory, DefaultStrategy
+
+            _LEMMATIZER = Lemmatizer(
+                lemmatization_strategy=DefaultStrategy(
+                    dictionary_factory=DefaultDictionaryFactory(
+                        cache_max_size=max(8, len(LEMMA_LANGS) + 2),
+                    ),
+                ),
+            )
+        except Exception:  # noqa: BLE001 - an odd simplemma must degrade, never crash
+            _LEMMATIZER = _simplemma
+    return _LEMMATIZER
+
+
 @lru_cache(maxsize=256)
 def _language_reason(language: str | None) -> str:
     """The part of :func:`lemma_status` that is a pure function of frozen sets.
@@ -161,7 +208,7 @@ def lemmatize(norm: str, language: str | None) -> str:
     if _simplemma is None or lg not in LEMMA_LANGS or lg in _UNSEGMENTED_EXCLUDED:
         return norm
     try:
-        return (_simplemma.lemmatize(norm, lg) or norm).casefold()
+        return (_lemmatizer().lemmatize(norm, lg) or norm).casefold()
     except Exception:  # noqa: BLE001 - never let a lemmatiser hiccup break extraction
         return norm
 
