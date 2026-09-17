@@ -486,10 +486,13 @@ def _check_structural() -> list[dict]:
     # variant (studied -> study) a plural heuristic misses, and the mislemma denylist
     # blocks a meaning-changer (media !-> medium). Checked DIRECTLY on _lemma() — no env
     # toggle, thread-safe in the live process — and only when the optional simplemma is
-    # present (a core install simply omits this case; the feature is a no-op there).
-    from src.analytics.families import _lemma, _simplemma
+    # present. simplemma is CORE since 2026-09-17 (Q416 = a), so this normally RUNS; the
+    # guard stays and asks `lemmatizer_available()` rather than a module attribute, so an
+    # install whose import is broken degrades instead of raising.
+    from src.analytics.families import _lemma
+    from src.analytics.lemma import lemmatizer_available
 
-    if _simplemma is not None:
+    if lemmatizer_available():
         lemma_fails: list[str] = []
         for word, lg, want_lemma in (("studied", "en", "study"), ("running", "en", "run"),
                                      ("Wahlen", "de", "wahl")):

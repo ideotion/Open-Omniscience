@@ -36,6 +36,7 @@ from pathlib import Path
 
 import yaml
 
+from src.analytics.lemma import extraction_lemma, extraction_lemma_enabled
 from src.analytics.managed import normalize_lang
 from src.analytics.segmentation import segment
 from src.services.stopwords import stopwords_manager
@@ -479,6 +480,19 @@ def _deelide(word: str) -> str:
     return word
 
 
+def _display_surface(seen: "Counter[str] | None", key: str) -> str:
+    """The surface form to SHOW for a key several forms folded onto.
+
+    The most frequent one, tie-broken alphabetically so the choice is deterministic
+    (same corpus -> same label; a tie resolved by dict order would make the displayed
+    word depend on tokenisation order, and a label that changes between two identical
+    re-indexes is indistinguishable from a real corpus change). Falls back to the key
+    itself, which is the pre-lemmatisation behaviour exactly."""
+    if not seen:
+        return key
+    return min(seen.items(), key=lambda kv: (-kv[1], kv[0]))[0]
+
+
 def _normalize(s: str) -> str:
     # French elisions are tokenization noise, not meaning: "d'euros" is about
     # euros, "l'ia" about ia. Strip the elided article before keying (field
@@ -606,19 +620,71 @@ class BaselineExtractor:
             # "il". Without this the whole "l'assemblée" form was kept as a keyword.
             toks = [(_deelide(m.group(0).lower()), m.start()) for m in _WORD_RE.finditer(text)]
             segmented = False
-        counts: Counter[str] = Counter()
-        first_at: dict[str, int] = {}
-
-        def _record(term: str, offset: int) -> None:
-            counts[term] += 1
-            first_at.setdefault(term, offset)
-
         # P2 (2026-09-10): the flag ONCE per document, not once per token. Below it is
         # asked ~6x per token (unigram + every bigram and trigram window it falls in),
         # and reading the environment there measured ~8,150 os.getenv calls per article.
         # A local bool also lets the loops short-circuit without a call at all when the
         # rule is off, which is what `OO_CODE_TOKEN_FILTER=0` should cost: nothing.
+        # HOISTED above the record helpers on 2026-09-17: the lemma key-guard below
+        # reuses it, and reading the environment per token is the cost this line removed.
         code_filter = code_token_filter_enabled()
+        counts: Counter[str] = Counter()
+        first_at: dict[str, int] = {}
+        # key -> the SURFACE forms that folded onto it, with their own counts. Only ever
+        # more than one entry once lemmatisation is on (studies + study -> study), and the
+        # most frequent surface becomes the DISPLAY term: the reader sees the word the
+        # articles actually use, while the dedup key is the lemma.
+        surfaces: dict[str, Counter[str]] = {}
+
+        def _record(term: str, offset: int, surface: str | None = None) -> None:
+            counts[term] += 1
+            first_at.setdefault(term, offset)
+            surfaces.setdefault(term, Counter())[surface if surface is not None else term] += 1
+
+        # LEMMATISATION AT EXTRACTION (Q416 = a, 2026-09-15, gate row M). The ONE seam is
+        # src/analytics/lemma.py, shared with families.py's display-time collapse so the
+        # two layers cannot disagree about what "the same keyword" is.
+        #
+        # THE INVARIANT, and it is the whole safety argument: this may only ever MERGE.
+        # A lemma is adopted as the key ONLY when the lemma would itself have survived
+        # every filter the surface form just survived (length floor, stoplist, digits,
+        # code shape). Otherwise the surface form stays its own key. So the set of keys
+        # after lemmatisation is a partition-MERGE of the set before it -- no input can
+        # make a term that used to be extracted disappear, which is what bounds the blast
+        # radius of a change that touches every article ever indexed.
+        # (The tempting alternative -- drop a term whose lemma lands on a stopword,
+        # reasoning that the lemma proves it was a function word -- is a RECALL
+        # improvement in the cases it is right about and silent data loss in the cases it
+        # is not, and "a wrong lemma is worse than none" is the rule this module already
+        # follows. Merging only is the direction that cannot be wrong.)
+        # ON A DEFAULTED LANGUAGE, MEASURED. `index_article` passes `known_lang or "en"`,
+        # calling "en" an extraction working assumption -- which until now only picked a
+        # stoplist and now also picks a lemmatiser, i.e. it reaches the STORED key. So the
+        # damage was measured rather than reasoned about: simplemma applies one language's
+        # morphology and declines elsewhere, so a French body read as English leaves
+        # `reformes` and `donnees` UNTOUCHED (it under-lemmatises), and the two that do
+        # fire -- `euros` -> `euro`, `elections` -> `election` -- are the correct French
+        # lemmas reached by a coinciding rule. German `wahlen` as `en` stays `wahlen`;
+        # English `studies` as `fr` stays `studies`. The failure direction is therefore
+        # RECALL (terms stay separate that could have merged), never a fabricated merge,
+        # which is the same direction the merge-only invariant above already guarantees.
+        lemma_on = extraction_lemma_enabled()
+
+        def _key_for(word: str) -> str:
+            if not lemma_on:
+                return word
+            lem = extraction_lemma(word, language, kind="term")
+            if lem == word:
+                return word
+            if (
+                len(lem) < _term_floor(lem, segmented)
+                or lem in stop
+                or lem.isdigit()
+                or (code_filter and _is_code_token_shape(lem))
+            ):
+                return word  # a lemma that would have been filtered is not a usable key
+            return lem
+
         # Unigrams (content words only). Drop digit-heavy CODE tokens (A-10C, a1b2 —
         # see _is_code_token) and glued <digits><token> fragments (1h15 -> h15), which
         # leaked ~35k junk keywords; real designations (a-10, covid-19, b52, mp3) stay.
@@ -629,7 +695,7 @@ class BaselineExtractor:
                 continue
             if off > 0 and text[off - 1].isdigit() and any(c.isdigit() for c in word):
                 continue  # tokenizer split of a glued code/timecode (1h15 -> h15)
-            _record(word, off)
+            _record(_key_for(word), off, surface=word)
         # Bigrams / trigrams over the raw token stream, dropping ones bounded by
         # stopwords so phrases stay meaningful ("prime minister", not "of the").
         for size in (2, 3):
@@ -665,7 +731,13 @@ class BaselineExtractor:
                 _record(phrase, window[0][1])
 
         terms = [
-            ExtractedTerm(term=t, normalized=t, kind="term", count=c, first_offset=first_at.get(t))
+            ExtractedTerm(
+                term=_display_surface(surfaces.get(t), t),
+                normalized=t,
+                kind="term",
+                count=c,
+                first_offset=first_at.get(t),
+            )
             for t, c in counts.items()
             if c >= 1
         ]

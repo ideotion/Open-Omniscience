@@ -269,12 +269,16 @@ def _lemma_preview(rows: list[tuple]) -> dict:
     flags as "new merges" turn out to already be collapsed by the plural step alone.
 
     ``rows`` are ``(normalized_term, language, is_entity)`` from the top-N keyword scan."""
-    from src.analytics.families import _lemma, _lemma_enabled, _simplemma
+    from src.analytics.families import _lemma, _lemma_enabled
+    from src.analytics.lemma import lemmatizer_available
 
-    if _simplemma is None:
+    # Ask the SOURCE OF TRUTH, not a module-level name: the lemmatiser moved into
+    # src/analytics/lemma.py on 2026-09-17 (Q416 = a) and `families` no longer holds it,
+    # so a `families._simplemma` read is an AttributeError rather than a False.
+    if not lemmatizer_available():
         return {
             "available": False,
-            "method": "simplemma (optional [analysis] extra) is not installed; lemmatization is a no-op here.",
+            "method": "simplemma is not importable in this install; lemmatization is a no-op here.",
         }
     groups: dict[tuple, list[str]] = {}
     for norm, lang, is_entity in rows:

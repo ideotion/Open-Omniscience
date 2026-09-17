@@ -124,9 +124,16 @@ def test_extract_drops_codes_and_timecodes_keeps_real_terms():
     # Codes + clock-time fragments gone.
     for junk in ("a-10c", "a1b2", "h15", "h00"):
         assert junk not in norms, f"code/timecode leaked as keyword: {junk}"
-    # Every real term survived.
-    for real in ("a-10", "f-18", "covid-19", "h1n1", "g7", "mp3", "economy", "elections"):
+    # Every real term survived. `elections` is keyed under its LEMMA `election` since
+    # 2026-09-17 (Q416 = a, lemmatisation at extraction) -- the term did not vanish, its
+    # key moved, which is a different layer's rule and is asserted as its own literal
+    # here rather than by asking the lemmatiser what it would say.
+    for real in ("a-10", "f-18", "covid-19", "h1n1", "g7", "mp3", "economy", "election"):
         assert real in norms, f"real term lost: {real}"
+    # The designations above are hyphenated/digit-bearing and multi-token-ish, so none of
+    # them is lemmatisable -- if a future lemma rule ever touched one, this fails loudly
+    # rather than letting a designation be silently rewritten.
+    assert {"a-10", "f-18", "covid-19", "h1n1", "g7", "mp3"} <= norms
 
 
 def test_extract_offsets_unchanged_for_clean_text():
@@ -169,7 +176,9 @@ def test_index_article_stores_no_code_keywords(db):
     index_article(db, art, extractor=BaselineExtractor())
     stored = {k.normalized_term.casefold() for k in db.query(Keyword).all()}
     assert not ({"a-10c", "a1b2", "h15", "h00"} & stored), f"code keywords indexed: {stored}"
-    assert "a-10" in stored and "h1n1" in stored and "elections" in stored
+    # `elections` is STORED under its lemma `election` (Q416 = a); the designations are
+    # not lemmatisable and are stored verbatim.
+    assert "a-10" in stored and "h1n1" in stored and "election" in stored
     # Re-index stays clean and keeps counters consistent (one mention row per article).
     index_article(db, art, extractor=BaselineExtractor())
     for kw in db.query(Keyword).all():

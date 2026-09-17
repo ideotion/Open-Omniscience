@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
+from src.analytics.managed import normalize_lang
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 
 _LOG = logging.getLogger(__name__)
@@ -331,6 +332,8 @@ def index_article(
     from src.catalog.countries import normalize_country
 
     cc = normalize_country(country or article.country)
+    # The one place the mention language is decided, so every row of one pass agrees.
+    mention_language = normalize_lang(known_lang) or None
 
     # Capture this article's PRIOR contribution to the denormalised keyword
     # counters BEFORE replacing its mentions, so mention_count / article_count stay
@@ -384,6 +387,13 @@ def index_article(
                 "observed_on": observed_on,
                 "country": cc,
                 "city": city,
+                # Q414 = a: the ARTICLE's language, normalised, on every mention it
+                # produced. Normalised here rather than at the readers, so the majority
+                # derivation counts one spelling per language instead of three
+                # (`en`/`en-US`/`en_us` -- the recorded language-equilibrium defect).
+                # An article with no known language writes NULL: never measured, which
+                # the majority derivation skips rather than counting as a vote.
+                "language": mention_language,
                 "source_id": article.source_id,  # denormalised (like observed_on/country)
                 "extractor": extractor.name,
                 "created_at": mentions_created_at,
