@@ -375,6 +375,11 @@ def test_the_bundle_is_one_file_per_cited_article_plus_a_contents_page(corpus):
         "20260811_OOS_Bulletin_Weekly/20260805_Article_0002.md",
         "20260811_OOS_Bulletin_Weekly/20260805_Article_0003.md",
         "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md",
+        # Q511's note: the cross-language concepts this edition's sections merged, as
+        # their own member. Written for EVERY edition, including one that merged
+        # nothing — an absent file reads as "no concept crossed languages", which is
+        # the one thing it must never mean.
+        "20260811_OOS_Bulletin_Weekly/CROSS-LANGUAGE-CONCEPTS.md",
         # §18: the enumeration of what a recipient can read off this bundle travels
         # INSIDE it, because the person who opens the ZIP is not always the one who
         # exported it. Named here rather than tolerated by a loosened count — an
@@ -481,8 +486,9 @@ def test_a_body_that_cannot_be_read_still_leaves_a_file(corpus, monkeypatch):
         for r in rows:
             r["excerpt"] = ""
     files = _unzip(build_annexes(corpus, ed))
-    # 3 articles + the contents page + the §18 privacy enumeration.
-    assert len(files) == 5
+    # 3 articles + the contents page + the §18 privacy enumeration + Q511's concepts
+    # annexe.
+    assert len(files) == 6
     assert "No text is included" in files[
         "20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"
     ]
@@ -535,7 +541,13 @@ def test_an_edition_naming_no_articles_produces_an_honest_empty_bundle(corpus):
     # never written.
     assert sorted(files) == [
         "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md",
+        "20260811_OOS_Bulletin_Weekly/CROSS-LANGUAGE-CONCEPTS.md",
         "20260811_OOS_Bulletin_Weekly/WHAT-A-READER-CAN-SEE.md",
+    ]
+    # ... and it says so IN WORDS rather than by being an empty file: an edition where
+    # nothing crossed languages is a fact about the corpus, not a gap in the bundle.
+    assert "not a gap in this file" in files[
+        "20260811_OOS_Bulletin_Weekly/CROSS-LANGUAGE-CONCEPTS.md"
     ]
     assert "nothing to annex" in files[
         "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"
@@ -599,7 +611,7 @@ def test_the_annexes_download_as_a_zip_named_after_the_report(client):
     assert r.headers["X-OO-Annex-Articles"] == "3"
     with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
         # 3 articles + the contents page + the §18 privacy enumeration.
-        assert len(zf.namelist()) == 5
+        assert len(zf.namelist()) == 6
 
 
 def test_the_annexes_honour_the_same_selection_as_the_report(client):
@@ -765,8 +777,12 @@ def test_every_sentence_this_module_asks_for_exists_in_every_catalog():
             and isinstance(node.args[0].value, str)
         ):
             wanted.append(node.args[0].value)
-    # The two long constants are passed by NAME, so the parser sees an identifier.
-    for name in ("DISCLOSURE", "_AI_LABEL"):
+    # The long constants are passed by NAME, so the parser sees an identifier and not a
+    # string. Each one has to be registered here by hand, which is the trap this list
+    # exists to hold open: a constant added to the module and forgotten here is a
+    # sentence that reaches no catalogue and renders in English in eleven locales with
+    # every gate green. `CONCEPTS_TITLE` joined it with Q511's concepts annexe.
+    for name in ("DISCLOSURE", "_AI_LABEL", "CONCEPTS_TITLE"):
         if f"T.t({name})" in src:
             wanted.append(getattr(mod, name))
     wanted = list(dict.fromkeys(wanted))
