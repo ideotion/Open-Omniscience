@@ -3533,5 +3533,21 @@
   "Concept": "المفهوم",
   "Across languages:": "عبر جميع اللغات:",
   "Open a local preview of this source first": "افتح أولاً معاينة محلية لهذا المصدر",
-  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (مترجم من لغة: {term_lang} — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (مترجم من لغة: {term_lang} — {term})",
+  "Keyword translations": "ترجمات الكلمات المفتاحية",
+  "— load rings from Wikidata": "— تحميل الحلقات من ويكي بيانات",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "الحلقة هي مفهوم واحد عبر اللغات (election / élection / Wahl)، وهي ما يتيح ظهور الكلمة المفتاحية بلغتك مع عبارة «مترجم من» بجانبها. يطلب هذا من ويكي بيانات المفاهيم الموجودة في مجموعتك والتي لا تغطيها أي حلقة بعد، بدءًا باللغة الأقل تغطية.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "هذه الحلقات مأخوذة من ويكي بيانات ولا يراجعها أحد. تُكتَب في ملف الحلقات الخاص بهذا التثبيت، وهو يُقرأ بأدنى أولوية: الحلقة المحرَّرة يدويًا تفوز دائمًا. وكل حلقة مُعلَّمة بأنها محمَّلة من ويكي بيانات، فيمكنك إزالتها من ذلك الملف — وهو يحتوي أيضًا على حلقات مستعادة من نسخة احتياطية، فلا تحذف الملف بأكمله.",
+  "Concepts to load": "عدد المفاهيم المراد تحميلها",
+  "Load from Wikidata": "تحميل من ويكي بيانات",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "يُرسل طلبًا واحدًا كل 10 ثوانٍ إلى www.wikidata.org، وهو المعدل الذي تطلبه سياسة الوصول الآلي لديها. يُرفض أثناء تشغيل وضع الطيران.",
+  "No keyword in this corpus is missing a ring right now.": "لا توجد حاليًا كلمة مفتاحية في هذه المجموعة بلا حلقة.",
+  "concepts have no ring": "مفهومًا بلا حلقة",
+  "two Wikidata requests each, one request every 10 seconds": "طلبان إلى ويكي بيانات لكل مفهوم، بمعدل طلب واحد كل 10 ثوانٍ",
+  "Could not read the ring gap:": "تعذّرت قراءة الفجوة في الحلقات:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "تحميل ترجمات الكلمات المفتاحية من ويكي بيانات (طلب واحد كل 10 ثوانٍ، عبر وسيلة نقلك)",
+  "Loading in the background…": "جارٍ التحميل في الخلفية…",
+  "Ring load failed:": "فشل تحميل الحلقات:",
+  "Rings loaded:": "الحلقات المحمَّلة:",
+  "stopped early": "أُوقف مبكرًا"
 }

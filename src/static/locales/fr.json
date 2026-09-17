@@ -3533,5 +3533,21 @@
   "Concept": "Concept",
   "Across languages:": "Toutes langues confondues :",
   "Open a local preview of this source first": "Ouvrir d'abord un aperçu local de cette source",
-  "“{term_translation}” (translated from {term_lang}: {term})": "« {term_translation} » (traduit de : {term_lang} — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "« {term_translation} » (traduit de : {term_lang} — {term})",
+  "Keyword translations": "Traductions des mots-clés",
+  "— load rings from Wikidata": "— charger des anneaux depuis Wikidata",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "Un anneau est un même concept dans plusieurs langues (election / élection / Wahl) ; c’est ce qui permet à un mot-clé d’apparaître dans votre langue avec « traduit de » à côté. Ceci demande à Wikidata les concepts présents dans votre corpus qu’aucun anneau ne couvre encore, en commençant par la langue la moins couverte.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "Ces anneaux proviennent de Wikidata et personne ne les relit. Ils sont écrits dans le fichier d’anneaux propre à cette installation, lu en dernière priorité : un anneau vérifié à la main l’emporte toujours. Chacun est marqué comme chargé depuis Wikidata, vous pouvez donc le retirer de ce fichier — qui contient aussi les anneaux restaurés depuis une sauvegarde, ne le supprimez donc pas en entier.",
+  "Concepts to load": "Concepts à charger",
+  "Load from Wikidata": "Charger depuis Wikidata",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "Envoie une requête toutes les 10 secondes à www.wikidata.org, le rythme demandé par sa politique d’accès automatisé. Refusé tant que le mode avion est actif.",
+  "No keyword in this corpus is missing a ring right now.": "Aucun mot-clé de ce corpus n’est actuellement sans anneau.",
+  "concepts have no ring": "concepts sans anneau",
+  "two Wikidata requests each, one request every 10 seconds": "deux requêtes Wikidata chacun, une requête toutes les 10 secondes",
+  "Could not read the ring gap:": "Impossible de lire les anneaux manquants :",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Charger les traductions de mots-clés depuis Wikidata (une requête toutes les 10 secondes, via votre transport)",
+  "Loading in the background…": "Chargement en arrière-plan…",
+  "Ring load failed:": "Échec du chargement des anneaux :",
+  "Rings loaded:": "Anneaux chargés :",
+  "stopped early": "arrêté avant la fin"
 }

@@ -3533,5 +3533,21 @@
   "Concept": "Conceito",
   "Across languages:": "Em todos os idiomas:",
   "Open a local preview of this source first": "Abrir primeiro uma pré-visualização local desta fonte",
-  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (traduzido de: {term_lang} — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (traduzido de: {term_lang} — {term})",
+  "Keyword translations": "Traduções de palavras-chave",
+  "— load rings from Wikidata": "— carregar anéis do Wikidata",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "Um anel é um mesmo conceito em vários idiomas (election / élection / Wahl); é o que permite que uma palavra-chave apareça no seu idioma com «traduzido de» ao lado. Isto pede ao Wikidata os conceitos do seu corpus que nenhum anel cobre ainda, começando pelo idioma menos coberto.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "Estes anéis vêm do Wikidata e ninguém os revê. São escritos no ficheiro de anéis próprio desta instalação, lido com a prioridade mais baixa: um anel revisto à mão ganha sempre. Cada um está marcado como carregado do Wikidata, pelo que pode removê-lo desse ficheiro — que também guarda anéis restaurados de uma cópia de segurança, por isso não o apague por inteiro.",
+  "Concepts to load": "Conceitos a carregar",
+  "Load from Wikidata": "Carregar do Wikidata",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "Envia um pedido a cada 10 segundos para www.wikidata.org, o ritmo exigido pela sua política de acesso automatizado. É recusado enquanto o modo avião estiver ativo.",
+  "No keyword in this corpus is missing a ring right now.": "Neste momento nenhuma palavra-chave deste corpus está sem anel.",
+  "concepts have no ring": "conceitos sem anel",
+  "two Wikidata requests each, one request every 10 seconds": "duas consultas ao Wikidata cada um, um pedido a cada 10 segundos",
+  "Could not read the ring gap:": "Não foi possível ler a lacuna de anéis:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Carregar traduções de palavras-chave do Wikidata (um pedido a cada 10 segundos, pelo seu transporte)",
+  "Loading in the background…": "A carregar em segundo plano…",
+  "Ring load failed:": "Falha ao carregar os anéis:",
+  "Rings loaded:": "Anéis carregados:",
+  "stopped early": "interrompido antes do fim"
 }

@@ -3533,5 +3533,21 @@
   "Concept": "Konsep",
   "Across languages:": "Di seluruh bahasa:",
   "Open a local preview of this source first": "Buka dulu pratinjau lokal sumber ini",
-  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” (diterjemahkan dari {term_lang} — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” (diterjemahkan dari {term_lang} — {term})",
+  "Keyword translations": "Terjemahan kata kunci",
+  "— load rings from Wikidata": "— muat ring dari Wikidata",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "Sebuah ring adalah satu konsep yang sama di berbagai bahasa (election / élection / Wahl); inilah yang membuat sebuah kata kunci muncul dalam bahasa Anda dengan keterangan “diterjemahkan dari”. Ini meminta Wikidata konsep-konsep dalam korpus Anda yang belum dicakup ring mana pun, dimulai dari bahasa yang paling sedikit tercakup.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "Ring ini berasal dari Wikidata dan tidak ditinjau siapa pun. Ring ditulis ke berkas ring milik instalasi ini, yang dibaca dengan prioritas terendah: ring yang dikurasi manual selalu menang. Masing-masing ditandai sebagai dimuat dari Wikidata, jadi Anda dapat menghapusnya dari berkas itu — berkas itu juga menyimpan ring yang dipulihkan dari cadangan, jadi jangan menghapus seluruh berkasnya.",
+  "Concepts to load": "Konsep yang dimuat",
+  "Load from Wikidata": "Muat dari Wikidata",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "Mengirim satu permintaan setiap 10 detik ke www.wikidata.org, laju yang diminta kebijakan akses otomatisnya. Ditolak selama mode pesawat aktif.",
+  "No keyword in this corpus is missing a ring right now.": "Saat ini tidak ada kata kunci di korpus ini yang tanpa ring.",
+  "concepts have no ring": "konsep tanpa ring",
+  "two Wikidata requests each, one request every 10 seconds": "masing-masing dua permintaan Wikidata, satu permintaan setiap 10 detik",
+  "Could not read the ring gap:": "Tidak dapat membaca celah ring:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Muat terjemahan kata kunci dari Wikidata (satu permintaan setiap 10 detik, lewat transport Anda)",
+  "Loading in the background…": "Memuat di latar belakang…",
+  "Ring load failed:": "Gagal memuat ring:",
+  "Rings loaded:": "Ring dimuat:",
+  "stopped early": "dihentikan lebih awal"
 }

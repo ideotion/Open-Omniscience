@@ -3533,5 +3533,21 @@
   "Concept": "ধারণা",
   "Across languages:": "সব ভাষা মিলিয়ে:",
   "Open a local preview of this source first": "আগে এই উৎসের স্থানীয় প্রিভিউ খুলুন",
-  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” ({term_lang} থেকে অনূদিত — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” ({term_lang} থেকে অনূদিত — {term})",
+  "Keyword translations": "কীওয়ার্ড অনুবাদ",
+  "— load rings from Wikidata": "— উইকিডেটা থেকে রিং লোড করুন",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "একটি রিং হল বিভিন্ন ভাষায় একই ধারণা (election / élection / Wahl) — এটিই একটি কীওয়ার্ডকে আপনার নিজের ভাষায় “অনূদিত” চিহ্নসহ দেখাতে দেয়। এটি উইকিডেটার কাছে আপনার সংগ্রহের সেই ধারণাগুলি চায় যেগুলি এখনও কোনও রিং আওতায় আনেনি, সবচেয়ে কম আওতাভুক্ত ভাষা থেকে শুরু করে।",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "এই রিংগুলি উইকিডেটা থেকে আসে এবং কেউ সেগুলি যাচাই করে না। সেগুলি এই ইনস্টলেশনের নিজস্ব রিং ফাইলে লেখা হয়, যা সবচেয়ে কম অগ্রাধিকারে পড়া হয়: হাতে যাচাই করা রিং সর্বদা জেতে। প্রতিটি রিং উইকিডেটা থেকে লোড হয়েছে বলে চিহ্নিত থাকে, তাই আপনি সেটি ওই ফাইল থেকে সরাতে পারেন — ওই ফাইলে ব্যাকআপ থেকে পুনরুদ্ধার করা রিংও থাকে, তাই পুরো ফাইলটি মুছবেন না।",
+  "Concepts to load": "কতগুলি ধারণা লোড হবে",
+  "Load from Wikidata": "উইকিডেটা থেকে লোড করুন",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "প্রতি ১০ সেকেন্ডে www.wikidata.org-এ একটি অনুরোধ পাঠায়, যা তাদের স্বয়ংক্রিয় অ্যাক্সেস নীতির চাওয়া হার। এয়ারপ্লেন মোড চালু থাকলে প্রত্যাখ্যাত হয়।",
+  "No keyword in this corpus is missing a ring right now.": "এই সংগ্রহের কোনও কীওয়ার্ড এই মুহূর্তে রিং ছাড়া নেই।",
+  "concepts have no ring": "ধারণার কোনও রিং নেই",
+  "two Wikidata requests each, one request every 10 seconds": "প্রতিটির জন্য দুটি উইকিডেটা অনুরোধ, প্রতি ১০ সেকেন্ডে একটি",
+  "Could not read the ring gap:": "রিং-এর ঘাটতি পড়া গেল না:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "উইকিডেটা থেকে কীওয়ার্ড অনুবাদ লোড করুন (প্রতি ১০ সেকেন্ডে একটি অনুরোধ, আপনার ট্রান্সপোর্টের মাধ্যমে)",
+  "Loading in the background…": "পটভূমিতে লোড হচ্ছে…",
+  "Ring load failed:": "রিং লোড ব্যর্থ:",
+  "Rings loaded:": "লোড হওয়া রিং:",
+  "stopped early": "আগেই থেমে গেছে"
 }

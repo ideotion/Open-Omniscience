@@ -3533,5 +3533,21 @@
   "Concept": "Понятие",
   "Across languages:": "По всем языкам:",
   "Open a local preview of this source first": "Сначала открыть локальный предпросмотр этого источника",
-  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (перевод с языка: {term_lang} — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (перевод с языка: {term_lang} — {term})",
+  "Keyword translations": "Переводы ключевых слов",
+  "— load rings from Wikidata": "— загрузить кольца из Викиданных",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "Кольцо — это одно понятие на разных языках (election / élection / Wahl); именно оно позволяет показать ключевое слово на вашем языке с пометкой «переведено с». Здесь у Викиданных запрашиваются понятия из вашего корпуса, которые ещё не покрыты ни одним кольцом, начиная с языка с наименьшим покрытием.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "Эти кольца получены из Викиданных, и их никто не проверяет. Они записываются в собственный файл колец этой установки, который читается с наименьшим приоритетом: вручную выверенное кольцо всегда важнее. Каждое помечено как загруженное из Викиданных, поэтому его можно удалить из этого файла — но в нём лежат и кольца, восстановленные из резервной копии, так что не удаляйте файл целиком.",
+  "Concepts to load": "Сколько понятий загрузить",
+  "Load from Wikidata": "Загрузить из Викиданных",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "Отправляет один запрос каждые 10 секунд на www.wikidata.org — темп, которого требует их политика автоматического доступа. Отклоняется, пока включён режим полёта.",
+  "No keyword in this corpus is missing a ring right now.": "Сейчас ни одно ключевое слово в этом корпусе не осталось без кольца.",
+  "concepts have no ring": "понятий без кольца",
+  "two Wikidata requests each, one request every 10 seconds": "по два запроса к Викиданным на каждое, один запрос в 10 секунд",
+  "Could not read the ring gap:": "Не удалось прочитать пробел в кольцах:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Загрузить переводы ключевых слов из Викиданных (один запрос каждые 10 секунд, через ваш канал)",
+  "Loading in the background…": "Загрузка в фоновом режиме…",
+  "Ring load failed:": "Не удалось загрузить кольца:",
+  "Rings loaded:": "Загружено колец:",
+  "stopped early": "остановлено досрочно"
 }

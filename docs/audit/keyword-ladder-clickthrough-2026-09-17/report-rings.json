@@ -1,0 +1,71 @@
+{
+  "url": "http://127.0.0.1:8033",
+  "locales": {
+    "en": {
+      "dir": "ltr",
+      "panel": {
+        "title": "Keyword translations — load rings from Wikidata",
+        "caveat": "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins — and you can edit or delete that file to undo a load.",
+        "caveat_visible": true,
+        "panel_on_screen": true,
+        "settings_visible": true,
+        "button": "Load from Wikidata",
+        "button_title": "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.",
+        "label": "Concepts to load",
+        "gaps": "200 concepts have no ring · two Wikidata requests each, one request every 10 secondsGerman · 60 Chinese · 60 French · 60 English · 20",
+        "overflows": false
+      }
+    },
+    "fr": {
+      "dir": "ltr",
+      "panel": {
+        "title": "Traductions des mots-clés — charger des anneaux depuis Wikidata",
+        "caveat": "Ces anneaux proviennent de Wikidata et personne ne les relit. Ils sont écrits dans le fichier d’anneaux propre à cette installation, lu en dernière priorité : un anneau vérifié à la main l’emporte toujours — et vous pouvez modifier ou supprimer ce fichier pour annuler un chargement.",
+        "caveat_visible": true,
+        "panel_on_screen": true,
+        "settings_visible": true,
+        "button": "Charger depuis Wikidata",
+        "button_title": "Envoie une requête toutes les 10 secondes à www.wikidata.org, le rythme demandé par sa politique d’accès automatisé. Refusé tant que le mode avion est actif.",
+        "label": "Concepts à charger",
+        "gaps": "200 concepts sans anneau · deux requêtes Wikidata chacun, une requête toutes les 10 secondesallemand · 60 chinois · 60 français · 60 anglais · 20",
+        "overflows": false
+      }
+    },
+    "ar": {
+      "dir": "rtl",
+      "panel": {
+        "title": "ترجمات الكلمات المفتاحية — تحميل الحلقات من ويكي بيانات",
+        "caveat": "هذه الحلقات مأخوذة من ويكي بيانات ولا يراجعها أحد. تُكتَب في ملف الحلقات الخاص بهذا التثبيت، وهو يُقرأ بأدنى أولوية: الحلقة المحرَّرة يدويًا تفوز دائمًا — ويمكنك تعديل هذا الملف أو حذفه للتراجع عن أي تحميل.",
+        "caveat_visible": true,
+        "panel_on_screen": true,
+        "settings_visible": true,
+        "button": "تحميل من ويكي بيانات",
+        "button_title": "يُرسل طلبًا واحدًا كل 10 ثوانٍ إلى www.wikidata.org، وهو المعدل الذي تطلبه سياسة الوصول الآلي لديها. يُرفض أثناء تشغيل وضع الطيران.",
+        "label": "عدد المفاهيم المراد تحميلها",
+        "gaps": "200 مفهومًا بلا حلقة · طلبان إلى ويكي بيانات لكل مفهوم، بمعدل طلب واحد كل 10 ثوانٍالألمانية · 60 الصينية · 60 الفرنسية · 60 الإنجليزية · 20",
+        "overflows": false
+      }
+    },
+    "ja": {
+      "dir": "ltr",
+      "panel": {
+        "title": "キーワードの翻訳 — Wikidata からリングを読み込む",
+        "caveat": "これらのリングは Wikidata 由来で、誰も確認していません。このインストール専用のリングファイルに書き込まれ、そのファイルは最も低い優先度で読まれます。手作業で精査されたリングが常に優先され、読み込みを取り消したい場合はそのファイルを編集または削除できます。",
+        "caveat_visible": true,
+        "panel_on_screen": true,
+        "settings_visible": true,
+        "button": "Wikidata から読み込む",
+        "button_title": "www.wikidata.org へ 10 秒に 1 リクエストを送信します。これは同サイトの自動アクセス方針が求める速度です。機内モード中は拒否されます。",
+        "label": "読み込む概念の数",
+        "gaps": "200 件の概念にリングがありません · 各概念につき Wikidata へ 2 リクエスト、10 秒に 1 リクエストドイツ語 · 60 中国語 · 60 フランス語 · 60 英語 · 20",
+        "overflows": false
+      }
+    }
+  },
+  "consent": {
+    "dialog_on_screen": true,
+    "dialog_text": "Go online? This action needs the network: Where this will let the app connect: Your machine presents these local network addresses: Beyond these local addresses, the internet sees whatever public address your ISP or VPN presents — this app does not check it, because checking would itself be a network call. Airplane mode here controls only this app's network — it does not switch off your device's n",
+    "offsite_requests": [],
+    "screenshot": "rings-consent.png"
+  }
+}

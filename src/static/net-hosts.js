@@ -140,6 +140,14 @@
       "fetcher": true
     },
     {
+      "id": "keyword-rings",
+      "label": "Keyword translations",
+      "hosts": ["www.wikidata.org"],
+      "trigger": "click",
+      "setting": null,
+      "fetcher": true
+    },
+    {
       "id": "weather",
       "label": "Weather",
       "hosts": ["archive-api.open-meteo.com"],

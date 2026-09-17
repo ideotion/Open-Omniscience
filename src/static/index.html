@@ -2549,6 +2549,26 @@
         <div id="kf-builtin-list" class="hint" style="max-height:180px;overflow:auto;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
       </details>
     </section>
+
+    <!-- S04-06 S6 (Q406 = b): load cross-language keyword RINGS from Wikidata, without a
+         review step. The caveat is VISIBLE, never behind the hover: the informed-consent
+         non-negotiable puts a caveat on the surface and lets the hover carry the long
+         form. The button passes ensureOnline (invariant #14); the gap read below it does
+         not, because it makes no request -- and says so where the operator can see it. -->
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Keyword translations <span class="muted">&mdash; load rings from Wikidata</span></h2>
+      <p class="hint" style="margin-top:0">A ring is one concept across languages (election / &eacute;lection / Wahl), and it is what lets a keyword appear in your own language with &ldquo;translated from&rdquo; beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.</p>
+      <p class="card-caveat" style="margin-top:6px">These rings come from Wikidata and nobody reviews them. They are written to this install&rsquo;s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file &mdash; the file also holds rings restored from a backup, so do not delete the whole of it.</p>
+      <div class="row" style="margin-top:8px;align-items:end">
+        <div style="flex:0 0 140px"><label for="ring-limit">Concepts to load</label>
+          <input id="ring-limit" type="number" min="1" max="500" step="1" value="20"></div>
+        <div style="flex:0 0 auto"><button onclick="ringLoadStart()"
+          title="Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.">Load from Wikidata</button></div>
+        <div style="flex:0 0 auto"><button class="secondary" onclick="loadRingGaps()">Refresh</button></div>
+        <span id="ring-status" class="hint"></span>
+      </div>
+      <div id="ring-gaps" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
+    </section>
     </details>
 
         <details class="adv-sec" data-adv="calendars">

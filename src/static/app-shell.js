@@ -483,7 +483,8 @@
       // the FIGURES surface moved to Governments → Statistics (2026-07-31).
       stats:    () => { loadStatAgencies(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
-      keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); loadKeywordFilter(); },
+      keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration();
+                        loadKeywordFilter(); loadRingGaps(); },
       // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
       // subtab (invariant #8). It no longer loads with the agenda — only on expand.
       calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too

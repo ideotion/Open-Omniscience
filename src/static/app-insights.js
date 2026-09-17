@@ -924,6 +924,83 @@
       } catch (e) { toast(t("Backfill failed:") + " " + e.message, "err"); }
     }
 
+    // -- S04-06 S6: the consented Wikidata ring load (Q406 = b, Q408 = a) ---- //
+    //
+    // TWO CALLS, TWO POSTURES, AND THE DIFFERENCE IS EGRESS. `loadRingGaps` reads what a
+    // load WOULD ask for and makes no request off this machine, so it is not gated --
+    // invariant #14e gates a pre-action estimate because estimates egress first, and the
+    // rule is about the egress, not about the word "preview". `ringLoadStart` does
+    // egress, so it passes the ONE consent and the backend refuses independently.
+    async function loadRingGaps() {
+      const box = $("ring-gaps");
+      if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      box.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      try {
+        const d = await api("/api/insights/ring-gaps");
+        const per = d.per_language || {};
+        const langs = Object.keys(per);
+        if (!d.candidates) {
+          // An honest empty state, and it says WHICH of the two reasons it is: an
+          // unindexed corpus and a fully covered one are different facts.
+          box.innerHTML = '<div class="muted">'
+            + esc(t("No keyword in this corpus is missing a ring right now.")) + "</div>";
+          return;
+        }
+        const chips = langs.slice(0, 12).map((code) => '<span class="pill">'
+          + esc((typeof ooLangName === "function" ? ooLangName(code, code) : code))
+          + " · " + per[code] + "</span>").join(" ");
+        // THE RATE, NOT AN ETA. Invariant #20's rule for jobs is that a duration is drawn
+        // only when it is MEASURED -- "about 7 minutes" here would be candidates x a
+        // constant, which is a guess wearing a number, and the first slow response makes
+        // it wrong. So the cost is stated as the rate it actually is, and the method
+        // travels in the hover (invariant #17) rather than being dropped.
+        box.innerHTML =
+          '<div><strong>' + d.candidates + "</strong> " + esc(t("concepts have no ring")) + " · "
+          + '<span title="' + esc(d.method || "") + '">'
+          + esc(t("two Wikidata requests each, one request every 10 seconds"))
+          + "</span></div>"
+          + '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' + chips + "</div>";
+      } catch (e) {
+        box.innerHTML = '<div class="muted">' + esc(t("Could not read the ring gap:")) + " "
+          + esc(e.message) + "</div>";
+      }
+    }
+
+    async function ringLoadStart() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const st = $("ring-status");
+      const limit = Math.max(1, Math.min(500, parseInt(($("ring-limit") || {}).value, 10) || 20));
+      // The ONE consent (invariant #14). The result is USED, not discarded -- the recorded
+      // app-ai-tools defect where an awaited ensureOnline's answer was thrown away.
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Load keyword translations from Wikidata (one request every 10 seconds, over your transport)"))) return;
+      if (st) st.textContent = t("Loading in the background…");
+      try {
+        await api("/api/insights/ring-load?limit=" + limit, {method: "POST"});
+        const job = await pollJobStatus("/api/insights/ring-load/status");
+        if (job.state === "error") {
+          if (st) st.textContent = t("Ring load failed:") + " " + (job.error || "");
+          return;
+        }
+        if (_jobStillRunning(job)) {
+          // Never report the start-state's zeros as a result (the recorded shape).
+          if (st) st.textContent = t("Still running in the background — check the task manager for the result.");
+          return;
+        }
+        const res = job.result || {};
+        if (st) {
+          st.textContent = t("Rings loaded:") + " " + (res.written || 0) + "/" + (res.requested || 0)
+            + (res.stopped ? " · " + t("stopped early") : "");
+          // The result's own caveat, shown verbatim rather than re-worded: it is a caveat.
+          st.title = (res.method || "") + (res.caveat ? "\n\n" + res.caveat : "");
+        }
+        loadRingGaps();
+      } catch (e) {
+        if (st) st.textContent = t("Ring load failed:") + " " + e.message;
+      }
+    }
+
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
     async function loadCitedSources() {
       const box = $("cs-list");

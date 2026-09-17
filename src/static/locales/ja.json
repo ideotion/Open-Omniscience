@@ -3533,5 +3533,21 @@
   "Concept": "概念",
   "Across languages:": "全言語の合計:",
   "Open a local preview of this source first": "まずこの情報源のローカルプレビューを開く",
-  "“{term_translation}” (translated from {term_lang}: {term})": "「{term_translation}」（翻訳元: {term_lang} — {term}）"
+  "“{term_translation}” (translated from {term_lang}: {term})": "「{term_translation}」（翻訳元: {term_lang} — {term}）",
+  "Keyword translations": "キーワードの翻訳",
+  "— load rings from Wikidata": "— Wikidata からリングを読み込む",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "リングとは複数の言語にまたがる一つの概念です（election / élection / Wahl）。キーワードを自分の言語で「〜から翻訳」と添えて表示できるのはこのためです。ここでは、コーパスに現れていてまだどのリングにも含まれていない概念を、カバー率の低い言語から順に Wikidata に問い合わせます。",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "これらのリングは Wikidata 由来で、誰も確認していません。このインストール専用のリングファイルに書き込まれ、そのファイルは最も低い優先度で読まれます。手作業で精査されたリングが常に優先されます。各リングには Wikidata から読み込んだ印が付くので、そのファイルから個別に削除できます。ただし同じファイルにはバックアップから復元したリングも入っているため、ファイルごと削除しないでください。",
+  "Concepts to load": "読み込む概念の数",
+  "Load from Wikidata": "Wikidata から読み込む",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "www.wikidata.org へ 10 秒に 1 リクエストを送信します。これは同サイトの自動アクセス方針が求める速度です。機内モード中は拒否されます。",
+  "No keyword in this corpus is missing a ring right now.": "現在、このコーパスにリングのないキーワードはありません。",
+  "concepts have no ring": "件の概念にリングがありません",
+  "two Wikidata requests each, one request every 10 seconds": "各概念につき Wikidata へ 2 リクエスト、10 秒に 1 リクエスト",
+  "Could not read the ring gap:": "リングの不足を読み取れませんでした:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Wikidata からキーワードの翻訳を読み込む（10 秒に 1 リクエスト、お使いの通信経路経由）",
+  "Loading in the background…": "バックグラウンドで読み込み中…",
+  "Ring load failed:": "リングの読み込みに失敗しました:",
+  "Rings loaded:": "読み込んだリング:",
+  "stopped early": "途中で停止"
 }

@@ -3533,5 +3533,21 @@
   "Concept": "Konzept",
   "Across languages:": "Über alle Sprachen hinweg:",
   "Open a local preview of this source first": "Zuerst eine lokale Vorschau dieser Quelle öffnen",
-  "“{term_translation}” (translated from {term_lang}: {term})": "„{term_translation}“ (übersetzt aus: {term_lang} — {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "„{term_translation}“ (übersetzt aus: {term_lang} — {term})",
+  "Keyword translations": "Schlagwort-Übersetzungen",
+  "— load rings from Wikidata": "— Ringe aus Wikidata laden",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "Ein Ring ist ein Begriff über Sprachen hinweg (election / élection / Wahl) – dadurch erscheint ein Schlagwort in Ihrer Sprache mit dem Hinweis „übersetzt aus“. Dies fragt bei Wikidata die Begriffe ab, die in Ihrem Korpus vorkommen und noch von keinem Ring abgedeckt sind, beginnend mit der am schlechtesten abgedeckten Sprache.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "Diese Ringe stammen von Wikidata und werden von niemandem geprüft. Sie werden in die eigene Ringdatei dieser Installation geschrieben, die mit der niedrigsten Priorität gelesen wird: ein handgeprüfter Ring gewinnt immer. Jeder ist als aus Wikidata geladen gekennzeichnet, Sie können ihn also aus dieser Datei entfernen – in der auch aus einer Sicherung wiederhergestellte Ringe liegen, löschen Sie sie deshalb nicht ganz.",
+  "Concepts to load": "Zu ladende Begriffe",
+  "Load from Wikidata": "Aus Wikidata laden",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "Sendet alle 10 Sekunden eine Anfrage an www.wikidata.org – das Tempo, das dessen Richtlinie für automatisierten Zugriff verlangt. Wird abgelehnt, solange der Flugmodus aktiv ist.",
+  "No keyword in this corpus is missing a ring right now.": "Derzeit fehlt keinem Schlagwort in diesem Korpus ein Ring.",
+  "concepts have no ring": "Begriffe ohne Ring",
+  "two Wikidata requests each, one request every 10 seconds": "je zwei Wikidata-Anfragen, eine Anfrage alle 10 Sekunden",
+  "Could not read the ring gap:": "Die Ringlücke konnte nicht gelesen werden:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Schlagwort-Übersetzungen aus Wikidata laden (eine Anfrage alle 10 Sekunden, über Ihren Transportweg)",
+  "Loading in the background…": "Wird im Hintergrund geladen…",
+  "Ring load failed:": "Ringladen fehlgeschlagen:",
+  "Rings loaded:": "Geladene Ringe:",
+  "stopped early": "vorzeitig gestoppt"
 }

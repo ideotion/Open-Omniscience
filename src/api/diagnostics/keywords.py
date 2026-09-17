@@ -47,8 +47,15 @@ _SW_CAND_MIN_ARTICLES = 5  # needs real spread (ubiquity) to look like a functio
 # Ring-candidate digest: the inverse worklist — the highest-spread CONCEPTS not yet
 # in any cross-language ring, per language, to drive the corpus-driven ring
 # expansion (generate_wikidata_rings.py --from-log) and to measure coverage.
-_RING_CAND_PER_LANG = 60     # top gap concepts surfaced per language
-_RING_CAND_MIN_ARTICLES = 3  # enough spread to be worth a Wikidata QID resolution
+# Defined in src/analytics/ring_loader.py and ALIASED here: S04-06's in-app ring load is
+# the second reader, and an analytics module may not import an api one. The private names
+# stay, so every existing reader of this module is unaffected.
+from src.analytics.ring_loader import (  # noqa: E402
+    RING_CAND_MIN_ARTICLES as _RING_CAND_MIN_ARTICLES,
+)
+from src.analytics.ring_loader import (  # noqa: E402
+    RING_CAND_PER_LANG as _RING_CAND_PER_LANG,
+)
 
 
 def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:

@@ -3533,5 +3533,21 @@
   "Concept": "Concept",
   "Across languages:": "Across languages:",
   "Open a local preview of this source first": "Open a local preview of this source first",
-  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” (translated from {term_lang}: {term})"
+  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” (translated from {term_lang}: {term})",
+  "Keyword translations": "Keyword translations",
+  "— load rings from Wikidata": "— load rings from Wikidata",
+  "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.": "A ring is one concept across languages (election / élection / Wahl), and it is what lets a keyword appear in your own language with “translated from” beside it. This asks Wikidata for the concepts your corpus shows that no ring covers yet, worst-covered language first.",
+  "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.": "These rings come from Wikidata and nobody reviews them. They are written to this install’s own ring file, which is read at the lowest precedence, so a hand-curated ring always wins. Each one is marked as loaded from Wikidata, so you can remove it from that file — the file also holds rings restored from a backup, so do not delete the whole of it.",
+  "Concepts to load": "Concepts to load",
+  "Load from Wikidata": "Load from Wikidata",
+  "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.": "Sends one request per 10 seconds to www.wikidata.org, the rate its automated-access policy asks for. Refused while airplane mode is on.",
+  "No keyword in this corpus is missing a ring right now.": "No keyword in this corpus is missing a ring right now.",
+  "concepts have no ring": "concepts have no ring",
+  "two Wikidata requests each, one request every 10 seconds": "two Wikidata requests each, one request every 10 seconds",
+  "Could not read the ring gap:": "Could not read the ring gap:",
+  "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)": "Load keyword translations from Wikidata (one request every 10 seconds, over your transport)",
+  "Loading in the background…": "Loading in the background…",
+  "Ring load failed:": "Ring load failed:",
+  "Rings loaded:": "Rings loaded:",
+  "stopped early": "stopped early"
 }
