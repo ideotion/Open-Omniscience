@@ -70,6 +70,50 @@ _BLOB_MEMBERS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 )
 
 
+def _lane_member() -> dict:
+    """The versioned-source lanes as ONE opt-in member, sized from the files themselves.
+
+    WHY IT IS NOT A FOLDER-BACKUP CATEGORY, which is the whole substance of this hook.
+    Every ``_BLOB_MEMBERS`` row names categories the FOLDER backup copies byte for byte,
+    and that is right for a finished download: a wiki dump on disk is inert. A lane is
+    not. It is a LIVE, WAL-dirty, encrypted SQLCipher database, and a byte copy taken
+    while the app is writing produces a file that may simply not open — a backup that
+    reports success and restores nothing. Lanes are snapshotted through
+    ``connect.snapshot_preserving`` (the corpus's own path, which keeps the source's
+    encryption state), so the member declares ``via: "snapshot"`` and carries NO folder
+    categories. A future slice that wires the export reads that field rather than
+    guessing from the presence of ``categories``.
+
+    ``exportable`` is False until S04-04 owns the format, and the reason travels WITH
+    the flag: a disabled row with no explanation reads as a bug. Nothing is understated
+    in the meantime — no shipped path creates a lane file in this slice, so an operator
+    cannot yet have lane data for a dialog to omit.
+    """
+    from src.versioned.lanes import all_lanes
+    from src.versioned.store import lane_file_bytes
+
+    breakdown: dict[str, dict] = {}
+    for spec in all_lanes():
+        size = lane_file_bytes(spec.kind)
+        # ``None`` means ABSENT, which is not zero: a lane that does not exist is not a
+        # lane of size nothing, and merging them would put a row in front of an operator
+        # for a store they have never opened.
+        if size is None:
+            continue
+        breakdown[spec.kind] = {"count": 1, "bytes": int(size)}
+    return {
+        "key": "lanes",
+        "label": "Living sources",
+        "categories": [],
+        "via": "snapshot",
+        "exportable": False,
+        "not_exportable_reason": "a lane is a live encrypted database; its backup format is not settled yet",
+        "count": sum(int(p["count"]) for p in breakdown.values()),
+        "bytes": sum(int(p["bytes"]) for p in breakdown.values()),
+        "breakdown": breakdown,
+    }
+
+
 def _members(blobs: dict[str, dict]) -> list[dict]:
     """Each opt-in member with the size the export would ACTUALLY write for it.
 
@@ -85,6 +129,11 @@ def _members(blobs: dict[str, dict]) -> list[dict]:
                 "key": key,
                 "label": label,
                 "categories": list(cats),
+                # The folder backup copies these byte for byte, which is correct for a
+                # finished download and is stated rather than implied, so the lane
+                # member's different answer is a value and not an absence.
+                "via": "folder",
+                "exportable": True,
                 "count": sum(int(p.get("count", 0)) for p in parts.values()),
                 "bytes": sum(int(p.get("bytes", 0)) for p in parts.values()),
                 # Named per store, because "which of these is the big one" is a real
@@ -92,6 +141,7 @@ def _members(blobs: dict[str, dict]) -> list[dict]:
                 "breakdown": parts,
             }
         )
+    out.append(_lane_member())
     return out
 
 
@@ -146,4 +196,5 @@ def backup_inventory(session=None) -> dict:
         "models": by_key["models"],
         "maps": by_key["maps"],
         "wiki": by_key["wiki"],
+        "lanes": by_key["lanes"],
     }
