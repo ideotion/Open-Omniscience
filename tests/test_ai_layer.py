@@ -96,9 +96,51 @@ def test_trusted_keyword_index_never_reads_the_ai_table():
     """The trusted, rule-based analytics must NEVER read ``ai_keyword`` / ``AiKeyword``
     nor import the AI layer — that is what keeps AI output from masquerading as, or being
     joined into, rule-based fact now that the two live in the same database. (The
-    rule-based keyword index reads only ``articles.content``.)"""
+    rule-based keyword index reads only ``articles.content``.)
+
+    PARSED, NOT GREPPED (2026-09-17). This was a whole-file substring search, and it
+    failed against correct code the first time a module in the trusted path EXPLAINED its
+    relationship to the AI layer: `src/analytics/translation_store.py` says in its own
+    docstring that the verified ring translation always wins and that
+    ``src.ai_layer.translate.translate_keywords`` already skips a term a ring covers --
+    a sentence asserting the very separation this guard exists to protect, reported as a
+    breach of it. That is the recorded "a must-be-gone guard trips on its own
+    explanation" trap, and the recorded repair is NOT to reword the sentence: it is what
+    a future session reads before deciding the separation was accidental. So the guard
+    now reads the AST and fails on an IMPORT or a real NAME, and is blind to prose --
+    which also makes it stronger, since a substring search could never have told
+    `import src.ai_layer` from the word appearing inside a URL."""
+    import ast
+
     for f in sorted(_TRUSTED_DIR.rglob("*.py")):
         src = f.read_text("utf-8")
-        assert "ai_keyword" not in src, f
-        assert "AiKeyword" not in src, f
-        assert "src.ai_layer" not in src, f
+        tree = ast.parse(src)
+        docstrings = {
+            id(n.body[0].value)
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.body
+            and isinstance(n.body[0], ast.Expr)
+            and isinstance(n.body[0].value, ast.Constant)
+            and isinstance(n.body[0].value.value, str)
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("src.ai_layer"):
+                raise AssertionError(f"{f} imports the AI layer: from {node.module}")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("src.ai_layer"), f"{f} imports {alias.name}"
+            if isinstance(node, ast.Name):
+                assert node.id != "AiKeyword", f"{f} names AiKeyword"
+            if isinstance(node, ast.Attribute):
+                assert node.attr != "AiKeyword", f"{f} names AiKeyword"
+            if isinstance(node, ast.alias):
+                assert node.name != "AiKeyword", f"{f} imports AiKeyword"
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+            ):
+                assert "ai_keyword" not in node.value, f"{f} references the ai_keyword table"
+    # ANTI-VACUITY: an empty walk satisfies every assertion above for free.
+    assert len(list(_TRUSTED_DIR.rglob("*.py"))) > 10, "the guard scanned almost nothing"

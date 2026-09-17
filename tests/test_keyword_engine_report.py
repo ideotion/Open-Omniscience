@@ -124,7 +124,9 @@ def test_lemma_preview_surfaces_candidate_conflations():
     the top terms (study/studied -> study), so the maintainer reviews precision before
     enabling OO_FAMILY_LEMMA. Denylisted meaning-changers (media/medium) must NOT appear,
     and there is no score. Degrades honestly (available:false) without simplemma."""
-    from src.analytics.families import _simplemma
+    # The lemmatiser moved to the ONE seam on 2026-09-17; ask the availability
+    # PROBE, never a module attribute, so this cannot break again on a move.
+    from src.analytics.lemma import lemmatizer_available
 
     s = _sess()
     s.add(Source(name="Src", domain="s.test"))
@@ -143,7 +145,7 @@ def test_lemma_preview_surfaces_candidate_conflations():
 
     lp = keyword_engine_report(s, top_n=50, sample_articles=1)["lemma_preview"]
     assert "score" not in lp  # counts only, never a score
-    if _simplemma is None:
+    if not lemmatizer_available():
         assert lp["available"] is False
         return
     assert lp["available"] is True and "enabled" in lp
@@ -175,7 +177,9 @@ def test_focused_lemma_preview_report_matches_the_full_report(monkeypatch):
     """S5.4: the FOCUSED lemma_preview_report (surfaced standalone in the Diagnostics panel)
     returns the same candidate conflations as the full report's lemma_preview block, WITHOUT
     running the heavy report. Counts only, no score; honest available:false without simplemma."""
-    from src.analytics.families import _simplemma
+    # The lemmatiser moved to the ONE seam on 2026-09-17; ask the availability
+    # PROBE, never a module attribute, so this cannot break again on a move.
+    from src.analytics.lemma import lemmatizer_available
 
     s = _sess()
     s.add(Source(name="Src", domain="s.test"))
@@ -192,7 +196,7 @@ def test_focused_lemma_preview_report_matches_the_full_report(monkeypatch):
 
     lp = lemma_preview_report(s, top_n=50)
     assert "score" not in lp
-    if _simplemma is None:
+    if not lemmatizer_available():
         assert lp["available"] is False
         return
     assert lp["available"] is True

@@ -3524,5 +3524,14 @@
   "Restoring a backup later": "Restaurar um backup mais tarde",
   "Trust a backup's scraping history by default": "Confiar por padrão no histórico de coleta de um backup",
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Confiar nele evita baixar novamente o que o histórico indica já ter sido obtido; não confiar nele baixa tudo novamente do zero. Você pode alterar isso para qualquer importação específica.",
-  "Netherlands Antilles": "Antilhas Neerlandesas"
+  "Netherlands Antilles": "Antilhas Neerlandesas",
+  "translated from {language}": "traduzido de: {language}",
+  "in {language}": "em {language}",
+  "Not translated — shown in its own language.": "Não traduzido — exibido no seu próprio idioma.",
+  "Several senses": "Vários sentidos",
+  "Original": "Original",
+  "Concept": "Conceito",
+  "Across languages:": "Em todos os idiomas:",
+  "Open a local preview of this source first": "Abrir primeiro uma pré-visualização local desta fonte",
+  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (traduzido de: {term_lang} — {term})"
 }

@@ -53,10 +53,13 @@ def test_lemmatization_mechanism_case_present_and_passes_when_available():
     # P4.3: the lemma mechanism (study<-studied) + denylist (media!->medium) is a golden
     # case when the optional simplemma is installed (CI [analysis] + the maintainer's export);
     # a core install simply omits it (the feature no-ops there), never a failure.
-    from src.analytics.families import _simplemma
+    # The lemmatiser moved to the ONE seam (src/analytics/lemma.py) on 2026-09-17, and
+    # the probe is the SOURCE OF TRUTH rather than a module attribute -- a name-based
+    # check fails the day the name moves, which is the day it just did.
+    from src.analytics.lemma import lemmatizer_available
 
     cases = {c["id"]: c for c in run_keyword_selftest()["cases"]}
-    if _simplemma is None:
+    if not lemmatizer_available():
         assert "lemmatization_mechanism" not in cases
     else:
         lm = cases.get("lemmatization_mechanism")

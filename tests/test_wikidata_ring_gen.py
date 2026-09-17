@@ -517,3 +517,24 @@ def test_the_additions_artifact_survives_an_id_a_human_typed():
     assert data["ring_additions"][0]["id"] == "odd: id"
     assert data["ring_additions"][0]["new_members"] == ['en:a "quoted" one']
     assert data["source_file"] == "src: file"
+
+
+def test_the_generator_runs_at_the_polite_rate_in_every_mode():
+    """R8 / Q410 = a: <= 1 request per 10 seconds, in EVERY mode.
+
+    The seed run and the refresh run reach the same API with the same User-Agent from the
+    same machine, so a fast refresh beside a polite seed run would make the politeness a
+    claim rather than a property. Pinned on the DEFAULTS, because that is what an operator
+    who types the documented command actually gets -- and pinned on `main()` NOT passing
+    its own value, because a default is only the rate if nothing overrides it on the way.
+    """
+    import inspect
+
+    assert G.POLITE_SLEEP_S >= 10.0
+    for fn in (G.generate, G.refresh_rings):
+        got = inspect.signature(fn).parameters["sleep"].default
+        assert got == G.POLITE_SLEEP_S, f"{fn.__name__} default is {got!r}, not the polite rate"
+    src = inspect.getsource(G.main)
+    assert "sleep=" not in src, (
+        "main() overrides the polite rate; the ruled default must reach the operator's run"
+    )

@@ -3524,5 +3524,14 @@
   "Restoring a backup later": "পরে একটি ব্যাকআপ পুনরুদ্ধার করা",
   "Trust a backup's scraping history by default": "ব্যাকআপের স্ক্র্যাপিং ইতিহাসে ডিফল্টরূপে ভরসা করুন",
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "এতে ভরসা করলে ইতিহাস অনুযায়ী আগে থেকেই আনা জিনিসগুলো আবার আনা হয় না; ভরসা না করলে সবকিছু নতুন করে শুরু থেকে আনা হয়। যেকোনো একটি আমদানির জন্য আপনি এটি বদলাতে পারেন।",
-  "Netherlands Antilles": "নেদারল্যান্ডস অ্যান্টিলস"
+  "Netherlands Antilles": "নেদারল্যান্ডস অ্যান্টিলস",
+  "translated from {language}": "{language} থেকে অনূদিত",
+  "in {language}": "ভাষা: {language}",
+  "Not translated — shown in its own language.": "অনূদিত নয় — নিজস্ব ভাষাতেই দেখানো হয়েছে।",
+  "Several senses": "একাধিক অর্থ",
+  "Original": "মূল",
+  "Concept": "ধারণা",
+  "Across languages:": "সব ভাষা মিলিয়ে:",
+  "Open a local preview of this source first": "আগে এই উৎসের স্থানীয় প্রিভিউ খুলুন",
+  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” ({term_lang} থেকে অনূদিত — {term})"
 }

@@ -538,22 +538,85 @@ def test_lemmatization_is_on_by_default_display_layer_and_reversible():
     review of the live-corpus lemma_preview (lemmatization is a display-layer change,
     invisible to the FTS retrieval harness, so an IR-gold-set A/B was never the coherent
     measurement for it). Opt OUT with OO_FAMILY_LEMMA=0; graceful-degrade when simplemma is
-    absent; a visible conflated_by provenance. It must NEVER touch the trusted
-    normalize/store path (that would rewrite the canonical index)."""
+    absent; a visible conflated_by provenance.
+
+    AMENDED 2026-09-17 (Q416 = a, gate row M). This guard used to end "It must NEVER touch
+    the trusted normalize/store path (that would rewrite the canonical index)", and the
+    maintainer has since ruled the opposite: lemmatisation now runs AT EXTRACTION and does
+    decide the stored key, under its own separate opt-out (`OO_EXTRACT_LEMMA`) and its own
+    migration. So the sentence is struck rather than quietly deleted, and what this test
+    pins is what remains true: the DISPLAY layer still behaves exactly as ruled in
+    2026-07-18, still governed by `OO_FAMILY_LEMMA`, still reversible, still provenanced —
+    and the two layers read the SAME rules from one module, which is the property that
+    keeps them from disagreeing about what "the same keyword" is."""
     fam = (_SRC / "analytics" / "families.py").read_text(encoding="utf-8")
+    lem = (_SRC / "analytics" / "lemma.py").read_text(encoding="utf-8")
     assert "def _lemma(" in fam and "def _lemma_enabled(" in fam
-    assert 'os.getenv("OO_FAMILY_LEMMA"' in fam and '"1")' in fam  # default ON
-    assert "_MISLEMMA_DENYLIST" in fam and "conflated_by" in fam  # denylist + visible provenance
-    assert "import simplemma" in fam  # optional dep, try/except guarded
-    # lemmatization is display-only: the trusted extractor/normalize path must NOT import it
+    assert 'os.getenv("OO_FAMILY_LEMMA"' in fam and '"1")' in fam  # default ON, display layer
+    assert "conflated_by" in fam  # visible provenance
+    # The denylist + the language set moved to the ONE seam; families.py reads them from
+    # there rather than holding a second copy that would drift.
+    assert "MISLEMMA_DENYLIST" in lem and "LEMMA_LANGS" in lem
+    assert "from src.analytics.lemma import" in fam, "families.py no longer reads the one seam"
+    # The two layers have SEPARATE opt-outs: folding them onto one variable would let an
+    # operator who wanted a display change quietly alter what their corpus stores.
+    assert 'os.getenv("OO_EXTRACT_LEMMA"' in lem
+    # ...asserted BEHAVIOURALLY, not by a source grep. The first draft of this line was
+    # `"OO_FAMILY_LEMMA" not in lem`, and it failed against correct code -- on the comment
+    # in `lemma.py` that EXPLAINS why the two are separate. That is the recorded
+    # "a must-be-gone guard trips on its own explanation" trap, and rewording the comment
+    # would be the wrong repair: the comment is what a future session reads before
+    # deciding the separation was an accident. So drive the variables instead.
+    import os as _os
+
+    from src.analytics import families as _fam_mod
+    from src.analytics import lemma as _lemma_mod
+
+    _saved = {k: _os.environ.get(k) for k in ("OO_FAMILY_LEMMA", "OO_EXTRACT_LEMMA")}
+    try:
+        _os.environ["OO_FAMILY_LEMMA"] = "0"
+        _os.environ["OO_EXTRACT_LEMMA"] = "1"
+        assert not _fam_mod._lemma_enabled(), "the display layer ignored its own opt-out"
+        assert _lemma_mod.extraction_lemma_enabled(), (
+            "turning the DISPLAY opt-out off also disabled EXTRACTION -- one variable "
+            "now silently controls what the corpus stores"
+        )
+        _os.environ["OO_FAMILY_LEMMA"] = "1"
+        _os.environ["OO_EXTRACT_LEMMA"] = "0"
+        assert not _lemma_mod.extraction_lemma_enabled(), "extraction ignored its own opt-out"
+        if _lemma_mod.lemmatizer_available():
+            assert _fam_mod._lemma_enabled(), (
+                "turning the EXTRACTION opt-out off also disabled the display layer"
+            )
+    finally:
+        for k, v in _saved.items():
+            if v is None:
+                _os.environ.pop(k, None)
+            else:
+                _os.environ[k] = v
+    assert "import simplemma" in lem  # the ONE seam owns the import, try/except guarded
+    # STRUCK 2026-09-17 by Q416 = a. This block used to assert that `extract.py` and
+    # `store.py` contain no `simplemma` at all, on the rule "lemmatization must stay at
+    # the families DISPLAY layer, never the stored index". The maintainer has ruled the
+    # opposite, so the assertion is replaced rather than relaxed, and what replaces it is
+    # the rule that IS still in force: extraction reaches the lemmatiser only through the
+    # one seam, never by importing the library itself, so the guards that make it safe
+    # (single tokens, per-language, the denylist, the merge-only key rule) cannot be
+    # bypassed by a second import somewhere else.
     extract = (_SRC / "analytics" / "extract.py").read_text(encoding="utf-8")
-    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
-    assert "simplemma" not in extract and "simplemma" not in store, (
-        "lemmatization must stay at the families DISPLAY layer, never the stored index"
+    assert "from src.analytics.lemma import" in extract, "extraction bypasses the one seam"
+    assert "import simplemma" not in extract, (
+        "extract.py imports the lemmatiser directly; every guard lives in src/analytics/lemma.py "
+        "and a second import is how they get bypassed"
     )
-    # the optional dependency is declared in the [analysis] extra (CI exercises it)
+    # ...and the CORE dependency is declared, with its registry entry (Q1015 = a: pure
+    # Python may live in core, and every addition is registered).
     pyproject = (_SRC.parent / "pyproject.toml").read_text(encoding="utf-8")
     assert "simplemma" in pyproject
+    core = pyproject.split("[project.optional-dependencies]", 1)[0]
+    assert "simplemma" in core, "simplemma must be a CORE dependency since Q416 = a, not an extra"
+    registry = (_SRC.parent / "configs" / "external_artifacts.yml").read_text(encoding="utf-8")
+    assert "simplemma-dictionaries" in registry, "the core addition is not registered (Q1015 = a)"
 
 
 def test_lemma_preview_shows_the_true_delta_over_the_plural_rule():
@@ -6110,13 +6173,34 @@ def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
 def test_keyword_views_show_verified_translations():
     """Language-aware keyword views (maintainer ruling 2026-06-19): don't blind the
     reader to foreign keywords — show each one WITH its verified cross-language
-    translation into the UI language. Browser-unverified; this pins the wiring."""
+    translation into the UI language.
+
+    AMENDED 2026-09-17 (Q401 = a, gate row M): the grammar INVERTED. The translation is
+    now the VISIBLE term and a small "translated from X" tag follows it, all rendered by
+    ONE helper (`kwLabelHtml`) that every keyword surface calls — so what this pins is the
+    helper and its wiring, not the old `term -> translation` pair. `kwTransHtml` is kept
+    as the renderer for surfaces not yet converted, and is deliberately NOT asserted at any
+    particular call site, because each conversion should be free to move one.
+
+    The LABEL GRAMMAR itself is not testable from source — a substring proves a field is
+    mentioned, never that it reaches the output — so it is driven as real code in
+    `tests/keyword_label_node_test.js` (see `tests/test_keyword_label_ui.py`)."""
     html = _ui_source()
-    # The translation helper + UI-language target param exist and are used.
-    for marker in ("function kwTransHtml(", "tgtLangParam(", "function uiLangCode(", "kw-trans"):
+    # The one helper + the UI-language target param exist and are used.
+    for marker in ("function kwLabelHtml(", "tgtLangParam(", "function uiLangCode(", "kw-tag"):
         assert marker in html, f"missing translation wiring: {marker}"
-    # termListHtml renders the translation beside the keyword.
-    assert "${kwTransHtml(t)}" in html, "termListHtml must render the verified translation"
+    # The keyword SPAN opts out of the i18n walker, or a keyword that happens to match a
+    # chrome key would be silently translated as if it were chrome.
+    assert 'class="kw-term" data-i18n-dyn' in html, "a keyword term does not opt out of the walker"
+    # The `data-i18n-dyn` opt-out costs a repaint, so the other half must be wired into the
+    # EXISTING oo:langchange listener (a second listener is a second enumerator).
+    assert "ooKwRepaintOnLangChange" in html, "the keyword labels never repaint on a language switch"
+    handlers = event_listener_bodies(html, "oo:langchange")
+    assert any("ooKwRepaintOnLangChange" in h for h in handlers), (
+        f"({len(handlers)} oo:langchange listener(s), none repaints the keyword labels)"
+    )
+    # termListHtml renders through the one helper.
+    assert "${kwLabelHtml(term)}" in html, "termListHtml must render through the one label helper"
     # The three keyword fetches request the verified translation for the UI language.
     assert "/api/insights/trending-windows?limit=6&series_top=6\" + tgtLangParam()" in html
     assert "/api/insights/trending-windows?limit=4&series_top=4\" + tgtLangParam()" in html

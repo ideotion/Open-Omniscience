@@ -3524,5 +3524,14 @@
   "Restoring a backup later": "Восстановление резервной копии позже",
   "Trust a backup's scraping history by default": "Доверять истории сбора данных резервной копии по умолчанию",
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля. Это можно изменить для любого отдельного импорта.",
-  "Netherlands Antilles": "Нидерландские Антильские острова"
+  "Netherlands Antilles": "Нидерландские Антильские острова",
+  "translated from {language}": "перевод с языка: {language}",
+  "in {language}": "язык: {language}",
+  "Not translated — shown in its own language.": "Не переведено — показано на языке оригинала.",
+  "Several senses": "Несколько значений",
+  "Original": "Оригинал",
+  "Concept": "Понятие",
+  "Across languages:": "По всем языкам:",
+  "Open a local preview of this source first": "Сначала открыть локальный предпросмотр этого источника",
+  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (перевод с языка: {term_lang} — {term})"
 }

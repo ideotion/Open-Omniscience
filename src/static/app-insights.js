@@ -139,7 +139,7 @@
             const fam = f.variants > 1;
             return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
               title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
-              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${esc(f.term)}${kwTransHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${kwLabelHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
@@ -168,7 +168,7 @@
         const top = await api(`/api/insights/top?group=true&limit=80&kind=${encodeURIComponent(kind)}` + tgtLangParam());
         const fams = top.terms || [];
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
-            <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
@@ -211,7 +211,7 @@
             : "";
           return `<div class="fam-row">
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
-            <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               ${lemmaTag}

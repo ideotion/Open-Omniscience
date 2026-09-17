@@ -39,6 +39,13 @@
     // re-renders from its CACHE (no fetch); the sources table re-renders only if it has
     // already been loaded.
     document.addEventListener("oo:langchange", () => {
+      // S04-06: the keyword labels opt OUT of the i18n walker (`data-i18n-dyn`, so a
+      // keyword that happens to match a chrome key is never translated as if it were
+      // chrome), which means nothing repaints them on a switch -- the frozen-locale
+      // class. Registered in THIS listener rather than a new one: a second listener is a
+      // second enumerator, and the two guards that inspect this event already walk every
+      // handler for exactly that reason.
+      try { if (typeof ooKwRepaintOnLangChange === "function") ooKwRepaintOnLangChange(); } catch (_e) {}
       try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
       // World-map lens desc + story chips are rendered at render time (kindLabel/t), so
       // re-render them too so the whole map surface tracks the new locale (field-test Item 6).

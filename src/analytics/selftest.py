@@ -226,7 +226,9 @@ _CASES: tuple[Challenge, ...] = (
         "Romance elisions (l'/d'/qu') are not kept as part of a keyword",
         "L'Assemblée a voté la réforme. D'euros et qu'il faut. L'assemblée débat encore.",
         language="fr",
-        term=("assemblée", "euros"),
+        # `euros` is keyed under its LEMMA `euro` since 2026-09-17 (Q416 = a); the
+        # ELISION this case is about is unchanged and still asserted by `absent` below.
+        term=("assemblée", "euro"),
         absent=("l'assemblée", "d'euros", "qu'il"),
     ),
     # 2026-06-22 field test, remainder batch: each newly-MANAGED language gets a
@@ -325,7 +327,7 @@ _CASES: tuple[Challenge, ...] = (
         "clock_timecode_fragments_dropped",
         "clock timecodes (1h15, 12h00) do not leave h15/h00 keyword fragments",
         "The session opened at 1h15 and closed at 12h00 after a debate about elections.",
-        term=("elections",),
+        term=("election",),  # lemma key (Q416 = a)
         absent=("h15", "h00"),
     ),
     Challenge(
@@ -341,7 +343,7 @@ _CASES: tuple[Challenge, ...] = (
         # ('newsletter' is now platform FURNITURE — 2026-07-01 open-class batch — so the
         # surviving content control is 'layout', not 'newsletter'.)
         "The govdelivery newsletter used a gd_combo_table layout while covering the elections.",
-        term=("elections", "layout", "govdelivery"),
+        term=("election", "layout", "govdelivery"),  # lemma key (Q416 = a)
         absent=("gd_combo_table", "newsletter"),
     ),
     Challenge(

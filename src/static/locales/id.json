@@ -3524,5 +3524,14 @@
   "Restoring a backup later": "Memulihkan cadangan nanti",
   "Trust a backup's scraping history by default": "Percayai riwayat scraping cadangan secara default",
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Mempercayainya berarti melewati pengunduhan ulang untuk hal yang menurut riwayat sudah pernah diambil; tidak mempercayainya berarti mengunduh ulang semuanya dari awal. Anda dapat mengubah ini untuk setiap impor secara terpisah.",
-  "Netherlands Antilles": "Antillen Belanda"
+  "Netherlands Antilles": "Antillen Belanda",
+  "translated from {language}": "diterjemahkan dari {language}",
+  "in {language}": "dalam {language}",
+  "Not translated — shown in its own language.": "Tidak diterjemahkan — ditampilkan dalam bahasanya sendiri.",
+  "Several senses": "Beberapa makna",
+  "Original": "Asli",
+  "Concept": "Konsep",
+  "Across languages:": "Di seluruh bahasa:",
+  "Open a local preview of this source first": "Buka dulu pratinjau lokal sumber ini",
+  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}” (diterjemahkan dari {term_lang} — {term})"
 }

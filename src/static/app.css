@@ -1801,6 +1801,42 @@
     .kw-trans.kw-tentative { color: var(--muted); border-bottom-style: dashed;
       border-bottom-color: var(--muted); font-style: italic; }
 
+    /* ---- S04-06: the ONE keyword label (Q401 = a) ------------------------------ */
+    /* The TRANSLATION is the visible term and a small tag follows it. The tag is the
+       tier marker, and it is VISIBLE by default -- the informed-consent non-negotiable
+       says a caveat is never behind a toggle, and "this word is not the word the article
+       used" is exactly a caveat. The long form lives in the #oo-tip hover (invariant
+       #17), which is layering, not hiding. */
+    .kw-term { }
+    .kw-tag { font-size: 0.82em; color: var(--accent); border-bottom: 1px dotted var(--accent);
+      cursor: help; white-space: nowrap; }
+
+    /* TENTATIVE: muted + dashed + italic, and the ~ is drawn by the renderer so the
+       marker survives a stylesheet that does not load. NO `opacity` anywhere in these
+       rules: element opacity composites the whole element over what is behind it, so a
+       contrast check scores a pair that never appears on screen -- measured at 16 of 17
+       themes failing WCAG AA on the calendar chip that did it. */
+    .kw-tag.kw-tentative { color: var(--muted); border-bottom-style: dashed;
+      border-bottom-color: var(--muted); font-style: italic; }
+
+    /* UNTRANSLATED: the keyword is shown in its own language and SAYS so. Grounded
+       rather than accented, because there is nothing to celebrate and nothing to click. */
+    .kw-tag.kw-untranslated { color: var(--muted); border-bottom-style: dotted;
+      border-bottom-color: var(--muted); }
+
+    /* SEVERAL SENSES (Q412 = a): the refusal, drawn in the caveat colour that already
+       clears AA on every panel of all 17 themes, with the picker beside it. */
+    .kw-tag.kw-senses { color: var(--caveat); border-bottom-color: var(--caveat); }
+    .kw-senses .kw-sense { font-size: 0.82em; margin-left: 4px; padding: 0 6px;
+      border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+      color: var(--fg); cursor: pointer; }
+    .kw-senses .kw-sense:hover { border-color: var(--accent); }
+
+    /* The QID chip. Opens the LOCAL preview first (invariant #6) -- it is a button in an
+       anchor's clothing, so it carries no outbound affordance of its own. */
+    .kw-qid { font-size: 0.78em; color: var(--muted); margin-left: 4px;
+      border-bottom: 1px dotted var(--muted); }
+
     /* S4.3: the synthesized-Leads carousel (Home dashboard). The caveat rides every face
        (.card-caveat, reused); the controls stay a constant footprint; dots mark position. */
     #home-carousel .carousel { outline-offset: 2px; }

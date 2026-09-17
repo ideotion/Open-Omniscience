@@ -3524,5 +3524,14 @@
   "Restoring a backup later": "稍后恢复备份",
   "Trust a backup's scraping history by default": "默认信任备份的抓取历史记录",
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "信任它会跳过重新抓取历史记录中显示已获取的内容；不信任它则会从头重新抓取所有内容。您可以针对每次导入单独更改此设置。",
-  "Netherlands Antilles": "荷属安的列斯"
+  "Netherlands Antilles": "荷属安的列斯",
+  "translated from {language}": "译自：{language}",
+  "in {language}": "语言：{language}",
+  "Not translated — shown in its own language.": "未翻译 — 以原语言显示。",
+  "Several senses": "多种含义",
+  "Original": "原文",
+  "Concept": "概念",
+  "Across languages:": "跨所有语言：",
+  "Open a local preview of this source first": "先打开该来源的本地预览",
+  "“{term_translation}” (translated from {term_lang}: {term})": "“{term_translation}”（译自：{term_lang} — {term}）"
 }

@@ -146,6 +146,36 @@ def unsegmented_note(session, article_ids: list[int]) -> dict | None:
     }
 
 
+def _resolve_by_lemma(session, norm: str) -> Keyword | None:
+    """The second EXACT try: the typed term's lemma (Q416 = a, 2026-09-17).
+
+    THE PROBLEM THIS SOLVES, which is not search expansion. Lemmatisation now happens at
+    EXTRACTION, so the corpus stores `sanction` where the articles said "sanctions" -- and
+    a reader who types the word the articles actually used would get nothing back, because
+    the two sides of the comparison stopped agreeing about the key. The recorded rule is
+    to normalise on BOTH sides; this is that, one function later. It is emphatically NOT
+    ring expansion (`S04-07`): it never widens a query to another TERM, only to the same
+    word's own stored form.
+
+    STILL EXACT, so ``exact=True`` keeps meaning what it says. The typed term carries no
+    language, so the lemma is computed under each language the app lemmatises -- a handful
+    of candidates, usually collapsing to one or two distinct strings -- and matched by
+    EQUALITY, never by ``LIKE``. Where the candidates reach SEVERAL different keywords the
+    answer is genuinely ambiguous (two languages' words sharing one lemma), and this
+    returns None rather than ranking them by mention count: that ranking is precisely the
+    recorded homograph defect that made "Dy" resolve to "already".
+    """
+    from src.analytics.lemma import LEMMA_LANGS, lemmatize
+
+    candidates = {lemmatize(norm, lg) for lg in LEMMA_LANGS}
+    candidates.discard(norm)
+    candidates = {c for c in candidates if c}
+    if not candidates:
+        return None
+    rows = session.query(Keyword).filter(Keyword.normalized_term.in_(sorted(candidates))).all()
+    return rows[0] if len(rows) == 1 else None
+
+
 def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | None:
     """Map a user term to a stored keyword: exact normalized match, else (unless
     ``exact=True``) the best fuzzy ``LIKE %term%`` match by mention count.
@@ -187,6 +217,9 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
     if not norm:
         return None
     kw = session.query(Keyword).filter_by(normalized_term=norm).first()
+    if kw:
+        return kw
+    kw = _resolve_by_lemma(session, norm)
     if kw:
         return kw
     if exact:

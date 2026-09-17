@@ -3524,5 +3524,14 @@
   "Restoring a backup later": "استعادة نسخة احتياطية لاحقًا",
   "Trust a backup's scraping history by default": "الوثوق افتراضيًا بسجلّ الجلب الخاص بالنسخة الاحتياطية",
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر. يمكنك تغيير هذا الخيار لأي عملية استيراد بمفردها.",
-  "Netherlands Antilles": "جزر الأنتيل الهولندية"
+  "Netherlands Antilles": "جزر الأنتيل الهولندية",
+  "translated from {language}": "مترجم من لغة: {language}",
+  "in {language}": "اللغة: {language}",
+  "Not translated — shown in its own language.": "غير مترجم — معروض بلغته الأصلية.",
+  "Several senses": "عدة معانٍ",
+  "Original": "الأصل",
+  "Concept": "المفهوم",
+  "Across languages:": "عبر جميع اللغات:",
+  "Open a local preview of this source first": "افتح أولاً معاينة محلية لهذا المصدر",
+  "“{term_translation}” (translated from {term_lang}: {term})": "«{term_translation}» (مترجم من لغة: {term_lang} — {term})"
 }

@@ -93,16 +93,20 @@ def test_all_grouped_top_fetches_carry_target_lang(app: str) -> None:
 def test_landscape_chip_renders_translation(app: str) -> None:
     region = _region(app, "async function loadLandscape(", "async function loadFamilies(")
     # rendered on the top-level family/ring row `f` (where `translation` lives)
-    assert "kwTransHtml(f)" in region, "landscape chip must render kwTransHtml(f)"
+    assert "kwLabelHtml(f)" in region, "landscape chip must render kwLabelHtml(f)"
 
 
 def test_families_label_renders_translation(app: str) -> None:
     region = _region(app, "async function loadFamilies(", "function renderFamOverrides(")
     # the translation is a concept-level field on the family ROW `f`, so it is rendered
     # on the family label (mirroring the top-level-row pattern at anRenderKwChips)
-    assert "kwTransHtml(f)" in region, "Families family label must render kwTransHtml(f)"
-    assert re.search(r"<b>\$\{esc\(f\.term\)\}</b>\$\{kwTransHtml\(f\)\}", region), (
-        "kwTransHtml(f) must sit beside the family term label"
+    assert "kwLabelHtml(f)" in region, "Families family label must render kwLabelHtml(f)"
+    # AMENDED 2026-09-17 (Q401 = a): the label helper now renders the term ITSELF, so
+    # the old `<b>${esc(f.term)}</b>${kwTransHtml(f)}` pair collapsed into one call.
+    # Anchored on the SHAPE that is left rather than on the punctuation between two calls
+    # that no longer exist.
+    assert re.search(r"<b>\$\{kwLabelHtml\(f\)\}</b>", region), (
+        "kwLabelHtml(f) must render the family term label"
     )
 
 

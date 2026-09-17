@@ -586,7 +586,7 @@
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
-              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>${kwTransHtml(x)}
+              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x)}</a>
               <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
@@ -770,8 +770,15 @@
       try { const s = await api("/api/database/stats", {polled: true}); renderHomeStats(s.counts, s); } catch (e) {}
       try { const sc = await api("/api/scheduler/status", {polled: true}); renderHomeStatus(sc.running); } catch (e) {}
       try {
-        const data = await api("/api/briefing", {polled: true});
-        if (data.generated_at !== _lastBriefGen) renderBriefing(data);
+        const data = await api("/api/briefing?target_lang=" + encodeURIComponent(uiLangCode()), {polled: true});
+        // THE FINGERPRINT CARRIES THE LOCALE. Since Q411 = a the card titles are
+        // annotated per READER, but `generated_at` describes the server-side CACHE and is
+        // byte-identical across a language switch -- so this guard would return early on
+        // "unchanged" data and leave every card title in whichever locale painted it
+        // first. That is the recorded payload-fingerprint defect, and the repair is the
+        // recorded one: put the thing that changed into the key.
+        const stamp = String(data.generated_at) + "|" + uiLangCode();
+        if (stamp !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
       try { await loadHomeTrends(); } catch (e) {}
       try { await loadHomeAlerts(); } catch (e) {}
@@ -782,13 +789,14 @@
     // them and lets the user triage (dismiss / add to draft). It never computes a
     // verdict. The full method + caveat for every figure is one toggle away.
     let _briefCards = {};   // id -> card (so "Add to draft" has the full card)
-    let _lastBriefGen = null;  // last rendered briefing generated_at (live-refresh guard)
+    let _lastBriefGen = null;  // last rendered "generated_at|locale" (live-refresh guard)
 
     async function loadBriefing(force) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const feed = $("briefing-feed");
       try {
-        const data = await api("/api/briefing" + (force ? "?force=true" : ""));
+        const data = await api("/api/briefing?target_lang=" + encodeURIComponent(uiLangCode())
+          + (force ? "&force=true" : ""));
         renderBriefing(data);
       } catch (e) {
         // AUDIT §4.2 (P0): the same api() bug that hit the stat strip above hit
@@ -864,7 +872,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _briefCards = {};
       renderCorpusTier(data.corpus_tier);
-      _lastBriefGen = data.generated_at || null;
+      // Same key shape as the guard that reads it, or the two describe different
+      // things and the guard never matches (a repaint on every poll) or never
+      // misses (a repaint on none).
+      _lastBriefGen = String(data.generated_at || "") + "|" + uiLangCode();
       const feed = $("briefing-feed");
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
