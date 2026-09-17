@@ -1792,6 +1792,8 @@
   "Top": "الأعلى",
   "What to include": "ما الذي يُضمَّن",
   "Wikipedia dumps": "تفريغات ويكيبيديا",
+  "Living sources": "المصادر الحيّة",
+  "A living source is a working encrypted database, not a finished file; how it is backed up is not settled yet.": "المصدر الحيّ قاعدة بيانات مشفّرة قيد العمل، وليس ملفًا منتهيًا؛ ولم تُحسم بعد طريقة نسخه احتياطيًا.",
   "Carry them inside the encrypted backup": "تضمينها داخل النسخة الاحتياطية المشفَّرة",
   "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "داخل الأرشيف تكون هذه الملفات مشفَّرة وقابلة للإصلاح مثل المجموعة، فتحتاج الاستعادة إلى شيء واحد فقط؛ وإذا نُسخت بجانبه تبقى قابلة للقراءة بمفردها ولا تكلّف شيئًا عند الكتابة.",
   "Offline maps (OSM)": "خرائط دون اتصال (OSM)",

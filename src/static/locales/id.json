@@ -1792,6 +1792,8 @@
   "Top": "Teratas",
   "What to include": "Apa yang disertakan",
   "Wikipedia dumps": "Dump Wikipedia",
+  "Living sources": "Sumber hidup",
+  "A living source is a working encrypted database, not a finished file; how it is backed up is not settled yet.": "Sumber hidup adalah basis data terenkripsi yang sedang berjalan, bukan berkas yang sudah selesai; cara mencadangkannya belum ditetapkan.",
   "Carry them inside the encrypted backup": "Sertakan di dalam cadangan terenkripsi",
   "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Di dalam artefak, berkas ini terenkripsi dan dapat diperbaiki seperti korpus, sehingga pemulihan hanya membutuhkan satu hal; disalin di sebelahnya, berkas tetap terbaca sendiri dan tidak menambah biaya penulisan.",
   "Offline maps (OSM)": "Peta luring (OSM)",

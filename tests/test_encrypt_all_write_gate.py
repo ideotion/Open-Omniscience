@@ -29,9 +29,19 @@ def _clean_gate():
     write_gate._reset_for_tests()
 
 
-def test_encrypt_all_holds_the_single_writer_gate_across_both_files(monkeypatch):
+def test_encrypt_all_holds_the_single_writer_gate_across_EVERY_file(monkeypatch):
+    """The gate is held for each store ``encrypt_all`` touches, however many there are.
+
+    UPDATED DELIBERATELY, 2026-09-17, not loosened. This asserted the exact pair
+    ``[True, True]`` when the corpus and the custody log were the only two databases;
+    the versioned-source LANES are now encrypted by the same call, so the list is five.
+    The exact count is kept — an exact list is what makes a future ADDITION a deliberate
+    edit — and it is now DERIVED from the lane registry rather than typed, so a lane
+    kind added later widens this assertion by itself instead of silently passing.
+    """
     import src.api.unlock as unlock_mod
     import src.database.encrypt_tool as tool
+    from src.versioned.lanes import all_lanes
 
     monkeypatch.setattr(unlock_mod, "main_db_path", lambda: Path("/fake/corpus.db"))
     monkeypatch.setattr("src.paths.data_dir", lambda: Path("/fake"))
@@ -51,7 +61,16 @@ def test_encrypt_all_holds_the_single_writer_gate_across_both_files(monkeypatch)
     reports = tool.encrypt_all("a-real-passphrase-123")
     assert reports["corpus"]["encrypted"] is True
     assert reports["custody"]["encrypted"] is True
-    assert seen_held == [True, True]  # held for BOTH the corpus and the custody log
+    # The corpus, the custody log, and one per registered lane -- each with the gate HELD.
+    expected = 2 + len(all_lanes())
+    assert seen_held == [True] * expected, (
+        f"the gate was held for {sum(seen_held)} of {len(seen_held)} files "
+        f"(expected {expected} files, all held)"
+    )
+    for spec in all_lanes():
+        assert reports[f"lane:{spec.kind}"]["encrypted"] is True, (
+            f"the {spec.kind} lane is not encrypted by encrypt_all"
+        )
     assert write_gate.stats()["held"] is False  # released again afterwards
 
 

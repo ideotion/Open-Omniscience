@@ -118,6 +118,29 @@ def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bo
         return (True, overwritten, False)
 
 
+def _lane_dbs(base: Path) -> list[Path]:
+    """Every versioned-source lane file under ``base``, present or not.
+
+    WHY THESE ARE NOT "ANYTHING ELSE UNDER THE DATA DIR". Step 6 of the erase overwrites
+    and unlinks whatever remains, and its own comment states the premise it rests on:
+    *"remaining files are small side files, so a full overwrite here is cheap and
+    complete"*. Q719 = a exists precisely because a lane may reach 100 GB. Left to step
+    6, a lane would be FULLY rewritten — turning an operation whose whole promise is
+    "instant at any corpus size" into an hours-long one, and quietly replacing the
+    CRYPTO-erase guarantee (destroy the salt, the body is unreadable) with a DATA-erase
+    that has to finish to be worth anything. Nothing would have caught it: no test
+    asserts that the erase is fast.
+
+    So lanes join step 1's head-shred, where the salt page is. Resolved from the lane
+    REGISTRY rather than from a glob, so a lane kind added later is covered the day it
+    is added, and a stray ``*.db`` an operator dropped in the folder is not mistaken for
+    one of ours.
+    """
+    from src.versioned.lanes import all_lanes
+
+    return [base / spec.filename for spec in all_lanes()]
+
+
 def _resolve(data_dir: Path | None) -> dict:
     """Resolve every wipe target. For the default store (``data_dir is None``) the
     real resolvers are used so nothing is hardcoded; an explicit dir (tests/tools)
@@ -133,6 +156,7 @@ def _resolve(data_dir: Path | None) -> dict:
             "store_dir": base,
             "custody_db": base / _CUSTODY_DB,
             "anchors_db": base / _ANCHORS_DB,
+            "lane_dbs": _lane_dbs(base),
         }
     base = _default_dir()
     from src.analytics.columnar import _store_dir
@@ -146,6 +170,7 @@ def _resolve(data_dir: Path | None) -> dict:
         "store_dir": _store_dir(),
         "custody_db": base / _CUSTODY_DB,
         "anchors_db": base / _ANCHORS_DB,
+        "lane_dbs": _lane_dbs(base),
     }
 
 
@@ -183,12 +208,28 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     # Was the corpus actually encrypted? Determines whether crypto-erase is the real
     # guarantee (encrypted) or degrades to header-overwrite (plaintext store -> the
     # optional full pass matters more; surfaced so the UI can recommend it).
+    # Close any open lane pool BEFORE a byte is touched. A pooled SQLCipher connection
+    # holds a derived key in memory — which is exactly what step 5 exists to drop — and
+    # an open handle on a file this function is about to overwrite and unlink. Measured
+    # without it: a connection this process already had open went on serving PRE-ERASE
+    # rows from a file that had been randomised and unlinked, for as long as the process
+    # lived — and this feature's stated purpose is an imminent seizure of that machine.
+    try:
+        from src.versioned.store import dispose_all as _dispose_lanes
+
+        _dispose_lanes()
+    except Exception:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
+        _LOG.warning("could not dispose the lane engines before the erase", exc_info=True)
+
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
 
     # 1) Destroy the salt/header page of each encrypted DB and its sidecars. Head-only
     #    overwrite = instant even for a 100 GB corpus; the salt is what matters.
-    for db in (main_db, paths["custody_db"]):
+    # The lane files join this loop rather than falling through to step 6: each is an
+    # encrypted SQLCipher database with its OWN salt page, and head-only is what keeps
+    # the erase instant at 100 GB (see ``_lane_dbs``).
+    for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())):
         if db is None:
             continue
         for suffix in ("", *_DB_SIDECARS):
@@ -251,12 +292,19 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
-            len(overwrite_failures), overwrite_failures,
+            len(overwrite_failures),
+            overwrite_failures,
         )
     _LOG.warning(
         "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
         "%d overwrite failures)",
-        base, encrypted, wiped, seen, len(headers), len(keys_destroyed), len(overwrite_failures),
+        base,
+        encrypted,
+        wiped,
+        seen,
+        len(headers),
+        len(keys_destroyed),
+        len(overwrite_failures),
     )
     return {
         "phase": "crypto-erase",

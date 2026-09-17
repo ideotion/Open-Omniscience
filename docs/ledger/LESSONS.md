@@ -10670,3 +10670,75 @@ predicate that is truthy on the success path.
   it** — a rule about interpolating a curve is a rule about drawing anything between
   two measurements. The measurable tell, once the treatment was fixed: painted canvas
   samples fell from 18,136 to 1,335, and the difference was the fabricated area.
+
+### 2026-09-17 — Seven lessons from S04-08 S1+S2 (PR #1154)
+
+Three are about code. Four are about VERIFICATION, and those four are the ones that
+nearly shipped: each was a check that would have read as success while proving nothing.
+
+**A NEW DATABASE FILE IS A NEW ENTRY IN THREE LITERAL LISTS, AND NONE OF THEM IS NEAR
+THE CODE THAT ADDS IT.** `encrypt_all` (make every store ciphertext),
+`quick_crypto_erase` step 1 (destroy each salt page), and `GET /api/system/doctor`
+(tell the operator the truth about all of them) each enumerate this app's databases by
+hand. Every list was correct while there were two. A third arrives and none of them
+fails a test — the new store simply is not in it. The consequences are not equivalent:
+out of `encrypt_all`, a store created while the app was plaintext stays plaintext
+FOREVER after the operator consents to encryption, because every later open takes
+`connect()`'s plaintext branch and never consults the passphrase; out of the erase's
+head-shred it falls to the full-overwrite path, whose own comment assumes "small side
+files"; out of the doctor, the endpoint whose docstring is *"the honest answer to 'is
+my corpus encrypted?'"* answers while a plaintext store sits beside the one it
+describes. THE RULE: adding a database file means grepping for the literal tuples that
+enumerate stores and joining all of them in the same PR. A file-format guarantee is
+always enumerated by hand somewhere, and never where the new file is written.
+
+**`OO_DATA_DIR` MOVES SOME THINGS AND NOT OTHERS, AND THE SPLIT IS INVISIBLE.**
+`data_dir()` re-reads the environment on every call. `DATABASE_URL` — and therefore
+`main_db_path()`, and therefore `encrypt_all`, `doctor` and the corpus engine — is
+computed at IMPORT time in `src/database/session.py:124`. A test that re-points
+`OO_DATA_DIR` at a `tmp_path` moves everything in the first group and NOTHING in the
+second. Measured cost: one test called `encrypt_all()` after re-pointing and encrypted
+the whole suite's shared corpus — 56 failures and 30 errors, almost all in files the
+branch never touched, every one reading "open_omniscience.db is encrypted". Patch
+`main_db_path` (the repo's existing answer, in `test_encrypt_all_write_gate`), and
+assert the redirection so dropping the patch fails in YOUR file.
+
+**A CURSOR MUST NOT ORDER ON A THIRD PARTY'S ID, INCLUDING AS A TIE-BREAK.** A wiki
+lane resumed on `revid`; when ids did not rise with time, three of five fixture pages
+silently stopped receiving changes with every counter at zero. Corrected to a
+`"<iso8601>|<revid>"` token — and the SAME assumption came straight back as a
+tie-break, because `(time, revid)` compared as a tuple. A genuinely new change at the
+cursor's own instant with a lower id was then dropped permanently, produced no gap, and
+contiguity advanced past the loss. `rccontinue`'s second half is an `rcid`, MediaWiki's
+insertion counter; a `revid` is a different number, and mirroring a token's SHAPE never
+licenses treating our number as theirs. Compare on time alone and let dedup absorb the
+re-offered instant: re-reading is free, dropping is permanent.
+
+**`cmd | tail` THROWS AWAY THE EXIT CODE.** A pipeline's status is the LAST command's,
+so every `pytest -q | tail -25` reports success no matter what pytest did. Two full
+suite runs in one session were reported to a user as "green (exit 0)" on that basis;
+one of them had `1 failed` in its own summary line. Redirect to a file and echo `$?`,
+or read `PIPESTATUS`. An exit code you did not check the provenance of is not evidence.
+
+**`node --check` IS NOT A TEST.** It proves a JS file parses. It says nothing about
+what the repo ASSERTS is in it — and this repo asserts a great deal, by exact string.
+A one-line change to `app-backup.js` broke a literal pin in `test_unified_backup_ui.py`
+and reached CI. A JS edit has to run the tests that READ that file.
+
+**A REPRODUCTION THAT FEEDS THE WRONG TYPES PROVES NOTHING, LOUDLY OR QUIETLY.** Two
+reported defects were "reproduced" against a fake client returning ISO STRINGS where
+`mediawiki.parse_recentchanges` returns `datetime` objects. `_aware` correctly rejected
+them, so every row lost its timestamp, the comparison under test never executed, and
+the result contradicted the finding. It was caught only because the output did not
+match what the finding predicted. Match the production parser's RETURN SHAPE, not just
+its call signature — and pin that shape in a test, because a fixture richer or poorer
+than the real client is how a whole suite comes to prove nothing.
+
+**A GUARD WHOSE LIMIT NO TEST CAN REACH IS ASSERTED STRUCTURALLY, AND THE NUMBER IS
+MEASURED.** "SQLite caps host parameters at 999" is folklore on a modern build: this
+one's `sqlite3` (3.45.1) and `sqlcipher3` (3.51.1) both accept 250,000 and refuse
+250,001. Chunking is still right — the ceiling is a PER-BUILD compile-time setting and
+this app ships to whatever SQLCipher an operator has — but the justification has to be
+that, not the recited number. And since no affordable fixture reaches 250,000, the
+guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statements, not
+1), with the test saying why the direct check was not written.

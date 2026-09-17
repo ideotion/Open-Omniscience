@@ -1792,6 +1792,8 @@
   "Top": "热门",
   "What to include": "包含哪些内容",
   "Wikipedia dumps": "维基百科转储",
+  "Living sources": "活跃信息源",
+  "A living source is a working encrypted database, not a finished file; how it is backed up is not settled yet.": "活跃信息源是正在运行的加密数据库，而不是已完成的文件；其备份方式尚未确定。",
   "Carry them inside the encrypted backup": "将它们放入加密备份中",
   "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "放入归档后，它们像语料库一样被加密并可修复，因此恢复只需要一样东西；复制在旁边则可以单独读取，写入时不增加成本。",
   "Offline maps (OSM)": "离线地图（OSM）",

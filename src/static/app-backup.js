@@ -246,10 +246,19 @@
         // the row.
         const opt = (id, label, d) => {
           const parts = Object.entries(d.breakdown || {}).filter(([, x]) => (x.count || 0) > 0);
-          const title = parts.length > 1
+          // A member the export cannot yet WRITE is never offered, whatever it holds.
+          // It would otherwise render CHECKED the moment it had content, carry no
+          // categories, and write nothing -- a tick that lies about what the backup
+          // contains, which is the one thing a backup dialog may never do. The reason
+          // travels as the hover (invariant #17's layered disclosure) because a
+          // disabled row with no explanation reads as a bug rather than as a boundary.
+          const offerable = d.exportable !== false;
+          const why = offerable ? "" : t(d.not_exportable_reason || "");
+          const title = why || (parts.length > 1
             ? parts.map(([k, x]) => `${k}: ${x.count || 0} · ${humanBytes(x.bytes || 0)}`).join(" · ")
-            : "";
-          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${(d.count || 0) > 0 ? "checked" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+            : "");
+          const state = (offerable && (d.count || 0) > 0) ? "checked" : "disabled";
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}" ${state}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
         };
         // ONE ordered list from the server drives the rows AND the categories each one
         // exports (`data-cats`), so a lane that lands later becomes a row with a real
