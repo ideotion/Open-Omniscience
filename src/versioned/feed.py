@@ -274,12 +274,28 @@ def record_batch(
                 reason=gap.reason,
             )
         )
+        # THE TOKENS DO NOT GO IN THE LOG, for two independent reasons.
+        #
+        # The one a reader cares about: a cursor token is an opaque third-party string,
+        # and an operator reading a log line cannot do anything with it. The TIME RANGE
+        # is the fact they can act on — "this feed has a hole between these two
+        # instants" — and both tokens are already on the ``versioned_gaps`` row, which
+        # is the record. A log line is not a second copy of the record.
+        #
+        # The one that made it urgent: CodeQL classifies any value whose name contains
+        # ``token`` as a credential, so ``from_token``/``to_token`` reaching a log call
+        # is ``py/clear-text-logging-sensitive-data`` (CWE-532, HIGH). These are feed
+        # POSITIONS on a public wiki's public change log and not secrets, so the finding
+        # is wrong about the danger — and it is right that nothing in the line, nor in
+        # the field names, lets a reviewer tell the difference. Arguing with it would
+        # leave a log line whose safety depends on knowing what this package means by
+        # "token". Dropping them costs nothing and removes the question.
         _LOG.info(
-            "versioned feed %s: recorded a %s gap (%s -> %s)",
+            "versioned feed %s: recorded a %s gap covering %s -> %s",
             batch.feed,
             gap.reason,
-            gap.from_token,
-            gap.to_token,
+            gap.from_time.isoformat() if gap.from_time else "an unknown start",
+            gap.to_time.isoformat() if gap.to_time else "an unknown end",
         )
 
     # The newest change we were handed bounds what "contiguous" can mean. An empty
