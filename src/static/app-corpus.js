@@ -940,20 +940,36 @@
     // ALREADY loaded -- a language switch must never fetch for a panel nobody opened --
     // and each call is guarded so one absent surface never stops the others.
     function ooKwRepaintOnLangChange() {
+      // DERIVED FROM THE CALL SITES, NOT GUESSED. The first version of this list was
+      // written from memory and was wrong about three of its four host ids -- which the
+      // rendered page caught and no test could: walking en -> fr -> ar -> zh left the Home
+      // trends panel reading "in Russian" in all four, because `#home-trends` was not on
+      // it. The set below is every function that calls `kwLabelHtml`, paired with the host
+      // element that function's own body reads, so a new keyword surface is added HERE at
+      // the same time as its renderer or it silently freezes.
+      //
+      // Each is guarded on the host ALREADY HAVING ROWS: a language switch must never
+      // FETCH for a panel the reader has not opened (the convention app-boot.js's own
+      // listener follows for `src-table` and the coverage table).
       const callers = [
-        ["ins-fam-body", "loadFamilies"],
-        ["ins-trend-body", "loadInsTrending"],
-        ["an-kw-body", "anLoadKeywords"],
+        ["home-trends", "loadHomeTrends"],
+        ["ins-landscape", "loadLandscape"],
+        ["fam-list", "loadFamilies"],
+        ["famc-list", "loadFamilyCuration"],
+        ["trd-windows", "loadTrendWindows"],
+        // The analysis window re-renders from data it already holds, so it needs no
+        // fetch guard -- `anRenderKwChips` returns early when there is nothing loaded.
+        [null, "anRenderKwChips"],
         // The Home cards translate their own term since Q411 = a, so they are the same
         // frozen-locale shape as the keyword rows and need the same repaint.
         ["briefing-feed", "loadBriefing"],
       ];
       for (const [hostId, fn] of callers) {
         try {
+          if (typeof window[fn] !== "function") continue;
+          if (hostId === null) { window[fn](); continue; }
           const host = document.getElementById(hostId);
-          if (host && host.children && host.children.length && typeof window[fn] === "function") {
-            window[fn]();
-          }
+          if (host && host.children && host.children.length) window[fn]();
         } catch (_e) { /* one stale surface must never stop the rest */ }
       }
     }

@@ -109,3 +109,75 @@ def test_the_card_title_template_is_the_ruling_verbatim() -> None:
         assert set(re.findall(r"\{(\w+)\}", value)) == holes, (
             f"{path.name}: the translated frame lost a hole -> {value!r}"
         )
+
+
+def test_every_surface_that_renders_a_keyword_label_also_repaints_on_a_language_switch() -> None:
+    """The guard that makes the repaint list a PROPERTY instead of a memory.
+
+    The keyword label opts out of the i18n DOM walker (`data-i18n-dyn`), because the
+    walker translates any text node that exactly matches a key and cannot tell a keyword
+    from chrome. That opt-out costs the repaint: nothing re-renders these labels on a
+    language switch, so each surface must be re-run explicitly.
+
+    THE FIRST VERSION OF THAT LIST WAS WRITTEN FROM MEMORY AND WAS WRONG ABOUT THREE OF
+    ITS FOUR HOST IDS. No test could see it — the helper was correct, the keys were in all
+    twelve locale files, the node suite passed — and a Chromium walk through en → fr → ar →
+    zh showed the Home trends panel reading "in Russian" in all four, because `#home-trends`
+    was not on the list. So the list is now DERIVED from the call sites, and this asserts
+    that derivation holds: every function that renders a label is named in the repaint set.
+    A new keyword surface therefore fails HERE, at the moment it is added, rather than
+    silently freezing in whichever locale painted it first.
+    """
+    import re
+
+    from tests.js_source_helper import app_js, function_body
+
+    app = app_js()
+    # The SHARED extractor, not a hand-rolled slice: `tests/js_source_helper.py` carries
+    # brace-, bracket- and literal-matching with each failure mode pinned, and the
+    # slicing-discipline ratchet exists precisely to stop a thirty-ninth private copy.
+    body = function_body(app, "ooKwRepaintOnLangChange")
+    renderers = set()
+    for m in re.finditer(r"kwLabelHtml\(", app):
+        before = app[: m.start()]
+        fn = None
+        for fm in re.finditer(r"\n\s*(?:async\s+)?function\s+(\w+)\s*\(", before):
+            fn = fm.group(1)
+        if fn:
+            renderers.add(fn)
+    # The helper itself and its own documentation mention the name; they are not surfaces.
+    renderers -= {"kwLabelHtml", "kwQidHtml", "kwHoverText", "kwSensePickerHtml"}
+    assert renderers, "no renderer found at all -- the scan is looking in the wrong place"
+
+    # A renderer is COVERED when it is named in the repaint set, OR when every function
+    # that calls it is. `termListHtml` is the case that forced this: it is a pure HTML
+    # builder with no host of its own, and `loadTrendWindows` -- which is on the list --
+    # is what draws it. Requiring the builder itself on the list would be asking for a
+    # host that does not exist; ignoring builders by NAME ("anything not called load*")
+    # would be a convention, not a property. Following the call is the property.
+    def covered(fn: str, seen: set[str]) -> bool:
+        if fn in body:
+            return True
+        if fn in seen:
+            return False  # a cycle reaches no repainted surface
+        seen.add(fn)
+        callers = set()
+        # `(?<!function )` matters: the DEFINITION `function termListHtml(` matches the
+        # bare name pattern too, and the enclosing-function scan then attributes it to
+        # whatever function happens to sit above it in the file -- a caller that does not
+        # exist. That misattribution is what this pattern's first draft reported.
+        for cm in re.finditer(rf"(?<![\w$.])(?<!function ){re.escape(fn)}\(", app):
+            head = app[: cm.start()]
+            outer = None
+            for fm in re.finditer(r"\n\s*(?:async\s+)?function\s+(\w+)\s*\(", head):
+                outer = fm.group(1)
+            if outer and outer != fn:
+                callers.add(outer)
+        return bool(callers) and all(covered(c, seen) for c in callers)
+
+    missing = sorted(fn for fn in renderers if not covered(fn, set()))
+    assert not missing, (
+        "these functions render a keyword label and neither they nor any of their callers "
+        "are re-run on oo:langchange, so their labels freeze in whichever locale painted "
+        f"them first: {missing}"
+    )

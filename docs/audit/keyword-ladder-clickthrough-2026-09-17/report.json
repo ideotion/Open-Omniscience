@@ -1,0 +1,783 @@
+{
+  "url": "http://127.0.0.1:8011",
+  "locales": {
+    "en": {
+      "dir": "ltr",
+      "card_titles": [],
+      "labels": [
+        {
+          "tag": "in Russian",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Russian",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in French",
+          "term": "nouvelles",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Spanish",
+          "term": "registros",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Spanish",
+          "term": "semana",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Russian",
+          "term": "новых",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Portuguese",
+          "term": "eleitores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Russian",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Russian",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Spanish",
+          "term": "incidentes importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Spanish",
+          "term": "observadores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "in Spanish",
+          "term": "importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        }
+      ],
+      "terms_marked_dyn": [
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "regional",
+          "dyn": true
+        },
+        {
+          "text": "district",
+          "dyn": true
+        },
+        {
+          "text": "local",
+          "dyn": true
+        },
+        {
+          "text": "nouvelles",
+          "dyn": true
+        },
+        {
+          "text": "registros",
+          "dyn": true
+        },
+        {
+          "text": "semana",
+          "dyn": true
+        },
+        {
+          "text": "новых",
+          "dyn": true
+        },
+        {
+          "text": "transport",
+          "dyn": true
+        },
+        {
+          "text": "budget",
+          "dyn": true
+        },
+        {
+          "text": "software",
+          "dyn": true
+        },
+        {
+          "text": "eleitores",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "incidentes importantes",
+          "dyn": true
+        },
+        {
+          "text": "observadores",
+          "dyn": true
+        },
+        {
+          "text": "importantes",
+          "dyn": true
+        },
+        {
+          "text": "A-Z",
+          "dyn": true
+        }
+      ],
+      "insights_labels": [
+        "in Russian",
+        "in Russian",
+        "in French",
+        "in Spanish",
+        "in Spanish",
+        "in Russian",
+        "in Portuguese",
+        "in Russian",
+        "in Russian",
+        "in Spanish",
+        "in Spanish",
+        "in Spanish"
+      ]
+    },
+    "fr": {
+      "dir": "ltr",
+      "card_titles": [],
+      "labels": [
+        {
+          "tag": "en russe",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en russe",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en anglais",
+          "term": "regional",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en anglais",
+          "term": "district",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en anglais",
+          "term": "local",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en espagnol",
+          "term": "registros",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en espagnol",
+          "term": "semana",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en russe",
+          "term": "новых",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "traduit de : anglais",
+          "term": "logiciel",
+          "cls": "kw-tag oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en portugais",
+          "term": "eleitores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en russe",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en russe",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en espagnol",
+          "term": "incidentes importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en espagnol",
+          "term": "observadores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en espagnol",
+          "term": "importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "en anglais",
+          "term": "A-Z",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        }
+      ],
+      "terms_marked_dyn": [
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "regional",
+          "dyn": true
+        },
+        {
+          "text": "district",
+          "dyn": true
+        },
+        {
+          "text": "local",
+          "dyn": true
+        },
+        {
+          "text": "nouvelles",
+          "dyn": true
+        },
+        {
+          "text": "registros",
+          "dyn": true
+        },
+        {
+          "text": "semana",
+          "dyn": true
+        },
+        {
+          "text": "новых",
+          "dyn": true
+        },
+        {
+          "text": "transport",
+          "dyn": true
+        },
+        {
+          "text": "budget",
+          "dyn": true
+        },
+        {
+          "text": "logiciel",
+          "dyn": true
+        },
+        {
+          "text": "eleitores",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "incidentes importantes",
+          "dyn": true
+        },
+        {
+          "text": "observadores",
+          "dyn": true
+        },
+        {
+          "text": "importantes",
+          "dyn": true
+        },
+        {
+          "text": "A-Z",
+          "dyn": true
+        }
+      ],
+      "insights_labels": [
+        "en russe",
+        "en russe",
+        "en anglais",
+        "en anglais",
+        "en anglais",
+        "en espagnol",
+        "en espagnol",
+        "en russe",
+        "traduit de : anglais",
+        "en portugais",
+        "en russe",
+        "en russe",
+        "en espagnol",
+        "en espagnol",
+        "en espagnol",
+        "en anglais"
+      ]
+    },
+    "ar": {
+      "dir": "rtl",
+      "card_titles": [],
+      "labels": [
+        {
+          "tag": "اللغة: الروسية",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الروسية",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإنجليزية",
+          "term": "regional",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإنجليزية",
+          "term": "district",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإنجليزية",
+          "term": "local",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الفرنسية",
+          "term": "nouvelles",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإسبانية",
+          "term": "registros",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإسبانية",
+          "term": "semana",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الروسية",
+          "term": "новых",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "مترجم من لغة: الإنجليزية",
+          "term": "برمجيات",
+          "cls": "kw-tag oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: البرتغالية",
+          "term": "eleitores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الروسية",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الروسية",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإسبانية",
+          "term": "incidentes importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإسبانية",
+          "term": "observadores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإسبانية",
+          "term": "importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "اللغة: الإنجليزية",
+          "term": "A-Z",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        }
+      ],
+      "terms_marked_dyn": [
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "regional",
+          "dyn": true
+        },
+        {
+          "text": "district",
+          "dyn": true
+        },
+        {
+          "text": "local",
+          "dyn": true
+        },
+        {
+          "text": "nouvelles",
+          "dyn": true
+        },
+        {
+          "text": "registros",
+          "dyn": true
+        },
+        {
+          "text": "semana",
+          "dyn": true
+        },
+        {
+          "text": "новых",
+          "dyn": true
+        },
+        {
+          "text": "نقل",
+          "dyn": true
+        },
+        {
+          "text": "ميزانية",
+          "dyn": true
+        },
+        {
+          "text": "برمجيات",
+          "dyn": true
+        },
+        {
+          "text": "eleitores",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "incidentes importantes",
+          "dyn": true
+        },
+        {
+          "text": "observadores",
+          "dyn": true
+        },
+        {
+          "text": "importantes",
+          "dyn": true
+        },
+        {
+          "text": "A-Z",
+          "dyn": true
+        }
+      ],
+      "insights_labels": [
+        "اللغة: الروسية",
+        "اللغة: الروسية",
+        "اللغة: الإنجليزية",
+        "اللغة: الإنجليزية",
+        "اللغة: الإنجليزية",
+        "اللغة: الفرنسية",
+        "اللغة: الإسبانية",
+        "اللغة: الإسبانية",
+        "اللغة: الروسية",
+        "مترجم من لغة: الإنجليزية",
+        "اللغة: البرتغالية",
+        "اللغة: الروسية",
+        "اللغة: الروسية",
+        "اللغة: الإسبانية",
+        "اللغة: الإسبانية",
+        "اللغة: الإسبانية",
+        "اللغة: الإنجليزية"
+      ]
+    },
+    "zh": {
+      "dir": "ltr",
+      "card_titles": [],
+      "labels": [
+        {
+          "tag": "语言：俄语",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：俄语",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：英语",
+          "term": "regional",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：英语",
+          "term": "district",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：英语",
+          "term": "local",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：法语",
+          "term": "nouvelles",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：西班牙语",
+          "term": "registros",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：西班牙语",
+          "term": "semana",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：俄语",
+          "term": "новых",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "译自：英语",
+          "term": "软件",
+          "cls": "kw-tag oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：葡萄牙语",
+          "term": "eleitores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：俄语",
+          "term": "избирательные",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：俄语",
+          "term": "избирателей",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：西班牙语",
+          "term": "incidentes importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：西班牙语",
+          "term": "observadores",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：西班牙语",
+          "term": "importantes",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        },
+        {
+          "tag": "语言：英语",
+          "term": "A-Z",
+          "cls": "kw-tag kw-untranslated oo-tip-target",
+          "clipped": false
+        }
+      ],
+      "terms_marked_dyn": [
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "regional",
+          "dyn": true
+        },
+        {
+          "text": "district",
+          "dyn": true
+        },
+        {
+          "text": "local",
+          "dyn": true
+        },
+        {
+          "text": "nouvelles",
+          "dyn": true
+        },
+        {
+          "text": "registros",
+          "dyn": true
+        },
+        {
+          "text": "semana",
+          "dyn": true
+        },
+        {
+          "text": "новых",
+          "dyn": true
+        },
+        {
+          "text": "运输",
+          "dyn": true
+        },
+        {
+          "text": "預算",
+          "dyn": true
+        },
+        {
+          "text": "软件",
+          "dyn": true
+        },
+        {
+          "text": "eleitores",
+          "dyn": true
+        },
+        {
+          "text": "избирательные",
+          "dyn": true
+        },
+        {
+          "text": "избирателей",
+          "dyn": true
+        },
+        {
+          "text": "incidentes importantes",
+          "dyn": true
+        },
+        {
+          "text": "observadores",
+          "dyn": true
+        },
+        {
+          "text": "importantes",
+          "dyn": true
+        },
+        {
+          "text": "A-Z",
+          "dyn": true
+        }
+      ],
+      "insights_labels": [
+        "语言：俄语",
+        "语言：俄语",
+        "语言：英语",
+        "语言：英语",
+        "语言：英语",
+        "语言：法语",
+        "语言：西班牙语",
+        "语言：西班牙语",
+        "语言：俄语",
+        "译自：英语",
+        "语言：葡萄牙语",
+        "语言：俄语",
+        "语言：俄语",
+        "语言：西班牙语",
+        "语言：西班牙语",
+        "语言：西班牙语",
+        "语言：英语"
+      ]
+    }
+  }
+}
