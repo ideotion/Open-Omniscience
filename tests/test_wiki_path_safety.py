@@ -78,8 +78,9 @@ def test_api_dump_endpoints_reject_traversal_with_400():
     assert c.get("/api/wiki/dumps/page", params={"wiki": "../x", "title": "Foo"}).status_code == 400
     assert c.post("/api/wiki/dumps/start", json={"wiki": "../../x",
                   "kind": "pages-articles-multistream"}).status_code == 400
-    assert c.post("/api/wiki/dumps/corpus-ingest", json={"wiki": "a/b",
-                  "titles": ["Foo"]}).status_code == 400
+    # ``/dumps/corpus-ingest`` was probed here until it was RETIRED (Q728 = a,
+    # 2026-09-17). Its absence is pinned by tests/test_wiki_dump_endpoint_retired.py;
+    # keeping the probe would pass on a 404 and read as traversal safety.
 
 
 def _pages_client(tmp_path):

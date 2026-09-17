@@ -296,3 +296,74 @@ def test_the_reason_travels_as_a_TOKEN_never_as_prose():
 
     reason = _wiki_lane_block()["reason"]
     assert " " not in reason and reason.islower(), f"{reason!r} reads as prose, not a token"
+
+
+def test_ACTIVE_is_measured_from_the_running_loop_not_hardcoded():
+    """The inverse lie this avoids.
+
+    ``active: False`` as a constant is true today and becomes a LIE the day someone
+    wires a collector and does not think to come back here -- an operator told nothing
+    is happening while their machine streams, which is the worse direction of the two.
+    ``live_streams()`` is maintained by the read loop itself, so the answer is true in
+    both directions without anyone remembering anything.
+    """
+    from src.api.scheduler import _wiki_lane_block
+    from src.wiki import stream as stream_mod
+
+    assert _wiki_lane_block()["active"] is False, "nothing is running, so nothing claims to be"
+
+    # A stream inside its loop registers itself; the block sees it WITHOUT any other
+    # change. Driven through the real registry rather than by patching the block.
+    fake = object()
+    with stream_mod._LIVE_LOCK:
+        stream_mod._LIVE[id(fake)] = ("en", "fr")
+    try:
+        block = _wiki_lane_block()
+        assert block["active"] is True, (
+            "a running stream did not reach the status; `active` is not measured"
+        )
+        assert block["reason"] is None, "there is nothing to explain while it runs"
+        assert block["editions_live"] == ["en", "fr"]
+    finally:
+        with stream_mod._LIVE_LOCK:
+            stream_mod._LIVE.pop(id(fake), None)
+    assert _wiki_lane_block()["active"] is False, "the registry did not clear"
+
+
+def test_a_real_run_registers_and_DEREGISTERS_itself():
+    """Through the actual client, so the registry is not a second thing to remember."""
+    from src.testing.wiki_stream_fixture import FixtureStreamSession
+    from src.wiki.stream import WikiEventStream, live_streams
+
+    # Sampled from INSIDE the loop, because the registry is only interesting while
+    # the run is in flight: a check after it returns can only ever see the empty
+    # registry, and would pass against a version that never registered at all. (The
+    # recorded rule that a test for "this is asynchronous" must observe DURING.)
+    seen: list[int] = []
+
+    def sample(*_args):
+        seen.append(len(live_streams()))
+
+    stream = WikiEventStream(session=FixtureStreamSession(), editions=("oo",))
+    stream.run(lambda _change: None, max_connections=1, on_position=sample)
+    assert seen, "the fixture delivered nothing, so the registry was never observed"
+    assert max(seen) == 1, "the run did not register itself while it was running"
+    assert live_streams() == (), "the run did not deregister itself when it ended"
+
+
+def test_a_run_that_RAISES_still_deregisters():
+    """A registry that leaks on the error path would report a dead stream as live."""
+    import pytest as _pytest
+
+    from src.ingest import activate_kill_switch, clear_kill_switch
+    from src.testing.wiki_stream_fixture import FixtureStreamSession
+    from src.wiki.stream import StreamStopped, WikiEventStream, live_streams
+
+    stream = WikiEventStream(session=FixtureStreamSession(), editions=("oo",))
+    activate_kill_switch()
+    try:
+        with _pytest.raises(StreamStopped):
+            stream.run(lambda _c: None, max_connections=1)
+    finally:
+        clear_kill_switch()
+    assert live_streams() == (), "a refused run stayed in the registry as though live"

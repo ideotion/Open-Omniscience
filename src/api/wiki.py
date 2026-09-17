@@ -524,33 +524,27 @@ def dumps_search(wiki: str, q: str, limit: int = 20) -> dict:
         raise HTTPException(status_code=400, detail="wiki and q are required.")
     return search_titles(_validated_wiki(wiki), q.strip(), limit=max(1, min(limit, 100)))
 
-
-class IngestDumpPages(BaseModel):
-    wiki: str
-    titles: list[str]
-
-
-@router.post("/dumps/corpus-ingest")
-def dumps_corpus_ingest(payload: IngestDumpPages, db: Session = Depends(get_db)) -> dict:
-    """Ingest a bounded list of titles FROM a downloaded dump into the corpus.
-
-    LOCAL ONLY — reads the local multistream dump, never the network. Each page
-    becomes a corpus article (a snapshot as of the dump date) through the one
-    ``index_article`` hook (keywords + When×Where×Who), keyed on the canonical
-    wiki URL so a later live sync of the same page updates the SAME row (no
-    duplicate). The title list is operator-chosen — a full edition is millions of
-    pages, so whole-dump streaming is a future slice.
-    """
-    from src.wiki.corpus import ingest_dump_pages
-
-    wiki = _validated_wiki(payload.wiki)
-    titles = [t.strip() for t in (payload.titles or []) if t and t.strip()]
-    if not titles:
-        raise HTTPException(
-            status_code=400, detail="wiki and a non-empty titles list are required."
-        )
-    return ingest_dump_pages(db, wiki, titles)
-
+# RETIRED 2026-09-17 (Q728 = a): the dump-to-corpus POST route.
+#
+# The ruling reads: "the dump machinery stays (it is built and tested) as an opt-in
+# offline reader, never the tracking path; the dump->corpus endpoint is retired."
+# Those are two different things and only the second one goes. A dump is a SNAPSHOT as
+# of its build date, so an article ingested from one enters the corpus carrying that
+# date's text with nothing to say it has since changed -- which is exactly the claim
+# the live lane exists to avoid making. The stream now supplies changed pages with
+# their revision, so a second, staler path into the corpus is not a fallback; it is a
+# way for two surfaces to disagree about what a Wikipedia article says.
+#
+# WHAT SURVIVES, deliberately: ``src.wiki.corpus.ingest_dump_pages`` itself, the
+# downloader, the multistream index, and the read routes below and above -- the
+# offline reader is the whole point of the ruling's first clause, and it is the
+# FUNCTION an operator with a dump on disk uses, not this route.
+#
+# ``tests/test_wiki_dump_endpoint_retired.py`` pins BOTH halves: the route's absence
+# against this router's OWN definitions (never the shared ``app.routes`` singleton,
+# per the recorded rule about process-global route reads), and the reader's presence,
+# because a test asserting only the absence would be satisfied by deleting the whole
+# dump subsystem that the same ruling keeps.
 
 @router.get("/dumps/fts-search")
 def dumps_fts_search(q: str, wiki: str | None = None, limit: int = 20) -> dict:

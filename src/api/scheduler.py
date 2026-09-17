@@ -140,19 +140,31 @@ def _wiki_lane_block() -> dict:
     becomes correct at once.
     """
     from src.scheduler.settings import WIKI_LANE_STATES, load_settings
+    from src.wiki.stream import live_streams
 
     state = getattr(load_settings(), "wiki_lane_state", "running")
+    # MEASURED, not asserted. ``live_streams()`` is maintained by the read loop
+    # itself, so this is true in both directions: false while nothing runs one, and
+    # true the moment something does, without anyone remembering to come back here.
+    live = live_streams()
     if state not in WIKI_LANE_STATES:
         # A persisted value this build does not know. Reported as itself rather than
         # coerced: the UI refuses to draw an unknown state, which is better than
         # either of us guessing.
-        return {"state": state, "active": False, "reason": "unknown-state", "states": list(WIKI_LANE_STATES)}
+        return {
+            "state": state,
+            "active": bool(live),
+            "reason": "unknown-state",
+            "states": list(WIKI_LANE_STATES),
+        }
     return {
         "state": state,
-        "active": False,
+        "active": bool(live),
         # A literal token, never prose: the sentence is composed by the UI through
-        # OOI18N.t and ships x12, because this reaches a caveat surface.
-        "reason": "no-collector-yet",
+        # OOI18N.t and ships x12, because this reaches a caveat surface. Absent while
+        # a stream IS running -- there is nothing to explain then.
+        "reason": None if live else "no-collector-yet",
+        "editions_live": sorted({code for editions in live for code in editions}),
         "states": list(WIKI_LANE_STATES),
     }
 

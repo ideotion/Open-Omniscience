@@ -10742,3 +10742,95 @@ this app ships to whatever SQLCipher an operator has — but the justification h
 that, not the recited number. And since no affordable fixture reaches 250,000, the
 guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statements, not
 1), with the test saying why the direct check was not written.
+  - **A CONSENT GATE THAT SITS IN `request()` IS THE RIGHT GATE FOR EVERY SHORT FETCH
+    AND THE WRONG ONE FOR A STREAM (2026-09-17, S04-09's EventStreams client):**
+    `GuardedSession.request()` consults the network kill switch on every verb, and that
+    is airtight for every caller in this tree — because every one of them makes a
+    request that RETURNS. A stream's `request()` returns in milliseconds and the
+    connection then delivers bytes for hours, so an operator engaging airplane mode
+    mid-stream would keep receiving and storing edits from a connection whose
+    permission was withdrawn, with every existing guard reporting green: the app-level
+    gate was passed (once, correctly, at connect), and the socket-level airplane guard
+    can refuse the next CONNECT but cannot tear down a socket that is already open.
+    The hole is not in either gate; it is in the SHAPE of the thing being gated. RULE:
+    when adding a long-lived connection of any kind (SSE, a websocket, a streamed
+    download, a subscription), the read loop re-checks the gate before acting on each
+    unit of work and refuses BY NAME — and the test that proves it drives the REAL
+    switch (`activate_kill_switch()`) mid-iteration, never a monkeypatched module
+    binding, which makes the two gates disagree and silently stops testing the
+    refusal. COROLLARY, from the same slice: a REQUESTED stop and a REFUSED one must
+    not share a signal. Both originally raised `StreamStopped`, so a caller would have
+    logged "stream ended" for a withheld permission; a stop now RETURNS its counters
+    and only a refusal raises.
+  - **AN INSTRUMENT WRITTEN ONLY WHEN WORK ARRIVES READS HEALTHY THROUGHOUT THE STALL
+    IT EXISTS TO SHOW — the recorded download-rate lesson, recurring in a new
+    subsystem (2026-09-17, the same slice):** `idle_seconds` was set when an event
+    arrived, so it said `0.0` for as long as the stream was stuck, which is the one
+    moment an operator looks at it. Computed against a FRESH clock at READ time, a
+    stall becomes a growing number by construction. Its `None` case is the other half:
+    `None` before anything has ever arrived, because "never" and "just now" are
+    different facts and a `0.0` makes a stream that has never delivered anything look
+    healthy. The general form — *prune/compute a window at read time, not at write* —
+    was already in this file about a rate sampler; it applies to any freshness figure,
+    and the way to find the next instance is to ask what the field reads while the
+    thing it measures is BROKEN, never while it is working.
+  - **A CURSOR THAT ADVANCES ONLY ON WHAT YOU KEPT WILL EVENTUALLY FABRICATE A GAP
+    (2026-09-17, the same slice):** the stream's resume point was taken from the last
+    change RECORDED, so every event deliberately filtered out — a foreign edition, a
+    non-article namespace, a redirect, a malformed body — left the stored cursor
+    sitting further behind the service's own head. Harmless for a moment and wrong over
+    days: a quiet edition's cursor drifts out of the feed's retention window, and the
+    lane then reports a GAP over a stretch in which nothing was missed. A fabricated
+    gap is exactly as dishonest as a fabricated measurement, and it is the more
+    convincing of the two because it looks like diligence. RULE: what you STORED and
+    where you ARE are different facts; a feed reader needs a position callback that
+    fires for every event it can attribute, kept/filtered alike, and the cursor takes
+    the later of "the last thing I kept" and "the last thing I saw".
+  - **A VALUE OF 0 IS NOT ABSENT, AND A FIXTURE THAT EMITS ONE IN THE SOURCE'S FAVOUR
+    HIDES THE BUG IT WOULD OTHERWISE FIND (2026-09-17, the same slice):** two MediaWiki
+    log events (a delete and a move) both carried `revision.new = 0`; the change-ref
+    builder tested `revid is not None`, which a `0` passes, so both produced the same
+    ref and the substrate's `(feed, change_ref)` dedup silently discarded one of them.
+    Found by a fixture run, not by reading. The fixture was then corrected to omit
+    `revision` entirely, as a real service does — and that correction made the GUARD
+    untestable: with no zero in the fixture, removing `> 0` from the builder changed
+    nothing anywhere and every test stayed green. A mutation matrix is what caught the
+    second half. RULE: after correcting a fixture to be more faithful, re-check that
+    every guard the OLD fixture exercised is still exercised by something — a fixture
+    fix can silently retire a test, and the survivor of a mutation run is where to look.
+  - **A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY, AND A HARDCODED "no, nothing is
+    happening" IS TRUE UNTIL IT IS THE INVERSE LIE (2026-09-17, the Wikipedia toggle):**
+    the toggle ships before anything consumes its setting, so "running" is the
+    operator's CHOICE and not an event. Reading only the stored state would have told
+    them *"running: every edit arrives as it happens"* while nothing was connected. The
+    fix is two fields, not one — `state` (chosen) and `active` (happening) — but the
+    second one's VALUE is where the trap moves: a constant `active: False` in the API
+    layer is correct today and becomes the WORSE lie the day someone wires a collector
+    and does not think to come back, because an operator is then told nothing is
+    happening while their machine streams. So `active` is read from a registry the read
+    loop maintains itself (`live_streams()`), which is true in both directions with
+    nobody remembering anything. RULE: when a surface must report whether some other
+    component is running, make the answer come FROM that component, never from a
+    constant beside the surface — and when shipping a control ahead of its backend, say
+    which of the two facts you are showing.
+  - **A ROUTE TEST THAT COMPARES THE DECORATOR PATH AGAINST THE ROUTER'S PATHS ASSERTS
+    THE ABSENCE OF A STRING THAT COULD NEVER BE PRESENT (2026-09-17, Q728's
+    retirement):** `router.routes` carries paths WITH the router's prefix
+    (`/api/wiki/dumps/...`), and the guard was written against the decorator's spelling
+    (`/dumps/...`). It passed, it would have passed with the endpoint fully restored,
+    and it reported safety. This is the recorded "compose the actual route" lesson in
+    its NEGATIVE form, which is the more dangerous one: a positive wiring assertion that
+    never matches fails loudly, and a negative one that never matches is silent forever.
+    Two cheap habits catch it: compose the path from `router.prefix` rather than
+    hardcoding it, and put a POSITIVE control in the same test (assert a route you know
+    IS there, in the same composed form) so a broken composition reddens immediately.
+    And mutation-check a removal guard by RE-ADDING the thing — a removal is exactly the
+    kind of change whose test nobody watches fail.
+  - **A "MUST BE GONE" GUARD OVER SOURCE TEXT WILL ACCUSE THE COMMENT THAT DOCUMENTS THE
+    REMOVAL (2026-09-17, same slice):** the retirement's own note names the path it
+    retired — as it should, so the next reader knows what was there and why — and a
+    tree-wide search for that path then reported the note as a surviving caller. Strip
+    comments before asserting either presence or absence in source. (The recorded
+    inverse is already here: a guard that stayed GREEN because the string it wanted
+    survived inside `// callName();`. Same root, opposite symptom, and both are fixed by
+    the same line.)

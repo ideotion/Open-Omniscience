@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -86,6 +87,28 @@ READ_TIMEOUT_S: float = 60.0
 #: not hammer the service, and must not go so quiet that an operator watching the
 #: counters thinks it gave up.
 MAX_BACKOFF_S: float = 300.0
+
+
+#: Every stream currently inside its read loop, by the editions it is reading.
+#:
+#: WHY A REGISTRY AND NOT A BOOLEAN SOMEWHERE ELSE. A surface has to be able to answer
+#: "is this lane actually collecting?", and the only honest source for that is the
+#: loop itself. The alternative -- a constant in the API layer saying "no collector
+#: yet" -- is true today and becomes a LIE the day someone wires one and does not
+#: think to update it, which is the worse direction: an operator told nothing is
+#: happening while their machine streams. Registering here makes the answer true by
+#: construction in both directions.
+#:
+#: Module-level and guarded by a lock because the collector will run on its own
+#: thread while an HTTP handler reads this on another.
+_LIVE: dict[int, tuple[str, ...]] = {}
+_LIVE_LOCK = threading.Lock()
+
+
+def live_streams() -> tuple[tuple[str, ...], ...]:
+    """The editions each currently-running stream is reading. Empty when none is."""
+    with _LIVE_LOCK:
+        return tuple(_LIVE.values())
 
 
 class StreamStopped(RuntimeError):
@@ -365,6 +388,25 @@ class WikiEventStream:
         if resume_from:
             self.parser.last_event_id = resume_from
             self.counters.last_event_id = resume_from
+        with _LIVE_LOCK:
+            _LIVE[id(self)] = self._editions
+        try:
+            return self._run(on_change, should_stop, max_connections, on_position)
+        finally:
+            # A ``finally`` is not a cleanup GUARANTEE -- a SIGKILL or an OOM skips it
+            # -- but this registry lives in the process that would die with it, so
+            # there is nothing to leak across a restart. What it does cover is every
+            # ordinary exit: a refusal, a caller stop, an exception, a return.
+            with _LIVE_LOCK:
+                _LIVE.pop(id(self), None)
+
+    def _run(
+        self,
+        on_change: Callable[[StreamChange], None],
+        should_stop: Callable[[], bool] | None,
+        max_connections: int | None,
+        on_position: Callable[[str | None, str | None], None] | None,
+    ) -> StreamCounters:
         backoff = 0.0
         while True:
             if should_stop is not None and should_stop():
