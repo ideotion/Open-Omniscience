@@ -8274,3 +8274,43 @@ is called by the same name is how "I ran the gate" stops being true without anyo
 **And when a ratchet moves, check the count is UNCHANGED rather than under the bar.** Back
 at exactly 442 is what says the two findings removed were the two findings added; 441 would
 have meant something else had also moved and been absorbed.
+
+### A TEST THAT SAMPLES A TRANSIENT STATE IS A RACE, HOWEVER LONG IT POLLS (2026-09-17, found from `S04-06`'s red lane, which it did not cause)
+
+`Portability observation (macos-latest)` went red on this PR for
+`test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot`, in the import path
+the PR does not touch. **The confirmation came free and needs recording as a technique:**
+a PR head gets TWO CI runs, one for the `push` event and one for the `pull_request` event,
+and on commit `d455ab7` the same macOS lane came back **success on one and failure on the
+other, 25 s apart**. A same-commit disagreement is the cleanest flake proof there is and
+costs no re-run — check for the twin run before spending one.
+
+**But "flake" is not a root cause, and this one has a shape worth naming.** The test's
+subprocess decides whether the boot started the drain by SAMPLING a transient state —
+`if _REINDEX_RESUME_JOB.status()["state"] == "running"` every `0.1` s, for up to 120 s.
+`BackgroundJob.start()` sets `_state = "running"` synchronously and `_run` flips it to
+`"done"` in its `finally`, so that string is true only for as long as the work takes — and
+the fixture is TWO articles with ~25-character bodies. A drain that begins and ends inside
+one `time.sleep(0.1)` is indistinguishable from one that never started: every later sample
+reads `"done"`, the `elif started:` break never fires, and the loop spins out its full 120 s
+to report `started: False`. **The 120 s is not a safety margin — it is 1,200 samples of a
+window that already closed.** A long deadline protects against a LATE start, never against
+a short life, and reading the two as interchangeable is the whole defect.
+
+**The fix is not a longer poll or a sleep before it; it is to read a fact that persists.**
+`status()` already returns `started_at` and `ended_at`, set under the lock and never cleared
+until the next `start()` — the durable evidence was published and thrown away. So: when a
+test must prove something HAPPENED, assert on the record it leaves, not on catching it in
+the act. Where only a transient exists, the test's job is to make it observable (a gate the
+worker blocks on) rather than to sample faster.
+
+**COROLLARY — a scary traceback in `Captured log setup` belongs to the PREVIOUS test.** The
+red log carried `TypeError: cannot unpack non-iterable bool object` out of the boot resume,
+which reads like the cause and is not: `test_the_boot_resume_never_blocks_the_boot` stubs the
+drain with `lambda: (gate.wait(5) or (True, None))`, and `Event.wait()` returns `True`
+whenever the event is set in time — so the tuple is reached ONLY when the wait times out, and
+every normal run returns a bare `True`. The daemon thread raises, `except Exception` swallows
+it, that test still passes, and the traceback lands in whatever test's capture is open when
+the thread finally runs. **`setup` capture is a different test's exhaust.** Read the phase
+label before believing the traceback, and be suspicious of a stub built with `or` over a
+predicate that is truthy on the success path.
