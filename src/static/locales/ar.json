@@ -3579,5 +3579,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "المفهوم في المركز، فرع واحد لكل لغة، والارتباطات على الفروع.",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "المراقبة بحث محفوظ يتفعّل عندما تبلغ المقالات الجديدة المطابقة عتبتك — دعوة للقراءة، لا حكمًا ولا درجة. محليًا فقط: دون إشعارات ودون شبكة.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "تتداخل الفروع: المقال الذي يحمل صيغتَي المفهوم بلغتين يُحسب على كلا الفرعين ومرةً واحدة في المركز، لذلك لا يساوي مجموع الفروع هذا الإجمالي. وحين تتشارك عدة لغات الإملاء نفسه، تحمل الفروع المقالات نفسها وتوضّح ذلك. عدّ فقط، ولا درجة أبدًا.",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "فرع واحد لكل لغة فهرست المجموعة فيها صيغة من صيغ المفهوم؛ ارتباطات كل فرع هي أعداد تزامن الورود عبر مقالات تلك اللغة نفسها، مع استبعاد صيغ المفهوم نفسه"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "فرع واحد لكل لغة فهرست المجموعة فيها صيغة من صيغ المفهوم؛ ارتباطات كل فرع هي أعداد تزامن الورود عبر مقالات تلك اللغة نفسها، مع استبعاد صيغ المفهوم نفسه",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "النطاقات هي أعداد الإشارات لكل لغة وهي متداخلة: المقال الذي يحمل صيغتين من صيغ المفهوم يُحسب في كلا النطاقين، لذلك ارتفاع التكديس ليس إجمالي المقالات المعروض إلى جانبه.",
+  "These series could not be stacked, so they are drawn as lines.": "تعذّر تكديس هذه السلاسل، فتُرسم كخطوط.",
+  "One of these series has a published gap, and a gap is not a zero.": "إحدى هذه السلاسل بها فجوة منشورة، والفجوة ليست صفرًا.",
+  "Indexed values cannot be added, so they are not stacked.": "لا يمكن جمع القيم المفهرسة، لذلك لا تُكدَّس.",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "الارتفاعات على محور لوغاريتمي لا تُجمع، لذلك لا تُكدَّس.",
+  "Only one language is present, so there is nothing to stack.": "لغة واحدة فقط موجودة، فلا يوجد ما يُكدَّس.",
+  "No points in this window.": "لا نقاط في هذه النافذة.",
+  "running total {n}": "إجمالي تراكمي {n}",
+  "not reported in this bucket": "غير مُبلَّغ في هذه الفترة",
+  "open in analysis (trend + worldwide spread)": "افتح في التحليل (الاتجاه + الانتشار العالمي)"
 }

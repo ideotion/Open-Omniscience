@@ -852,6 +852,30 @@
         : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
     }
 
+    // Q417 = a — "a per-language breakdown in the hover", as ONE sentence with two
+    // callers rather than two copies. It was written inline inside `kwHoverText`, which
+    // is reached only from the keyword-label path; the ruling names the AGGREGATES
+    // (rising, trends, top), and `termBarsHtml` renders exactly those and had no hover
+    // beyond the term itself. The breakdown was published by `queries.trending` on every
+    // ring row and read by nobody on that surface — shipped-but-unread, in the feature
+    // whose own ledger names that trap.
+    //
+    // Independent of whether a translation exists: a concept's composition across
+    // languages is a fact about the corpus, and gating it on having a label for the
+    // concept would hide it exactly where the ring table is thinnest.
+    function kwLangBreakdownText(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const lb = row && row.language_breakdown;
+      if (!lb || typeof lb !== "object") return "";
+      const cells = Object.keys(lb).map((k) => [k, +lb[k] || 0]).filter((x) => x[1] > 0)
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .map((x) => kwLangName(x[0]) + " " + x[1]);
+      if (!cells.length) return "";
+      // The figures OVERLAP -- one article carrying two forms is counted under both --
+      // so the sentence never presents them as adding up to anything.
+      return t("Across languages:") + " " + cells.join(" · ");
+    }
+
     function kwHoverText(row) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tier = kwTier(row);
@@ -863,12 +887,8 @@
       if (row && row.translation && term) parts.push(t("Original") + ": " + term);
       const src = row && row.translation_source_lang;
       if (src) parts.push(t("Language") + ": " + kwLangName(src));
-      const lb = row && row.language_breakdown;
-      if (lb && typeof lb === "object") {
-        const cells = Object.keys(lb).map((k) => [k, +lb[k] || 0]).filter((x) => x[1] > 0)
-          .sort((a, b) => b[1] - a[1]).map((x) => kwLangName(x[0]) + " " + x[1]);
-        if (cells.length) parts.push(t("Across languages:") + " " + cells.join(" · "));
-      }
+      const across = kwLangBreakdownText(row);
+      if (across) parts.push(across);
       if (row && row.translation_model) parts.push(t("Model") + ": " + row.translation_model);
       if (row && row.translation_qid) parts.push("Wikidata: " + row.translation_qid);
       return parts.join(" — ");
@@ -1225,6 +1245,24 @@
     // genuinely share it.
     function termBarsHtml(terms, valueOf, labelOf) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Q417's hover on the AGGREGATES. Appended to the existing title rather than
+      // replacing it, and empty for a term in no ring -- a breakdown on every row would
+      // train the reader to ignore the one that means something. The title rides the
+      // #oo-tip convention (invariant #17) like every other translated title.
+      const kwAcross = (row) => {
+        const across = kwLangBreakdownText(row);
+        return across ? " — " + across : "";
+      };
+      // ...AND IT HAS TO SURVIVE THE FIRST HOVER. These rows carry `data-kwstat`, so
+      // `ooKwStatInit` fetches live keyword stats and OVERWRITES both the title and the
+      // #oo-tip text with them -- a breakdown left only in the title is true in the DOM
+      // and gone the moment anyone points at the row. `data-oo-tip-extra` is the channel
+      // that handler appends rather than replaces, so the row's own fact reaches the
+      // bubble beside the stats instead of being destroyed by them.
+      const kwExtra = (row) => {
+        const across = kwLangBreakdownText(row);
+        return across ? ` data-oo-tip-extra="${esc(across)}"` : "";
+      };
       if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
       const scaled = terms.map(t => valueOf(t)).map(v => (v == null ? null : Number(v)))
         .map(v => (v != null && Number.isFinite(v)) ? v : null);
@@ -1235,7 +1273,7 @@
           : `<span class="tb-fill" style="width:${Math.max(2, Math.round((v / max) * 100))}%"></span>`;
         return `<div class="tb-row">
           <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-          <a class="tb-label" href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)} — open in analysis (trend + worldwide spread)"
+          <a class="tb-label" href="#" data-kwstat="${esc(t.term)}"${kwExtra(t)} title="${esc(t.term + " — " + T("open in analysis (trend + worldwide spread)") + kwAcross(t))}"
              onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
           <span class="tb-bar" aria-hidden="true">${fill}</span>
           <span class="tb-val muted">${esc(labelOf(t))}</span>

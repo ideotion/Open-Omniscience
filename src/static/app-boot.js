@@ -301,16 +301,33 @@
         return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;
       }
       function applyTo(el, text, persist) {
-        // persist=true writes the #oo-tip convention (dataset.ooTip + title) so the next
-        // hover shows it instantly; persist=false updates ONLY the currently-open bubble
-        // (used for the transient "Loading…" state, so an abandoned+failed fetch can never
-        // strand "Loading…" as the element's permanent tooltip — the runtime-review fix).
+        // THIS HANDLER OVERWRITES THE TITLE, so anything the RENDERER put there is gone
+        // the moment the reader hovers. `data-oo-tip-extra` is how a row keeps a fact of
+        // its own: read here and appended to the composed line, so it survives the
+        // overwrite and reaches the bubble the reader actually reads rather than only
+        // the native tooltip that the overwrite replaces.
+        //
+        // Found by measuring (Q417, 2026-09-17): the per-language breakdown was put in
+        // the title of a `data-kwstat` row, which is true in the DOM at render time and
+        // false after one hover, forever. The Chromium walk read the bubble back and saw
+        // the stats line where the breakdown should have been.
+        //
+        // Appended per ELEMENT rather than folded into `fmt`, because the stats line is
+        // cached per TERM and this is a fact about the row.
+        //
+        // The rest as before: persist=true writes the #oo-tip convention (dataset.ooTip +
+        // title) so the next hover shows it instantly; persist=false updates ONLY the
+        // currently-open bubble (used for the transient "Loading…" state, so an
+        // abandoned+failed fetch can never strand "Loading…" as the element's permanent
+        // tooltip — the runtime-review fix).
+        const extra = (el.dataset && el.dataset.ooTipExtra) || "";
+        const full = extra ? text + " \u2014 " + extra : text;
         if (persist) {
-          el.dataset.ooTip = text;                                 // #oo-tip reads this
-          if (el.getAttribute("title") != null) el.setAttribute("title", text);
+          el.dataset.ooTip = full;                                 // #oo-tip reads this
+          if (el.getAttribute("title") != null) el.setAttribute("title", full);
         }
         const tip = document.getElementById("oo-tip");
-        if (tip && tip.classList.contains("show") && hovered === el) tip.textContent = text;
+        if (tip && tip.classList.contains("show") && hovered === el) tip.textContent = full;
       }
       async function load(el, term) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

@@ -957,6 +957,86 @@
       ? ooViz.isMissing(v) || !isFinite(v)
       : (v === null || v === undefined || !isFinite(v));
     const _GAP_FACTOR = 3;
+    // Q502 — STACKED BANDS, and the four things a stack may not be asked to do.
+    //
+    // PURE (visible series -> bands, or a refusal) so the arithmetic and, more
+    // importantly, the REFUSALS can be driven without a canvas. A stack is a
+    // part-to-whole statement, which is a much stronger claim than a set of lines on
+    // shared axes, so it has to be earned:
+    //
+    //   1. A GAP IS NOT A ZERO. Stacking needs a value for every series at every
+    //      timestamp, and the obvious way to get one is to treat an absent point as 0 --
+    //      which turns "nobody measured this bucket" into "we measured none here" and
+    //      shifts every band above it. So an EXPLICITLY missing value (the `gapBefore`
+    //      mark ooChart already sets for a published null) refuses the stack outright.
+    //      A merely absent bucket is different and is the caller's declaration: passing
+    //      `stacked` asserts the series are counts over a complete grid, where an
+    //      absent bucket genuinely means zero.
+    //   2. NOT UNDER `indexed`. Each series there is rebased to 100 at its own first
+    //      value, so the bands would sum rebasings -- a number with no referent.
+    //   3. NOT UNDER `logY`. Heights on a log axis do not add, so a stack drawn on one
+    //      is a picture of an addition that never happened.
+    //   4. NOT FOR ONE SERIES. A single band is an area chart wearing a stack's clothes,
+    //      and it invites the reader to look for parts that are not there.
+    //
+    // The refusal is RETURNED, not thrown, and it names which rule bit -- the caller
+    // draws the ordinary chart and says why, rather than silently getting something
+    // other than what it asked for.
+    function _stackSeries(vs, opts) {
+      opts = opts || {};
+      if (!vs || vs.length < 2) return {refusal: "one-series"};
+      if (opts.indexed) return {refusal: "indexed"};
+      if (opts.logY) return {refusal: "log"};
+      for (const s of vs) {
+        for (let i = 0; i < s.vis.length; i++) {
+          // `gapBefore` on the FIRST visible point only means the hole is outside the
+          // window; a hole between two visible points is the one that would be filled
+          // in with a fabricated zero.
+          if (i > 0 && s.vis[i].gapBefore) return {refusal: "gap"};
+        }
+      }
+      const times = [...new Set(vs.flatMap(s => s.vis.map(p => p.t)))].sort((a, b) => a - b);
+      if (!times.length) return {refusal: "empty"};
+      const running = new Map(times.map(t => [t, 0]));
+      const bands = vs.map((s) => {
+        const at = new Map(s.vis.map(p => [p.t, p.v]));
+        const pts = times.map((t) => {
+          const lo = running.get(t);
+          const v = at.has(t) ? at.get(t) : 0;
+          const hi = lo + v;
+          running.set(t, hi);
+          return {t, v, lo, hi, measured: at.has(t)};
+        });
+        return {s, pts};
+      });
+      return {times, bands, top: Math.max(...times.map(t => running.get(t)))};
+    }
+
+    // The stack's HIT TEST, pure for the same reason the builder is: it decides which
+    // band the reader is pointing at, and that decision is the difference between a
+    // readout that names a part and one that names the wrong part. Handed the
+    // y-projection rather than reaching for one, so it can be driven without a canvas.
+    //
+    // Time dominates, y separates: `d` ties on every point of a shared grid, so without
+    // the second dimension the first band iterated would win every hover.
+    function _stackPick(stack, yOf, ms, my) {
+      if (!stack || !stack.bands || typeof yOf !== "function") return null;
+      let best = null;
+      for (const band of stack.bands) {
+        for (const p of band.pts) {
+          const d = Math.abs(p.t - ms);
+          const a = yOf(p.lo), b = yOf(p.hi);
+          // Zero INSIDE the band's own vertical extent, and the gap to it outside -- so
+          // a pointer in the band always beats one merely near its edge.
+          const dy = Math.max(0, Math.min(a, b) - my, my - Math.max(a, b));
+          if (!best || d < best.d || (d === best.d && dy < best.dy)) {
+            best = {d, dy, band, p};
+          }
+        }
+      }
+      return best;
+    }
+
     function _seriesRuns(points, opts) {
       opts = opts || {};
       const factor = opts.gapFactor || _GAP_FACTOR;
@@ -1744,6 +1824,14 @@
       const span0 = Math.max(tMax - tMin, 1);
       let t0 = tMin, t1 = tMax, pinned = null, pinnedS = null;
       const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
+      // The last stack `draw()` computed, so the hover can report a band's OWN value
+      // rather than the cumulative height the reader is pointing at -- the cumulative
+      // number answers a question nobody asked and is the easiest way for a stack to
+      // lie about a part.
+      let _lastStack = null;
+      // ...and the y-projection that drew it. `Yof` is built inside `draw()` from the
+      // window's own scale, and `nearest` needs it to tell which BAND the pointer is in.
+      let _lastYof = null;
       const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n) || "#888";
       const fmtV = (v) => (typeof fmtNum === "function") ? fmtNum(v) : String(v);
       const fmtT = (ms) => _msLabel(ms, Math.max(tMax - tMin, 1));
@@ -1887,9 +1975,28 @@
           s._base = fnz ? fnz.v : (vis.length ? (vis[0].v || 1) : 1);
         }
         const vs = visible();
-        const ys = vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
+        // Q502: bands, or a NAMED refusal the caller can surface. Recomputed per draw
+        // because the visible window, the legend toggles and the zoom all change which
+        // series are stacked and over which timestamps.
+        const stk = opts.stacked ? _stackSeries(vs, opts) : null;
+        _lastStack = stk;
+        // The refusal is published ON THE HOST, not thrown and not swallowed: a caller
+        // that asked for a stack and got lines has to be able to say why on the surface.
+        // A dataset attribute rather than a global, so two charts on one page cannot
+        // report each other's refusal.
+        if (opts.stacked) {
+          if (stk && stk.refusal) el.dataset.stackRefusal = stk.refusal;
+          else delete el.dataset.stackRefusal;
+        }
+        const stacked = stk && stk.bands;
+        // A STACK'S AXIS IS THE TOTAL, and it starts at zero: a stack drawn from a
+        // window-minimum baseline states that the parts sum to something the axis never
+        // shows, which is the one reading a part-to-whole picture must not support.
+        const ys = stacked
+          ? [0, stk.top]
+          : vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
         if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
-        const dataLo = (opts.zeroBase && !logOk) ? Math.min(0, ...ys) : Math.min(...ys);
+        const dataLo = (stacked || (opts.zeroBase && !logOk)) ? Math.min(0, ...ys) : Math.min(...ys);
         const dataHi = Math.max(...ys);
         // A FLAT series is centred instead of fabricating a span: the old
         // `(yMax-yMin)||1` fallback drew 23 / 23.33 / 23.67 / 24 for a constant
@@ -1898,6 +2005,7 @@
         const yMin = flatY ? dataLo - 0.5 : dataLo, yMax = flatY ? dataHi + 0.5 : dataHi;
         const ySpan = (yMax - yMin) || 1;
         const Yof = (v) => padT + plotH * (1 - (v - yMin) / ySpan);
+        _lastYof = Yof;
         ctx.font = "10px sans-serif"; ctx.fillStyle = cssVar("--muted"); ctx.strokeStyle = cssVar("--border");
         // Ticks in the data's own units: integer-only for a count axis (never a
         // fractional count), exactly one tick for a flat series. Under logY the
@@ -1922,7 +2030,84 @@
           seenT.add(lab);
           ctx.fillText(lab, Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
         }
-        for (const s of vs) {
+        if (stacked) {
+          // A STACK OBEYS THE SPARSE RULE LIKE EVERY OTHER SERIES HERE (invariant #16's
+          // 2026-06-15 amendment): under _SPARSE_BAR_MAX x positions it is drawn as
+          // stacked COLUMNS, not as filled bands. A band is a polygon between measured
+          // points, which on a young corpus means two samples ramping across a week --
+          // a trend the corpus never measured, which is precisely what "NEVER
+          // interpolation faking a curve through 3 points" forbids. Caught by looking at
+          // the rendered chart: six bands swept diagonally across seven days from one or
+          // two real points each.
+          //
+          // Columns rather than the GROUPED bars the line path uses, because here the
+          // part-to-whole statement IS computed and its overlap is printed beside the
+          // chart. The grouped treatment exists because bars drawn from a shared
+          // baseline READ as a stack nobody computed; that reasoning does not apply to a
+          // caller that asked for one and said what it means.
+          const sparse = stk.times.length < _SPARSE_BAR_MAX;
+          const slot = Math.max(2, Math.min(plotW / (Math.max(stk.times.length, 1) * 1.5), 26));
+          for (const b of stk.bands) {
+            const col = b.s.color.startsWith("var(") ? cssVar(b.s.color.slice(4, -1)) : b.s.color;
+            ctx.fillStyle = col; ctx.strokeStyle = col;
+            const st2 = b.s.style || _figStyle(0);
+            if (sparse) {
+              for (const p of b.pts) {
+                // A segment of height zero is not drawn: an empty rectangle at a
+                // timestamp a language was never seen in would read as a measured zero
+                // sitting in the column, and the stack's own declaration is that an
+                // absent bucket contributes nothing, not that nothing was found.
+                if (p.hi === p.lo) continue;
+                const cx = Xof(p.t);
+                const x0 = Math.max(padL, Math.min(cx - slot / 2, W - padR - slot));
+                const yHi = Yof(vt(p.hi)), yLo = Yof(vt(p.lo));
+                ctx.globalAlpha = 0.72;
+                ctx.fillRect(x0, Math.min(yHi, yLo), slot, Math.abs(yLo - yHi));
+                // The 2px cap at the segment's own top, so a one-mention band stays
+                // visible rather than collapsing to nothing -- the same rule the line
+                // path's bars use, for the same reason.
+                ctx.globalAlpha = 1;
+                ctx.fillRect(x0, yHi - 1, slot, 2);
+                // ...and the series' marker, because fill colour alone cannot carry
+                // identity in greyscale. Only where the series REPORTED: the mark means
+                // "measured here" everywhere else in this component.
+                if (p.measured) _figMarkerCanvas(ctx, st2.marker, x0 + slot / 2, yHi - 6, 3.2);
+              }
+              continue;
+            }
+            // Painted bottom-up so a band's own colour sits over the one beneath it, and
+            // with the SAME redundant channels the lines use -- a stack read in greyscale
+            // must still separate, so each band carries its series' marker on its own
+            // upper boundary rather than relying on fill hue alone.
+            ctx.globalAlpha = 0.68;
+            ctx.beginPath();
+            b.pts.forEach((p, i) => {
+              const x = Xof(p.t), y = Yof(vt(p.hi));
+              i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+            });
+            for (let i = b.pts.length - 1; i >= 0; i--) {
+              const p = b.pts[i];
+              ctx.lineTo(Xof(p.t), Yof(vt(p.lo)));
+            }
+            ctx.closePath(); ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            b.pts.forEach((p, i) => {
+              const x = Xof(p.t), y = Yof(vt(p.hi));
+              i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+            });
+            ctx.stroke();
+            // A timestamp this series did NOT report is drawn at the height the
+            // declaration says it has (zero of its own), and carries no marker -- the
+            // mark means "measured here" everywhere else in this component and must not
+            // start meaning something weaker inside a stack.
+            for (const p of b.pts) {
+              if (p.measured) _figMarkerCanvas(ctx, st2.marker, Xof(p.t), Yof(vt(p.hi)), 2.6);
+            }
+          }
+        }
+        for (const s of stacked ? [] : vs) {
           if (!s.vis.length) continue;
           const n = s.vis.length, pxPer = plotW / Math.max(n - 1, 1);
           const barMode = n < _SPARSE_BAR_MAX;              // Item Y: n<10 -> bars, n>=10 -> line
@@ -2038,7 +2223,17 @@
           ctx.stroke();
         }
         if (pinned) {
-          const x = Xof(pinned.t), y = Yof(vt(opts.indexed && pinnedS ? pv(pinnedS, pinned) : pinned.v));
+          // IN A STACK THE MARK GOES WHERE THE BAND WAS DRAWN. `pinned.v` is the series'
+          // OWN value -- which is what the readout reports, and is correct there -- but
+          // the band's boundary is at its cumulative top, so pinning by value alone would
+          // circle a point near the baseline while the reader clicked halfway up the
+          // chart. Same defect as the hit test, one interaction later.
+          const pinBand = (stacked && pinnedS)
+            ? stk.bands.find((b) => b.s.label === pinnedS.label) : null;
+          const pinAt = pinBand ? pinBand.pts.find((q) => q.t === pinned.t) : null;
+          const x = Xof(pinned.t), y = pinAt
+            ? Yof(vt(pinAt.hi))
+            : Yof(vt(opts.indexed && pinnedS ? pv(pinnedS, pinned) : pinned.v));
           ctx.strokeStyle = cssVar("--muted"); ctx.setLineDash([3, 3]);
           ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke(); ctx.setLineDash([]);
           ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke();
@@ -2071,6 +2266,19 @@
       function nearest(ev) {
         const r = cv.getBoundingClientRect(), mx = ev.clientX - r.left;
         const ms = t0 + (t1 - t0) * (mx - padL) / plotW;
+        // A STACK IS HIT-TESTED IN TWO DIMENSIONS, because its bands are adjacent
+        // REGIONS and the pointer is inside one of them. Lines keep the time-only test:
+        // there the reader picks a series by following it, and the y of a line between
+        // two samples is not a value anyone measured.
+        if (_lastStack && _lastStack.bands && _lastYof) {
+          const hit = _stackPick(_lastStack, (v) => _lastYof(vt(v)), ms, ev.clientY - r.top);
+          if (hit) {
+            // The point the readout formats is the SERIES' own, so an unmeasured bucket
+            // stays unmeasured rather than becoming the zero the stack drew.
+            const own = hit.band.s.vis.find(x => x.t === hit.p.t);
+            return {d: hit.d, dy: hit.dy, p: own || {t: hit.p.t, v: hit.p.v}, s: hit.band.s};
+          }
+        }
         let best = null;
         for (const s of visible()) for (const p of s.vis) {
           const d = Math.abs(p.t - ms);
@@ -2128,7 +2336,25 @@
         const b = nearest(ev);
         if (b) {
           const ix = opts.indexed && b.s._base ? ` \u00b7 idx ${Math.round(pv(b.s, b.p))}` : "";
-          readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""}${ix} \u00b7 ${fmtT(b.p.t)}`;
+          // In a stack the reader points at a HEIGHT, and the height is cumulative. The
+          // readout names the series' OWN value first -- the number the label refers to
+          // -- and the running total separately and labelled, because reporting the
+          // cumulative figure under the series' name is the easiest way for a stack to
+          // misattribute a part.
+          let st = "";
+          if (_lastStack && _lastStack.bands) {
+            const band = _lastStack.bands.find(x => x.s.label === b.s.label);
+            const at = band && band.pts.find(x => x.t === b.p.t);
+            if (at) {
+              // Keyable FRAMES with the value interpolated after translation -- the
+              // composite-string discipline `_figTf` exists for. There is no plain
+              // `_figT` in this module, and inventing one for two strings would be a
+              // second translation path beside the one every other chart string uses.
+              st = ` \u00b7 ${_figTf("running total {n}", {n: fmtV(at.hi)})}`;
+              if (!at.measured) st += ` \u00b7 ${_figTf("not reported in this bucket", {})}`;
+            }
+          }
+          readout.textContent = `${b.s.label}: ${fmtV(b.p.v)}${b.s.unit ? " " + b.s.unit : ""}${ix}${st} \u00b7 ${fmtT(b.p.t)}`;
         }
       });
       cv.addEventListener("pointerup", (ev) => {

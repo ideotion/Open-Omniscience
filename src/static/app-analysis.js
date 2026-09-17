@@ -354,6 +354,16 @@
     function anSelectTab(key) {
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
+      // A LAZY TAB SELECTED WHILE AN ANALYSIS IS LOADING WAITS FOR ITS PARAMS. Before
+      // this, selecting Trend inside that window called `renderAnTrend(null)`, which
+      // falls back to the typed term with NO lens -- so the tab fetched, charted and
+      // cached the LITERAL word while the list beside it counted the concept, which is
+      // the exact split Q501 exists to close. Measured in Chromium as `hi` issuing the
+      // trend request twice, once bare and once with the locale.
+      // Nothing is lost by waiting: `loadAnalysis` renders whichever lazy panel is
+      // visible the moment it has the lensed params, and it nulls this on entry so a
+      // second run cannot serve the PREVIOUS corpus' chart in the meantime.
+      if (!_anLastParams) return;
       if (key === "overview") renderAnOverview(_anLastParams);  // headline tile per lens
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
       if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
@@ -511,7 +521,8 @@
     // dual-axis price×coverage panel. The shared axis is TIME. Counts only / no
     // score; the design respects co-occurrence ≠ causation, but the on-graph caveat
     // text was removed (maintainer 2026-06-17). Lazy: rendered on tab-show, cached.
-    const _anTrend = { key: null, term: null, counts: [], suggested: [], picked: {}, mode: "counts" };
+    const _anTrend = { key: null, term: null, counts: [], suggested: [], picked: {}, mode: "counts",
+                       byLang: null, concept: null, articles: null };
     function commoditiesForTerm(term, related) {
       // Reverse of the COMMODITY_QUERY seed: suggest a commodity when its family
       // word appears in the analyzed term or its related terms (e.g. a "Middle East"
@@ -574,6 +585,13 @@
             series.push({ label: rel[i], unit: t("articles"), color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
         });
         _anTrend.counts = series;
+        // Q502/Q417: the per-language halves the aggregate already publishes. Captured
+        // rather than re-fetched -- the stacked view and the hover must describe the
+        // SAME resolution as the line above them, and a second call under a different
+        // lens is how two views of one term come to disagree.
+        _anTrend.byLang = (main && main.by_language) || null;
+        _anTrend.concept = (main && main.concept) || null;
+        _anTrend.articles = (main && main.articles != null) ? main.articles : null;
         _anTrend.suggested = commoditiesForTerm(term, rel);
         if (_anCommodity && _anCommodity.symbol && _anTrend.suggested.indexOf(_anCommodity.symbol) < 0)
           _anTrend.suggested.unshift(_anCommodity.symbol);
@@ -607,8 +625,20 @@
         if (pts.length) list.push({ label: sym, unit: c.unit || t("price"), color: "var(--err)", points: pts });
       }
       const seg = (m, lbl) => `<button class="ghost tiny${_anTrend.mode === m ? " on" : ""}" onclick="anTrendSetMode('${m}')">${esc(lbl)}</button>`;
+      // Q502's view, offered only when the concept is actually carried in more than one
+      // language: a one-band stack is an area chart wearing a stack's clothes and asks
+      // the reader to look for parts that are not there.
+      const langKeys = Object.keys(_anTrend.byLang || {}).filter(
+        (k) => ((_anTrend.byLang[k] || {}).points || []).length);
+      const byLangOffered = langKeys.length > 1;
+      // A MODE THE VIEW NO LONGER OFFERS FALLS BACK, rather than leaving the row with no
+      // button lit beside a chart drawn in a mode the reader cannot see named. The mode
+      // is reset per analysis run, so this only bites when the same corpus comes back
+      // carrying one language -- but a control row that lights nothing reads as broken.
+      if (_anTrend.mode === "bylang" && !byLangOffered) _anTrend.mode = "counts";
       const modeRow = `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
-        + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>` + seg("counts", t("Counts")) + seg("indexed", t("Indexed")) + `</div>`;
+        + `<span class="muted" style="font-size:11px">${esc(t("View"))}:</span>` + seg("counts", t("Counts")) + seg("indexed", t("Indexed"))
+        + (byLangOffered ? seg("bylang", t("By language")) : "") + `</div>`;
       const chip = (sym) => `<button class="chip${_anTrend.picked[sym] ? " on" : ""}" onclick="anTrendPick('${sym}')"`
         + `${_anTrend.picked[sym] ? ' style="border-color:var(--accent)"' : ''}>${esc(sym)}</button>`;
       const suggRow = `<div class="row" style="gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:6px">`
@@ -621,6 +651,7 @@
       const caveat = indexed
         ? t("Indexed to 100 at the window start — relative movement, not absolute levels. Hover shows the real value.")
         : t("Article counts on a shared time axis.");
+      if (_anTrend.mode === "bylang" && byLangOffered) return _drawAnTrendByLang(host, modeRow, langKeys);
       host.innerHTML = modeRow + suggRow + `<div id="an-trend-chart"></div>`
         + `<p class="card-caveat" style="margin-top:6px">${esc(caveat)}</p>`
         + (_anTrend.mode === "counts" && picks.length ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switch to Indexed to overlay commodity prices honestly (different units)."))}</p>` : "")
@@ -635,6 +666,83 @@
         dual.innerHTML = `<div class="hint"><b>${esc(t("Dual-axis"))}</b> — ${esc(picks[0])} · ${esc(t("Price × coverage"))} `
           + `<span class="muted">${esc(t("each on its own real-unit scale"))}</span></div>` + commodityOverlaySvg(c.prices, cov, c.unit);
       } else dual.innerHTML = "";
+    }
+
+    // Q502 = a — "stacked per language with a legend", through the ONE chart toolkit
+    // (invariant #16), and the sentence that keeps the stack honest.
+    //
+    // A STACK ASSERTS PART-TO-WHOLE, AND THESE PARTS DO NOT SUM TO THIS WHOLE. An
+    // article carrying two languages' forms of the concept is counted in BOTH bands and
+    // ONCE in the article total, so the stack's height is a sum of per-language mention
+    // counts and NOT the distinct article count. Drawn without saying so, the picture
+    // makes a claim the data cannot support -- so the distinct total is printed beside
+    // it, labelled, and the caveat names the overlap rather than leaving a reader to
+    // discover it by adding the bands up.
+    //
+    // The "absent bucket = zero" declaration `stacked` requires is TRUE here and is why
+    // this caller may pass it: these are mention counts over a complete weekly grid, so
+    // a week a language does not appear in is a week it was not mentioned. A published
+    // NULL would be different, and `_stackSeries` refuses that case outright.
+    function _drawAnTrendByLang(host, modeRow, langKeys) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      const ordered = langKeys.slice().sort((a, b) => {
+        const na = ((_anTrend.byLang[a] || {}).articles) || 0;
+        const nb = ((_anTrend.byLang[b] || {}).articles) || 0;
+        return nb - na || String(a).localeCompare(String(b));
+      });
+      const series = ordered.map((lg) => ({
+        label: ooLangCode(lg),
+        unit: t("mentions"),
+        points: (((_anTrend.byLang[lg] || {}).points) || [])
+          .map((pt) => ({ t: pt.date, v: pt.count })),
+      }));
+      const totals = ordered.map((lg) =>
+        `${ooLangCell(lg)} ${esc(String(((_anTrend.byLang[lg] || {}).articles) || 0))}`).join(" · ");
+      host.innerHTML = modeRow + `<div id="an-trend-chart"></div>`
+        + `<div class="hint" style="margin-top:6px">${totals}`
+        + (_anTrend.articles != null
+            ? ` <span class="muted">· ${esc(tf("{n} articles in total, counted once each",
+                { n: _anTrend.articles }))}</span>` : "")
+        + `</div>`
+        + `<p class="card-caveat" style="margin-top:6px">`
+        // ONE LINE, however long: a concatenated literal is invisible to every instrument
+        // that harvests translation calls by READING THE SOURCE -- the i18n report and
+        // the guards that check a rendered string has twelve entries both see the pieces
+        // and neither sees the sentence. The same blind spot cost a module-level constant
+        // its translations earlier in this slice; splitting a caveat across `+` is that
+        // trap with a different shape.
+        //
+        // AND THE INSTRUMENT DOES NOT STRIP COMMENTS: the first draft of this note quoted
+        // the call shape it describes, and `--max-unkeyed-t-calls` harvested the quote as
+        // a real call and demanded a key for the ellipsis inside it. A comment about a
+        // source-reading guard is source the guard reads.
+        + esc(t("Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it."))
+        + `</p><div id="an-trend-refusal" class="hint muted"></div>`;
+      ooChart($("an-trend-chart"), series, { height: 240, stacked: true, zeroBase: true });
+      // A REFUSAL IS REPORTED, never silently swallowed: without this the reader sees an
+      // ordinary multi-line chart under a control labelled "By language" and has no way
+      // to learn that the stack was declined or why.
+      const host2 = $("an-trend-chart");
+      const why = host2 && host2.dataset ? host2.dataset.stackRefusal : null;
+      const box = $("an-trend-refusal");
+      if (box && why) {
+        // Each refusal is a KEYED sentence of its own rather than an interpolated code:
+        // "gap" and "indexed" are reasons a reader has to be able to act on, and a raw
+        // token in eleven locales is not one.
+        const said = {
+          gap: t("One of these series has a published gap, and a gap is not a zero."),
+          indexed: t("Indexed values cannot be added, so they are not stacked."),
+          log: t("Heights on a logarithmic axis do not add, so they are not stacked."),
+          "one-series": t("Only one language is present, so there is nothing to stack."),
+          empty: t("No points in this window."),
+        }[why];
+        box.textContent = t("These series could not be stacked, so they are drawn as lines.")
+          + (said ? " " + said : "");
+      } else if (box) {
+        box.textContent = "";
+      }
     }
 
     // --- Related & coordination (Analysis window; maintainer-ruled 2026-06-17):
@@ -1779,6 +1887,26 @@
         + (tags ? `<div style="margin-top:3px">${tags}</div>` : "");
     }
     async function loadAnalysis(p) {
+      // ...and the lazy subtabs hold until this run has params of its own (see
+      // `anSelectTab`). Nulled BEFORE the await below, so the window in which a click
+      // could reach the previous corpus' params does not exist.
+      _anLastParams = null;
+      // THE BOOT RACE, measured in Chromium (2026-09-17): walking straight to an analysis
+      // deep link in `hi` rendered the expansion rail's frame in ENGLISH while ar, zh and
+      // ja came out translated — the analysis fetch simply beat the locale fetch, and
+      // which locale loses is a matter of file size and timing. `OOI18N.ready` is the
+      // promise this project added for exactly this, and it is a promise rather than an
+      // event so that asking late still works.
+      //
+      // IT WAITS FIRST, BEFORE ANYTHING READS THE LOCALE. The wait originally sat a few
+      // lines lower, which fixed the frame text it was written for and left the two
+      // readers ABOVE it unguarded: `t` captured the fallback, and -- the one that
+      // reaches the server -- `_anApplyLens` read `OOI18N.current()` too early and built
+      // the params for EVERY tab with no `ui_lang`. The second Chromium walk caught it as
+      // `hi` issuing the trend request TWICE (once bare, once with the locale) where the
+      // other four locales issued it once: the reader's first chart described a
+      // resolution computed without their language, and a repaint quietly replaced it.
+      try { if (window.OOI18N && OOI18N.ready) await OOI18N.ready; } catch (_e) { /* never block a render */ }
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Q501/Q516: apply the lens ONCE, here, to the params EVERY tab below reads -- the
       // keywords chips, the mind map's graph, When/Where/Who, Links, Sentiment, Sources
@@ -1787,13 +1915,6 @@
       // toggle changed the Articles tab and left every other tab describing a different
       // concept while looking like one view.
       p = _anApplyLens(new URLSearchParams(p));
-      // THE BOOT RACE, measured in Chromium (2026-09-17): walking straight to an analysis
-      // deep link in `hi` rendered the expansion rail's frame in ENGLISH while ar, zh and
-      // ja came out translated — the analysis fetch simply beat the locale fetch, and
-      // which locale loses is a matter of file size and timing. `OOI18N.ready` is the
-      // promise this project added for exactly this, and it is a promise rather than an
-      // event so that asking late still works.
-      try { if (window.OOI18N && OOI18N.ready) await OOI18N.ready; } catch (_e) { /* never block a render */ }
       const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
