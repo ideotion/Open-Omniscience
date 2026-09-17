@@ -8248,3 +8248,29 @@ balance, so a malformed listener still yields something rather than the rest of 
 Bodies went from a uniform 4000 to 458 / 1001 / 6824, and all 309 tests using the helper
 stayed green — which is the check worth running when a shared helper changes: every guard
 that reads through it, not the one that failed.
+
+### A GATE LIST IN A BRIEF IS A CLAIM, AND THIS ONE WAS MISSING A BLOCKING RATCHET (2026-09-17, `S04-06`)
+
+`_WORKING_MODE.md` §4 lists "the gates, verbatim". I ran all of them, each separately,
+each at its own exit code, and pushed. CI went red on `test` — for
+`scripts/ruff_ratchet.py --max 442`, a BLOCKING non-growth ratchet over the ADVISORY ruff
+lane that the list does not mention. Two findings in code the PR had just added (`UP035`
+on a `typing` import, `UP037` on a needlessly quoted annotation) took it to 444.
+
+The ledger already carried both halves of this: *a gate's NAME is not its SCOPE — read the
+gate's own target paths out of `ci.yml`*, and *the `test` CI job is not only pytest*. The
+`test` job runs **fourteen** steps. What neither lesson said, and what this adds, is that
+**the brief's own gate list is one of the documents those lessons distrust** — a session
+following it faithfully is not running CI, and the faithfulness is what makes the gap
+invisible. Corrected in `_WORKING_MODE.md` §4 in the same PR, with the correction labelled
+as having the same shelf life as the text it replaces.
+
+**A SECOND, QUIETER DIVERGENCE IN THE SAME LIST:** it gives the untranslatable gate as
+`--audit-chrome --max-untranslatable N`; CI runs it with **no `--audit-chrome`**. Both
+passed here, so this cost nothing this time — which is exactly why it would have survived.
+Reproducing a gate means reproducing its FLAGS; a command that differs by one argument and
+is called by the same name is how "I ran the gate" stops being true without anyone noticing.
+
+**And when a ratchet moves, check the count is UNCHANGED rather than under the bar.** Back
+at exactly 442 is what says the two findings removed were the two findings added; 441 would
+have meant something else had also moved and been absorbed.

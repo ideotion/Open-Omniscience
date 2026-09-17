@@ -62,20 +62,40 @@ two disagree, this one wins, because it is newer and carries the 2026-09-15 ruli
 - **A PR never decides a ⛔, never rewrites history, never pushes a tag, never merges.** Draft PRs onto `main`;
   the maintainer merges.
 
-## 4. The gates, verbatim (unchanged from the base working mode; re-read `ci.yml` for the current numbers)
+## 4. The gates, verbatim (re-read `ci.yml` for the current numbers AND for the current LIST)
+
+**CORRECTED 2026-09-17 (`S04-06`), because this list cost a red lane.** It was missing
+`scripts/ruff_ratchet.py`, a BLOCKING non-growth ratchet over the ADVISORY ruff lane — a
+different rule set from the `--select=F,B` line above it, so passing that one is no
+evidence about this one. A session that ran every gate listed here, verbatim, and pushed,
+went red on `test` for two `UP035`/`UP037` findings in code it had just added. The
+recorded lessons name this exactly twice — *a gate's NAME is not its SCOPE* and *the
+`test` CI job is not only pytest* — and a list in a document is precisely the thing they
+warn against trusting. The `test` job runs **fourteen** steps; these are the ones that can
+fail on a change.
+
+Note also that CI's untranslatable gate carries **no `--audit-chrome`**. Running it with
+that flag is a different command, and calling it the same gate is how a "verified"
+reproduction stops being one.
 
 ```
 ruff check --select=F,B --extend-ignore=B008 src/ tests/     # blocking
+python scripts/ruff_ratchet.py --max <the number in ci.yml>  # blocking; a RATCHET: only ever lowered
 python -m mypy src/                                          # blocking, must be exit 0
 pytest -q
 alembic upgrade head && alembic check
 python scripts/i18n_report.py --min 100
-python scripts/i18n_report.py --audit-chrome --max-untranslatable <the number in ci.yml>
+python scripts/i18n_report.py --max-untranslatable <the number in ci.yml>     # NO --audit-chrome
 python scripts/i18n_report.py --max-unkeyed-t-calls <the number in ci.yml>
 bandit -r src/ -ll -q
 pytest -q tests/test_utf8_file_io.py tests/test_source_slicing_discipline.py \
   tests/test_repo_invariants.py tests/test_import_conclusion.py::test_every_node_suite_has_a_driver
 ```
+
+When a ratchet moves, check the count is **UNCHANGED** rather than merely under the bar: a
+change that alters what is measured can pass a max-gate while hiding a new finding behind
+a removed one. And read the list out of `ci.yml` rather than out of this block — including
+this correction, which is a claim with the same shelf life as the one it replaces.
 
 The last line is the named set of whole-tree guards that any file addition can redden; it costs seconds. Run
 `node --check` on every `<script>` block after a UI edit. Redirect each gate to a file and capture `$?` on its
