@@ -232,8 +232,21 @@ def test_the_host_names_survive_every_translation_verbatim():
     for path in sorted((_ROOT / "src" / "static" / "locales").glob("*.json")):
         value = json.loads(path.read_text(encoding="utf-8")).get(key)
         assert value, f"{path.name} has no translation for the hosts line"
-        assert "stream.wikimedia.org" in value, f"{path.name} mangled stream.wikimedia.org"
-        assert "wikimedia.org" in value, f"{path.name} mangled wikimedia.org"
+        # WHOLE TOKENS, not substrings. `"...stream.wikimedia.org...".find("wikimedia.org")`
+        # succeeds, so a substring check for the pageviews host was being satisfied by the
+        # STREAM host and testing nothing -- a translation that dropped the second host
+        # entirely would have passed. (CodeQL flagged the same shape in this slice's node
+        # test; the weak assertion underneath it was the defect worth fixing, in both
+        # languages.)
+        # Trailing `-`/`.` trimmed: a host token cannot end in one, and Bengali
+        # attaches its genitive suffix to a Latin word with a hyphen
+        # (`stream.wikimedia.org-এর`, the same shape bn.json already uses for `GB-কে`),
+        # so a greedy class would report a mangled host where the host is verbatim.
+        hosts = {h.rstrip("-.") for h in re.findall(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", value)}
+        assert "stream.wikimedia.org" in hosts, f"{path.name} mangled stream.wikimedia.org"
+        assert "wikimedia.org" in hosts, (
+            f"{path.name} does not carry the pageviews host as its own token"
+        )
 
 
 @pytest.mark.skipif(

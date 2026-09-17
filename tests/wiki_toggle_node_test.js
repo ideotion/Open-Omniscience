@@ -108,12 +108,35 @@ function run(state, translate, active) {
     "two states rendered the same hover -- an operator cannot tell them apart");
 }
 
+// -- hosts are compared as whole TOKENS, never as substrings ----------------- //
+//
+// CodeQL flagged `indexOf("wikimedia.org")` as incomplete URL substring
+// sanitization, which is the right shape to complain about even though this is an
+// assertion and not a sanitizer. THE DEFECT UNDERNEATH IT IS THE REAL ONE:
+// `"...stream.wikimedia.org...".indexOf("wikimedia.org")` succeeds, so the assertion
+// that the PAGEVIEWS host appears in the hover was being satisfied by the STREAM
+// host and tested nothing at all. Deleting the pageviews host from the sentence
+// would have left it green.
+//
+// Extracting host-shaped TOKENS and comparing sets fixes both: the pattern CodeQL
+// objects to is gone, and each host is now asserted on its own.
+function hostsIn(text) {
+  // Trailing `-`/`.` trimmed: a host token cannot end in one, and some locales attach
+  // a case suffix to a Latin word with a hyphen (Bengali writes
+  // `stream.wikimedia.org-\u098f\u09b0`, the shape bn.json already uses for `GB`), so a greedy
+  // class reports a mangled host where the host is verbatim and correct.
+  const raw = String(text).match(/[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g) || [];
+  return new Set(raw.map((h) => h.replace(/[-.]+$/, "")));
+}
+
 // -- a hover is a consent surface: it names what the lane CONTACTS ------------ //
 ["running", "halted", "stopped"].forEach((s) => {
-  const t = run(s).btn.title;
-  assert.ok(t.indexOf("stream.wikimedia.org") !== -1,
-    s + ": the hover must name the hosts, in every state (invariant #17 + informed consent)");
-  assert.ok(t.indexOf("wikimedia.org") !== -1, s + ": the pageviews host is missing from the hover");
+  const hosts = hostsIn(run(s).btn.title);
+  assert.ok(hosts.has("stream.wikimedia.org"),
+    s + ": the stream host is not named in the hover (invariant #17 + informed consent)");
+  assert.ok(hosts.has("wikimedia.org"),
+    s + ": the pageviews host is not named in the hover -- and note this is a WHOLE-TOKEN "
+      + "check, so stream.wikimedia.org does not satisfy it");
 });
 
 // -- a control that renders CLAIMS its capability: every state names its action //
@@ -142,8 +165,8 @@ function run(state, translate, active) {
   // The hosts must survive a translator verbatim: a localized hostname is an
   // unreachable address printed on a consent surface.
   const r = run("running", (s) => s.replace(/wikimedia/g, "WIKIMEDIA-TRANSLATED"));
-  assert.ok(r.btn.title.indexOf("stream.wikimedia.org") === -1,
-    "sanity: this probe is meant to mangle the host, so the next assertion means something");
+  assert.ok(!hostsIn(r.btn.title).has("stream.wikimedia.org"),
+    "sanity: this probe is meant to mangle the host, so the assertions above mean something");
 }
 
 console.log("wiki_toggle_node_test: ok");
