@@ -1126,7 +1126,7 @@
         toast(next === "running" ? t9("Resume the Wikipedia stream")
                                  : t9("Pause the Wikipedia stream"));
       } catch (e) {
-        toast(_failMsg("Could not change the Wikipedia stream: {error}", e), "err");
+        toast(_failMsg("Update failed: {error}", e), "err");
       }
     }
 
@@ -1138,7 +1138,7 @@
         _paintWikiLane((c && c.wiki_lane_state) || "stopped", _wikiLaneActive);
         toast(t9("Stop the Wikipedia stream"));
       } catch (e) {
-        toast(_failMsg("Could not change the Wikipedia stream: {error}", e), "err");
+        toast(_failMsg("Update failed: {error}", e), "err");
       }
     }
 
