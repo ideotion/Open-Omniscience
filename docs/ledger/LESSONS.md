@@ -10586,7 +10586,7 @@ predicate that is truthy on the success path.
   format**: a structured-data round trip is lossy about everything the structure does not
   model, and on a file with `merge=union` or a human reader that loss is the defect.
 
-- **AN `await` THAT IS PRESENT IS NOT AN `await` THAT IS FIRST (2026-09-17, `S04-07` PR 5):**
+- **AN `await` THAT IS PRESENT IS NOT AN `await` THAT IS FIRST (2026-09-17, `S04-07` PR #1153):**
   the previous PR added `await OOI18N.ready` to `loadAnalysis` to close a measured boot
   race — a deep link in `hi` rendering an English frame. It worked, and it was placed
   seven lines into the function, below `const t = …OOI18N.t…` and below
@@ -10657,7 +10657,7 @@ predicate that is truthy on the success path.
   A field with one reader in a codebase with two surfaces is a coin flip.
 
 - **A CHART CAN BE ARITHMETICALLY RIGHT AND STILL DRAW A TREND NOBODY MEASURED
-  (2026-09-17, `S04-07` PR 5):** the stacked view's first rendering filled BANDS —
+  (2026-09-17, `S04-07` PR #1153):** the stacked view's first rendering filled BANDS —
   polygons between measured points — which is correct for a dense series and, on a
   young corpus with two timestamps, becomes six wedges sweeping diagonally across a
   week. Every assertion passed: the running sums were right, the five refusals were
