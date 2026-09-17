@@ -3577,5 +3577,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "Konsep di pusat, satu cabang per bahasa, asosiasi di luar cabang.",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Pemantauan adalah pencarian tersimpan yang terpicu ketika cukup banyak artikel baru mencapai ambang batas Anda — ajakan untuk membaca, bukan vonis atau skor. Hanya lokal: tanpa notifikasi, tanpa jaringan.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Cabang-cabang ini tumpang tindih: artikel yang membawa bentuk konsep dari dua bahasa dihitung pada kedua cabang dan sekali di pusat, sehingga cabang-cabang tidak berjumlah sama dengan total tersebut. Ketika beberapa bahasa berbagi satu ejaan yang sama, cabang-cabang tersebut membawa artikel yang sama dan menyatakannya. Sekadar hitungan, bukan skor.",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "satu cabang untuk setiap bahasa tempat korpus telah mengindeks satu bentuk konsep tersebut; asosiasi tiap cabang adalah hitungan kemunculan bersama atas artikel milik bahasa ITU sendiri, dengan bentuk konsep itu sendiri dikecualikan"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "satu cabang untuk setiap bahasa tempat korpus telah mengindeks satu bentuk konsep tersebut; asosiasi tiap cabang adalah hitungan kemunculan bersama atas artikel milik bahasa ITU sendiri, dengan bentuk konsep itu sendiri dikecualikan",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Pita adalah jumlah penyebutan per bahasa dan saling tumpang tindih: artikel yang memuat bentuk konsep dalam dua bahasa dihitung pada keduanya, sehingga tinggi tumpukan bukan total artikel yang ditampilkan di sampingnya.",
+  "These series could not be stacked, so they are drawn as lines.": "Seri-seri ini tidak dapat ditumpuk, sehingga digambar sebagai garis.",
+  "One of these series has a published gap, and a gap is not a zero.": "Salah satu dari seri-seri ini memiliki celah terbit, dan celah bukan berarti nol.",
+  "Indexed values cannot be added, so they are not stacked.": "Nilai terindeks tidak dapat dijumlahkan, sehingga tidak ditumpuk.",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "Tinggi pada sumbu logaritmik tidak bisa dijumlahkan, sehingga tidak ditumpuk.",
+  "Only one language is present, so there is nothing to stack.": "Hanya ada satu bahasa, sehingga tidak ada yang perlu ditumpuk.",
+  "No points in this window.": "Tidak ada titik di jendela ini.",
+  "running total {n}": "total berjalan {n}",
+  "not reported in this bucket": "tidak dilaporkan pada periode ini",
+  "open in analysis (trend + worldwide spread)": "buka di analisis (tren + sebaran global)"
 }

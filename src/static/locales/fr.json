@@ -3577,5 +3577,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "Le concept au centre, une branche par langue, des associations issues des branches.",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Une veille est une recherche enregistrée qui se déclenche quand assez de nouveaux articles atteignent votre seuil — une invitation à lire, jamais un verdict ni un score. Uniquement en local : sans notifications, sans réseau.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Les branches se chevauchent : un article portant les formes du concept dans deux langues est compté sur les deux branches et une seule fois au centre, si bien que la somme des branches ne correspond pas à ce total. Là où plusieurs langues partagent une même orthographe, les branches portent les mêmes articles et le signalent. Uniquement des décomptes, jamais un score.",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "une branche par langue dans laquelle le corpus a indexé une forme du concept ; les associations de chaque branche sont des décomptes de co-occurrence sur les articles propres à cette langue, à l’exclusion des formes du concept elles-mêmes"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "une branche par langue dans laquelle le corpus a indexé une forme du concept ; les associations de chaque branche sont des décomptes de co-occurrence sur les articles propres à cette langue, à l’exclusion des formes du concept elles-mêmes",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Les bandes comptent les mentions par langue et elles se chevauchent : un article portant les formes du concept dans deux langues est compté dans les deux, donc la hauteur de l'empilement n'est pas le total d'articles affiché à côté.",
+  "These series could not be stacked, so they are drawn as lines.": "Ces séries n'ont pas pu être empilées, elles sont donc tracées en lignes.",
+  "One of these series has a published gap, and a gap is not a zero.": "Une de ces séries a une lacune publiée, et une lacune n'est pas un zéro.",
+  "Indexed values cannot be added, so they are not stacked.": "Les valeurs indexées ne peuvent pas s'additionner, elles ne sont donc pas empilées.",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "Les hauteurs sur un axe logarithmique ne s'additionnent pas, elles ne sont donc pas empilées.",
+  "Only one language is present, so there is nothing to stack.": "Une seule langue est présente, il n'y a donc rien à empiler.",
+  "No points in this window.": "Aucun point dans cette fenêtre.",
+  "running total {n}": "total cumulé {n}",
+  "not reported in this bucket": "non déclaré pour cette période",
+  "open in analysis (trend + worldwide spread)": "ouvrir dans l'analyse (tendance + diffusion mondiale)"
 }

@@ -3577,5 +3577,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "O conceito no centro, um ramo por língua, associações que saem dos ramos.",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Um monitoramento é uma busca salva que dispara quando artigos novos suficientes atingem o seu limite — um convite à leitura, nunca um veredito ou uma pontuação. Apenas local: sem notificações, sem rede.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Os ramos sobrepõem-se: um artigo que traz formas do conceito em duas línguas é contado em ambos os ramos e uma única vez no centro, de modo que os ramos não somam esse total. Onde várias línguas partilham a mesma ortografia, os ramos trazem os mesmos artigos e dizem-no. Apenas contagens, nunca uma pontuação.",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "um ramo por língua em que o corpus indexou uma forma do conceito; as associações de cada ramo são contagens de coocorrência sobre os próprios artigos DESSA língua, excluindo as próprias formas do conceito"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "um ramo por língua em que o corpus indexou uma forma do conceito; as associações de cada ramo são contagens de coocorrência sobre os próprios artigos DESSA língua, excluindo as próprias formas do conceito",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "As bandas são contagens de menções por idioma e sobrepõem-se: um artigo que contém formas do conceito em dois idiomas é contado em ambas, por isso a altura da pilha não é o total de artigos apresentado ao lado.",
+  "These series could not be stacked, so they are drawn as lines.": "Estas séries não puderam ser empilhadas, por isso são desenhadas como linhas.",
+  "One of these series has a published gap, and a gap is not a zero.": "Uma destas séries tem uma lacuna publicada, e uma lacuna não é um zero.",
+  "Indexed values cannot be added, so they are not stacked.": "Os valores indexados não podem ser somados, por isso não são empilhados.",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "As alturas num eixo logarítmico não se somam, por isso não são empilhadas.",
+  "Only one language is present, so there is nothing to stack.": "Apenas um idioma está presente, por isso não há nada para empilhar.",
+  "No points in this window.": "Sem pontos nesta janela.",
+  "running total {n}": "total acumulado {n}",
+  "not reported in this bucket": "não reportado neste período",
+  "open in analysis (trend + worldwide spread)": "abrir na análise (tendência + difusão mundial)"
 }

@@ -1032,7 +1032,7 @@
   "articles mention it": "लेख इसका उल्लेख करते हैं",
   "total mentions": "कुल उल्लेख",
   "Find coverage in your corpus": "अपने कॉर्पस में कवरेज खोजें",
-  "mentions": "उল्लेख",
+  "mentions": "उल्लेख",
   "📍 places": "📍 स्थान",
   "Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.": "वे स्थान दिखाएँ जिनका आपका कॉर्पस उल्लेख करता है, लेख पाठ से अनुमानित (कभी पुष्टि नहीं)। मार्कर का क्षेत्रफल इस पर निर्भर करता है कि कितने लेख प्रत्येक स्थान का उल्लेख करते हैं — कच्ची गिनती, कोई स्कोर नहीं।",
   "open detailed chart": "विस्तृत चार्ट खोलें",
@@ -3577,5 +3577,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "केंद्र में संकल्पना, हर भाषा की एक शाखा, शाखाओं से आगे संबद्धताएँ।",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "निगरानी एक सहेजी गई खोज है जो तब सक्रिय होती है जब पर्याप्त नए लेख आपकी सीमा तक पहुँच जाते हैं — पढ़ने का निमंत्रण, कभी फैसला या स्कोर नहीं। केवल स्थानीय: कोई सूचना नहीं, कोई नेटवर्क नहीं।",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "शाखाएँ ओवरलैप करती हैं: संकल्पना के दो भाषाओं के रूपों वाला कोई लेख दोनों शाखाओं में और केंद्र में एक बार गिना जाता है, इसलिए शाखाओं के आंकड़े जोड़ने पर उस कुल के बराबर नहीं आते। जहाँ कई भाषाएँ एक ही वर्तनी साझा करती हैं, वहाँ शाखाएँ वही लेख रखती हैं और यह बताती हैं। केवल गिनती, कभी स्कोर नहीं।",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "हर उस भाषा के लिए एक शाखा जिसमें कॉर्पस ने संकल्पना का कोई रूप अनुक्रमित किया है; हर शाखा की संबद्धताएँ उसी भाषा के अपने लेखों पर आधारित सह-घटना गणनाएँ हैं, जिसमें संकल्पना के अपने रूप शामिल नहीं हैं"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "हर उस भाषा के लिए एक शाखा जिसमें कॉर्पस ने संकल्पना का कोई रूप अनुक्रमित किया है; हर शाखा की संबद्धताएँ उसी भाषा के अपने लेखों पर आधारित सह-घटना गणनाएँ हैं, जिसमें संकल्पना के अपने रूप शामिल नहीं हैं",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "बैंड प्रत्येक भाषा में उल्लेख की गणना हैं और वे ओवरलैप करते हैं: संकल्पना के दो भाषा-रूपों वाला कोई लेख दोनों में गिना जाता है, इसलिए स्टैक की ऊँचाई बगल में दिखाए गए लेखों के कुल के बराबर नहीं है।",
+  "These series could not be stacked, so they are drawn as lines.": "इन्हें स्टैक नहीं किया जा सका, इसलिए इन्हें रेखाओं के रूप में दिखाया गया है।",
+  "One of these series has a published gap, and a gap is not a zero.": "इनमें से एक में एक प्रकाशित रिक्ति है, और रिक्ति शून्य नहीं है।",
+  "Indexed values cannot be added, so they are not stacked.": "सूचकांकित मान जोड़े नहीं जा सकते, इसलिए उन्हें स्टैक नहीं किया जाता।",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "लघुगणकीय अक्ष पर ऊँचाइयाँ जुड़ती नहीं हैं, इसलिए उन्हें स्टैक नहीं किया जाता।",
+  "Only one language is present, so there is nothing to stack.": "केवल एक भाषा मौजूद है, इसलिए स्टैक करने के लिए कुछ नहीं है।",
+  "No points in this window.": "इस विंडो में कोई बिंदु नहीं है।",
+  "running total {n}": "चालू कुल {n}",
+  "not reported in this bucket": "इस अवधि में कोई रिपोर्ट नहीं",
+  "open in analysis (trend + worldwide spread)": "विश्लेषण में खोलें (रुझान + विश्वव्यापी प्रसार)"
 }

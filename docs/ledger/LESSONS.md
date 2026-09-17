@@ -10585,3 +10585,88 @@ predicate that is truthy on the success path.
   additive diff. **Same family as the `shipped.csv` round-trip lesson, in a second file
   format**: a structured-data round trip is lossy about everything the structure does not
   model, and on a file with `merge=union` or a human reader that loss is the defect.
+
+- **AN `await` THAT IS PRESENT IS NOT AN `await` THAT IS FIRST (2026-09-17, `S04-07` PR #1153):**
+  the previous PR added `await OOI18N.ready` to `loadAnalysis` to close a measured boot
+  race — a deep link in `hi` rendering an English frame. It worked, and it was placed
+  seven lines into the function, below `const t = …OOI18N.t…` and below
+  `p = _anApplyLens(…)`, which reads `OOI18N.current()` and writes `ui_lang` into the
+  params **every tab sends to the server**. So the symptom the wait was written for
+  disappeared while the request path it should also have guarded stayed wrong: a non-`en`
+  reader's first chart described a resolution computed without their language, and a
+  repaint quietly replaced it. Invisible in `en`, where the wait resolves against the
+  default. **The tell is measurable and cheap: count the REQUESTS.** `hi` issued the trend
+  fetch twice, once bare and once with the locale, where every other locale issued it once
+  — a duplicate request in one locale and not another is a readiness bug, not a cache
+  miss. **GENERAL FORM: when you add a wait for asynchronously-loaded state, move it above
+  every reader of that state in the function, not merely above the line whose symptom you
+  saw.** The readers that do not render are the ones nobody notices.
+
+- **A LAZY PANEL RENDERED FROM `null` PARAMS DOES NOT RENDER NOTHING — IT RENDERS THE
+  DEFAULT (2026-09-17, same PR):** `anSelectTab` handed `_anLastParams` to the lazy Trend /
+  Related / Competitive renderers, and that module variable is assigned at the END of
+  `loadAnalysis`. A tab selected during the load window therefore got `null`, and
+  `renderAnTrend(null)` does not bail — it falls back to the typed term with NO lens, so it
+  fetched, charted **and cached** the literal word beside a list counting the concept,
+  which is the exact split the feature exists to close. On a second analysis run the same
+  window served the PREVIOUS corpus' params, which is worse: a chart of the wrong corpus
+  rather than the wrong lens. **A guard is not the same as an early return with a
+  fallback**: a function whose parameter is optional will happily answer a question nobody
+  asked. Fixed by nulling the state on entry and having the selector WAIT — `loadAnalysis`
+  renders whichever lazy panel is visible as soon as it has params, so nothing is lost.
+
+- **A TIME-ONLY HIT TEST ON A STACKED CHART ALWAYS ANSWERS WITH THE BOTTOM BAND
+  (2026-09-17, same PR):** `ooChart`'s `nearest()` picked the series whose point was
+  closest in TIME — correct for lines, where the reader identifies a series by following
+  it and the y between two samples is nobody's measurement. Every band of a stack shares
+  the timestamp grid, so `d` ties on **every** point and `!best || d < best.d` resolves to
+  iteration order: the first band, wherever the pointer is. The readout was written to
+  keep a stack from misattributing a part, and it misattributed every one. Fixed with a
+  second dimension (zero inside a band's own vertical extent, the gap to it outside), and
+  the pick extracted as a PURE function handed the y-projection, so it is driven in node
+  with no canvas — the mutation confirms the old rule answers `en` where the pointer is
+  in `fr`. **GENERAL FORM: a tie-break that never fired on the old data shape is not a
+  tie-break, it is iteration order wearing one.**
+
+- **A LOCALE VALUE CAN BE PRESENT, COMPLETE AND MISSPELLED IN A WAY NO GATE CAN SEE
+  (2026-09-17, same PR):** `hi.json`'s `"mentions"` read `उল्लेख` — six characters, of
+  which the second was U+09B2 BENGALI LETTER LA inside an otherwise Devanagari word. The
+  same word is spelled correctly in **thirty-nine other keys of the same file**. It
+  rendered on every Hindi surface that counts anything, for as long as the key existed.
+  Nothing could catch it: `--min 100` counts keys, so a present-but-wrong value is a
+  complete locale; the unkeyed-`t()` ratchet asks whether a key EXISTS; and a reviewer who
+  does not read the script sees a plausible word. **What IS decidable with no language
+  knowledge at all is that one WORD must not mix two writing systems** — one character
+  from the neighbouring block is a typo or a bad paste, never a word. A token-level scan
+  over the four blocks where such a slip is plausible found exactly one offender across
+  all twelve files, with no false positives once the shared Indic danda is excluded and
+  the check is per TOKEN (a SENTENCE may legitimately hold `USA / США / EUA`, and `ar.json`
+  deliberately does). Now `tests/test_locale_script_purity.py`. **GENERAL FORM: when you
+  cannot check whether a translation is RIGHT, check the properties of a word that hold in
+  every language.**
+
+- **A PAYLOAD CAN BE SHIPPED, SERIALISED ON EVERY REQUEST, AND READ BY NOBODY ON THE
+  SURFACE ITS OWN RULING NAMES (2026-09-17, same PR):** Q417 says the aggregates carry "a
+  per-language breakdown in the hover". The backend half shipped first and
+  `queries.trending` put `language_breakdown` on every ring row. Its only reader was
+  `kwTransHtml`, on the keyword-LABEL path — while the AGGREGATES the ruling names are
+  drawn by `termBarsHtml`, which had no hover beyond the term itself. So the ruling read as
+  half-done from the backend and half-done from the frontend, and neither half was looking
+  at the other. **The check that finds this is cheap and is not a grep for the field name:
+  grep for its READERS, and then check that a reader is on the surface the ruling names.**
+  A field with one reader in a codebase with two surfaces is a coin flip.
+
+- **A CHART CAN BE ARITHMETICALLY RIGHT AND STILL DRAW A TREND NOBODY MEASURED
+  (2026-09-17, `S04-07` PR #1153):** the stacked view's first rendering filled BANDS —
+  polygons between measured points — which is correct for a dense series and, on a
+  young corpus with two timestamps, becomes six wedges sweeping diagonally across a
+  week. Every assertion passed: the running sums were right, the five refusals were
+  right, the axis started at zero, the caveat named the overlap. **The picture was
+  the only thing that was wrong, and only a picture could show it.** Invariant #16's
+  sparse rule (`n < _SPARSE_BAR_MAX` → bars, not a line) already existed for exactly
+  this and was not applied to the new renderer, because the new renderer was not a
+  line and the rule is written about lines. **GENERAL FORM: an app-wide honesty rule
+  applies to the SHAPE OF THE CLAIM, not to the code path that happens to be named in
+  it** — a rule about interpolating a curve is a rule about drawing anything between
+  two measurements. The measurable tell, once the treatment was fixed: painted canvas
+  samples fell from 18,136 to 1,335, and the difference was the fabricated area.

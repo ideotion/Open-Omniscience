@@ -1,0 +1,191 @@
+{
+  "url": "http://127.0.0.1:8010",
+  "term": "climate",
+  "locales": [
+    {
+      "locale": "en",
+      "dir": "ltr",
+      "lang_applied": "en",
+      "bylang_button_label": "By language",
+      "bylang_offered": true,
+      "bylang_label_is_english": false,
+      "pixels": {
+        "w": 900,
+        "h": 240,
+        "distinct": 15,
+        "area_colours": 7,
+        "painted": 1335
+      },
+      "refusal": null,
+      "refusal_line": "",
+      "totals_line": "eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 7 articles in total, counted once each",
+      "caveat_line": "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.",
+      "caveat_is_english": false,
+      "hover_low": "eng: 7 mentions · running total 7 · 2026-09-14",
+      "hover_high": "fra: 5 mentions · running total 12 · 2026-09-14",
+      "hover_separates_bands": true,
+      "overflow_px": 0,
+      "errors": []
+    },
+    {
+      "locale": "ar",
+      "dir": "rtl",
+      "lang_applied": "ar",
+      "bylang_button_label": "حسب اللغة",
+      "bylang_offered": true,
+      "bylang_label_is_english": false,
+      "pixels": {
+        "w": 900,
+        "h": 240,
+        "distinct": 15,
+        "area_colours": 7,
+        "painted": 1335
+      },
+      "refusal": null,
+      "refusal_line": "",
+      "totals_line": "eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 7 مقالاً إجمالاً، كل واحد محسوب مرة واحدة",
+      "caveat_line": "النطاقات هي أعداد الإشارات لكل لغة وهي متداخلة: المقال الذي يحمل صيغتين من صيغ المفهوم يُحسب في كلا النطاقين، لذلك ارتفاع التكديس ليس إجمالي المقالات المعروض إلى جانبه.",
+      "caveat_is_english": false,
+      "hover_low": "eng: 7 إشارات · إجمالي تراكمي 7 · 2026-09-14",
+      "hover_high": "fra: 5 إشارات · إجمالي تراكمي 12 · 2026-09-14",
+      "hover_separates_bands": true,
+      "overflow_px": 0,
+      "errors": []
+    },
+    {
+      "locale": "zh",
+      "dir": "ltr",
+      "lang_applied": "zh",
+      "bylang_button_label": "按语言",
+      "bylang_offered": true,
+      "bylang_label_is_english": false,
+      "pixels": {
+        "w": 900,
+        "h": 240,
+        "distinct": 15,
+        "area_colours": 7,
+        "painted": 1335
+      },
+      "refusal": null,
+      "refusal_line": "",
+      "totals_line": "eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 共 7 篇文章，每篇只计一次",
+      "caveat_line": "色带是各语言的提及计数，它们存在重叠：同时包含该概念两种语言词形的文章会计入两条色带，因此堆叠高度并不等于旁边显示的文章总数。",
+      "caveat_is_english": false,
+      "hover_low": "eng: 7 提及 · 累计总数 7 · 2026-09-14",
+      "hover_high": "fra: 5 提及 · 累计总数 12 · 2026-09-14",
+      "hover_separates_bands": true,
+      "overflow_px": 0,
+      "errors": []
+    },
+    {
+      "locale": "ja",
+      "dir": "ltr",
+      "lang_applied": "ja",
+      "bylang_button_label": "言語別",
+      "bylang_offered": true,
+      "bylang_label_is_english": false,
+      "pixels": {
+        "w": 900,
+        "h": 240,
+        "distinct": 15,
+        "area_colours": 7,
+        "painted": 1335
+      },
+      "refusal": null,
+      "refusal_line": "",
+      "totals_line": "eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · 合計 7 件の記事、それぞれ1回ずつ数えられます",
+      "caveat_line": "帯は言語ごとの言及件数であり、重複します。この概念の2つの言語形式を含む記事は両方の帯で数えられるため、積み上げの高さは横に表示される記事の合計とは一致しません。",
+      "caveat_is_english": false,
+      "hover_low": "eng: 7 言及 · 累計 7 · 2026-09-14",
+      "hover_high": "fra: 5 言及 · 累計 12 · 2026-09-14",
+      "hover_separates_bands": true,
+      "overflow_px": 0,
+      "errors": []
+    },
+    {
+      "locale": "hi",
+      "dir": "ltr",
+      "lang_applied": "hi",
+      "bylang_button_label": "भाषा के अनुसार",
+      "bylang_offered": true,
+      "bylang_label_is_english": false,
+      "pixels": {
+        "w": 900,
+        "h": 240,
+        "distinct": 15,
+        "area_colours": 7,
+        "painted": 1335
+      },
+      "refusal": null,
+      "refusal_line": "",
+      "totals_line": "eng 3 · fra 3 · deu 1 · spa 1 · ita 1 · por 1 · कुल 7 लेख, प्रत्येक को एक बार गिना गया",
+      "caveat_line": "बैंड प्रत्येक भाषा में उल्लेख की गणना हैं और वे ओवरलैप करते हैं: संकल्पना के दो भाषा-रूपों वाला कोई लेख दोनों में गिना जाता है, इसलिए स्टैक की ऊँचाई बगल में दिखाए गए लेखों के कुल के बराबर नहीं है।",
+      "caveat_is_english": false,
+      "hover_low": "eng: 7 उल्लेख · चालू कुल 7 · 2026-09-14",
+      "hover_high": "fra: 5 उल्लेख · चालू कुल 12 · 2026-09-14",
+      "hover_separates_bands": true,
+      "overflow_px": 0,
+      "errors": []
+    }
+  ],
+  "aggregate_hover": [
+    {
+      "locale": "en",
+      "surface": "insights-trends",
+      "rows": 24,
+      "rows_with_breakdown": 2,
+      "sample_with": {
+        "term": "climate",
+        "title": "climate — open in analysis (trend + worldwide spread) — Across languages: English 9 · French 7 · German 3 · Spanish 3"
+      },
+      "sample_without": {
+        "term": "المناخ",
+        "title": "المناخ — open in analysis (trend + worldwide spread)"
+      },
+      "breakdown_is_selective": true,
+      "row_with_extra_found": true,
+      "oo_tip": {
+        "present": true,
+        "show": true,
+        "display": "block",
+        "visibility": "visible",
+        "opacity": "1",
+        "text": "climate — 22 mentions · 7 articles · trend: 22 mentions — new in this period, nothing prior to compare · with: assembly (2 articles, Association 3.9) · Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world. — Across languages: English 9 · French 7 · German 3 · Spanish 3"
+      },
+      "oo_tip_text": "climate — 22 mentions · 7 articles · trend: 22 mentions — new in this period, nothing prior to compare · with: assembly (2 articles, Association 3.9) · Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world. — Across languages: English 9 · French 7 · German 3 · Spanish 3",
+      "oo_tip_carries_breakdown": true,
+      "oo_tip_on_focus": "climate — 22 mentions · 7 articles · trend: 22 mentions — new in this period, nothing prior to compare · with: assembly (2 articles, Association 3.9) · Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world. — Across languages: English 9 · French 7 · German 3 · Spanish 3",
+      "oo_tip_on_focus_carries_breakdown": true,
+      "errors": []
+    },
+    {
+      "locale": "ar",
+      "surface": "insights-trends",
+      "rows": 24,
+      "rows_with_breakdown": 2,
+      "sample_with": {
+        "term": "climate",
+        "title": "climate — افتح في التحليل (الاتجاه + الانتشار العالمي) — عبر جميع اللغات: الإنجليزية 9 · الفرنسية 7 · الألمانية 3 · الإسبانية 3"
+      },
+      "sample_without": {
+        "term": "المناخ",
+        "title": "المناخ — افتح في التحليل (الاتجاه + الانتشار العالمي)"
+      },
+      "breakdown_is_selective": true,
+      "row_with_extra_found": true,
+      "oo_tip": {
+        "present": true,
+        "show": true,
+        "display": "block",
+        "visibility": "visible",
+        "opacity": "1",
+        "text": "climate — 22 إشارات · 7 مقالة · الاتجاه: 22 إشارة — جديد في هذه الفترة، ولا سابق للمقارنة · مع: assembly (2 مقالة, ارتباط 3.9) · Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world. — عبر جميع اللغات: الإنجليزية 9 · الفرنسية 7 · الألمانية 3 · الإسبانية 3"
+      },
+      "oo_tip_text": "climate — 22 إشارات · 7 مقالة · الاتجاه: 22 إشارة — جديد في هذه الفترة، ولا سابق للمقارنة · مع: assembly (2 مقالة, ارتباط 3.9) · Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world. — عبر جميع اللغات: الإنجليزية 9 · الفرنسية 7 · الألمانية 3 · الإسبانية 3",
+      "oo_tip_carries_breakdown": true,
+      "oo_tip_on_focus": "climate — 22 إشارات · 7 مقالة · الاتجاه: 22 إشارة — جديد في هذه الفترة، ولا سابق للمقارنة · مع: assembly (2 مقالة, ارتباط 3.9) · Counts only, never a score. The trend ratio is noisy on a young corpus; co-occurrence and PMI are association, not causation. Deduced from your corpus, not a claim about the world. — عبر جميع اللغات: الإنجليزية 9 · الفرنسية 7 · الألمانية 3 · الإسبانية 3",
+      "oo_tip_on_focus_carries_breakdown": true,
+      "errors": []
+    }
+  ]
+}

@@ -57,11 +57,12 @@ const src =
   extract("_kwTf") + "\n" +
   extract("kwLangName") + "\n" +
   extract("kwTier") + "\n" +
+  extract("kwLangBreakdownText") + "\n" +
   extract("kwHoverText") + "\n" +
   extract("kwQidHtml") + "\n" +
   extract("kwSensePickerHtml") + "\n" +
   extract("kwLabelHtml") + "\n" +
-  "module.exports = { kwLabelHtml, kwTier, kwHoverText, kwSensePickerHtml, kwLangName };";
+  "module.exports = { kwLabelHtml, kwTier, kwHoverText, kwSensePickerHtml, kwLangName, kwLangBreakdownText };";
 const K = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
