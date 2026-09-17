@@ -244,3 +244,76 @@ def test_every_lane_owns_a_distinct_file_beside_the_corpus(tmp_path, monkeypatch
     assert sorted(names) == ["law.db", "osm.db", "wiki.db"]
     assert len(set(names)) == len(names), "two lanes share a file"
     assert "open_omniscience.db" not in names
+
+
+def test_a_lane_is_REFUSED_rather_than_created_in_the_clear_beside_an_encrypted_corpus(
+    tmp_path, monkeypatch
+):
+    """The claim "no per-lane plaintext" was true of the MECHANISM and false as an OUTCOME.
+
+    There is no per-lane override — this module passes neither ``key=`` nor
+    ``create_encrypted=``, and that much always held. But the factory's fresh-file
+    precedence puts the app-wide ``OO_DB_PLAINTEXT`` opt-out AHEAD of the process
+    passphrase, so with the flag set and a real passphrase in hand — an ordinary
+    unlocked, already-encrypted corpus on a machine where the flag is also exported —
+    a brand-new lane came out plaintext beside it. Measured, then closed.
+
+    The asymmetry is what made it invisible: an already-encrypted corpus never reaches
+    that branch, so nothing else in the app diverges. Only a store created LATER does,
+    and a lane is the first of those.
+    """
+    from src.database.connect import connect, is_encrypted_file
+
+    store.dispose_all()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    monkeypatch.setattr("src.database.connect._passphrase", PASSPHRASE, raising=False)
+    con = connect(str(tmp_path / "open_omniscience.db"), key=PASSPHRASE, create_encrypted=True)
+    con.execute("CREATE TABLE t(a)")
+    con.close()
+    assert is_encrypted_file(tmp_path / "open_omniscience.db") is True
+
+    try:
+        with pytest.raises(store.PlaintextLaneRefused) as excinfo:
+            store.create_lane("wiki")
+        message = str(excinfo.value)
+        assert "OO_DB_PLAINTEXT" in message, "the refusal does not name the way out"
+        assert "wiki" in message
+        assert not store.lane_exists("wiki"), "a refused create still left a file"
+    finally:
+        store.dispose_all()
+
+
+def test_a_plaintext_lane_beside_a_PLAINTEXT_corpus_is_still_allowed(tmp_path, monkeypatch):
+    """Anti-vacuity, and the state this whole suite runs in.
+
+    The refusal is about a MISMATCH, not about the opt-out. A developer who has chosen
+    plaintext for everything keeps it; refusing here would break the documented opt-out
+    and every test in this repository.
+    """
+    import sqlite3
+
+    store.dispose_all()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    monkeypatch.setattr("src.database.connect._passphrase", None, raising=False)
+    sqlite3.connect(str(tmp_path / "open_omniscience.db")).close()
+    try:
+        path = store.create_lane("wiki")
+        assert path.is_file()
+    finally:
+        store.dispose_all()
+
+
+def test_a_lane_on_a_FRESH_INSTALL_with_no_corpus_yet_is_not_refused(tmp_path, monkeypatch):
+    """No corpus on disk is not an encrypted corpus.
+
+    Refusing then would block a fresh install for a mismatch that cannot exist yet.
+    """
+    store.dispose_all()
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    try:
+        assert store.create_lane("wiki").is_file()
+    finally:
+        store.dispose_all()

@@ -66,22 +66,33 @@ have moved; this brief re-checked them at `7ca142e`.
   `:492–496` the per-mode preview count; wiki mode never runs by default and STOPS RSS when selected (sheet).
   A lane ladder exists: `runner.py:1186–1213` `_LANE_KINDS` (markets, hazards, calendar, law, world_discovery,
   qualification, country_data, crawl, backfill) + `_LANE_RATES` / `_LANE_FLOORS`. Settings migration precedent:
-  `settings.py:196–240` one-time-migrates `scheduler_settings.json` into the KV store — all grep-verified.
+  `settings.py:223–240` one-time-migrates `scheduler_settings.json` into the KV store (`:196` is
+  `_settings_path`) — all grep-verified.
 - `POST /api/wiki/pages` is `src/api/wiki.py:155`; `WikiPage(` only at `src/wiki/track.py:47` (confirmed).
-  The wiki and law tables live in the CORPUS file: `class WikiPage` `src/database/models.py:2124`,
-  `WikiRevision` `:2173`, `LawDocument` `:2227`, `LawRevision` `:2285`. The one keyed path:
+  The wiki and law tables live in the CORPUS file: `class WikiPage` `src/database/models.py:2260`,
+  `WikiRevision` `:2309`, `LawDocument` `:2363`, `LawRevision` `:2421` (all four re-read 2026-09-17;
+  the brief's 2124/2173/2227/2285 were each 136 lines short after S04-06 widened the file). The one keyed path:
   `src/database/connect.py:158` (`OO_DB_PLAINTEXT`), `:196` (`PRAGMA key`), `sqlcipher3` at `:163` / `:219`.
   The member hook: `src/backup/artifact.py:154`, `src/backup/folder_backup.py:161` / `:540` — grep-verified.
 - Hardware is already read locally: `src/config/memory_budget.py` (`psutil.virtual_memory` `:97`,
   `os.cpu_count` `:259`), `src/config/machine_floor.py` (three-state `below`),
-  `src/database/maintenance.py:1594` (`shutil.disk_usage`), `src/api/scheduler.py:105`
+  `src/database/maintenance.py:1654` (`shutil.disk_usage`; the brief said `:1594`), `src/api/scheduler.py:105`
   `status["machine_floor"]`. The reference VM is 2 cores / 3.5 GB (sheet VERIFIED). Settings has NO
   "Storage" subtab (`src/static/index.html:1471–1481`: Graphics · General · Cards · AI · Wikipedia ·
   OpenStreetMap · Agenda · Data & backup · Advanced); the corpus window's "Database & storage"
-  (`data-tab="storage"`, `:532`) is another surface; `<dialog id="wiki-tc">` is `:3101`.
-- `simplemma>=1.1` is in the `analysis` extra (`pyproject.toml:147`; S04-06 moves it); pyosmium is 0.5; the
-  SSE client is S04-09's — this slice adds NO dependency. `tests/fixtures/` holds only `law/` and `pdf/`.
+  (`data-tab="storage"`, `:532`) is another surface; `<dialog id="wiki-tc">` is `:3178` (the brief said `:3101`).
+- `simplemma>=1.1` is now in CORE (`pyproject.toml:116`) -- S04-06 made that move on 2026-09-17
+  under Q416 = a, so the brief's "is in the `analysis` extra ... S04-06 moves it" is history; pyosmium is 0.5; the
+  SSE client is S04-09's — this slice adds NO dependency. `tests/fixtures/` held only `law/` and `pdf/`; this slice adds `wiki/`.
   The socket-guard proof: `src/ingest/airplane.py:259` + `tests/test_airplane_socket_guard.py`.
+
+> **Staleness sweep, 2026-09-17 (the slice's own PR, per working mode §2).** Every anchor above was
+> re-read line by line. Six were stale and are corrected in place; the fifteen others were confirmed
+> unchanged: `settings.py:21`/`:66`, `runner.py:492`/`:744`/`:1186`, `connect.py:158`/`:163`/`:196`/`:219`,
+> `api/wiki.py:155`, `wiki/track.py:47`, `memory_budget.py:97`/`:259`, `api/scheduler.py:105`,
+> `index.html:532` and `:1471`, `airplane.py:259`, `folder_backup.py:161`. A note on method: a single
+> `sed -n '1471p;532p'` prints in FILE order, which read as though the two `index.html` anchors were
+> swapped when they are not — each was re-read on its own before anything was recorded.
 
 ## 3. Slices — what to build, in order
 

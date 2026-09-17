@@ -146,10 +146,21 @@ def doctor() -> dict:
 
     keys_dir = data_dir() / "keys"
     key_files = sorted(p.name for p in keys_dir.iterdir()) if keys_dir.is_dir() else []
+    # THE LANES ARE STORES, so this endpoint reports them. It answers the operator's
+    # question "is my data encrypted?", and an answer that enumerates two files while a
+    # third sits in the clear beside them is not a narrower answer — it is a wrong one,
+    # and it is wrong in the direction the no-fabricated-security rule exists to forbid.
+    # Read from the registry, with each lane's state taken from its own file HEADER by
+    # the same ``_store`` every other row uses; an absent lane reports "absent", which
+    # is the honest state for a lane the operator has never opened.
+    from src.versioned.lanes import all_lanes
+
+    lanes = {spec.kind: _store(data_dir() / spec.filename) for spec in all_lanes()}
     return {
         "driver": have_driver(),
         "corpus": _store(main_db_path()),
         "custody_log": _store(data_dir() / "custody_log.db"),
+        "lanes": lanes,
         "signing_keys": {
             "files": key_files,
             "note": "wrapped with scrypt+AES-GCM when a key passphrase is set; "
@@ -214,7 +225,9 @@ def data_location() -> dict:
         "state": state,
         "offerable": state == "fresh",
         "subdir": DATA_SUBDIR,
-        "why_not_offerable": None if state == "fresh" else (
+        "why_not_offerable": None
+        if state == "fresh"
+        else (
             "A corpus already exists here. Moving it is a file copy with the app stopped, "
             "not a setting — see the manual."
         ),
@@ -489,9 +502,7 @@ def create_db(body: CreateBody) -> dict:
     if body.passphrase != body.confirm:
         raise HTTPException(status_code=400, detail="passphrases do not match")
     if len(body.passphrase) < _MIN_PASSPHRASE:
-        raise HTTPException(
-            status_code=400, detail=f"use at least {_MIN_PASSPHRASE} characters"
-        )
+        raise HTTPException(status_code=400, detail=f"use at least {_MIN_PASSPHRASE} characters")
     set_passphrase(body.passphrase)
     try:
         _finish_unlock()

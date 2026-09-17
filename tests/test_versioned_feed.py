@@ -63,6 +63,21 @@ def _change(ref: str, *, days: int = 1, kind: str = "edit", ext: str | None = No
     )
 
 
+def _day(n: int):
+    return T0 + timedelta(days=n)
+
+
+def _pass(ref: str, *, days: int, token: str, resumed: str | None) -> ChangeBatch:
+    """One delivered batch of exactly one change, with its resume position named."""
+    return ChangeBatch(
+        feed=FEED,
+        changes=(_change(ref, days=days),),
+        next_token=token,
+        resumed_from=resumed,
+        gap=None,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # detect_gap — the pure decision, every combination.
 # --------------------------------------------------------------------------- #
@@ -332,3 +347,65 @@ def test_later_changes_do_NOT_close_an_open_gap(lane):
     with store.lane_session("wiki") as session:
         still = open_gaps(session, FEED)
     assert len(still) >= 1, "an open gap was closed by nothing but the passage of changes"
+
+
+def test_contiguity_does_NOT_climb_past_a_gap_that_is_still_OPEN(lane):
+    """The column's whole meaning, and the one the first version got wrong.
+
+    ``contiguous_through`` is documented as "the point up to which this app believes it
+    has seen EVERY change", and the cursor table says the two columns are separate
+    "because conflating them is how a gap disappears". Checking only THIS batch's gap is
+    that conflation arriving one pass later: the gap is recorded, contiguity correctly
+    holds for that pass, and then the very next clean resume walks straight over the
+    hole. Measured before the fix: a gap spanning days 1-9, three ordinary passes, and
+    contiguity read day 12 with the gap still open and never re-read.
+    """
+    with store.lane_session("wiki") as session:
+        record_batch(session, _pass("c1", days=1, token="t1", resumed=None))
+        assert cursor_row(session, FEED).contiguous_through == _day(1)
+
+        # A cold start against a live cursor: a real disconnect gap.
+        record_batch(session, _pass("c9", days=9, token="t9", resumed=None))
+        assert len(open_gaps(session, FEED)) == 1
+
+        # Three passes that each resume CORRECTLY from the one before.
+        prev = "t9"
+        for days, ref in ((10, "c10"), (11, "c11"), (12, "c12")):
+            record_batch(session, _pass(ref, days=days, token=ref, resumed=prev))
+            prev = ref
+
+        row = cursor_row(session, FEED)
+        assert row.contiguous_through == _day(1), (
+            f"contiguity climbed over a hole nobody re-read: {row.contiguous_through}"
+        )
+        # ...while the cursor itself DID move, which is the reason these are two
+        # columns: freshness is a different question from completeness.
+        assert row.token == "c12"
+
+
+def test_closing_the_gap_lets_contiguity_move_again(lane):
+    """Anti-vacuity for the test above: the freeze must be the GAP, not a dead column.
+
+    Only a caller that actually re-read the stretch may close a gap, so this is the
+    state that licenses the claim — and once it holds, the claim may be made.
+    """
+    with store.lane_session("wiki") as session:
+        record_batch(session, _pass("c1", days=1, token="t1", resumed=None))
+        record_batch(session, _pass("c9", days=9, token="t9", resumed=None))
+        assert close_gap(session, open_gaps(session, FEED)[0].id) is True
+        record_batch(session, _pass("c10", days=10, token="t10", resumed="t9"))
+        assert cursor_row(session, FEED).contiguous_through == _day(10)
+
+
+def test_closing_a_gap_is_VISIBLE_to_the_very_next_query_on_the_same_session(lane):
+    """``autoflush=False`` makes an unflushed close invisible to a later SELECT.
+
+    The failure is silent in the direction that reads as "the closure did nothing":
+    contiguity stayed frozen after a genuine close, because the open-gap check read the
+    database and the close was still sitting in the session.
+    """
+    with store.lane_session("wiki") as session:
+        record_batch(session, _pass("c1", days=1, token="t1", resumed=None))
+        record_batch(session, _pass("c9", days=9, token="t9", resumed=None))
+        close_gap(session, open_gaps(session, FEED)[0].id)
+        assert open_gaps(session, FEED) == [], "the close was not visible to the next read"

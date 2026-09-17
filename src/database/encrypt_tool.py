@@ -110,8 +110,22 @@ def _table_counts_safe(p: Path, key: str) -> dict:
 
 
 def encrypt_all(key: str) -> dict:
-    """Encrypt the main corpus AND the custody log under THE one passphrase
-    (design D6). The caller disposes the engine before and re-opens after.
+    """Encrypt EVERY at-rest store under THE one passphrase (design D6).
+    The caller disposes the engine before and re-opens after.
+
+    THE LIST IS THE FEATURE, and it is the part that rots. This function enumerated
+    the corpus and the custody log for as long as those were the only two databases.
+    The versioned-source LANES (``wiki.db`` / ``law.db`` / ``osm.db``) are encrypted
+    stores too, and left out they would survive "Encrypt my store" untouched: the
+    operator consents, the corpus becomes ciphertext, and the lane stays plaintext on
+    disk FOREVER — every later open takes ``connect()``'s plaintext branch, which never
+    consults the passphrase at all. The lane holds which sources the operator tracks,
+    which is exactly the selection Q1005 = a says is as revealing as the data.
+
+    So the lanes are read from the REGISTRY (``src.versioned.lanes``) rather than listed
+    here, and an absent lane is skipped rather than created — ``encrypt_database``
+    already reports ``skipped`` for a file that does not exist, which is how the custody
+    log has always been handled.
 
     Held under the single-writer gate (audit finding 2026-07-17): encrypt_database
     reads the live file through a RAW sqlcipher3/sqlite3 connection, not the ORM
@@ -130,9 +144,21 @@ def encrypt_all(key: str) -> dict:
     main = main_db_path()
     if main is None:
         raise EncryptToolError("non-SQLite backend: the at-rest layer does not apply")
+    from src.versioned.lanes import all_lanes
+
     with write_lock():
         reports = {
             "corpus": encrypt_database(main, key),
             "custody": encrypt_database(data_dir() / "custody_log.db", key),
         }
+        # Close any lane pool first: encrypt_database swaps the file underneath, and a
+        # cached engine would go on using a handle to the replaced one.
+        try:
+            from src.versioned.store import dispose_all as _dispose_lanes
+
+            _dispose_lanes()
+        except Exception:  # noqa: BLE001 - never let bookkeeping block the encryption
+            _LOG.warning("could not dispose the lane engines before encrypting", exc_info=True)
+        for spec in all_lanes():
+            reports[f"lane:{spec.kind}"] = encrypt_database(data_dir() / spec.filename, key)
     return reports

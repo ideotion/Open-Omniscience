@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.testing.wiki_fixture import FixtureNetworkAttempt, FixtureWikiClient
+from src.versioned.adapters.base import ReadBudget
 from src.versioned.adapters.wiki import (
     WikiLaneAdapter,
     external_id_for,
@@ -156,3 +157,117 @@ def test_the_fixture_counts_every_call_it_serves():
     client.fetch_current_text("oo", "Fixture Alpha")
     assert client.calls["fetch_recentchanges"] == 1
     assert client.calls["fetch_current_text"] == 1
+
+
+# ------------------------------------------------- what the cursor must not drop
+
+
+class _RowClient:
+    """A client that serves prepared recentchanges rows, in the REAL client's shape.
+
+    ``src/wiki/mediawiki.py::parse_recentchanges`` hands back a ``datetime`` under
+    ``timestamp``, not a string — and a first draft of these tests passed ISO strings,
+    which ``_aware`` correctly rejects, so every row lost its timestamp and the
+    comparison under test never ran at all. The tests passed and proved nothing. The
+    shape is matched here deliberately.
+    """
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.limits: list[int] = []
+
+    def fetch_recentchanges(self, wiki, *, namespace=0, limit=50):
+        self.limits.append(limit)
+        return self.rows[:limit]
+
+
+def _rc(revid, when, title="Page"):
+    return {"revid": revid, "timestamp": when, "title": title, "type": "edit"}
+
+
+def test_a_SAME_INSTANT_change_with_a_LOWER_id_is_NOT_dropped():
+    """The cursor compares TIME, never the id it also carries.
+
+    An earlier version treated ``(time, revid)`` as an ordering and skipped anything
+    ``<=`` the mark. A genuinely new change at the mark's own instant with a lower id
+    was then skipped, never recorded, produced no gap, and could never resurface — the
+    mark only moves forward. This is the assertion that separates the two designs.
+    """
+    rows = [_rc(101, WHEN), _rc(100, WHEN), _rc(99, WHEN)]
+    adapter = WikiLaneAdapter(client=_RowClient(rows), editions=("oo",))
+    batch = adapter.read_changes(
+        feed="recentchanges:oo", since=make_token(WHEN, 100), budget=ReadBudget()
+    )
+    kept = {c.change_ref for c in batch.changes}
+    assert "oo:99" in kept, f"a same-instant change with a lower id was dropped: {kept}"
+    # The already-held ones come back too and are deduped downstream, which is the
+    # trade: a handful of re-offered rows can never lose one.
+    assert kept == {"oo:99", "oo:100", "oo:101"}, kept
+
+
+def test_a_change_STRICTLY_OLDER_than_the_cursor_is_still_skipped():
+    """The other half: the comparison must still do its job, or it is not a cursor."""
+    older = WHEN - timedelta(days=1)
+    rows = [_rc(200, WHEN + timedelta(days=1)), _rc(1, older)]
+    adapter = WikiLaneAdapter(client=_RowClient(rows), editions=("oo",))
+    batch = adapter.read_changes(
+        feed="recentchanges:oo", since=make_token(WHEN, 100), budget=ReadBudget()
+    )
+    assert {c.change_ref for c in batch.changes} == {"oo:200"}
+
+
+def test_an_UNREADABLE_stored_token_is_reported_as_a_GAP():
+    """Both of this lane's gap layers go quiet on this input at once.
+
+    The retention check is gated on a parseable mark, and ``detect_gap``'s remaining
+    cases compare ``resumed_from`` against the stored token — which for this adapter are
+    the same string by construction. So a legacy or hand-edited token produced NO signal
+    anywhere and the lane resumed as though nothing were missing.
+    """
+    rows = [_rc(5000, WHEN), _rc(4999, WHEN - timedelta(days=1))]
+    adapter = WikiLaneAdapter(client=_RowClient(rows), editions=("oo",))
+    batch = adapter.read_changes(feed="recentchanges:oo", since="4242", budget=ReadBudget())
+    assert batch.gap is not None, "an unreadable cursor produced no signal at all"
+    assert batch.gap.reason == "disconnect", batch.gap
+    assert batch.gap.from_token == "4242", "the unreadable token is not named"
+    assert batch.gap.to_token, "the far end of the gap is not named"
+
+
+def test_a_COLD_START_is_not_reported_as_a_gap():
+    """Anti-vacuity for the test above: no cursor at all is not the same as a broken one."""
+    rows = [_rc(5000, WHEN)]
+    adapter = WikiLaneAdapter(client=_RowClient(rows), editions=("oo",))
+    batch = adapter.read_changes(feed="recentchanges:oo", since=None, budget=ReadBudget())
+    assert batch.gap is None
+
+
+def test_the_read_BUDGET_sets_the_window_the_client_is_asked_for():
+    """``max_requests`` was accepted and ignored — the literal 50 stood where it belonged.
+
+    It matters past the wasted knob: the window size is the input to the retention-gap
+    arithmetic, so a caller widening the window after downtime (to avoid a FALSE gap) or
+    narrowing it for cost silently got neither.
+    """
+    client = _RowClient([_rc(i, WHEN) for i in range(600)])
+    adapter = WikiLaneAdapter(client=client, editions=("oo",))
+    adapter.read_changes(feed="recentchanges:oo", since=None, budget=ReadBudget())
+    adapter.read_changes(feed="recentchanges:oo", since=None, budget=ReadBudget(max_requests=200))
+    adapter.read_changes(feed="recentchanges:oo", since=None, budget=ReadBudget(max_requests=1))
+    adapter.read_changes(feed="recentchanges:oo", since=None, budget=ReadBudget(max_requests=99999))
+    assert client.limits == [50, 200, 1, 500], client.limits
+
+
+def test_an_UNDATED_change_carries_no_unreadable_cursor_token():
+    """``make_token(None, revid)`` is ``"|<revid>"`` — truthy AND unparseable.
+
+    Stored, it defeats its own fallback: ``change.cursor_token or batch.next_token``
+    never reaches the batch's real token, and the row keeps a position nothing can read.
+    """
+    rows = [_rc(7, None), _rc(8, WHEN)]
+    adapter = WikiLaneAdapter(client=_RowClient(rows), editions=("oo",))
+    batch = adapter.read_changes(feed="recentchanges:oo", since=None, budget=ReadBudget())
+    undated = next(c for c in batch.changes if c.change_ref == "oo:7")
+    assert undated.occurred_at is None
+    assert undated.cursor_token is None, f"stored an unreadable position: {undated.cursor_token!r}"
+    dated = next(c for c in batch.changes if c.change_ref == "oo:8")
+    assert parse_token(dated.cursor_token) is not None

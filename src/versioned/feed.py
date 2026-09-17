@@ -295,14 +295,36 @@ def record_batch(
         session.add(row)
     row.token = batch.next_token
     row.updated_at = _now()
-    # TWO separate refusals, written as one condition because the nesting that would
+    # THREE separate refusals, written as one condition because the nesting that would
     # let each carry its own line is what SIM102 forbids:
     #   (1) a batch that straddles a GAP must not advance contiguity at all — the hole
     #       is the whole reason the claim cannot be extended across it;
-    #   (2) contiguity moves only FORWARD — a backfill or an out-of-order delivery must
+    #   (2) neither may a batch that arrives while an EARLIER gap is still open — see
+    #       below, this is the one that was missing;
+    #   (3) contiguity moves only FORWARD — a backfill or an out-of-order delivery must
     #       never REDUCE a claim already earned.
+    #
+    # (2) IS THE WHOLE COLUMN'S MEANING, AND IT WAS BROKEN. ``contiguous_through`` is
+    # documented as "the point up to which this app believes it has seen EVERY change",
+    # and the two columns exist, in this table's own words, "because conflating them is
+    # how a gap disappears". Checking only THIS batch's gap is exactly that conflation
+    # arriving one pass later: a gap is recorded, contiguity correctly stays put for
+    # that pass — and then the very next clean resume walks it straight over the hole.
+    # Measured before the fix: a disconnect gap spanning days 1–9, then three ordinary
+    # passes, left ``contiguous_through`` reading day 12 with the gap still open and
+    # never re-read.
+    #
+    # WHAT THIS COSTS, SAID PLAINLY SO NOBODY "FIXES" IT BACK. Nothing closes a gap
+    # today (``close_gap`` has no caller outside its own definition), so after a lane's
+    # first gap this column FREEZES until something reconciles the hole. That is not a
+    # regression, it is the true statement: a lane with an unreconciled hole has no
+    # later point it can honestly claim contiguity through. Freshness is a DIFFERENT
+    # question and ``token`` and ``updated_at`` answer it. A coverage surface reads both
+    # — "contiguous through X, N gaps open since" — which is the honest sentence, and it
+    # is only sayable because these are separate columns.
+    blocked = gap is not None or _has_open_gap(session, batch.feed)
     if (
-        gap is None
+        not blocked
         and newest is not None
         and (row.contiguous_through is None or newest > row.contiguous_through)
     ):
@@ -328,6 +350,24 @@ def record_batch(
     )
 
 
+def _has_open_gap(session: Session, feed: str) -> bool:
+    """Does this feed have an unreconciled hole? A COUNT, never the rows.
+
+    Separate from ``open_gaps`` because this runs on every batch and only needs to know
+    whether one exists — loading the rows to check a boolean is how a hot path acquires
+    a cost nobody measured.
+    """
+    from sqlalchemy import func
+
+    return bool(
+        session.execute(
+            select(func.count())
+            .select_from(VersionedGap)
+            .where(VersionedGap.feed == feed, VersionedGap.closed_at.is_(None))
+        ).scalar_one()
+    )
+
+
 def open_gaps(session: Session, feed: str | None = None) -> list[VersionedGap]:
     """Gaps nobody has closed, newest first. The Living sources view's own input."""
     stmt = select(VersionedGap).where(VersionedGap.closed_at.is_(None))
@@ -348,6 +388,14 @@ def close_gap(session: Session, gap_id: int) -> bool:
     if row is None or row.closed_at is not None:
         return False
     row.closed_at = _now()
+    # FLUSH, for the same reason ``record_batch`` does and with the same failure
+    # direction. The lane session sets ``autoflush=False``, so an unflushed close is
+    # invisible to a later SELECT on this very session — and the one that matters is
+    # ``_has_open_gap``, which decides whether contiguity may advance. Without this, a
+    # gap closed and then immediately followed by a pass kept contiguity frozen, which
+    # reads as "the closure did nothing". Measured, not supposed: that is exactly how
+    # this line came to be written.
+    session.flush()
     return True
 
 

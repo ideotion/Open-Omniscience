@@ -18,13 +18,25 @@ passphrase, the driver choice is the file header's, the fresh-file page size is
 DB-10 §1b's, and a wrong key raises ``WrongPassphraseError`` here exactly as it
 does for the corpus. A second key path would be a second thing to get wrong.
 
-NO PER-LANE PLAINTEXT. ``connect()`` decides a FRESH file's at-rest state from the
-process passphrase and the app-wide ``OO_DB_PLAINTEXT`` opt-out; this module passes
-neither ``key=`` nor ``create_encrypted=``, so a lane can never be created
-plaintext while the corpus is encrypted. ``create_lane`` additionally REFUSES to
-create a lane file when no passphrase is available (``DatabaseLockedError``),
-rather than quietly waiting for an unlock that may not come — an absent lane is an
-honest state and a half-made one is not.
+NO PER-LANE PLAINTEXT — AND THAT TOOK A GUARD, not just an omission. This module
+passes neither ``key=`` nor ``create_encrypted=``, so there is no per-lane OVERRIDE;
+that much was always true. But it is not what the sentence above used to claim. The
+factory's fresh-file precedence puts the app-wide ``OO_DB_PLAINTEXT`` opt-out AHEAD of
+the process passphrase, so with that variable set and a real passphrase in hand — the
+state of an ordinary unlocked, already-encrypted corpus on a machine where the flag is
+also exported — ``create_lane`` produced a PLAINTEXT lane beside it. Measured, not
+feared. An already-encrypted corpus is immune to the same rule (an existing encrypted
+file never consults the flag), so the divergence is lane-shaped: the corpus was created
+before the flag mattered and the lane is created after.
+
+``create_lane`` therefore refuses outright to make a plaintext lane while the corpus on
+disk is encrypted, naming the variable. Two refusals, not one:
+  * the store is LOCKED (no passphrase, no plaintext opt-out) -> ``DatabaseLockedError``,
+    rather than quietly waiting for an unlock that may not come; an absent lane is an
+    honest state and a half-made one is not;
+  * the corpus is ENCRYPTED and the plaintext opt-out is on -> refuse, because the one
+    thing this module may never do is put an operator's tracked-source selection in the
+    clear beside a corpus they were told is protected.
 
 AN ABSENT LANE IS ABSENT, NEVER ZERO. ``connect()`` CREATES a missing file, which
 makes every "does this lane exist?" question a hazard: asking it through the
@@ -68,6 +80,32 @@ _LOG = logging.getLogger("versioned.store")
 _engines: dict[tuple[str, str], Engine] = {}
 _factories: dict[tuple[str, str], sessionmaker] = {}
 _lock = threading.Lock()
+
+
+class PlaintextLaneRefused(RuntimeError):
+    """A lane would have been created in the clear beside an encrypted corpus.
+
+    Its own type rather than ``ValueError`` because a caller that wants to offer the
+    operator a way out (unset the flag, or decrypt on purpose) has to be able to tell
+    this from a locked store, which is a different situation with a different remedy.
+    """
+
+
+def _corpus_path() -> Path:
+    from src.paths import data_dir
+
+    return data_dir() / "open_omniscience.db"
+
+
+def _corpus_is_encrypted() -> bool:
+    """Is the corpus ciphertext ON DISK? A header read, never an inference.
+
+    ``False`` when the corpus does not exist yet: a lane created before any corpus is
+    not beside an encrypted one, and refusing then would block a fresh install.
+    """
+    from src.database.connect import is_encrypted_file
+
+    return is_encrypted_file(_corpus_path()) is True
 
 
 class LaneAbsentError(FileNotFoundError):
@@ -234,6 +272,16 @@ def create_lane(kind: str) -> Path:
             f"the {spec.kind} lane cannot be created while the store is locked: "
             "its file is encrypted with the same passphrase as the corpus"
         )
+    if fresh and plaintext_mode() and _corpus_is_encrypted():
+        # The factory would honour the flag and write a plaintext lane here — the
+        # opt-out outranks the passphrase for a FRESH file, and an already-encrypted
+        # corpus never reaches that branch, so nothing else in the app would notice.
+        raise PlaintextLaneRefused(
+            f"refusing to create the {spec.kind} lane in the clear: the corpus at "
+            f"{_corpus_path().name} is encrypted, and OO_DB_PLAINTEXT is set. A lane "
+            "holds which sources you track, which is as revealing as the corpus. "
+            "Unset OO_DB_PLAINTEXT for this process, or decrypt the corpus deliberately."
+        )
 
     eng = lane_engine(kind, create=True)
     create_schema(kind, eng)
@@ -286,10 +334,20 @@ def lane_session(kind: str, *, create: bool = False) -> Iterator[Session]:
 def dispose_lane(kind: str) -> None:
     """Close this lane's pool and forget the engine.
 
-    Called when the store LOCKS: a pooled SQLCipher connection holds a derived key in
-    memory, and a lane that kept one open after the operator locked the app would be
-    a quiet exception to the lock. Also the safe thing to call before any file-level
-    operation on the lane (a snapshot, a restore swap).
+    WHY, and what is actually true. A pooled SQLCipher connection holds a derived key in
+    memory and an open handle on the file, so any path that drops the passphrase or
+    replaces the file must drop these too. An earlier version of this docstring said
+    "called when the store LOCKS" — and nothing called it at all, which made the
+    sentence a description of an intention.
+
+    What is true now: this tree has NO in-process relock (grep-verified — the only
+    callers of ``set_passphrase(None)`` are the crypto-erase and a fresh-state failure
+    path), so "locking" is a restart and a restart takes the engines with it. The two
+    real in-process events are ``src/safety/crypto_erase.py`` (which now calls
+    ``dispose_all`` before it touches a byte) and ``src/database/encrypt_tool.py``
+    (which swaps each file underneath, so a cached engine would keep using the replaced
+    one). Both call it. Also the right thing before any other file-level operation on a
+    lane — a snapshot, a restore swap.
     """
     with _lock:
         keys = [k for k in _engines if k[0] == kind]

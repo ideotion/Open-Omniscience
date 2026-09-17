@@ -1792,6 +1792,8 @@
   "Top": "শীর্ষ",
   "What to include": "কী অন্তর্ভুক্ত করবেন",
   "Wikipedia dumps": "উইকিপিডিয়া ডাম্প",
+  "Living sources": "জীবন্ত উৎস",
+  "A living source is a working encrypted database, not a finished file; how it is backed up is not settled yet.": "একটি জীবন্ত উৎস হলো চলমান একটি এনক্রিপ্টেড ডেটাবেস, সম্পূর্ণ হয়ে যাওয়া কোনো ফাইল নয়; এটির ব্যাকআপ কীভাবে নেওয়া হবে তা এখনও ঠিক হয়নি।",
   "Carry them inside the encrypted backup": "সেগুলি এনক্রিপ্ট করা ব্যাকআপের ভিতরে রাখুন",
   "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "আর্কাইভের ভিতরে এগুলি কর্পাসের মতোই এনক্রিপ্ট করা ও মেরামতযোগ্য থাকে, তাই পুনরুদ্ধারের জন্য একটিমাত্র জিনিস লাগে; পাশে কপি করলে সেগুলি নিজে থেকেই পড়া যায় এবং লিখতে বাড়তি খরচ হয় না।",
   "Offline maps (OSM)": "অফলাইন মানচিত্র (OSM)",

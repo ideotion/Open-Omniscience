@@ -9,12 +9,25 @@ change looks like on ``list=recentchanges``, how a page's current wikitext is
 fetched, how wikitext becomes the plain text the corpus indexes — and nothing else.
 
 IT IS HANDED ITS CLIENT. ``WikiLaneAdapter(client=...)`` takes anything with the
-three methods it calls. Production passes ``src.wiki.client.WikiClient``, which goes
-through ``guarded_session`` and therefore through the kill switch, the SSRF guard
-and the airplane socket guard. CI passes a fixture client that reads files. The code
-between them is the same code, which is what makes Q1018's "end-to-end in CI without
-a socket" a property rather than a claim — and it is why this module builds no
-client of its own, not even as a default.
+three methods it calls. CI passes a fixture client that reads files. The code between
+them is the same code, which is what makes Q1018's "end-to-end in CI without a socket"
+a property rather than a claim — and it is why this module builds no client of its
+own, not even as a default.
+
+WHAT THE PRODUCTION CLIENT ACTUALLY GETS, stated precisely because an earlier version
+of this paragraph overstated it. ``src.wiki.client.WikiClient`` builds a
+``guarded_session``, which gives it the network KILL SWITCH (checked on every verb,
+``src/safety/fetcher.py``), the protected-mode proxy, and the honest bot UA — and the
+process-wide AIRPLANE SOCKET GUARD applies to it as it does to everything, because
+that one patches sockets rather than sessions. It does NOT give it the CONNECT-TIME
+SSRF guard: ``ssrf_guard.connect_scope`` has exactly one caller in this tree,
+``EthicalFetcher._guarded_redirect_get`` (``src/ingest/__init__.py:1412``), which a
+``GuardedSession`` never reaches. That is a PRE-EXISTING property of the shared
+session factory — every ``guarded_session`` consumer (dumps, ORES, DuckDuckGo) is in
+the same position and this package introduced none of it — and it is DORMANT here,
+because no production code constructs a ``WikiLaneAdapter`` yet. It stops being
+dormant the day a scheduler job wires one, so it is recorded in ``OPEN_QUEUE.md``
+against that slice rather than left for whoever wires it to rediscover.
 
 IDENTITY IN 0.4 IS ``{wiki}:{title}``, AND THE SEAM IS NAMED. Q715 rules the wiki
 lane's identity to be ``WikiPage(wiki, pageid)`` + QID — and Q715 belongs to S04-09,
@@ -143,12 +156,42 @@ class WikiLaneAdapter:
         A change with NO timestamp is KEPT rather than compared: it cannot be placed
         against the cursor, and the safe direction is to record it again (dedup on
         ``change_ref`` makes that free) rather than to drop it once, permanently.
+
+        **THE COMPARISON IS ON TIME ALONE, AND THAT IS A SECOND CORRECTION.** The
+        cursor CARRIES a revid, and an earlier version also COMPARED on it, treating
+        ``(time, revid)`` as an ordering and skipping anything ``<=`` the mark. That
+        silently dropped a real change, permanently: a genuinely new change at the
+        SAME INSTANT as the mark but with a LOWER id sorted below it, was skipped, was
+        never recorded, produced no gap, and could never resurface — the mark only
+        moves forward, so it stayed below it on every later read. Worse, the cursor
+        then advanced past that instant and ``contiguous_through`` claimed coverage
+        through a point AFTER the loss.
+
+        The assumption underneath it was the one this adapter had already been
+        corrected for once: that a third party's id orders its log. It does not, and
+        the tie-break made it load-bearing again in a place a test would not look.
+        ``rccontinue``'s second half is an ``rcid`` — MediaWiki's own insertion
+        counter — and a ``revid`` is a different number; mirroring the SHAPE of that
+        token never licensed treating our number as theirs.
+
+        So the skip is now ``when < mark_time``, strictly. Every change at the
+        cursor's exact instant is re-offered on the next read and deduped on
+        ``change_ref``, which costs a handful of rows and cannot lose one. The revid
+        stays IN the token, where it identifies the position for a human reading it
+        and for the feed's own vocabulary — it simply no longer decides what we keep.
         """
         code = _edition_of(feed)
         if code not in self._editions:
             raise ValueError(f"{feed!r} is not a feed of this adapter")
 
-        limit = 50 if budget.max_requests is None else max(1, min(500, 50))
+        # The caller's window size, honoured. This line read
+        # ``max(1, min(500, 50))`` — an expression in which the literal 50 stands
+        # where ``budget.max_requests`` belongs, so it evaluated to 50 for every
+        # budget and the argument did nothing. It matters more than a wasted knob:
+        # the window size is the input to the RETENTION-GAP arithmetic below, so a
+        # caller widening the window after downtime (to avoid a false gap) or
+        # narrowing it for cost got neither, silently.
+        limit = 50 if budget.max_requests is None else max(1, min(500, budget.max_requests))
         rows = self._client.fetch_recentchanges(code, namespace=0, limit=limit)
 
         mark = parse_token(since)
@@ -164,10 +207,13 @@ class WikiLaneAdapter:
                 continue
             when = _aware(row.get("timestamp"))
             here = (when, revid) if when is not None else None
-            if here is not None:
+            if here is not None and when is not None:
                 oldest = here if oldest is None else min(oldest, here)
                 newest = here if newest is None else max(newest, here)
-                if mark is not None and here <= mark:
+                # STRICTLY older, never "older or equal": see the docstring. A change
+                # at the cursor's own instant is re-offered and deduped, which is free;
+                # skipping it is permanent.
+                if mark is not None and when < mark[0]:
                     continue
             title = row.get("title") or ""
             changes.append(
@@ -176,13 +222,44 @@ class WikiLaneAdapter:
                     change_kind=_change_kind(row),
                     external_id=external_id_for(code, title) if title else None,
                     occurred_at=when,
-                    cursor_token=make_token(when, revid),
+                    # ``None``, never ``make_token(None, revid)``. That call returns
+                    # ``"|<revid>"`` — TRUTHY, so ``change.cursor_token or
+                    # batch.next_token`` would never fall back, and UNPARSEABLE, so the
+                    # row would be stored with a position nothing can read. The column
+                    # exists so a gap's ends can be named in the feed's own vocabulary;
+                    # an unreadable value there is worse than the batch's real one.
+                    cursor_token=make_token(when, revid) if when is not None else None,
                     byte_delta=row.get("delta_bytes"),
                 )
             )
 
         gap: GapReport | None = None
-        if mark is not None and oldest is not None and oldest > mark:
+        if since and mark is None:
+            # A CURSOR WE CANNOT READ IS A GAP, and it has to be reported HERE.
+            # Both of this lane's gap layers go quiet on this input at once, which is
+            # why it needs saying rather than assuming one catches it: the retention
+            # check below is gated on ``mark is not None``, and ``detect_gap``'s
+            # remaining cases compare ``resumed_from`` against the stored token — which
+            # for this adapter are the SAME STRING by construction (``resumed_from`` is
+            # ``since``), so they can never fire for it at all. A stored token in a
+            # format this parser does not accept (a legacy bare revid, a hand-edited
+            # row, a file from a future version) therefore produced NO signal anywhere,
+            # and the lane resumed from the window it happened to be served as though
+            # nothing were missing.
+            #
+            # "disconnect" rather than a new reason: what happened is that this lane
+            # lost its place in the feed, which is what that word already means here.
+            # The ends are named as honestly as they can be — the unreadable token
+            # verbatim on one side, the oldest change we can see on the other — because
+            # naming a boundary we cannot compute would be worse than naming none.
+            gap = GapReport(
+                reason="disconnect",
+                from_token=since,
+                to_token=make_token(*oldest) if oldest is not None else None,
+                from_time=None,
+                to_time=oldest[0] if oldest is not None else None,
+            )
+        elif mark is not None and oldest is not None and oldest[0] > mark[0]:
             # Every change in the window is newer than where we left off, so the
             # window did not reach our position: whatever sat between is outside
             # this feed's retention as far as this read can tell.

@@ -1792,6 +1792,8 @@
   "Top": "Top",
   "What to include": "Was einschließen",
   "Wikipedia dumps": "Wikipedia-Dumps",
+  "Living sources": "Lebende Quellen",
+  "A living source is a working encrypted database, not a finished file; how it is backed up is not settled yet.": "Eine lebende Quelle ist eine laufende verschlüsselte Datenbank, keine fertige Datei; wie sie gesichert wird, ist noch nicht entschieden.",
   "Carry them inside the encrypted backup": "Sie in die verschlüsselte Sicherung aufnehmen",
   "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Innerhalb des Archivs sind diese Dateien verschlüsselt und reparierbar wie der Korpus, sodass eine Wiederherstellung nur eine Sache braucht. Daneben kopiert bleiben sie eigenständig lesbar und kosten beim Schreiben nichts.",
   "Offline maps (OSM)": "Offline-Karten (OSM)",

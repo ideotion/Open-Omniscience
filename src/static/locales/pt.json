@@ -1792,6 +1792,8 @@
   "Top": "Top",
   "What to include": "O que incluir",
   "Wikipedia dumps": "Dumps da Wikipédia",
+  "Living sources": "Fontes vivas",
+  "A living source is a working encrypted database, not a finished file; how it is backed up is not settled yet.": "Uma fonte viva é uma base de dados cifrada em funcionamento, não um ficheiro terminado; a forma de a salvaguardar ainda não está definida.",
   "Carry them inside the encrypted backup": "Incluí-los no backup criptografado",
   "Inside the artifact they are encrypted and repairable like the corpus, so a restore needs one thing; copied alongside they stay readable on their own and cost nothing to write.": "Dentro do artefacto ficam cifrados e reparáveis como o corpus, por isso um restauro precisa de uma só coisa; copiados ao lado continuam legíveis sozinhos e não custam nada a escrever.",
   "Offline maps (OSM)": "Mapas offline (OSM)",
