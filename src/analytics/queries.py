@@ -16,7 +16,8 @@ import math
 import os
 import time
 from datetime import date, timedelta
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from sqlalchemy import func
 
@@ -381,14 +382,41 @@ def resolve_concept_keywords(
         chunk = wanted[i : i + _IN_CHUNK]
         for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
             found.setdefault(str(kw.normalized_term), kw)
+    # THE LEMMA RUNG, and why it belongs here (found by reading this against S04-06 after
+    # it merged, not by a test). Extraction lemmatises, so the corpus stores `sanction`
+    # where the articles said "sanctions" -- and a RING member is a surface form from
+    # Wikidata, not a lemma. Without this pass, every ring form whose stored keyword sits
+    # under its lemma is simply absent from the concept, and the aggregate silently
+    # under-reports the concept in exactly the languages the lemmatiser covers.
+    # ``_resolve_by_lemma`` is the same EXACT second try ``resolve_keyword`` uses: equality
+    # against the lemma candidates, never ``LIKE``, and ``None`` when several distinct
+    # keywords answer -- so the recorded homograph defect cannot re-enter through a ring.
+    for n in wanted:
+        if n in found:
+            continue
+        kw = _resolve_by_lemma(session, n)
+        if kw is not None:
+            found.setdefault(str(kw.normalized_term), kw)
+            found.setdefault(n, kw)
     primary = found.get(_normalize(term))
     # Deterministic order: the typed form first, then the rest in the order the cap kept
     # them (most frequent first when the frequency resolver answered), so a reader
     # comparing two runs over one corpus sees the same list.
-    ordered = [found[n] for n in wanted if n in found]
+    # Deduped by keyword ID, not by the form that reached it: the lemma rung above can
+    # map two ring forms onto ONE stored keyword (`sanction` and `sanctions`), and a
+    # duplicate id would double every mention that keyword carries in every aggregate
+    # built on this list.
+    ordered = []
+    seen_ids: set[int] = set()
+    for n in wanted:
+        kw = found.get(n)
+        if kw is None or int(kw.id) in seen_ids:
+            continue
+        seen_ids.add(int(kw.id))
+        ordered.append(kw)
     lang_terms = _ring_language_map(concept)
     by_language = {
-        lang: [int(found[t].id) for t in terms if t in found]
+        lang: list(dict.fromkeys(int(found[t].id) for t in terms if t in found))
         for lang, terms in lang_terms.items()
     }
     by_language = {k: v for k, v in by_language.items() if v}
@@ -2434,6 +2462,25 @@ def _window_filter(q, start=None, end=None):
     return q
 
 
+def _resolved_label(kw: Any, *, full: bool = False) -> dict | None:
+    """The ``resolved`` block a display surface renders, or an honest ``None``.
+
+    A concept can be searched through a ring whose typed form this corpus does not carry
+    — a French reader types ``climat`` into a corpus holding only ``climate`` — and the
+    ring path deliberately survives that. What it must NOT do is render a label for a
+    keyword that does not exist: ``resolved`` is the sentence "this is the keyword you
+    are looking at", so an absent one is ``None`` and the ``concept`` block beside it is
+    what names the ring. mypy caught the first version of this reading ``kw.term`` off a
+    ``Keyword | None``; it was a real defect, not a typing nit.
+    """
+    if kw is None:
+        return None
+    out = {"term": kw.term, "kind": kind_of(kw)}
+    if full:
+        out["normalized"] = kw.normalized_term
+    return out
+
+
 def _concept_seed_ids(concept: Any, kw: Any) -> list[int]:
     """The keyword ids ONE aggregate should filter on — the ring's, or just the term's.
 
@@ -2543,7 +2590,7 @@ def associations(
     if not target_articles or total == 0:
         return {
             "term": term,
-            "resolved": {"term": kw.term, "kind": kind_of(kw)},
+            "resolved": _resolved_label(kw),
             "corpus_articles": int(total),
             "n_articles_with_term": n_a,
             "pairs": [],
@@ -2641,7 +2688,7 @@ def associations(
         caveat += " " + _RING_CAVEAT
     result = {
         "term": term,
-        "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
+        "resolved": _resolved_label(kw, full=True),
         "corpus_articles": int(total),
         # The TRUE population (articles mentioning the term), even when the co-occurrence
         # below was computed over a bounded SAMPLE of them — the honest count, never the

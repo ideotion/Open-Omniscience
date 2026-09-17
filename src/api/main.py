@@ -1284,6 +1284,7 @@ def _query_expander(
     enabled: bool,
     ui_lang: str | None,
     senses: list[str] | None = None,
+    cap: int | None = -1,
 ):
     """Build the R1 cross-language hook for one request, or ``None``.
 
@@ -1300,14 +1301,23 @@ def _query_expander(
     answer to the several-senses refusal, so it outranks the narrowing -- but only ever
     among the rings the term already belongs to, and a pin that names anything else is
     reported rather than applied.
+
+    ``cap`` is Q503's fan-out limit. The sentinel ``-1`` means "the ruled default"; ``None``
+    means the reader turned the cap OFF, and the two must not be spelled the same way or a
+    caller that forgot the argument would silently uncap every search.
     """
     if not query or not enabled:
         return None
-    from src.analytics.equivalence import QueryExpander, parse_sense_pins
+    from src.analytics.equivalence import (
+        CONCEPT_LITERAL_CAP,
+        QueryExpander,
+        parse_sense_pins,
+    )
 
     return QueryExpander(
         prefer_language=(ui_lang or "").strip().casefold() or None,
         pinned=parse_sense_pins(senses),
+        cap=CONCEPT_LITERAL_CAP if cap == -1 else cap,
     )
 
 
@@ -1504,6 +1514,11 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     expand: bool = True,
     ui_lang: str | None = None,
     sense: list[str] | None = Query(None),
+    literal_cap: bool = Query(
+        True,
+        description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+        "first. false = search every form the concept has.",
+    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -1629,7 +1644,10 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     # DISCLOSED in the payload below. `expand=false` is the "narrow to the literal term"
     # click -- the same request with the hook off, so the two readings are one parameter
     # apart and the reader can always get back to exactly what they typed.
-    expander = _query_expander(query, enabled=expand, ui_lang=ui_lang, senses=sense)
+    expander = _query_expander(
+        query, enabled=expand, ui_lang=ui_lang, senses=sense,
+        cap=-1 if literal_cap else None,
+    )
     articles, total = _query_articles(
         db,
         query=query,
