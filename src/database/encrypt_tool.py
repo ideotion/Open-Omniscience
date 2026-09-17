@@ -159,6 +159,18 @@ def encrypt_all(key: str) -> dict:
             _dispose_lanes()
         except Exception:  # noqa: BLE001 - never let bookkeeping block the encryption
             _LOG.warning("could not dispose the lane engines before encrypting", exc_info=True)
+        # BESIDE THE CORPUS means beside THE CORPUS THIS CALL IS ENCRYPTING — so the
+        # lane directory is taken from ``main.parent``, not independently from
+        # ``data_dir()``. The two resolvers do not always agree: ``main_db_path()``
+        # reads ``DATABASE_URL``, which ``src/database/session.py`` computes at IMPORT
+        # time, while ``data_dir()`` re-reads the environment on every call. Where they
+        # diverge, encrypting a corpus in one directory and lanes in another would
+        # leave the operator's real lanes untouched while reporting success — the exact
+        # failure this whole change exists to prevent, one directory over.
+        #
+        # MEASURED, not hypothesised: a test of this function that pointed OO_DATA_DIR
+        # at a temporary directory still reached the session-wide corpus through
+        # main_db_path() and encrypted it, taking 86 unrelated tests down with it.
         for spec in all_lanes():
-            reports[f"lane:{spec.kind}"] = encrypt_database(data_dir() / spec.filename, key)
+            reports[f"lane:{spec.kind}"] = encrypt_database(main.parent / spec.filename, key)
     return reports

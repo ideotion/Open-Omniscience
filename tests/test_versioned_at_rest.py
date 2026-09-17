@@ -43,9 +43,25 @@ PASSPHRASE = "a passphrase long enough to pass the floor"
 
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
-    """A data directory of this test's own, with every lane engine disposed on both edges."""
+    """A data directory of this test's own — INCLUDING the corpus these paths resolve to.
+
+    ``OO_DATA_DIR`` IS NOT ENOUGH HERE, AND THE COST OF ASSUMING IT WAS IS RECORDED.
+    ``main_db_path()`` reads ``DATABASE_URL``, which ``src/database/session.py`` computes
+    at IMPORT time from whatever ``OO_DATA_DIR`` said then — which in this suite is
+    ``conftest``'s session-wide directory. So a test that re-points ``OO_DATA_DIR`` and
+    then calls anything resolving through ``main_db_path`` reaches the SHARED corpus, not
+    its own. The first version of this file did exactly that and called ``encrypt_all``:
+    it encrypted the suite's own corpus, and 56 tests failed with 30 errors reading
+    "open_omniscience.db is encrypted: a passphrase is required" — almost all of them in
+    files this branch never touched.
+
+    Patching ``main_db_path`` is the repo's existing answer (``test_encrypt_all_write_gate``
+    does the same), and it works because ``encrypt_all`` imports it INSIDE the function,
+    so the name resolves at call time.
+    """
     store.dispose_all()
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr("src.api.unlock.main_db_path", lambda: tmp_path / "open_omniscience.db")
     try:
         yield tmp_path
     finally:
@@ -202,3 +218,21 @@ def test_the_doctor_calls_a_PLAINTEXT_lane_plaintext(data_dir, monkeypatch):
     store.create_lane("wiki")
     out = doctor()
     assert out["lanes"]["wiki"]["state"] == "plaintext", out["lanes"]["wiki"]
+
+
+def test_these_tests_can_never_reach_the_SUITE_S_OWN_CORPUS(data_dir):
+    """The guard for the failure this file caused once.
+
+    ``encrypt_all`` and ``doctor`` resolve the corpus through ``main_db_path``, which
+    does not follow ``OO_DATA_DIR``. If the fixture's patch is ever dropped, these tests
+    would encrypt the shared corpus again — and the damage shows up in OTHER files,
+    where nobody would look for it. So the redirection is asserted directly rather than
+    trusted.
+    """
+    from src.api.unlock import main_db_path
+
+    resolved = main_db_path()
+    assert resolved is not None
+    assert resolved.parent == data_dir, (
+        f"the corpus these tests act on is {resolved}, not this test's own directory"
+    )
