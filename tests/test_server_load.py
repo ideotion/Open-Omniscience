@@ -200,6 +200,12 @@ def test_the_live_polls_are_the_calls_marked_polled():
         'api("/api/database/stats", {polled: true})',
         'api("/api/scheduler/status", {polled: true})',
         'api("/api/database/figures", {polled: true})',
-        'api("/api/briefing", {polled: true})',
     ):
         assert call in src, f"the live chain must mark {call} as polled"
+    # The briefing call gained `?target_lang=` on 2026-09-17 (Q411 = a), so its URL is
+    # built by concatenation and no longer a single literal. Anchored on the two things
+    # this test is actually about -- that the POLLED chain reaches the briefing, and that
+    # it is marked polled -- rather than on punctuation a correct change can move.
+    assert 'api("/api/briefing?target_lang=" + encodeURIComponent(uiLangCode()), {polled: true})' in src, (
+        "the polled briefing call must still be marked polled"
+    )

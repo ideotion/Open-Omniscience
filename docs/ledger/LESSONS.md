@@ -10253,3 +10253,85 @@ ceiling; with it, the fix is obvious and the ceiling never moves.
 And **leave a deliberate slack alone**: the CI step's own comment said the one slot above
 the base absorbs a finding `main` lands while a PR is open. Lowering it to make this branch
 look tidier would have spent something somebody put there on purpose.
+
+## 2026-09-17 — `S04-06`, the keyword translation ladder: three lessons, two of them from measuring a claim I had already written down
+
+### A NORMALISER THAT REWRITES A STORED KEY MUST RE-APPLY EVERY FILTER THE ORIGINAL PASSED — and the unguarded version RENAMES rather than drops, which is worse
+
+Q416 = a moved lemmatisation from a display-time collapse to the EXTRACTION path, so the
+lemma became the stored key. The obvious implementation adopts the lemma unconditionally.
+Measured against this tree's own English stopset, that deletes real keywords: `cars` →
+`car`, `ways` → `way`, `ends` → `end` and `owns` → `own` are **all stoplisted**, and
+`ads` → `ad` falls below the 3-character term floor. The filters run on the SURFACE token,
+before the key is chosen, so the lemma never meets them.
+
+**What it actually does is worse than deletion, and only running it says so.** The mutant
+did not drop the row — it stored four occurrences of `cars` under the key `car`, where
+every stoplist-aware surface downstream then hides it. A term made invisible with no row
+missing anywhere to show for it. My own test docstring claimed "DELETE those keywords from
+the index outright" until the mutation run printed `{'car': ('cars', 4)}` and refuted it.
+
+The rule: **a lemma is adopted only when it would itself have survived every filter the
+surface form just survived** — length floor, stoplist, digits, code shape — and otherwise
+the surface form stays its own key. That makes the change a partition-MERGE and never a
+removal, which is the property that bounds a change touching every article ever indexed.
+The tempting alternative (drop a term whose lemma lands on a stopword, reasoning that the
+lemma proves it was a function word) is a recall improvement where it is right and silent
+data loss where it is not; merging only is the direction that cannot be wrong.
+
+**THE SECOND HALF, AND IT IS A DIFFERENT DEFECT: changing the key function breaks every
+reader that keys on the old form.** The corpus now stores `sanction` where the articles
+said "sanctions", so `resolve_keyword` — and every surface through it — returned nothing
+for the word a reader types. Found by an unrelated association test asserting
+`"nickel" in pairs` against an empty dict. The recorded rule is to normalise on BOTH sides
+of a comparison; this is that rule one layer up, where the thing being normalised is the
+key function itself. The repair stays EXACT: lemma candidates are matched by equality,
+never `LIKE`, and several distinct hits return `None` rather than ranking by mention count,
+which is the recorded homograph defect that made `Dy` resolve to `already`.
+
+**And the migration-drift ratchet is what caught the half neither of those covers:** the
+live store is never `alembic upgrade`d, so a new column needs a boot self-heal or an
+existing corpus meets `no such column` on the first query. Written, then DRIVEN against a
+table built without the column rather than asserted from source.
+
+### `render_as_batch=True` MAKES `op.add_column` IDEMPOTENT ON SQLite — the recorded `_has_table` lesson is about CREATE TABLE, and I wrote its mechanism into a docstring before measuring it
+
+The 2026-09-16 entry records `alembic upgrade head` dying with `table keyword_translations
+already exists`, because the RESTORE path runs alembic at a staged copy and never calls
+`create_all` while the ordinary boot does the opposite. I copied the prescribed
+`_has_column` guard for an ADD COLUMN migration and wrote a docstring saying a bare
+`op.add_column` "fails on exactly one of the two".
+
+**It does not.** `migrations/env.py` configures `render_as_batch=True`, so on SQLite an
+`add_column` is a reflect-and-recreate and adding a column the table already carries is a
+clean no-op — driven with the guard deleted over a `create_all`'d store, the upgrade
+SUCCEEDED and `PRAGMA table_info` showed the column exactly once with all ten indexes
+intact. The mutation SURVIVED, which is a question and not a reassurance, and the answer
+was that my sentence was wrong rather than my guard being dead.
+
+Two general forms. **The recorded lesson was about a different DDL verb**, and copying its
+remedy to a neighbouring one carried its rationale across unchecked — a lesson does not
+generalise itself from `CREATE TABLE` to `ADD COLUMN` just because both are migrations.
+And **a docstring that explains a mechanism is a claim of exactly the kind the staleness
+guard distrusts in a status line**; the guard is kept (two lines, states the intent, stays
+correct if `render_as_batch` is ever turned off) but the note now says what was measured
+instead of what would have been satisfying to believe.
+
+### A FIXED-SPAN LISTENER SLICE IS A GUARD THAT A COMMENT CAN REDDEN
+
+`js_source_helper.event_listener_bodies` exists because three guards took
+`js.index('addEventListener("oo:langchange"')` and read a fixed span, silently assuming one
+listener. It fixed the ENUMERATION and kept the fixed span: 4000 characters from each
+registration. On 2026-09-17 a seven-line COMMENT added at the top of that listener in
+`app-boot.js` pushed `renderCompositionFigures()` past the 4000th character, and
+`test_figure_channels` failed saying "3 listener(s) found, none of them calls it" — about
+code that calls it, seventeen lines below the cut.
+
+**A guard whose window is a character count is the same defect it replaced wearing a
+different number.** Fixed by brace-matching the body (starting after the parentheses
+balance, so a `{}` in the arguments cannot truncate the slice to the signature — the
+recorded ooChart trap), with the span kept only as the fallback when the braces do not
+balance, so a malformed listener still yields something rather than the rest of the file.
+Bodies went from a uniform 4000 to 458 / 1001 / 6824, and all 309 tests using the helper
+stayed green — which is the check worth running when a shared helper changes: every guard
+that reads through it, not the one that failed.

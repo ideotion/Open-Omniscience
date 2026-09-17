@@ -709,6 +709,11 @@ def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     Additive, NO backfill: a re-index fills it forward (index_article sets it from the
     article's source) -- deliberately NOT a multi-million-row boot UPDATE join. So
     per-source analytics (flood/bury) grow as the corpus is re-indexed. Idempotent.
+
+    ALSO SELF-HEALS language since 2026-09-17 (Q414 = a): the same shape, the same
+    reason, the same forward-fill. The live store is never ``alembic upgrade``d, so
+    without this an existing corpus would meet "no such column: language" on the first
+    query that reads it -- which is exactly what the migration-drift ratchet caught.
     """
     if engine.url.get_backend_name() != "sqlite":
         return []
@@ -723,6 +728,22 @@ def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
         if "source_id" not in cols:
             conn.execute(text("ALTER TABLE keyword_mentions ADD COLUMN source_id INTEGER"))
             added.append("source_id")
+        # Q414 = a (2026-09-17, gate row M): the article's language, denormalised per
+        # mention. Added HERE rather than in a second `ensure_*` beside this one, because
+        # both columns denormalise an article-level fact onto the same table for the same
+        # measured reason (the SQLCipher codec trap), and two self-heals over one table
+        # are two things to keep in step. Nullable, NO backfill: a pre-existing mention
+        # reads NULL, which means "never measured here" and is a different fact from
+        # "language unknown" -- the majority derivation skips NULLs rather than counting
+        # them as votes, and the rows fill forward as the re-index reaches each article.
+        #
+        # NO INDEX. Unlike `source_id`, nothing GROUPs BY this column: it is read as a
+        # per-row facet beside rows already found by keyword_id or observed_on, and an
+        # index over a low-cardinality column on the corpus's largest table would cost
+        # write throughput on every ingest to serve no query that exists.
+        if "language" not in cols:
+            conn.execute(text("ALTER TABLE keyword_mentions ADD COLUMN language VARCHAR(10)"))
+            added.append("language")
         idx = {r[1] for r in conn.execute(text("PRAGMA index_list(keyword_mentions)")).fetchall()}
         if "ix_keyword_mentions_source_id" not in idx:
             conn.execute(
@@ -730,7 +751,7 @@ def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
             )
             added.append("ix_keyword_mentions_source_id")
     if added:
-        _LOG.info(f"added keyword_mentions source denormalisation: {', '.join(added)}")
+        _LOG.info(f"added keyword_mentions denormalisation: {', '.join(added)}")
     return added
 
 
@@ -1370,8 +1391,10 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_NEWSLETTER_ATTACH_COLUMN)
     ),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
-    # ensure_keyword_mention_source_column (inline DDL, column + its index).
-    "keyword_mentions": frozenset({"source_id"}),
+    # ensure_keyword_mention_source_column (inline DDL): source_id + its index, and
+    # `language` (Q414 = a) in the same function -- see the note there on why one
+    # self-heal serves both and why `language` gets no index.
+    "keyword_mentions": frozenset({"source_id", "language"}),
     "wiki_pages": frozenset(_WIKI_PAGE_COLUMNS),
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),

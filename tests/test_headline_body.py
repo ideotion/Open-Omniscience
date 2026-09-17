@@ -77,7 +77,9 @@ def test_fires_on_lexical_divergence(db):
     assert it["article_id"] == 1
     assert it["lexical_div"] >= res["d_min"]
     # The exact divergent headline terms travel with the item (explorable, honest).
-    assert "pentagon" in it["absent_terms"] and "aliens" in it["absent_terms"]
+    # `aliens` is keyed under its lemma `alien` since 2026-09-17 (Q416 = a); the
+    # DIVERGENCE this test measures is unchanged, only the term's stored key moved.
+    assert "pentagon" in it["absent_terms"] and "alien" in it["absent_terms"]
 
 
 def test_no_fire_when_headline_matches_body(db):
