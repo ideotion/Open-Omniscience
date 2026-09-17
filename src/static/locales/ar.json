@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "طابق هذا البحث المفهوم في كل لغة تغطيها الحلقة، وليس الكلمات التي كتبتها فقط. معظم المصطلحات لا تنتمي إلى أي حلقة ولا تتأثر بذلك.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "جرى توسيع البحث ليشمل الصيغ الأكثر ذكرًا فقط. أوقف هذا الحد للبحث عن جميع صيغ المفهوم.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "هذه الأرقام متداخلة: المقال الذي يحمل صيغتين من صيغ المفهوم يُحسب تحت كل واحدة منهما، ويُحسب مرةً واحدة فقط في الإجمالي، لذلك لا يساوي مجموع أرقام الصيغ هذا الإجمالي.",
-  "this form could not be counted": "تعذّر حساب هذه الصيغة"
+  "this form could not be counted": "تعذّر حساب هذه الصيغة",
+  "This watch covers": "تغطي هذه المراقبة",
+  "the concept “{concept}”": "المفهوم «{concept}»",
+  "in every language its ring carries.": "في كل لغة تحملها حلقته.",
+  "the same word in": "نفس الكلمة في",
+  "Not observed in this corpus:": "لم تُرصد في هذه المجموعة:",
+  "The concept at the centre, one arm per language, associations off the arms.": "المفهوم في المركز، فرع واحد لكل لغة، والارتباطات على الفروع.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "المراقبة بحث محفوظ يتفعّل عندما تبلغ المقالات الجديدة المطابقة عتبتك — دعوة للقراءة، لا حكمًا ولا درجة. محليًا فقط: دون إشعارات ودون شبكة.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "تتداخل الفروع: المقال الذي يحمل صيغتَي المفهوم بلغتين يُحسب على كلا الفرعين ومرةً واحدة في المركز، لذلك لا يساوي مجموع الفروع هذا الإجمالي. وحين تتشارك عدة لغات الإملاء نفسه، تحمل الفروع المقالات نفسها وتوضّح ذلك. عدّ فقط، ولا درجة أبدًا.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "فرع واحد لكل لغة فهرست المجموعة فيها صيغة من صيغ المفهوم؛ ارتباطات كل فرع هي أعداد تزامن الورود عبر مقالات تلك اللغة نفسها، مع استبعاد صيغ المفهوم نفسه"
 }

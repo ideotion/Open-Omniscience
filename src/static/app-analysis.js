@@ -795,8 +795,73 @@
     // {a,b,weight}, plus level/method/caveat. Font size scales with node size.
     // In-map controls (mind-map rules): a Cloud SECOND view, a text-size control and
     // ⛶ Enlarge. State is kept so the controls re-render from the same graph.
-    const _anMM = { graph: null, cloud: false, scale: 100, big: false };
+    const _anMM = { graph: null, cloud: false, concept: false, arms: null, scale: 100, big: false };
     function anMMset(patch) { Object.assign(_anMM, patch); if (_anMM.graph) renderAnMindmap(_anMM.graph); }
+    // Q512: THE RING AT THE CENTRE, ONE ARM PER LANGUAGE, ASSOCIATIONS OFF THE ARMS.
+    // A third view beside Map and Cloud rather than a replacement for Map: they answer
+    // different questions (Map = "what does this term sit with?", Concept = "where does
+    // this concept live?"), and the mind-map rules say the cloud is a SECOND view, which
+    // is a rule about not replacing the map with something else.
+    //
+    // PURE (payload + geometry -> svg) so the geometry that the mind-map rules constrain
+    // can be driven in node: centre -> arm -> association, ALWAYS outward, every edge
+    // radial, nothing crossing. An association sits inside its OWN arm's angular sector,
+    // so which arm it hangs off is read off the picture rather than from a legend.
+    function _anConceptTreeSvg(d, geo) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const { cx, cy, R, scale } = geo;
+      const arms = (d && d.arms) || [];
+      if (!arms.length) return "";
+      const edges = [];
+      const nodes = [];
+      const line = (x1, y1, x2, y2, w) =>
+        `<line stroke="var(--border)" stroke-width="${w}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}"`
+        + ` x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"></line>`;
+      const label = (x, y, text, size, weight, col, title) =>
+        `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})">`
+        + (title ? `<title>${esc(title)}</title>` : "")
+        + `<text text-anchor="middle" dominant-baseline="central" font-size="${size.toFixed(1)}"`
+        + ` font-weight="${weight}" fill="${col}">${esc(text)}</text></g>`;
+      const step = (2 * Math.PI) / arms.length;
+      arms.forEach((a, i) => {
+        const ang = i * step - Math.PI / 2;
+        const ax = cx + R * Math.cos(ang), ay = cy + R * Math.sin(ang);
+        edges.push(line(cx, cy, ax, ay, 1.6));
+        const forms = (a.forms || []).join(", ");
+        // The hover carries the layered detail (invariant #17): the form(s) this arm is,
+        // and -- when several languages share one spelling -- which other arms are the
+        // same word, so three arms of one article do not read as three languages of
+        // coverage.
+        const shared = (a.form_shared_with || []).length
+          ? " — " + t("the same word in") + " "
+            + a.form_shared_with.map((x) => ooLangCode(x)).join(", ") : "";
+        // Q302 INSIDE AN SVG. `ooLangCell` renders an HTML `<span title=…>`, which an
+        // SVG `<text>` cannot hold -- so the ruling is expressed in the markup this
+        // surface actually emits: the CODE (`ooLangCode`) is what is drawn, and the
+        // localised NAME (`ooLangDisplayName`) joins the `<title>` the node already
+        // carries. Same rule, same two facts, a different element.
+        const lname = ooLangDisplayName(a.language, "");
+        nodes.push(label(ax, ay, `${ooLangCode(a.language)} ${a.articles}`, 13 * scale, 600,
+                         "var(--ok)", `${lname ? lname + " — " : ""}${forms}${shared}`));
+        const assoc = (a.associations || []);
+        // The arm's OWN angular sector, so an association can never drift under a
+        // neighbouring language. One arm -> its whole circle; the fan never exceeds the
+        // sector, so two arms' associations cannot interleave.
+        const fan = Math.min(step * 0.72, Math.PI / 3);
+        assoc.forEach((x, j) => {
+          const f = assoc.length === 1 ? 0 : (j / (assoc.length - 1) - 0.5) * fan;
+          const bang = ang + f, br = R * 1.72;
+          const bx = cx + br * Math.cos(bang), by = cy + br * Math.sin(bang);
+          edges.push(line(ax, ay, bx, by, 1));
+          nodes.push(label(bx, by, x.term, 9.5 * scale, 400, "var(--accent)",
+                           `${x.term} · ${x.articles}`));
+        });
+      });
+      const c = (d.center || {});
+      nodes.push(label(cx, cy, c.label || "", 17 * scale, 700, "var(--fg)",
+                       `${c.ring_id || ""} · ${c.articles || 0}`));
+      return edges.join("") + nodes.join("");
+    }
     function renderAnMindmap(graph, hostEl) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = hostEl || $("an-mindmap");
@@ -805,16 +870,29 @@
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
       const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
-        + `<button class="ghost tiny${_anMM.cloud ? "" : " on"}" onclick="anMMset({cloud:false})">Map</button>`
-        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true})">Cloud</button>`
+        + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" onclick="anMMset({cloud:false,concept:false})">Map</button>`
+        + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" onclick="anMMset({cloud:true,concept:false})">Cloud</button>`
+        // Offered only when the term IS in a ring the corpus carries more than one form
+        // of: a Concept view over a single language is a straight line drawn as though
+        // it were a structure.
+        + ((_anMM.arms && _anMM.arms.expanded)
+            ? `<button class="ghost tiny${_anMM.concept ? " on" : ""}" onclick="anMMset({cloud:false,concept:true})">`
+              + `${esc(t("Concept"))}</button>`
+            : "")
         + `<label class="hint" style="display:flex;align-items:center;gap:4px">${esc(t("Text size"))}`
         + ` <input type="range" min="60" max="180" value="${_anMM.scale}" oninput="anMMset({scale:+this.value})" style="width:90px"></label>`
         + `<button class="ghost tiny" onclick="anMMset({big:!_anMM.big})" title="${esc(t("Enlarge the mindmap"))}">⛶</button></div>`;
-      if (all.length < 2) {
+      // The Concept view reads a DIFFERENT payload, so it must not be gated on the
+      // association graph having content: a corpus can carry a concept in six languages
+      // and still have no keyword co-occurring often enough to draw an association map.
+      // Gated below the "no associations" line, the view offered by the button above
+      // would have been unreachable in exactly the young corpus it is most useful on.
+      const _concept = (_anMM.concept && _anMM.arms && _anMM.arms.expanded) ? _anMM.arms : null;
+      if (all.length < 2 && !_concept) {
         host.innerHTML = controls + `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
         return;
       }
-      const center = all.find((n) => n.center) || all[0];
+      const center = all.find((n) => n.center) || all[0] || {id: "", label: "", size: 1};
       const neighbours = all.filter((n) => n.id !== center.id)
         .sort((a, b) => (b.size || 1) - (a.size || 1)).slice(0, 24);
       const scale = (_anMM.scale || 100) / 100, big = _anMM.big;
@@ -823,6 +901,31 @@
       const maxSize = Math.max(center.size || 1, ...neighbours.map((n) => n.size || 1), 1);
       const fsOf = (n) => ((n.id === center.id ? 17 : 9 + 9 * Math.sqrt((n.size || 1) / maxSize)) * scale);
       let edges = "";
+      if (_concept) {
+        const d = _concept;
+        const tree = _anConceptTreeSvg(d, {cx, cy, R: R * 0.62, scale});
+        // THE PICTURE NAMES WHAT IT OMITS. A ring language the corpus carries nothing in
+        // gets no arm, because an empty arm asserts the concept exists there and is
+        // merely quiet -- a different fact. Naming them keeps the omission visible
+        // instead of cropping the sky to what happens to be in it.
+        // The not-observed line is ordinary HTML, so it uses the ordinary renderer:
+        // `ooLangCell` already escapes, which is why the forms beside it are escaped
+        // here and the whole string is not escaped again around it.
+        const missing = (d.not_observed || []).map((n) =>
+          `${ooLangCell(n.language)}: ${esc((n.forms || []).join(", "))}`);
+        const omitted = missing.length
+          ? `<div class="hint muted" style="margin-top:4px">`
+            + `${esc(t("Not observed in this corpus:"))} ${missing.join(" · ")}</div>`
+          : "";
+        host.innerHTML = controls
+          + `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);`
+          + `border:1px solid var(--border);border-radius:8px">${tree}</svg>`
+          + omitted
+          + `<div class="hint muted" style="margin-top:6px">`
+          + `${esc(t("The concept at the centre, one arm per language, associations off the arms."))} `
+          + `${esc(d.method ? t(d.method) : "")} <b>${esc(d.caveat ? t(d.caveat) : "")}</b></div>`;
+        return;
+      }
       if (_anMM.cloud) {
         // Word cloud SECOND view: golden-angle spiral by size, no edges.
         [center, ...neighbours].sort((a, b) => (b.size || 1) - (a.size || 1)).forEach((n, i) => {
@@ -1725,7 +1828,22 @@
           // corpus-wide keyword graph for every seeded/searched analysis.
           const gp = new URLSearchParams(p);
           gp.set("level", "keyword"); gp.set("term", top); gp.set("hops", "2");
-          const g = await api("/api/insights/graph?" + gp.toString());
+          // Q512: the Concept view's own payload, fetched beside the graph and keyed on
+          // the TYPED term rather than on the corpus's top keyword -- "the ring" means
+          // the ring of the word the reader searched, not of whatever happens to be
+          // most frequent in the result set. Best-effort: the map still draws without it,
+          // and the Concept button simply does not appear.
+          const _ct = (p.get && p.get("query")) || top;
+          const cq = new URLSearchParams({ term: String(_ct) });
+          ["ui_lang", "literal_cap"].forEach((k) => {
+            const v = p.get(k); if (v != null) cq.set(k, v);
+          });
+          (p.getAll ? p.getAll("sense") : []).forEach((v) => cq.append("sense", v));
+          const [g, cm] = await Promise.all([
+            api("/api/insights/graph?" + gp.toString()),
+            api("/api/insights/concept-map?" + cq.toString()).catch(() => null),
+          ]);
+          _anMM.arms = cm;
           renderAnMindmap(g, mm);
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }

@@ -8424,3 +8424,35 @@ predicate that is truthy on the success path.
   see. Both halves or neither: registering the repaint without awaiting `ready` leaves the
   first paint wrong, and awaiting `ready` without registering the repaint leaves it wrong
   from the moment the reader changes language.
+
+- **`python -m pkg.module` MAKES THE MODULE `__main__`, AND A RUNTIME IMPORT OF ITS REAL
+  NAME THEN RUNS IT TWICE (2026-09-17, found by a Chromium walk, `S04-07` PR 3):**
+  `src/api/insights.py` does `from src.api.main import _query_articles` inside a function —
+  a deliberate late import, to break a cycle. Booted as `python -m src.api.main`, the
+  module is `sys.modules["__main__"]`, so that import loads it a SECOND time under
+  `src.api.main`, re-executing every module-level side effect. Here the side effects are
+  Prometheus `Counter` definitions, which refuse to register twice: `/api/insights/graph`
+  returns a 500 whose message is about a *metrics registry*, which points a reader at the
+  wrong subsystem entirely. **GENERAL FORM: a late import is a cycle-breaker at import
+  time and a DOUBLE EXECUTION under `-m`, and the two look nothing alike from the error.**
+  The tell is an error about a registry, a singleton or a duplicate handler in a module
+  nobody touched. It reproduces only under `-m`, so a console-script boot and every test
+  that imports the app normally are clean — and `_run_ephemeral` spawns exactly
+  `[sys.executable, "-m", "src.api.main", …]`, so the one supported mode that hits it is
+  the one nothing tests. Recorded rather than fixed: it has nothing to do with the slice
+  that found it, and a finding with a reproduction is worth more than a drive-by fix in an
+  unrelated PR.
+
+- **A CLICK-THROUGH THAT PICKS A CONTROL BY A SUBSTRING OF ITS HANDLER CAN MEASURE THE
+  WRONG SURFACE AND SAY NOTHING (2026-09-17, same walk):** the mind map's three views are
+  `anMMset({cloud:true,concept:false})`, `({cloud:false,concept:false})` and
+  `({cloud:false,concept:true})`. A walk selecting the Concept view by matching
+  `"concept" in onclick` clicked **Map** — because Map's handler names the flag it is
+  turning OFF — then measured the radial keyword map, found labels and edges, and reported
+  a pass for a view it never opened. **GENERAL FORM: a boolean flag appears in the handler
+  of every control that sets it, including the ones setting it to false**; select on the
+  VALUE (`concept:true`), and prefer asserting something only the intended surface could
+  produce. The same walk's other harness defect is the sibling of this one: a fixed settle
+  tuned on the second locale reported "no Concept button" in the first, which is a fail
+  indistinguishable from the feature being absent — wait for the control, never for a
+  duration.

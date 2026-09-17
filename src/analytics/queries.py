@@ -430,6 +430,152 @@ def resolve_concept_keywords(
     )
 
 
+def concept_arms(
+    session,
+    ck: ConceptKeywords,
+    *,
+    assoc_limit: int = 8,
+    min_cooccur: int = 2,
+    article_cap: int = 4000,
+) -> dict:
+    """Q512 — the concept as a TREE: the ring at the centre, one arm per LANGUAGE.
+
+    *"The ring is the centre node; each language is an arm; associations hang off the
+    arms."* The mind-map rules then say how it may be drawn — centre → arms → always
+    outward, deterministic, no cross-tangle, never interpolate structure that is not
+    there — and that is a constraint on this function as much as on the renderer,
+    because a renderer cannot draw a tree from data that is not one.
+
+    So this returns a genuine two-level tree and refuses everything else:
+
+    **AN ARM IS A LANGUAGE THE CORPUS ACTUALLY CARRIES.** A ring language with no stored
+    keyword gets NO arm — an empty arm is a drawn claim that the concept exists there and
+    is simply quiet, which is a different fact from "this corpus has nothing in it". Those
+    languages are NAMED in ``not_observed`` instead, so the picture still accounts for
+    every population it omits rather than silently cropping to what it has.
+
+    **AN ASSOCIATION HANGS OFF THE ARM IT WAS MEASURED ON.** Each arm's associations are
+    counted over that language's OWN articles, so a word that only ever co-occurs in
+    French appears on the French arm and nowhere else. The concept's own forms are
+    excluded, because a ring member co-occurring with its own ring is the structure, not
+    a finding.
+
+    **THE ARMS OVERLAP AND THE CENTRE DOES NOT.** An article carrying two languages'
+    forms is counted on both arms and once at the centre, so the arms do not add up.
+    Stated in the caveat, never left to the reader.
+
+    **ORDERING IS DETERMINISTIC** — arms by article count descending, ties alphabetical;
+    associations the same. Two runs over one corpus must produce the same picture, or
+    CHANGE stops being signal.
+
+    ``article_cap`` bounds one arm's article set before the co-occurrence scan and says so
+    in ``bounded`` when it bit; it never bounds ``articles``, which stays the exact count.
+    """
+    lang_ids = ck.language_ids()
+    ring_langs = _ring_language_map(ck.concept)
+    own = {int(i) for i in ck.ids}
+    arms: list[dict] = []
+    for lang, ids in lang_ids.items():
+        kw_ids = [int(i) for i in ids]
+        if not kw_ids:
+            continue
+        art_ids: list[int] = []
+        for i in range(0, len(kw_ids), _IN_CHUNK):
+            rows = (
+                session.query(KeywordMention.article_id)
+                .filter(KeywordMention.keyword_id.in_(kw_ids[i : i + _IN_CHUNK]))
+                .distinct()
+                .all()
+            )
+            art_ids.extend(int(r[0]) for r in rows)
+        art_ids = sorted(set(art_ids))
+        n_articles = len(art_ids)
+        if not n_articles:
+            continue
+        # A DETERMINISTIC bound, not a sample: the oldest ids first is an arbitrary but
+        # stable rule, so a re-run draws the same arm.
+        scan = art_ids[:article_cap]
+        counts: dict[int, int] = {}
+        for i in range(0, len(scan), _IN_CHUNK):
+            rows = (
+                session.query(KeywordMention.keyword_id, func.count(func.distinct(KeywordMention.article_id)))
+                .filter(KeywordMention.article_id.in_(scan[i : i + _IN_CHUNK]))
+                .group_by(KeywordMention.keyword_id)
+                .all()
+            )
+            for kid, n in rows:
+                kid = int(kid)
+                if kid in own:
+                    continue
+                counts[kid] = counts.get(kid, 0) + int(n)
+        top = [(k, v) for k, v in counts.items() if v >= min_cooccur]
+        top.sort(key=lambda kv: -kv[1])
+        top = top[: max(0, assoc_limit) * 2]
+        labels = dict(
+            session.query(Keyword.id, Keyword.term).filter(
+                Keyword.id.in_([k for k, _ in top][:_IN_CHUNK])
+            )
+        ) if top else {}
+        # Ranked as TYPED PAIRS and only then rendered: sorting the payload dicts means
+        # sorting on `object`, and an unlabelled keyword would otherwise sort by its id.
+        ranked = [(str(labels[k]), v) for k, v in top if labels.get(k)]
+        ranked.sort(key=lambda r: (-r[1], r[0]))
+        assoc = [{"term": t, "articles": int(v)} for t, v in ranked[:assoc_limit]]
+        arms.append({
+            "language": lang,
+            "forms": [str(t) for t in ring_langs.get(lang, [])],
+            "articles": n_articles,
+            "bounded": n_articles > len(scan),
+            "associations": assoc,
+        })
+    arms.sort(key=lambda a: (-a["articles"], a["language"]))
+    # A FORM SHARED BY SEVERAL LANGUAGES IS ONE WORD, AND THE PICTURE HAS TO SAY SO.
+    # Found by reading real output: `clima` is the ring's form for es, it AND pt, so one
+    # Spanish article produced three arms of one article each -- three arms that look
+    # like coverage in three languages and are the same row counted three times. The
+    # count is not wrong (the arm is a language of the RING, and its form genuinely
+    # matches), but drawn without this it asserts Italian and Portuguese coverage this
+    # corpus does not have. Naming the sharing is the honest fix; dropping the arms would
+    # hide a ring statement, and merging them would invent a language that is not one.
+    by_form: dict[tuple[str, ...], list[str]] = {}
+    for a in arms:
+        by_form.setdefault(tuple(sorted(a["forms"])), []).append(str(a["language"]))
+    for a in arms:
+        others = [
+            lg for lg in by_form.get(tuple(sorted(a["forms"])), [])
+            if lg != a["language"]
+        ]
+        if others:
+            a["form_shared_with"] = sorted(others)
+    present = {a["language"] for a in arms}
+    not_observed = [
+        {"language": lang, "forms": [str(t) for t in terms]}
+        for lang, terms in sorted(ring_langs.items())
+        if lang not in present
+    ]
+    applied = ck.concept.expansion.applied
+    return {
+        "center": {
+            "ring_id": applied.ring_id if applied else None,
+            "label": (applied.label if applied else None) or ck.concept.term,
+            "articles": _distinct_articles(session, ck.ids),
+        },
+        "arms": arms,
+        "not_observed": not_observed,
+        "method": (
+            "one arm per language the corpus has indexed a form of the concept in; each "
+            "arm's associations are co-occurrence counts over THAT language's own "
+            "articles, with the concept's own forms excluded"
+        ),
+        "caveat": (
+            "The arms overlap: an article carrying two languages' forms of the concept is "
+            "counted on both arms and once at the centre, so the arms do not add up to "
+            "it. Where several languages share one spelling the arms carry the same "
+            "articles and say so. Counts only, never a score."
+        ),
+    }
+
+
 def concept_block(ck: ConceptKeywords) -> dict | None:
     """The payload block every concept-aware aggregate publishes, or ``None``.
 

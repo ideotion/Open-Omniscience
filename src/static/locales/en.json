@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.",
-  "this form could not be counted": "this form could not be counted"
+  "this form could not be counted": "this form could not be counted",
+  "This watch covers": "This watch covers",
+  "the concept “{concept}”": "the concept “{concept}”",
+  "in every language its ring carries.": "in every language its ring carries.",
+  "the same word in": "the same word in",
+  "Not observed in this corpus:": "Not observed in this corpus:",
+  "The concept at the centre, one arm per language, associations off the arms.": "The concept at the centre, one arm per language, associations off the arms.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded"
 }

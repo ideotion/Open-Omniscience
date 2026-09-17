@@ -1712,6 +1712,60 @@ def insights_concept_forms(
     return out
 
 
+@router.get("/concept-map")
+def insights_concept_map(
+    term: str,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(description="Q503: cap the cross-language fan-out at 40 forms"),
+    ] = True,
+    limit: Annotated[int, Query(ge=1, le=20, description="associations per arm")] = 8,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Q512 — the concept as a tree: the ring at the centre, one arm per language.
+
+    A SEPARATE endpoint from ``/graph`` rather than a mode on it, and the reason is the
+    shape. ``/graph`` returns a flat ``nodes`` + ``edges`` list whose consumers draw a
+    radial map by SIZE; this returns a genuine two-level TREE whose second level is
+    language. Folding the two into one payload would mean a renderer deciding which
+    picture it is holding, and the mind-map rules ("centre → arms → always outward,
+    deterministic, no cross-tangle") are exactly the kind of thing that stops being true
+    when one renderer serves two shapes.
+
+    Returns ``expanded: false`` and no arms when the term is in no ring, or when the
+    corpus carries it in one language only: a one-armed tree is a straight line drawn as
+    if it were a structure.
+    """
+    ck = q.resolve_concept_keywords(
+        db, term, ui_lang=ui_lang, sense=sense, expand=True,
+        cap=-1 if literal_cap else None,
+    )
+    if not ck.is_ring:
+        return {
+            "term": term,
+            "expanded": False,
+            "arms": [],
+            "skipped": (
+                "this term is in no concept ring, or this corpus carries it in one "
+                "language only"
+            ),
+            "concept": q.concept_block(ck),
+        }
+    out = q.concept_arms(db, ck, assoc_limit=limit)
+    out["term"] = term
+    out["expanded"] = True
+    out["concept"] = q.concept_block(ck)
+    return out
+
+
 @router.get("/trend")
 def insights_trend(
     term: str,

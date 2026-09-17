@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "এই অনুসন্ধান রিং যে সব ভাষা আওতাভুক্ত করে সেই সব ভাষায় ধারণাটির সঙ্গে মিলেছে, কেবল আপনার লেখা শব্দগুলির সঙ্গে নয়। অধিকাংশ শব্দ কোনো রিংয়ে নেই এবং সেগুলোর ওপর কোনো প্রভাব পড়ে না।",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "অনুসন্ধানটি শুধু সবচেয়ে বেশি উল্লিখিত রূপে সম্প্রসারিত করা হয়েছে। ধারণার সব রূপ খুঁজতে এই সীমা বন্ধ করুন।",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "এই সংখ্যাগুলি ওভারল্যাপ করে: ধারণার দুটি রূপ বহনকারী কোনো নিবন্ধ প্রতিটি রূপের অধীনে আলাদাভাবে গণনা করা হয়, কিন্তু মোটের মধ্যে কেবল একবারই গণনা করা হয়, তাই প্রতিটি রূপের সংখ্যা যোগ করলে তা মোটের সমান হয় না।",
-  "this form could not be counted": "এই রূপটি গণনা করা যায়নি"
+  "this form could not be counted": "এই রূপটি গণনা করা যায়নি",
+  "This watch covers": "এই নজরদারি",
+  "the concept “{concept}”": "“{concept}” ধারণা",
+  "in every language its ring carries.": "কে তার রিং যেসব ভাষা বহন করে, সেসব ভাষাতেই অন্তর্ভুক্ত করে।",
+  "the same word in": "এই ভাষাগুলোতেও একই শব্দ:",
+  "Not observed in this corpus:": "এই সংগ্রহে পর্যবেক্ষণ করা হয়নি:",
+  "The concept at the centre, one arm per language, associations off the arms.": "কেন্দ্রে ধারণা, প্রতিটি ভাষার একটি করে শাখা, শাখার বাইরে সংযোগ।",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "নজরদারি একটি সংরক্ষিত অনুসন্ধান যা পর্যাপ্ত নতুন নিবন্ধ আপনার সীমায় পৌঁছালে সক্রিয় হয় — পড়ার আমন্ত্রণ, কখনও রায় বা স্কোর নয়। শুধু স্থানীয়: কোনো বিজ্ঞপ্তি নেই, কোনো নেটওয়ার্ক নেই।",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "শাখাগুলো ওভারল্যাপ করে: ধারণার দুটি ভাষার রূপ বহনকারী কোনো নিবন্ধ উভয় শাখাতেই এবং কেন্দ্রে একবার গণনা করা হয়, তাই শাখাগুলোর সংখ্যা যোগ করলে তা ওই মোটের সমান হয় না। যেখানে একাধিক ভাষা একই বানান ভাগ করে নেয়, সেখানে শাখাগুলো একই নিবন্ধ বহন করে এবং তা জানিয়ে দেয়। শুধু গণনা, কখনো স্কোর নয়।",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "যে প্রতিটি ভাষায় কর্পাস ধারণার কোনো রূপ সূচিভুক্ত করেছে, তার জন্য একটি করে শাখা; প্রতিটি শাখার সংযোগ হলো ওই একই ভাষার নিজস্ব নিবন্ধের ওপর ভিত্তি করে সহ-উপস্থিতির গণনা, যেখানে ধারণার নিজস্ব রূপগুলো বাদ দেওয়া হয়েছে"
 }

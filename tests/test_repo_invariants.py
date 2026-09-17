@@ -4009,15 +4009,28 @@ def test_text_only_modality_disclosed():
 
 def test_analysis_mindmap_controls():
     """Mind-map rules on the analysis Mindmap: a Cloud SECOND view, a text-size
-    control and ⛶ enlarge — re-rendering deterministically from the same graph."""
+    control and ⛶ enlarge — re-rendering deterministically from the same graph.
+
+    THE ASSERTION MOVED WITH THE FEATURE (`S04-07`, Q512) and was not relaxed. It matched
+    the literal handlers ``anMMset({cloud:true})`` / ``({cloud:false})``; the Concept view
+    made each button set BOTH flags, so the exact strings changed while the rule did not.
+    What the rule is about is that the Map stays reachable and the Cloud is a SECOND view
+    beside it rather than a replacement — so that is what is asserted, plus the third view
+    the ruling added, by the flag each control sets rather than by one spelling of it.
+    """
     html = _ui_source()
     assert "function anMMset" in html and "const _anMM" in html, "stateful in-map controls required"
-    assert 'anMMset({cloud:true})' in html and 'anMMset({cloud:false})' in html, "Map/Cloud second view"
-    assert "anMMset({big:!_anMM.big})" in html, "⛶ enlarge"
-    assert "anMMset({scale:+this.value})" in html, "text-size control"
+    flat = html.replace(" ", "")
+    assert "anMMset({cloud:true,concept:false})" in flat, "the Cloud second view is gone"
+    assert "anMMset({cloud:false,concept:false})" in flat, "the Map view is no longer reachable"
+    assert "anMMset({cloud:false,concept:true})" in flat, (
+        "Q512's Concept view (the ring at the centre, one arm per language) is missing"
+    )
+    assert "anMMset({big:!_anMM.big})" in flat, "⛶ enlarge"
+    assert "anMMset({scale:+this.value})" in flat, "text-size control"
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
-    for k in ("Map", "Cloud", "Enlarge the mindmap"):
+    for k in ("Map", "Cloud", "Concept", "Enlarge the mindmap"):
         assert k in en
 
 

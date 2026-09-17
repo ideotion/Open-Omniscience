@@ -1,0 +1,150 @@
+{
+  "url": "http://127.0.0.1:8010",
+  "term": "climate",
+  "concept": [
+    {
+      "locale": "en",
+      "dir": "ltr",
+      "view_buttons": [
+        "Map",
+        "Cloud",
+        "Concept",
+        "⛶"
+      ],
+      "concept_button_present": true,
+      "arms": [
+        "eng 3",
+        "assembly",
+        "fra 3",
+        "rapport",
+        "deu 1",
+        "spa 1",
+        "ita 1",
+        "por 1",
+        "climate"
+      ],
+      "edges": 8,
+      "omitted_line": "Not observed in this corpus: ara: مناخ · nld: klimaat · rus: климат",
+      "caption": "The concept at the centre, one arm per language, associations off the arms. one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms e",
+      "labels_outside_canvas": 0
+    },
+    {
+      "locale": "ar",
+      "dir": "rtl",
+      "view_buttons": [
+        "خريطة",
+        "سحابة",
+        "المفهوم",
+        "⛶"
+      ],
+      "concept_button_present": true,
+      "arms": [
+        "eng 3",
+        "assembly",
+        "fra 3",
+        "rapport",
+        "deu 1",
+        "spa 1",
+        "ita 1",
+        "por 1",
+        "climate"
+      ],
+      "edges": 8,
+      "omitted_line": "لم تُرصد في هذه المجموعة: ara: مناخ · nld: klimaat · rus: климат",
+      "caption": "المفهوم في المركز، فرع واحد لكل لغة، والارتباطات على الفروع. فرع واحد لكل لغة فهرست المجموعة فيها صيغة من صيغ المفهوم؛ ارتباطات كل فرع هي أعداد تزامن الورود عبر مقالات تلك اللغة نفسها، مع استبعاد صيغ المفهوم نفسه تتداخل الفروع: المقال الذي يحمل صيغتَي المفهوم ",
+      "labels_outside_canvas": 0
+    },
+    {
+      "locale": "zh",
+      "dir": "ltr",
+      "view_buttons": [
+        "图谱",
+        "词云",
+        "概念",
+        "⛶"
+      ],
+      "concept_button_present": true,
+      "arms": [
+        "eng 3",
+        "assembly",
+        "fra 3",
+        "rapport",
+        "deu 1",
+        "spa 1",
+        "ita 1",
+        "por 1",
+        "climate"
+      ],
+      "edges": 8,
+      "omitted_line": "未在此语料库中观测到： ara: مناخ · nld: klimaat · rus: климат",
+      "caption": "概念居中，每种语言对应一条分支，关联分布在分支之外。 语料库已索引该概念某一词形的每种语言各对应一条分支；每条分支的关联都是该语言自身文章中的共现计数，其中不包括该概念自身的词形 分支之间有重叠：包含该概念两种语言词形的文章会同时计入两条分支，但在中心只计一次，因此各分支相加并不等于该总数。当多种语言共用同一种拼写时，这些分支会承载相同的文章并说明这一点。仅为计数，绝非评分。",
+      "labels_outside_canvas": 0
+    },
+    {
+      "locale": "ja",
+      "dir": "ltr",
+      "view_buttons": [
+        "マップ",
+        "クラウド",
+        "概念",
+        "⛶"
+      ],
+      "concept_button_present": true,
+      "arms": [
+        "eng 3",
+        "assembly",
+        "fra 3",
+        "rapport",
+        "deu 1",
+        "spa 1",
+        "ita 1",
+        "por 1",
+        "climate"
+      ],
+      "edges": 8,
+      "omitted_line": "このコーパスでは観測されていません: ara: مناخ · nld: klimaat · rus: климат",
+      "caption": "概念は中心に、言語ごとに枝が1本、関連語は枝の先にあります。 コーパスがその概念の語形を索引した言語ごとに1本の枝があり、各枝の関連語はその言語自身の記事における共起数であり、概念自身の語形は除外されます 枝は重複します：概念の2つの言語の語形を含む記事は、両方の枝の下で数えられますが、中心では一度だけ数えられます。そのため、枝ごとの数字を足しても、その合計にはなりません。複数の言語が同じ綴りを共有する場合、それらの枝は同じ記事を持ち、その旨が示されます。件数の集計のみで、スコアではありません。",
+      "labels_outside_canvas": 0
+    },
+    {
+      "locale": "hi",
+      "dir": "ltr",
+      "view_buttons": [
+        "मानचित्र",
+        "क्लाउड",
+        "संकल्पना",
+        "⛶"
+      ],
+      "concept_button_present": true,
+      "arms": [
+        "eng 3",
+        "assembly",
+        "fra 3",
+        "rapport",
+        "deu 1",
+        "spa 1",
+        "ita 1",
+        "por 1",
+        "climate"
+      ],
+      "edges": 8,
+      "omitted_line": "इस संग्रह में नहीं देखी गईं: ara: مناخ · nld: klimaat · rus: климат",
+      "caption": "केंद्र में संकल्पना, हर भाषा की एक शाखा, शाखाओं से आगे संबद्धताएँ। हर उस भाषा के लिए एक शाखा जिसमें कॉर्पस ने संकल्पना का कोई रूप अनुक्रमित किया है; हर शाखा की संबद्धताएँ उसी भाषा के अपने लेखों पर आधारित सह-घटना गणनाएँ हैं, जिसमें संकल्पना के अपने रूप शामिल नह",
+      "labels_outside_canvas": 0
+    }
+  ],
+  "watches": [
+    {
+      "locale": "en",
+      "rows": 1,
+      "ring_note": "This watch covers the concept “climate” in every language its ring carries.",
+      "panel_caveat": "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected."
+    },
+    {
+      "locale": "ar",
+      "rows": 1,
+      "ring_note": "تغطي هذه المراقبة المفهوم «climate» في كل لغة تحملها حلقته.",
+      "panel_caveat": "طابق هذا البحث المفهوم في كل لغة تغطيها الحلقة، وليس الكلمات التي كتبتها فقط. معظم المصطلحات لا تنتمي إلى أي حلقة ولا تتأثر بذلك."
+    }
+  ]
+}

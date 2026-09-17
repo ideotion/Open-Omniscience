@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "Pencarian ini cocok dengan konsep tersebut di setiap bahasa yang dicakup ring, bukan hanya kata yang Anda ketik. Sebagian besar istilah tidak berada dalam ring mana pun dan tidak terpengaruh.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "Pencarian hanya diperluas ke bentuk yang paling sering disebut. Matikan batas ini untuk mencari semua bentuk konsep ini.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "Angka-angka ini tumpang tindih: artikel yang memuat dua bentuk dari konsep tersebut dihitung pada masing-masing bentuk, tetapi hanya dihitung satu kali saja dalam totalnya, sehingga angka per bentuk tidak berjumlah sama dengan total tersebut.",
-  "this form could not be counted": "bentuk ini tidak dapat dihitung"
+  "this form could not be counted": "bentuk ini tidak dapat dihitung",
+  "This watch covers": "Pemantauan ini mencakup",
+  "the concept “{concept}”": "konsep “{concept}”",
+  "in every language its ring carries.": "dalam setiap bahasa yang dibawa oleh ringnya.",
+  "the same word in": "kata yang sama dalam",
+  "Not observed in this corpus:": "Tidak teramati dalam korpus ini:",
+  "The concept at the centre, one arm per language, associations off the arms.": "Konsep di pusat, satu cabang per bahasa, asosiasi di luar cabang.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Pemantauan adalah pencarian tersimpan yang terpicu ketika cukup banyak artikel baru mencapai ambang batas Anda — ajakan untuk membaca, bukan vonis atau skor. Hanya lokal: tanpa notifikasi, tanpa jaringan.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Cabang-cabang ini tumpang tindih: artikel yang membawa bentuk konsep dari dua bahasa dihitung pada kedua cabang dan sekali di pusat, sehingga cabang-cabang tidak berjumlah sama dengan total tersebut. Ketika beberapa bahasa berbagi satu ejaan yang sama, cabang-cabang tersebut membawa artikel yang sama dan menyatakannya. Sekadar hitungan, bukan skor.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "satu cabang untuk setiap bahasa tempat korpus telah mengindeks satu bentuk konsep tersebut; asosiasi tiap cabang adalah hitungan kemunculan bersama atas artikel milik bahasa ITU sendiri, dengan bentuk konsep itu sendiri dikecualikan"
 }

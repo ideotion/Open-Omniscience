@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "この検索は、入力した語だけでなく、リングが含むすべての言語でこの概念に一致しました。ほとんどの語はどのリングにも属さず、影響を受けません。",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "検索は最も多く言及された語形のみに拡張されました。上限をオフにすると、概念のすべての語形を検索できます。",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "これらの数字は重複します。この概念の2つの語形を含む記事は、それぞれの語形の下で数えられますが、合計では一度だけ数えられます。そのため、語形ごとの数字を足しても、その合計にはなりません。",
-  "this form could not be counted": "この語形を集計できませんでした"
+  "this form could not be counted": "この語形を集計できませんでした",
+  "This watch covers": "このウォッチがカバーするのは",
+  "the concept “{concept}”": "概念「{concept}」",
+  "in every language its ring carries.": "、そのリングが持つすべての言語における出現です。",
+  "the same word in": "綴りが同じ言語:",
+  "Not observed in this corpus:": "このコーパスでは観測されていません:",
+  "The concept at the centre, one arm per language, associations off the arms.": "概念は中心に、言語ごとに枝が1本、関連語は枝の先にあります。",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "ウォッチは、十分な数の新しい記事がしきい値に達すると発火する保存済みの検索です——読むためのきっかけであり、判定やスコアではありません。ローカルのみ: 通知なし、ネットワークなし。",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "枝は重複します：概念の2つの言語の語形を含む記事は、両方の枝の下で数えられますが、中心では一度だけ数えられます。そのため、枝ごとの数字を足しても、その合計にはなりません。複数の言語が同じ綴りを共有する場合、それらの枝は同じ記事を持ち、その旨が示されます。件数の集計のみで、スコアではありません。",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "コーパスがその概念の語形を索引した言語ごとに1本の枝があり、各枝の関連語はその言語自身の記事における共起数であり、概念自身の語形は除外されます"
 }
