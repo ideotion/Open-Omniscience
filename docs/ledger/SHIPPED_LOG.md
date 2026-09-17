@@ -8314,3 +8314,53 @@ it, that test still passes, and the traceback lands in whatever test's capture i
 the thread finally runs. **`setup` capture is a different test's exhaust.** Read the phase
 label before believing the traceback, and be suspicious of a stub built with `or` over a
 predicate that is truthy on the success path.
+
+- **A PASS-THROUGH PARAMETER THAT IS ACCEPTED AND NEVER USED IS INVISIBLE FROM BOTH SIDES OF
+  THE CALL, AND THE CALLER'S OWN COMMENT WILL ARGUE FOR THE PROPERTY IT DOES NOT HAVE
+  (2026-09-17, `search_total`'s `expand`):** the function declared the cross-language hook,
+  documented it in its own docstring, and its body called `build_match(query)` without it.
+  The call site in `search_omni.py` passed the hook and carried a comment explaining
+  exactly why — *"a count over the un-widened query would describe a different set than the
+  rows -- the property search_total exists to keep"* — so the codebase contained, in two
+  places, a correct statement of a property the code did not have, and the omnibar's
+  "exact total" described the LITERAL query while its rows described the concept on every
+  query that filled the 20,000-candidate cap. Live-reproduced on seven articles (3 en
+  `climate`, 2 fr `climat`, 2 de `Klima`): **`search_ids` returned 7 ids and `search_total`
+  answered 3.** **GENERAL FORM: a keyword-only parameter with a default is invisible to
+  every caller that omits it and silently inert for every caller that supplies it, so
+  neither side of the call can detect the drop.** Only a test that PASSES the argument and
+  asserts the two answers AGREE can, and it owes the negative twin ("and they still differ
+  when it is not passed"), because a fix that makes every total the expanded one is the
+  same defect pointing the other way. THE TELL IS GREPPABLE: a parameter named in the
+  docstring and appearing exactly ONCE in the whole function — in its own signature.
+
+- **`Annotated[T, Query(...)] = default` IS THE FIX FOR THE FASTAPI-SENTINEL TRAP, NOT A
+  DEFENSIVE CHECK AT EVERY READER (2026-09-17, four controls added to thirteen routes):**
+  the ledger already records that `Depends(...)`/`Query(...)` defaults are resolved by
+  FastAPI, so a route called DIRECTLY receives the sentinel — and that `Query(False)` is
+  truthy, which is the quiet half. The loud half arrived here: a `Query` object reaching
+  `.strip()` RAISES, so two pre-existing cache tests that had called `insights_associations`
+  directly for years went red the moment the routes grew a `ui_lang` parameter. The
+  recorded remedy — "pass the arguments explicitly at every such call site" — is an
+  ENUMERATION, and the ledger's own rule is that enumerations are wrong: the next direct
+  caller will be in a file named for something else. `Annotated[str | None,
+  Query(description=...)] = None` keeps the OpenAPI description and gives every direct
+  caller the REAL default, so the class closes by construction. Pin it on the SIGNATURE
+  (`not isinstance(p.default, fastapi.params.Param)`) with an anti-vacuity count, because
+  a behavioural test can only reach the routes someone thought to call.
+
+- **A RING MEMBER IS A SURFACE FORM AND THE CORPUS STORES A LEMMA (2026-09-17, merging
+  `S04-07` onto `S04-06` the day it landed):** extraction lemmatises, so the corpus holds
+  `sanction` where the articles said "sanctions" — and `S04-06` correctly taught
+  `resolve_keyword` a second EXACT try against the typed term's lemma. A cross-language
+  ring member is a Wikidata **surface form**, never a lemma, so a concept resolution that
+  looked its forms up by exact `normalized_term` alone simply MISSED every form whose
+  stored keyword sits under its lemma — and the aggregate then under-reports the concept
+  in exactly the languages the lemmatiser covers, silently, with nothing to notice.
+  **GENERAL FORM: when two slices land in the same cycle and one changes what a KEY means,
+  the other's lookups are part of that change** — the merge is clean, the suite is green,
+  and the only thing that finds it is reading the two sides against each other. Two riders:
+  reuse the sibling's own resolver rather than re-deriving the lemma (equality, never
+  `LIKE`, `None` on several distinct hits, so the recorded homograph defect cannot re-enter
+  through a ring); and DEDUPE the result by keyword ID, because two ring forms can map onto
+  one stored keyword and a duplicate id doubles every mention that keyword carries.
