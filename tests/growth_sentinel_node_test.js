@@ -62,6 +62,11 @@ const excludeKeyword = () => {};
 const SRC = [
   functionSource(APP, "growthIsRatio"),
   functionSource(APP, "growthFallback"),
+  // `termBarsHtml` appends Q417's per-language breakdown to each row's hover title, so
+  // the two functions that build it belong in the sandbox as their REAL source: stubbing
+  // them would leave this suite passing over a `termBarsHtml` that production never runs.
+  functionSource(APP, "kwLangName"),
+  functionSource(APP, "kwLangBreakdownText"),
   functionSource(APP, "termBarsHtml"),
 ].join("\n");
 

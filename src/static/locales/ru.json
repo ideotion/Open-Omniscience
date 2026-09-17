@@ -3577,5 +3577,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "Понятие в центре, одна ветвь на каждый язык, связи на ветвях.",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Наблюдение — это сохранённый поиск, который срабатывает, когда достаточно новых статей достигает вашего порога — повод прочитать, а не вердикт и не оценка. Только локально: без уведомлений, без сети.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Ветви пересекаются: статья, несущая формы понятия на двух языках, считается на обеих ветвях и один раз в центре, поэтому ветви в сумме не совпадают с этим итогом. Там, где несколько языков используют одно и то же написание, ветви несут одни и те же статьи и указывают на это. Только подсчёт, никогда не оценка.",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "одна ветвь на каждый язык, на котором корпус проиндексировал форму понятия; связи каждой ветви — это подсчёты совместной встречаемости по статьям ИМЕННО ЭТОГО языка, без учёта собственных форм понятия"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "одна ветвь на каждый язык, на котором корпус проиндексировал форму понятия; связи каждой ветви — это подсчёты совместной встречаемости по статьям ИМЕННО ЭТОГО языка, без учёта собственных форм понятия",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Полосы — это количество упоминаний по языкам, и они пересекаются: статья, содержащая формы понятия на двух языках, считается в обеих, поэтому высота стека не равна итоговому числу статей, показанному рядом.",
+  "These series could not be stacked, so they are drawn as lines.": "Эти ряды не удалось объединить в стек, поэтому они показаны линиями.",
+  "One of these series has a published gap, and a gap is not a zero.": "У одного из этих рядов есть опубликованный пробел, а пробел — это не ноль.",
+  "Indexed values cannot be added, so they are not stacked.": "Индексированные значения нельзя складывать, поэтому их не показывают в виде стека.",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "Высоты на логарифмической оси не складываются, поэтому их не показывают в виде стека.",
+  "Only one language is present, so there is nothing to stack.": "Присутствует только один язык, поэтому строить стек не из чего.",
+  "No points in this window.": "В этом окне нет точек.",
+  "running total {n}": "нарастающий итог {n}",
+  "not reported in this bucket": "не сообщено за этот период",
+  "open in analysis (trend + worldwide spread)": "открыть в анализе (тренд + мировой охват)"
 }

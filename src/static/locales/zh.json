@@ -3577,5 +3577,16 @@
   "The concept at the centre, one arm per language, associations off the arms.": "概念居中，每种语言对应一条分支，关联分布在分支之外。",
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "监视是一个已保存的搜索，当足够多的新文章达到你的阈值时便会触发——阅读的提示，绝非定论或评分。仅限本地：无通知，无网络。",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "分支之间有重叠：包含该概念两种语言词形的文章会同时计入两条分支，但在中心只计一次，因此各分支相加并不等于该总数。当多种语言共用同一种拼写时，这些分支会承载相同的文章并说明这一点。仅为计数，绝非评分。",
-  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "语料库已索引该概念某一词形的每种语言各对应一条分支；每条分支的关联都是该语言自身文章中的共现计数，其中不包括该概念自身的词形"
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "语料库已索引该概念某一词形的每种语言各对应一条分支；每条分支的关联都是该语言自身文章中的共现计数，其中不包括该概念自身的词形",
+
+  "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "色带是各语言的提及计数，它们存在重叠：同时包含该概念两种语言词形的文章会计入两条色带，因此堆叠高度并不等于旁边显示的文章总数。",
+  "These series could not be stacked, so they are drawn as lines.": "这些序列无法堆叠，因此以折线绘制。",
+  "One of these series has a published gap, and a gap is not a zero.": "其中一个序列存在已公布的缺口，缺口不等于零。",
+  "Indexed values cannot be added, so they are not stacked.": "指数化的数值无法相加，因此不堆叠。",
+  "Heights on a logarithmic axis do not add, so they are not stacked.": "对数轴上的高度不能相加，因此不堆叠。",
+  "Only one language is present, so there is nothing to stack.": "只有一种语言，因此没有可堆叠的内容。",
+  "No points in this window.": "此窗口内没有数据点。",
+  "running total {n}": "累计总数 {n}",
+  "not reported in this bucket": "此时段未上报",
+  "open in analysis (trend + worldwide spread)": "在分析中打开（趋势 + 全球覆盖）"
 }
