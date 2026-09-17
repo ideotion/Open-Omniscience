@@ -1,0 +1,56 @@
+=== term='climate' ui_lang='en' literal_cap=True ===
+  forms with a hit : climat 3 · climate 3 · clima 1 · klima 1
+  sum of the forms : 8
+  TOTAL (distinct) : 7
+  measured_forms   : 7   total_forms: 7   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='climate' ui_lang='en' literal_cap=False ===
+  forms with a hit : climat 3 · climate 3 · clima 1 · klima 1
+  sum of the forms : 8
+  TOTAL (distinct) : 7
+  measured_forms   : 7   total_forms: 7   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='climat' ui_lang='fr' literal_cap=True ===
+  forms with a hit : climat 3 · climate 3 · clima 1 · klima 1
+  sum of the forms : 8
+  TOTAL (distinct) : 7
+  measured_forms   : 7   total_forms: 7   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='climat' ui_lang='fr' literal_cap=False ===
+  forms with a hit : climat 3 · climate 3 · clima 1 · klima 1
+  sum of the forms : 8
+  TOTAL (distinct) : 7
+  measured_forms   : 7   total_forms: 7   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='Klima' ui_lang='de' literal_cap=True ===
+  forms with a hit : climat 3 · climate 3 · Klima 1 · clima 1
+  sum of the forms : 8
+  TOTAL (distinct) : 7
+  measured_forms   : 7   total_forms: 7   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='Klima' ui_lang='de' literal_cap=False ===
+  forms with a hit : climat 3 · climate 3 · Klima 1 · clima 1
+  sum of the forms : 8
+  TOTAL (distinct) : 7
+  measured_forms   : 7   total_forms: 7   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='covid-19' ui_lang='en' literal_cap=True ===
+  forms with a hit : covid 2 · covid 19 1 · covid-19 1
+  sum of the forms : 4
+  TOTAL (distinct) : 2
+  measured_forms   : 40   total_forms: 120   capped: True   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+
+=== term='covid-19' ui_lang='en' literal_cap=False ===
+  forms with a hit : covid 2 · covid 19 1 · covid-19 1
+  sum of the forms : 4
+  TOTAL (distinct) : 2
+  measured_forms   : 120   total_forms: 120   capped: False   ordering: corpus-frequency
+  unmeasured forms : 0 (drawn with a reason, never as 0)
+

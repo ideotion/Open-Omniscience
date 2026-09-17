@@ -1,0 +1,7 @@
+# simplemma dictionary-cache thrash — the measurement
+
+```
+shipped: simplemma.lemmatize, 9 langs (cache 8)       174217.8 ms for 360 calls -> 483.94 ms/call
+shipped: simplemma.lemmatize, 8 langs (cache 8)            0.2 ms for 320 calls ->   0.00 ms/call
+fixed: one Lemmatizer, factory cache = 9                   3.7 ms for 360 calls ->   0.01 ms/call
+```

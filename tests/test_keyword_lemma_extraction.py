@@ -21,6 +21,7 @@ import pytest
 from src.analytics import lemma as lemma_mod
 from src.analytics.extract import BaselineExtractor
 from src.analytics.lemma import (
+    LEMMA_LANGS,
     REASON_NO_LIBRARY,
     REASON_UNSEGMENTED,
     REASON_UNSUPPORTED,
@@ -202,3 +203,89 @@ def test_extraction_degrades_to_the_pre_lemma_behaviour_without_a_lemmatiser(mon
     monkeypatch.setattr(lemma_mod, "_simplemma", None)
     off = _terms(_EN, "en", lemma=False, monkeypatch=monkeypatch)
     assert degraded == off
+
+
+def test_the_dictionary_cache_has_room_for_every_language_we_ask_about():
+    """MEASURED, not argued (`S04-07` PR 2): the cache was one slot under the working set.
+
+    ``simplemma.lemmatize`` delegates to one process-wide lemmatiser whose dictionary
+    factory keeps an LRU of **eight** loaded dictionaries. :data:`LEMMA_LANGS` holds
+    **nine**, and ``_resolve_by_lemma`` asks for a term's lemma under every one of them in
+    turn — so each call evicted the dictionary the next call needed and the hit rate was
+    not poor but exactly ZERO. A per-form readout over a 120-form ring took **166 seconds
+    on a three-article corpus**; the same call after this fix takes **8 milliseconds**.
+
+    RUN AS AN A/B, against a factory built the way the library ships, because three
+    plausible versions of this test measure nothing:
+
+    * counting calls to ``_get_dictionary`` counts cache HITS — the decomposition
+      strategies ask it a dozen times per lemma — so the number to read is the LRU's own
+      ``misses``, which is by definition one per dictionary actually loaded;
+    * ``Lemmatizer`` keeps a 65536-entry cache keyed on ``(token, lang)``, so a second
+      pass over the SAME word loads nothing whatever the dictionary cache does — each
+      pass therefore uses a DIFFERENT word;
+    * a green result proves nothing unless the shipped default is shown to be red on the
+      identical sequence, so the eight-slot factory is exercised right beside ours.
+    """
+    if not lemmatizer_available():
+        pytest.skip("no simplemma in this install")
+    try:
+        from simplemma import Lemmatizer
+        from simplemma.strategies import DefaultDictionaryFactory, DefaultStrategy
+    except Exception:  # noqa: BLE001
+        pytest.skip("this simplemma exposes a different strategy surface")
+
+    langs = sorted(LEMMA_LANGS)
+
+    def misses_over_two_passes(size: int) -> int:
+        """Dictionaries LOADED on a second pass over the same languages, new words."""
+        factory = DefaultDictionaryFactory(cache_max_size=size)
+        lz = Lemmatizer(
+            lemmatization_strategy=DefaultStrategy(dictionary_factory=factory)
+        )
+        for lg in langs:
+            lz.lemmatize("zzqcoronavirus", lg)
+        before = factory._get_dictionary.cache_info().misses
+        for lg in langs:
+            lz.lemmatize("zzqinfluenza", lg)
+        return factory._get_dictionary.cache_info().misses - before
+
+    shipped = misses_over_two_passes(8)
+    assert shipped > 0, (
+        "the eight-slot default did NOT thrash on this sequence, so this test no longer "
+        "measures the defect it was written for -- check whether simplemma changed its "
+        "default or its caching before trusting the green result below"
+    )
+    ours = misses_over_two_passes(max(8, len(LEMMA_LANGS) + 2))
+    assert ours == 0, (
+        f"our dictionary cache still evicts between two passes over the same {len(langs)} "
+        f"languages ({ours} reloads), so every lemmatisation re-reads from disk"
+    )
+    # ... and the shipped lemmatiser this module actually uses is the fixed one.
+    lz = lemma_mod._lemmatizer()
+    strategy = getattr(lz, "_lemmatization_strategy", None)
+    lookup = getattr(strategy, "_dictionary_lookup", None)
+    factory = getattr(lookup, "_dictionary_factory", None)
+    if factory is not None and hasattr(factory, "_get_dictionary"):
+        assert factory._get_dictionary.cache_info().maxsize >= len(LEMMA_LANGS), (
+            "the module's own lemmatiser has fewer dictionary slots than the languages "
+            "it is asked about"
+        )
+
+
+def test_the_cache_is_sized_from_the_language_set_not_from_a_remembered_number():
+    """The STRUCTURAL half: a tenth language must not silently re-open the cliff.
+
+    The property is "at least as many slots as languages we ask for", so it is asserted
+    against ``LEMMA_LANGS`` rather than against the number that satisfies it today. This
+    is the guard that fails when someone adds a language, which is precisely when the
+    behavioural test above would start failing in production and nowhere else.
+    """
+    src = (lemma_mod.__file__ or "").replace(".pyc", ".py")
+    import pathlib
+
+    text = pathlib.Path(src).read_text(encoding="utf-8")
+    assert "cache_max_size=max(8, len(LEMMA_LANGS) + 2)" in text, (
+        "the dictionary cache is sized to a literal; adding a language would put the "
+        "working set back over the cache and re-introduce a 20,000x slowdown silently"
+    )

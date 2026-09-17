@@ -8364,3 +8364,63 @@ predicate that is truthy on the success path.
   `LIKE`, `None` on several distinct hits, so the recorded homograph defect cannot re-enter
   through a ring); and DEDUPE the result by keyword ID, because two ring forms can map onto
   one stored keyword and a duplicate id doubles every mention that keyword carries.
+
+- **A CACHE ONE SLOT UNDER ITS WORKING SET IS A CLIFF, NOT A SLOWDOWN (2026-09-17,
+  `S04-07` PR 2, found by measuring a new readout before shipping it):** a per-form count
+  over a 120-form concept ring took **166 seconds on a three-article corpus**. Nothing
+  about that is data volume. `simplemma.lemmatize` delegates to one process-wide
+  lemmatiser whose dictionary factory keeps an LRU of **eight** loaded dictionaries;
+  `LEMMA_LANGS` holds **nine**, and the lemma rung asks for a term's lemma under every one
+  of them in turn — so each call evicts the dictionary the next call needs. The hit rate
+  is not poor, it is exactly **zero**, and every lemmatisation re-reads a dictionary from
+  disk. Measured three ways on one sequence: **483.94 ms/call at nine languages, 0.00 at
+  eight, 0.01 once the factory is sized from the language set.** One language fewer and
+  the cost vanishes; one more and nothing changes.
+  **GENERAL FORM, and why this class hides so well:** a cache sized to *N* while the
+  caller cycles through *N+1* keys does not degrade proportionally — it goes from perfect
+  to zero at one key, and the key that tips it is usually added years after the cache was
+  dimensioned, in a different file, by someone adding a language or a region or a shard.
+  It is invisible in every smaller configuration, it never appears in a unit test, and at
+  the call site it reads as "this library is slow".
+  **THREE RIDERS, each of which was a version of this test that measured nothing.**
+  (1) Size the cache from the SET, never from a number: `max(8, len(LEMMA_LANGS) + 2)`
+  fails safe when someone adds the tenth language, and a literal re-opens the cliff
+  silently. (2) Count the LRU's own `misses`, not calls to the cached wrapper — the
+  decomposition strategies here ask it a dozen times per lemma, so counting calls counts
+  HITS and reads as a perfect cache. (3) Use a DIFFERENT input on the second pass: the
+  lemmatiser also memoises `(token, language)`, so repeating one word loads nothing
+  whatever the dictionary cache does, and the test passes for the wrong reason. The
+  finished test is an **A/B** that asserts the eight-slot default STILL thrashes on the
+  identical sequence before it believes that ours does not — a green result against a
+  library you do not control is worth nothing unless the red one is shown beside it.
+
+- **A CAVEAT BUILT ON THE SERVER IS STILL A STRING ON A TRANSLATED PAGE — AND A NUMBER
+  INSIDE ONE CANNOT BE TRANSLATED OR STAY TRUE (2026-09-17, `S04-07` PR 2, found by a
+  Chromium walk in five locales):** the cross-language rail's own sentences were built
+  with `OOI18N.tf` frames and translated correctly in `ar`, `zh`, `ja` and `hi`. The
+  CAVEAT beneath them rendered in English in all four, because it arrived in the payload
+  and the client escaped it straight onto the page. Every i18n gate was green: the gates
+  measure the locale FILES, and a string that never asks for a key is not missing one.
+  The convention this project already uses is `t(server_string)`; it only needs to be
+  applied where prose crosses the wire. **The second half is the one worth carrying:** the
+  sentence read *"Rings cover 698 concepts, so most terms are unaffected."* A number baked
+  into prose is two defects — it goes stale the moment the data grows, and it makes the
+  sentence unkeyable, because a locale key must match VERBATIM. So the count came out of
+  the caveat entirely. **GENERAL FORM: a caveat carries a claim, never a figure; a figure
+  belongs in a field that reports figures.** Pin it both ways — that the client passes the
+  prose through the translator, and that the server still EMITS the exact sentence the
+  twelve locale files are keyed on (read the constants through `ast`, since these are
+  written as adjacent literals and no line-wrapping of them is the value).
+
+- **THE FROZEN-LOCALE CLASS HAS A BOOT HALF AS WELL AS A SWITCH HALF (2026-09-17, the same
+  walk):** the recorded lesson from the keyword label is that text derived at RENDER time
+  is unreachable by the i18n DOM walker and needs registering in the one `oo:langchange`
+  listener. That is the SWITCH half. The walk found the other one: a deep link straight to
+  an analysis in `hi` rendered the frame in English while `ar`, `zh` and `ja` came out
+  translated — the analysis fetch simply beat the locale fetch. **Which locale loses is a
+  matter of file size and network timing, so it is a race, and a race reproduces in one
+  locale and not the next four.** `OOI18N.ready` is the promise this project added for
+  exactly this; awaiting it costs nothing and is the half no language-switch test can
+  see. Both halves or neither: registering the repaint without awaiting `ready` leaves the
+  first paint wrong, and awaiting `ready` without registering the repaint leaves it wrong
+  from the moment the reader changes language.
