@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "यह खोज उस अवधारणा से हर उस भाषा में मिली जिसे रिंग ढकती है, न कि केवल आपके द्वारा लिखे गए शब्दों से। अधिकतर शब्द किसी रिंग में नहीं हैं और उन पर कोई असर नहीं पड़ता।",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "खोज केवल सबसे अधिक उल्लिखित रूपों तक विस्तारित की गई। संकल्पना के सभी रूप खोजने के लिए यह सीमा बंद करें।",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "ये आंकड़े ओवरलैप करते हैं: संकल्पना के दो रूपों वाला कोई लेख उन दोनों रूपों में अलग-अलग गिना जाता है, लेकिन कुल में केवल एक ही बार गिना जाता है, इसलिए हर रूप के आंकड़े जोड़ने पर कुल के बराबर नहीं आते।",
-  "this form could not be counted": "इस रूप को गिना नहीं जा सका"
+  "this form could not be counted": "इस रूप को गिना नहीं जा सका",
+  "This watch covers": "यह निगरानी",
+  "the concept “{concept}”": "“{concept}” संकल्पना",
+  "in every language its ring carries.": "को उन सभी भाषाओं में शामिल करती है जिन्हें उसकी रिंग रखती है।",
+  "the same word in": "इन भाषाओं में भी वही शब्द:",
+  "Not observed in this corpus:": "इस संग्रह में नहीं देखी गईं:",
+  "The concept at the centre, one arm per language, associations off the arms.": "केंद्र में संकल्पना, हर भाषा की एक शाखा, शाखाओं से आगे संबद्धताएँ।",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "निगरानी एक सहेजी गई खोज है जो तब सक्रिय होती है जब पर्याप्त नए लेख आपकी सीमा तक पहुँच जाते हैं — पढ़ने का निमंत्रण, कभी फैसला या स्कोर नहीं। केवल स्थानीय: कोई सूचना नहीं, कोई नेटवर्क नहीं।",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "शाखाएँ ओवरलैप करती हैं: संकल्पना के दो भाषाओं के रूपों वाला कोई लेख दोनों शाखाओं में और केंद्र में एक बार गिना जाता है, इसलिए शाखाओं के आंकड़े जोड़ने पर उस कुल के बराबर नहीं आते। जहाँ कई भाषाएँ एक ही वर्तनी साझा करती हैं, वहाँ शाखाएँ वही लेख रखती हैं और यह बताती हैं। केवल गिनती, कभी स्कोर नहीं।",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "हर उस भाषा के लिए एक शाखा जिसमें कॉर्पस ने संकल्पना का कोई रूप अनुक्रमित किया है; हर शाखा की संबद्धताएँ उसी भाषा के अपने लेखों पर आधारित सह-घटना गणनाएँ हैं, जिसमें संकल्पना के अपने रूप शामिल नहीं हैं"
 }

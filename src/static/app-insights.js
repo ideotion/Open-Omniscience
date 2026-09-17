@@ -1256,6 +1256,29 @@
     const _wt = () => (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
     const _wtf = () => (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
       String(s2).replace(/\{(\w+)\}/g, (m2, k) => (v && v[k] != null) ? v[k] : m2));
+    // Q510: a watch on "climate" watches the RING, and this is the row saying so. PURE
+    // (payload -> html) so it can be driven in node.
+    //
+    // It is SHORTER than the analysis window's rail on purpose. That surface is a place
+    // the reader went looking for an explanation; this one is a list they are scanning,
+    // and a rail per row would be four paragraphs of identical prose. One sentence naming
+    // the concept, the member words in the hover (the layering convention, invariant #17),
+    // and the server's own caveat once at the foot of the panel rather than once per row.
+    function _watchRingNote(cross) {
+      const t = _wt(), tf = _wtf();
+      if (!cross || !cross.expanded) return "";
+      const terms = (cross.terms || []).filter((x) => x.expanded);
+      if (!terms.length) return "";
+      const bits = terms.map((x) => {
+        const langs = Object.entries(x.by_language || {})
+          .map(([lg, words]) => `${lg}: ${(words || []).join(", ")}`).join(" · ");
+        return `<span title="${esc(langs)}">${esc(tf("the concept “{concept}”",
+          { concept: x.concept || x.ring_id || x.term }))}</span>`;
+      }).join(", ");
+      return `<div class="hint" style="margin-top:4px">`
+        + `${esc(t("This watch covers"))} ${bits} `
+        + `<span class="muted">${esc(t("in every language its ring carries."))}</span></div>`;
+    }
     async function loadWatches() {
       const box = $("wt-list"); if (!box) return;
       const t = _wt(), tf = _wtf();
@@ -1287,9 +1310,20 @@
             </div>
             <div class="hint" style="margin-top:4px">${esc(tf("≥ {n} articles within {d} day(s) · last fired: {when}",
                 {n: w.threshold, d: w.window_days, when: last}))}</div>
+            ${_watchRingNote(w.cross_language)}
             ${hist ? `<ul class="hint" style="margin:6px 0 0 16px">${hist}</ul>` : ""}
           </div>`;
-        }).join("") + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
+        }).join("")
+          // Server prose, so it goes through t() -- the same defect class the analysis
+          // rail carried until a Chromium walk read it back in Arabic.
+          + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(t(d.caveat))}</div>` : "")
+          // The ring caveat ONCE for the panel, not once per row: it is the same sentence
+          // for every watch, and repeating it is how a caveat stops being read.
+          + (ws.some((w) => w.cross_language && w.cross_language.caveat)
+              ? `<div class="hint muted" style="margin-top:4px">`
+                + `${esc(t(ws.find((w) => w.cross_language && w.cross_language.caveat)
+                    .cross_language.caveat))}</div>`
+              : "");
       } catch (e) {
         box.innerHTML = `<div class="muted">${esc(tf("Could not load watches: {error}", {error: e.message}))}</div>`;
       }

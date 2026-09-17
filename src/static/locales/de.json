@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "Diese Suche hat das Konzept in jeder Sprache gefunden, die der Ring abdeckt – nicht nur die von Ihnen eingegebenen Wörter. Die meisten Begriffe liegen in keinem Ring und sind davon nicht betroffen.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "Die Suche wurde nur auf die am häufigsten genannten Formen erweitert. Schalten Sie die Beschränkung aus, um alle Formen des Konzepts zu suchen.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "Diese Zahlen überschneiden sich: Ein Artikel, der zwei Formen des Konzepts enthält, wird unter jeder von ihnen mitgezählt, aber in der Gesamtzahl nur ein einziges Mal – die Werte je Form ergeben in der Summe daher nicht die Gesamtzahl.",
-  "this form could not be counted": "diese Form konnte nicht gezählt werden"
+  "this form could not be counted": "diese Form konnte nicht gezählt werden",
+  "This watch covers": "Diese Beobachtung deckt",
+  "the concept “{concept}”": "das Konzept „{concept}“",
+  "in every language its ring carries.": "in jeder Sprache ab, die ihr Ring trägt.",
+  "the same word in": "dasselbe Wort in",
+  "Not observed in this corpus:": "In diesem Korpus nicht beobachtet:",
+  "The concept at the centre, one arm per language, associations off the arms.": "Das Konzept im Zentrum, ein Arm pro Sprache, Assoziationen an den Armen.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Eine Beobachtung ist eine gespeicherte Suche, die ausgelöst wird, sobald genug neue Artikel Ihren Schwellenwert erreichen — eine Einladung zum Lesen, niemals ein Urteil oder eine Bewertung. Nur lokal: keine Benachrichtigungen, kein Netzwerk.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Die Arme überschneiden sich: Ein Artikel, der die Formen des Konzepts in zwei Sprachen enthält, wird auf beiden Armen und einmal im Zentrum mitgezählt, sodass die Arme zusammen nicht der Zahl im Zentrum entsprechen. Wo mehrere Sprachen dieselbe Schreibweise teilen, tragen die Arme dieselben Artikel und weisen darauf hin. Nur Zählungen, niemals eine Bewertung.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "ein Arm pro Sprache, in der der Korpus eine Form des Konzepts indexiert hat; die Assoziationen jedes Arms sind Kookkurrenz-Zählungen über die eigenen Artikel DIESER Sprache, wobei die eigenen Formen des Konzepts ausgeschlossen sind"
 }

@@ -18,7 +18,10 @@ By ruling, deliberately MINIMAL and honest:
   * fires only on genuinely NEW evidence — ``last_seen_ids`` records the previous
     firing set so a watch never re-alarms on the same articles every pass.
   * the matcher reuses the SAME search the user sees (FTS5 ``search_ids``), so a watch
-    means exactly what searching for its query means.
+    means exactly what searching for its query means -- which since `S04-07` (Q510 = a)
+    includes the cross-language CONCEPT: a watch on "climate" watches the ring. That
+    widens what INTERRUPTS the reader, so every watch row and every firing carries the
+    disclosure naming the concept and its per-language members.
 """
 
 from __future__ import annotations
@@ -49,6 +52,26 @@ _MAX_SEEN = 500
 _IN_CHUNK = 900
 
 
+def watch_concept(session: Session, query: str):
+    """The cross-language concept a watch query resolves to, or ``None`` (Q510 = a).
+
+    Separate from the matcher because the WATCH ROW has to say what the watch now
+    covers, and the row is built by a different call than the evaluation. Both read
+    this, so the sentence on screen and the search that fires cannot disagree.
+
+    ``None`` on any failure: a watch whose disclosure cannot be computed is still a
+    watch, and blanking the panel to explain a query the reader can see would trade a
+    caveat for an outage.
+    """
+    try:
+        from src.analytics.equivalence import resolve_concept
+        from src.analytics.queries import keyword_frequency
+
+        return resolve_concept(query, expand=True, frequency=keyword_frequency(session))
+    except Exception:  # noqa: BLE001 - a disclosure must never break an evaluation pass
+        return None
+
+
 def _fts_matcher(session: Session, query: str) -> list[int] | None:
     """The production matcher: FTS5 ids for ``query`` (None = no positive constraint).
 
@@ -58,10 +81,27 @@ def _fts_matcher(session: Session, query: str) -> list[int] | None:
     it manufactures a signal out of nav soup. This also keeps the matcher's docstring
     promise that a watch "reuses the SAME search the user sees" true, since
     /api/articles and the omnibar both apply this condition.
+
+    **Q510 = a: A WATCH ON "climate" WATCHES THE RING.** The expansion is passed here
+    rather than at the callers for the same reason the quarantine gate is: this module's
+    own promise is that a watch means exactly what searching for its query means, and
+    `S04-07` made searching mean the CONCEPT. A matcher that kept searching the literal
+    word would have quietly broken that promise the day the omnibar changed -- the watch
+    would go on firing, on a narrower set than the search the user is looking at, with
+    nothing anywhere to say the two had parted.
+
+    It widens what INTERRUPTS the reader, so it is disclosed on the watch row
+    (``watch_concept`` above) rather than being a silent change of meaning. One
+    consequence is stated and not hidden: the first pass after this lands sees the
+    ring's other-language articles as NEW, so a watch on a ringed term can fire once on
+    evidence that was already in the corpus. That is the widening being real, and the
+    row says what widened it.
     """
     from src.database.fts import search_ids
 
-    return search_ids(session, query, exclude_quarantined=True)
+    return search_ids(
+        session, query, exclude_quarantined=True, expand=watch_concept(session, query)
+    )
 
 
 def _id_list(blob: str | None) -> list[int]:
@@ -108,7 +148,15 @@ def list_watches(session: Session, *, history_limit: int = 5) -> list[dict]:
                 .order_by(WatchMatch.matched_at.desc()).limit(history_limit)
             ).scalars().all()
         )
-        out.append({**_watch_dict(w), "history": [_match_dict(m) for m in hist]})
+        row = {**_watch_dict(w), "history": [_match_dict(m) for m in hist]}
+        # Q510's other half: the row DISCLOSES the ring. A watch that silently widened
+        # what interrupts the reader would be the informed-consent rule broken on the one
+        # surface that reaches out to them rather than waiting to be opened.
+        concept = watch_concept(session, w.query)
+        disclosure = concept.disclosure() if concept is not None else None
+        if disclosure is not None:
+            row["cross_language"] = disclosure
+        out.append(row)
     return out
 
 
@@ -235,9 +283,17 @@ def evaluate_watches(
             w.last_matched_at = now_naive
             # Remember this firing set (bounded) so we only fire again on NEW evidence.
             w.last_seen_ids = json.dumps(sorted(recent)[-_MAX_SEEN:])
-            fired.append({"id": w.id, "name": w.name, "query": w.query,
-                          "n_articles": len(recent), "new_articles": len(new_ids),
-                          "article_ids": sorted(recent)})
+            row = {"id": w.id, "name": w.name, "query": w.query,
+                   "n_articles": len(recent), "new_articles": len(new_ids),
+                   "article_ids": sorted(recent)}
+            # The Lead card is where a firing reaches the reader, so the concept travels
+            # with it -- otherwise the card names a count over a set the reader cannot
+            # reconstruct from the query it also shows them.
+            _c = watch_concept(session, w.query)
+            _d = _c.disclosure() if _c is not None else None
+            if _d is not None:
+                row["cross_language"] = _d
+            fired.append(row)
     session.flush()
     return fired
 
@@ -261,10 +317,15 @@ def recent_fired_watches(session: Session, *, within_hours: int = 48, limit: int
         ).scalars().first()
         if latest is None:
             continue
-        out.append({
+        row = {
             "id": w.id, "name": w.name, "query": w.query,
             "n_articles": latest.n_articles, "new_articles": latest.new_articles,
             "matched_at": latest.matched_at.isoformat() if latest.matched_at else None,
             "article_ids": _id_list(latest.article_ids),
-        })
+        }
+        _c = watch_concept(session, w.query)
+        _d = _c.disclosure() if _c is not None else None
+        if _d is not None:
+            row["cross_language"] = _d
+        out.append(row)
     return out

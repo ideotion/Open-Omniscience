@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "Этот поиск нашёл понятие на всех языках, которые покрывает кольцо, а не только введённые вами слова. Большинство терминов не входят ни в одно кольцо и не затронуты.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "Поиск был расширен только до самых упоминаемых форм. Отключите ограничение, чтобы искать все формы понятия.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "Эти цифры пересекаются: статья с двумя формами понятия считается под каждой из них, но в общем итоге — лишь один раз, поэтому цифры по формам в сумме не совпадают с этим итогом.",
-  "this form could not be counted": "не удалось подсчитать эту форму"
+  "this form could not be counted": "не удалось подсчитать эту форму",
+  "This watch covers": "Это наблюдение охватывает",
+  "the concept “{concept}”": "понятие «{concept}»",
+  "in every language its ring carries.": "на всех языках, которые несёт его кольцо.",
+  "the same word in": "то же слово на",
+  "Not observed in this corpus:": "Не наблюдались в этом корпусе:",
+  "The concept at the centre, one arm per language, associations off the arms.": "Понятие в центре, одна ветвь на каждый язык, связи на ветвях.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Наблюдение — это сохранённый поиск, который срабатывает, когда достаточно новых статей достигает вашего порога — повод прочитать, а не вердикт и не оценка. Только локально: без уведомлений, без сети.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Ветви пересекаются: статья, несущая формы понятия на двух языках, считается на обеих ветвях и один раз в центре, поэтому ветви в сумме не совпадают с этим итогом. Там, где несколько языков используют одно и то же написание, ветви несут одни и те же статьи и указывают на это. Только подсчёт, никогда не оценка.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "одна ветвь на каждый язык, на котором корпус проиндексировал форму понятия; связи каждой ветви — это подсчёты совместной встречаемости по статьям ИМЕННО ЭТОГО языка, без учёта собственных форм понятия"
 }

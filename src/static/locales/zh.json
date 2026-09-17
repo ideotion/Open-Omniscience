@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "这次搜索匹配的是该概念在语义环覆盖的所有语言，而不仅是你输入的词。大多数词语不在任何语义环中，不受影响。",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "此次搜索仅扩展到了被提及最多的词形。关闭限制即可搜索该概念的所有词形。",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "这些数字有重叠：同时包含该概念两种词形的文章会分别计入这两种词形，但在总数中只计一次，因此各词形的数字相加并不等于总数。",
-  "this form could not be counted": "无法统计这个词形"
+  "this form could not be counted": "无法统计这个词形",
+  "This watch covers": "此监视覆盖",
+  "the concept “{concept}”": "概念“{concept}”",
+  "in every language its ring carries.": "在其语义环所承载的每一种语言中。",
+  "the same word in": "同一个词，见于",
+  "Not observed in this corpus:": "未在此语料库中观测到：",
+  "The concept at the centre, one arm per language, associations off the arms.": "概念居中，每种语言对应一条分支，关联分布在分支之外。",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "监视是一个已保存的搜索，当足够多的新文章达到你的阈值时便会触发——阅读的提示，绝非定论或评分。仅限本地：无通知，无网络。",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "分支之间有重叠：包含该概念两种语言词形的文章会同时计入两条分支，但在中心只计一次，因此各分支相加并不等于该总数。当多种语言共用同一种拼写时，这些分支会承载相同的文章并说明这一点。仅为计数，绝非评分。",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "语料库已索引该概念某一词形的每种语言各对应一条分支；每条分支的关联都是该语言自身文章中的共现计数，其中不包括该概念自身的词形"
 }

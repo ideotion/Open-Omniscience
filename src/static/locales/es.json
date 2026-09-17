@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "Esta búsqueda coincidió con el concepto en todos los idiomas que cubre el anillo, no solo las palabras que escribió. La mayoría de los términos no están en ningún anillo y no se ven afectados.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "La búsqueda se amplió únicamente a las formas más mencionadas. Desactive el límite para buscar todas las formas del concepto.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "Estas cifras se superponen: un artículo que contiene dos formas del concepto se cuenta en cada una de ellas y una sola vez en el total, así que las cifras por forma no suman ese total.",
-  "this form could not be counted": "esta forma no se pudo contar"
+  "this form could not be counted": "esta forma no se pudo contar",
+  "This watch covers": "Esta vigilancia cubre",
+  "the concept “{concept}”": "el concepto «{concept}»",
+  "in every language its ring carries.": "en todos los idiomas que lleva su anillo.",
+  "the same word in": "la misma palabra en",
+  "Not observed in this corpus:": "No observados en este corpus:",
+  "The concept at the centre, one arm per language, associations off the arms.": "El concepto en el centro, una rama por idioma, asociaciones que salen de las ramas.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Una vigilancia es una búsqueda guardada que se activa cuando suficientes artículos nuevos alcanzan su umbral — una invitación a leer, nunca un veredicto ni una puntuación. Solo local: sin notificaciones, sin red.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Las ramas se superponen: un artículo que lleva formas del concepto en dos idiomas se cuenta en ambas ramas y una sola vez en el centro, de modo que las ramas no suman ese total. Donde varios idiomas comparten una misma ortografía, las ramas llevan los mismos artículos y lo indican. Solo recuentos, nunca una puntuación.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "una rama por idioma en la que el corpus ha indexado una forma del concepto; las asociaciones de cada rama son recuentos de co-ocurrencia sobre los propios artículos de ESE idioma, con las propias formas del concepto excluidas"
 }

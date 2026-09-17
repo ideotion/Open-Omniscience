@@ -3568,5 +3568,14 @@
   "This search matched the concept in every language the ring covers, not only the words you typed. Most terms are in no ring and are unaffected.": "Cette recherche a trouvé le concept dans toutes les langues que l’anneau couvre, pas seulement les mots que vous avez saisis. La plupart des termes ne sont dans aucun anneau et ne sont pas concernés.",
   "The search was widened to the most-mentioned forms only. Turn the limit off to search every form the concept has.": "La recherche a été élargie aux formes les plus mentionnées uniquement. Désactivez la limite pour rechercher toutes les formes du concept.",
   "These figures overlap: an article carrying two forms of the concept is counted under each of them and ONCE in the total, so the per-form numbers do not add up to it.": "Ces chiffres se chevauchent : un article qui contient deux formes du concept est compté sous chacune d’elles, mais une seule fois dans le total — la somme des chiffres par forme ne correspond donc pas au total.",
-  "this form could not be counted": "cette forme n’a pas pu être comptée"
+  "this form could not be counted": "cette forme n’a pas pu être comptée",
+  "This watch covers": "Cette veille couvre",
+  "the concept “{concept}”": "le concept « {concept} »",
+  "in every language its ring carries.": "dans toutes les langues que porte son anneau.",
+  "the same word in": "le même mot en",
+  "Not observed in this corpus:": "Non observées dans ce corpus :",
+  "The concept at the centre, one arm per language, associations off the arms.": "Le concept au centre, une branche par langue, des associations issues des branches.",
+  "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Une veille est une recherche enregistrée qui se déclenche quand assez de nouveaux articles atteignent votre seuil — une invitation à lire, jamais un verdict ni un score. Uniquement en local : sans notifications, sans réseau.",
+  "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Les branches se chevauchent : un article portant les formes du concept dans deux langues est compté sur les deux branches et une seule fois au centre, si bien que la somme des branches ne correspond pas à ce total. Là où plusieurs langues partagent une même orthographe, les branches portent les mêmes articles et le signalent. Uniquement des décomptes, jamais un score.",
+  "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "une branche par langue dans laquelle le corpus a indexé une forme du concept ; les associations de chaque branche sont des décomptes de co-occurrence sur les articles propres à cette langue, à l’exclusion des formes du concept elles-mêmes"
 }
