@@ -90,9 +90,39 @@ def _terms(
     Ordered by mentions, and every row carries the distinct-article count behind it
     — a term carried by one article and a term carried by forty are different facts
     at the same mention total.
+
+    **Q511 = a: CROSS-LANGUAGE EQUIVALENTS MERGE INTO ONE CONCEPT ROW.** Before this, a
+    country column listing `climate` and `climat` separately reported one concept as two
+    smaller things, and did it hardest in exactly the corpora this section exists to
+    describe: the ones with coverage in several languages. The merge reuses
+    ``equivalence.group_rows`` — the same function ``queries.trending`` uses, so the ring
+    lookup and its honesty rules (language-qualified, split-aware) stay in one place.
+
+    TWO THINGS THAT WOULD MAKE THE MERGE DISHONEST, both handled:
+
+    * **The limit has to move.** Merging AFTER a top-N cut loses every ring member that
+      fell below the cut, so the merged row under-reports by exactly the members the cut
+      removed. Four times the headroom is fetched first (``trending``'s own rule), then
+      the merge, then the cut.
+    * **``articles`` may not be summed, and may not be a floor either.** Two members'
+      distinct-article counts overlap wherever one article carries both, so a sum
+      over-reports; ``max()`` is a conservative floor, which is a different number
+      presented as the same one. The merged row's article count is therefore a real
+      ``COUNT(DISTINCT article_id)`` over every member id, under the same window and the
+      same ``where`` — one extra query per merged ring, never per row.
     """
+    from src.analytics import equivalence
+    from src.analytics.queries import _ring_lang_of
+
+    in_window = [
+        KeywordMention.observed_on >= period.start,
+        KeywordMention.observed_on < period.end,
+        *where,
+    ]
+    # Headroom so a ring member below `limit` still merges (the trending rule).
     rows = (
         session.query(
+            Keyword.id,
             Keyword.term,
             Keyword.normalized_term,
             Keyword.language,
@@ -100,26 +130,65 @@ def _terms(
             func.count(func.distinct(KeywordMention.article_id)),
         )
         .join(Keyword, Keyword.id == KeywordMention.keyword_id)
-        .filter(
-            KeywordMention.observed_on >= period.start,
-            KeywordMention.observed_on < period.end,
-            *where,
-        )
+        .filter(*in_window)
         .group_by(Keyword.id)
         .order_by(func.sum(KeywordMention.count).desc(), Keyword.normalized_term)
-        .limit(int(limit))
+        .limit(int(limit) * 4)
         .all()
     )
-    return [
+    cand = [
         {
-            "term": r[0],
-            "normalized": r[1],
-            "language": r[2],
-            "mentions": int(r[3] or 0),
-            "articles": int(r[4] or 0),
+            "id": int(r[0]),
+            "term": r[1],
+            "normalized": r[2],
+            "language": r[3],
+            "mentions": int(r[4] or 0),
+            "articles": int(r[5] or 0),
         }
         for r in rows
     ]
+    if not cand:
+        return []
+    stored = {str(c["normalized"]): c["language"] for c in cand}
+    lang_of = _ring_lang_of(session, stored)
+    out: list[dict] = []
+    for kind, payload in equivalence.group_rows(cand, lang_of=lang_of):
+        if kind == "solo":
+            row = dict(payload)
+            row.pop("id", None)
+            out.append(row)
+            continue
+        ring_id, members = payload
+        meta = equivalence.ring_meta(ring_id)
+        ids = [int(m["id"]) for m in members]
+        # The exact union, never a sum (which double-counts an article carrying two
+        # members) and never a max (which is a floor wearing a count's name).
+        n_articles = int(
+            session.query(func.count(func.distinct(KeywordMention.article_id)))
+            .filter(KeywordMention.keyword_id.in_(ids), *in_window)
+            .scalar()
+            or 0
+        )
+        lead = max(members, key=lambda m: m["mentions"])
+        row = {
+            "term": (meta.label if meta else None) or lead["term"],
+            "normalized": f"ring:{ring_id}",
+            "language": None,
+            "mentions": sum(int(m["mentions"]) for m in members),
+            "articles": n_articles,
+            "ring_id": ring_id,
+            "members": [
+                {"term": m["term"], "normalized": m["normalized"],
+                 "language": lang_of(m["normalized"]) or "?",
+                 "mentions": int(m["mentions"])}
+                for m in members
+            ],
+        }
+        if meta and meta.note:
+            row["ring_note"] = meta.note
+        out.append(row)
+    out.sort(key=lambda t: (-int(t["mentions"]), str(t["normalized"])))
+    return out[: int(limit)]
 
 
 def _articles(session, period: Period, *, where: list[Any]) -> int:

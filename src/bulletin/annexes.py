@@ -328,6 +328,154 @@ def _md_kv(T: Translator, label: str, value: Any) -> str:
     return f"- **{T.t(label)}:** {value if value not in (None, '', []) else '—'}"
 
 
+CONCEPTS_FILENAME = "CROSS-LANGUAGE-CONCEPTS.md"
+
+#: The heading the concepts annexe opens with. A module-level constant, and therefore
+#: INVISIBLE to the AST translation harvester in ``tests/test_bulletin_annexes.py``,
+#: which only sees ``T.t("literal")`` written inline — so its NAME is registered in that
+#: test's own exception tuple beside ``DISCLOSURE`` and ``_AI_LABEL``. Recorded here
+#: because the trap is silent: the string simply never reaches any catalogue and the
+#: annexe renders in English in eleven locales with every i18n gate green.
+CONCEPTS_TITLE = "Cross-language concepts in this edition"
+
+
+def concepts_markdown(edition: dict, *, tr: Translator | None = None) -> str:
+    """Q511's note — every ring this edition's own sections merged, with its members.
+
+    **READ FROM THE RECORD, NEVER RE-DERIVED.** The rule this module already states for
+    article rows applies here for the same reason: *"Re-deriving them here would let the
+    annex and the report disagree about an article they both describe."* A fresh
+    corpus-wide ring query would describe a DIFFERENT population from the one the
+    edition's sections used — a different window, a different scope — and the annexe
+    would then contradict the report it is annexed to while looking authoritative.
+
+    So the source is the edition's own ``rising_concepts`` terms and ``country_coverage``
+    columns, filtered to the rows those sections already merged (the ones carrying
+    ``ring_id``).
+
+    **FOUR HONESTY RULES, each of which this table could break:**
+
+    * The member TERMS are corpus DATA and are never translated — only the labels around
+      them are. A term run through the translator would both mistranslate a proper word
+      and silently depress every locale's measured coverage.
+    * The per-language figures OVERLAP, so they are never totalled: one article carrying
+      two forms is counted under both languages. The caveat says so rather than leaving a
+      reader to discover it by adding up.
+    * The language of a member is DERIVED where the stored keyword carries none (the
+      dominant article language of its own mentions), not asserted. Members whose
+      language could not be resolved get an explicit ``?`` row rather than being dropped,
+      because dropping them makes the per-language figures fail to reconcile in a second,
+      invisible way.
+    * A ring's members PRESENT in this edition are not the ring's members. The count of
+      forms the ring defines is stated beside them, so a short list reads as "this corpus
+      reached three of them" rather than as the ring being small.
+
+    Written for every edition, including one that merged nothing: an absent annexe reads
+    as "no concepts crossed languages", which is the one thing it must never mean.
+    """
+    T = tr or Translator("en")
+    sections = edition.get("sections")
+    rows: list[dict] = []
+    seen: set[str] = set()
+    if isinstance(sections, list):
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            pools: list[Any] = [sec.get("terms")]
+            for col in sec.get("columns") or []:
+                if isinstance(col, dict):
+                    pools.append(col.get("terms"))
+            for pool in pools:
+                for row in pool or []:
+                    if not isinstance(row, dict) or not row.get("ring_id"):
+                        continue
+                    rid = str(row["ring_id"])
+                    if rid in seen:
+                        continue
+                    seen.add(rid)
+                    rows.append({**row, "_section": sec.get("section")})
+    out = [
+        f"# {T.t(CONCEPTS_TITLE)}",
+        "",
+        T.t(
+            "A concept is a hand-vetted Wikidata ring of equivalent terms across "
+            "languages. The sections of this edition that group by keyword merged these "
+            "rings before counting; this is what they merged."
+        ),
+        "",
+        "> " + T.t(
+            "The per-language figures overlap: one article mentioning two forms of a "
+            "concept is counted under both languages, so they do not add up to the "
+            "concept's own total. Counts only, never a score."
+        ),
+        "",
+        "> " + T.t(
+            "A member's language is the stored one where the corpus recorded it, and "
+            "otherwise the dominant language of the articles that mention it — a "
+            "reading, not the publisher's claim. Members whose language could not be "
+            "resolved are listed under ?."
+        ),
+        "",
+    ]
+    if not rows:
+        out += [
+            T.t(
+                "No concept in this edition was carried in more than one language. That "
+                "is a fact about this period's corpus, not a gap in this file."
+            ),
+            "",
+        ]
+        return "\n".join(out)
+    for row in sorted(rows, key=lambda r: str(r.get("ring_id"))):
+        members = [m for m in (row.get("members") or []) if isinstance(m, dict)]
+        out += [
+            f"## {row.get('term') or row.get('ring_id')}",
+            "",
+            _md_kv(T, "Ring", row.get("ring_id")),
+            _md_kv(T, "Merged in", row.get("_section")),
+            _md_kv(T, "Forms present in this edition", len(members) or "—"),
+            _md_kv(T, "Forms the ring defines", _ring_size(row.get("ring_id"))),
+        ]
+        if row.get("ring_note"):
+            out.append(_md_kv(T, "Note", row["ring_note"]))
+        out += [
+            "",
+            f"| {T.t('Language')} | {T.t('Form')} | {T.t('Mentions')} |",
+            "|---|---|---|",
+        ]
+        for m in sorted(members, key=lambda m: (-int(m.get("mentions") or m.get("recent") or 0),
+                                                str(m.get("normalized") or ""))):
+            # The TERM is corpus data: printed, never looked up.
+            lang = str(m.get("language") or "?")
+            n = m.get("mentions")
+            if n is None:
+                n = m.get("recent")
+            out.append(f"| {lang} | {m.get('term') or m.get('normalized')} | "
+                       f"{'—' if n is None else int(n)} |")
+        out.append("")
+    return "\n".join(out)
+
+
+def _ring_size(ring_id: Any) -> Any:
+    """How many forms the ring DEFINES — the anti-capping half of the table above.
+
+    Without it a three-row table reads as a three-form concept rather than as the three
+    forms this corpus reached. Degrades to ``—`` rather than to a number it cannot
+    stand behind: a ring file that cannot be read is an unanswered question, and an
+    invented count is worse than an absent one.
+    """
+    try:
+        from src.analytics.equivalence import ring_meta
+
+        ring = ring_meta(str(ring_id))
+        # DISTINCT forms, not member entries: a ring states `clima` for es, it and pt,
+        # and counting those as three forms would overstate what the corpus could have
+        # reached -- the same shared-spelling fact the concept map names on its arms.
+        return len({t for _lang, t in ring.members}) if ring is not None else "—"
+    except Exception:  # noqa: BLE001 - an annexe never fails over its own metadata
+        return "—"
+
+
 def _analysis_block(T: Translator, rows: list[dict]) -> list[str]:
     """Stored model output for one article, labelled and with its provenance.
 
@@ -838,6 +986,24 @@ def build_annexes(
                 "That is an unanswered question, not an all-clear.\n",
             )
             written.append("WHAT-A-READER-CAN-SEE.md")
+
+        # Q511's NOTE: the ring analytics, as their own member. Same shape as the
+        # privacy note above -- a try/except that degrades to a stated failure rather
+        # than costing the bundle, because a file that cannot be written is a different
+        # thing from one that had nothing to say.
+        try:
+            zf.writestr(f"{stem}/{CONCEPTS_FILENAME}", concepts_markdown(edition, tr=T))
+            written.append(CONCEPTS_FILENAME)
+        except Exception as exc:  # noqa: BLE001 - never lose the bundle to one member
+            _LOG.warning("bulletin: could not write the concepts annexe", exc_info=True)
+            zf.writestr(
+                f"{stem}/{CONCEPTS_FILENAME}",
+                f"# {CONCEPTS_TITLE}\n\n"
+                f"This table could not be computed: {type(exc).__name__}: {exc}.\n"
+                "That is an unanswered question, not a statement that no concept "
+                "crossed languages.\n",
+            )
+            written.append(CONCEPTS_FILENAME)
 
         # Written LAST because it reports what the loop above actually did.
         zf.writestr(

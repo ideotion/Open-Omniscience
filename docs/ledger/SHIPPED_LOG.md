@@ -8456,3 +8456,45 @@ predicate that is truthy on the success path.
   tuned on the second locale reported "no Concept button" in the first, which is a fail
   indistinguishable from the feature being absent — wait for the control, never for a
   duration.
+
+- **A MERGED ROW'S ARTICLE COUNT IS THE ONE NUMBER THREE PLAUSIBLE IMPLEMENTATIONS GET
+  WRONG IN THREE DIFFERENT DIRECTIONS (2026-09-17, `S04-07` PR 4):** when `climate`'s
+  articles are {A, B} and `climat`'s are {B, C}, the concept's article count is **3**.
+  Summing the members' own distinct counts gives **4** — article B counted twice.
+  `max()` gives **2** — a conservative floor wearing a count's name. Only
+  `COUNT(DISTINCT article_id)` over every member id is the number the row claims to be.
+  The trap is that the codebase's own `_merge_group` uses `max()` **correctly**, with a
+  comment explaining why (*"an honest `article_key`, never a double-counting sum"*) — it
+  is a SORT KEY there, and copying it into a figure a reader reads turns a defensible
+  floor into a wrong count. **GENERAL FORM: a de-duplicating aggregate cannot be merged
+  arithmetically from its parts at all**; mentions sum because each member is a distinct
+  row, articles do not because the sets overlap. The three-way mutation check is what
+  makes the distinction testable rather than argued: swap the union for either wrong
+  answer and the test names which one.
+  **AND THE LIMIT HAS TO MOVE WITH THE MERGE.** A top-N cut applied BEFORE grouping drops
+  exactly the members that make the group worth forming — on a four-row fixture, a
+  9-mention unrelated term beat each spelling of a 14-mention concept and the concept
+  never formed at `limit=1`. Fetch headroom, merge, then cut.
+
+- **A SENTENCE FACTORED INTO A MODULE-LEVEL CONSTANT IS INVISIBLE TO AN AST TRANSLATION
+  HARVESTER (2026-09-17, same PR):** `tests/test_bulletin_annexes.py` finds translatable
+  strings by parsing the module for `T.t("literal")` written inline, and carries a
+  hand-maintained tuple of the constants passed by NAME instead. A new constant that is
+  not added to that tuple reaches no catalogue, renders in English in eleven locales, and
+  **every i18n gate stays green** — because the gates measure the catalogue files, and a
+  string that never asks for a key is not a missing key. The complementary end-to-end
+  test catches it only for the branches its fixtures reach. **GENERAL FORM: any
+  string-harvesting instrument has a shape it cannot see, and the honest response is to
+  name that shape in the instrument itself** — this one's docstring already names its
+  other blind spot (`_md_kv`'s labels, passed as parameters) and measures it by deletion.
+  A second blind spot the docstring does not name is a blind spot nobody will look for.
+
+- **A CATALOGUE FILE'S BLANK LINES ARE STRUCTURE, AND `json.dumps` EATS THEM (2026-09-17,
+  same PR):** `configs/bulletin_i18n/*.json` separates logical groups with blank lines —
+  something a maintainer reads and no parser preserves. Adding thirteen keys by
+  `json.load` → mutate → `json.dump` produced **287 deletions across eleven files for 143
+  new lines**, every one of them a re-flow nobody asked for. Appending by TEXT before the
+  closing brace, then `json.loads` on the result to prove it still parses, gives a purely
+  additive diff. **Same family as the `shipped.csv` round-trip lesson, in a second file
+  format**: a structured-data round trip is lossy about everything the structure does not
+  model, and on a file with `merge=union` or a human reader that loss is the defect.
