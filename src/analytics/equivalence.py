@@ -36,7 +36,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import yaml
 
@@ -692,6 +692,32 @@ def parse_sense_pins(values: Iterable[str] | None) -> dict[str, str]:
     return out
 
 
+#: Q503 (2026-09-15): the cross-language OR fan-out is capped at this many LITERALS per
+#: term -- the typed form plus its siblings -- most frequent first, and the ruling's own
+#: NOTE adds a toggle that turns the cap OFF, with the cap ON by default.
+#:
+#: MEASURED on the shipped ring files rather than assumed: 698 rings load, and **140 of
+#: them (20.1%) carry more than 40 distinct sibling terms** -- the largest are
+#: ``soviet-afghan-war`` (124 distinct forms) and ``covid-19`` (120 forms / 119
+#: siblings, spread ar 6 / bn 4 / de 3 / en 23 / es 41 / fr 5 / hi 2 / id 6 / ja 33 /
+#: pt 5 / ru 4 / zh 7). So the cap is reached by a fifth of the table, not by a
+#: hypothetical outlier, and the disclosure it owes is a live one.
+#:
+#: THE CAP BOUNDS THE FAN-OUT AND NOTHING ELSE. ``total_forms`` is always the EXACT
+#: number of forms the ring offers, and the article total stays the exact, uncapped
+#: count of whatever search actually ran (Q515 = b) -- the standing anti-capping rule
+#: is that a cap may bound which literals are searched and may never bound a REPORTED
+#: NUMBER.
+CONCEPT_LITERAL_CAP = 40
+
+#: Injected corpus-frequency resolver: ``terms -> {term: mentions}``. INJECTED rather
+#: than imported because this module is pure (no DB) by design -- the same discipline as
+#: ``merge_equivalents``'s ``lang_of``. A term the resolver omits is treated as
+#: unmeasured, NEVER as zero: an absent frequency and a measured zero are different
+#: facts, and only the second is evidence about the corpus.
+Frequency = Callable[[Sequence[str]], Mapping[str, int]]
+
+
 class QueryExpander:
     """A ``build_match`` expansion hook that RECORDS what it did.
 
@@ -707,9 +733,18 @@ class QueryExpander:
         prefer_language: str | None = None,
         languages: Iterable[str] | None = None,
         pinned: Mapping[str, str] | None = None,
+        cap: int | None = CONCEPT_LITERAL_CAP,
+        frequency: Frequency | None = None,
     ) -> None:
         self.prefer_language = prefer_language
         self.languages = tuple(languages) if languages is not None else None
+        # Q503 + its NOTE: the fan-out cap, ON by default, ``None`` when the reader turned
+        # it off. Counted in LITERALS (the typed form plus its siblings), because that is
+        # the unit the ruling's own disclosure speaks in -- "expanded to 40 of 63 forms".
+        self.cap = cap if (cap is None or cap > 0) else None
+        self.frequency = frequency
+        # {normalized term: (kept_siblings, all_siblings, ordering)} -- what the cap did.
+        self._capped: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {}
         # {normalized term: ring id} -- the reader's sense choices (R2a). Keyed on the
         # NORMALIZED form because that is what the ring index is keyed on, so `April` and
         # `april` are one choice rather than two that disagree.
@@ -729,7 +764,7 @@ class QueryExpander:
         """
         cached = self._by_term.get(term)
         if cached is not None:
-            return cached.siblings
+            return self._literals_for(cached)
         result = expand_term(
             term,
             prefer_language=self.prefer_language,
@@ -738,11 +773,87 @@ class QueryExpander:
         )
         self._by_term[term] = result
         self.expansions.append(result)
-        return result.siblings
+        return self._literals_for(result)
+
+    def _literals_for(self, result: TermExpansion) -> tuple[str, ...]:
+        """The siblings this expander actually ORs in, after ordering and the cap.
+
+        ORDERING IS A CLAIM, so it is recorded rather than assumed. With a ``frequency``
+        resolver the siblings are sorted by the corpus's own mention counts, which is the
+        "most frequent first" the ruling asks for; without one they keep the ring file's
+        own member order and the disclosure says ``ring-order`` instead. A term the
+        resolver does not answer for sorts as UNMEASURED and keeps its ring position
+        relative to the other unmeasured ones -- never as a measured zero, which would
+        push a real form the corpus simply has not indexed yet to the back of the queue
+        behind forms it genuinely outranks.
+        """
+        siblings = result.siblings
+        if not siblings:
+            return ()
+        ordering = "ring-order"
+        ordered = siblings
+        if self.frequency is not None:
+            try:
+                counts = self.frequency(siblings)
+            except Exception:  # noqa: BLE001 - an unreadable corpus must never break a search
+                counts = {}
+            if counts:
+                ordering = "corpus-frequency"
+                # Stable: measured terms first by descending count, then the unmeasured
+                # ones in ring order. ``sorted`` is stable, so equal keys keep that order.
+                ordered = tuple(
+                    sorted(
+                        siblings,
+                        key=lambda t: (0 if t in counts else 1, -int(counts.get(t, 0))),
+                    )
+                )
+        kept = ordered if self.cap is None else ordered[: max(0, self.cap - 1)]
+        self._capped[result.normalized] = (tuple(kept), tuple(ordered), ordering)
+        return tuple(kept)
+
+    def cap_record(self, normalized: str) -> tuple[tuple[str, ...], tuple[str, ...], str] | None:
+        """``(kept siblings, every sibling, ordering)`` for one resolved term, or ``None``."""
+        return self._capped.get(normalized)
 
     @property
     def any_expanded(self) -> bool:
-        return any(e.expanded for e in self.expansions)
+        """Did the SEARCH actually widen? Read off what was ORed in, never off the ring.
+
+        Under a cap of 1 the ring may offer sixty siblings and the query still searches
+        the typed form alone, so reading ``TermExpansion.expanded`` (a fact about the
+        RING) would report a widening that did not happen.
+        """
+        return any(bool(self.searched_siblings(e)) for e in self.expansions)
+
+    def searched_siblings(self, e: TermExpansion) -> tuple[str, ...]:
+        """The siblings this expander really ORed in for ``e`` -- cap applied."""
+        rec = self._capped.get(e.normalized)
+        return rec[0] if rec is not None else ()
+
+    def cap_facts(self, e: TermExpansion) -> dict | None:
+        """The anti-capping block for one term: what was searched, out of how many.
+
+        ``total_forms`` is EXACT and is never the cap -- it counts the typed form plus
+        every sibling the ring offers, whether or not the fan-out reached them. Emitted
+        only when the term expanded at all, because a term that touched no ring has no
+        forms to be capped.
+        """
+        rec = self._capped.get(e.normalized)
+        if rec is None:
+            return None
+        kept, every, ordering = rec
+        total_forms = 1 + len(every)
+        searched_forms = 1 + len(kept)
+        out: dict = {
+            "searched_forms": searched_forms,
+            "total_forms": total_forms,
+            "capped": searched_forms < total_forms,
+            "cap": self.cap,
+            "ordering": ordering,
+        }
+        if out["capped"]:
+            out["omitted_forms"] = total_forms - searched_forms
+        return out
 
     def disclosure(self) -> dict | None:
         """The payload block, or None when there is nothing to disclose.
@@ -758,9 +869,22 @@ class QueryExpander:
         interesting = [e for e in self.expansions if e.expanded or e.declined or e.pin_missed]
         if not interesting:
             return None
-        return {
+        terms = []
+        for e in interesting:
+            row = e.to_dict()
+            facts = self.cap_facts(e)
+            if facts is not None:
+                row.update(facts)
+                # The ROW's own `added_terms` must describe the SEARCH, not the ring --
+                # otherwise a capped query lists forms it never looked for, and the
+                # keyword group beside it would offer siblings the article count cannot
+                # account for (two surfaces disagreeing about one quantity).
+                row["added_terms"] = list(self.searched_siblings(e))
+            terms.append(row)
+        any_capped = any(t.get("capped") for t in terms)
+        out: dict = {
             "expanded": self.any_expanded,
-            "terms": [e.to_dict() for e in interesting],
+            "terms": terms,
             "method": (
                 "cross-language expansion through the hand-vetted Wikidata concept rings "
                 "(configs/keyword_rings_generated.yml); a term denoting several concepts is "
@@ -771,6 +895,18 @@ class QueryExpander:
                 "the words you typed. Rings cover 698 concepts, so most terms are unaffected."
             ),
         }
+        if any_capped:
+            out["capped"] = True
+            out["cap"] = self.cap
+            # A separate sentence rather than an extension of the caveat above: that one
+            # is an already-translated key in twelve locales, and appending to it would
+            # change the key and silently un-translate it everywhere (the recorded
+            # extend-a-keyed-constant defect).
+            out["cap_caveat"] = (
+                "The search was widened to the most-mentioned forms only. Turn the limit off "
+                "to search every form the concept has."
+            )
+        return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1013,4 +1149,138 @@ def resolve_translation(
     # --- rung 3: UNTRANSLATED, tagged with the language it IS in -------------------- #
     return TermTranslation(
         text=None, tier=TIER_UNTRANSLATED, source_lang=src, target_lang=tl, ring_id=rid
+    )
+
+
+@dataclass(frozen=True)
+class ConceptResolution:
+    """What ONE typed concept resolves to — the single object both search paths read.
+
+    Q501 (2026-09-15): ``resolve_concept(term, ui_lang, sense)`` is computed ONCE per
+    analysis tab and passed to BOTH the FTS path and the keyword-keyed aggregates. This
+    is that object. It IS the ``ExpandTerms`` hook (``__call__``), so it can be handed
+    straight to :func:`src.database.fts.build_match` / ``search_ids`` / ``search_total``;
+    and it carries :attr:`literals`, which is what a keyword-keyed aggregate joins on.
+    One object means the article list and every analysis tab cannot disagree about which
+    concept they are describing — the property the gate row asks to be demonstrated.
+
+    A query may carry SEVERAL terms (``climate AND policy``). The primary term's numbers
+    are the ones this object publishes; the others are resolved by the same expander,
+    under the same settings, when ``build_match`` asks for them. So a multi-term query
+    still expands consistently and the disclosure still covers every term.
+    """
+
+    term: str
+    normalized: str
+    expansion: TermExpansion
+    literals: tuple[str, ...]  # the forms actually SEARCHED, the typed form first
+    all_literals: tuple[str, ...]  # every form the ring offers; the anti-capping total
+    ordering: str  # "corpus-frequency" | "ring-order" | "literal"
+    expander: QueryExpander | None  # None when the reader asked for the literal term
+
+    # -- the ExpandTerms hook -------------------------------------------------- #
+    def __call__(self, term: str) -> tuple[str, ...]:
+        if self.expander is None:
+            return ()
+        return self.expander(term)
+
+    # -- the facts a surface publishes ----------------------------------------- #
+    @property
+    def total_forms(self) -> int:
+        """EXACT — the typed form plus every sibling the ring offers. Never the cap."""
+        return len(self.all_literals)
+
+    @property
+    def searched_forms(self) -> int:
+        return len(self.literals)
+
+    @property
+    def cap_applied(self) -> bool:
+        return self.searched_forms < self.total_forms
+
+    @property
+    def expanded(self) -> bool:
+        """Did the SEARCH widen? (Not: does the ring offer siblings.)"""
+        return self.searched_forms > 1
+
+    def disclosure(self) -> dict | None:
+        return self.expander.disclosure() if self.expander is not None else None
+
+
+def resolve_concept(
+    term: str,
+    *,
+    ui_lang: str | None = None,
+    sense: Mapping[str, str] | Iterable[str] | None = None,
+    expand: bool = True,
+    cap: int | None = CONCEPT_LITERAL_CAP,
+    frequency: Frequency | None = None,
+    languages: Iterable[str] | None = None,
+) -> ConceptResolution:
+    """Resolve one typed term to the forms every search path should use (Q501, Q504).
+
+    ``expand=False`` is the reader's "only the words I typed" toggle (Q504's ``?expand=0``).
+    It returns a resolution whose ``literals`` is exactly ``(term,)`` and whose hook adds
+    NOTHING, so every downstream call is byte-identical to a tree without rings — which is
+    what makes the toggle a real refusal rather than an approximation of one.
+
+    ``sense`` is the reader's sense pick (Q504's ``?sense=``). It accepts either the parsed
+    ``{term: ring_id}`` mapping or the raw ``term:ring_id`` strings a URL carries, so a
+    caller never has to remember which side of :func:`parse_sense_pins` it is on.
+
+    ``cap`` is Q503's fan-out limit, ``None`` when the reader turned it off. ``frequency``
+    is the injected corpus-frequency resolver that makes "most frequent first" a
+    measurement rather than a claim; without it the ordering is the ring file's own and
+    :attr:`ConceptResolution.ordering` says so.
+
+    RING-VERIFIED ONLY (Q514). The forms come from :func:`expand_term`, which reads the
+    hand-vetted ring files and nothing else. A tentative (``≈``) machine translation may
+    be DISPLAYED beside a keyword, and it can never enter this list — there is no path
+    from ``keyword_translations`` into a query here, by construction rather than by a
+    filter that could be relaxed. The per-query opt-in the ruling allows would be a
+    separate, explicit argument; none exists, so no caller can widen a search on a
+    translation nobody verified.
+    """
+    normalized = _norm(term)
+    pins: Mapping[str, str]
+    if sense is None:
+        pins = {}
+    elif isinstance(sense, Mapping):
+        pins = dict(sense)
+    else:
+        pins = parse_sense_pins(sense)
+
+    if not expand or not normalized:
+        return ConceptResolution(
+            term=term,
+            normalized=normalized,
+            expansion=TermExpansion(
+                term=term, normalized=normalized, matches=(), applied=None, declined=None
+            ),
+            literals=(term,) if term else (),
+            all_literals=(term,) if term else (),
+            ordering="literal",
+            expander=None,
+        )
+
+    expander = QueryExpander(
+        prefer_language=(ui_lang or "").strip().casefold() or None,
+        languages=languages,
+        pinned=pins,
+        cap=cap,
+        frequency=frequency,
+    )
+    kept = expander(term)  # warms the memo AND records the cap for this term
+    resolved = expander._by_term[term]
+    rec = expander.cap_record(resolved.normalized)
+    every = rec[1] if rec is not None else resolved.siblings
+    ordering = rec[2] if rec is not None else "ring-order"
+    return ConceptResolution(
+        term=term,
+        normalized=normalized,
+        expansion=resolved,
+        literals=(term, *kept),
+        all_literals=(term, *every),
+        ordering=ordering,
+        expander=expander,
     )

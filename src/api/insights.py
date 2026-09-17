@@ -20,7 +20,7 @@ import os as _os
 import threading as _threading
 from collections.abc import Callable
 from datetime import UTC, date, datetime
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -389,6 +389,10 @@ def _resolve_corpus(
     language: str | None,
     tags: str | None,
     cap: int,
+    expand: bool = True,
+    ui_lang: str | None = None,
+    sense: list[str] | None = None,
+    literal_cap: int | None = -1,
 ) -> tuple[list[int], int]:
     """Resolve the analysis corpus to ``(ids, total)``.
 
@@ -401,6 +405,20 @@ def _resolve_corpus(
 
     ``cap`` is additionally clamped to ``_SQLITE_SAFE_IN_CAP`` so the returned ids can
     always be safely used in a single ``.in_(...)`` filter downstream.
+
+    CROSS-LANGUAGE (Q501, Q516). ``expand`` / ``ui_lang`` / ``sense`` / ``literal_cap``
+    are the same four controls ``/api/articles`` exposes, and threading them here is what
+    makes the gate row's bar — *every analysis tab agrees with the Articles list on the
+    same concept* — true by construction rather than by coincidence. Before this, the
+    hook existed one hop below (``_query_articles`` has taken ``expand`` since R1) and
+    ``_resolve_corpus`` simply never passed it, so five analysis tabs searched the literal
+    query while the Articles tab beside them searched the concept.
+
+    An EXPLICIT id set is untouched by any of it: there is no term to widen, so sending
+    the controls would offer a choice that does not exist.
+
+    ``literal_cap`` uses the sentinel ``-1`` for "the ruled default" because ``None`` is
+    the reader turning the cap OFF, and the two must not be spelled the same way.
     """
     cap = min(cap, _SQLITE_SAFE_IN_CAP)
     if article_ids:
@@ -414,13 +432,88 @@ def _resolve_corpus(
                     seen.add(v)
                     ids.append(v)
         return ids[:cap], len(ids)
-    from src.api.main import _query_articles
+    from src.api.main import _query_articles, _query_expander
 
+    expander = _query_expander(
+        query, enabled=expand, ui_lang=ui_lang, senses=sense, cap=literal_cap
+    )
     articles, total = _query_articles(
         db, query=query, source=source, start_date=start_date, end_date=end_date,
-        language=language, tags=tags, limit=cap, offset=0,
+        language=language, tags=tags, limit=cap, offset=0, expand=expander,
     )
     return [a.id for a in articles], total
+
+
+def _corpus_expander(
+    db,
+    *,
+    article_ids: str | None,
+    query: str | None,
+    expand: bool,
+    ui_lang: str | None,
+    sense: list[str] | None,
+    literal_cap: int | None = -1,
+):
+    """The disclosure hook for ONE analysis-tab request, or ``None``.
+
+    Built with the SAME arguments ``_resolve_corpus`` resolves the corpus with, so the
+    sentence a tab prints and the search it printed it about come from one configuration.
+    ``None`` for an id-seeded corpus (nothing was widened) and for a reader who turned
+    expansion off, so those payloads carry no extra weight and no extra sentence.
+
+    It is deliberately a SECOND object rather than the one ``_resolve_corpus`` used: an
+    expander records what it did, and handing the same instance to two searches would
+    make the disclosure describe both at once.
+    """
+    if article_ids or not query or not expand:
+        return None
+    from src.api.main import _query_expander
+
+    return _query_expander(
+        query, enabled=True, ui_lang=ui_lang, senses=sense, cap=literal_cap
+    )
+
+
+def _cross_language_block(
+    db,
+    *,
+    article_ids: str | None,
+    query: str | None,
+    expand: bool,
+    ui_lang: str | None,
+    sense: list[str] | None,
+    literal_cap: int | None = -1,
+) -> dict | None:
+    """The ``cross_language`` disclosure for one analysis tab, or ``None``.
+
+    An expander records what it did only once something ASKS it, so this re-runs the very
+    parse the search ran (``build_match`` is pure — no database, no index) and reads the
+    disclosure off the result. That is what makes the sentence and the search agree by
+    construction: a block built from the same query under the same settings cannot
+    describe an expansion the search did not perform.
+
+    A parse failure yields ``None`` rather than raising: the corpus resolution above has
+    already answered, and blanking an analysis tab to explain a query the reader can see
+    on screen would trade a caveat for an outage.
+    """
+    exp = _corpus_expander(
+        db,
+        article_ids=article_ids,
+        query=query,
+        expand=expand,
+        ui_lang=ui_lang,
+        sense=sense,
+        literal_cap=literal_cap,
+    )
+    if exp is None:
+        return None
+    from src.database.fts import build_match
+
+    try:
+        build_match(query, expand=exp)
+    except Exception:  # noqa: BLE001 - a disclosure must never blank the tab it explains
+        return None
+    return exp.disclosure()
 
 
 class KeywordFilterUpdate(BaseModel):
@@ -749,6 +842,28 @@ def insights_corpus_keywords(
     tags: str | None = None,
     kind: str | None = Query(None),
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     limit: int = Query(30, ge=1, le=100),
     cap: int = Query(1000, ge=1, le=5000),
     target_lang: str | None = Query(None, description="UI language for verified ring translations"),
@@ -765,16 +880,25 @@ def insights_corpus_keywords(
     # this subtab is instant instead of re-paying the search + aggregation (field test
     # 2026-06-24: the analysis window's "Loading…"). Resolve INSIDE the compute so a hit
     # skips the search too. TTL-disclosed (cached/computed_at), like every cached endpoint.
-    key = _ckey("corpus-keywords", ids=article_ids, q=query, src=source, sd=start_date,
+    key = _ckey("corpus-keywords", **_xkey(expand, ui_lang, sense, literal_cap),
+                ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, kind=kind, limit=limit, cap=cap, tl=target_lang)
 
     def _compute() -> dict:
         ids, total = _resolve_corpus(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
+            expand=expand, ui_lang=ui_lang, sense=sense,
+            literal_cap=-1 if literal_cap else None,
         )
         res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
         res["total_matched"] = total
+        _xl = _cross_language_block(
+            db, article_ids=article_ids, query=query, expand=expand, ui_lang=ui_lang,
+            sense=sense, literal_cap=-1 if literal_cap else None,
+        )
+        if _xl is not None:
+            res["cross_language"] = _xl
         res["capped"] = total > len(ids)
         res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
         res["caveat"] = (
@@ -809,6 +933,28 @@ def insights_corpus_www(
     language: str | None = None,
     tags: str | None = None,
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
@@ -818,13 +964,16 @@ def insights_corpus_www(
     When/Where/Who facet surface. Each facet value is clickable (the drill endpoint
     below narrows the corpus). Deduced from text, never confirmed; no score. Bounded to
     ``cap`` (disclosed)."""
-    key = _ckey("corpus-www", ids=article_ids, q=query, src=source, sd=start_date,
+    key = _ckey("corpus-www", **_xkey(expand, ui_lang, sense, literal_cap),
+                ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
 
     def _compute() -> dict:
         ids, total = _resolve_corpus(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
+            expand=expand, ui_lang=ui_lang, sense=sense,
+            literal_cap=-1 if literal_cap else None,
         )
         return {
             "who": q.corpus_who(db, article_ids=ids, limit=limit),
@@ -850,6 +999,28 @@ def insights_corpus_facet_articles(
     language: str | None = None,
     tags: str | None = None,
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -869,6 +1040,8 @@ def insights_corpus_facet_articles(
     ids, total = _resolve_corpus(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap,
+        expand=expand, ui_lang=ui_lang, sense=sense,
+        literal_cap=-1 if literal_cap else None,
     )
     matched = q.corpus_facet_article_ids(db, article_ids=ids, facet=facet, value=value)
     return {
@@ -891,6 +1064,28 @@ def insights_corpus_source_language_facets(
     language: str | None = None,
     tags: str | None = None,
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -901,6 +1096,8 @@ def insights_corpus_source_language_facets(
     ids, total = _resolve_corpus(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap,
+        expand=expand, ui_lang=ui_lang, sense=sense,
+        literal_cap=-1 if literal_cap else None,
     )
     facets = q.corpus_source_language_facets(db, article_ids=ids)
     return {
@@ -1007,6 +1204,28 @@ def insights_corpus_sentiment(
     language: str | None = None,
     tags: str | None = None,
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1015,16 +1234,25 @@ def insights_corpus_sentiment(
     English-lexicon based, so the response carries the English share + a caveat that
     non-English scores are unreliable. Counts only; tone is a measured word-valence,
     never a verdict. Bounded to ``cap`` (disclosed)."""
-    key = _ckey("corpus-sentiment", ids=article_ids, q=query, src=source, sd=start_date,
+    key = _ckey("corpus-sentiment", **_xkey(expand, ui_lang, sense, literal_cap),
+                ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, cap=cap)
 
     def _compute() -> dict:
         ids, total = _resolve_corpus(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
+            expand=expand, ui_lang=ui_lang, sense=sense,
+            literal_cap=-1 if literal_cap else None,
         )
         res = q.corpus_sentiment(db, article_ids=ids)
         res["total_matched"] = total
+        _xl = _cross_language_block(
+            db, article_ids=article_ids, query=query, expand=expand, ui_lang=ui_lang,
+            sense=sense, literal_cap=-1 if literal_cap else None,
+        )
+        if _xl is not None:
+            res["cross_language"] = _xl
         res["capped"] = total > len(ids)
         return res
 
@@ -1040,6 +1268,28 @@ def insights_corpus_sources(
     language: str | None = None,
     tags: str | None = None,
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     limit: int = Query(40, ge=1, le=200),
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
@@ -1048,16 +1298,25 @@ def insights_corpus_sources(
     search) — the source view: per-source volume, mean tone, publication span. Counts +
     dates exact; mean tone inherits the VADER English caveat. No ranking, no verdict —
     coverage, not credibility. Bounded to ``cap`` (disclosed)."""
-    key = _ckey("corpus-sources", ids=article_ids, q=query, src=source, sd=start_date,
+    key = _ckey("corpus-sources", **_xkey(expand, ui_lang, sense, literal_cap),
+                ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
 
     def _compute() -> dict:
         ids, total = _resolve_corpus(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
+            expand=expand, ui_lang=ui_lang, sense=sense,
+            literal_cap=-1 if literal_cap else None,
         )
         res = q.corpus_sources(db, article_ids=ids, limit=limit)
         res["n_articles"] = len(ids)
+        _xl = _cross_language_block(
+            db, article_ids=article_ids, query=query, expand=expand, ui_lang=ui_lang,
+            sense=sense, literal_cap=-1 if literal_cap else None,
+        )
+        if _xl is not None:
+            res["cross_language"] = _xl
         res["total_matched"] = total
         res["capped"] = total > len(ids)
         return res
@@ -1074,6 +1333,28 @@ def insights_corpus_coordination(
     language: str | None = None,
     tags: str | None = None,
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     cap: int = Query(400, ge=1, le=2000),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1083,16 +1364,25 @@ def insights_corpus_coordination(
     near-duplication only (MinHash+LSH, high-precision); independence = distinct sources;
     counts only, NO score. Bounded to ``cap`` (disclosed) because clustering reads full
     article text."""
-    key = _ckey("corpus-coordination", ids=article_ids, q=query, src=source, sd=start_date,
+    key = _ckey("corpus-coordination", **_xkey(expand, ui_lang, sense, literal_cap),
+                ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, cap=cap)
 
     def _compute() -> dict:
         ids, total = _resolve_corpus(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
+            expand=expand, ui_lang=ui_lang, sense=sense,
+            literal_cap=-1 if literal_cap else None,
         )
         res = q.corpus_coordination(db, article_ids=ids)
         res["total_matched"] = total
+        _xl = _cross_language_block(
+            db, article_ids=article_ids, query=query, expand=expand, ui_lang=ui_lang,
+            sense=sense, literal_cap=-1 if literal_cap else None,
+        )
+        if _xl is not None:
+            res["cross_language"] = _xl
         res["capped"] = total > len(ids)
         return res
 
@@ -1281,15 +1571,78 @@ def insights_trending_windows(
     return _annotate_windows(out, tl)
 
 
+def _xkey(expand: bool, ui_lang: str | None, sense, literal_cap: bool) -> dict:
+    """The four cross-language controls, as cache-key components.
+
+    EVERY cached concept-aware endpoint must fold these in. A key that omits them serves
+    a reader who just turned expansion OFF the expanded answer they were trying to get
+    away from — a cache keyed on the wrong thing, which reads as the toggle being broken
+    rather than as a caching bug. One helper so a new control cannot be added to the
+    signature and forgotten in the key.
+    """
+    return {
+        "x": 1 if expand else 0,
+        "xl": (ui_lang or "").strip().casefold(),
+        "xs": ",".join(sorted(str(s) for s in (sense or []))),
+        "xc": 1 if literal_cap else 0,
+    }
+
+
+def _concept_for(db, term, *, expand, ui_lang, sense, literal_cap):
+    """The ONE :class:`ConceptKeywords` a keyword-keyed request resolves with (Q501).
+
+    Resolved once per request and handed to whichever aggregate the endpoint runs, so a
+    tab's numbers and its ``concept`` block come from one resolution. ``None`` for a term
+    the reader narrowed with ``expand=false`` — the aggregate then takes its literal path
+    and is byte-identical to the pre-ring behaviour.
+    """
+    if not term or not expand:
+        return None
+    try:
+        return q.resolve_concept_keywords(
+            db, term, ui_lang=ui_lang, sense=sense, expand=True,
+            cap=-1 if literal_cap else None,
+        )
+    except Exception:  # noqa: BLE001 - an unreadable ring file must never break an aggregate
+        return None
+
+
 @router.get("/trend")
 def insights_trend(
     term: str,
     bucket: str = Query("week", pattern="^(day|week|month)$"),
     country: str | None = None,
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: aggregate over every form of the concept its "
+            "ring covers (Q417/Q501). false = only the word you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the concept at its 40 most-mentioned forms. "
+            "false = every form."
+        ),
+    ] = True,
     db: Session = Depends(get_db),
 ) -> dict:
     """Mention volume over time for one keyword."""
-    return q.trend(db, term, bucket=bucket, country=country)
+    return q.trend(
+        db, term, bucket=bucket, country=country,
+        concept=_concept_for(
+            db, term, expand=expand, ui_lang=ui_lang, sense=sense, literal_cap=literal_cap
+        ),
+    )
 
 
 @router.get("/trend-articles")
@@ -1298,6 +1651,28 @@ def insights_trend_articles(
     start: str = Query(..., description="ISO date, inclusive — the brushed span's left edge"),
     end: str = Query(..., description="ISO date, inclusive — the brushed span's right edge"),
     bucket: str = Query("day", pattern="^(day|week|month)$"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: aggregate over every form of the concept its "
+            "ring covers (Q417/Q501). false = only the word you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the concept at its 40 most-mentioned forms. "
+            "false = every form."
+        ),
+    ] = True,
     db: Session = Depends(get_db),
 ) -> dict:
     """The articles behind a brushed span of a keyword trend chart (plan F4).
@@ -1321,10 +1696,19 @@ def insights_trend_articles(
         ) from None
     if lo > hi:
         raise HTTPException(status_code=400, detail="start must not be after end")
-    key = _ckey("trend-articles", term=term, start=start, end=end, bucket=bucket)
+    key = _ckey(
+        "trend-articles", term=term, start=start, end=end, bucket=bucket,
+        **_xkey(expand, ui_lang, sense, literal_cap),
+    )
     return _deadlined(
         db, key,
-        lambda: q.trend_range_article_ids(db, term, start=lo, end=hi, bucket=bucket),
+        lambda: q.trend_range_article_ids(
+            db, term, start=lo, end=hi, bucket=bucket,
+            concept=_concept_for(
+                db, term, expand=expand, ui_lang=ui_lang, sense=sense,
+                literal_cap=literal_cap,
+            ),
+        ),
     )
 
 
@@ -1334,12 +1718,40 @@ def insights_associations(
     limit: int = Query(20, ge=1, le=100),
     min_cooccur: int = Query(2, ge=1, le=50),
     group: bool = Query(True, description="Merge surface variants into entity families"),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: aggregate over every form of the concept its "
+            "ring covers (Q417/Q501). false = only the word you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the concept at its 40 most-mentioned forms. "
+            "false = every form."
+        ),
+    ] = True,
     db: Session = Depends(get_db),
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
-    key = _ckey("associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group)
+    key = _ckey(
+        "associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group,
+        **_xkey(expand, ui_lang, sense, literal_cap),
+    )
     return _deadlined(db, key, lambda: rm.associations(
-        db, term, limit=limit, min_cooccur=min_cooccur, group=group))
+        db, term, limit=limit, min_cooccur=min_cooccur, group=group,
+        concept=_concept_for(
+            db, term, expand=expand, ui_lang=ui_lang, sense=sense, literal_cap=literal_cap
+        )))
 
 
 @router.get("/source-types", response_model=SourceTypeFacetsResponse)
@@ -1387,6 +1799,28 @@ def insights_keyword_stats(
     window_days: int = Query(7, ge=1, le=365),
     baseline_days: int = Query(30, ge=1, le=3650),
     cooccur_limit: int = Query(5, ge=0, le=20),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: aggregate over every form of the concept its "
+            "ring covers (Q417/Q501). false = only the word you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the concept at its 40 most-mentioned forms. "
+            "false = every form."
+        ),
+    ] = True,
     db: Session = Depends(get_db),
 ) -> dict:
     """Hover stats for one keyword (mention n · distinct-article spread · windowed
@@ -1395,12 +1829,17 @@ def insights_keyword_stats(
     key = _ckey(
         "keyword-stats", term=term, window_days=window_days,
         baseline_days=baseline_days, cooccur_limit=cooccur_limit,
+        **_xkey(expand, ui_lang, sense, literal_cap),
     )
     return _deadlined(
         db, key,
         lambda: q.keyword_stats(
             db, term, window_days=window_days,
             baseline_days=baseline_days, cooccur_limit=cooccur_limit,
+            concept=_concept_for(
+                db, term, expand=expand, ui_lang=ui_lang, sense=sense,
+                literal_cap=literal_cap,
+            ),
         ),
     )
 
@@ -1409,10 +1848,37 @@ def insights_keyword_stats(
 def insights_context(
     term: str,
     limit: int = Query(10, ge=1, le=50),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: aggregate over every form of the concept its "
+            "ring covers (Q417/Q501). false = only the word you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the concept at its 40 most-mentioned forms. "
+            "false = every form."
+        ),
+    ] = True,
     db: Session = Depends(get_db),
 ) -> dict:
     """Recent mention snippets for a keyword, with article + source links."""
-    return q.context(db, term, limit=limit)
+    return q.context(
+        db, term, limit=limit,
+        concept=_concept_for(
+            db, term, expand=expand, ui_lang=ui_lang, sense=sense, literal_cap=literal_cap
+        ),
+    )
 
 
 @router.get("/subjectivity")
@@ -2713,6 +3179,28 @@ def insights_graph(
         None, description="explicit article-id set → a radial keyword map over that "
         "exact selection (the reader / analysis 'corpus of 1+'); overrides term/level"
     ),
+    expand: Annotated[
+        bool,
+        Query(
+            description="cross-language: search the concept in every language its ring "
+            "covers (Q501). false = only the words you typed."
+        ),
+    ] = True,
+    ui_lang: Annotated[
+        str | None,
+        Query(description="the reader's own locale; only ever NARROWS an ambiguous term"),
+    ] = None,
+    sense: Annotated[
+        list[str] | None,
+        Query(description="term:ring_id — the reader's own sense pick, repeatable (Q504)"),
+    ] = None,
+    literal_cap: Annotated[
+        bool,
+        Query(
+            description="Q503: cap the cross-language fan-out at 40 forms, most frequent "
+            "first. false = search every form the concept has."
+        ),
+    ] = True,
     query: str | None = Query(None, description="analysis-window search scope (same as corpus-keywords)"),
     source: str | None = Query(None, description="analysis-window source-domain scope"),
     language: str | None = Query(None, description="analysis-window language scope"),
@@ -2746,6 +3234,8 @@ def insights_graph(
         ids, _total = _resolve_corpus(
             db, article_ids, query=query, source=source, start_date=start_date,
             end_date=end_date, language=language, tags=tags, cap=cap,
+            expand=expand, ui_lang=ui_lang, sense=sense,
+            literal_cap=-1 if literal_cap else None,
         )
         # Cache by the exact id set so re-opening the same analysis mindmap is instant.
         return _deadlined(

@@ -1,0 +1,40 @@
+
+=== term='climate' ui_lang='en' expand=True ===
+  ARTICLES (search_ids / total)      ids=6 · total=6
+  resolve_concept                    forms_searched=7 · forms_total=7 · capped=False · ordering=corpus-frequency
+  concept keywords in corpus         n=4 · terms=climate,climat,klima,clima
+  TREND tab                          articles=6 · mentions=7 · langs=de,en,es,fr,it,pt
+  KEYWORDS tab (over the same ids)   n_articles=6
+  CONTEXT tab                        mentions=6
+  ASSOCIATIONS / mindmap             n_with_term=6
+  -> total vs ids: AGREE | trend articles vs articles list: AGREE
+
+=== term='climate' ui_lang='en' expand=False ===
+  ARTICLES (search_ids / total)      ids=2 · total=2
+  resolve_concept                    forms_searched=1 · forms_total=1 · capped=False · ordering=literal
+  concept keywords in corpus         n=1 · terms=climate
+  TREND tab                          articles=2 · mentions=3 · langs=-
+  KEYWORDS tab (over the same ids)   n_articles=2
+  CONTEXT tab                        mentions=2
+  ASSOCIATIONS / mindmap             n_with_term=2
+  -> total vs ids: AGREE | trend articles vs articles list: AGREE
+
+=== term='climat' ui_lang='fr' expand=True ===
+  ARTICLES (search_ids / total)      ids=6 · total=6
+  resolve_concept                    forms_searched=7 · forms_total=7 · capped=False · ordering=corpus-frequency
+  concept keywords in corpus         n=4 · terms=climat,climate,klima,clima
+  TREND tab                          articles=6 · mentions=7 · langs=de,en,es,fr,it,pt
+  KEYWORDS tab (over the same ids)   n_articles=6
+  CONTEXT tab                        mentions=6
+  ASSOCIATIONS / mindmap             n_with_term=6
+  -> total vs ids: AGREE | trend articles vs articles list: AGREE
+
+=== term='climat' ui_lang='fr' expand=False ===
+  ARTICLES (search_ids / total)      ids=2 · total=2
+  resolve_concept                    forms_searched=1 · forms_total=1 · capped=False · ordering=literal
+  concept keywords in corpus         n=1 · terms=climat
+  TREND tab                          articles=2 · mentions=2 · langs=-
+  KEYWORDS tab (over the same ids)   n_articles=2
+  CONTEXT tab                        mentions=2
+  ASSOCIATIONS / mindmap             n_with_term=2
+  -> total vs ids: AGREE | trend articles vs articles list: AGREE
