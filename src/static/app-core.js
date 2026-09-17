@@ -35,6 +35,321 @@
     };
 
     // ===================================================================== //
+    //  COUNTRY AND LANGUAGE CODES ON SCREEN (ruling Q301 = c step 1, Q302's  //
+    //  note, Q303, Q306, Q307, Q308)                                        //
+    // ===================================================================== //
+    //
+    // WHAT THE READER SEES. Every surface that shows a country shows the
+    // UPPERCASE ISO 3166-1 ALPHA-3 CODE, with the full country name in the
+    // current UI language in the hover bubble. That is Q302 as the maintainer
+    // wrote it: the option they picked was labelled "name only, the code in the
+    // hover" and the note beside it inverts the label, so the note is the ruling.
+    // Storage is untouched -- every payload still carries lowercase alpha-2, and
+    // this layer converts on the way to the screen and nowhere else.
+    //
+    // THE HOVER COSTS NOTHING TO WIRE. `ooTipInit` (app-boot.js) marks EVERY
+    // element carrying a non-empty `title` as `.oo-tip-target` and re-marks
+    // anything added later through a MutationObserver -- so a `title=` written
+    // here joins the invariant-#17 convention by construction, with no
+    // registration and nothing for a future surface to forget.
+    //
+    // WHY THE TABLE IS DUPLICATED HERE. The browser cannot read
+    // `src/catalog/countries.py`, and this must work offline with no request, so
+    // the alpha-3 map exists twice. Two records of one fact disagree the moment
+    // anything moves one of them, so the copy below is the Python module's
+    // `_ISO3_TO_2_TEXT` VERBATIM -- same pairs, same order, same line breaks --
+    // and `tests/test_country_display.py` compares the two TEXTS and fails
+    // naming the pairs that differ. A copy plus a parity test is the enforcement;
+    // the comment saying "kept in sync manually" is the thing that is never true.
+    const _OO_ISO3_TO_2_TEXT = `
+      afg:af alb:al dza:dz and:ad ago:ao atg:ag arg:ar arm:am aus:au aut:at aze:az bhs:bs
+      bhr:bh bgd:bd brb:bb blr:by bel:be blz:bz ben:bj btn:bt bol:bo bih:ba bwa:bw bra:br
+      brn:bn bgr:bg bfa:bf bdi:bi cpv:cv khm:kh cmr:cm can:ca caf:cf tcd:td chl:cl chn:cn
+      col:co com:km cog:cg cod:cd cri:cr civ:ci hrv:hr cub:cu cyp:cy cze:cz dnk:dk dji:dj
+      dma:dm dom:do ecu:ec egy:eg slv:sv gnq:gq eri:er est:ee swz:sz eth:et fji:fj fin:fi
+      fra:fr gab:ga gmb:gm geo:ge deu:de gha:gh grc:gr grd:gd gtm:gt gin:gn gnb:gw guy:gy
+      hti:ht hnd:hn hun:hu isl:is ind:in idn:id irn:ir irq:iq irl:ie isr:il ita:it jam:jm
+      jpn:jp jor:jo kaz:kz ken:ke kir:ki prk:kp kor:kr kwt:kw kgz:kg lao:la lva:lv lbn:lb
+      lso:ls lbr:lr lby:ly lie:li ltu:lt lux:lu mdg:mg mwi:mw mys:my mdv:mv mli:ml mlt:mt
+      mhl:mh mrt:mr mus:mu mex:mx fsm:fm mda:md mco:mc mng:mn mne:me mar:ma moz:mz mmr:mm
+      nam:na nru:nr npl:np nld:nl nzl:nz nic:ni ner:ne nga:ng mkd:mk nor:no omn:om pak:pk
+      plw:pw pan:pa png:pg pry:py per:pe phl:ph pol:pl prt:pt qat:qa rou:ro rus:ru rwa:rw
+      kna:kn lca:lc vct:vc wsm:ws smr:sm stp:st sau:sa sen:sn srb:rs syc:sc sle:sl sgp:sg
+      svk:sk svn:si slb:sb som:so zaf:za ssd:ss esp:es lka:lk sdn:sd sur:sr swe:se che:ch
+      syr:sy tjk:tj tza:tz tha:th tls:tl tgo:tg ton:to tto:tt tun:tn tur:tr tkm:tm tuv:tv
+      uga:ug ukr:ua are:ae gbr:gb usa:us ury:uy uzb:uz vut:vu ven:ve vnm:vn yem:ye zmb:zm
+      zwe:zw hkg:hk mac:mo pri:pr twn:tw pse:ps grl:gl xkx:xk ncl:nc pyf:pf abw:aw cuw:cw
+      sxm:sx tca:tc vir:vi asm:as gum:gu mnp:mp vgb:vg cym:ky bmu:bm fro:fo gib:gi imn:im
+    `;
+    const OO_ISO3_TO_ISO2 = {};
+    const OO_ISO2_TO_ISO3 = {};
+    _OO_ISO3_TO_2_TEXT.split(/\s+/).forEach((pair) => {
+      if (!pair) return;
+      const [a3, a2] = pair.split(":");
+      if (!a3 || !a2) return;
+      OO_ISO3_TO_ISO2[a3] = a2;
+      OO_ISO2_TO_ISO3[a2] = a3;
+    });
+
+    // The four values the catalogues legitimately store that are NOT ISO
+    // countries, in the alpha-3 form Q303 ruled. `xk` resolves through the table
+    // above anyway (the World Bank's XKX is in it); it is listed so the DISCLOSED
+    // set is one object a reader can check against the ruling.
+    const OO_SPECIAL_ALPHA3 = { eu: "EUU", int: "INT", xk: "XKX", an: "ANT" };
+    const OO_NON_ISO_ALPHA3 = { EUU: 1, INT: 1, XKX: 1, ANT: 1 };
+    // `uk` is the law catalogue's jurisdiction spelling and is not an ISO alpha-2;
+    // Q303 names GBR as its alpha-3. The other two are the shorthands the source
+    // catalogue's own name index already resolves server-side, mirrored here so a
+    // value typed into a filter box behaves the same on both sides.
+    const OO_COUNTRY_ALIASES = { uk: "gb", usa: "us", uae: "ae", drc: "cd" };
+
+    // THE TWO CODES CLDR ANSWERS WRONGLY, measured in Chromium rather than assumed.
+    // `Intl.DisplayNames(…,{type:"region"}).of("AN")` returns **Curaçao**: CLDR aliases
+    // the withdrawn Netherlands Antilles code to its successor territory, so the hover
+    // named a DIFFERENT place than the code means -- while `countries.SPECIAL_CODES`
+    // server-side had it right all along, which is the tell: the two halves of one
+    // helper disagreed about one value. `INT` is not a region code at all (regions are
+    // two-alpha or three-digit), so the lookup throws and the name was simply absent,
+    // leaving a code with a disclosure and nothing to disclose it ABOUT.
+    //
+    // `eu` and `xk` are deliberately NOT here. CLDR names both correctly and in every
+    // UI locale; an English table beside it would be a downgrade, and a table that
+    // duplicates a correct source is a second place to forget to update.
+    const OO_CLDR_WRONG_ABOUT = { an: "Netherlands Antilles", int: "International" };
+
+    // lowercase alpha-2 for any stored or displayed country value, or "" when we
+    // cannot read it. This is the SINGLE place a code changes shape, so a caller
+    // that needs alpha-2 for `Intl.DisplayNames`, for a flag, or for a GeoJSON key
+    // never re-derives it -- the recorded "two records of one constraint" trap.
+    function ooCountryAlpha2(value) {
+      const raw = String(value == null ? "" : value).trim().toLowerCase();
+      if (!raw) return "";
+      if (OO_COUNTRY_ALIASES[raw]) return OO_COUNTRY_ALIASES[raw];
+      if (raw.length === 2) return raw;
+      if (OO_ISO3_TO_ISO2[raw]) return OO_ISO3_TO_ISO2[raw];
+      // A special's alpha-3 maps back to the alpha-2 the store holds.
+      const specials = Object.keys(OO_SPECIAL_ALPHA3);
+      for (let i = 0; i < specials.length; i++) {
+        if (OO_SPECIAL_ALPHA3[specials[i]] === raw.toUpperCase()) return specials[i];
+      }
+      return "";
+    }
+
+    // UPPERCASE alpha-3 -- what goes ON SCREEN. An unreadable value comes back
+    // stripped but otherwise unchanged, matching the server helper's contract:
+    // legacy or junk data stays VISIBLE rather than being masked by a fabricated
+    // code or blanked into "this source has no country", which is a different claim.
+    function ooCountryCode(value) {
+      const raw = String(value == null ? "" : value).trim();
+      if (!raw) return "";
+      const a2 = ooCountryAlpha2(raw);
+      if (a2) {
+        if (OO_SPECIAL_ALPHA3[a2]) return OO_SPECIAL_ALPHA3[a2];
+        if (OO_ISO2_TO_ISO3[a2]) return OO_ISO2_TO_ISO3[a2].toUpperCase();
+      }
+      const up = raw.toUpperCase();
+      if (OO_NON_ISO_ALPHA3[up]) return up;
+      if (OO_ISO3_TO_ISO2[raw.toLowerCase()]) return up;
+      return raw;
+    }
+
+    // Three-state, so a caller never re-derives it from the shape of the string:
+    // "iso" | "non-iso" | "unresolved". One field rather than two booleans,
+    // because two booleans can disagree and a reader then has to pick one.
+    function ooCountryKind(value) {
+      const code = ooCountryCode(value);
+      if (!code) return "unresolved";
+      const up = code.toUpperCase();
+      if (OO_NON_ISO_ALPHA3[up]) return "non-iso";
+      if (OO_ISO3_TO_ISO2[up.toLowerCase()]) return "iso";
+      return "unresolved";
+    }
+
+    // The full country name in the CURRENT UI language -- the hover's payload.
+    // `ooRegionName` (app-map.js) owns the CLDR lookup and is reached through the
+    // derived alpha-2, never the alpha-3, because `Intl.DisplayNames({type:
+    // "region"})` accepts alpha-2 and M49 ONLY and answers an alpha-3 by handing
+    // the input straight back -- a silent miss, not an error.
+    function ooCountryName(value, fallback) {
+      const a2 = ooCountryAlpha2(value);
+      const fb = fallback == null ? "" : String(fallback);
+      if (!a2) return fb;
+      if (OO_CLDR_WRONG_ABOUT[a2]) {
+        const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        return tt(OO_CLDR_WRONG_ABOUT[a2]);
+      }
+      if (typeof ooRegionName === "function") return ooRegionName(a2, fb || ooCountryCode(value));
+      return fb || ooCountryCode(value);
+    }
+
+    // The hover STRING. The name, plus Q303's disclosure when the code is not an
+    // ISO one, plus an honest line when we could not read the value at all --
+    // an unreadable code with a silent hover reads as a code we stand behind.
+    function ooCountryTitle(value) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const kind = ooCountryKind(value);
+      if (kind === "unresolved") {
+        const raw = String(value == null ? "" : value).trim();
+        return raw ? t("not a recognised country code") : "";
+      }
+      const name = ooCountryName(value, "");
+      const code = ooCountryCode(value);
+      const label = name && name !== code ? name : code;
+      return kind === "non-iso" ? label + " \u2014 " + t("not an ISO code") : label;
+    }
+
+    // ONE renderer, so no surface re-derives the pair. Returns the escaped HTML
+    // for a single country: the CODE visible, the localised NAME in the hover.
+    // `opts.cls` adds a class; `opts.empty` is what an absent value renders as
+    // (default ""), because an absent country and an unreadable one are different
+    // facts and only the caller knows which blank it wants.
+    function ooCountryCell(value, opts) {
+      const o = opts || {};
+      const code = ooCountryCode(value);
+      if (!code) return o.empty == null ? "" : esc(o.empty);
+      const title = ooCountryTitle(value);
+      const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
+      const ti = title ? ` title="${esc(title)}"` : "";
+      return `<span${cls}${ti}>${esc(code)}</span>`;
+    }
+
+    // Q308: order by LOCALISED NAME, with the code as the secondary key so the
+    // order is total and stable for two countries whose names have not loaded.
+    // `localeCompare` is given the UI locale, or sorting "Ägypten" in German puts
+    // it after "Zypern".
+    function ooCountryCompare(a, b) {
+      const lc = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      const na = ooCountryName(a, "") || ooCountryCode(a) || String(a || "");
+      const nb = ooCountryName(b, "") || ooCountryCode(b) || String(b || "");
+      return na.localeCompare(nb, lc) || ooCountryCode(a).localeCompare(ooCountryCode(b));
+    }
+
+    // Q307: the flag emoji is DERIVED, never stored. Regional-indicator letters
+    // are built from the alpha-2, so an alpha-3 on screen still gets its flag;
+    // anything with no alpha-2 (INT, an unreadable value) gets the globe, which
+    // is what the agenda already did for the non-ISO entities.
+    function ooCountryFlag(value) {
+      // An ABSENT country renders NOTHING. The globe means "an entity with no flag"
+      // (INT, an unreadable code); returning it for an empty value would put a
+      // fabricated "international" marker on every row that simply has no country --
+      // the absent-versus-unreadable distinction, one glyph wide. `agFlag` had this
+      // guard and dropping it on the way into the shared helper is what a node run
+      // caught before any surface was rewired.
+      if (value == null || String(value).trim() === "") return "";
+      const a2 = ooCountryAlpha2(value).toUpperCase();
+      if (/^[A-Z]{2}$/.test(a2)) {
+        return String.fromCodePoint(...[...a2].map((ch) => 0x1F1E6 + ch.charCodeAt(0) - 65));
+      }
+      return "\u{1F310}";
+    }
+
+    // ---- Language codes on screen (Q306 = b, the DISPLAY step) ------------ //
+    //
+    // The same two-sided shape as countries: storage stays ISO 639-1, the screen
+    // reads ISO 639-2/3. The table is `src/catalog/languages.py`'s
+    // `_ISO1_TO_3_TEXT` VERBATIM and `tests/test_country_display.py` compares the
+    // two texts, for the reason spelled out above the country table.
+    //
+    // NOT CONVERTED, each on purpose: a Wikipedia EDITION code (`enwiki`,
+    // `simple`, `zh-yue`) names a wiki and not a language; the native-name
+    // switcher (invariant #15) and the edition pickers (invariant #1) show NAMES
+    // and are untouched; and every `Intl`/BCP-47/`lang=` boundary keeps 639-1,
+    // which is why `ooLangStorage` exists beside `ooLangCode`.
+    const _OO_ISO1_TO_3_TEXT = `
+      aa:aar ab:abk ae:ave af:afr ak:aka am:amh an:arg ar:ara as:asm av:ava ay:aym az:aze
+      ba:bak be:bel bg:bul bi:bis bm:bam bn:ben bo:bod br:bre bs:bos
+      ca:cat ce:che ch:cha co:cos cr:cre cs:ces cu:chu cv:chv cy:cym
+      da:dan de:deu dv:div dz:dzo
+      ee:ewe el:ell en:eng eo:epo es:spa et:est eu:eus
+      fa:fas ff:ful fi:fin fj:fij fo:fao fr:fra fy:fry
+      ga:gle gd:gla gl:glg gn:grn gu:guj gv:glv
+      ha:hau he:heb hi:hin ho:hmo hr:hrv ht:hat hu:hun hy:hye hz:her
+      ia:ina id:ind ie:ile ig:ibo ii:iii ik:ipk io:ido is:isl it:ita iu:iku
+      ja:jpn jv:jav
+      ka:kat kg:kon ki:kik kj:kua kk:kaz kl:kal km:khm kn:kan ko:kor kr:kau ks:kas
+      ku:kur kv:kom kw:cor ky:kir
+      la:lat lb:ltz lg:lug li:lim ln:lin lo:lao lt:lit lu:lub lv:lav
+      mg:mlg mh:mah mi:mri mk:mkd ml:mal mn:mon mr:mar ms:msa mt:mlt my:mya
+      na:nau nb:nob nd:nde ne:nep ng:ndo nl:nld nn:nno no:nor nr:nbl nv:nav ny:nya
+      oc:oci oj:oji om:orm or:ori os:oss
+      pa:pan pi:pli pl:pol ps:pus pt:por
+      qu:que
+      rm:roh rn:run ro:ron ru:rus rw:kin
+      sa:san sc:srd sd:snd se:sme sg:sag si:sin sk:slk sl:slv sm:smo sn:sna so:som
+      sq:sqi sr:srp ss:ssw st:sot su:sun sv:swe sw:swa
+      ta:tam te:tel tg:tgk th:tha ti:tir tk:tuk tl:tgl tn:tsn to:ton tr:tur ts:tso
+      tt:tat tw:twi ty:tah
+      ug:uig uk:ukr ur:urd uz:uzb
+      ve:ven vi:vie vo:vol
+      wa:wln wo:wol
+      xh:xho
+      yi:yid yo:yor
+      za:zha zh:zho zu:zul
+    `;
+    const OO_LANG1_TO_3 = {};
+    const OO_LANG3_TO_1 = {};
+    _OO_ISO1_TO_3_TEXT.split(/\s+/).forEach((pair) => {
+      if (!pair) return;
+      const [a1, a3] = pair.split(":");
+      if (!a1 || !a3) return;
+      OO_LANG1_TO_3[a1] = a3;
+      OO_LANG3_TO_1[a3] = a1;
+    });
+
+    // Bare 639-1 base: lowercased, region/script stripped. Mirrors
+    // `src.analytics.managed.normalize_lang`, which is the house rule for what a
+    // language KEY is -- `Article.language` is stored raw from `<html lang>`, so
+    // `en-US` is an ordinary value and not a defect.
+    function ooLangBase(value) {
+      return String(value == null ? "" : value).trim().toLowerCase().replace(/_/g, "-").split("-")[0];
+    }
+
+    // The code a PERSON sees: ISO 639-2/3. An unrecognised value passes through
+    // stripped, never blanked -- an article whose language we cannot read is a
+    // different fact from an article with no language.
+    function ooLangCode(value) {
+      const raw = String(value == null ? "" : value).trim();
+      if (!raw) return "";
+      const base = ooLangBase(raw);
+      if (OO_LANG1_TO_3[base]) return OO_LANG1_TO_3[base];
+      if (OO_LANG3_TO_1[base]) return base;
+      return raw;
+    }
+
+    // Back to the 639-1 every `Intl`/BCP-47 boundary needs. "" when there is no
+    // two-letter answer (`pcm`, `yue`, `tet` are real catalogue values with none),
+    // so a caller shows the code rather than an invented tag.
+    function ooLangStorage(value) {
+      const base = ooLangBase(value);
+      if (!base) return "";
+      if (OO_LANG1_TO_3[base]) return base;
+      return OO_LANG3_TO_1[base] || "";
+    }
+
+    // The localised language NAME -- the hover's payload, the mirror of
+    // `ooCountryName`. Reached through the derived 639-1, because
+    // `Intl.DisplayNames({type:"language"})` wants a BCP-47 tag and hands a
+    // three-letter code straight back.
+    function ooLangDisplayName(value, fallback) {
+      const a1 = ooLangStorage(value);
+      const fb = fallback == null ? "" : String(fallback);
+      if (!a1) return fb || ooLangCode(value);
+      if (typeof ooLangName === "function") return ooLangName(a1, fb || ooLangCode(value));
+      return fb || ooLangCode(value);
+    }
+
+    // ONE renderer: the 639-2/3 code visible, the localised name in the hover.
+    function ooLangCell(value, opts) {
+      const o = opts || {};
+      const code = ooLangCode(value);
+      if (!code) return o.empty == null ? "" : esc(o.empty);
+      const name = ooLangDisplayName(value, "");
+      const cls = o.cls ? ` class="${esc(o.cls)}"` : "";
+      const ti = name && name !== code ? ` title="${esc(name)}"` : "";
+      return `<span${cls}${ti}>${esc(code)}</span>`;
+    }
+
+    // ===================================================================== //
     //  Frontend error capture (recursive-augmentation log #1) — turns the    //
     //  "browser-unverified" debt into an OBSERVABLE feed: window.onerror,     //
     //  unhandledrejection, and failed/5xx fetches are reported (throttled) to //

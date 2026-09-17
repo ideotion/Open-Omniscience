@@ -111,7 +111,14 @@ def country_from_title(name: str | None) -> str | None:
     m = _TITLE_COUNTRY_RE.search(name)
     if not m:
         return None
-    code = normalize_country(m.group(1).strip())
+    # `accept_alpha3=False`: a three-letter parenthetical in a human title is an
+    # ACRONYM far more often than a country code, and the two are indistinguishable
+    # by shape. `(PRI)` is the Permaculture Research Institute and Puerto Rico;
+    # `(ARM)` is the Alliance for Regenerative Medicine and Armenia. This function is
+    # documented as deliberately conservative, and accepting alpha-3 here is exactly
+    # the breadth the paragraph above refuses. Full names and alpha-2 still resolve,
+    # and so do the name index's own shorthands (`USA`, `UK`), which are curated.
+    code = normalize_country(m.group(1).strip(), accept_alpha3=False)
     return code if code and len(code) == 2 else None
 
 

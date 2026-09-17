@@ -197,9 +197,9 @@
       const cards = rows.map(r => {
         const meta = r;   // the catalog facts now travel on the row itself
         const facts = [];
-        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(ooRegionName(meta.country, meta.country.toUpperCase()))}`);
+        if (meta.country) facts.push(`${esc(t("Country"))}: ${ooCountryCell(meta.country)}`);
         if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
-        if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(ooLangName(meta.language, meta.language))}`);
+        if (meta.language) facts.push(`${esc(t("Language"))}: ${ooLangCell(meta.language)}`);
         if (meta.source_type) facts.push(`${esc(t("Type"))}: ${esc(meta.source_type)}`);
         const tags = (meta.tags && meta.tags.length) ? chips(meta.tags) : "";
         const hasMeta = facts.length || tags;
@@ -715,7 +715,7 @@
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
-               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(ooRegionName(m.country, m.country)):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
+               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+ooCountryCell(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
                  ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· ${extLink(m.url, "source ↗", "muted")}`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';
@@ -972,7 +972,7 @@
       const body = ms.length
         ? ms.map((m) => `<div class="note" style="max-width:none;margin-bottom:6px">`
             + `<div style="font-size:12px" class="muted">${esc(m.source || "")}`
-            + `${m.country ? " · " + esc(ooRegionName(m.country, m.country)) : ""}`
+            + `${m.country ? " · " + ooCountryCell(m.country) : ""}`
             + `${m.city ? " · " + esc(m.city) : ""}${m.observed_on ? " · " + esc(m.observed_on) : ""}`
             + `${m.article_id ? ` · <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(t("open"))}</a>` : ""}`
             + `${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>`

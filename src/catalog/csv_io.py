@@ -18,6 +18,7 @@ import csv
 import io
 
 from src.catalog.countries import normalize_country, to_iso2, to_iso3
+from src.catalog.languages import language_storage_code
 from src.catalog.normalize import registrable_domain
 
 # The defined column set (export order). Only name + domain are required on import.
@@ -153,6 +154,16 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
             val = (rec.get(opt) or "").strip()
             if val:
                 out[opt] = val.lower() if opt in ("country", "language") else val
+        # Language: accept BOTH forms, the same discipline the country columns got
+        # (S04-05 S8). The app DISPLAYS 639-2/T (`fra`), so an operator exporting,
+        # editing and re-importing a sheet types back what they were shown --
+        # `language_storage_code` turns that into the 639-1 the column stores, and
+        # a 639-1 typed directly passes through it unchanged. A value it cannot
+        # place (`pcm`, `yue`, `tet` have no 639-1 at all) is KEPT AS TYPED rather
+        # than dropped: the column is free text for exactly those, and silently
+        # discarding a real language the operator stated would be the worse answer.
+        if "language" in out:
+            out["language"] = language_storage_code(out["language"]) or out["language"]
         # Country: canonical lowercase ISO-2 via the one conversion layer —
         # accepts codes, full names and slugs; unrecognisable values are dropped
         # (never stored as junk).
@@ -169,11 +180,13 @@ def parse_sources_csv(text: str) -> tuple[list[dict], list[str]]:
         # one in a form we understand. So the fall-back is keyed on the RESULT ("is
         # there a country now?"), never on which column happened to be present.
         if "country" not in out and iso3_raw:
-            # Through `to_iso2`, not `normalize_country` -- measured,
-            # `normalize_country("DEU")` is None, because it resolves codes, NAMES and
-            # slugs and alpha-3 is none of the three. `to_iso2` is the alpha-3 converter
-            # and fails closed the same way, so an aggregate or an unknown code still
-            # yields nothing.
+            # Through `to_iso2`, not `normalize_country`. The claim this comment used
+            # to make -- that `normalize_country("DEU")` is None -- was measured and
+            # TRUE until S04-05 taught that function the alpha-3 forms; either call
+            # now answers `de`. `to_iso2` is kept because it is the narrower one: this
+            # column is declared to hold an alpha-3, so reading it with the alpha-3
+            # converter says what the column means, and both fail closed on an
+            # aggregate or an unknown code.
             cc = to_iso2(iso3_raw)
             if cc:
                 out["country"] = cc

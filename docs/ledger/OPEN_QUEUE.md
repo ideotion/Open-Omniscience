@@ -22,6 +22,60 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **`tests/test_import_lifecycle_stages.py` IS ORDER- OR ENVIRONMENT-DEPENDENT ON CI, PROVEN BY
+  SAME-COMMIT DIVERGENCE — found while driving `S04-05` (PR #1147) to green, NOT fixed there
+  (S04-02's code, gate row I; fixing it inside a display PR would widen it into a slice it does
+  not own).** Two tests in that file assert OPPOSITE things about the boot re-index auto-resume,
+  and each has now failed on a different CI run while the other passed:
+  `test_the_boot_resume_declines_under_its_own_opt_out` (`OO_REINDEX_AUTORESUME=0` must decline)
+  failed on **`main`@`be658809`** in `Core-only install`, and
+  `test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot` ("boot must START the
+  drain, not merely report the backlog") failed on **PR #1147@`7adcfec6`** in
+  `Portability observation (macos-latest)`.
+
+  **THE EVIDENCE IS NOT AN INFERENCE.** `7adcfec6` was built TWICE (a `push` run and a
+  `pull_request` run): job `104995183603` in run `35155893710` **FAILED** and job `104995192615`
+  in run `35155898679` **SUCCEEDED** — the same job, on the same commit, with the same code,
+  in opposite directions. "Flake" is not a root cause anywhere else in this ledger and it is not
+  one here either; what is established is that the OUTCOME does not depend on the diff. The file
+  passes 3/3 locally and inside a full local suite of 11,212.
+
+  **DIAGNOSED, not guessed — the reproduction this entry first asked for was run.** The boot
+  helper (`_KILL_AND_BOOT`, `tests/test_import_lifecycle_stages.py:412`) sets `started` ONLY by
+  catching the job mid-flight:
+
+      deadline = time.time() + 120
+      while time.time() < deadline:
+          st = _REINDEX_RESUME_JOB.status()
+          if st.get("state") == "running":
+              started = True
+          elif started:
+              break
+          time.sleep(0.1)
+
+  A 1 ms-resolution probe of the REAL boot path, on the fixture's own 2-article backlog,
+  measured: `idle` at 0.3 ms → **`running` at 2.1 ms** → `done` at 227 ms, i.e. an observable
+  `running` window of **224 ms**, with `pending_after == 0`. The test samples every **100 ms**.
+  So it is catching a ~200 ms event with a 100 ms sampler, and the moment that window falls
+  under one tick — a faster runner, a different scheduler, a smaller backlog — every poll
+  misses it, `started` stays `False`, and the loop spins out its full 120 s while the work has
+  in fact completed correctly. The wall-clock corroborates it: the failing macOS run took
+  1509 s against 1416 s for the passing one on the SAME commit, a 93 s gap against a 120 s
+  deadline. **The drain is not broken; the test measures the observation rather than the fact.**
+
+  **The proposed patch, for whoever owns S04-02** (not applied here — a display slice must not
+  rewrite another slice's test): assert the FACT the property is about, not the sighting.
+  `started` should be satisfied by any non-`idle` state ever observed, or better by the job's
+  own durable record (it reaches `done`; `pending_after == 0` already proves the work ran), so
+  a drain that finishes between two polls reads as success rather than as a failure to start.
+  A `time.sleep(0.1)` sampler can never be made reliable by shortening it — that is a race the
+  test can only lose more slowly.
+
+  **Not blocking today:** the macOS lane is `continue-on-error: true` (an observation lane that
+  graduates to required when green), and `Core-only install` — which is NOT observational —
+  passed on `7adcfec6` in both runs. It becomes blocking the day the portability lane graduates,
+  and it is already costing the `Core-only install` lane a false red on `main`.
+
 - **THE COLLECTION-SPEED KNOB MISSTATES ITS OWN UNIT BY 8.192x, ON FOUR USER-FACING SURFACES —
   found while building the per-process budget (S04-13 S1, Q1012), NOT fixed here.**
   `collect_target_kbps` is **kilobits** per second: `collect_perf._measure_rate` computes

@@ -19,6 +19,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.catalog.countries import country_query_forms
+
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
@@ -421,7 +423,7 @@ def registered_sources(
     with session_scope() as db:
         q = select(Source).where(Source.source_type == "statistics")
         if country:
-            q = q.where(Source.country == country.strip().lower())
+            q = q.where(Source.country.in_(country_query_forms(country)))
         if enabled is not None:
             q = q.where(Source.enabled == enabled)
         rows = list(db.execute(q).scalars())

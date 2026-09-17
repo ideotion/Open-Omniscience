@@ -71,19 +71,64 @@ const sandbox = {
   $: (id) => (id === "aicheck-result" ? { set innerHTML(v) { rendered = v; } } : null),
 };
 
+// The refusal lines now print each language through `ooLangCell` (S04-05 S8: the
+// code a person sees is 639-2/T). EXTRACTED FROM THE ENGINE, never stubbed -- a stub
+// would agree with a broken shipped helper, which is what this whole harness exists
+// to prevent, and it would also hide an escaping regression in the one place these
+// assertions read. The lookup table is a top-level template literal, so it is
+// spliced in as SOURCE; the derivation beneath it comes along with it.
+function slice(from, to) {
+  const a = APP.indexOf(from);
+  if (a < 0) throw new Error("not found: " + from);
+  const b = APP.indexOf(to, a);
+  if (b < 0) throw new Error("no end marker after: " + from);
+  return APP.slice(a, b + to.length);
+}
+const langTable = slice("const _OO_ISO1_TO_3_TEXT = `", "OO_LANG3_TO_1[a3] = a1;\n    });");
+
 const src = [
   constArrow(APP, "esc"),
+  langTable,
+  functionSource(APP, "ooLangBase"),
+  functionSource(APP, "ooLangCode"),
+  functionSource(APP, "ooLangStorage"),
+  functionSource(APP, "ooLangDisplayName"),
+  functionSource(APP, "ooLangCell"),
   functionSource(APP, "_aiCheckLine"),
   functionSource(APP, "_renderAiCheck"),
-  "return { _renderAiCheck, esc };",
+  "return { _renderAiCheck, esc, ooLangCell };",
 ].join("\n");
 
-const { _renderAiCheck } = new Function("window", "$", src)(sandbox.window, sandbox.$);
+const { _renderAiCheck, ooLangCell } = new Function("window", "$", src)(sandbox.window, sandbox.$);
+// ANTI-VACUITY: prove the extracted helper is the real one before any assertion
+// below leans on it. A silently-empty extraction would make every refusal line
+// render "" and the negative-space twins would pass for the wrong reason.
+assert.ok(/>fra</.test(ooLangCell("fr")), "the extracted ooLangCell is not the shipped one");
 
 function render(gate) {
   rendered = "";
   _renderAiCheck({ reading: { backend: { available: false, reason: "x" }, extraction_gate: gate } });
   return rendered;
+}
+
+// --- reading a refusal line after S04-05 ------------------------------------------ //
+// The language inside a refusal is now drawn by `ooLangCell`, which prints the 639-2/T
+// code and wraps it in its own <span title="..."> so the localised name has a hover to
+// live in (Q302/Q306). Two assertions below used to read
+//
+//     /class="card-caveat"[^>]*>[^<]*hi[^<]*who/
+//
+// which demanded the language be BARE TEXT immediately after the div AND be the
+// two-letter stored code -- the ruling changes both. The FACT being asserted is
+// unchanged and is asserted here instead: a refusal is a caveat, visible by default,
+// naming its language and its field on one line. Tags are stripped rather than
+// tolerated in the pattern, so a future wrapper cannot break this again.
+function refusalLines(html) {
+  return (html.match(/<div class="card-caveat">[\s\S]*?<\/div>/g) || [])
+    .map((block) => block.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
+}
+function aRefusalNames(html, code, field) {
+  return refusalLines(html).some((line) => line.includes(code) && line.includes(field));
 }
 
 let passed = 0;
@@ -108,7 +153,11 @@ check("a field refused inside a cleared language reaches the reader", () => {
     field_counts: { cleared: 1, refused: 1, unmeasured: 1, total: 3 },
     note: "n",
   });
-  assert.ok(html.includes("hi"), "the language is named");
+  // `hin`, not `hi`: the code a person reads is 639-2/T since S04-05, and asserting
+  // the old two-letter form would pass on the substring of the new one -- true for the
+  // wrong reason, which is how a display ruling gets quietly half-applied.
+  assert.ok(html.includes("hin"), "the language is named, in the form a reader sees");
+  assert.ok(!/>hi</.test(html), "and never as the bare stored code");
   assert.ok(html.includes("who"), "the FIELD is named -- this is what was invisible");
   assert.ok(
     html.includes("hallucination 1.0 above 0.5"),
@@ -124,7 +173,7 @@ check("the refusal is rendered as a caveat, not buried in a hint", () => {
     partly_cleared: [], field_counts: { cleared: 0, refused: 1, unmeasured: 0, total: 1 },
   });
   assert.ok(
-    /class="card-caveat"[^>]*>[^<]*hi[^<]*who/.test(html),
+    aRefusalNames(html, "hin", "who"),
     "a refusal is a caveat by the house convention -- visible by default, never a toggle",
   );
 });
@@ -162,7 +211,11 @@ check("a language cleared on one field says which fields it was not", () => {
     partly_cleared: [{ language: "zh", not_cleared: ["who", "when"] }],
     field_counts: { cleared: 1, refused: 0, unmeasured: 2, total: 3 },
   });
-  assert.ok(/zh \(who, when\)/.test(html), "'cleared' over-reads without this");
+  // `zho`, and read with the tags stripped: the language is drawn by `ooLangCell`
+  // since S04-05, so it arrives inside its own hover <span>. Same fact, same
+  // sentence, one wrapper further in.
+  const text = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  assert.ok(/zho \(who, when\)/.test(text), "'cleared' over-reads without this");
 });
 
 check("the per-field counts carry every state that is non-empty", () => {
@@ -278,7 +331,7 @@ check("a single refusal is still collapsed, so the grammar never changes", () =>
     partly_cleared: [], field_counts: { cleared: 0, refused: 1, unmeasured: 0, total: 1 },
   });
   assert.ok(html.includes("<details"), "one shape for one refusal and for thirty");
-  assert.ok(/class="card-caveat"[^>]*>[^<]*hi[^<]*who/.test(html),
+  assert.ok(aRefusalNames(html, "hin", "who"),
     "and the refusal itself is unchanged -- still a caveat naming language and field");
 });
 

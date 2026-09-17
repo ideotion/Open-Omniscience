@@ -628,7 +628,7 @@
       // browser's own CLDR data (ooLangName) — the code is what the lever keys on,
       // not what a reader should have to decode. Degrades to the code.
       const panels = (d.series || []).map(s => ({
-        label: ooLangName(s.language, s.language),
+        label: ooLangName(s.language),
         points: (s.points || []).map(p => ({date: p.t, count: p.n})),
       }));
       // neutral: a language growing more slowly than another is not "bad", so the
@@ -773,7 +773,7 @@
         for (const r of (sent.rows || [])) {
           // ooLangName, not a bare code: the shipped CLDR helper already renders the
           // full language name in the reader's own locale.
-          const name = ooLangName(r.language, r.language);
+          const name = ooLangName(r.language);
           if (r.measured > 0) {
             rows.push({label: `${name} · ${t("measured")}`, n: r.measured, color: "var(--fig-1)",
                        title: t("A tone value was stored for these articles.")});
@@ -893,7 +893,7 @@
           : "") +
         ((ex.languages || []).length
           ? `<div class="hint muted">${esc(t("Excluded languages"))}: ` +
-            (ex.languages || []).map(l => esc(ooLangName(l, l))).join(", ") + `</div>`
+            (ex.languages || []).map(l => esc(ooLangName(l))).join(", ") + `</div>`
           : "") +
         figMeta(d);
     }

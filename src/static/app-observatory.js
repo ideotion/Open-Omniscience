@@ -311,7 +311,7 @@
         html += `<div class="sky-leg"><span class="sky-leg-h">${esc(t("Language"))}</span>` +
           codes.map((c) =>
             `<span class="sky-ref"><i class="sky-sw" style="background:${esc(th.fig[_obs.langSlots[c] - 1])}"></i>` +
-            `${esc(ooLangName(c, c))}</span>`
+            `${esc(ooLangName(c))}</span>`
           ).join("") +
           (_obs.otherLangs.length
             ? `<span class="sky-ref"><i class="sky-sw" style="background:${esc(th.fig[5])}"></i>` +
@@ -398,7 +398,7 @@
           `<td>${esc(g.domain || "")}</td>` +
           `<td>${placed ? esc(fmtNum(g.value)) : `<span class="muted">${esc(t("Not observed in this corpus yet"))}</span>`}</td>` +
           `<td>${esc(fmtNum(g.mentions || 0))}</td>` +
-          `<td>${code ? esc(ooLangName(code, code)) : `<span class="muted">${esc(t("No data yet"))}</span>`}</td>` +
+          `<td>${code ? esc(ooLangName(code)) : `<span class="muted">${esc(t("No data yet"))}</span>`}</td>` +
           `<td>${esc(_obsTrendText(g))}</td></tr>`;
       }).join("");
       host.innerHTML = `<table class="sky-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
@@ -563,7 +563,7 @@
       if (_obs.measure !== "mentions") {
         parts.push(esc(tf("Mentions: {n}", {n: fmtNum(g.mentions || 0)})));
       }
-      if (code) parts.push(esc(tf("Main language: {lang}", {lang: ooLangName(code, code)})));
+      if (code) parts.push(esc(tf("Main language: {lang}", {lang: ooLangName(code)})));
       parts.push(esc(_obsTrendText(g)));
       // Dominance rides every galaxy in the S1 stats core: a headline total can be
       // one member's, and that is disclosed here rather than only in the payload.

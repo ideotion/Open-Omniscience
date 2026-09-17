@@ -145,7 +145,19 @@
         // persisted) until the user makes an explicit choice, so a newly-added catalog
         // calendar is auto-included and nothing is ever silently dropped (honors the flag).
         if (_agPrefs && !_agPrefs.configured) _agPrefs.subs = new Set(fac.calendars.map(c => c.key));
-        $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${agFlag(x)} ${esc(x)}</option>`).join("");
+        // Q308 rules PICKERS specifically -- "by localised name, the code as a
+        // secondary column" -- which is why this surface shows BOTH where an
+        // ordinary cell shows the code alone (Q302). An <option> carries no
+        // reliable hover, so the layered form Q302 relies on is not available here
+        // and the more specific ruling is the one that can actually be honoured.
+        // The VALUE stays the stored alpha-2: a picker that silently changed what
+        // it submits would break every filter reading it.
+        $("agenda-country").innerHTML = '<option value="">all</option>' +
+          fac.countries.slice().sort(ooCountryCompare).map(x => {
+            const code = ooCountryCode(x), name = ooCountryName(x, "");
+            const label = name && name !== code ? `${name} (${code})` : code;
+            return `<option value="${esc(x)}">${agFlag(x)} ${esc(label)}</option>`;
+          }).join("");
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         if (!_agViewTabs) _agViewTabs = ooSubtabs($("agenda-views"), agendaSetView);
         renderAgendaCatChips();
@@ -698,7 +710,7 @@
             ${f.duplicates ? `<span class="pill" title="Several providers publish this calendar — compare them below">${f.feeds.length} sources</span>` : ""}
             ${f.imported_events ? `<span class="pill ok">${f.imported_events} imported</span>` : ""}
             ${isExcl ? `<span class="pill warn">excluded</span>` : ""}
-            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + esc(f.country) : ""}</span>
+            <span class="muted">· ${esc(f.kind)}${f.country ? " · " + ooCountryCell(f.country) : ""}</span>
             <button class="ghost tiny" style="float:inline-end" onclick="event.preventDefault();event.stopPropagation();agToggleExclude(${esc(JSON.stringify(f.key))})">${isExcl ? "Include" : "Exclude"}</button></summary>
           ${feeds}</details>`;
       }).join("") + (total > 40 ? `<div class="hint">+${total - 40} — type to filter</div>` : "");
@@ -936,7 +948,7 @@
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
       const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();${openExpr}">${esc(e.title)}</b>`;
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}</div>
+        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?ooCountryCell(e.country,{cls:"pill"}):""} ${conf}${span}${alsoIn}${imp}${prov}${yearNote}</div>
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }
@@ -978,9 +990,16 @@
     // convention, never the sole label (flags ≠ identity; some entities have none,
     // and emoji flags render inconsistently on some platforms).
     function agFlag(cc) {
+      // Q307: the emoji is DERIVED from the alpha-2, which is itself derived from
+      // whatever form the code arrives in. The old body gated on /^[A-Z]{2}$/ and
+      // fell through to the globe for anything else -- correct while every code was
+      // alpha-2, and it would have silently globed EVERY country the moment the
+      // agenda started showing alpha-3. `ooCountryFlag` (app-core.js) owns the
+      // derivation now, so the flag and the code on screen cannot disagree.
       if (!cc) return "";
-      cc = cc.toUpperCase();
-      if (/^[A-Z]{2}$/.test(cc)) return String.fromCodePoint(...[...cc].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65));
+      if (typeof ooCountryFlag === "function") return ooCountryFlag(cc);
+      const up = String(cc).toUpperCase();
+      if (/^[A-Z]{2}$/.test(up)) return String.fromCodePoint(...[...up].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65));
       return "\u{1F310}";   // globe for INT / non-ISO entities
     }
     function agLocale() { return document.documentElement.lang || "en"; }
@@ -1356,7 +1375,12 @@
       for (const e of rows) {
         const k = groupBy === "month" ? (e.next_occurrence ? _MONTHS[+e.next_occurrence.slice(5,7)-1] : (e.month ? _MONTHS[e.month-1] : "Movable / no fixed date"))
                 : groupBy === "calendar" ? (AG.meta[e.calendar]?.name || e.calendar)
-                : (e.country || "—");
+                // Grouping by COUNTRY keys on the stored value (so two spellings of
+                // one country cannot become two groups) and the heading renders the
+                // alpha-3 below -- the key and the label are different jobs, and
+                // keying on a rendered label is how a display change silently
+                // re-partitions a list.
+                : (e.country || "");
         (groups[k] = groups[k] || []).push(e);
       }
       // TWO NODES, deliberately. i18n.js's DOM walker matches a WHOLE text node
@@ -1371,8 +1395,14 @@
       // numbers never pass through a translation table.
       box.innerHTML = `<p class="hint"><span>${esc(AG.caveat)}</span> · <span>${
         esc(_bulTf("showing {shown} of {total}", {shown: rows.length, total: AG.events.length}))}</span></p>` +
-        Object.entries(groups).map(([k, list]) =>
-          `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
+        Object.entries(groups).map(([k, list]) => {
+          // Only the country grouping holds a code; month and calendar keys are
+          // already prose and must not be run through a country formatter.
+          const head = groupBy === "country"
+            ? (k ? ooCountryCell(k) : esc(tt("No country")))
+            : esc(k);
+          return `<h3 style="font-size:13px;margin:12px 0 6px">${head} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("");
+        }).join("");
     }
 
     // ===================================================================== //

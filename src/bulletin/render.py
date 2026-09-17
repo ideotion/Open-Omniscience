@@ -47,6 +47,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.bulletin.i18n import Translator
+from src.catalog.countries import country_display_code
+from src.catalog.languages import language_display_code
 
 _AI_LABEL = "AI-derived — unreliable"
 
@@ -329,13 +331,25 @@ def _masthead_splits(m: dict, T: Translator) -> list[str]:
     langs = m.get("languages") or []
     if langs:
         shown, tail = _listed(langs, limit=16, label=T.t("carried"), T=T)
-        parts = [f"{r['language'] or T.t('untagged')} {_fmt(r['articles'])}" for r in shown]
+        # S8: every language CODE a reader sees is 639-2/T. `language_display_code`
+        # returns an unrecognised value unchanged, so a corpus language scraped raw
+        # out of <html lang> stays visible instead of being blanked.
+        parts = [
+            f"{language_display_code(r['language']) or T.t('untagged')} {_fmt(r['articles'])}"
+            for r in shown
+        ]
         lines.append(T.f("Languages: {parts}{tail}.", parts=", ".join(parts), tail=tail))
 
     countries = m.get("source_countries") or []
     if countries:
         shown, tail = _listed(countries, limit=20, label=T.t("carried"), T=T)
-        parts = [f"{r['country']} {_fmt(r['articles'])}" for r in shown]
+        # Q302 in a medium with no hover: the bulletin is TEXT, so there is no bubble
+        # to put the name in. The code is what is displayed, alpha-3 like everywhere
+        # else; the by-country section below carries the full name beside it.
+        parts = [
+            f"{country_display_code(r['country']) or r['country']} {_fmt(r['articles'])}"
+            for r in shown
+        ]
         unl = m.get("source_unlocated_articles") or 0
         unlocated = (
             T.f("; {n} from sources with no country recorded", n=_fmt(unl)) if unl else ""
@@ -693,7 +707,11 @@ def _coverage_blocks(section: dict, T: Translator) -> list[tuple[str | None, str
         return lines
 
     for i, row in enumerate(section.get("countries") or []):
-        head = f"{row.get('name') or row.get('country')} ({row.get('country')})"
+        # The name AND the code, because a printed page has no hover to layer them
+        # into -- the parenthesised code is the alpha-3 the rest of the app displays,
+        # so a reader can carry it back to a filter and it will match (Q301).
+        _cc = country_display_code(row.get("country")) or row.get("country")
+        head = f"{row.get('name') or _cc} ({_cc})"
         if row.get("continent"):
             head += f" · {T.t(str(row['continent']))}"
         blocks.append((T.t("By country") if i == 0 else None, head, _lines(row)))

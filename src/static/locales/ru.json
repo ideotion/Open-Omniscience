@@ -391,6 +391,9 @@
   "Countries / floor": "Страны / порог",
   "below floor": "ниже порога",
   "Region": "Регион",
+  "not an ISO code": "не код ISO",
+  "not a recognised country code": "нераспознанный код страны",
+  "No country": "Без страны",
   "Country": "Страна",
   "Enabled": "Включено",
   "Topic keywords (source tags)": "Тематические ключевые слова (теги источников)",
@@ -2787,7 +2790,7 @@
   "AI features are enabled by your override, not by this hardware.": "Функции ИИ включены вашим ручным переопределением, а не этим оборудованием.",
   "AI features are off by default on this hardware.": "На этом оборудовании функции ИИ по умолчанию отключены.",
   "Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped.": "Аддитивное восстановление: ничего в вашем корпусе не заменено и не удалено. Дубликаты пропущены.",
-  "Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score.": "Собранные статьи, сгруппированные по каталогизированной стране каждого источника (ISO-2). Только подсчёты, без оценки.",
+  "Articles collected, grouped by each source's catalogued country, shown as ISO 3166-1 alpha-3. Counts only, no score.": "Собранные статьи, сгруппированные по каталогизированной стране каждого источника показан как ISO 3166-1 alpha-3. Только подсчёты, без оценки.",
   "Corpus figures — measured averages and the current ingestion rate:": "Показатели корпуса — измеренные средние и текущая скорость сбора:",
   "Corpus share → target; over-represented languages are re-checked less often (pace < 1). A cadence nudge, never an exclusion — set in Settings.": "Доля корпуса → цель; перепредставленные языки проверяются реже (темп < 1). Это корректировка частоты, а не исключение — задаётся в настройках.",
   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.": "Страна указывается оператором или каталогом; статьи, у источника которых нет страны, учитываются, но никогда не размещаются на карте — см. разбивку по языкам ниже.",
@@ -3520,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля.",
   "Restoring a backup later": "Восстановление резервной копии позже",
   "Trust a backup's scraping history by default": "Доверять истории сбора данных резервной копии по умолчанию",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля. Это можно изменить для любого отдельного импорта."
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Если доверять ей, то не придётся заново загружать то, что, по данным истории, уже было получено; если не доверять — всё будет загружено заново с нуля. Это можно изменить для любого отдельного импорта.",
+  "Netherlands Antilles": "Нидерландские Антильские острова"
 }

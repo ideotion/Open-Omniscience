@@ -42,7 +42,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from src.bulletin.period import Period
-from src.catalog.countries import COUNTRY_NAMES, continent_of
+from src.catalog.countries import COUNTRY_NAMES, continent_of, country_display_code
 from src.database.models import ArticleMentionedPlace, Keyword, KeywordMention
 
 _LOG = logging.getLogger(__name__)
@@ -68,8 +68,14 @@ _CAVEAT = (
 
 
 def _label(code: str) -> str:
-    """A country's display name, falling back to the code rather than inventing one."""
-    return COUNTRY_NAMES.get(code, code)
+    """A country's display name, falling back to the CODE rather than inventing one.
+
+    The fallback is the alpha-3 display code (S04-05), not the stored alpha-2: this
+    string is rendered beside codes that went through `country_display_code`, and a
+    lone `xk` among a column of `FRA`/`DEU` reads as a different kind of thing rather
+    than as the same fact spelled shorter.
+    """
+    return COUNTRY_NAMES.get(code) or country_display_code(code) or code
 
 
 def _terms(

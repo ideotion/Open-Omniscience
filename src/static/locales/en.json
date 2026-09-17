@@ -391,6 +391,9 @@
   "Countries / floor": "Countries / floor",
   "below floor": "below floor",
   "Region": "Region",
+  "not an ISO code": "not an ISO code",
+  "not a recognised country code": "not a recognised country code",
+  "No country": "No country",
   "Country": "Country",
   "Enabled": "Enabled",
   "Topic keywords (source tags)": "Topic keywords (source tags)",
@@ -2787,7 +2790,7 @@
   "AI features are enabled by your override, not by this hardware.": "AI features are enabled by your override, not by this hardware.",
   "AI features are off by default on this hardware.": "AI features are off by default on this hardware.",
   "Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped.": "Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped.",
-  "Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score.": "Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score.",
+  "Articles collected, grouped by each source's catalogued country, shown as ISO 3166-1 alpha-3. Counts only, no score.": "Articles collected, grouped by each source's catalogued country, shown as ISO 3166-1 alpha-3. Counts only, no score.",
   "Corpus figures — measured averages and the current ingestion rate:": "Corpus figures — measured averages and the current ingestion rate:",
   "Corpus share → target; over-represented languages are re-checked less often (pace < 1). A cadence nudge, never an exclusion — set in Settings.": "Corpus share → target; over-represented languages are re-checked less often (pace < 1). A cadence nudge, never an exclusion — set in Settings.",
   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.": "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.",
@@ -3520,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.",
   "Restoring a backup later": "Restoring a backup later",
   "Trust a backup's scraping history by default": "Trust a backup's scraping history by default",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import."
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.",
+  "Netherlands Antilles": "Netherlands Antilles"
 }

@@ -173,7 +173,7 @@
         const r = (1.5 + 4*Math.sqrt(m/maxM)).toFixed(1);
         const terms = (c.top||[]).map(t=>t.term+" "+t.mentions).join(", ");
         return `<g><circle cx="${x}" cy="${y}" r="${r}" fill="var(--accent)" fill-opacity="0.75">
-            <title>${esc(c.name)}${c.country?" ("+esc(c.country)+")":""}: ${esc(terms)}</title></circle>
+            <title>${esc(c.name)}${c.country?" ("+esc(ooCountryCode(c.country))+" — "+esc(ooCountryName(c.country, c.country))+")":""}: ${esc(terms)}</title></circle>
           <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
       }).join("");
       if (!placed.length)
@@ -211,13 +211,27 @@
     // stay as their language-neutral codes.
     const _ooRegionDN = {};
     function ooRegionName(code, fallback) {
-      const cc = (code || "").trim().toUpperCase();
+      // ALPHA-2 IS DERIVED, NEVER ASSUMED (ruling Q301 step 1). Every surface now
+      // shows alpha-3, and `Intl.DisplayNames({type:"region"})` accepts alpha-2 and
+      // M49 ONLY -- handed `FRA` it does not throw, it returns `FRA`, so the miss is
+      // silent and reads as "CLDR has no name for this country". `ooCountryAlpha2`
+      // (app-core.js) is the one place a code changes shape; this call is what lets
+      // the ~30 existing call sites keep passing whatever form they hold.
+      const src = (code || "").trim();
+      if (!src) return fallback || "";
+      const a2 = (typeof ooCountryAlpha2 === "function") ? ooCountryAlpha2(src) : "";
+      const cc = (a2 || src).toUpperCase();
       if (!cc) return fallback || "";
+      // THE LAST RESORT IS A DISPLAY CODE, NOT `cc`. `cc` is the alpha-2 this
+      // function derived for CLDR's benefit; printing it when CLDR has no name
+      // would put a two-letter code on a screen of three-letter ones, in the one
+      // case nobody looks at -- which is how the old shape survived the sweep.
+      const _dispCC = () => ((typeof ooCountryCode === "function") ? ooCountryCode(src) : "") || cc;
       const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         if (!_ooRegionDN[lang]) _ooRegionDN[lang] = new Intl.DisplayNames([lang], { type: "region" });
-        return _ooRegionDN[lang].of(cc) || fallback || cc;
-      } catch { return fallback || cc; }
+        return _ooRegionDN[lang].of(cc) || fallback || _dispCC();
+      } catch { return fallback || _dispCC(); }
     }
     // The language analog (field test 2026-06-19 #52/#53, THEME-4): show the full
     // language NAME in the current UI locale via the browser's own CLDR data, instead
@@ -226,13 +240,23 @@
     // an unknown/structurally-invalid tag. Re-derives on oo:langchange (same as names).
     const _ooLangDN = {};
     function ooLangName(code, fallback) {
-      const lc = (code || "").trim();
-      if (!lc) return fallback || "";
+      // The language twin of the derivation above (Q306 = b). `Intl.DisplayNames
+      // ({type:"language"})` wants a BCP-47 tag, so a 639-2/3 code (`fra`) comes
+      // straight back unchanged -- the same silent miss. `ooLangStorage` returns ""
+      // for a 639-3 code with no 639-1 equivalent (`pcm`, `yue`, `tet` are real
+      // catalogue values), and the original is then tried as-is: some of those ARE
+      // valid BCP-47 subtags, so asking is strictly better than refusing.
+      const src = (code || "").trim();
+      if (!src) return fallback || "";
+      const lc = ((typeof ooLangStorage === "function") ? ooLangStorage(src) : "") || src;
+      // Same rule as the region twin: `lc` is the 639-1 tag derived for CLDR, so it
+      // is the wrong thing to print when CLDR has no name for it.
+      const _dispLC = () => ((typeof ooLangCode === "function") ? ooLangCode(src) : "") || lc;
       const ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         if (!_ooLangDN[ui]) _ooLangDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
-        return _ooLangDN[ui].of(lc) || fallback || lc;
-      } catch { return fallback || lc; }
+        return _ooLangDN[ui].of(lc) || fallback || _dispLC();
+      } catch { return fallback || _dispLC(); }
     }
 
     // Server-side folder picker (field test 2026-06-22 #8: "Browse buttons, never
@@ -327,7 +351,7 @@
       if (code === "contested") return t("Contested (assign nothing)");
       if (code === "iso") return t("ISO / de jure");
       if (code === "tlc") return t("Natural Earth (de facto)");
-      return ooRegionName(_OO_POV_REGION[code] || code, code.toUpperCase());
+      return ooRegionName(_OO_POV_REGION[code] || code);
     }
 
     // What a single area's worldview cell means, as a translated sentence. The three
@@ -340,7 +364,7 @@
       const v = (area.views || {})[view];
       if (v === "self") return t("recognised as its own state in this view");
       if (!v) return t("assigned to no recognised state in this view");
-      return t("attributed to") + " " + ooRegionName(v, v.toUpperCase());
+      return t("attributed to") + " " + ooRegionName(v);
     }
 
     // An area's name in the reader's locale, from Natural Earth's own NAME_<lang>
@@ -1153,7 +1177,7 @@
         else v = r[dim.id];
         if (v != null && isFinite(v)) {
           values[r.country] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : names[r.country] });
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : (ooCountryCode(r.country) || names[r.country]) });
         }
       });
       const nWith = Object.keys(values).length;
@@ -1170,7 +1194,7 @@
       const serverPoints = (_ooMapServerOn && _ooMapServerLoc && Array.isArray(_ooMapServerLoc.countries))
         ? _ooMapServerLoc.countries.filter(c => c.lat != null && c.lon != null)
             .map(c => ({ lat: c.lat, lon: c.lon, value: c.articles,
-                         label: (names[c.country] || (c.country || "").toUpperCase()) })) : [];
+                         label: (names[c.country] || ooCountryCode(c.country)) })) : [];
       let serverMeta = "";
       if (_ooMapServerOn && _ooMapServerLoc) {
         caveat += `  ${_ooMapServerLoc.caveat || t("Server location is our vantage point (CDN edge / anycast), not the publisher's origin; unavailable over Tor.")}`;
@@ -1325,7 +1349,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
       const iso = (row.country || "").toLowerCase();
-      const name = ooRegionName(iso, row.name || row.country);
+      // The heading of a panel the reader OPENED: the code identifies it and the
+      // title carries the name, which is the ordinary Q302 pair.
+      const name = ooCountryCode(iso) || ooRegionName(iso, row.name || row.country);
       const line = (label, v, extra) => (v != null && isFinite(v))
         ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
       const tone = (row.sentiment != null && isFinite(row.sentiment))
@@ -1401,7 +1427,7 @@
           <span class="pill">${esc(s.kind === "hazard" ? hazardTypeLabel(s.hazard_type) : kindLabel(s.kind))}</span> ${conf} ${geo}
         </div>
         <div class="muted" style="margin-top:5px;font-size:13px">
-          ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
+          ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${ooCountryCell(s.country)})` : ""}
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
           ${s.magnitude != null ? ` · <b>M${esc(fmtNum(s.magnitude, 1))}</b>` : ""}
         </div>
@@ -1566,7 +1592,7 @@
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
         const rowsFor = (areas, label) => areas.length
           ? "<tr><th>" + label + "</th><th>Top keywords</th></tr>" + areas.map(a =>
-              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${esc(a.country)}</span>`:""}</td><td>` +
+              `<tr><td><strong>${esc(a.code||a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
               a.top.map(t => `<span class="pill" style="cursor:pointer" onclick='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
               `</td></tr>`).join("")
           : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
@@ -1991,7 +2017,7 @@
         const rows = ags.map(a => `<tr>
             <td><strong>${esc(a.name)}</strong>${a.acronym ? ` <span class="muted">(${esc(a.acronym)})</span>` : ""}</td>
             <td>${esc(scope(a.scope))}</td>
-            <td>${a.country ? esc(String(a.country).toUpperCase()) : "<span class=\"muted\">—</span>"}</td>
+            <td>${a.country ? ooCountryCell(a.country) : "<span class=\"muted\">—</span>"}</td>
             <td>${esc(a.region || "")}</td>
             <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
           </tr>`).join("");
@@ -2203,7 +2229,7 @@
           // just for being big). Honest refusal + the comparable values as a ranked list.
           const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
             .sort((a, b) => b.value - a.value).slice(0, 30)
-            .map(c => `<tr><td>${esc(ooRegionName(iso2By[c.area] || "", c.area))}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
+            .map(c => `<tr><td>${ooCountryCell(iso2By[c.area] || c.area)}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
           host.innerHTML = `<div class="note">${esc(cd.refusalReason || "")}</div>`
             + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
           if (meta) meta.textContent = cd.caveat + multi;
@@ -2215,7 +2241,7 @@
           const iso2 = iso2By[c.area];
           if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
           values[iso2] = c.value;
-          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2, iso2.toUpperCase()) : iso2;
+          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2) : iso2;
         });
         const unit = (cd.basis && cd.basis.unit) || "";
         const nMapped = Object.keys(values).length;
@@ -2238,7 +2264,7 @@
         const subs = d.subscriptions || [];
         if (!subs.length) { box.innerHTML = `<div class="muted">Nothing tracked yet — fetch a figure above to start tracking it.</div>`; return; }
         const rows = subs.map(s => {
-          const what = s.indicator ? esc(s.indicator) + (s.country ? " · " + esc(String(s.country).toUpperCase()) : "")
+          const what = s.indicator ? esc(s.indicator) + (s.country ? " · " + ooCountryCell(s.country) : "")
                                    : esc(s.dataset || "");
           const last = s.last_fetched_at ? fmtDateTime(s.last_fetched_at) : "never";
           return `<tr>

@@ -18,6 +18,11 @@
    spot in review. Add new code inside the module it belongs to.
 */
     let _covMapStamp = "";
+    // ONE reader for the active locale, used by BOTH coverage repaint guards, because
+    // the two of them getting different answers is exactly the failure above.
+    function _covUiLang() {
+      return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+    }
     async function renderCoverageMap() {
       const mapHost = $("coverage-map");
       if (!mapHost) return;
@@ -25,11 +30,24 @@
       let d;
       try { d = await api("/api/insights/map-coverage"); }
       catch (e) { mapHost.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
-      const stamp = JSON.stringify([d.by_country, d.unlocated]);
+      // THE LOCALE IS PART OF THE FINGERPRINT. Without it this guard is right about a
+      // live poll (same data, no repaint) and wrong about a language switch: the walk
+      // of 2026-09-16 went en -> fr -> ar -> zh and left all 218 country hovers reading
+      // FRENCH, because the payload never changed. That is the frozen-locale family
+      // `app-boot.js`'s oo:langchange handler already documents for the Lead titles and
+      // the Composition figures, and it became load-bearing here the moment the
+      // localised name moved into a hover (Q302). Fixed in the GUARD rather than by
+      // adding a third entry to that handler, so the next surface behind this stamp
+      // cannot inherit the bug by being written correctly.
+      const stamp = JSON.stringify([d.by_country, d.unlocated, _covUiLang()]);
       if (stamp === _covMapStamp) return;   // live poll: unchanged, no repaint
       _covMapStamp = stamp;
       const values = {}, names = {}, points = [];
       (d.by_country || []).forEach(r => {
+        // The localised NAME, deliberately: this map feeds ooMap's screen-reader
+        // "top values" list and its <title> tooltip, and a tooltip IS the hover
+        // Q302 puts the name in. The CODE goes on the drawn label and the ranked
+        // table, where a code can be read and a hover can carry the name.
         names[r.country] = ooRegionName(r.country, r.name);
         const v = r.articles;
         if (v != null && isFinite(v) && v > 0) {
@@ -46,7 +64,7 @@
         // click a country -> filter the catalogue table below to it (ties the map to the table).
         onCountry: (code) => { const f = $("cov-filter"); if (f) { f.value = names[code] || code; renderCoverageTable(); } },
         aria: t("Articles collected per country."),
-        method: t("Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score."),
+        method: t("Articles collected, grouped by each source's catalogued country, shown as ISO 3166-1 alpha-3. Counts only, no score."),
         caveat: t("Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.")
           + (unloc ? `  ${fmtNum(unloc)} ${t("with no country.")}` : ""),
       });
@@ -55,7 +73,7 @@
       if (donutHost) {
         const byLang = (d.unlocated && d.unlocated.by_language) || {};
         const ddata = Object.keys(byLang).map(code => ({
-          value: byLang[code], label: code ? ooLangName(code, code) : t("Unknown language"),
+          value: byLang[code], label: code ? ooLangName(code) : t("Unknown language"),
         })).filter(x => x.value > 0);
         if (!ddata.length) {
           donutHost.innerHTML = `<div class="muted">${esc(t("All collected articles have a country."))}</div>`;
@@ -79,7 +97,12 @@
           api("/api/database/coverage"),
           api("/api/database/countries"),
         ]);
-        const stamp = JSON.stringify([c, d.countries, d.missing]);
+        // The locale is part of THIS fingerprint too, and forgetting it here is what
+        // the first fix missed: the panel has TWO guards, and only the map's was made
+        // locale-aware, so the map followed the language and the 218-row TABLE beneath
+        // it kept the hovers it was first painted with. Re-measured in Chromium rather
+        // than reasoned about -- the walk is what said the fix was half a fix.
+        const stamp = JSON.stringify([c, d.countries, d.missing, _covUiLang()]);
         if (stamp === _covStamp) return;   // live poll: nothing changed, no repaint
         _covStamp = stamp;
         el.innerHTML =
@@ -186,9 +209,11 @@
       const t = $("coverage-table");
       t.innerHTML = "<tr><th>Country</th><th>Region</th><th>Sources</th><th>Enabled</th><th>Topic keywords (source tags)</th></tr>" +
         (rows.length ? rows.map(c => {
-          const label = c.name && c.name !== c.code
-            ? `${esc(c.name)} <span class="muted">${esc(c.code.toUpperCase())}</span>`
-            : esc(c.code);
+          // Q302's note inverts what this cell used to do: the CODE is the label
+          // and the NAME rides the hover, where it used to be the other way round.
+          // `ooCountryCell` writes that title, and `ooTipInit`'s MutationObserver
+          // picks it up as an `.oo-tip-target` with nothing to register here.
+          const label = ooCountryCell(c.code);
           const tags = (c.top_tags || []).map(([t, n]) =>
             `<span class="pill" style="cursor:pointer" title="show ${esc(t)} sources in ${esc(c.name || c.code)}"
                 onclick="openSourcesForKeyword(${esc(JSON.stringify(c.code))}, ${esc(JSON.stringify(t))})">${esc(t)} ${n}</span>`
@@ -204,7 +229,7 @@
       $("coverage-gaps").innerHTML = miss.length
         ? `<strong>Not covered (${miss.length})</strong>: ` +
           miss.slice(0, 120).map(x =>
-            `<span class="pill" title="${esc(x.code.toUpperCase())}">${esc(x.name)}</span>`).join(" ") +
+            ooCountryCell(x.code, {cls: "pill"})).join(" ") +
           (miss.length > 120 ? ` <span class="muted">…and ${miss.length - 120} more</span>` : "")
         : `<span class="pill ok">every listed country has at least one source</span>`;
     }
@@ -305,8 +330,17 @@
           ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}" onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
           : `<div class="muted" style="padding:4px">—</div>`;
       };
-      fill("src-msel-language", f.languages, k => (typeof ooLangName === "function" ? ooLangName(k, k) : k));
-      fill("src-msel-country", f.countries, k => (typeof ooRegionName === "function" ? ooRegionName(k, k) : k));
+      // Q308 for a picker: ordered by localised NAME with the code beside it. A
+      // checkbox label is plain text with no usable hover, so both are visible --
+      // the same reading the agenda's country <select> takes. The VALUE stays the
+      // stored code; a picker that changed what it submits would break the filter
+      // reading it.
+      const _pickLabel = (code, name) => (name && name !== code ? `${name} (${code})` : code);
+      fill("src-msel-language", f.languages,
+        k => _pickLabel(ooLangCode(k), ooLangDisplayName(k, "")));
+      fill("src-msel-country",
+        (f.countries || []).slice().sort((a, b) => ooCountryCompare(a.key, b.key)),
+        k => _pickLabel(ooCountryCode(k), ooCountryName(k, "")));
       fill("src-msel-source_type", f.types);
       fill("src-msel-tag", f.tags);
       ["src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"].forEach(updateMselSummary);
@@ -378,8 +412,8 @@
         <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
         <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
-        <td class="muted" title="${esc((s.country || "").toUpperCase())}">${esc(s.country ? ooRegionName(s.country, s.country_name) : (s.country_name || "—"))}</td>
-        <td class="muted" title="${esc(s.language || "")}">${esc(s.language ? ooLangName(s.language, s.language) : "—")}</td>
+        <td class="muted">${s.country ? ooCountryCell(s.country) : "—"}</td>
+        <td class="muted">${s.language ? ooLangCell(s.language) : "—"}</td>
         <td><select class="tiny" style="width:auto;padding:3px"
               onchange="updateSource(${s.id},{priority:Number(this.value)})">${prio}</select></td>
         <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
@@ -709,8 +743,8 @@
       else {
         list.innerHTML = rows.map(s => {
           const feed = !!s.rss_url;
-          const meta = [s.language ? ooLangName(s.language, s.language) : null,
-                        s.country ? ooRegionName(s.country, s.country) : null,
+          const meta = [s.language ? ooLangName(s.language) : null,
+                        s.country ? ooRegionName(s.country) : null,
                         s.source_type].filter(Boolean).map(esc).join(" · ");
           return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
             <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}

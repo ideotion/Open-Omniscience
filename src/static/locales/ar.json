@@ -391,6 +391,9 @@
   "Countries / floor": "البلدان / الحد",
   "below floor": "دون الحد",
   "Region": "المنطقة",
+  "not an ISO code": "ليس رمزًا من رموز أيزو",
+  "not a recognised country code": "رمز دولة غير معروف",
+  "No country": "بدون دولة",
   "Country": "البلد",
   "Enabled": "مفعّلة",
   "Topic keywords (source tags)": "كلمات مفتاحية موضوعية (وسوم المصادر)",
@@ -2787,7 +2790,7 @@
   "AI features are enabled by your override, not by this hardware.": "ميزات الذكاء الاصطناعي مُفعّلة بناءً على تجاوزك اليدوي، وليس بناءً على هذا العتاد.",
   "AI features are off by default on this hardware.": "ميزات الذكاء الاصطناعي معطّلة افتراضيًا على هذا العتاد.",
   "Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped.": "استعادة إضافية: لم يُستبدل أو يُحذف أي شيء من مجموعتك. وتم تخطّي المكرّرات.",
-  "Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score.": "المقالات المجمَّعة، مصنّفة حسب بلد كل مصدر المُدرَج في الفهرس (ISO-2). أعداد فقط، بدون أي تقييم.",
+  "Articles collected, grouped by each source's catalogued country, shown as ISO 3166-1 alpha-3. Counts only, no score.": "المقالات المجمَّعة، مصنّفة حسب بلد كل مصدر المُدرَج في الفهرس معروض بترميز ISO 3166-1 alpha-3. أعداد فقط، بدون أي تقييم.",
   "Corpus figures — measured averages and the current ingestion rate:": "أرقام المجموعة — متوسطات مقيسة ومعدّل الاستيعاب الحالي:",
   "Corpus share → target; over-represented languages are re-checked less often (pace < 1). A cadence nudge, never an exclusion — set in Settings.": "حصة المجموعة ← الهدف؛ اللغات المُفرطة التمثيل يُعاد فحصها بوتيرة أقل (الإيقاع < 1). تعديل في الوتيرة فقط، وليس استبعادًا — يُضبط من الإعدادات.",
   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.": "البلد مُدرج من قِبل المشغّل أو الفهرس؛ المقالات التي لا يحمل مصدرها بلدًا تُحتسب لكنها لا تُوضع على الخريطة أبدًا — انظر التوزيع اللغوي أدناه.",
@@ -3520,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر.",
   "Restoring a backup later": "استعادة نسخة احتياطية لاحقًا",
   "Trust a backup's scraping history by default": "الوثوق افتراضيًا بسجلّ الجلب الخاص بالنسخة الاحتياطية",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر. يمكنك تغيير هذا الخيار لأي عملية استيراد بمفردها."
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "الوثوق به يتخطى إعادة جلب ما يشير السجلّ إلى أنه جُلب بالفعل؛ وعدم الوثوق به يعيد جلب كل شيء من الصفر. يمكنك تغيير هذا الخيار لأي عملية استيراد بمفردها.",
+  "Netherlands Antilles": "جزر الأنتيل الهولندية"
 }

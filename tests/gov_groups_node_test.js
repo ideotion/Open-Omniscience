@@ -53,6 +53,19 @@ function extract(name) {
 const box = {};
 new Function(
   "esc", "fmtNum", "window",
+  // `_govNames` and the spread line now render member codes as alpha-3 (ruling
+  // Q301 step 1), so this suite needs the real converter in scope. EXTRACTED, never
+  // stubbed: a stub agrees with a broken shipped helper, which is the one thing this
+  // whole harness exists to prevent. The table it reads is a top-level const, so it
+  // is spliced in as source rather than extracted as a function.
+  APP.slice(APP.indexOf("const _OO_ISO3_TO_2_TEXT = "),
+            APP.indexOf("`;", APP.indexOf("const _OO_ISO3_TO_2_TEXT = ")) + 2) + "\n" +
+  "const OO_ISO3_TO_ISO2 = {}; const OO_ISO2_TO_ISO3 = {};\n" +
+  "_OO_ISO3_TO_2_TEXT.split(/\\s+/).forEach((q)=>{if(!q)return;const[a,b]=q.split(':');" +
+  "if(!a||!b)return;OO_ISO3_TO_ISO2[a]=b;OO_ISO2_TO_ISO3[b]=a;});\n" +
+  APP.slice(APP.indexOf("const OO_SPECIAL_ALPHA3 = "),
+            APP.indexOf("\n", APP.indexOf("const OO_COUNTRY_ALIASES = "))) + "\n" +
+  extract("ooCountryAlpha2") + "\n" + extract("ooCountryCode") + "\n" +
   extract("_govGroupHtml") + "\n" + extract("_govFmt") + "\n" +
   extract("_govCompact") + "\n" + extract("_govTf") + "\n" + extract("_govNames") + "\n" +
   "this._govGroupHtml = _govGroupHtml;"

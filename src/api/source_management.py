@@ -283,6 +283,7 @@ async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, l
 # qualification.run_qualification_pass in batches until the backlog is drained or the run
 # is stopped/paused (airplane / memory guard / cancel). See src/catalog/qualify_job.py.
 
+from src.catalog.countries import country_payload_iso3, country_query_forms
 from src.jobs.background import BackgroundJob, register_job
 
 
@@ -436,7 +437,14 @@ def list_sources(
             if langs:
                 query = query.filter(Source.language.in_(langs))          # OR within
             if ctrys:
-                query = query.filter(Source.country.in_(ctrys))           # OR within
+                # Q301 step 1: the parameter accepts BOTH forms. `country_query_forms`
+                # WIDENS -- it adds the alpha-3 and the alpha-2 beside whatever was
+                # typed and never replaces it, so a filter that worked yesterday works
+                # today and `FRA` now matches a column holding `fr`. The naive repair
+                # (normalise the needle) is the recorded one-sided-normalisation
+                # defect: it would make `uk` stop matching a column full of `uk`.
+                _forms = sorted({f for c in ctrys for f in country_query_forms(c)})
+                query = query.filter(Source.country.in_(_forms))          # OR within
             if tps:
                 query = query.filter(Source.source_type.in_(tps))         # OR within
             tag_list = _vals(tags)
@@ -500,6 +508,10 @@ def list_sources(
                 # Geo/type metadata — powers the batch-ingest source picker's filters.
                 "language": s.language,
                 "country": s.country,
+                # Q313 = a: the alpha-3 rides BESIDE the stored value for one release,
+                # derived at the row builder and never stored, so the two cannot be
+                # edited into disagreement.
+                "country_iso3": country_payload_iso3(s.country),
                 "region": s.region,
                 "source_type": s.source_type,
             }
@@ -615,6 +627,7 @@ def get_source(request: Request, source_id: int, db: Session = Depends(get_db)):
             "metadata": {
                 "language": metadata.language if metadata else None,
                 "country": metadata.country if metadata else None,
+                "country_iso3": country_payload_iso3(metadata.country if metadata else None),
                 "region": metadata.region if metadata else None,
                 "city": metadata.city if metadata else None,
                 "timezone": metadata.timezone if metadata else None,
@@ -1166,6 +1179,7 @@ def get_metadata(request: Request, source_id: int, db: Session = Depends(get_db)
             "source_id": metadata.source_id,
             "language": metadata.language,
             "country": metadata.country,
+            "country_iso3": country_payload_iso3(metadata.country),
             "region": metadata.region,
             "city": metadata.city,
             "timezone": metadata.timezone,

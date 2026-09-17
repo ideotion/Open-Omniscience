@@ -920,7 +920,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let out = _toneChip(a);
       if (a && a.detected_language && !a.language) {
-        out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${esc(t("deduced"))}: ${esc(String(a.detected_language).toUpperCase())}</span>`;
+        out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${esc(t("deduced"))}: ${ooLangCell(a.detected_language)}</span>`;
       }
       return out;
     }
@@ -1021,7 +1021,7 @@
       const langChips = (_anArtFacetData.languages || []).slice(0, 20).map(l => {
         const on = _anArtFacetSel.language === l.language;
         return `<button type="button" class="an-facet" aria-pressed="${on}" `
-          + `onclick="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${esc(String(l.language || "").toUpperCase())} `
+          + `onclick="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${ooLangCell(l.language)} `
           + `<span class="muted">${l.n}</span></button>`;
       }).join(" ");
       if (!srcChips && !langChips) { host.innerHTML = ""; return; }
@@ -1316,10 +1316,10 @@
       s = s || {};
       const facts = [
         s.country ? (typeof ooRegionName === "function"
-          ? ooRegionName(s.country, s.country.toUpperCase()) : s.country) : null,
+          ? ooRegionName(s.country) : s.country) : null,
         s.region || null,
         s.language ? (typeof ooLangName === "function"
-          ? ooLangName(s.language, s.language) : s.language) : null,
+          ? ooLangName(s.language) : s.language) : null,
         s.source_type || null,
       ].filter(Boolean).join(" \u00b7 ");
       const tags = (s.tags && s.tags.length)
@@ -1382,7 +1382,7 @@
             sub: e.class || "", n: e.articles})),
           where: ((d.where && d.where.places) || []).map((pl) => ({
             facet: "place", value: pl.name, label: pl.name,
-            sub: pl.country ? String(pl.country).toUpperCase() : "", n: pl.articles})),
+            sub: pl.country ? ooCountryCode(pl.country) : "", n: pl.articles})),
           when: ((d.when && d.when.years) || []).map((yr) => ({
             facet: "when", value: String(yr.year), label: String(yr.year),
             sub: "", n: yr.articles})),
@@ -1648,7 +1648,7 @@
             `<tr><td><div>${esc(a.title) || '<span class="muted">(untitled)</span>'}</div>
                  <div class="muted" style="font-size:12px">${esc((a.content||"").slice(0,160))}…</div></td>
              <td>${esc(a.source)}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at||"").slice(0,10))}</td>
-             <td>${esc(a.language||"")}</td>
+             <td>${ooLangCell(a.language)}</td>
              <td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>
                  ${a.url ? `· ${extLink(a.url, "source ↗", "muted")}` : ""}
                  <button class="secondary tiny" style="margin-top:4px"
@@ -1735,7 +1735,7 @@
           <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} onchange="_synthCount()">
           <span style="flex:1">
             <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
-            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc((a.published_at || "").slice(0, 10)) || t("undated")} · ${esc((a.language || "?").toUpperCase())}
+            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc((a.published_at || "").slice(0, 10)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
               · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
           </span>
         </label>`).join("");
@@ -1799,7 +1799,7 @@
       const members = (r.members || []).map((m) => `
         <li style="padding:6px 0;border-bottom:1px solid var(--line)">
           <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
-          <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10)) || t("undated")} · ${esc((m.language || "?").toUpperCase())}
+          <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10)) || t("undated")} · ${m.language ? ooLangCell(m.language) : "?"}
             · <a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>
         </li>`).join("");
       $("synth-win-body").innerHTML = `
@@ -1821,13 +1821,13 @@
         `*${t("Local model")}: ${r.model || "?"} · ${r.member_count} ${t("articles")} · ${new Date().toISOString().slice(0, 10)}*`,
         "", (r.result || ""), "", `> ${r.caveat || ""}`, "", `## ${t("Synthesized corpus")}`];
       for (const m of (r.members || []))
-        out.push(`${m.n}. ${m.title || "(untitled)"} — ${m.source || ""}${m.published_at ? " (" + m.published_at.slice(0, 10) + ")" : ""}${m.language ? " [" + m.language + "]" : ""}${m.url ? " " + m.url : ""}`);
+        out.push(`${m.n}. ${m.title || "(untitled)"} — ${m.source || ""}${m.published_at ? " (" + m.published_at.slice(0, 10) + ")" : ""}${m.language ? " [" + ooLangCode(m.language) + "]" : ""}${m.url ? " " + m.url : ""}`);
       return out.join("\n");
     }
     function _synthAsHtml() {
       const t = _synthT(); const r = _synthData; if (!r) return "";
       const rows = (r.members || []).map((m) =>
-        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10))} · ${esc((m.language || "").toUpperCase())}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
+        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10))} · ${esc(ooLangCode(m.language || ""))}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
       return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t("Synthesis"))}</title>`
         + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#1a1a1a}`
         + `.meta{color:#666;font-size:13px}blockquote{color:#555;border-left:3px solid #ddd;padding-left:12px}`

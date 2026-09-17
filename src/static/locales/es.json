@@ -391,6 +391,9 @@
   "Countries / floor": "Países / umbral",
   "below floor": "bajo el umbral",
   "Region": "Región",
+  "not an ISO code": "no es un código ISO",
+  "not a recognised country code": "código de país no reconocido",
+  "No country": "Sin país",
   "Country": "País",
   "Enabled": "Activadas",
   "Topic keywords (source tags)": "Palabras clave temáticas (etiquetas de las fuentes)",
@@ -2787,7 +2790,7 @@
   "AI features are enabled by your override, not by this hardware.": "Las funciones de IA están activadas por tu anulación manual, no por este hardware.",
   "AI features are off by default on this hardware.": "Las funciones de IA están desactivadas por defecto en este hardware.",
   "Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped.": "Restauración aditiva: no se reemplazó ni eliminó nada de tu corpus. Se omitieron los duplicados.",
-  "Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score.": "Artículos recopilados, agrupados por el país catalogado de cada fuente (ISO-2). Solo recuentos, sin puntuación.",
+  "Articles collected, grouped by each source's catalogued country, shown as ISO 3166-1 alpha-3. Counts only, no score.": "Artículos recopilados, agrupados por el país catalogado de cada fuente mostrado como ISO 3166-1 alfa-3. Solo recuentos, sin puntuación.",
   "Corpus figures — measured averages and the current ingestion rate:": "Cifras del corpus: promedios medidos y la tasa de ingesta actual:",
   "Corpus share → target; over-represented languages are re-checked less often (pace < 1). A cadence nudge, never an exclusion — set in Settings.": "Proporción del corpus → objetivo; los idiomas sobrerrepresentados se revisan con menos frecuencia (ritmo < 1). Un ajuste de cadencia, nunca una exclusión: se configura en Ajustes.",
   "Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.": "El país lo declara el operador o el catálogo; los artículos cuya fuente no tiene país se cuentan, pero nunca se sitúan en el mapa: consulta el desglose por idioma más abajo.",
@@ -3520,5 +3523,6 @@
   "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch.": "Confiar en él evita volver a descargar lo que el historial indica que ya se obtuvo; no confiar en él vuelve a descargar todo desde cero.",
   "Restoring a backup later": "Restaurar una copia de seguridad más tarde",
   "Trust a backup's scraping history by default": "Confiar de forma predeterminada en el historial de rastreo de una copia de seguridad",
-  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Confiar en él evita volver a descargar lo que el historial indica que ya se obtuvo; no confiar en él vuelve a descargar todo desde cero. Puede cambiar esto para cualquier importación concreta."
+  "Trusting it skips re-fetching what the history says was already fetched; not trusting it re-fetches everything from scratch. You can change this for any single import.": "Confiar en él evita volver a descargar lo que el historial indica que ya se obtuvo; no confiar en él vuelve a descargar todo desde cero. Puede cambiar esto para cualquier importación concreta.",
+  "Netherlands Antilles": "Antillas Neerlandesas"
 }
