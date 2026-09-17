@@ -51,6 +51,16 @@
       // prose, so the walker cannot reach them. It redraws from the payload it already
       // has and NEVER fetches, so a switch cannot re-run a search behind the reader.
       try { if (typeof _anRepaintXLang === "function") _anRepaintXLang(); } catch (_e) {}
+      // S04-09: the Wikipedia toggle's hover is built at paint time from t() calls,
+      // so it is the frozen-locale class too -- the button carries `data-i18n-dyn`
+      // (its title is ALREADY translated, and letting the walker cache that as "the
+      // original English" is the poisoning half of the same bug), which means nothing
+      // else repaints it. Repaints from the state it already holds and NEVER fetches,
+      // so a language switch cannot ask the backend anything behind the reader.
+      try {
+        if (typeof _paintWikiLane === "function" && typeof _wikiLaneState !== "undefined"
+            && _wikiLaneState) _paintWikiLane(_wikiLaneState, _wikiLaneActive);
+      } catch (_e) {}
       try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
       // World-map lens desc + story chips are rendered at render time (kindLabel/t), so
       // re-render them too so the whole map surface tracks the new locale (field-test Item 6).
@@ -159,7 +169,7 @@
     // catalogue -- 714,399 bytes, 98.8% of all boot API bytes on the live fixture --
     // to populate one <select> inside a folded Settings section. It now loads with
     // that section, via _ADV_LOADERS.collect, like every other Advanced panel.
-    loadHealth(); loadLlmHealth(); checkEmptyCorpus(); loadRateMode();
+    loadHealth(); loadLlmHealth(); checkEmptyCorpus(); loadRateMode(); loadWikiLane();
     // A window lives in the SERVER process, so it outlives a page reload. Discover
     // it at boot or the operator could have an open window with no visible sign of
     // it and no way to close it -- the exact failure mode the bar exists to prevent.

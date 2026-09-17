@@ -3590,5 +3590,18 @@
   "No points in this window.": "Keine Punkte in diesem Fenster.",
   "running total {n}": "laufende Summe {n}",
   "not reported in this bucket": "in diesem Zeitraum nicht gemeldet",
-  "open in analysis (trend + worldwide spread)": "in der Analyse öffnen (Trend + weltweite Verbreitung)"
+  "open in analysis (trend + worldwide spread)": "in der Analyse öffnen (Trend + weltweite Verbreitung)",
+  "Chosen, but nothing is collecting yet on this build.": "Ausgewählt, aber in dieser Version wird noch nichts gesammelt.",
+  "Every edit in the editions you chose arrives as it happens.": "Jede Bearbeitung in den von Ihnen gewählten Ausgaben trifft ein, sobald sie geschieht.",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "Nichts ist verbunden. Ein Neustart kann eine Lücke hinterlassen, die dieser Strang aufzeichnet, statt sie zu verbergen.",
+  "Pause the Wikipedia stream": "Den Wikipedia-Stream pausieren",
+  "Resume the Wikipedia stream": "Den Wikipedia-Stream fortsetzen",
+  "Start the Wikipedia stream": "Den Wikipedia-Stream starten",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "Die Verbindung ist geschlossen und Ihre Position bleibt erhalten; Fortsetzen macht genau dort weiter, wo gestoppt wurde.",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "Dieser Strang kontaktiert stream.wikimedia.org, die Action API jeder Ausgabe sowie wikimedia.org für die täglichen Seitenaufrufe.",
+  "Wikipedia live stream": "Wikipedia-Livestream",
+  "Wikipedia stream: paused": "Wikipedia-Stream: pausiert",
+  "Wikipedia stream: running": "Wikipedia-Stream: läuft",
+  "Wikipedia stream: stopped": "Wikipedia-Stream: gestoppt",
+  "Stop the Wikipedia stream": "Den Wikipedia-Stream stoppen"
 }

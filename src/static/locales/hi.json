@@ -3590,5 +3590,18 @@
   "No points in this window.": "इस विंडो में कोई बिंदु नहीं है।",
   "running total {n}": "चालू कुल {n}",
   "not reported in this bucket": "इस अवधि में कोई रिपोर्ट नहीं",
-  "open in analysis (trend + worldwide spread)": "विश्लेषण में खोलें (रुझान + विश्वव्यापी प्रसार)"
+  "open in analysis (trend + worldwide spread)": "विश्लेषण में खोलें (रुझान + विश्वव्यापी प्रसार)",
+  "Chosen, but nothing is collecting yet on this build.": "चुना गया, पर इस रिलीज़ में अभी कुछ भी संग्रहित नहीं हो रहा।",
+  "Every edit in the editions you chose arrives as it happens.": "आपके चुने गए संस्करणों में हर परिवर्तन होते ही पहुँच जाता है।",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "अभी कुछ भी कनेक्ट नहीं है। फिर से शुरू करने पर एक अंतराल रह सकता है, जिसे यह लेन छुपाने के बजाय दर्ज करती है।",
+  "Pause the Wikipedia stream": "विकिपीडिया स्ट्रीम को विराम दें",
+  "Resume the Wikipedia stream": "विकिपीडिया स्ट्रीम फिर से शुरू करें",
+  "Start the Wikipedia stream": "विकिपीडिया स्ट्रीम शुरू करें",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "कनेक्शन बंद है और आपकी जगह सुरक्षित रखी गई है; फिर से शुरू करें वहीं से जारी रहेगा जहाँ यह रुका था।",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "यह लेन stream.wikimedia.org से, हर संस्करण के Action API से, और दैनिक पेज-व्यू के लिए wikimedia.org से संपर्क करती है।",
+  "Wikipedia live stream": "विकिपीडिया लाइव स्ट्रीम",
+  "Wikipedia stream: paused": "विकिपीडिया स्ट्रीम: विराम पर",
+  "Wikipedia stream: running": "विकिपीडिया स्ट्रीम: चल रही है",
+  "Wikipedia stream: stopped": "विकिपीडिया स्ट्रीम: रुक गई",
+  "Stop the Wikipedia stream": "विकिपीडिया स्ट्रीम रोकें"
 }

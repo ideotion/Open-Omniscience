@@ -139,6 +139,22 @@
             <path id="rate-needle" d="M12 15.5 L12 9.8" transform="rotate(-48 12 15.5)"/>
             <circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/>
           </svg></button>
+        <!-- Wikipedia live-stream toggle (Q702's NOTE, ruled 2026-09-15: "make it
+             default on, and add a toggle on the taskbar -like the AI toggle, with a
+             nice and consistent animation- , to allow users to stop / start / halt /
+             resume wikipedia streaming"). Follows the #net-toggle / #rate-toggle
+             grammar: ONE constant glyph whose FILL is the state (invariant #14),
+             constant footprint (invariant #3), the action named in a translated
+             hover that also names what the lane contacts (invariant #17). A click
+             pauses/resumes; a full stop is the shift-click, so an accidental tap on
+             a top-bar icon never ends a multi-day stream. -->
+        <button class="icon-btn" id="wiki-toggle"
+          onclick="if(event.shiftKey){stopWikiLane();}else{toggleWikiLane();}" data-i18n-dyn
+          title="Wikipedia live stream" aria-label="Wikipedia live stream">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path id="wiki-mark" d="M3 6h3.2l3.1 8.6L12 8h1.9l2.7 6.6L19.8 6H22l-4.3 12h-2L13 11.4 10.3 18h-2L3 6Z"/>
+          </svg></button>
         <button class="icon-btn" id="net-toggle" onclick="toggleNetwork()" data-i18n-dyn
           title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
           aria-label="Airplane mode (network on/off)">

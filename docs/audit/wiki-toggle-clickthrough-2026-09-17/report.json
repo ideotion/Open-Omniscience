@@ -1,0 +1,136 @@
+{
+ "url": "http://127.0.0.1:8099",
+ "locales": {
+  "en": {
+   "running": {
+    "title": "Wikipedia stream: running — Chosen, but nothing is collecting yet on this build.\nPause the Wikipedia stream\nThis lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.",
+    "aria_label": "Pause the Wikipedia stream",
+    "aria_pressed": "true",
+    "mark_fill": "currentColor",
+    "width": 34,
+    "height": 34
+   },
+   "halted": {
+    "title": "Wikipedia stream: paused — The connection is closed and your place is kept; Resume continues from where it stopped.\nResume the Wikipedia stream\nThis lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.",
+    "aria_label": "Resume the Wikipedia stream",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   },
+   "stopped": {
+    "title": "Wikipedia stream: stopped — Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.\nStart the Wikipedia stream\nThis lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.",
+    "aria_label": "Start the Wikipedia stream",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   }
+  },
+  "ar": {
+   "running": {
+    "title": "تدفق ويكيبيديا: يعمل — مُختار، لكن لا شيء يُجمَع بعد في هذا الإصدار.\nإيقاف تدفق ويكيبيديا مؤقتًا\nيتواصل هذا المسار مع stream.wikimedia.org، وواجهة Action API الخاصة بكل نسخة، ومع wikimedia.org لعدد مشاهدات الصفحات اليومي.",
+    "aria_label": "إيقاف تدفق ويكيبيديا مؤقتًا",
+    "aria_pressed": "true",
+    "mark_fill": "currentColor",
+    "width": 34,
+    "height": 34
+   },
+   "halted": {
+    "title": "تدفق ويكيبيديا: متوقف مؤقتًا — الاتصال مغلق ومكانك محفوظ؛ الاستئناف يكمل من حيث توقف.\nاستئناف تدفق ويكيبيديا\nيتواصل هذا المسار مع stream.wikimedia.org، وواجهة Action API الخاصة بكل نسخة، ومع wikimedia.org لعدد مشاهدات الصفحات اليومي.",
+    "aria_label": "استئناف تدفق ويكيبيديا",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   },
+   "stopped": {
+    "title": "تدفق ويكيبيديا: متوقف — لا شيء متصل الآن. قد يترك البدء من جديد فجوة، وهذا المسار يسجّلها بدلاً من إخفائها.\nبدء تدفق ويكيبيديا\nيتواصل هذا المسار مع stream.wikimedia.org، وواجهة Action API الخاصة بكل نسخة، ومع wikimedia.org لعدد مشاهدات الصفحات اليومي.",
+    "aria_label": "بدء تدفق ويكيبيديا",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   }
+  },
+  "zh": {
+   "running": {
+    "title": "维基百科流：运行中 — 已选择，但本版本目前并未采集任何内容。\n暂停维基百科流\n这条通道会连接 stream.wikimedia.org、各语言版本的 Action API，以及提供每日页面浏览量的 wikimedia.org。",
+    "aria_label": "暂停维基百科流",
+    "aria_pressed": "true",
+    "mark_fill": "currentColor",
+    "width": 34,
+    "height": 34
+   },
+   "halted": {
+    "title": "维基百科流：已暂停 — 连接已关闭，但你的位置已保留；「继续」会从中断处接着运行。\n继续维基百科流\n这条通道会连接 stream.wikimedia.org、各语言版本的 Action API，以及提供每日页面浏览量的 wikimedia.org。",
+    "aria_label": "继续维基百科流",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   },
+   "stopped": {
+    "title": "维基百科流：已停止 — 当前没有任何连接。重新开始可能会留下空缺，这条通道会记录它，而不是隐藏它。\n开始维基百科流\n这条通道会连接 stream.wikimedia.org、各语言版本的 Action API，以及提供每日页面浏览量的 wikimedia.org。",
+    "aria_label": "开始维基百科流",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   }
+  },
+  "de": {
+   "running": {
+    "title": "Wikipedia-Stream: läuft — Ausgewählt, aber in dieser Version wird noch nichts gesammelt.\nDen Wikipedia-Stream pausieren\nDieser Strang kontaktiert stream.wikimedia.org, die Action API jeder Ausgabe sowie wikimedia.org für die täglichen Seitenaufrufe.",
+    "aria_label": "Den Wikipedia-Stream pausieren",
+    "aria_pressed": "true",
+    "mark_fill": "currentColor",
+    "width": 34,
+    "height": 34
+   },
+   "halted": {
+    "title": "Wikipedia-Stream: pausiert — Die Verbindung ist geschlossen und Ihre Position bleibt erhalten; Fortsetzen macht genau dort weiter, wo gestoppt wurde.\nDen Wikipedia-Stream fortsetzen\nDieser Strang kontaktiert stream.wikimedia.org, die Action API jeder Ausgabe sowie wikimedia.org für die täglichen Seitenaufrufe.",
+    "aria_label": "Den Wikipedia-Stream fortsetzen",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   },
+   "stopped": {
+    "title": "Wikipedia-Stream: gestoppt — Nichts ist verbunden. Ein Neustart kann eine Lücke hinterlassen, die dieser Strang aufzeichnet, statt sie zu verbergen.\nDen Wikipedia-Stream starten\nDieser Strang kontaktiert stream.wikimedia.org, die Action API jeder Ausgabe sowie wikimedia.org für die täglichen Seitenaufrufe.",
+    "aria_label": "Den Wikipedia-Stream starten",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   }
+  },
+  "fr": {
+   "running": {
+    "title": "Flux Wikipédia : en cours — Choisi, mais rien n'est encore collecté dans cette version.\nSuspendre le flux Wikipédia\nCette file contacte stream.wikimedia.org, l'Action API de chaque édition, et wikimedia.org pour les pages vues quotidiennes.",
+    "aria_label": "Suspendre le flux Wikipédia",
+    "aria_pressed": "true",
+    "mark_fill": "currentColor",
+    "width": 34,
+    "height": 34
+   },
+   "halted": {
+    "title": "Flux Wikipédia : en pause — La connexion est fermée et votre position est conservée ; Reprendre continue là où le flux s'est arrêté.\nReprendre le flux Wikipédia\nCette file contacte stream.wikimedia.org, l'Action API de chaque édition, et wikimedia.org pour les pages vues quotidiennes.",
+    "aria_label": "Reprendre le flux Wikipédia",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   },
+   "stopped": {
+    "title": "Flux Wikipédia : arrêté — Rien n'est connecté. Redémarrer peut laisser un trou, que cette file enregistre au lieu de le masquer.\nDémarrer le flux Wikipédia\nCette file contacte stream.wikimedia.org, l'Action API de chaque édition, et wikimedia.org pour les pages vues quotidiennes.",
+    "aria_label": "Démarrer le flux Wikipédia",
+    "aria_pressed": "false",
+    "mark_fill": "none",
+    "width": 34,
+    "height": 34
+   }
+  }
+ },
+ "findings": []
+}

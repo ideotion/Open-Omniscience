@@ -3590,5 +3590,18 @@
   "No points in this window.": "Tidak ada titik di jendela ini.",
   "running total {n}": "total berjalan {n}",
   "not reported in this bucket": "tidak dilaporkan pada periode ini",
-  "open in analysis (trend + worldwide spread)": "buka di analisis (tren + sebaran global)"
+  "open in analysis (trend + worldwide spread)": "buka di analisis (tren + sebaran global)",
+  "Chosen, but nothing is collecting yet on this build.": "Dipilih, tetapi belum ada yang dikumpulkan pada rilis ini.",
+  "Every edit in the editions you chose arrives as it happens.": "Setiap perubahan di edisi yang Anda pilih tiba begitu terjadi.",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "Saat ini tidak ada yang terhubung. Memulai lagi dapat meninggalkan celah, yang dicatat oleh jalur ini, bukan disembunyikan.",
+  "Pause the Wikipedia stream": "Jeda aliran Wikipedia",
+  "Resume the Wikipedia stream": "Lanjutkan aliran Wikipedia",
+  "Start the Wikipedia stream": "Mulai aliran Wikipedia",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "Koneksi ditutup dan posisi Anda tersimpan; Lanjutkan akan meneruskan dari titik terakhir berhenti.",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "Jalur ini menghubungi stream.wikimedia.org, Action API tiap edisi, dan wikimedia.org untuk tampilan halaman harian.",
+  "Wikipedia live stream": "Aliran langsung Wikipedia",
+  "Wikipedia stream: paused": "Aliran Wikipedia: dijeda",
+  "Wikipedia stream: running": "Aliran Wikipedia: berjalan",
+  "Wikipedia stream: stopped": "Aliran Wikipedia: dihentikan",
+  "Stop the Wikipedia stream": "Hentikan aliran Wikipedia"
 }

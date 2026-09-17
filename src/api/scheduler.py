@@ -118,7 +118,43 @@ def _status_payload() -> dict:
     # 429/503 it was served), because a server too loaded to answer cannot tell
     # anyone it is loaded.
     status["server_load"] = server_load()
+    # THE WIKIPEDIA LANE'S STATE, AND WHETHER ANYTHING IS ACTING ON IT (Q702's NOTE).
+    #
+    # TWO FIELDS, NOT ONE, and the second is the honest half. `state` is what the
+    # operator chose; `active` is whether a collector is currently acting on that
+    # choice. They are not the same fact, and on this build they DIFFER: the lane's
+    # stream client, its storage and its consent gate are built, and no scheduler job
+    # constructs one yet (S04-09's S4). A toggle that read only `state` would tell an
+    # operator "running -- every edit arrives as it happens" while nothing was
+    # connected, which is the shape of a control that claims a capability it does not
+    # have. `reason` names what is missing, so the UI can say it rather than imply it.
+    status["wiki_lane"] = _wiki_lane_block()
     return status
+
+
+def _wiki_lane_block() -> dict:
+    """What the operator chose for the Wikipedia lane, and what is acting on it.
+
+    ``active`` is computed, never stored: the day a scheduler job owns a stream, this
+    is the one place that has to learn about it, and every surface reading the status
+    becomes correct at once.
+    """
+    from src.scheduler.settings import WIKI_LANE_STATES, load_settings
+
+    state = getattr(load_settings(), "wiki_lane_state", "running")
+    if state not in WIKI_LANE_STATES:
+        # A persisted value this build does not know. Reported as itself rather than
+        # coerced: the UI refuses to draw an unknown state, which is better than
+        # either of us guessing.
+        return {"state": state, "active": False, "reason": "unknown-state", "states": list(WIKI_LANE_STATES)}
+    return {
+        "state": state,
+        "active": False,
+        # A literal token, never prose: the sentence is composed by the UI through
+        # OOI18N.t and ships x12, because this reaches a caveat surface.
+        "reason": "no-collector-yet",
+        "states": list(WIKI_LANE_STATES),
+    }
 
 
 @router.get("/status")

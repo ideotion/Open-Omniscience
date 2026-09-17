@@ -3590,5 +3590,18 @@
   "No points in this window.": "В этом окне нет точек.",
   "running total {n}": "нарастающий итог {n}",
   "not reported in this bucket": "не сообщено за этот период",
-  "open in analysis (trend + worldwide spread)": "открыть в анализе (тренд + мировой охват)"
+  "open in analysis (trend + worldwide spread)": "открыть в анализе (тренд + мировой охват)",
+  "Chosen, but nothing is collecting yet on this build.": "Выбрано, но в этом релизе пока ничего не собирается.",
+  "Every edit in the editions you chose arrives as it happens.": "Каждое изменение в выбранных вами изданиях приходит в момент, когда оно происходит.",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "Сейчас ничего не подключено. Повторный запуск может оставить пробел, который этот канал фиксирует, а не скрывает.",
+  "Pause the Wikipedia stream": "Приостановить поток Википедии",
+  "Resume the Wikipedia stream": "Возобновить поток Википедии",
+  "Start the Wikipedia stream": "Запустить поток Википедии",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "Соединение закрыто, но ваша позиция сохранена; «Возобновить» продолжит с того места, где всё остановилось.",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "Этот канал обращается к stream.wikimedia.org, к Action API каждого издания и к wikimedia.org — за ежедневными просмотрами страниц.",
+  "Wikipedia live stream": "Живой поток Википедии",
+  "Wikipedia stream: paused": "Поток Википедии: на паузе",
+  "Wikipedia stream: running": "Поток Википедии: работает",
+  "Wikipedia stream: stopped": "Поток Википедии: остановлен",
+  "Stop the Wikipedia stream": "Остановить поток Википедии"
 }
