@@ -92,9 +92,11 @@ def _digest_thresholds() -> tuple[int, int]:
     return RING_CAND_MIN_ARTICLES, RING_CAND_PER_LANG
 
 
-#: What a refusal is CALLED. Strings, because they are counted and reported to a surface
-#: that must be able to say which refusal happened without re-deriving it from a message.
-REFUSED_AIRPLANE = "airplane-mode"
+#: What a SKIP is called. Strings, because they are counted and reported to a surface that
+#: must be able to say which one happened without re-deriving it from a message. The
+#: airplane refusal is deliberately NOT one of these: it raises rather than being tallied,
+#: because it stops the whole load instead of costing it one candidate, and a constant here
+#: for it would have claimed a place in a tally it never reaches.
 SKIP_NO_ITEM = "no_item"
 SKIP_ONE_LANGUAGE = "one_language"
 SKIP_ERROR = "error"
@@ -142,7 +144,14 @@ class RateGate:
             self.sleep(step)
             waited += step
             now = self.clock()
-        self._last = max(now, due) if not (self.stop and self.stop()) else now
+        # ALWAYS the later of the two, and never a second `stop()` call. The previous form
+        # was `max(now, due) if not (self.stop and self.stop()) else now`, which asked the
+        # caller's predicate again -- a predicate that may count its invocations -- and
+        # whose two branches both evaluated to `now`: the loop exits only when `now >= due`
+        # (so the max is `now`) or on a cancel break (where the else gave `now`). Taking
+        # the max unconditionally also means a wait cut short by a cancel cannot let the
+        # next request leave early, which is the safe direction for a politeness rate.
+        self._last = max(now, due)
         self._note(waited)
         return waited
 
@@ -165,7 +174,13 @@ class Candidate:
     mentions: int
 
 
-def gap_candidates(session, *, limit: int = 50, languages: Iterable[str] | None = None) -> list[Candidate]:
+def gap_candidates(
+    session,
+    *,
+    limit: int = 50,
+    languages: Iterable[str] | None = None,
+    stats: dict | None = None,
+) -> list[Candidate]:
     """Q407 = a: the keywords with no ring, worst-covered language first.
 
     THE SAME RULE AS THE DIAGNOSTICS DIGEST, and not the same code: ``_ring_candidates``
@@ -182,7 +197,11 @@ def gap_candidates(session, *, limit: int = 50, languages: Iterable[str] | None 
     NEW concepts, not re-resolve the table we have).
 
     Bounded at :data:`_SCAN_CAP` keywords, most-cited first -- see that constant for why
-    the bound cannot move the head of the answer.
+    the bound cannot move the head of the answer. ``stats`` is filled with ``{"scanned"}``,
+    the number of rows the query actually returned, because NOTHING ABOVE THIS FUNCTION CAN
+    SEE IT: the returned list is bounded by the per-language cap (60 x the languages
+    present), so ``len(result) >= _SCAN_CAP`` is a comparison that can never be true and a
+    "capped" flag built on it would report nothing while reading like a measurement.
     """
     from sqlalchemy import func, select
 
@@ -210,6 +229,8 @@ def gap_candidates(session, *, limit: int = 50, languages: Iterable[str] | None 
                   func.coalesce(Keyword.mention_count, 0).desc())
         .limit(_SCAN_CAP)
     ).all()
+    if stats is not None:
+        stats["scanned"] = len(rows)
 
     by_lang: dict[str, list[Candidate]] = {}
     gated: dict[str, int] = {}
@@ -262,7 +283,8 @@ def gap_summary(session, *, languages: Iterable[str] | None = None) -> dict:
     the disk. The rule is about egress, not about the word "preview", so the honest thing
     is to say here, at the function, that nothing leaves the machine.
     """
-    cands = gap_candidates(session, limit=_SCAN_CAP, languages=languages)
+    scan: dict = {}
+    cands = gap_candidates(session, limit=_SCAN_CAP, languages=languages, stats=scan)
     per_lang: dict[str, int] = {}
     for c in cands:
         per_lang[c.language] = per_lang.get(c.language, 0) + 1
@@ -272,9 +294,12 @@ def gap_summary(session, *, languages: Iterable[str] | None = None) -> dict:
         "rings_held": len(equivalence.load_rings()),
         "seconds_per_candidate": POLITE_SLEEP_S * 2,
         "scan_cap": _SCAN_CAP,
-        # "at least this many" rather than a silent truncation: a capped count that reads
-        # as a complete one is the shape where a number outlives its denominator.
-        "capped": len(cands) >= _SCAN_CAP,
+        "scanned": int(scan.get("scanned") or 0),
+        # Read off the SCAN, not off the returned list: the list is bounded by the
+        # per-language cap long before the scan cap, so `len(cands) >= _SCAN_CAP` was a
+        # comparison that could never be true -- a flag that reads like a measurement and
+        # measures nothing, which is worse than not having one.
+        "capped": int(scan.get("scanned") or 0) >= _SCAN_CAP,
         "method": (
             "Keywords in this corpus that no ring covers, worst-covered language first "
             "(the ring-gap digest's own rule and thresholds), over the "
@@ -304,7 +329,7 @@ def _default_getter(url: str) -> dict:
     return json.loads(resp.text)
 
 
-def load_rings(
+def load_rings_from_wikidata(
     candidates: list[Candidate],
     *,
     get: Callable[[str], dict] | None = None,
@@ -314,6 +339,12 @@ def load_rings(
     write: bool = True,
 ) -> dict:
     """Resolve ``candidates`` into rings and merge them into the LOCAL ring file.
+
+    **NOT** ``equivalence.load_rings``, which parses the ring FILES and is what every
+    read path calls. The first draft of this module named it ``load_rings`` too, and two
+    functions of one name in one package is the recorded shape where a reader -- or a
+    later edit -- reaches for the wrong one; the qualified call below (``equivalence.
+    load_rings()``, three lines into the same file) is exactly how close the two came.
 
     Refuses up front under airplane mode, by name. One candidate's failure never aborts
     the batch. Returns counts with the method stated -- never a success rate, because the

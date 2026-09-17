@@ -91,9 +91,21 @@ def _cands(*normalized: str) -> list[RL.Candidate]:
 
 @pytest.fixture(autouse=True)
 def _offline_by_default():
+    """Airplane mode off around every test, and the ring caches cleared AFTER each one.
+
+    The cache clear is not tidiness. `test_a_write_invalidates_every_memoised_ring_view`
+    points `local_rings_path` at a tmp file and loads a ring into it, which warms three
+    process-wide `lru_cache`s with a ring that exists only in that test's tmpdir. A clear
+    written as the last LINE of the test is skipped the moment the test fails — and then a
+    phantom ring rides into every later test in the session, where it is exactly the sort
+    of cross-test contamination that produces a failure nobody can reproduce alone. In the
+    fixture's teardown it runs whatever the test did.
+    """
     clear_kill_switch()
+    equivalence.invalidate_ring_caches()
     yield
     clear_kill_switch()
+    equivalence.invalidate_ring_caches()
 
 
 # --------------------------------------------------------------------------- #
@@ -110,7 +122,7 @@ def test_every_pair_of_requests_is_at_least_ten_seconds_apart(tmp_path):
     clock = FakeClock()
     wd = FakeWikidata(clock, _ITEMS)
     gate = RL.RateGate(clock=clock, sleep=clock.sleep)
-    out = RL.load_rings(_cands("kanzleramt", "wahlrecht"), get=wd, gate=gate,
+    out = RL.load_rings_from_wikidata(_cands("kanzleramt", "wahlrecht"), get=wd, gate=gate,
                         write=False)
 
     assert out["resolved"] == 2
@@ -133,7 +145,7 @@ def test_the_search_goes_out_in_the_terms_own_language(tmp_path):
     returns SOMETHING, just not the right item."""
     clock = FakeClock()
     wd = FakeWikidata(clock, _ITEMS)
-    RL.load_rings(_cands("kanzleramt"), get=wd, gate=RL.RateGate(clock=clock, sleep=clock.sleep),
+    RL.load_rings_from_wikidata(_cands("kanzleramt"), get=wd, gate=RL.RateGate(clock=clock, sleep=clock.sleep),
                   write=False)
     search = next(u for _, u in wd.calls if "wbsearchentities" in u)
     assert "language=de" in search, search
@@ -161,7 +173,7 @@ def test_airplane_mode_refuses_by_name_and_never_calls_the_getter():
 
     activate_kill_switch()
     with pytest.raises(RL.AirplaneRefusal) as err:
-        RL.load_rings(_cands("kanzleramt"), get=_never, write=False)
+        RL.load_rings_from_wikidata(_cands("kanzleramt"), get=_never, write=False)
     assert "airplane mode" in str(err.value).lower()
     assert calls == [], "the load reached a fetch while the kill switch was engaged"
 
@@ -173,7 +185,7 @@ def test_the_refusal_beats_an_empty_candidate_list():
     claims and only the first one is about the kill switch."""
     activate_kill_switch()
     with pytest.raises(RL.AirplaneRefusal):
-        RL.load_rings([], write=False)
+        RL.load_rings_from_wikidata([], write=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -185,7 +197,7 @@ def test_a_one_language_item_is_never_written_as_a_ring(tmp_path):
     "rings held" figure as if it did."""
     clock = FakeClock()
     wd = FakeWikidata(clock, _ITEMS)
-    out = RL.load_rings(_cands("einsprachig"), get=wd,
+    out = RL.load_rings_from_wikidata(_cands("einsprachig"), get=wd,
                         gate=RL.RateGate(clock=clock, sleep=clock.sleep), write=False)
     assert out["resolved"] == 0
     assert out["skipped"] == {RL.SKIP_ONE_LANGUAGE: 1}
@@ -195,7 +207,7 @@ def test_a_term_with_no_item_is_counted_and_the_batch_continues(tmp_path):
     """One unresolvable term must not cost the other nineteen their 10 s each."""
     clock = FakeClock()
     wd = FakeWikidata(clock, _ITEMS)
-    out = RL.load_rings(_cands("nixdaheim", "kanzleramt"), get=wd,
+    out = RL.load_rings_from_wikidata(_cands("nixdaheim", "kanzleramt"), get=wd,
                         gate=RL.RateGate(clock=clock, sleep=clock.sleep), write=False)
     assert out["skipped"] == {RL.SKIP_NO_ITEM: 1}
     assert out["rings"] == ["chancellery"]
@@ -212,7 +224,7 @@ def test_a_raising_request_is_isolated_to_its_own_candidate(tmp_path):
             raise OSError("connection reset")
         return wd(url)
 
-    out = RL.load_rings(_cands("wahlrecht", "kanzleramt"), get=_flaky,
+    out = RL.load_rings_from_wikidata(_cands("wahlrecht", "kanzleramt"), get=_flaky,
                         gate=RL.RateGate(clock=clock, sleep=clock.sleep), write=False)
     assert out["skipped"] == {RL.SKIP_ERROR: 1}
     assert out["resolved"] == 1
@@ -230,7 +242,7 @@ def test_a_cancel_stops_the_batch_and_says_so(tmp_path):
         seen["n"] += 1
         return seen["n"] > 3  # let the first candidate through, then stop
 
-    out = RL.load_rings(_cands("kanzleramt", "wahlrecht"), get=wd,
+    out = RL.load_rings_from_wikidata(_cands("kanzleramt", "wahlrecht"), get=wd,
                         gate=RL.RateGate(clock=clock, sleep=clock.sleep, stop=_stop),
                         should_stop=_stop, write=False)
     assert out["stopped"] is True
@@ -293,7 +305,7 @@ def test_a_write_invalidates_every_memoised_ring_view(tmp_path, monkeypatch):
 
     clock = FakeClock()
     wd = FakeWikidata(clock, _ITEMS)
-    RL.load_rings(_cands("kanzleramt"), get=wd,
+    RL.load_rings_from_wikidata(_cands("kanzleramt"), get=wd,
                   gate=RL.RateGate(clock=clock, sleep=clock.sleep))
     assert equivalence.ring_of("de", "kanzleramt") == "chancellery", (
         "a freshly loaded ring is invisible until a restart — the caches were not cleared"
@@ -370,3 +382,48 @@ def test_the_gap_summary_states_that_it_made_no_network_call():
     assert out["per_language"] == {"de": 1}
     assert "No network call" in out["method"]
     assert out["seconds_per_candidate"] == RL.POLITE_SLEEP_S * 2
+
+
+def test_the_capped_flag_reports_the_SCAN_and_not_the_returned_list():
+    """A flag that reads like a measurement and can never be true is worse than no flag.
+
+    The returned list is bounded by the PER-LANGUAGE cap (60 x the languages present) long
+    before the scan cap of 20,000 is reached, so the first version's
+    `len(cands) >= _SCAN_CAP` was a comparison with no reachable true branch: it would have
+    reported "not capped" on a corpus of any size, for ever.
+
+    THE FIXTURE IS THE WHOLE TEST, and the first draft of it was worthless. Lowering the cap
+    to 3 and seeding 6 plain keywords makes `scanned` and `len(cands)` BOTH 3, so the broken
+    version passes — measured, by running it. The discriminating shape is a scan that fills
+    the cap with rows the worklist then DISCARDS: here the three highest-spread keywords are
+    all ring members already, so `scanned` is 3 and the candidate list is empty. The broken
+    flag reads 0 >= 3 and says "not capped" while the scan was truncated."""
+    import unittest.mock as mock
+
+    s = _sess()
+    # ANTI-VACUITY: the premise is measured, not assumed. If a future ring file drops one of
+    # these, this fails here rather than passing for the wrong reason below.
+    covered = [("climat", "fr"), ("premierminister", "de"), ("wahl", "de")]
+    for term, lang in covered:
+        assert equivalence.ring_of(lang, term) is not None, f"{lang}:{term} is no longer a ring member"
+
+    _seed_keywords(
+        s,
+        # The ring members carry the HIGHEST article counts, so the ordered scan reaches
+        # exactly them; the plain terms sit below the cap and are never read.
+        [(term, lang, 50 - i, False) for i, (term, lang) in enumerate(covered)]
+        + [(f"zzzplain{i}", "de", 9, False) for i in range(3)],
+    )
+
+    out = RL.gap_summary(s)
+    assert out["scanned"] == 6 and out["capped"] is False, out
+    assert out["scan_cap"] == RL._SCAN_CAP
+
+    with mock.patch.object(RL, "_SCAN_CAP", 3):
+        small = RL.gap_summary(s)
+    assert small["scanned"] == 3, "the SQL limit did not follow the cap"
+    assert small["candidates"] == 0, (
+        "the fixture no longer discriminates: the scan must fill the cap with rows the "
+        "worklist discards, or `len(cands)` and `scanned` agree and the broken flag passes"
+    )
+    assert small["capped"] is True, "the true branch is unreachable -- the flag measures nothing"

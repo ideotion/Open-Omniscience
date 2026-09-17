@@ -3022,7 +3022,7 @@ def _ring_load_worker(ctx, *, limit: int = 20, languages: list[str] | None = Non
         # Wikidata query string on a progress line is plumbing (invariant #8).
         ctx.set_progress(done=i, total=total, detail=term)
 
-    return rl.load_rings(
+    return rl.load_rings_from_wikidata(
         cands, should_stop=lambda: ctx.stopping, progress=_progress,
     )
 
