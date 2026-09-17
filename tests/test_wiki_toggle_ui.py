@@ -45,6 +45,13 @@ _CSS = _ROOT / "src" / "static" / "app.css"
 
 _STATES = ("running", "halted", "stopped")
 
+#: The hosts the lane's consent line must name, as WHOLE TOKENS, in every locale.
+#: A frozenset rather than two literals at the assertion site: the check below is a
+#: set difference, which says "these must all be present" in one expression and keeps
+#: the host strings out of an `in` comparison -- the shape CodeQL reads as an
+#: incomplete URL substring check whatever the right-hand side actually is.
+_EXPECTED_HOSTS = frozenset({"stream.wikimedia.org", "wikimedia.org"})
+
 
 def _button() -> str:
     """The toggle's own markup. One slice, bounded by the element's own close tag.
@@ -243,9 +250,18 @@ def test_the_host_names_survive_every_translation_verbatim():
         # (`stream.wikimedia.org-এর`, the same shape bn.json already uses for `GB-কে`),
         # so a greedy class would report a mangled host where the host is verbatim.
         hosts = {h.rstrip("-.") for h in re.findall(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", value)}
-        assert "stream.wikimedia.org" in hosts, f"{path.name} mangled stream.wikimedia.org"
-        assert "wikimedia.org" in hosts, (
-            f"{path.name} does not carry the pageviews host as its own token"
+        # A SET DIFFERENCE, not two membership tests. Python spells substring
+        # containment and set membership with the SAME operator, so a host literal on
+        # the left of `in` is indistinguishable to a reader -- and to CodeQL, which
+        # flagged exactly that as incomplete URL substring sanitization even after the
+        # value on the right had become a set of whole tokens. Taking the difference
+        # states the property directly, is not the shape the query looks for, and
+        # reports BOTH missing hosts at once instead of stopping at the first.
+        missing = _EXPECTED_HOSTS - hosts
+        assert not missing, (
+            f"{path.name} does not carry {sorted(missing)} as whole tokens; it has "
+            f"{sorted(hosts)}. A localised or mangled hostname is an unreachable "
+            "address printed on a consent surface."
         )
 
 
