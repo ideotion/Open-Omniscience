@@ -156,6 +156,28 @@ class SchedulerSettings:
     # usually no-ops. Set False to leave those stores to the explicit manual endpoints only.
     auto_track_signals: bool = True
 
+    # THE WIKIPEDIA LANE'S RUN STATE (Q702's NOTE, ruled 2026-09-15). The label of
+    # Q702's answer said "default off"; the note that follows it says "make it
+    # default on, and add a toggle on the taskbar ... to allow users to stop / start
+    # / halt / resume wikipedia streaming". The working mode's rule for this pair is
+    # explicit -- "the label is context; the note is the ruling" -- so the default
+    # here is ON, and the field is a STATE rather than a boolean because the note
+    # names four verbs, not two.
+    #
+    #   "running" : the stream is connected (or reconnecting). START and RESUME both
+    #               land here; what differs is what the lane PROMISES about the gap.
+    #   "halted"  : deliberately paused. The connection is closed and the cursor is
+    #               kept, so RESUME continues from the stored Last-Event-ID and the
+    #               lane can say honestly whether anything was missed.
+    #   "stopped" : off. The connection is closed and nothing reconnects.
+    #
+    # THE CURSOR SURVIVES BOTH, and that is deliberate: discarding a resume point
+    # because an operator pressed stop would turn a reversible choice into data loss.
+    # What "stopped" gives up is the PROMISE -- a start after a long stop may find its
+    # cursor outside EventStreams' retention, and the lane then records a gap saying
+    # so (Q727) rather than resuming as though nothing had happened.
+    wiki_lane_state: str = "running"
+
     # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled: Governments-
     # tab figures should load automatically, not only via the manual "Load standard
     # country data" button): how many curated World-Bank indicators the scheduler
@@ -295,6 +317,41 @@ def _coerce_list(value) -> list[str]:
     return out
 
 
+
+#: The Wikipedia lane's three persistent states (Q702's NOTE). A CLOSED vocabulary:
+#: the four verbs the note names are TRANSITIONS between these, not states of their
+#: own -- "start" and "resume" both arrive at ``running``, and conflating the verb
+#: with the state is how a UI comes to show a fourth thing the backend cannot store.
+WIKI_LANE_STATES: tuple[str, ...] = ("running", "halted", "stopped")
+
+
+def _require_wiki_lane_state(value) -> str:
+    """Refuse anything outside :data:`WIKI_LANE_STATES`, by name."""
+    text = str(value).strip().lower()
+    if text not in WIKI_LANE_STATES:
+        raise SchedulerSettingsError(
+            f"wiki_lane_state must be one of {', '.join(WIKI_LANE_STATES)}, got {value!r}"
+        )
+    return text
+
+
+def _coerce_wiki_lane_state(value, default: str) -> str:
+    """Read a PERSISTED value, falling back to the default for an unreadable one.
+
+    Distinct from :func:`_require_wiki_lane_state` on purpose. A settings FILE that
+    cannot be read must not stop the app booting -- the operator would have no way in
+    to fix it -- so a corrupt stored value falls back. An API REQUEST is a live
+    instruction from somebody who is watching, and there the refusal is the honest
+    answer. The two differ in what a wrong value costs, so they are two functions.
+    """
+    if value is None:
+        return default
+    try:
+        return _require_wiki_lane_state(value)
+    except SchedulerSettingsError:
+        _LOG.warning("ignoring an unreadable wiki_lane_state %r; using %r", value, default)
+        return default
+
 def load_settings() -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
     d = SchedulerSettings()
@@ -353,6 +410,7 @@ def load_settings() -> SchedulerSettings:
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
         auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
+        wiki_lane_state=_coerce_wiki_lane_state(raw.get("wiki_lane_state"), d.wiki_lane_state),
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
@@ -383,6 +441,11 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.auto_track_signals = _coerce_bool(
             updates["auto_track_signals"], current.auto_track_signals
         )
+    if "wiki_lane_state" in updates and updates["wiki_lane_state"] is not None:
+        # REFUSES an unknown state rather than coercing it. A lane whose state fell
+        # back to a default on a typo would be running when the operator asked it to
+        # stop, which is the one direction this control must never fail in.
+        current.wiki_lane_state = _require_wiki_lane_state(updates["wiki_lane_state"])
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement

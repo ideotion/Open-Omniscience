@@ -85,6 +85,14 @@ class SchedulerConfigUpdate(BaseModel):
     # crawl_per_pass=0 disables the supplement (mode="crawl" stays orthogonal).
     crawl_supplement: bool | None = None
     crawl_per_pass: int | None = None
+    # THE WIKIPEDIA LANE'S RUN STATE (Q702's NOTE): "running" | "halted" | "stopped".
+    # DECLARED HERE ON PURPOSE. ``net-hosts.js``'s own header records the trap this
+    # line avoids: a field that exists on the settings dataclass and is honoured by
+    # save_settings, but is NOT declared on this request model, is DROPPED by Pydantic
+    # -- and the endpoint then returns 200 having changed nothing, so the operator is
+    # told their opt-out succeeded when it did not. That is the ``settingUnreachable``
+    # state the table has a flag for, and it is a worse failure than no control at all.
+    wiki_lane_state: str | None = None
 
 
 def _status_payload() -> dict:

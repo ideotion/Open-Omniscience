@@ -288,8 +288,26 @@ def run_feed_once(
         if version is None:
             # The source says it is gone. Recorded as a change by the feed; the
             # entity keeps its history, because deleting it would destroy evidence.
+            #
+            # THE COUNT IS NOT THE MARK. ``deleted_reported`` lives for the length of
+            # this pass and is then a number in a log; Q713 asks for the page to BE
+            # marked, which only a column can do. Without it, a reader coming back
+            # tomorrow sees an entity whose text simply stopped changing — the exact
+            # shape of a page nobody edits, which is a different fact entirely.
+            if entity.deleted_at is None:
+                entity.deleted_at = _utcnow()
+                # FLUSHED HERE, not left to the caller's commit. A pass that dies
+                # after this point — a later entity raising, a kill switch, a crash —
+                # would otherwise lose the one fact this iteration learned, and the
+                # next pass would see a page that merely stopped changing.
+                lane.flush()
             result.deleted_reported += 1
             continue
+        if entity.deleted_at is not None:
+            # The source answered with a version, so the page is back. The column
+            # tracks the SOURCE's current state, not our history of it.
+            entity.deleted_at = None
+            lane.flush()
         outcome, article_id = store_version(lane, adapter, entity, version, corpus=corpus)
         if outcome == "baseline":
             result.baselines_captured += 1

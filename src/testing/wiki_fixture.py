@@ -177,6 +177,62 @@ class FixtureWikiClient:
             "timestamp": _parse_ts(rev["timestamp"]),
         }
 
+    def fetch_hot_pages(
+        self, wiki: str, pageids: list[int], *, with_assessments: bool = False
+    ) -> dict[int, dict]:
+        """The HOT tier's batched read, over the fixture edition. Q705's fields included.
+
+        REFUSES AN OVER-CAP BATCH exactly as the real client does. A fixture that
+        quietly served 200 pages where the service serves 50 would let a chunking bug
+        pass here and fail only in the field -- which is the whole failure mode the
+        real client's refusal exists to prevent, so the double has to share it.
+        """
+        self._note("fetch_hot_pages")
+        self._check(wiki)
+        from src.wiki.mediawiki import MAX_PAGES_PER_REQUEST
+
+        if len(pageids) > MAX_PAGES_PER_REQUEST:
+            raise ValueError(
+                f"{len(pageids)} pages asked for in one request; the Action API serves "
+                f"{MAX_PAGES_PER_REQUEST} to an anonymous client. Chunk before calling."
+            )
+        wanted = set(pageids)
+        out: dict[int, dict] = {}
+        for title, page in self._pages().items():
+            if page["pageid"] not in wanted:
+                continue
+            if self._deleted(page):
+                out[page["pageid"]] = {"pageid": page["pageid"], "title": title, "missing": True}
+                continue
+            visible = [r for r in page["revisions"] if self._visible(r)]
+            if not visible:
+                continue
+            rev = visible[-1]
+            text = rev["text"]
+            out[page["pageid"]] = {
+                "pageid": page["pageid"],
+                "title": title,
+                "missing": False,
+                "text": text,
+                "revid": rev["revid"],
+                "timestamp": _parse_ts(rev["timestamp"]),
+                # Q705 fields the fixture can honestly answer. Everything it CANNOT
+                # answer is simply absent -- which is the property the facts table
+                # exists to preserve, so the fixture must not invent placeholders.
+                "length": len(text.encode("utf-8")),
+                "revisions": [{"revid": rev["revid"], "user": rev["user"]}],
+            }
+        return out
+
+    def fetch_current_text_by_id(self, wiki: str, pageid: int) -> dict:
+        """One page's current wikitext by ID. Same shape as ``fetch_current_text``."""
+        self._note("fetch_current_text_by_id")
+        pages = self.fetch_hot_pages(wiki, [pageid])
+        page = pages.get(pageid)
+        if page is None or page.get("missing"):
+            return {"missing": True, "pageid": pageid}
+        return page
+
     def fetch_revisions(
         self, wiki: str, title: str, *, limit: int = 20, older_than: int | None = None
     ) -> list[dict]:
