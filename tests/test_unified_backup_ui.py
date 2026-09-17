@@ -29,7 +29,23 @@ def test_export_dialog_covers_the_streaming_backup_capabilities():
         assert ep in _APP, ep
     # "Everything" is the default selection: a present category is CHECKED (field ask
     # 2026-07-02) so a backup covers corpus + wiki + maps + models unless unticked.
-    assert '(d.count || 0) > 0 ? "checked" : "disabled"' in _APP
+    #
+    # UPDATED DELIBERATELY 2026-09-17, not loosened. This pinned the exact expression
+    # ``(d.count || 0) > 0 ? "checked" : "disabled"``, which was the whole rule while
+    # "has content" was the only thing that decided a tick. A member may now also be one
+    # the export cannot yet WRITE (``exportable: false``), and such a member must never
+    # be offered whatever it holds -- it would otherwise render CHECKED the moment it had
+    # content, carry no categories, and write nothing, which is a tick that lies about
+    # what the backup contains. Both halves are pinned, separately, so losing either one
+    # fails by name rather than by a string that no longer matches anything.
+    assert '(d.count || 0) > 0' in _APP, "the present-category default is gone"
+    assert '"checked" : "disabled"' in _APP
+    assert "d.exportable !== false" in _APP, "a member the export cannot write is offered"
+    assert "offerable && (d.count || 0) > 0" in _APP, (
+        "the tick no longer depends on BOTH content and exportability"
+    )
+    # ...and the reason a disabled member gives, so the row is never silently dead.
+    assert "not_exportable_reason" in _APP
 
 
 def test_import_dialog_covers_restore_and_ingest_capabilities():
