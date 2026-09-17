@@ -105,6 +105,15 @@ dependencies = [
     # holds the guard for all six and is written to be superseded if any is ever
     # genuinely adopted.
     "psutil>=5.9",
+    # Offline lemmatization (pure-Python, bundled dictionaries, NO torch, NO network).
+    # MOVED here from [analysis] on 2026-09-17 by Q416 = a: lemmatisation is no longer a
+    # display-time nicety over rows the store already wrote, it decides what EXTRACTION
+    # writes -- so a core install that silently skipped it would build a differently
+    # partitioned keyword index from a [analysis] install of the same release, and the
+    # two corpora would disagree about what "the same keyword" is. Q1015 = a permits it
+    # in core precisely because it is pure Python; registered in
+    # configs/external_artifacts.yml (simplemma-dictionaries) as Q1015 also requires.
+    "simplemma>=1.1",
 ]
 
 [project.optional-dependencies]
@@ -140,11 +149,6 @@ analysis = [
     # so a foreign article gets the right stoplist instead of leaking function words
     # (field §2.6). Gated like VADER: a core install simply leaves the language NULL.
     "py3langid>=0.3",
-    # Offline lemmatization (pure-Python, bundled dictionaries, NO torch/network) for the
-    # OPT-IN display-time keyword conflation in families.py (P4.3: study/studied -> study,
-    # Wahlen -> Wahl). Gated like the rest: a core install leaves families.py's lemma step a
-    # no-op (OO_FAMILY_LEMMA defaults off; the mechanism degrades gracefully when absent).
-    "simplemma>=1.1",
 ]
 
 # Optional real Named-Entity Recognition for the Insights tab (people / orgs /

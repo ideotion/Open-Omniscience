@@ -120,7 +120,13 @@ def test_romance_elision_is_stripped_from_terms():
     ex = BaselineExtractor()
     by = _by_norm(ex.extract(text))
     assert "assemblée" in by
-    assert "euros" in by
+    # `d'euros` -> `euros` is the ELISION claim this test makes, and it still holds: the
+    # DISPLAY term is `euros`. The KEY is the lemma `euro` since 2026-09-17 (Q416 = a,
+    # lemmatisation at extraction), which is a different rule in a different layer -- so
+    # this asserts the elision on the surface form and names the lemma rather than
+    # silently depending on whichever one the key happens to be.
+    assert "euro" in by and by["euro"].term == "euros"
+    assert "d'euros" not in by and "'euros" not in by
     # The contracted forms must NOT survive as keywords.
     assert "l'assemblée" not in by and "d'euros" not in by and "qu'il" not in by
     # And the de-elided form feeds the n-grams.

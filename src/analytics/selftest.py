@@ -226,7 +226,9 @@ _CASES: tuple[Challenge, ...] = (
         "Romance elisions (l'/d'/qu') are not kept as part of a keyword",
         "L'Assemblée a voté la réforme. D'euros et qu'il faut. L'assemblée débat encore.",
         language="fr",
-        term=("assemblée", "euros"),
+        # `euros` is keyed under its LEMMA `euro` since 2026-09-17 (Q416 = a); the
+        # ELISION this case is about is unchanged and still asserted by `absent` below.
+        term=("assemblée", "euro"),
         absent=("l'assemblée", "d'euros", "qu'il"),
     ),
     # 2026-06-22 field test, remainder batch: each newly-MANAGED language gets a
@@ -325,7 +327,7 @@ _CASES: tuple[Challenge, ...] = (
         "clock_timecode_fragments_dropped",
         "clock timecodes (1h15, 12h00) do not leave h15/h00 keyword fragments",
         "The session opened at 1h15 and closed at 12h00 after a debate about elections.",
-        term=("elections",),
+        term=("election",),  # lemma key (Q416 = a)
         absent=("h15", "h00"),
     ),
     Challenge(
@@ -341,7 +343,7 @@ _CASES: tuple[Challenge, ...] = (
         # ('newsletter' is now platform FURNITURE — 2026-07-01 open-class batch — so the
         # surviving content control is 'layout', not 'newsletter'.)
         "The govdelivery newsletter used a gd_combo_table layout while covering the elections.",
-        term=("elections", "layout", "govdelivery"),
+        term=("election", "layout", "govdelivery"),  # lemma key (Q416 = a)
         absent=("gd_combo_table", "newsletter"),
     ),
     Challenge(
@@ -486,10 +488,13 @@ def _check_structural() -> list[dict]:
     # variant (studied -> study) a plural heuristic misses, and the mislemma denylist
     # blocks a meaning-changer (media !-> medium). Checked DIRECTLY on _lemma() — no env
     # toggle, thread-safe in the live process — and only when the optional simplemma is
-    # present (a core install simply omits this case; the feature is a no-op there).
-    from src.analytics.families import _lemma, _simplemma
+    # present. simplemma is CORE since 2026-09-17 (Q416 = a), so this normally RUNS; the
+    # guard stays and asks `lemmatizer_available()` rather than a module attribute, so an
+    # install whose import is broken degrades instead of raising.
+    from src.analytics.families import _lemma
+    from src.analytics.lemma import lemmatizer_available
 
-    if _simplemma is not None:
+    if lemmatizer_available():
         lemma_fails: list[str] = []
         for word, lg, want_lemma in (("studied", "en", "study"), ("running", "en", "run"),
                                      ("Wahlen", "de", "wahl")):

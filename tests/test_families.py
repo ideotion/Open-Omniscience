@@ -14,15 +14,20 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.analytics import families as fam_mod
 from src.analytics import queries as q
 from src.analytics.families import _lemma, build_families, canonical_key, strip_honorifics
+from src.analytics import lemma as lemma_mod
+from src.analytics.lemma import lemmatizer_available
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
-# P4.3 lemmatization needs the optional simplemma ([analysis] extra). The unit + grouping
-# tests below skip on a core install and run in CI / the analysis venv.
-_HAS_SIMPLEMMA = fam_mod._simplemma is not None
-_needs_simplemma = pytest.mark.skipif(not _HAS_SIMPLEMMA, reason="simplemma ([analysis]) not installed")
+# Lemmatisation reads the ONE seam (src/analytics/lemma.py). simplemma moved from the
+# [analysis] extra into CORE on 2026-09-17 (Q416 = a), so these normally RUN -- but the
+# guard stays and asks the SOURCE OF TRUTH (`lemmatizer_available()`), never
+# `fam_mod._simplemma` and never an assumed environment: the recorded segmenter/referee
+# lesson is that a check depending on an optional import must skip on the probe, or it
+# fails against perfectly correct code the first time the import moves. It just moved.
+_HAS_SIMPLEMMA = lemmatizer_available()
+_needs_simplemma = pytest.mark.skipif(not _HAS_SIMPLEMMA, reason="simplemma not importable here")
 
 
 def test_canonical_key_and_honorifics():
@@ -210,11 +215,15 @@ def test_lemma_is_on_by_default_and_opt_out_restores_byte_identical(monkeypatch)
 
 
 def test_lemma_off_by_default_without_simplemma_installed(monkeypatch):
-    # A core install (simplemma absent) must be byte-identical regardless of the new
-    # default -- _lemma_enabled() checks `_simplemma is not None` before the env var, so
-    # the on-by-default flip can never fabricate a merge without the optional dependency.
+    # An install with NO importable lemmatiser must be byte-identical regardless of the
+    # default -- _lemma_enabled() checks availability before the env var, so the
+    # on-by-default flip can never fabricate a merge without the dependency.
+    # PATCH THE MODULE WHOSE CODE READS THE NAME (2026-09-16 package-split lesson):
+    # `_simplemma` lives in src.analytics.lemma since 2026-09-17 and families.py holds
+    # only a function reference, so patching fam_mod would be a silent no-op -- the test
+    # would pass while exercising the INSTALLED lemmatiser, i.e. testing nothing.
     monkeypatch.delenv("OO_FAMILY_LEMMA", raising=False)
-    monkeypatch.setattr(fam_mod, "_simplemma", None)
+    monkeypatch.setattr(lemma_mod, "_simplemma", None)
     items = [
         {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
         {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},
@@ -254,7 +263,7 @@ def test_lemma_degrades_gracefully_without_simplemma(monkeypatch):
     # Even with the feature enabled, a missing simplemma is a no-op (never a crash) — the
     # core-install path. Force the absent-dependency branch regardless of what's installed.
     monkeypatch.setenv("OO_FAMILY_LEMMA", "1")
-    monkeypatch.setattr(fam_mod, "_simplemma", None)
+    monkeypatch.setattr(lemma_mod, "_simplemma", None)  # the module that READS it
     items = [
         {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
         {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},

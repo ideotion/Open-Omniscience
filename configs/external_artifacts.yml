@@ -378,6 +378,30 @@ artifacts:
     freshness: {max_age_months: 24}
     last_verified: "2026-07-10"
 
+  - id: simplemma-dictionaries
+    title: simplemma lemmatisation dictionaries
+    kind: runtime-coupling
+    description: >
+      simplemma ships per-language lemma DICTIONARIES, and since Q416 = a (2026-09-15,
+      gate row M) those dictionaries decide what the keyword index CONTAINS: a term is
+      lemmatised as it is extracted, so `studies` and `study` become one stored keyword
+      rather than two rows a display layer reunites. That makes the package a dated data
+      artifact wearing a version number, not an ordinary library pin -- a release that
+      lemmatises a word differently silently re-partitions an existing corpus, and the
+      repair is the S04-06 re-normalisation job, not a reinstall. Moved from the
+      [analysis] extra into CORE in the same change (Q1015 = a: pure Python belongs in
+      core, and every addition is registered here).
+    upstream: https://pypi.org/project/simplemma/ (https://github.com/adbar/simplemma)
+    check_upstream: "pypi.org/pypi/simplemma/json - compare info.version; read the changelog for DICTIONARY changes, not just code"
+    license: MIT
+    pin: {file: src/analytics/lemma.py, const: SIMPLEMMA_AS_OF}
+    refresh: "bump the pyproject floor, re-read the upstream dictionary changelog, then run the S04-06 re-normalisation job so the stored index matches the new dictionaries; bump SIMPLEMMA_AS_OF"
+    freshness: {max_age_months: 24}
+    couplings:
+      - "src/analytics/lemma.py is the ONE seam: families.py (display) and extract.py (extraction) both read LEMMA_LANGS / MISLEMMA_DENYLIST from it"
+      - "zh/ja are excluded by construction (unsegmented here); their segmenters are the [segmentation] extra"
+    last_verified: "2026-09-17"
+
   - id: subjectivity-lexicons
     title: Subjectivity / loaded-language seed lexicons
     kind: dated-data

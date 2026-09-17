@@ -2053,6 +2053,35 @@ class KeywordMention(Base):
     observed_on: Mapped[date | None] = mapped_column(Date, index=True)  # denormalised article date (for trends)
     country: Mapped[str | None] = mapped_column(String(2))  # denormalised source country (for the map)
     city: Mapped[str | None] = mapped_column(String(120))  # denormalised source city, when known
+    # THE ARTICLE'S LANGUAGE, DENORMALISED PER MENTION (Q414 = a, 2026-09-15, gate row M).
+    # Stored NORMALISED (``managed.normalize_lang``: "en-US" -> "en") while
+    # ``Article.language`` keeps the raw ``<html lang>`` value, because every consumer of
+    # this column compares it against a bare code and the recorded language-equilibrium
+    # defect is exactly what happens when one side is normalised and the other is not:
+    # en / en-US / en_us became three languages to a lever that then compared ONE
+    # spelling's share against the whole target. The raw form is never lost -- it is one
+    # join away, on the article.
+    #
+    # THE CARDINALITY CHECK, because the ledger requires it before a column is added
+    # (the per-mention revid entry: "count how many rows would hold the same value for
+    # one entity; if the answer is 'all of them', the column is on the wrong table").
+    # Run here, the answer IS "all of them": one indexing pass reads one article in one
+    # language, so every mention row from that pass carries the same code. The column is
+    # kept anyway, for the same measured reason the four columns above it exist --
+    # ``observed_on``, ``country``, ``city`` and ``source_id`` are all article-level facts
+    # copied per mention, because the alternative is the recorded SQLCipher codec trap:
+    # joining keyword_mentions -> articles for ONE small column drags whole ~35 KB article
+    # rows through the codec (measured ~26 s of a 32 s wall), which is why
+    # ``reconcile_keyword_language`` already builds an article-language map in PYTHON
+    # rather than asking SQL for the join. This column is that map, materialised.
+    # So the check's verdict is "redundant, deliberately, exactly like its four
+    # neighbours" rather than "on the wrong table".
+    #
+    # NULL is honest: a mention written before this column existed, or one whose article
+    # carries no language at all, has never been measured. It is NOT "unknown language"
+    # dressed as a value, and the majority derivation below skips it rather than counting
+    # it as a vote.
+    language: Mapped[str | None] = mapped_column(String(10))
     # Denormalised source id (like observed_on/country) so per-SOURCE analytics (the
     # flood/bury concentration card #4) avoid the keyword_mentions->articles decrypt trap.
     # Populated forward at index time; a re-index fills it for an existing corpus (no heavy

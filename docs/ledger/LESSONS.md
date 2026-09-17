@@ -10253,3 +10253,151 @@ ceiling; with it, the fix is obvious and the ceiling never moves.
 And **leave a deliberate slack alone**: the CI step's own comment said the one slot above
 the base absorbs a finding `main` lands while a PR is open. Lowering it to make this branch
 look tidier would have spent something somebody put there on purpose.
+
+## 2026-09-17 — `S04-06`, the keyword translation ladder: three lessons, two of them from measuring a claim I had already written down
+
+### A NORMALISER THAT REWRITES A STORED KEY MUST RE-APPLY EVERY FILTER THE ORIGINAL PASSED — and the unguarded version RENAMES rather than drops, which is worse
+
+Q416 = a moved lemmatisation from a display-time collapse to the EXTRACTION path, so the
+lemma became the stored key. The obvious implementation adopts the lemma unconditionally.
+Measured against this tree's own English stopset, that deletes real keywords: `cars` →
+`car`, `ways` → `way`, `ends` → `end` and `owns` → `own` are **all stoplisted**, and
+`ads` → `ad` falls below the 3-character term floor. The filters run on the SURFACE token,
+before the key is chosen, so the lemma never meets them.
+
+**What it actually does is worse than deletion, and only running it says so.** The mutant
+did not drop the row — it stored four occurrences of `cars` under the key `car`, where
+every stoplist-aware surface downstream then hides it. A term made invisible with no row
+missing anywhere to show for it. My own test docstring claimed "DELETE those keywords from
+the index outright" until the mutation run printed `{'car': ('cars', 4)}` and refuted it.
+
+The rule: **a lemma is adopted only when it would itself have survived every filter the
+surface form just survived** — length floor, stoplist, digits, code shape — and otherwise
+the surface form stays its own key. That makes the change a partition-MERGE and never a
+removal, which is the property that bounds a change touching every article ever indexed.
+The tempting alternative (drop a term whose lemma lands on a stopword, reasoning that the
+lemma proves it was a function word) is a recall improvement where it is right and silent
+data loss where it is not; merging only is the direction that cannot be wrong.
+
+**THE SECOND HALF, AND IT IS A DIFFERENT DEFECT: changing the key function breaks every
+reader that keys on the old form.** The corpus now stores `sanction` where the articles
+said "sanctions", so `resolve_keyword` — and every surface through it — returned nothing
+for the word a reader types. Found by an unrelated association test asserting
+`"nickel" in pairs` against an empty dict. The recorded rule is to normalise on BOTH sides
+of a comparison; this is that rule one layer up, where the thing being normalised is the
+key function itself. The repair stays EXACT: lemma candidates are matched by equality,
+never `LIKE`, and several distinct hits return `None` rather than ranking by mention count,
+which is the recorded homograph defect that made `Dy` resolve to `already`.
+
+**And the migration-drift ratchet is what caught the half neither of those covers:** the
+live store is never `alembic upgrade`d, so a new column needs a boot self-heal or an
+existing corpus meets `no such column` on the first query. Written, then DRIVEN against a
+table built without the column rather than asserted from source.
+
+### `render_as_batch=True` MAKES `op.add_column` IDEMPOTENT ON SQLite — the recorded `_has_table` lesson is about CREATE TABLE, and I wrote its mechanism into a docstring before measuring it
+
+The 2026-09-16 entry records `alembic upgrade head` dying with `table keyword_translations
+already exists`, because the RESTORE path runs alembic at a staged copy and never calls
+`create_all` while the ordinary boot does the opposite. I copied the prescribed
+`_has_column` guard for an ADD COLUMN migration and wrote a docstring saying a bare
+`op.add_column` "fails on exactly one of the two".
+
+**It does not.** `migrations/env.py` configures `render_as_batch=True`, so on SQLite an
+`add_column` is a reflect-and-recreate and adding a column the table already carries is a
+clean no-op — driven with the guard deleted over a `create_all`'d store, the upgrade
+SUCCEEDED and `PRAGMA table_info` showed the column exactly once with all ten indexes
+intact. The mutation SURVIVED, which is a question and not a reassurance, and the answer
+was that my sentence was wrong rather than my guard being dead.
+
+Two general forms. **The recorded lesson was about a different DDL verb**, and copying its
+remedy to a neighbouring one carried its rationale across unchecked — a lesson does not
+generalise itself from `CREATE TABLE` to `ADD COLUMN` just because both are migrations.
+And **a docstring that explains a mechanism is a claim of exactly the kind the staleness
+guard distrusts in a status line**; the guard is kept (two lines, states the intent, stays
+correct if `render_as_batch` is ever turned off) but the note now says what was measured
+instead of what would have been satisfying to believe.
+
+### A FIXED-SPAN LISTENER SLICE IS A GUARD THAT A COMMENT CAN REDDEN
+
+`js_source_helper.event_listener_bodies` exists because three guards took
+`js.index('addEventListener("oo:langchange"')` and read a fixed span, silently assuming one
+listener. It fixed the ENUMERATION and kept the fixed span: 4000 characters from each
+registration. On 2026-09-17 a seven-line COMMENT added at the top of that listener in
+`app-boot.js` pushed `renderCompositionFigures()` past the 4000th character, and
+`test_figure_channels` failed saying "3 listener(s) found, none of them calls it" — about
+code that calls it, seventeen lines below the cut.
+
+**A guard whose window is a character count is the same defect it replaced wearing a
+different number.** Fixed by brace-matching the body (starting after the parentheses
+balance, so a `{}` in the arguments cannot truncate the slice to the signature — the
+recorded ooChart trap), with the span kept only as the fallback when the braces do not
+balance, so a malformed listener still yields something rather than the rest of the file.
+Bodies went from a uniform 4000 to 458 / 1001 / 6824, and all 309 tests using the helper
+stayed green — which is the check worth running when a shared helper changes: every guard
+that reads through it, not the one that failed.
+
+### A GATE LIST IN A BRIEF IS A CLAIM, AND THIS ONE WAS MISSING A BLOCKING RATCHET (2026-09-17, `S04-06`)
+
+`_WORKING_MODE.md` §4 lists "the gates, verbatim". I ran all of them, each separately,
+each at its own exit code, and pushed. CI went red on `test` — for
+`scripts/ruff_ratchet.py --max 442`, a BLOCKING non-growth ratchet over the ADVISORY ruff
+lane that the list does not mention. Two findings in code the PR had just added (`UP035`
+on a `typing` import, `UP037` on a needlessly quoted annotation) took it to 444.
+
+The ledger already carried both halves of this: *a gate's NAME is not its SCOPE — read the
+gate's own target paths out of `ci.yml`*, and *the `test` CI job is not only pytest*. The
+`test` job runs **fourteen** steps. What neither lesson said, and what this adds, is that
+**the brief's own gate list is one of the documents those lessons distrust** — a session
+following it faithfully is not running CI, and the faithfulness is what makes the gap
+invisible. Corrected in `_WORKING_MODE.md` §4 in the same PR, with the correction labelled
+as having the same shelf life as the text it replaces.
+
+**A SECOND, QUIETER DIVERGENCE IN THE SAME LIST:** it gives the untranslatable gate as
+`--audit-chrome --max-untranslatable N`; CI runs it with **no `--audit-chrome`**. Both
+passed here, so this cost nothing this time — which is exactly why it would have survived.
+Reproducing a gate means reproducing its FLAGS; a command that differs by one argument and
+is called by the same name is how "I ran the gate" stops being true without anyone noticing.
+
+**And when a ratchet moves, check the count is UNCHANGED rather than under the bar.** Back
+at exactly 442 is what says the two findings removed were the two findings added; 441 would
+have meant something else had also moved and been absorbed.
+
+### A TEST THAT SAMPLES A TRANSIENT STATE IS A RACE, HOWEVER LONG IT POLLS (2026-09-17, found from `S04-06`'s red lane, which it did not cause)
+
+`Portability observation (macos-latest)` went red on this PR for
+`test_a_kill_between_stages_three_and_four_resumes_on_the_next_boot`, in the import path
+the PR does not touch. **The confirmation came free and needs recording as a technique:**
+a PR head gets TWO CI runs, one for the `push` event and one for the `pull_request` event,
+and on commit `d455ab7` the same macOS lane came back **success on one and failure on the
+other, 25 s apart**. A same-commit disagreement is the cleanest flake proof there is and
+costs no re-run — check for the twin run before spending one.
+
+**But "flake" is not a root cause, and this one has a shape worth naming.** The test's
+subprocess decides whether the boot started the drain by SAMPLING a transient state —
+`if _REINDEX_RESUME_JOB.status()["state"] == "running"` every `0.1` s, for up to 120 s.
+`BackgroundJob.start()` sets `_state = "running"` synchronously and `_run` flips it to
+`"done"` in its `finally`, so that string is true only for as long as the work takes — and
+the fixture is TWO articles with ~25-character bodies. A drain that begins and ends inside
+one `time.sleep(0.1)` is indistinguishable from one that never started: every later sample
+reads `"done"`, the `elif started:` break never fires, and the loop spins out its full 120 s
+to report `started: False`. **The 120 s is not a safety margin — it is 1,200 samples of a
+window that already closed.** A long deadline protects against a LATE start, never against
+a short life, and reading the two as interchangeable is the whole defect.
+
+**The fix is not a longer poll or a sleep before it; it is to read a fact that persists.**
+`status()` already returns `started_at` and `ended_at`, set under the lock and never cleared
+until the next `start()` — the durable evidence was published and thrown away. So: when a
+test must prove something HAPPENED, assert on the record it leaves, not on catching it in
+the act. Where only a transient exists, the test's job is to make it observable (a gate the
+worker blocks on) rather than to sample faster.
+
+**COROLLARY — a scary traceback in `Captured log setup` belongs to the PREVIOUS test.** The
+red log carried `TypeError: cannot unpack non-iterable bool object` out of the boot resume,
+which reads like the cause and is not: `test_the_boot_resume_never_blocks_the_boot` stubs the
+drain with `lambda: (gate.wait(5) or (True, None))`, and `Event.wait()` returns `True`
+whenever the event is set in time — so the tuple is reached ONLY when the wait times out, and
+every normal run returns a bare `True`. The daemon thread raises, `except Exception` swallows
+it, that test still passes, and the traceback lands in whatever test's capture is open when
+the thread finally runs. **`setup` capture is a different test's exhaust.** Read the phase
+label before believing the traceback, and be suspicious of a stub built with `or` over a
+predicate that is truthy on the success path.

@@ -67,7 +67,9 @@ def test_strip_markup_drops_style_blocks_tags_comments_and_decodes_entities():
     for junk in ("max-width", "font-size", "font-family", "wrapper", "color"):
         assert junk not in out.lower()
     # Real prose survived; entities decoded (no &copy; / &nbsp; / &amp;).
-    assert "elections" in out and "inflation" in out
+    # Q416 = a (2026-09-17) lemmatises at extraction, so the KEY is `election`; what
+    # this test is about -- markup never becoming a keyword -- is untouched.
+    assert "election" in out and "inflation" in out
     assert "&copy;" not in out and "&nbsp;" not in out and "&amp;" not in out
     assert "©" in out  # &copy; decoded, not left as the literal text "copy"
 
@@ -78,7 +80,7 @@ def test_strip_markup_drops_style_blocks_tags_comments_and_decodes_entities():
 def test_extract_does_not_mint_css_or_html_keywords():
     by = _norms(BaselineExtractor().extract(_MARKUP_ARTICLE))
     assert not (by & _CSS_HTML_JUNK), f"markup leaked as keywords: {by & _CSS_HTML_JUNK}"
-    assert "elections" in by and "inflation" in by and "country" in by
+    assert "election" in by and "inflation" in by and "country" in by  # lemma key since 2026-09-17 (Q416 = a): the term survived, its KEY moved
 
 
 def test_extract_offsets_unchanged_for_clean_text():
@@ -125,7 +127,7 @@ def test_index_article_stores_no_markup_keywords(db):
     index_article(db, art, extractor=BaselineExtractor())
     stored = {k.normalized_term for k in db.query(Keyword).all()}
     assert not (stored & _CSS_HTML_JUNK), f"markup indexed: {stored & _CSS_HTML_JUNK}"
-    assert "elections" in stored and "inflation" in stored
+    assert "election" in stored and "inflation" in stored  # lemma key since 2026-09-17 (Q416 = a): the term survived, its KEY moved
     # Re-index is idempotent and stays clean (counters consistent with the join).
     index_article(db, art, extractor=BaselineExtractor())
     stored2 = {k.normalized_term for k in db.query(Keyword).all()}

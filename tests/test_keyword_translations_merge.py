@@ -229,6 +229,24 @@ def test_nothing_in_the_keyword_index_reads_this_table():
     allowed = {
         "src/database/models.py",          # the definition
         "src/backup/merge.py",             # the merge handler
+        # ADDED 2026-09-17 by S04-06, which is the slice this guard's own message names,
+        # and admitted on the condition it set. The argument, since the guard asks a
+        # future reader to make one rather than arrive silently:
+        #
+        #   * this module is the ONLY reader, and it reads at the TENTATIVE rung only --
+        #     `resolve_translation` reaches it exclusively after the verified ring rung
+        #     answered nothing, so a published label can never be displaced by a model;
+        #   * every row it returns arrives labelled. `TermTranslation.to_dict()` stamps
+        #     `translation_tier: "tentative"` and `translation_source: "llm"`, the label
+        #     helper draws a visible "~" and a dashed, muted tag, and the model that said
+        #     it rides along -- so nothing from this table can reach a reader dressed as
+        #     a verified fact. That is the debt the guard names, paid;
+        #   * the trusted keyword INDEX still never reads it: nothing here writes
+        #     `Keyword` or `KeywordMention`, and the annotation happens on the payload
+        #     after the query, not on the stored rows.
+        #
+        # The guard stays otherwise unchanged, so the NEXT reader still has to argue.
+        "src/analytics/translation_store.py",
     }
     assert hits <= allowed, (
         f"keyword_translations gained a reader outside the backup engine: "

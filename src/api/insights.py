@@ -3001,6 +3001,100 @@ def backfill_keyword_tags_status() -> dict:
     return _TAGS_BACKFILL_JOB.status()
 
 
+# ===== S04-06 S6: the consented in-app Wikidata ring load (Q406 = b) ======= //
+# Three endpoints, and the shape of them is the ruling. The GAP is local and free, so it
+# is readable without consent; the LOAD egresses, so it passes the ONE network consent in
+# the UI (invariant #14) and refuses here as well -- because a caller that never opened
+# the UI must meet the same refusal, which is the lesson #14f recorded when OpenTimestamps
+# had a gated button in front of an ungated endpoint.
+
+
+def _ring_load_worker(ctx, *, limit: int = 20, languages: list[str] | None = None) -> dict:
+    from src.analytics import ring_loader as rl
+    from src.database.session import session_scope
+
+    with session_scope() as db:
+        cands = rl.gap_candidates(db, limit=limit, languages=languages)
+    ctx.set_progress(done=0, total=len(cands), detail="starting")
+
+    def _progress(i: int, total: int, term: str) -> None:
+        # The TERM, not a URL: the task manager shows what the app is working on, and a
+        # Wikidata query string on a progress line is plumbing (invariant #8).
+        ctx.set_progress(done=i, total=total, detail=term)
+
+    return rl.load_rings_from_wikidata(
+        cands, should_stop=lambda: ctx.stopping, progress=_progress,
+    )
+
+
+# cancellable=True is HONEST here: the worker checks ctx.stopping between candidates AND
+# inside the 10 s rate wait, so Cancel stops within a quarter-second rather than leaving
+# the operator watching a dead button for ten (the no-theater rule for cancel buttons).
+#: NOT A WRITER in the database sense (``is_writer=False``, the ``bulletin`` precedent):
+#: the only writes are the local ring YAML on disk and the job's own state. Claiming the
+#: flag would put this in the DB-writer arbitration set, where it would ask the operator
+#: to stop a collection pass for a contention that does not exist.
+_RING_LOAD_JOB = register_job(
+    BackgroundJob(
+        "wikidata-rings", "Loading keyword translations from Wikidata", _ring_load_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.get("/ring-gaps")
+def ring_gaps(languages: str = Query("", max_length=200)) -> dict:
+    """What a ring load WOULD ask for — computed locally, with NO network call.
+
+    Not gated by the network consent, and that is a deliberate reading of invariant #14e
+    rather than an omission: #14e gates every estimate that runs before an action BECAUSE
+    those egress first ("Estimate size" fired a live HEAD). This one reads the keyword
+    index and the ring files off this machine, so gating it would ask an operator to
+    consent to a network call nobody is going to make. The payload says so in its own
+    method string, where a reader can check the claim.
+    """
+    from src.analytics.ring_loader import gap_summary
+    from src.database.session import session_scope
+
+    want = [x for x in (languages or "").replace(",", " ").split() if x] or None
+    with session_scope() as db:
+        return gap_summary(db, languages=want)
+
+
+@router.post("/ring-load")
+def ring_load(
+    limit: int = Query(20, ge=1, le=500),
+    languages: str = Query("", max_length=200),
+) -> dict:
+    """Load rings from Wikidata for the worst-covered keywords (Q406 = b, Q408 = a).
+
+    EGRESSES to ``www.wikidata.org`` at one request per 10 seconds (R8), through the
+    guarded fetch path, and refuses up front under airplane mode with a 409 that NAMES
+    the kill switch — never a generic failure that would send an operator looking at
+    Wikidata for their own setting (invariant #14e's corollary).
+    """
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise HTTPException(
+            status_code=409,
+            detail="network refused: airplane mode is engaged",
+        )
+    want = [x for x in (languages or "").replace(",", " ").split() if x] or None
+    try:
+        return {"started": True, "job": _RING_LOAD_JOB.start(limit=limit, languages=want)}
+    except RuntimeError:
+        # Already running: return the live status rather than 409, so the button is
+        # idempotent and a double click never reads as an error.
+        return {"started": False, "job": _RING_LOAD_JOB.status()}
+
+
+@router.get("/ring-load/status")
+def ring_load_status() -> dict:
+    """Live status of the background Wikidata ring load (state/progress/result/error)."""
+    return _RING_LOAD_JOB.status()
+
+
 # ===== Figure endpoints (the GUI visualization plan §7) ==================== //
 # Read-only chartable aggregates. Each returns the rows plus the method/caveat/n the
 # frontend's figMeta panel renders verbatim, so "every displayed figure carries its

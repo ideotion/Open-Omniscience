@@ -112,7 +112,7 @@ def test_top_cooccurrences_present(db):
     _seed(db)
     r = q.keyword_stats(db, "inflation", cooccur_limit=5)
     terms = {c["normalized"] for c in r["cooccurrences"]}
-    assert "markets" in terms
+    assert "market" in terms  # lemma key since 2026-09-17 (Q416 = a): "markets" -> "market"
     assert "rainfall" not in terms, "an unrelated term must not co-occur"
     for c in r["cooccurrences"]:
         assert set(c) == {"term", "normalized", "cooccur", "pmi"}

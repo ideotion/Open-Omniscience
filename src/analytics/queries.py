@@ -146,6 +146,36 @@ def unsegmented_note(session, article_ids: list[int]) -> dict | None:
     }
 
 
+def _resolve_by_lemma(session, norm: str) -> Keyword | None:
+    """The second EXACT try: the typed term's lemma (Q416 = a, 2026-09-17).
+
+    THE PROBLEM THIS SOLVES, which is not search expansion. Lemmatisation now happens at
+    EXTRACTION, so the corpus stores `sanction` where the articles said "sanctions" -- and
+    a reader who types the word the articles actually used would get nothing back, because
+    the two sides of the comparison stopped agreeing about the key. The recorded rule is
+    to normalise on BOTH sides; this is that, one function later. It is emphatically NOT
+    ring expansion (`S04-07`): it never widens a query to another TERM, only to the same
+    word's own stored form.
+
+    STILL EXACT, so ``exact=True`` keeps meaning what it says. The typed term carries no
+    language, so the lemma is computed under each language the app lemmatises -- a handful
+    of candidates, usually collapsing to one or two distinct strings -- and matched by
+    EQUALITY, never by ``LIKE``. Where the candidates reach SEVERAL different keywords the
+    answer is genuinely ambiguous (two languages' words sharing one lemma), and this
+    returns None rather than ranking them by mention count: that ranking is precisely the
+    recorded homograph defect that made "Dy" resolve to "already".
+    """
+    from src.analytics.lemma import LEMMA_LANGS, lemmatize
+
+    candidates = {lemmatize(norm, lg) for lg in LEMMA_LANGS}
+    candidates.discard(norm)
+    candidates = {c for c in candidates if c}
+    if not candidates:
+        return None
+    rows = session.query(Keyword).filter(Keyword.normalized_term.in_(sorted(candidates))).all()
+    return rows[0] if len(rows) == 1 else None
+
+
 def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | None:
     """Map a user term to a stored keyword: exact normalized match, else (unless
     ``exact=True``) the best fuzzy ``LIKE %term%`` match by mention count.
@@ -187,6 +217,9 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
     if not norm:
         return None
     kw = session.query(Keyword).filter_by(normalized_term=norm).first()
+    if kw:
+        return kw
+    kw = _resolve_by_lemma(session, norm)
     if kw:
         return kw
     if exact:
@@ -242,36 +275,77 @@ def _apply_kind(query, kind: str | None):
     return query.filter(Keyword.entity_type == kind)
 
 
-def _annotate_translations(terms, target_lang, stored_lang=None):
-    """Make the keyword rows LANGUAGE-AWARE: tag each row whose concept has a VERIFIED
-    translation into ``target_lang`` (via its Wikidata-sourced ring) with
-    ``translation`` + ``translation_source='ring'`` — so the UI can show the original
-    AND its translation, never blinding the reader to a foreign-language keyword.
+def _tentative_for(session, terms, target_lang):
+    """The TENTATIVE rung's rows for a page of keyword rows, or ``{}``.
+
+    Read HERE rather than inside :func:`_annotate_translations` because the ladder is
+    pure and this function owns the session. Bounded by the page the caller already
+    limited, so it never widens a query that was capped for a reason. Any failure
+    degrades to "no tentative rows" -- the ladder then reports ``untranslated``, which is
+    the honest answer for a reader who cannot be shown one, and is never worth failing a
+    whole keyword page over.
+    """
+    tl = (target_lang or "").strip().casefold()
+    if not tl or session is None or not terms:
+        return {}
+    try:
+        from src.analytics.translation_store import tentative_translations
+
+        return tentative_translations(
+            session, [r.get("normalized") or "" for r in terms], tl
+        )
+    except Exception:  # noqa: BLE001 - a missing table on a pre-migration store, etc.
+        return {}
+
+
+def _annotate_translations(terms, target_lang, stored_lang=None, tentative=None):
+    """Make the keyword rows LANGUAGE-AWARE: walk the three-tier ladder for each row and
+    stamp WHICH RUNG answered, so every keyword surface can render Q401's label grammar
+    from one payload instead of re-deriving it eleven times.
+
+    Each row gains ``translation_tier`` (verified / tentative / untranslated /
+    same_language), ``translation_source_lang`` (what Q402's "translated from X" names),
+    and, where the ladder refused, ``translation_declined`` + ``senses`` for Q412's
+    picker. ``translation`` + ``translation_source`` keep their pre-2026-09-17 meaning
+    exactly, so a surface that reads only those two is unchanged -- which is what lets
+    the silent surfaces be converted one at a time.
+
+    ``tentative`` is ``{normalized: {text, model, prompt_version}}``, the caller's read
+    of ``keyword_translations`` (Q404's table, whose writers are this slice's). It is
+    passed IN rather than read here because the ladder itself is pure and this function
+    runs inside paths that already own their session.
 
     Grouped ring rows resolve directly by ``ring_id``; solo rows resolve by
-    (effective language, normalized). A same-language or self-identical result is
-    skipped (nothing to add). No-op when ``target_lang`` is empty."""
+    (effective language, normalized). No-op when ``target_lang`` is empty."""
     tl = (target_lang or "").strip().casefold()
     if not tl:
         return terms
     from src.analytics import equivalence
 
     stored_lang = stored_lang or {}
+    tentative = tentative or {}
     for r in terms:
+        norm = r.get("normalized") or ""
         rid = r.get("ring_id")
-        if rid:
-            tr = equivalence.ring_translation(rid, tl)
-        else:
-            norm = r.get("normalized") or ""
-            lang = r.get("language") or stored_lang.get(norm)
-            tr = equivalence.translate_term(lang, norm, tl)
-        if not tr:
-            continue
-        trf = tr.casefold()
-        if trf == (r.get("normalized") or "").casefold() or trf == (r.get("term") or "").casefold():
-            continue
-        r["translation"] = tr
-        r["translation_source"] = "ring"
+        # A merged RING row has no single source language -- it is the concept, counted
+        # across every language it appears in -- so the ladder is asked by ring id and the
+        # "translated from" tag is left off rather than fabricating one of its members as
+        # THE source. The per-language breakdown already rides the row for the hover.
+        lang = None if rid else (r.get("language") or stored_lang.get(norm))
+        res = equivalence.resolve_translation(
+            lang, norm, tl, ring_id=rid, tentative=tentative.get(norm)
+        )
+        payload = res.to_dict()
+        # Never overwrite the row's own `ring_id` with the ladder's copy of it, and never
+        # let a self-identical answer through (a translation equal to the term adds
+        # nothing and would print a "translated from" tag over an unchanged word).
+        payload.pop("ring_id", None)
+        text = payload.get("translation")
+        if text and text.casefold() in {norm.casefold(), (r.get("term") or "").casefold()}:
+            payload.pop("translation", None)
+            payload.pop("translation_source", None)
+            payload["translation_tier"] = equivalence.TIER_UNTRANSLATED
+        r.update(payload)
     return terms
 
 
@@ -613,7 +687,9 @@ def top_terms(
         ringed = any(t.get("ring_id") for t in merged)
         terms = merged
     terms = terms[:limit]
-    _annotate_translations(terms, target_lang, stored_lang)
+    _annotate_translations(
+        terms, target_lang, stored_lang, _tentative_for(session, terms, target_lang)
+    )
     out: dict[str, Any] = {
         "count": len(terms),
         "days": days,
@@ -689,7 +765,9 @@ def corpus_keywords(
         )
         if len(terms) >= limit:
             break
-    _annotate_translations(terms, target_lang)
+    _annotate_translations(
+        terms, target_lang, None, _tentative_for(session, terms, target_lang)
+    )
     out = {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
     note = unsegmented_note(session, article_ids)
     if note:
@@ -1790,7 +1868,9 @@ def trending(
         ringed = True
     out.sort(key=lambda t: (-t["growth"], -t["recent"]))
     out = out[:limit]
-    _annotate_translations(out, target_lang, stored_lang)
+    _annotate_translations(
+        out, target_lang, stored_lang, _tentative_for(session, out, target_lang)
+    )
     res: dict[str, Any] = {
         "count": len(out),
         "window_days": window_days,

@@ -786,10 +786,203 @@
     // The current UI language as a target for verified keyword translations.
     function uiLangCode() { return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }
     function tgtLangParam() { return "&target_lang=" + encodeURIComponent(uiLangCode()); }
+    // ===================================================================== //
+    //  THE ONE KEYWORD LABEL HELPER (S04-06; Q401, Q402, Q403, Q418 = a)
+    // ===================================================================== //
+    //
+    // Q401 = a inverts what this surface used to do. The TRANSLATION is now the visible
+    // term and a small "translated from French" tag follows it; the original, the ring's
+    // other members with their counts, the QID and the tier live in the hover. Every
+    // keyword surface calls THIS, because the recorded defect is a second renderer
+    // re-deriving the rules and getting them wrong -- which is what invariant #16's ONE
+    // toolkit rule is actually about.
+    //
+    // THE WALKER WOULD TRANSLATE THE KEYWORD ITSELF. `i18n.js` translates any text node
+    // whose trimmed content EXACTLY matches a key, and it cannot tell chrome from data --
+    // the recorded Arabic export panel rendered `source_qualification_attempts` beside
+    // three translated table names for exactly this reason, and that entry names "keyword
+    // terms" as an at-risk identifier class. A corpus containing the keyword "sources",
+    // "language" or "budget" is one collision away from a fabricated term. So every span
+    // that carries a TERM is marked `data-i18n-dyn`, which the walker skips.
+    //
+    // ...AND THAT OPT-OUT COSTS A REPAINT. A subtree the walker skips does not re-render
+    // on a language switch, so these labels would stay frozen in whichever locale painted
+    // them first -- the frozen-locale class, three times recorded. `ooKwRepaintOnLangChange`
+    // below is the other half, called from app-boot.js's EXISTING `oo:langchange` listener
+    // rather than a new one (a second listener is a second enumerator, and two guards find
+    // "the" listener by first occurrence).
+    //
+    // The tier marker is VISIBLE, never behind a toggle (the informed-consent
+    // non-negotiable): a tentative translation reads "~" on the surface itself and the
+    // hover carries the long form, which is the layering convention, not hiding.
+
+    // Language NAME in the UI language (Q402 = a) — CLDR through the browser, so this is
+    // ONE keyed frame plus the platform's own names rather than 144 hand-written strings
+    // that would drift. The sheet's context claimed the 12x12 names already live in the
+    // locale files; they do not (confirmed: `fr.json` carries one, `English`), and
+    // `ooLangName` is what the app already uses everywhere else a language is printed.
+    function kwLangName(code) {
+      if (!code) return "";
+      if (typeof ooLangName === "function") return ooLangName(code, code);
+      return code;
+    }
+
+    // The tier a row is on. Reads the SERVER's `translation_tier` when present and falls
+    // back to deriving it from the older two-key shape, so a surface fed by an endpoint
+    // that has not yet been given `target_lang` still renders something honest instead of
+    // claiming a tier nobody computed.
+    function kwTier(row) {
+      if (!row) return "untranslated";
+      if (row.translation_tier) return row.translation_tier;
+      if (row.translation) return "verified";
+      if (row.tentative) return "tentative";
+      return "untranslated";
+    }
+
+    // The Q418 hover: original term, source language, ring members with per-language
+    // counts, the QID, and the tier. Built as label:value pairs -- a sentence with an
+    // interpolated value cannot conjugate across twelve languages, and the app has no
+    // CLDR plural rules, so the frame never tries to.
+    // AN IDENTITY FALLBACK FOR A TEMPLATE IS A BROKEN FRAME: before i18n loads,
+    // `((s) => s)` renders a literal `{language}` to the reader. This is the shape
+    // `app-gov-law.js:_govTf` already uses -- reached for rather than re-invented, and
+    // the reason the fallback INTERPOLATES instead of merely returning the template.
+    function _kwTf(str, vars) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(str, vars)
+        : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
+    }
+
+    function kwHoverText(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tier = kwTier(row);
+      const parts = [];
+      if (tier === "verified") parts.push(t("Verified translation (cross-language concept)."));
+      else if (tier === "tentative") parts.push(t("AI-generated tentative translation — unreliable, not verified."));
+      else if (tier === "untranslated") parts.push(t("Not translated — shown in its own language."));
+      const term = row && (row.term || row.normalized);
+      if (row && row.translation && term) parts.push(t("Original") + ": " + term);
+      const src = row && row.translation_source_lang;
+      if (src) parts.push(t("Language") + ": " + kwLangName(src));
+      const lb = row && row.language_breakdown;
+      if (lb && typeof lb === "object") {
+        const cells = Object.keys(lb).map((k) => [k, +lb[k] || 0]).filter((x) => x[1] > 0)
+          .sort((a, b) => b[1] - a[1]).map((x) => kwLangName(x[0]) + " " + x[1]);
+        if (cells.length) parts.push(t("Across languages:") + " " + cells.join(" · "));
+      }
+      if (row && row.translation_model) parts.push(t("Model") + ": " + row.translation_model);
+      if (row && row.translation_qid) parts.push("Wikidata: " + row.translation_qid);
+      return parts.join(" — ");
+    }
+
+    // The QID opens the LOCAL preview first (invariant #6, Q418's "a LOCAL preview
+    // first"): never a bare outbound shortcut, even to Wikidata.
+    function kwQidHtml(row) {
+      const qid = row && row.translation_qid;
+      if (!qid) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const url = "https://www.wikidata.org/wiki/" + encodeURIComponent(qid);
+      return ` <a href="#" class="kw-qid" data-i18n-dyn title="${esc(t("Open a local preview of this source first"))}"`
+        + ` onclick='openLinkPreview(${esc(JSON.stringify(url))});return false'>${esc(qid)}</a>`;
+    }
+
+    // THE LABEL. Returns the whole visible unit: the term the reader should see, plus the
+    // tier tag. Callers render `${kwLabelHtml(row)}` instead of `${esc(row.term)}` + a
+    // translation suffix, which is what makes the translation the VISIBLE term (Q401).
+    function kwLabelHtml(row) {
+      if (!row) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tier = kwTier(row);
+      const original = row.term || row.normalized || "";
+      const shown = (tier === "verified" || tier === "tentative") && row.translation
+        ? row.translation : original;
+      const hover = kwHoverText(row);
+      // `data-i18n-dyn` on the TERM span: the walker must never translate a keyword.
+      let html = `<span class="kw-term" data-i18n-dyn>${esc(shown)}</span>`;
+      const srcName = kwLangName(row.translation_source_lang);
+      if (tier === "verified" && srcName) {
+        html += ` <span class="kw-tag" data-i18n-dyn title="${esc(hover)}">`
+          + esc(_kwTf("translated from {language}", {language: srcName})) + `</span>`;
+      } else if (tier === "tentative" && srcName) {
+        html += ` <span class="kw-tag kw-tentative" data-i18n-dyn title="${esc(hover)}">≈ `
+          + esc(_kwTf("translated from {language}", {language: srcName})) + `</span>`;
+      } else if (tier === "untranslated") {
+        if (row.translation_declined === "several-senses") {
+          html += ` <span class="kw-tag kw-senses" data-i18n-dyn title="${esc(hover)}">`
+            + esc(t("Several senses")) + `</span>` + kwSensePickerHtml(row);
+        } else if (srcName) {
+          // R7: a keyword we cannot translate is still TAGGED with what it is, never
+          // left as an unexplained foreign word.
+          html += ` <span class="kw-tag kw-untranslated" data-i18n-dyn title="${esc(hover)}">`
+            + esc(_kwTf("in {language}", {language: srcName})) + `</span>`;
+        }
+      }
+      return html + kwQidHtml(row);
+    }
+
+    // Q412 = a's picker. A refusal that names a choice and offers no way to make it is a
+    // dead end one level past the unread-flag trap, so the senses ride the row and each
+    // one is offered by what it READS AS, never by a bare ring id.
+    function kwSensePickerHtml(row) {
+      const senses = (row && row.senses) || [];
+      if (!senses.length) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const opts = senses.map((x) => {
+        const label = x.translation || x.concept || x.ring_id;
+        const pin = (row.normalized || row.term || "") + ":" + x.ring_id;
+        return `<button class="kw-sense" type="button" data-i18n-dyn data-kwpin="${esc(pin)}"`
+          + ` title="${esc(t("Concept") + ": " + (x.concept || x.ring_id))}">${esc(label)}</button>`;
+      });
+      return ` <span class="kw-senses" data-i18n-dyn>` + opts.join("") + `</span>`;
+    }
+
+    // The frozen-locale half of the `data-i18n-dyn` opt-out. Called from app-boot.js's
+    // existing `oo:langchange` listener. It re-renders only surfaces the reader has
+    // ALREADY loaded -- a language switch must never fetch for a panel nobody opened --
+    // and each call is guarded so one absent surface never stops the others.
+    function ooKwRepaintOnLangChange() {
+      // DERIVED FROM THE CALL SITES, NOT GUESSED. The first version of this list was
+      // written from memory and was wrong about three of its four host ids -- which the
+      // rendered page caught and no test could: walking en -> fr -> ar -> zh left the Home
+      // trends panel reading "in Russian" in all four, because `#home-trends` was not on
+      // it. The set below is every function that calls `kwLabelHtml`, paired with the host
+      // element that function's own body reads, so a new keyword surface is added HERE at
+      // the same time as its renderer or it silently freezes.
+      //
+      // Each is guarded on the host ALREADY HAVING ROWS: a language switch must never
+      // FETCH for a panel the reader has not opened (the convention app-boot.js's own
+      // listener follows for `src-table` and the coverage table).
+      const callers = [
+        ["home-trends", "loadHomeTrends"],
+        ["ins-landscape", "loadLandscape"],
+        ["fam-list", "loadFamilies"],
+        ["famc-list", "loadFamilyCuration"],
+        ["trd-windows", "loadTrendWindows"],
+        // The analysis window re-renders from data it already holds, so it needs no
+        // fetch guard -- `anRenderKwChips` returns early when there is nothing loaded.
+        [null, "anRenderKwChips"],
+        // The Home cards translate their own term since Q411 = a, so they are the same
+        // frozen-locale shape as the keyword rows and need the same repaint.
+        ["briefing-feed", "loadBriefing"],
+      ];
+      for (const [hostId, fn] of callers) {
+        try {
+          if (typeof window[fn] !== "function") continue;
+          if (hostId === null) { window[fn](); continue; }
+          const host = document.getElementById(hostId);
+          if (host && host.children && host.children.length) window[fn]();
+        } catch (_e) { /* one stale surface must never stop the rest */ }
+      }
+    }
+
     // A foreign keyword's VERIFIED translation into the UI language (Wikidata-sourced
     // cross-language ring) — shown beside the original so the reader is never blinded
     // to a foreign-language keyword, only given its translation (the language-aware
     // engine). `row` is the keyword row; `t` here is the outer i18n function.
+    //
+    // SUPERSEDED BY `kwLabelHtml` for Q401's grammar, and KEPT because the conversion of
+    // every keyword surface is deliberately incremental: a surface still on this renderer
+    // shows the old "term -> translation" pair, which is honest, rather than being swept
+    // in one unreviewable change. Each converted call site is named in the PR.
     function kwTransHtml(row) {
       if (!row || !row.translation) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -941,7 +1134,7 @@
         + ` title="${esc(t("Open this group's own trend + members") + " — " + lvlTitle("super"))}">⊕ ${esc(g.name)}</button>`).join(" ");
       const chips = d.terms.map((term) =>
         `<button class="chip" data-kwstat="${esc(term.term)}" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
-        + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}${kwTentativeHtml(term)}`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(term)}`
         + ` <span class="muted">${term.articles}</span></button>${sgChips(term)}`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
       // are unreliable; surface it when CJK terms are present.
@@ -1015,7 +1208,7 @@
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>${kwTransHtml(t)}
+        <a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t)}</a>
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords

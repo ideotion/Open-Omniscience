@@ -35,10 +35,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-try:  # optional ([analysis] extra); display-time lemmatization degrades to a no-op when absent
-    import simplemma as _simplemma
-except Exception:  # noqa: BLE001 - a core install runs without it
-    _simplemma = None  # type: ignore[assignment]
+# THE ONE lemmatisation seam (S04-06, Q416 = a). The language set, the
+# meaning-changing denylist and the error handling used to live here; they moved to
+# src/analytics/lemma.py when extraction started lemmatising too, because two copies
+# of those rules would drift and the two layers would then disagree about what "the
+# same keyword" is. Behaviour HERE is unchanged: same languages, same denylist, same
+# fall-back-to-the-input on any error, still governed by OO_FAMILY_LEMMA.
+from src.analytics.lemma import lemmatize as _lemmatize
+from src.analytics.lemma import lemmatizer_available as _lemmatizer_available
 
 _POSS_APOS_S = re.compile(r"['’]s$")  # trailing 's  -> drop two chars
 _POSS_S_APOS = re.compile(r"['’]$")  # trailing '   -> drop the apostrophe only
@@ -171,19 +175,6 @@ def _plural_bases(norm: str) -> list[str]:
     return out
 
 
-# simplemma languages we lemmatize — the UI/corpus languages it handles well. Unsegmented
-# scripts (zh/ja) and languages simplemma covers poorly are deliberately excluded -> no-op
-# (a wrong lemma is worse than none, same discipline as the de-US-centring country work).
-_LEMMA_LANGS: frozenset[str] = frozenset(
-    {"en", "fr", "de", "es", "it", "pt", "nl", "ru", "id"}
-)
-
-# Norms whose lemma CHANGES the meaning for a news corpus, so they must NOT be lemmatized:
-# media->medium, data->datum, us->we, plus a few stopword-ish flatteners. Evidence-grown +
-# log-tunable, exactly like _PLURAL_DENYLIST — start small, grow from the keyword logs.
-_MISLEMMA_DENYLIST: frozenset[str] = frozenset(
-    {"media", "data", "us", "good", "better", "was", "be", "left", "right"}
-)
 
 
 def _lemma_enabled() -> bool:
@@ -197,25 +188,20 @@ def _lemma_enabled() -> bool:
     keywords) and found it clean (regular plurals + verb forms/irregulars only; nothing
     meaning-changing). Opt OUT with ``OO_FAMILY_LEMMA=0`` (a core install without the
     optional ``simplemma`` still no-ops regardless of this default)."""
-    return _simplemma is not None and os.getenv("OO_FAMILY_LEMMA", "1") == "1"
+    return _lemmatizer_available() and os.getenv("OO_FAMILY_LEMMA", "1") == "1"
 
 
 def _lemma(norm: str, lang: str | None) -> str:
     """The lemma of a SINGLE-token term in a supported language, else ``norm`` unchanged.
 
-    Reversible by construction (display only — the stored keyword index is never touched)
-    and conservative: a multi-token form, an unsupported/unknown language, a denylisted
-    norm, a missing ``simplemma``, or any lemmatizer error all fall back to ``norm``. The
-    caller only UNIONs terms that share a lemma, so a no-op simply leaves a term standalone."""
-    if not norm or " " in norm:
-        return norm
-    lg = (lang or "").lower()
-    if _simplemma is None or lg not in _LEMMA_LANGS or norm in _MISLEMMA_DENYLIST:
-        return norm
-    try:
-        return (_simplemma.lemmatize(norm, lg) or norm).casefold()
-    except Exception:  # noqa: BLE001 - never let a lemmatizer hiccup break grouping
-        return norm
+    A thin alias for :func:`src.analytics.lemma.lemmatize`, kept because this module's
+    call sites and its tests name it. Display-only here — the stored keyword index is
+    written by ``extract.py``, which reaches the SAME function, so the two layers can
+    never disagree about a lemma. One behavioural difference from the pre-2026-09-17
+    version, and it is a fix: the language is NORMALISED (``en-US`` → ``en``) instead of
+    merely lowercased, so a region-tagged article's terms are lemmatised rather than
+    silently skipped."""
+    return _lemmatize(norm, lang)
 
 
 @dataclass

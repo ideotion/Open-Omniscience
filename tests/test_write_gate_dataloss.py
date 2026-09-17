@@ -319,7 +319,9 @@ def test_parallel_index_article_loses_no_keyword_or_date_rows():
         # The shared natural keywords also all landed -- scoped to MY articles so the
         # check is robust to a shared test DB other tests have written to (NEVER assert
         # corpus-wide positive facts against the shared singleton -- CLAUDE.md).
-        for term in ("inflation", "elections", "economy"):
+        # `elections` is stored under its lemma `election` since 2026-09-17 (Q416 = a);
+        # the data-loss property this test guards is untouched, only the key moved.
+        for term in ("inflation", "election", "economy"):
             kw2 = s.query(Keyword).filter_by(normalized_term=term).one()
             mine = (
                 s.query(KeywordMention)

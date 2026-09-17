@@ -523,16 +523,60 @@ def event_listener_bodies(js: str, event: str, *, span: int = 4000) -> list[str]
     was about the new one. A guard anchored to "the first occurrence" is a guard a correct
     change can redden, and the failure names the wrong thing.
 
-    Returns a fixed ``span`` of source from each registration, which is coarse and
-    deliberately so: the point is to test every listener, not to parse one exactly.
+    Returns each listener's WHOLE body, bounded by brace matching, with ``span`` kept
+    only as the fallback when the braces do not balance (a truncated read, a listener
+    written in a form this cannot parse).
+
+    IT USED TO RETURN A FIXED ``span`` OF 4000 CHARACTERS, and that was the recorded
+    "index plus a fixed span" trap one level down from the one this function was written
+    to fix. On 2026-09-17 a seven-line COMMENT added at the top of the `oo:langchange`
+    listener in ``app-boot.js`` pushed `renderCompositionFigures()` past the 4000th
+    character, and `test_figure_channels` failed saying "3 listener(s) found, none of them
+    calls it" -- about code that calls it, seventeen lines below the cut. A guard whose
+    window is a character count is a guard that a COMMENT can redden, which is the same
+    defect as the one it replaced wearing a different number.
+
     Assert with ``any(... for h in ...)`` and say how many were found when it fails.
     """
     needle = f'document.addEventListener("{event}"'
     out, at = [], js.find(needle)
     while at != -1:
-        out.append(js[at : at + span])
+        out.append(js[at : at + _listener_len(js, at, span)])
         at = js.find(needle, at + 1)
     return out
+
+
+def _listener_len(js: str, at: int, span: int) -> int:
+    """Length of the listener registration starting at ``at``, by brace matching.
+
+    Starts at the FIRST ``{`` after the registration's opening parenthesis balances, so a
+    ``{}`` inside the arguments (a default parameter, an options object) cannot truncate
+    the body to the signature -- the recorded ooChart trap. Falls back to ``span`` when
+    the braces do not balance, so a malformed or unparsed listener still yields something
+    rather than the whole rest of the file, which is the OTHER way a slice lies.
+    """
+    paren_at, depth = js.find("(", at), 0
+    if paren_at == -1:
+        return span
+    for i in range(paren_at, len(js)):
+        if js[i] == "(":
+            depth += 1
+        elif js[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+    open_brace = js.find("{", at)
+    if open_brace == -1:
+        return span
+    depth = 0
+    for j in range(open_brace, len(js)):
+        if js[j] == "{":
+            depth += 1
+        elif js[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return (j + 1) - at
+    return span
 
 
 def assert_absent(haystack: str, needle: str, *, why: str = "") -> None:

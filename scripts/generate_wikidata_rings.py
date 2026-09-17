@@ -51,83 +51,66 @@ import argparse
 import json
 import sys
 import time
-import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
 
-# The app's UI languages = the pre-translation scope. zh/ja are included for
-# completeness though their keyword extraction is segmentation-limited today.
-LANGS: tuple[str, ...] = ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")
+# THE REPO ROOT, not the package: this script is run as `python scripts/…` from a clone
+# on a networked machine, where `sys.path[0]` is `scripts/` and nothing is installed.
+# Without this line the import below works for a developer with `pip install -e .` and
+# fails for exactly the operator the docstring addresses.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-_API = "https://www.wikidata.org/w/api.php"
+# The URL shapes, the parsers, the ring builder and the polite rate live in src/ now,
+# because S04-06's in-app ring load (Q406 = b) is their second consumer and two copies of
+# a request shape drift. Re-exported here under this module's historical names so the
+# operator ritual and tests/test_wikidata_ring_gen.py see no change.
+from src.analytics.wikidata_rings import (  # noqa: E402 - after the sys.path line above
+    API_ENDPOINT as _API,
+)
+from src.analytics.wikidata_rings import (  # noqa: E402
+    LANGS,
+    build_ring,
+    parse_entity,
+    parse_search,
+    wbentities_url,
+    wbsearch_url,
+)
+from src.analytics.wikidata_rings import POLITE_SLEEP_S  # noqa: E402
+from src.analytics.wikidata_rings import slug as _slug  # noqa: E402
+
 _UA = "OpenOmniscience-ring-generator/0.1 (local-first research app)"
 
 
-def wbsearch_url(term: str, lang: str = "en") -> str:
-    # Search in the SEED's own language, so a concept prominent only in ar/zh/ru
-    # (surfaced by the ring-gap digest) resolves to a QID too — wbgetentities then
-    # pulls labels for all 12 languages regardless of the search language.
-    qs = urllib.parse.urlencode(
-        {"action": "wbsearchentities", "search": term, "language": lang,
-         "format": "json", "limit": 1, "type": "item"}
-    )
-    return f"{_API}?{qs}"
-
-
-def wbentities_url(qid: str, langs: tuple[str, ...] = LANGS) -> str:
-    qs = urllib.parse.urlencode(
-        {"action": "wbgetentities", "ids": qid, "props": "labels|aliases",
-         "languages": "|".join(langs), "format": "json"}
-    )
-    return f"{_API}?{qs}"
-
-
-def parse_search(payload: dict) -> str | None:
-    """The first search result's QID, or None."""
-    results = payload.get("search") or []
-    return results[0].get("id") if results else None
-
-
-def parse_entity(payload: dict, qid: str, langs: tuple[str, ...] = LANGS) -> dict[str, list[str]]:
-    """``{lang: [label, *aliases]}`` for the languages present (label + synonyms)."""
-    ent = (payload.get("entities") or {}).get(qid) or {}
-    labels = ent.get("labels") or {}
-    aliases = ent.get("aliases") or {}
-    out: dict[str, list[str]] = {}
-    for lang in langs:
-        terms: list[str] = []
-        lab = (labels.get(lang) or {}).get("value")
-        if lab:
-            terms.append(lab)
-        for al in aliases.get(lang, []) or []:
-            if al.get("value"):
-                terms.append(al["value"])
-        seen: set[str] = set()
-        uniq: list[str] = []
-        for t in terms:
-            k = t.casefold()
-            if k not in seen:
-                seen.add(k)
-                uniq.append(t)
-        if uniq:
-            out[lang] = uniq
-    return out
-
-
-def _slug(s: str) -> str:
-    return "-".join("".join(c if c.isalnum() else " " for c in s.lower()).split())
-
-
-def build_ring(seed: str, qid: str, lang_terms: dict[str, list[str]]) -> dict | None:
-    """A ring ``{id, qid, members:["lang:term", …]}``, or None if <2 languages."""
-    members = [f"{lang}:{t}" for lang, terms in lang_terms.items() for t in terms]
-    if len({m.split(":", 1)[0] for m in members}) < 2:
-        return None  # a ring needs >=2 languages to merge anything
-    en = lang_terms.get("en") or [seed]
-    return {"id": _slug(en[0]) or qid.lower(), "qid": qid, "members": members}
-
+# --------------------------------------------------------------------------- #
+#  THE POLITE RATE (R8 / Q410 = a, 2026-09-15, gate row M)
+# --------------------------------------------------------------------------- #
+#
+# R8: "automated Wikidata downloads respect <= 1 request per 10 seconds." That is the
+# rate for EVERY mode of this script, not just the seed run -- Q410 = a describes the
+# operator ritual as "regenerate ... at the polite rate", and the refresh mode reaches
+# the same API with the same User-Agent from the same machine, so a 0.2 s refresh would
+# make the seed run's politeness a claim rather than a property.
+#
+# WHAT THIS COSTS, stated rather than discovered by the operator mid-run: Q410's target
+# is the top 2,000 keywords per language across 12 languages, so ~24,000 lookups. Each
+# seed is TWO requests (wbsearchentities, then wbgetentities), and the sleep falls once
+# per seed, so the wall time is ~24,000 x 10 s = ~67 hours -- the "about 3 days of a
+# background script" the ruling itself names. The refresh mode BATCHES ids 50 to a
+# wbgetentities call, so a 684-ring refresh is ~14 requests and finishes in minutes even
+# at this rate; whether it may keep batching under the 10 s rule is NOT decided here
+# (brief S04-06 section 6 reserves it), so the batching is left exactly as it was and
+# only the spacing changed.
+#
+# NOT A KNOB WITH A FAST DEFAULT, AND THERE IS NO CLI FLAG. `main()` calls both modes
+# WITHOUT a sleep argument, so the operator's run always gets the ruled rate -- there is
+# nothing to remember and nothing to type. The `sleep=` PARAMETER remains as the test
+# seam: every case in tests/test_wikidata_ring_gen.py already passes `sleep=0` beside its
+# injected `getter`, which is why raising the default costs the suite nothing (checked,
+# not assumed -- a default that reached the tests would have added ten seconds per seed
+# to a suite that runs on every push).
+# POLITE_SLEEP_S is imported from src/analytics/wikidata_rings.py (one rate, one place).
 
 def fetch_json(url: str, getter: Callable[[str], bytes] | None = None) -> dict:
     """GET + parse JSON. ``getter`` is injectable so tests never touch the network."""
@@ -138,7 +121,7 @@ def fetch_json(url: str, getter: Callable[[str], bytes] | None = None) -> dict:
         return json.loads(r.read())
 
 
-def generate(seeds, getter=None, sleep=0.2, log=print) -> list[dict]:
+def generate(seeds, getter=None, sleep=POLITE_SLEEP_S, log=print) -> list[dict]:
     """Build rings for each seed; one seed's failure never aborts the run.
 
     A seed is either a plain ``"term"`` (searched in English) or a ``(term, lang)``
@@ -270,7 +253,7 @@ def _entity_state(payload: dict, qid: str) -> str:
     return "missing" if "missing" in (ents.get(qid) or {}) else "ok"
 
 
-def refresh_rings(rings, getter=None, sleep=0.2, log=print) -> dict:
+def refresh_rings(rings, getter=None, sleep=POLITE_SLEEP_S, log=print) -> dict:
     """Re-read each ring's QID and report ONLY what Wikidata has gained.
 
     Returns ``{"checked", "unchanged", "additions", "unresolved", "errors"}`` where the

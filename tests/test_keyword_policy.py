@@ -173,7 +173,9 @@ def test_index_article_suppresses_uppercase_acronym_self_name(client):
         }
         assert "CORRECTIV" not in got, "uppercase acronym self-name leaked"
         assert "correctiv" not in got, "lowercase self-name leaked"
-        assert "documents" in got  # a shared content word is untouched
+        # A shared content word is untouched by the self-name suppression this test is
+        # about. Its KEY is the lemma `document` since 2026-09-17 (Q416 = a).
+        assert "document" in got
         s.query(KeywordMention).filter_by(article_id=a.id).delete()
         s.query(Article).filter_by(id=a.id).delete()
         s.query(Source).filter_by(id=own.id).delete()

@@ -80,6 +80,12 @@ class Ring:
     id: str
     members: tuple[tuple[str, str], ...]  # (language, normalized_term)
     note: str | None = None
+    #: The Wikidata QID the generated ring was resolved from, when it has one. Q418 = a
+    #: puts it in the hover, behind the LOCAL preview (invariant #6). Honest NULL for a
+    #: CURATED ring: those are hand-vetted from the operator's own logs and were never
+    #: resolved from an item, so there is no QID to show -- and inventing one would be a
+    #: fabricated citation on the exact surface that exists to let a reader check us.
+    qid: str | None = None
 
     @property
     def label(self) -> str:
@@ -119,7 +125,15 @@ def _parse_rings(data: dict) -> list[Ring]:
             if lang and term:
                 members.append((lang, term))
         if rid and len(members) >= 2:  # a 1-member ring would merge nothing
-            rings.append(Ring(id=rid, members=tuple(dict.fromkeys(members)), note=r.get("note")))
+            qid = str(r.get("qid") or "").strip() or None
+            rings.append(
+                Ring(
+                    id=rid,
+                    members=tuple(dict.fromkeys(members)),
+                    note=r.get("note"),
+                    qid=qid,
+                )
+            )
     return rings
 
 
@@ -757,3 +771,246 @@ class QueryExpander:
                 "the words you typed. Rings cover 698 concepts, so most terms are unaffected."
             ),
         }
+
+
+# --------------------------------------------------------------------------- #
+# The THREE-TIER TRANSLATION LADDER (S04-06; Q401, Q403, Q412, Q418, ruling R7/R8)
+# --------------------------------------------------------------------------- #
+#
+# Q403 = a confirms three tiers and Q401 = a says what the reader sees: the translation
+# IS the visible term, followed by a small "translated from <language>" tag, with the
+# original and the evidence in the hover. That grammar only works if every surface can
+# ask ONE question -- "what does this keyword read as, in my language, and how sure is
+# that?" -- and get ONE answer carrying its own provenance. This is that answer.
+#
+# THE RUNGS, in order, and what each one is:
+#   verified   -- a member of the term's Wikidata-sourced RING in the target language.
+#                 A published label, checkable against the QID the hover shows.
+#   tentative  -- a local model's answer, persisted in `keyword_translations` (Q404).
+#                 ALWAYS marked ~, never the trusted index. Supplied BY THE CALLER,
+#                 because this module is pure and the tier lives in the database.
+#   untranslated -- no answer at either rung. The term keeps its own language, stays
+#                 searchable, and is tagged with the language it IS in, because a
+#                 foreign keyword the reader cannot place is the thing R7 is about.
+#
+# AND A FOURTH VALUE THAT IS NOT A RUNG. `same_language` means the ladder was never
+# entered: the term is already in the reader's language, so there is nothing to
+# translate and nothing to disclose. It is kept apart from `untranslated` because those
+# are two different facts and the recorded rule is that two absences must not share a
+# sentinel -- a reader told "not translated" about a word already in their own language
+# has been told something false, and a surface that tags every native term would be
+# noise on the majority of every corpus.
+TIER_VERIFIED = "verified"
+TIER_TENTATIVE = "tentative"
+TIER_UNTRANSLATED = "untranslated"
+TIER_SAME_LANGUAGE = "same_language"
+
+#: The refusal Q412 = a asks for: `translate_term` gains the path `expand_term` already
+#: has. Re-exported under its own name so a caller reads the tier and the reason without
+#: importing the expansion vocabulary.
+DECLINE_SEVERAL_SENSES_TR = DECLINE_SEVERAL_SENSES
+
+
+@dataclass(frozen=True)
+class SenseOption:
+    """One concept a term could mean, when it means several (Q412 = a).
+
+    Carries what a picker needs to let a reader CHOOSE rather than be guessed at: the
+    ring id (the pin grammar's value), the concept label, the QID, and what the concept
+    reads as in the target language -- so the picker offers translations, not ring ids.
+    """
+
+    ring_id: str
+    concept: str
+    qid: str | None
+    translation: str | None
+
+    def to_dict(self) -> dict:
+        return {
+            "ring_id": self.ring_id,
+            "concept": self.concept,
+            "qid": self.qid,
+            "translation": self.translation,
+        }
+
+
+@dataclass(frozen=True)
+class TermTranslation:
+    """What ONE keyword reads as in ONE target language, with its provenance.
+
+    Every field a surface needs is here, so the label grammar cannot be re-derived
+    differently on each of the eleven surfaces that render a keyword -- the recorded
+    "a second renderer re-derives the rules, and gets them wrong" defect, which is what
+    invariant #16's ONE-toolkit rule is actually about.
+    """
+
+    text: str | None  # the translation, or None at the untranslated / same-language rungs
+    tier: str  # one of the TIER_* values above
+    source_lang: str | None  # the language the term IS in (Q402's "translated from X")
+    target_lang: str
+    ring_id: str | None = None
+    qid: str | None = None
+    declined: str | None = None  # a DECLINE_* reason when the ladder REFUSED to choose
+    senses: tuple[SenseOption, ...] = ()
+    model: str | None = None  # tentative tier only: which model said so
+    prompt_version: str | None = None  # tentative tier only
+
+    @property
+    def translated(self) -> bool:
+        return self.tier in (TIER_VERIFIED, TIER_TENTATIVE)
+
+    def to_dict(self) -> dict:
+        """The payload every keyword surface reads. Counts and labels, never a score.
+
+        The keys are ADDITIVE over the pre-2026-09-17 shape (`translation` +
+        `translation_source`), so a caller that only knows the old two keeps working --
+        which is what lets the eleven silent surfaces be converted one at a time instead
+        of in one unreviewable sweep.
+        """
+        out: dict = {"translation_tier": self.tier, "translation_target_lang": self.target_lang}
+        if self.source_lang:
+            out["translation_source_lang"] = self.source_lang
+        if self.text:
+            out["translation"] = self.text
+            out["translation_source"] = "ring" if self.tier == TIER_VERIFIED else "llm"
+        if self.ring_id:
+            out["ring_id"] = self.ring_id
+        if self.qid:
+            out["translation_qid"] = self.qid
+        if self.declined:
+            out["translation_declined"] = self.declined
+        if self.senses:
+            out["senses"] = [x.to_dict() for x in self.senses]
+        if self.model:
+            out["translation_model"] = self.model
+        if self.prompt_version:
+            out["translation_prompt_version"] = self.prompt_version
+        return out
+
+
+def _senses_for(normalized: str, language: str | None, target_lang: str) -> tuple[SenseOption, ...]:
+    """Every distinct concept ``normalized`` belongs to, as pickable options."""
+    matches = ring_matches(normalized, languages=[language] if language else None)
+    seen: set[str] = set()
+    out: list[SenseOption] = []
+    for m in matches:
+        if m.ring_id in seen:
+            continue
+        seen.add(m.ring_id)
+        meta = ring_meta(m.ring_id)
+        out.append(
+            SenseOption(
+                ring_id=m.ring_id,
+                concept=m.label,
+                qid=meta.qid if meta else None,
+                translation=ring_translation(m.ring_id, target_lang),
+            )
+        )
+    return tuple(out)
+
+
+def resolve_translation(
+    language: str | None,
+    normalized: str,
+    target_lang: str,
+    *,
+    ring_id: str | None = None,
+    tentative: Mapping[str, Any] | None = None,
+    pinned_ring: str | None = None,
+) -> TermTranslation:
+    """Walk the ladder for one keyword and report WHICH rung answered.
+
+    ``ring_id`` short-circuits the lookup for a row that is already a merged ring row
+    (it knows its own ring); ``tentative`` is the caller's ``keyword_translations`` hit,
+    a mapping with at least ``text`` and optionally ``model``/``prompt_version`` -- the
+    database read cannot happen here because this module is pure by design and is
+    imported by paths that hold no session.
+
+    ``pinned_ring`` is the reader's own sense choice, on the same grammar
+    :func:`parse_sense_pins` already parses, and it outranks the refusal below for the
+    same reason it does in :func:`expand_term`: it answers the exact question the
+    refusal exists to avoid guessing at.
+
+    THE REFUSAL IS THE LOAD-BEARING HALF (Q412 = a). Where the term names several
+    concepts -- de ``wahl`` is election, public-election AND voting; de ``strom`` is
+    electricity AND river -- there is no single translation, and printing one would
+    change what the reader believes the row is about on a coin flip. The ladder stops,
+    reports ``declined``, and hands back the senses so a picker can offer the choice.
+    """
+    tl = (target_lang or "").strip().casefold()
+    src = (language or "").strip().casefold() or None
+    if not tl:
+        return TermTranslation(text=None, tier=TIER_UNTRANSLATED, source_lang=src, target_lang="")
+    if src and src == tl:
+        return TermTranslation(text=None, tier=TIER_SAME_LANGUAGE, source_lang=src, target_lang=tl)
+
+    norm = _norm(normalized)
+
+    # --- rung 1: the VERIFIED ring translation ------------------------------------ #
+    rid = ring_id
+    if rid is None and src:
+        senses = _senses_for(norm, src, tl)
+        if pinned_ring and any(x.ring_id == pinned_ring for x in senses):
+            rid = pinned_ring
+        elif len(senses) > 1:
+            # SEVERAL CONCEPTS, NO CHOICE MADE: refuse, and say what the choices are.
+            #
+            # Q412 = a's own named examples are the shape this covers: de `wahl` is
+            # election AND public-election AND voting; de `strom` is electricity AND
+            # river. Picking one would change what the reader believes the row is about
+            # on a coin flip, and picking the union would print two concepts as one word.
+            #
+            # MEASURED over the two shipped ring files (2026-09-17): 91 of 21,834
+            # (language, term) pairs are collision-prone -- the same 91 `expand_term`
+            # already refuses, which is the corroboration that this is the same path the
+            # ruling asked to be extended, not a second one beside it. Across en/fr/ar/zh
+            # targets that is 246 refusals in 78,371 resolutions (0.31%), against 96.4%
+            # verified.
+            #
+            # A NARROWER RULE WAS TRIED AND REJECTED: refusing only where the senses
+            # DISAGREE about the target term would read as kinder, and it fires on
+            # exactly ZERO pairs of the shipped table -- while being wrong on the
+            # ruling's own headline example, since `wahl`'s three senses translate to
+            # three different English strings and Q412 names them as a case to refuse.
+            return TermTranslation(
+                text=None,
+                tier=TIER_UNTRANSLATED,
+                source_lang=src,
+                target_lang=tl,
+                declined=DECLINE_SEVERAL_SENSES_TR,
+                senses=senses,
+            )
+        elif senses:
+            rid = senses[0].ring_id
+    if rid:
+        text = ring_translation(rid, tl)
+        meta = ring_meta(rid)
+        if text and _norm(text) not in (norm, _norm(normalized)):
+            return TermTranslation(
+                text=text,
+                tier=TIER_VERIFIED,
+                source_lang=src,
+                target_lang=tl,
+                ring_id=rid,
+                qid=meta.qid if meta else None,
+            )
+
+    # --- rung 2: the TENTATIVE model translation ----------------------------------- #
+    # Only reachable when no ring covered the term, which is the doctrine the LLM tier
+    # has carried since 2026-06-19: the verified translation always wins.
+    text = str((tentative or {}).get("text") or "").strip()
+    if text and _norm(text) != norm:
+        return TermTranslation(
+            text=text,
+            tier=TIER_TENTATIVE,
+            source_lang=src,
+            target_lang=tl,
+            ring_id=rid,
+            model=(tentative or {}).get("model"),
+            prompt_version=(tentative or {}).get("prompt_version"),
+        )
+
+    # --- rung 3: UNTRANSLATED, tagged with the language it IS in -------------------- #
+    return TermTranslation(
+        text=None, tier=TIER_UNTRANSLATED, source_lang=src, target_lang=tl, ring_id=rid
+    )
