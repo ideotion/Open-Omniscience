@@ -16,7 +16,7 @@ import math
 import os
 import time
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Callable, Sequence
 
 from sqlalchemy import func
 
@@ -236,7 +236,214 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
     return rows[0][0] if rows else None
 
 
+# --------------------------------------------------------------------------- #
+# Cross-language CONCEPT resolution (Q501, Q417) — the keyword-keyed half
+# --------------------------------------------------------------------------- #
+
+
+def keyword_frequency(session) -> Callable[[Sequence[str]], dict[str, int]]:
+    """The injected corpus-frequency resolver Q503's "most frequent first" needs.
+
+    ``equivalence.py`` is pure by design (no DB), so the ordering that decides WHICH
+    forms survive the fan-out cap is injected rather than imported — the same discipline
+    as ``merge_equivalents``'s ``lang_of``.
+
+    A form the corpus has never indexed is OMITTED from the answer, never returned as
+    ``0``: an unmeasured form and a form measured at zero mentions are different facts,
+    and the expander sorts the two differently on purpose (an unmeasured form keeps its
+    ring position instead of being pushed behind forms it may genuinely outrank).
+    """
+
+    def _freq(terms: Sequence[str]) -> dict[str, int]:
+        wanted = [t for t in {str(x or "").strip().casefold() for x in terms} if t]
+        out: dict[str, int] = {}
+        for i in range(0, len(wanted), _IN_CHUNK):
+            chunk = wanted[i : i + _IN_CHUNK]
+            rows = (
+                session.query(
+                    Keyword.normalized_term,
+                    func.coalesce(func.sum(KeywordMention.count), 0),
+                )
+                .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+                .filter(Keyword.normalized_term.in_(chunk))
+                .group_by(Keyword.normalized_term)
+                .all()
+            )
+            for term, n in rows:
+                out[str(term)] = int(n or 0)
+        return out
+
+    return _freq
+
+
+class ConceptKeywords:
+    """The stored keywords ONE resolved concept covers — Q501's keyword-keyed half.
+
+    Q501 asks for ``resolve_concept(term, ui_lang, sense)`` computed once and passed to
+    BOTH the FTS path and the keyword-keyed aggregates. ``ConceptResolution`` is the FTS
+    half (it IS the ``ExpandTerms`` hook); this is the other half — the ring's forms
+    looked up in the ``keywords`` table so ``trend`` / ``associations`` / ``keyword_stats``
+    / ``context`` can aggregate over the concept rather than over one spelling of it.
+
+    EXACT, ALWAYS. Every form is matched on ``normalized_term`` equality. The fuzzy
+    ``LIKE %term%`` fallback in :func:`resolve_keyword` never runs here, because this is
+    a display surface and audit §4.1's P0 (a commodity ``Dy`` resolving to the English
+    word "already") is exactly what a fuzzy match on a ring member would reproduce, once
+    per language.
+
+    THE LANGUAGE BREAKDOWN COMES FROM THE RING, NOT FROM ``Keyword.language``. The ring
+    file states ``lang:term`` from Wikidata — a finding. ``Keyword.language`` is
+    first-write-wins and the repo's own ``reconcile_keyword_language`` is the documented
+    repair for it — a hint. Where they disagree the ring is the one that can be checked,
+    so it is the one published, and ``method`` says so.
+    """
+
+    __slots__ = ("concept", "keywords", "primary", "by_language", "missing")
+
+    def __init__(self, *, concept, keywords, primary, by_language, missing) -> None:
+        self.concept = concept
+        self.keywords = tuple(keywords)
+        self.primary = primary
+        self.by_language = dict(by_language)
+        self.missing = tuple(missing)
+
+    @property
+    def ids(self) -> list[int]:
+        return [int(k.id) for k in self.keywords]
+
+    @property
+    def is_ring(self) -> bool:
+        """True when the SEARCH widened past the typed form AND the corpus has more than one."""
+        return self.concept.expanded and len(self.keywords) > 1
+
+    def language_ids(self) -> dict[str, list[int]]:
+        return {lang: list(v) for lang, v in self.by_language.items()}
+
+
+def _ring_language_map(concept) -> dict[str, list[str]]:
+    """``{ring language: [its forms, among the ones actually searched]}``.
+
+    A form the ring files under SEVERAL languages appears under each of them, because
+    that is what the ring says and collapsing it onto one would be a silent pick. The
+    consequence is stated wherever the breakdown is published: the per-language figures
+    can overlap, so they do not sum to the distinct total.
+    """
+    applied = concept.expansion.applied
+    if applied is None:
+        return {}
+    searched = {str(t).casefold() for t in concept.literals}
+    searched.add(concept.normalized)
+    out: dict[str, list[str]] = {}
+    for lang, term in applied.members:
+        if term not in searched:
+            continue
+        bucket = out.setdefault(lang, [])
+        if term not in bucket:
+            bucket.append(term)
+    return out
+
+
+def resolve_concept_keywords(
+    session,
+    term: str,
+    *,
+    ui_lang: str | None = None,
+    sense: Any = None,
+    expand: bool = True,
+    cap: Any = -1,
+) -> ConceptKeywords:
+    """Resolve ``term`` to its concept AND to the stored keywords that concept covers.
+
+    ``cap`` defaults to the sentinel ``-1`` meaning "the ruled default" — passing
+    ``None`` is the reader turning the cap OFF, and the two must not be spelled the same
+    way. ``expand=False`` is the literal toggle: the result then carries exactly the one
+    keyword the typed term resolves to, and every aggregate built on it is
+    byte-identical to the pre-ring behaviour.
+    """
+    from src.analytics.equivalence import CONCEPT_LITERAL_CAP, resolve_concept
+
+    effective_cap = CONCEPT_LITERAL_CAP if cap == -1 else cap
+    concept = resolve_concept(
+        term,
+        ui_lang=ui_lang,
+        sense=sense,
+        expand=expand,
+        cap=effective_cap,
+        frequency=keyword_frequency(session) if expand else None,
+    )
+    wanted: list[str] = []
+    for lit in concept.literals:
+        n = _normalize(lit)
+        if n and n not in wanted:
+            wanted.append(n)
+    found: dict[str, Any] = {}
+    for i in range(0, len(wanted), _IN_CHUNK):
+        chunk = wanted[i : i + _IN_CHUNK]
+        for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
+            found.setdefault(str(kw.normalized_term), kw)
+    primary = found.get(_normalize(term))
+    # Deterministic order: the typed form first, then the rest in the order the cap kept
+    # them (most frequent first when the frequency resolver answered), so a reader
+    # comparing two runs over one corpus sees the same list.
+    ordered = [found[n] for n in wanted if n in found]
+    lang_terms = _ring_language_map(concept)
+    by_language = {
+        lang: [int(found[t].id) for t in terms if t in found]
+        for lang, terms in lang_terms.items()
+    }
+    by_language = {k: v for k, v in by_language.items() if v}
+    missing = tuple(n for n in wanted if n not in found)
+    return ConceptKeywords(
+        concept=concept,
+        keywords=ordered,
+        primary=primary,
+        by_language=by_language,
+        missing=missing,
+    )
+
+
+def concept_block(ck: ConceptKeywords) -> dict | None:
+    """The payload block every concept-aware aggregate publishes, or ``None``.
+
+    ``None`` whenever the search did not widen — an ordinary single-language query
+    carries no extra weight and no extra sentence.
+
+    ANTI-CAPPING: ``total_forms`` counts every form the ring offers and is never the
+    cap; ``searched_forms`` says how many were actually looked for; ``forms_absent``
+    names how many forms the corpus has not indexed, so a small per-language figure
+    reads as "this corpus has little in that language" rather than as a defect.
+    """
+    if not ck.is_ring:
+        return None
+    applied = ck.concept.expansion.applied
+    out: dict[str, Any] = {
+        "ring_id": applied.ring_id if applied else None,
+        "concept": applied.label if applied else None,
+        "matched_language": applied.language if applied else None,
+        "searched_forms": ck.concept.searched_forms,
+        "total_forms": ck.concept.total_forms,
+        "capped": ck.concept.cap_applied,
+        "ordering": ck.concept.ordering,
+        "keywords_found": len(ck.keywords),
+        "forms_absent": len(ck.missing),
+        "method": (
+            "aggregated over every form of the concept this corpus has indexed, resolved "
+            "through the hand-vetted Wikidata rings by EXACT term match; the language of "
+            "each form is the ring's own (a Wikidata statement), not the stored "
+            "Keyword.language (first-write-wins)"
+        ),
+        "caveat": (
+            "Per-language figures can overlap: one article mentioning two forms of the "
+            "concept is counted under both languages, so they do not add up to the total."
+        ),
+    }
+    if ck.concept.cap_applied:
+        out["omitted_forms"] = ck.concept.total_forms - ck.concept.searched_forms
+    return out
+
+
 def _hidden_predicate():
+
     """Build is_hidden(normalized) from the keyword-filter settings.
 
     Hides built-in stopwords + user exclusions + too-short / numeric terms, so
@@ -379,11 +586,106 @@ def _bucket_span(d: date, bucket: str) -> tuple[date, date]:
     return monday, monday + timedelta(days=6)
 
 
-def trend(session, term: str, *, bucket: str = "week", country: str | None = None) -> dict:
-    """Mention volume over time for one keyword, bucketed by day/week/month."""
+def _mention_series(session, ids, *, bucket: str, country: str | None) -> list[dict]:
+    """``[{date, count}]`` over a set of keyword ids — the shared trend arithmetic.
+
+    Chunked at ``_IN_CHUNK`` because a ring can carry more forms than SQLite's historical
+    ~999 bound-variable ceiling once the reader turns the fan-out cap off; summing the
+    per-chunk buckets is exact, since a bucket key is a date and addition commutes.
+    """
+    buckets: dict[str, int] = {}
+    for i in range(0, len(ids), _IN_CHUNK):
+        chunk = ids[i : i + _IN_CHUNK]
+        q = session.query(KeywordMention.observed_on, func.sum(KeywordMention.count)).filter(
+            KeywordMention.keyword_id.in_(chunk), KeywordMention.observed_on.isnot(None)
+        )
+        if country:
+            q = q.filter(KeywordMention.country == country.lower())
+        for d, c in q.group_by(KeywordMention.observed_on).all():
+            k = _bucket_key(d, bucket)
+            buckets[k] = buckets.get(k, 0) + int(c or 0)
+    return [{"date": k, "count": v} for k, v in sorted(buckets.items())]
+
+
+def _distinct_articles(session, ids) -> int:
+    """DISTINCT articles across a set of keyword ids — one article counted ONCE.
+
+    This is the "single total" Q509's note asks for, and it is why the per-language
+    figures beside it cannot be added up: an article carrying two forms of the concept
+    appears in two language buckets and in this number exactly once.
+
+    Over more than one chunk the distinct set is assembled in Python rather than summed,
+    because summing per-chunk distinct counts would count such an article twice — the
+    error the number exists to avoid.
+    """
+    if len(ids) <= _IN_CHUNK:
+        return int(
+            session.query(func.count(func.distinct(KeywordMention.article_id)))
+            .filter(KeywordMention.keyword_id.in_(ids))
+            .scalar()
+            or 0
+        )
+    seen: set[int] = set()
+    for i in range(0, len(ids), _IN_CHUNK):
+        chunk = ids[i : i + _IN_CHUNK]
+        for (aid,) in (
+            session.query(KeywordMention.article_id)
+            .filter(KeywordMention.keyword_id.in_(chunk))
+            .distinct()
+            .all()
+        ):
+            seen.add(int(aid))
+    return len(seen)
+
+
+def trend(
+    session,
+    term: str,
+    *,
+    bucket: str = "week",
+    country: str | None = None,
+    concept: Any = None,
+) -> dict:
+    """Mention volume over time for one keyword — or for its whole RING (Q417).
+
+    ``concept`` is the :class:`ConceptKeywords` the caller resolved ONCE for this tab
+    (Q501). When it names a ring the corpus actually carries, the series is summed over
+    every form of the concept and a per-language breakdown rides along for the hover;
+    otherwise this is byte-identical to the single-keyword behaviour that preceded it.
+    """
     # EXACT ONLY (audit §4.1, P0, 2026-09-08): this is a chart/hover LABEL surface --
     # "resolved" is rendered as the answer, not a candidate. See resolve_keyword's
-    # exact= docstring for why the fuzzy LIKE fallback must never reach here.
+    # exact= docstring for why the fuzzy LIKE fallback must never reach here. The ring
+    # path is exact by construction: every form is matched on normalized_term equality.
+    if concept is not None and concept.is_ring:
+        ids = concept.ids
+        points = _mention_series(session, ids, bucket=bucket, country=country)
+        primary = concept.primary
+        out = {
+            "term": term,
+            "bucket": bucket,
+            "resolved": (
+                {
+                    "term": primary.term,
+                    "normalized": primary.normalized_term,
+                    "kind": kind_of(primary),
+                }
+                if primary is not None
+                else None
+            ),
+            "points": points,
+            "total": sum(p["count"] for p in points),
+            "articles": _distinct_articles(session, ids),
+            "concept": concept_block(concept),
+            "by_language": {
+                lang: {
+                    "points": _mention_series(session, kids, bucket=bucket, country=country),
+                    "articles": _distinct_articles(session, kids),
+                }
+                for lang, kids in sorted(concept.by_language.items())
+            },
+        }
+        return out
     kw = resolve_keyword(session, term, exact=True)
     if kw is None:
         return {"term": term, "resolved": None, "points": [], "total": 0, "articles": 0}
@@ -427,6 +729,7 @@ def trend_range_article_ids(
     end: date,
     bucket: str = "day",
     cap: int = _BRUSH_ID_CAP,
+    concept: Any = None,
 ) -> dict:
     """The articles behind a brushed span of a keyword trend chart.
 
@@ -493,7 +796,7 @@ def trend_range_article_ids(
     start, _ = _bucket_span(start, bucket)
     _, end = _bucket_span(end, bucket)
     in_range = (
-        KeywordMention.keyword_id == kw.id,
+        KeywordMention.keyword_id.in_(_concept_seed_ids(concept, kw)),
         KeywordMention.observed_on >= start,
         KeywordMention.observed_on <= end,
     )
@@ -2131,6 +2434,19 @@ def _window_filter(q, start=None, end=None):
     return q
 
 
+def _concept_seed_ids(concept: Any, kw: Any) -> list[int]:
+    """The keyword ids ONE aggregate should filter on — the ring's, or just the term's.
+
+    Q417 computes an aggregate PER RING "when the term is in one". ``concept`` is the
+    :class:`ConceptKeywords` the caller resolved once; when it names a ring the corpus
+    carries, every form is in scope, and otherwise this is the single id the pre-ring
+    code used, so the aggregate is byte-identical.
+    """
+    if concept is not None and concept.is_ring:
+        return concept.ids
+    return [int(kw.id)]
+
+
 def associations(
     session,
     term: str,
@@ -2143,6 +2459,7 @@ def associations(
     end=None,
     corpus_total: int | None = None,
     article_cap: int | None = None,
+    concept: Any = None,
 ) -> dict:
     """Keywords that co-occur with ``term`` in the same articles, ranked by PMI.
 
@@ -2167,7 +2484,14 @@ def associations(
     # EXACT ONLY (audit §4.1, P0): this powers the mind-map's CENTRE-node label and
     # its co-occurring-keyword labels -- the same homograph vector as trend().
     kw = resolve_keyword(session, term, exact=True)
-    if kw is None:
+    if kw is None and not (concept is not None and concept.is_ring):
+        return {"term": term, "resolved": None, "pairs": []}
+    # Q512: the ring is the mind-map's CENTRE node, so the seed is the whole concept and
+    # the co-occurrence exclusion has to drop EVERY form of it -- otherwise `climat`
+    # comes back as the strongest "association" of `climate`, which is the concept
+    # talking to itself.
+    seed_ids = _concept_seed_ids(concept, kw) if kw is not None else (concept.ids if concept else [])
+    if not seed_ids:
         return {"term": term, "resolved": None, "pairs": []}
     total = (
         corpus_total
@@ -2183,7 +2507,7 @@ def associations(
         a
         for (a,) in _window_filter(
             session.query(KeywordMention.article_id).filter(
-                KeywordMention.keyword_id == kw.id
+                KeywordMention.keyword_id.in_(seed_ids)
             ),
             start,
             end,
@@ -2233,7 +2557,10 @@ def associations(
             start,
             end,
         )
-        .filter(KeywordMention.article_id.in_(target_articles), KeywordMention.keyword_id != kw.id)
+        .filter(
+            KeywordMention.article_id.in_(target_articles),
+            KeywordMention.keyword_id.notin_(seed_ids),
+        )
         .group_by(KeywordMention.keyword_id)
         .having(func.count(func.distinct(KeywordMention.article_id)) >= min_cooccur)
         .all()
@@ -2410,6 +2737,7 @@ def keyword_stats(
     window_days: int = 7,
     baseline_days: int = 30,
     cooccur_limit: int = 5,
+    concept: Any = None,
 ) -> dict:
     """Compact hover stats for ONE keyword (the clickable-in-article-keyword hover):
     total mentions + distinct-article spread + a windowed recent-vs-prior RATE + the
@@ -2443,12 +2771,13 @@ def keyword_stats(
     # Exact mention n + distinct-article spread over this keyword's mention rows.
     # ix_mention_keyword_article is UNIQUE on (keyword_id, article_id), so a distinct
     # article count is the row count; both served index-only (no article decrypt).
+    stat_ids = _concept_seed_ids(concept, kw)
     row = (
         session.query(
             func.count(func.distinct(KeywordMention.article_id)),
             func.coalesce(func.sum(KeywordMention.count), 0),
         )
-        .filter(KeywordMention.keyword_id == kw.id)
+        .filter(KeywordMention.keyword_id.in_(stat_ids))
         .one()
     )
     distinct_articles, total_mentions = int(row[0] or 0), int(row[1] or 0)
@@ -2466,7 +2795,7 @@ def keyword_stats(
         return int(
             session.query(func.coalesce(func.sum(KeywordMention.count), 0))
             .filter(
-                KeywordMention.keyword_id == kw.id,
+                KeywordMention.keyword_id.in_(stat_ids),
                 KeywordMention.observed_on >= lo,
                 KeywordMention.observed_on < hi,
             )
@@ -2534,8 +2863,16 @@ def keyword_stats(
     }
 
 
-def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
-    """Recent mention snippets for a keyword, sliced from the stored article text."""
+def context(
+    session, term: str, *, limit: int = 10, window: int = 180, concept: Any = None
+) -> dict:
+    """Recent mention snippets for a keyword — or for its whole RING (Q417).
+
+    ``concept`` is the :class:`ConceptKeywords` the caller resolved ONCE for this tab
+    (Q501/Q417). When it names a ring the corpus carries, the aggregate is computed over
+    every form of the concept; otherwise this is byte-identical to the single-keyword
+    behaviour that preceded it.
+    """
     # EXACT ONLY (audit §4.1, P0): the snippet list is headed by ``resolved.term`` and
     # rendered as "this keyword's mentions" -- the same display-label surface as
     # trend()/associations(), reached through the same exploreTerm() search box, so a
@@ -2546,7 +2883,7 @@ def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
     rows = (
         session.query(KeywordMention, Article)
         .join(Article, Article.id == KeywordMention.article_id)
-        .filter(KeywordMention.keyword_id == kw.id)
+        .filter(KeywordMention.keyword_id.in_(_concept_seed_ids(concept, kw)))
         .order_by(KeywordMention.observed_on.desc(), KeywordMention.id.desc())
         .limit(limit)
         .all()

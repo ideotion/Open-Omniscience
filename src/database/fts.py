@@ -653,8 +653,18 @@ def search_total(
     ("searched, matched nothing"). The quarantine gate is the SAME shared fragment
     :func:`search_ids` uses, so the count can never describe a different set than
     the rows — the property ``source_type_facets`` once claimed and did not keep.
+
+    ``expand`` is the SAME cross-language hook :func:`search_ids` takes, and passing it
+    is what keeps the count and the rows describing one set. It was accepted and then
+    DROPPED here for as long as it existed — the parameter was declared, the caller at
+    ``search_omni.py`` passed it with a comment explaining exactly why, and the body
+    called ``build_match(query)`` without it. Live-reproduced on a seven-article fixture
+    (3 en ``climate``, 2 fr ``climat``, 2 de ``Klima``): ``search_ids`` returned **7**
+    ids and ``search_total`` answered **3**, i.e. the omnibar's "exact total" described
+    the literal query while its rows described the concept. Q515 = b (exact, uncapped)
+    is a ruling about THIS function, so the fix belongs here rather than at each caller.
     """
-    match = build_match(query)
+    match = build_match(query, expand=expand)
     if match is None:
         return None
     gate = _QUARANTINE_GATE if exclude_quarantined else ""
