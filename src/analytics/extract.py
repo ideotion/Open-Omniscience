@@ -480,7 +480,7 @@ def _deelide(word: str) -> str:
     return word
 
 
-def _display_surface(seen: "Counter[str] | None", key: str) -> str:
+def _display_surface(seen: Counter[str] | None, key: str) -> str:
     """The surface form to SHOW for a key several forms folded onto.
 
     The most frequent one, tie-broken alphabetically so the choice is deterministic

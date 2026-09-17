@@ -39,7 +39,8 @@ nothing, so the absence is the honest answer and is pinned by a test.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
