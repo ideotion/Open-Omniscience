@@ -8498,3 +8498,59 @@ predicate that is truthy on the success path.
   additive diff. **Same family as the `shipped.csv` round-trip lesson, in a second file
   format**: a structured-data round trip is lossy about everything the structure does not
   model, and on a file with `merge=union` or a human reader that loss is the defect.
+- **A NEW DATABASE FILE IS A NEW ENTRY IN THREE LITERAL LISTS, AND NONE OF THEM IS NEAR THE
+  CODE THAT ADDS IT (2026-09-17, S04-08 S1+S2, PR #1154):** `encrypt_all`,
+  `quick_crypto_erase` step 1 and `GET /api/system/doctor` each enumerate this app's
+  databases BY HAND. Every list was correct while there were two; a third arrives and none
+  of them fails a test, because the new store simply is not in it. The three consequences
+  are not equivalent and none is small. Out of `encrypt_all`, a store created while the app
+  was plaintext stays plaintext **forever** after the operator consents to encryption —
+  every later open takes `connect()`'s plaintext branch, which never consults the
+  passphrase. Out of the erase's head-shred it falls to the full-overwrite path, whose own
+  comment rests on "remaining files are small side files", against a store Q719 expects to
+  reach 100 GB — an instant crypto-erase quietly becoming an hours-long data erase, with
+  nothing to catch it because **no test asserts the erase is fast**. Out of the doctor — the
+  endpoint whose docstring is *"the honest answer to 'is my corpus encrypted?'"* — the
+  answer enumerates two stores while a third sits in the clear, which is the fabricated
+  security the non-negotiables forbid, arriving as an omission rather than as a claim. THE
+  RULE: adding a database file means grepping for the literal tuples that enumerate stores
+  and joining all of them **in the same PR**, resolved from a registry rather than re-typed.
+  A file-format guarantee is always enumerated by hand somewhere, and never where the new
+  file is written.
+- **`OO_DATA_DIR` MOVES SOME THINGS AND NOT OTHERS, AND THE SPLIT IS INVISIBLE (same PR):**
+  `data_dir()` re-reads the environment on every call; `DATABASE_URL` — and therefore
+  `main_db_path()`, `encrypt_all`, `doctor` and the corpus engine — is computed at IMPORT
+  time (`src/database/session.py:124`). A test that re-points `OO_DATA_DIR` at a `tmp_path`
+  moves everything in the first group and **nothing** in the second. Measured: one test
+  called `encrypt_all()` after re-pointing and encrypted the whole suite's shared corpus —
+  56 failures and 30 errors, almost all in files the branch never touched. Patch
+  `main_db_path` (the repo's existing answer in `test_encrypt_all_write_gate`) and assert
+  the redirection, so dropping the patch fails in YOUR file rather than in someone else's.
+- **FOUR VERIFICATION LESSONS FROM ONE SESSION, each a check that read as success while
+  proving nothing (same PR).** (a) `cmd | tail` throws away the exit code — a pipeline's
+  status is the LAST command's, so `pytest -q | tail -25` reports success whatever pytest
+  did; two runs were reported as "green (exit 0)" on that basis and one of them had
+  `1 failed` in its own summary line. Redirect and echo `$?`, or read `PIPESTATUS`.
+  (b) `node --check` proves a JS file PARSES and says nothing about what the repo asserts is
+  IN it — this tree pins JS by exact string, and a one-line edit broke a literal pin and
+  reached CI. A JS edit must run the tests that READ that file. (c) A reproduction that
+  feeds the wrong TYPES executes nothing: two reported defects were "reproduced" against a
+  fake client returning ISO strings where `parse_recentchanges` returns `datetime` objects,
+  so every row lost its timestamp and the comparison under test never ran — caught only
+  because the output contradicted the finding it was meant to confirm. Match the production
+  parser's RETURN SHAPE, not merely its signature. (d) A guard whose limit no affordable
+  test can reach is asserted STRUCTURALLY: "SQLite caps host parameters at 999" is folklore
+  on a modern build — this one's `sqlite3` 3.45.1 and `sqlcipher3` 3.51.1 both accept
+  250,000 and refuse 250,001 — so chunking is justified by the ceiling being a PER-BUILD
+  setting, and pinned by asserting the work is split (805 ids → 3 statements), with the test
+  saying why the direct check was not written.
+- **A CURSOR MUST NOT ORDER ON A THIRD PARTY'S ID, INCLUDING AS A TIE-BREAK (same PR):** a
+  wiki lane resumed on `revid`; when ids did not rise with time, three of five fixture pages
+  silently stopped receiving changes with every counter reading zero. Corrected to a
+  `"<iso8601>|<revid>"` token — and the SAME assumption came straight back as a tie-break,
+  because `(time, revid)` compares as a tuple. A genuinely new change at the cursor's own
+  instant with a lower id was then dropped permanently, produced no gap, and contiguity
+  advanced PAST the loss. `rccontinue`'s second half is an `rcid`, MediaWiki's insertion
+  counter; a `revid` is a different number, and mirroring a token's SHAPE never licensed
+  treating our number as theirs. Compare on time alone and let dedup absorb the re-offered
+  instant: re-reading is free, dropping is permanent.

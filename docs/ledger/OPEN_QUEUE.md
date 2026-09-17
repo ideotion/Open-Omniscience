@@ -14371,3 +14371,36 @@ caveat naming this ordering when it is not 0. `tests/test_country_code_normalise
 `test_flip_day_is_REPORTED_when_the_live_corpus_is_still_on_the_other_form` is the tripwire: a
 future session that flips the constant without rewriting the live corpus first gets a red test
 that says so.
+## 2026-09-17 — Two findings DISCLOSED, not fixed (S04-08 S1+S2, PR #1154)
+
+**(1) `guarded_session` does not enter the connect-time SSRF guard.** `ssrf_guard.connect_scope`
+has exactly ONE caller in this tree — `EthicalFetcher._guarded_redirect_get`
+(`src/ingest/__init__.py:1412`) — and a `GuardedSession` never reaches it. So a `guarded_session`
+consumer gets the network KILL SWITCH (checked on every verb), the protected-mode proxy and the
+honest bot UA, plus the process-wide AIRPLANE SOCKET GUARD (which patches sockets rather than
+sessions, so it applies regardless) — and NOT the connect-time SSRF validation that
+`ssrf_guard.py`'s own docstring says was live-reproduced against a real `requests.Session` before
+it existed. **Pre-existing and shared by every consumer** (dumps, ORES, DuckDuckGo); the versioned
+package introduced none of it and correctly builds no client of its own. **Dormant today:** grep
+confirms nothing in production constructs a `WikiLaneAdapter`. It stops being dormant the day
+S04-09 wires a scheduler job, which is why it is recorded HERE against that slice rather than left
+for whoever wires it to rediscover. `src/versioned/adapters/wiki.py`'s docstring, which had
+overstated what its named production client gets, is corrected in the same PR. **The fix is not
+this slice's to make:** making `GuardedSession` enter `connect_scope` changes every wiki, dumps,
+ORES and DuckDuckGo fetch in the app, and wants its own PR and its own live reproduction.
+
+**(2) CodeQL `py/weak-sensitive-data-hashing` (CWE-916, high) at `src/analytics/columnar.py:167`.**
+`return hashlib.sha256(("oo-columnar-v1:" + passphrase).encode("utf-8")).hexdigest()` — the DuckDB
+`ENCRYPTION_KEY` derived from the corpus passphrase with a single cheap hash. **Byte-identical on
+`origin/main`**, introduced 2026-06-19 by `d883259c`, with both call sites inside `columnar.py` and
+no import path from PR #1154's diff; it surfaced on this PR only through the default-setup
+comparison. **It is a real finding for this project specifically, not scanner noise:** the same
+passphrase opens the canonical store behind PBKDF2-HMAC-SHA512 ×256,000, and `CLAUDE.md`'s own
+reasoning for omitting wrong-passphrase rate-limiting is that a brute-forcer "HAS the file and
+works offline" — which is precisely the position a fast hash beside a slow one creates. The
+disposable cache becomes the cheapest offline attack on the one passphrase that opens everything.
+**Migration cost is near zero** because `_derive_key`'s own docstring calls the store a disposable
+cache; a proposed `scrypt` patch with a `v2` domain-separation string is in the PR comment.
+**NOT fixed here** because the brief's own instruction is "do NOT build … the DuckDB store
+(Q1009 ⛔, 0.5)", and Q1009 is still PENDING. **Needs a ruling:** its own PR, or folded into
+whichever slice takes Q1009.
