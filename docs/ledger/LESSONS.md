@@ -11401,3 +11401,87 @@ and none of it about the SECTION the panel was put in. The failure lived in a fi
 has nothing to do with the feature. That is the ordinary shape of a cross-surface regression,
 and it is the argument for running the whole suite before calling a slice done rather than the
 files the diff touches.
+
+---
+
+## A gate's NUMBER is only as wide as its SHAPES — and a scanner cannot report the blind spot it has by construction (S04-14 session 2, 2026-09-18)
+
+All three i18n gates read **0** — 0 untranslatable, 0 unkeyed `t()` literals, 0 unkeyed `tf()`
+frames, each pinned by a test asserting `ci.yml`'s number equals the real measured count. Every
+instrument agreed the work was finished. Then the app was opened in Arabic, and Home's empty
+state — the surface the *never blank-and-silent* rule exists for, the first thing a new operator
+sees — was **entirely in English**, along with four `r-caveat` lines in the reader, which the
+informed-consent non-negotiable requires to ship ×12.
+
+The cause was a one-line asymmetry nobody had reason to look at. `index.html` is parsed by a real
+`HTMLParser`, so it had no hole. Every `app-*.js` module, which is where most of this app's markup
+actually lives, was scanned by a **regex list carrying exactly two HTML shapes: `<th>` and
+`<button>`**. Prose inside any other tag — `<h4>`, `<p>`, `<td>`, `<strong>`, `<summary>` — was
+never extracted, so it could not be counted, so the number was 0 and stayed 0 no matter how much
+English accumulated behind it.
+
+**THE GENERAL FORM, and the reason this keeps recurring in this file:** a scanner reports what its
+shapes match, and a blind spot contributes ZERO to the count by construction — not a small number,
+not a warning, zero. So a green gate is evidence about the gate's shapes, never about the tree.
+The recorded ancestors of this exact failure are the reader page (no code path into `src/api/`),
+the two inline `<script>` blocks, `oosky.js` (excluded by an `app*.js` filter), backtick literals,
+and `tf()` frames. This is the sixth. **The only instrument that can find the next one is the
+RENDERED UI in a non-Latin locale**, because a locale whose script differs makes leftover English
+visible at a glance in a way no count can. Read the app, not the scanner.
+
+Measured, both directions, TWICE. Adding nineteen prose tags took `--max-untranslatable` from 0
+to **35**; keying those ×12 took it back to 0. Then `<span>` and `<div>` — the two COMMONEST tags
+in this codebase's generated markup, and the two the first pass had left out while `caption` and
+`figcaption` were in it — took it from 0 to **83**, and keying those took it back to 0 again. 120
+new keys ×12 in total, and **the gate's number never moved. What it MEASURES did** — which is the
+only reason the 0 now means something it did not mean before. When a ratchet is already at its
+floor, the remaining work is not lowering the number; it is widening the lens.
+
+**The second widening is the part worth copying.** After the first one the list looked thorough,
+the gate read 0 again, and it would have been easy to stop — but a list containing `figcaption`
+and not `div` is not a thorough list, it is an arbitrary one. The check that caught it was not
+reading the scanner: it was seeing `SOURCES QUALIFIED` still in English on the Arabic Home strip
+while `Articles` and `Sources` beside it had translated, and asking why those three differed.
+
+### The corollary that cost a false positive twice
+
+Every one of these scanners reads SOURCE, so every one of them can be fooled by a call-shaped
+literal written in a COMMENT — which is exactly what someone does while *explaining* the code the
+gate watches. The 2026-09-18 session hit this and reworded its own comment to get green. The
+session after it wrote `t("...")` in a comment explaining that very fix and hit the identical false
+positive the same afternoon. **Rewording is not a fix**: it leaves the trap armed for the next
+person, who has no way to know. The three scanners now share one `_strip_js_comments` helper, and
+a test pins that all three call it.
+
+### And the filter that keeps the gate honest
+
+The widened scan also matched ten captures carrying a concatenation signature — `'<p>No ' + word +
+" stored yet</p>'` is three text nodes at runtime, so **no key added for it could ever match**.
+Reporting those in a gate whose only available fix cannot work is how a gate starts crying wolf and
+gets switched off. They are filtered out, and the population is recorded in `OPEN_QUEUE.md` with its
+count and the decision a session picking it up must make first — not silently dropped.
+
+## The frozen-locale differential: use the boot render as ground truth (S04-14 session 2, 2026-09-18)
+
+A surface that COMPOSES its text — a `tf()` frame plus a measured number, or plain concatenation —
+produces a text node the i18n DOM walker can never match against an English key, so it repaints on
+a language switch only if something registers it in `app-boot.js`'s one `oo:langchange` listener.
+Two surfaces were not registered, and a count could not have found either.
+
+**The instrument that did, and that is worth reusing:** render every tab TWICE — once by booting in
+`en` and switching to `ar` with the real top-bar switcher, once by booting straight into `ar` — and
+treat the boot render as correct BY CONSTRUCTION. Anything Latin-only in the first and absent from
+the second failed to repaint. Across thirteen tabs it named exactly two, both real, with no manual
+triage: Home's "By channel" total line, and the analysis window's near-duplicate note. It reports 0
+now, and 0 in `zh` and `hi` too.
+
+**Why the second one matters more than it looks:** it is a `card-caveat`, and every locale ALREADY
+carried a translation for it. The string was not missing — the UI simply never showed it. A caveat
+that holds a translation in twelve locales and still renders English after a switch is the
+informed-consent non-negotiable failing *quietly*, which is worse than an untranslated string,
+because nothing is missing anywhere for a count to find.
+
+**The trap when fixing one:** the natural fix is to register the loader in that listener, and
+`loadHomeChannels` FETCHES. That would have made a language switch ask the backend a question behind
+the reader — the thing every other entry in that listener is carefully written not to do. Split the
+fetch from the render, cache the payload, register only the render half.

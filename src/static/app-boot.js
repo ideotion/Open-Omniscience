@@ -70,6 +70,19 @@
       // "Corpus size" line stayed English in fr while the pills beside it translated.
       // Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderPatternsGate === "function") _renderPatternsGate(); } catch (_e) {}
+      // S04-14 (session 2): Home's "By channel" total line is built from a tf() frame
+      // plus measured counts, so it is the same frozen-locale class -- the walker cannot
+      // match a composed sentence against its English key. Measured in the Chromium walk:
+      // booting `en` then switching to `ar` left "24 articles across 1 channels" in
+      // English beside chips that translated, while booting straight into `ar` rendered
+      // it correctly. Repaints from the CACHED payload, so a switch costs no request.
+      try { if (typeof _renderHomeChannels === "function") _renderHomeChannels(); } catch (_e) {}
+      // S04-14 (session 2): the analysis window's near-duplicate CAVEAT and its "≈N"
+      // pill hovers are a keyed frame plus a measured count, so they are the same
+      // frozen-locale class. A caveat that holds a translation in all twelve locales and
+      // still shows English after a switch is the informed-consent non-negotiable
+      // failing quietly. Repaints text only, from retained values -- no fetch.
+      try { if (typeof _anRepaintDupNote === "function") _anRepaintDupNote(); } catch (_e) {}
       // S04-09: the Wikipedia toggle's hover is built at paint time from t() calls,
       // so it is the frozen-locale class too -- the button carries `data-i18n-dyn`
       // (its title is ALREADY translated, and letting the walker cache that as "the
