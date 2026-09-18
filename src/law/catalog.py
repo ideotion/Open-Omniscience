@@ -111,6 +111,151 @@ def feed_rss_url(source: dict) -> str | None:
     return str(feed)
 
 
+#: Q924 = a: "each source carries ``verified: live | fixture | unverified`` with a date;
+#: the UI shows it". THREE tiers, and the middle one is the honest majority of this
+#: catalogue today.
+#:
+#: THIS IS NOT ``verification.status``, AND CONFLATING THE TWO WOULD BE THE WHOLE DEFECT.
+#: That field is about the RESEARCH: did the session that wrote this row confirm the
+#: portal exists (``fetched`` / ``search-verified`` / ``lead``)? This one is about THIS
+#: APP: has an adapter in this tree actually read a document from this source, and
+#: against what? A portal can be ``fetched`` by a researcher's browser and ``unverified``
+#: here, which is exactly the state 276 of the 277 rows are in.
+VERIFIED_TIERS: tuple[str, ...] = ("live", "fixture", "unverified")
+
+#: What each tier CLAIMS, in one sentence. The claims are deliberately narrow: "an
+#: adapter read a document" is not "this source works", and a surface that renders the
+#: tier without the sentence invites the stronger reading.
+VERIFIED_TIER_NOTES: dict[str, str] = {
+    "live": "an adapter in this tree read a document fetched from this source's own host",
+    "fixture": (
+        "an adapter in this tree read a stored fixture of this source's format; the "
+        "live host has not answered here"
+    ),
+    "unverified": "no adapter has read anything from this source, live or stored",
+}
+
+
+def verified_tier(source: dict) -> dict:
+    """Pure: this source's Q924 tier, its date and its method — never inferred.
+
+    A row with no ``verified`` block is ``unverified`` with NO date, because "nobody
+    recorded a verification" is what that state means and stamping it with today's date
+    would turn an absence into a measurement. The tier is likewise never derived from
+    ``verification.status``: a researcher confirming a portal exists says nothing about
+    whether this app can read it.
+
+    An unknown tier degrades to ``unverified`` and says so in ``note``, rather than
+    raising: this is read on a rendering path, and a catalogue typo should show as an
+    unverified row rather than as a 500 on the coverage surface.
+    """
+    block = source.get("verified")
+    if not isinstance(block, dict):
+        return {"tier": "unverified", "as_of": None, "method": None,
+                "note": VERIFIED_TIER_NOTES["unverified"]}
+    tier = str(block.get("tier") or "").strip().lower()
+    if tier not in VERIFIED_TIERS:
+        return {
+            "tier": "unverified",
+            "as_of": None,
+            "method": None,
+            "note": VERIFIED_TIER_NOTES["unverified"],
+            "unreadable_tier": block.get("tier"),
+        }
+    return {
+        "tier": tier,
+        "as_of": block.get("as_of"),
+        "method": block.get("method"),
+        "note": VERIFIED_TIER_NOTES[tier],
+    }
+
+
+def counts_documents(official_count: dict | None) -> bool:
+    """Pure: may a coverage figure DIVIDE by this count? (Q921 = a)
+
+    ``True`` only when the row says so IN SO MANY WORDS. The catalogue's counts are in
+    codes, acts, volumes, gazette issues, treaties and cases; a volume or an issue
+    contains many acts, so dividing a tracked-document count by one of those produces a
+    percentage of nothing. Ruling 47's rail says to "declare it explicitly on each
+    catalog entry rather than inferring it from the unit string", and this is that
+    declaration — absent means REFUSE, which is what ``src/law/coverage.py`` has always
+    done and now does for a stated reason rather than for all of them at once.
+    """
+    return bool(isinstance(official_count, dict) and official_count.get("counts_documents") is True)
+
+
+#: Q919 = a: "each law authority is a ``Source`` row with ``source_type=\"law\"``, so the
+#: Sources tab, coverage and qualification see it like any other source."
+LAW_SOURCE_TYPE = "law"
+
+#: The catalogue's OWN types that describe a law authority, and therefore become ``law``
+#: on the Source row. ``ip`` (10 rows) does NOT: an intellectual-property office is a
+#: registry, not a law authority, and Q919 names the latter. ``case_law`` (2 rows) does
+#: not either, for a stronger reason — Q902's (e) was NOT CHOSEN, so admitting those two
+#: rows under the law type would quietly enter a document class this cycle declined.
+LAW_AUTHORITY_TYPES: frozenset[str] = frozenset({"legal", "gazette"})
+
+#: The token those rows carried BEFORE Q919. Readers accept both, because a store
+#: mid-migration and a corpus restored from an older backup both legitimately hold the
+#: old one, and a classifier that recognised only the new token would silently drop 190
+#: law portals out of the law provenance class on exactly those stores.
+LEGACY_LAW_SOURCE_TYPES: frozenset[str] = frozenset({"legal"})
+
+
+def source_type_for(source: dict) -> str:
+    """Pure: the ``source_type`` this catalogue row's Source row carries (Q919).
+
+    A row whose catalogue type is not a law-authority type keeps its own: this is a
+    rename of one class, not a flattening of four into one.
+    """
+    declared = str(source.get("source_type") or "").strip().lower()
+    return LAW_SOURCE_TYPE if declared in LAW_AUTHORITY_TYPES else (declared or "legal")
+
+
+def is_law_source_type(source_type: str | None) -> bool:
+    """Does this token name a law authority — under either vocabulary?
+
+    The ONE place the pair is written. Two call sites each spelling
+    ``in ("law", "legal")`` is how one of them comes to be updated and the other not.
+    """
+    token = (source_type or "").strip().lower()
+    return token == LAW_SOURCE_TYPE or token in LEGACY_LAW_SOURCE_TYPES
+
+
+def source_for_url(url: str | None, catalog: dict | None = None) -> dict | None:
+    """The catalogue row whose domain serves ``url``, or ``None``. Pure.
+
+    Matched on the HOST, with a suffix match so ``www.legislation.gov.uk`` finds the
+    ``legislation.gov.uk`` row. The match is on a DOT boundary — ``endswith("." + domain)``
+    rather than ``endswith(domain)`` — because the loose form would make
+    ``notlegislation.gov.uk`` resolve to the UK row and inherit its licence, which is
+    precisely the claim this lookup exists to carry.
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(str(url or "")).hostname or "").strip().lower()
+    if not host:
+        return None
+    cat = catalog if catalog is not None else load_legal_catalog()
+    for source in cat["sources"]:
+        domain = str(source.get("domain") or "").strip().lower()
+        if domain and (host == domain or host.endswith("." + domain)):
+            return source
+    return None
+
+
+def licence_for_url(url: str | None, catalog: dict | None = None) -> str:
+    """The licence token a document served from ``url`` INHERITS (Q927).
+
+    ``unknown`` when the source states none, which is almost all of them. The inheritance
+    is a DEFAULT, not a finding: a document may carry its own licence and override this,
+    and the reader says "licence not recorded" for the default rather than implying that
+    anybody looked at that particular document's terms.
+    """
+    source = source_for_url(url, catalog)
+    return str((source or {}).get("licence") or "unknown")
+
+
 def registration_source_rows(catalog: dict) -> list[dict]:
     """Pure: the Source rows a catalog registers, with provenance applied.
 
@@ -144,6 +289,11 @@ def registration_source_rows(catalog: dict) -> list[dict]:
         rss = feed_rss_url(s)
         if rss:
             s["rss_url"] = rss
+        # Q919 (2026-09-18): a law authority's Source row carries `law`. The catalogue
+        # keeps its own finer vocabulary -- `legal` vs `gazette` says something real
+        # about the row -- so the mapping happens HERE, on the way to the Source, and
+        # the file is not rewritten.
+        s["source_type"] = source_type_for(s)
         rows.append(s)
     return rows
 

@@ -1,0 +1,173 @@
+{
+  "base": "http://127.0.0.1:8742",
+  "document": 1,
+  "translation": 2,
+  "locales": {
+    "en": {
+      "original": {
+        "screenshot": "law-model-en-original.png",
+        "dir": "ltr",
+        "meta_block": "Jurisdiction\nZZZ\nCategory\nlegislation\nText kind\npoint-in-time consolidation\nLast checked\n2026-09-18 07:03\nLast status\nchanged (+160 bytes vs the previous version)\nChanges recorded\n2\nEnacted\n2019-03-04\nThis text is in force from\n2024-01-01\nCaptured by this instance\n2026-09-18\nShowing\nCurrent text (as last captured)\nLicence\nOpen Government Licence v3.0\nRedistribution\nThis licence permits redistribution\nProvenance\nThe original text as issued\nIdentity\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx-fr Loi sur les normes de mesure"
+        ],
+        "other_versions_heading": "OTHER LANGUAGE VERSIONS",
+        "provenance_spans": [
+          "2024-01-01",
+          "Current text (as last captured)",
+          "The original text as issued"
+        ],
+        "still_english": [
+          "Licence",
+          "Redistribution",
+          "Provenance",
+          "Identity",
+          "This licence permits redistribution",
+          "The original text as issued",
+          "Each language version is tracked as its own document"
+        ],
+        "page_errors": []
+      },
+      "translation": {
+        "screenshot": "law-model-en-translation.png",
+        "dir": "ltr",
+        "meta_block": "Jurisdiction\nZZZ\nCategory\nlegislation\nText kind\npoint-in-time consolidation\nLast checked\n2026-09-18 07:03\nLast status\nbaseline captured\nChanges recorded\n1\nEnacted\n2019-03-04\nThis text is in force from\n2019-06-01\nCaptured by this instance\n2026-09-18\nShowing\nCurrent text (as last captured)\nLicence\nCC BY 4.0\nRedistribution\nThis licence permits redistribution\nProvenance\nAn official translation (Office of the Government Translator)\nIdentity\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx Measurement Standards Act"
+        ],
+        "other_versions_heading": "OTHER LANGUAGE VERSIONS",
+        "provenance_spans": [
+          "2019-06-01",
+          "Current text (as last captured)",
+          "An official translation",
+          "(Office of the Government Translator)"
+        ],
+        "still_english": [
+          "Licence",
+          "Redistribution",
+          "Provenance",
+          "Identity",
+          "This licence permits redistribution",
+          "An official translation",
+          "Each language version is tracked as its own document"
+        ],
+        "page_errors": []
+      }
+    },
+    "fr": {
+      "original": {
+        "screenshot": "law-model-fr-original.png",
+        "dir": "ltr",
+        "meta_block": "Juridiction\nZZZ\nCatégorie\nlegislation\nType de texte\nconsolidation à une date donnée\nDernière vérification\n2026-09-18 07:03\nDernier état\nchanged (+160 bytes vs the previous version)\nModifications enregistrées\n2\nAdoptée le\n2019-03-04\nCe texte est en vigueur à compter du\n2024-01-01\nCapturé par cette instance\n2026-09-18\nAffichage de\nTexte actuel (tel que capturé en dernier)\nLicence\nOpen Government Licence v3.0\nRedistribution\nCette licence autorise la redistribution\nOrigine\nLe texte original tel que publié\nIdentité\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx-fr Loi sur les normes de mesure"
+        ],
+        "other_versions_heading": "AUTRES VERSIONS LINGUISTIQUES",
+        "provenance_spans": [
+          "2024-01-01",
+          "Texte actuel (tel que capturé en dernier)",
+          "Le texte original tel que publié"
+        ],
+        "still_english": [
+          "Licence",
+          "Redistribution"
+        ],
+        "page_errors": []
+      },
+      "translation": {
+        "screenshot": "law-model-fr-translation.png",
+        "dir": "ltr",
+        "meta_block": "Juridiction\nZZZ\nCatégorie\nlegislation\nType de texte\nconsolidation à une date donnée\nDernière vérification\n2026-09-18 07:03\nDernier état\nbaseline captured\nModifications enregistrées\n1\nAdoptée le\n2019-03-04\nCe texte est en vigueur à compter du\n2019-06-01\nCapturé par cette instance\n2026-09-18\nAffichage de\nTexte actuel (tel que capturé en dernier)\nLicence\nCC BY 4.0\nRedistribution\nCette licence autorise la redistribution\nOrigine\nUne traduction officielle (Office of the Government Translator)\nIdentité\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx Measurement Standards Act"
+        ],
+        "other_versions_heading": "AUTRES VERSIONS LINGUISTIQUES",
+        "provenance_spans": [
+          "2019-06-01",
+          "Texte actuel (tel que capturé en dernier)",
+          "Une traduction officielle",
+          "(Office of the Government Translator)"
+        ],
+        "still_english": [
+          "Licence",
+          "Redistribution"
+        ],
+        "page_errors": []
+      }
+    },
+    "de": {
+      "original": {
+        "screenshot": "law-model-de-original.png",
+        "dir": "ltr",
+        "meta_block": "Rechtsraum\nZZZ\nKategorie\nlegislation\nTextart\nKonsolidierung zu einem Stichtag\nZuletzt geprüft\n2026-09-18 07:03\nLetzter Status\nchanged (+160 bytes vs the previous version)\nErfasste Änderungen\n2\nErlassen\n2019-03-04\nDieser Text gilt ab\n2024-01-01\nVon dieser Instanz erfasst\n2026-09-18\nAngezeigt:\nAktueller Text (Stand der letzten Erfassung)\nLizenz\nOpen Government Licence v3.0\nWeiterverbreitung\nDiese Lizenz erlaubt die Weiterverbreitung\nHerkunft\nDer Originaltext, so wie veröffentlicht\nIdentität\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx-fr Loi sur les normes de mesure"
+        ],
+        "other_versions_heading": "ANDERE SPRACHVERSIONEN",
+        "provenance_spans": [
+          "2024-01-01",
+          "Aktueller Text (Stand der letzten Erfassung)",
+          "Der Originaltext, so wie veröffentlicht"
+        ],
+        "still_english": [
+          "Licence"
+        ],
+        "page_errors": []
+      },
+      "translation": {
+        "screenshot": "law-model-de-translation.png",
+        "dir": "ltr",
+        "meta_block": "Rechtsraum\nZZZ\nKategorie\nlegislation\nTextart\nKonsolidierung zu einem Stichtag\nZuletzt geprüft\n2026-09-18 07:03\nLetzter Status\nbaseline captured\nErfasste Änderungen\n1\nErlassen\n2019-03-04\nDieser Text gilt ab\n2019-06-01\nVon dieser Instanz erfasst\n2026-09-18\nAngezeigt:\nAktueller Text (Stand der letzten Erfassung)\nLizenz\nCC BY 4.0\nWeiterverbreitung\nDiese Lizenz erlaubt die Weiterverbreitung\nHerkunft\nEine offizielle Übersetzung (Office of the Government Translator)\nIdentität\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx Measurement Standards Act"
+        ],
+        "other_versions_heading": "ANDERE SPRACHVERSIONEN",
+        "provenance_spans": [
+          "2019-06-01",
+          "Aktueller Text (Stand der letzten Erfassung)",
+          "Eine offizielle Übersetzung",
+          "(Office of the Government Translator)"
+        ],
+        "still_english": [],
+        "page_errors": []
+      }
+    },
+    "ar": {
+      "original": {
+        "screenshot": "law-model-ar-original.png",
+        "dir": "rtl",
+        "meta_block": "الولاية القضائية\nZZZ\nالفئة\nlegislation\nنوع النص\nنص موحَّد في تاريخ محدد\nآخر فحص\n2026-09-18 07:03\nآخر حالة\nchanged (+160 bytes vs the previous version)\nالتغييرات المسجّلة\n2\nتاريخ السن\n2019-03-04\nهذا النص نافذ اعتباراً من\n2024-01-01\nالتُقط بواسطة هذه النسخة\n2026-09-18\nعرض\nالنص الحالي (كما التُقط آخر مرة)\nالترخيص\nOpen Government Licence v3.0\nإعادة التوزيع\nيسمح هذا الترخيص بإعادة التوزيع\nالمنشأ\nالنص الأصلي كما صدر\nالمعرِّف\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx-fr Loi sur les normes de mesure"
+        ],
+        "other_versions_heading": "نسخ بلغات أخرى",
+        "provenance_spans": [
+          "2024-01-01",
+          "النص الحالي (كما التُقط آخر مرة)",
+          "النص الأصلي كما صدر"
+        ],
+        "still_english": [
+          "Licence"
+        ],
+        "page_errors": []
+      },
+      "translation": {
+        "screenshot": "law-model-ar-translation.png",
+        "dir": "rtl",
+        "meta_block": "الولاية القضائية\nZZZ\nالفئة\nlegislation\nنوع النص\nنص موحَّد في تاريخ محدد\nآخر فحص\n2026-09-18 07:03\nآخر حالة\nbaseline captured\nالتغييرات المسجّلة\n1\nتاريخ السن\n2019-03-04\nهذا النص نافذ اعتباراً من\n2019-06-01\nالتُقط بواسطة هذه النسخة\n2026-09-18\nعرض\nالنص الحالي (كما التُقط آخر مرة)\nالترخيص\nCC BY 4.0\nإعادة التوزيع\nيسمح هذا الترخيص بإعادة التوزيع\nالمنشأ\nترجمة رسمية (Office of the Government Translator)\nالمعرِّف\nact-number:ZZZ:2019/7",
+        "other_versions": [
+          "zxx Measurement Standards Act"
+        ],
+        "other_versions_heading": "نسخ بلغات أخرى",
+        "provenance_spans": [
+          "2019-06-01",
+          "النص الحالي (كما التُقط آخر مرة)",
+          "ترجمة رسمية",
+          "(Office of the Government Translator)"
+        ],
+        "still_english": [],
+        "page_errors": []
+      }
+    }
+  }
+}

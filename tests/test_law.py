@@ -80,7 +80,13 @@ def test_catalog_loads_real_sources_and_documents():
 def test_seed_sources_and_register_documents(db):
     s = seed_legal_sources(db)
     assert s["created"] >= 30
-    assert db.query(Source).filter_by(source_type="legal").count() >= 10
+    # Q919 = a (2026-09-18): a law authority's Source row carries `law`, not the legacy
+    # `legal`. The CATALOGUE keeps its own finer vocabulary (`legal` vs `gazette` says
+    # something real about a row); the mapping happens on the way to the Source, which is
+    # what this assertion measures. Both halves are checked, because a rename that merely
+    # emptied the old bucket would satisfy a count on the new one.
+    assert db.query(Source).filter_by(source_type="law").count() >= 10
+    assert db.query(Source).filter_by(source_type="legal").count() == 0
     d = register_documents(db)
     assert d["created"] >= 5
     # Idempotent.

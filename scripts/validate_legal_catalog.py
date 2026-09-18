@@ -78,6 +78,21 @@ LEGAL_SYSTEMS_RE = re.compile(r"^(civil_law|common_law|mixed(:.+)?|religious|cus
 SOURCE_TYPES = ("legal", "ip", "case_law", "gazette")
 SPECIAL_COUNTRIES = ("eu", "int")
 
+#: Q924 = a's tier, validated here so a typo cannot reach the coverage surface as an
+#: unverified row nobody meant. See ``src/law/catalog.py``'s ``VERIFIED_TIERS`` for why
+#: this is a DIFFERENT question from ``verification.status`` above: that one is about the
+#: research (does the portal exist), this one about this app (has an adapter read it).
+VERIFIED_TIERS = ("live", "fixture", "unverified")
+
+#: Read from the model rather than restated, so the catalogue and the renderer can never
+#: disagree about which licences exist.
+try:  # pragma: no cover - the fallback only fires for a standalone run without src/
+    from src.law.model import LICENCES as _LICENCES
+
+    LICENCE_IDS = frozenset(_LICENCES)
+except Exception:  # noqa: BLE001
+    LICENCE_IDS = frozenset()
+
 
 def _err(errors: list[str], where: str, msg: str) -> None:
     errors.append(f"{where}: {msg}")
@@ -205,6 +220,50 @@ def validate(generated: dict, curated: dict) -> dict:
                                         "ever READ OFF the official page, never estimated")
                 _check_url(errors, warnings, where, "official_count.source_url",
                            oc.get("source_url"))
+                # Q921 = a. A boolean, and only a literal `true` counts: `"yes"` and `1`
+                # would both be truthy to a careless reader and would license a DIVISION
+                # nobody declared.
+                cd = oc.get("counts_documents")
+                if cd is not None and cd is not True and cd is not False:
+                    _err(errors, where,
+                         "official_count.counts_documents must be true or false — it "
+                         "licenses a division, so a truthy string is not a declaration")
+                if cd is True and not oc.get("unit"):
+                    _err(errors, where,
+                         "official_count.counts_documents: true needs a unit — the claim "
+                         "is that THIS unit counts the same objects a tracked document "
+                         "is, and an unnamed unit cannot make it")
+        # Q924 = a's per-source tier. OPTIONAL: a row without one is `unverified` by
+        # absence, which is the honest state of almost every row in this catalogue. When
+        # present it must be READABLE, because an unrecognised tier renders as unverified
+        # — so a typo would silently DOWNGRADE a source somebody had verified, in the one
+        # direction nobody would think to check.
+        # Q927's licence, as a DEFAULT the documents of this source inherit (a document
+        # may carry its own and override it). Validated against the model's registry so a
+        # typo cannot reach a reader as "licence not recorded" — which would look like an
+        # honest absence and is in fact a lost fact.
+        lic = s.get("licence")
+        if lic is not None and str(lic) not in LICENCE_IDS:
+            _err(errors, where,
+                 f"licence {lic!r} is not in src/law/model.py's LICENCES registry; add it "
+                 "there (with its redistribution terms) rather than storing a free string")
+        vt = s.get("verified")
+        if vt is not None:
+            if not isinstance(vt, dict):
+                _err(errors, where, "verified must be {tier, as_of, method}")
+            else:
+                tier = vt.get("tier")
+                if tier not in VERIFIED_TIERS:
+                    _err(errors, where, f"verified.tier must be one of {VERIFIED_TIERS}")
+                elif tier != "unverified":
+                    if not DATE_RE.match(str(vt.get("as_of", ""))):
+                        _err(errors, where,
+                             "a verified source needs verified.as_of — a verification "
+                             "with no date cannot be re-checked or aged out")
+                    if not str(vt.get("method") or "").strip():
+                        _err(errors, where,
+                             "a verified source needs verified.method — WHAT was read, "
+                             "so a reader can tell a fixture parse from a live fetch")
         if status not in VERIFICATION_STATUSES:
             _err(errors, where, f"verification.status must be one of {VERIFICATION_STATUSES}")
         else:

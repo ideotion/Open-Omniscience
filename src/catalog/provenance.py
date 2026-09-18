@@ -102,7 +102,10 @@ def ensure_channel_tags(session) -> int:
                 Source.domain.like("law.%.local"),
                 Source.domain.like("hazard.%.local"),
                 Source.domain.in_(sorted(NEWSLETTER_DOMAINS)),
-                Source.source_type.in_(["legal", "ip", "statistics", "cited", "hazard"]),
+                # "law" is Q919's token and "legal" the one those rows carried before
+                # it; both are listed because a store mid-migration and a corpus restored
+                # from an older backup each legitimately hold the old one.
+                Source.source_type.in_(["law", "legal", "ip", "statistics", "cited", "hazard"]),
             )
         )
         .all()
@@ -149,7 +152,13 @@ def provenance_of(domain: str | None, source_type: str | None = None) -> str:
         return STATISTICS
     if st == CITED:
         return CITED
-    if st in ("legal", "ip"):
+    from src.law.catalog import is_law_source_type
+
+    # `law` (Q919, 2026-09-18) and the legacy `legal` are the same class here; `ip` has
+    # always shared it. Read through the catalogue's own helper so the pair of law tokens
+    # is written in ONE place -- two call sites each spelling the pair is how one of them
+    # comes to be updated and the other not.
+    if is_law_source_type(st) or st == "ip":
         return LAW
     if st == HAZARD:
         return HAZARD

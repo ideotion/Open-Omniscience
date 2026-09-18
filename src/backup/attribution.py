@@ -143,7 +143,7 @@ def _law_because(signals: set[str]) -> str | None:
         s
         for s in signals
         if s in (table_signal("law_documents"), table_signal("law_revisions"))
-        or s == source_type_signal("legal")
+        or s in (source_type_signal("law"), source_type_signal("legal"))
         or (s.startswith("domain:law.") and s.endswith(".local"))
     )
     return ", ".join(hits) if hits else None

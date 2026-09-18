@@ -283,26 +283,39 @@ def _pdf_fixture():
     return s
 
 
-def test_a_default_install_says_it_cannot_read_a_pdf_statute(monkeypatch):
+def test_an_install_missing_pypdf_says_it_cannot_read_a_pdf_statute(monkeypatch):
+    """Renamed and re-worded by ruling L6: pypdf ships in the DEFAULT install now, so
+    this branch describes a stripped or broken environment rather than "a default
+    install". The counts are unchanged — they measure the catalogue, not the machine."""
     monkeypatch.setattr("src.ingest.pdf.pdf_available", lambda: False)
     ex = law_coverage_report(_pdf_fixture(), enumerations={})["extraction"]
     assert ex["pdf_extractor_available"] is False
     assert ex["tracked_documents_whose_url_ends_pdf"] == 1
     assert ex["tracked_documents"] == 2
     assert "cannot read a PDF statute" in ex["caveat"]
-    assert "[pdf] extra" in ex["caveat"], "the caveat must name the way to close the gap"
+    assert "default install" in ex["caveat"], "the caveat must name the way to close the gap"
+    assert "[pdf] extra" not in ex["caveat"], (
+        "L6 retired this wording: it points an operator at a knob that is already on"
+    )
 
 
-def test_an_install_with_the_extra_is_never_told_it_is_degraded(monkeypatch):
+def test_an_install_that_can_read_pdfs_is_never_told_it_is_degraded(monkeypatch):
     """The negative twin, and the one that stops this being a fabricated caveat: a
     report that always says "narrower than the catalog" is wrong on every machine that
-    installed the extra, which is exactly as dishonest as hiding the narrowing."""
+    CAN read a PDF, which is exactly as dishonest as hiding the narrowing.
+
+    Re-worded by ruling L6 with the branch itself: the counts no longer describe "what a
+    default install would lose" — a default install loses nothing now — they describe how
+    much of the catalogue is PDF-only, which is a fact about the world's gazettes."""
     monkeypatch.setattr("src.ingest.pdf.pdf_available", lambda: True)
     ex = law_coverage_report(_pdf_fixture(), enumerations={})["extraction"]
     assert ex["pdf_extractor_available"] is True
     assert "cannot read" not in ex["caveat"]
-    assert "is installed" in ex["caveat"]
-    # the counts survive either way -- they describe what a default install would lose
+    assert "readable here" in ex["caveat"]
+    assert "would lose" not in ex["caveat"], (
+        "L6: a default install loses nothing, so the counts must not be framed as its loss"
+    )
+    # the counts survive either way -- they measure the catalogue, not the install
     assert ex["catalog_sources_publishing_pdf_only"] > 0
 
 

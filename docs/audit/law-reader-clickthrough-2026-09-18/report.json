@@ -1,0 +1,259 @@
+{
+  "base": "http://127.0.0.1:8731",
+  "document": 1,
+  "baseline_revision": 1,
+  "locales": {
+    "en": {
+      "current": {
+        "screenshot": "law-reader-en-current.png",
+        "dir": "ltr",
+        "html_lang": "en",
+        "versions_listed": 4,
+        "version_links": [
+          "Current text (as last captured) shown",
+          "Current text (as last captured)",
+          "an amendment 2026-09-18 04:37 · +96 bytes",
+          "an amendment 2026-09-18 04:37 · +96 bytes",
+          "an amendment 2026-09-18 04:37 · +159 bytes",
+          "an amendment 2026-09-18 04:37 · +159 bytes",
+          "first captured snapshot 2026-09-18 04:37",
+          "first captured snapshot 2026-09-18 04:37"
+        ],
+        "article_chars": 1057,
+        "meta_block": "Jurisdiction\nUK\nCategory\nlegislation\nText kind\npoint-in-time consolidation\nLast checked\n2026-09-18 04:37\nLast status\nchanged (+96 bytes vs the previous version)\nChanges recorded\n3\nEnacted\n2018-05-23\nThis text is in force from\n2024-01-01\nCaptured by this instance\n2026-09-18\nShowing\nCurrent text (as last captured)",
+        "body_chars": 1881,
+        "still_english": [
+          "Current text (as last captured)",
+          "first captured snapshot",
+          "an amendment",
+          "Enacted",
+          "This text is in force from",
+          "Captured by this instance",
+          "Showing"
+        ],
+        "page_errors": []
+      },
+      "baseline": {
+        "screenshot": "law-reader-en-baseline.png",
+        "dir": "ltr",
+        "html_lang": "en",
+        "versions_listed": 4,
+        "version_links": [
+          "Current text (as last captured)",
+          "Current text (as last captured)",
+          "an amendment 2026-09-18 04:37 · +96 bytes",
+          "an amendment 2026-09-18 04:37 · +96 bytes",
+          "an amendment 2026-09-18 04:37 · +159 bytes",
+          "an amendment 2026-09-18 04:37 · +159 bytes",
+          "first captured snapshot 2026-09-18 04:37 shown",
+          "first captured snapshot 2026-09-18 04:37"
+        ],
+        "article_chars": 811,
+        "meta_block": "Jurisdiction\nUK\nCategory\nlegislation\nText kind\npoint-in-time consolidation\nLast checked\n2026-09-18 04:37\nLast status\nchanged (+96 bytes vs the previous version)\nChanges recorded\n3\nEnacted\n2018-05-23\nThis text is in force from\n2024-01-01\nCaptured by this instance\n2026-09-18\nShowing\nfirst captured snapshot 2026-09-18 04:37",
+        "body_chars": 1563,
+        "still_english": [
+          "Current text (as last captured)",
+          "first captured snapshot",
+          "an amendment",
+          "Enacted",
+          "This text is in force from",
+          "Captured by this instance",
+          "Showing"
+        ],
+        "page_errors": []
+      },
+      "law_panel": {
+        "screenshot": "law-panel-en.png",
+        "dir": "ltr",
+        "visible": true,
+        "rows": 1,
+        "status_titles": [
+          "United Kingdom",
+          "changed (+96 bytes vs the previous version)",
+          "offline stored copy + history",
+          "Opens the local preview first — what your database knows about this link",
+          "Stop tracking this document (its history stays)."
+        ],
+        "text": "World law — change tracking\n\nAggregate the law — statutes, gazettes, IP records — from official sources worldwide and track how it changes over time (the data is the diff). A research mirror, never the authoritative source and not legal advice: every record links back to its official gazette. Fetched only through the ethical, robots-respecting path. See the User Manual (law chapter).\n\nTrack changes now\nRe-seed catalog\nRefresh\n1\nLAWS\n1\nWITH BASELINE\n2\nCHANGES\n0\nFLAGGED\n1\nJURISDICTIONS\nLegal changes\nflagged only\n\nA research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.\n\nGBR · Measurement Act 2018 +96 bytes\nSeptember 18, 2026 at 04:37 AM · open reader · official source ↗\n-This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. A duty to publish measurement standards is inserted. A duty to publish measurement standards is inserted. A duty to publish measurement standards is inserted.",
+        "page_errors": []
+      }
+    },
+    "fr": {
+      "current": {
+        "screenshot": "law-reader-fr-current.png",
+        "dir": "ltr",
+        "html_lang": "fr",
+        "versions_listed": 4,
+        "version_links": [
+          "Texte actuel (tel que capturé en dernier) affiché",
+          "Texte actuel (tel que capturé en dernier)",
+          "une modification 2026-09-18 04:37 · +96 bytes",
+          "une modification 2026-09-18 04:37 · +96 bytes",
+          "une modification 2026-09-18 04:37 · +159 bytes",
+          "une modification 2026-09-18 04:37 · +159 bytes",
+          "premier instantané capturé 2026-09-18 04:37",
+          "premier instantané capturé 2026-09-18 04:37"
+        ],
+        "article_chars": 1114,
+        "meta_block": "Juridiction\nUK\nCatégorie\nlegislation\nType de texte\nconsolidation à une date donnée\nDernière vérification\n2026-09-18 04:37\nDernier état\nchanged (+96 bytes vs the previous version)\nModifications enregistrées\n3\nAdoptée le\n2018-05-23\nCe texte est en vigueur à compter du\n2024-01-01\nCapturé par cette instance\n2026-09-18\nAffichage de\nTexte actuel (tel que capturé en dernier)",
+        "body_chars": 2146,
+        "still_english": [],
+        "page_errors": []
+      },
+      "baseline": {
+        "screenshot": "law-reader-fr-baseline.png",
+        "dir": "ltr",
+        "html_lang": "fr",
+        "versions_listed": 4,
+        "version_links": [
+          "Texte actuel (tel que capturé en dernier)",
+          "Texte actuel (tel que capturé en dernier)",
+          "une modification 2026-09-18 04:37 · +96 bytes",
+          "une modification 2026-09-18 04:37 · +96 bytes",
+          "une modification 2026-09-18 04:37 · +159 bytes",
+          "une modification 2026-09-18 04:37 · +159 bytes",
+          "premier instantané capturé 2026-09-18 04:37 affiché",
+          "premier instantané capturé 2026-09-18 04:37"
+        ],
+        "article_chars": 861,
+        "meta_block": "Juridiction\nUK\nCatégorie\nlegislation\nType de texte\nconsolidation à une date donnée\nDernière vérification\n2026-09-18 04:37\nDernier état\nchanged (+96 bytes vs the previous version)\nModifications enregistrées\n3\nAdoptée le\n2018-05-23\nCe texte est en vigueur à compter du\n2024-01-01\nCapturé par cette instance\n2026-09-18\nAffichage de\npremier instantané capturé 2026-09-18 04:37",
+        "body_chars": 1782,
+        "still_english": [],
+        "page_errors": []
+      },
+      "law_panel": {
+        "screenshot": "law-panel-fr.png",
+        "dir": "ltr",
+        "visible": true,
+        "rows": 1,
+        "status_titles": [
+          "Royaume-Uni",
+          "changed (+96 bytes vs the previous version)",
+          "copie stockée hors ligne + historique",
+          "Ouvre d'abord l'aperçu local — ce que votre base sait de ce lien",
+          "Arrêter de suivre ce document (son historique est conservé)."
+        ],
+        "text": "Droit mondial — suivi des modifications\n\nAggregate the law — statutes, gazettes, IP records — from official sources worldwide and track how it changes over time (the data is the diff). A research mirror, never the authoritative source and not legal advice: every record links back to its official gazette. Fetched only through the ethical, robots-respecting path. See the User Manual (law chapter).\n\nSuivre les modifications maintenant\nRéinitialiser le catalogue\nActualiser\n1\nLAWS\n1\nWITH BASELINE\n2\nCHANGES\n0\nFLAGGED\n1\nJURISDICTIONS\nModifications juridiques\nsignalées seulement\n\nA research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.\n\nGBR · Measurement Act 2018 +96 bytes\n18 septembre 2026 à 04:37 · open reader · official source ↗\n-This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. A duty to publish measurement standards is inserted. A duty to publish measurement standards is inser",
+        "page_errors": []
+      }
+    },
+    "de": {
+      "current": {
+        "screenshot": "law-reader-de-current.png",
+        "dir": "ltr",
+        "html_lang": "de",
+        "versions_listed": 4,
+        "version_links": [
+          "Aktueller Text (Stand der letzten Erfassung) angezeigt",
+          "Aktueller Text (Stand der letzten Erfassung)",
+          "eine Änderung 2026-09-18 04:37 · +96 bytes",
+          "eine Änderung 2026-09-18 04:37 · +96 bytes",
+          "eine Änderung 2026-09-18 04:37 · +159 bytes",
+          "eine Änderung 2026-09-18 04:37 · +159 bytes",
+          "erste erfasste Momentaufnahme 2026-09-18 04:37",
+          "erste erfasste Momentaufnahme 2026-09-18 04:37"
+        ],
+        "article_chars": 1079,
+        "meta_block": "Rechtsraum\nUK\nKategorie\nlegislation\nTextart\nKonsolidierung zu einem Stichtag\nZuletzt geprüft\n2026-09-18 04:37\nLetzter Status\nchanged (+96 bytes vs the previous version)\nErfasste Änderungen\n3\nErlassen\n2018-05-23\nDieser Text gilt ab\n2024-01-01\nVon dieser Instanz erfasst\n2026-09-18\nAngezeigt:\nAktueller Text (Stand der letzten Erfassung)",
+        "body_chars": 2008,
+        "still_english": [],
+        "page_errors": []
+      },
+      "baseline": {
+        "screenshot": "law-reader-de-baseline.png",
+        "dir": "ltr",
+        "html_lang": "de",
+        "versions_listed": 4,
+        "version_links": [
+          "Aktueller Text (Stand der letzten Erfassung)",
+          "Aktueller Text (Stand der letzten Erfassung)",
+          "eine Änderung 2026-09-18 04:37 · +96 bytes",
+          "eine Änderung 2026-09-18 04:37 · +96 bytes",
+          "eine Änderung 2026-09-18 04:37 · +159 bytes",
+          "eine Änderung 2026-09-18 04:37 · +159 bytes",
+          "erste erfasste Momentaufnahme 2026-09-18 04:37 angezeigt",
+          "erste erfasste Momentaufnahme 2026-09-18 04:37"
+        ],
+        "article_chars": 826,
+        "meta_block": "Rechtsraum\nUK\nKategorie\nlegislation\nTextart\nKonsolidierung zu einem Stichtag\nZuletzt geprüft\n2026-09-18 04:37\nLetzter Status\nchanged (+96 bytes vs the previous version)\nErfasste Änderungen\n3\nErlassen\n2018-05-23\nDieser Text gilt ab\n2024-01-01\nVon dieser Instanz erfasst\n2026-09-18\nAngezeigt:\nerste erfasste Momentaufnahme 2026-09-18 04:37",
+        "body_chars": 1659,
+        "still_english": [],
+        "page_errors": []
+      },
+      "law_panel": {
+        "screenshot": "law-panel-de.png",
+        "dir": "ltr",
+        "visible": true,
+        "rows": 1,
+        "status_titles": [
+          "Vereinigtes Königreich",
+          "changed (+96 bytes vs the previous version)",
+          "offline gespeicherte Kopie + Verlauf",
+          "Öffnet zuerst die lokale Vorschau — was Ihre Datenbank über diesen Link weiß",
+          "Verfolgung dieses Dokuments beenden (sein Verlauf bleibt erhalten)."
+        ],
+        "text": "Weltrecht — Änderungsverfolgung\n\nAggregate the law — statutes, gazettes, IP records — from official sources worldwide and track how it changes over time (the data is the diff). A research mirror, never the authoritative source and not legal advice: every record links back to its official gazette. Fetched only through the ethical, robots-respecting path. See the User Manual (law chapter).\n\nÄnderungen jetzt verfolgen\nKatalog neu befüllen\nAktualisieren\n1\nLAWS\n1\nWITH BASELINE\n2\nCHANGES\n0\nFLAGGED\n1\nJURISDICTIONS\nRechtsänderungen\nnur markierte\n\nA research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.\n\nGBR · Measurement Act 2018 +96 bytes\n18. September 2026 um 04:37 · open reader · official source ↗\n-This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. A duty to publish measurement standards is inserted. A duty to publish measurement standards is inserted. A duty to publish measureme",
+        "page_errors": []
+      }
+    },
+    "ar": {
+      "current": {
+        "screenshot": "law-reader-ar-current.png",
+        "dir": "rtl",
+        "html_lang": "ar",
+        "versions_listed": 4,
+        "version_links": [
+          "النص الحالي (كما التُقط آخر مرة) معروض",
+          "النص الحالي (كما التُقط آخر مرة)",
+          "تعديل 2026-09-18 04:37 · +96 bytes",
+          "تعديل 2026-09-18 04:37 · +96 bytes",
+          "تعديل 2026-09-18 04:37 · +159 bytes",
+          "تعديل 2026-09-18 04:37 · +159 bytes",
+          "أول لقطة مُلتقطة 2026-09-18 04:37",
+          "أول لقطة مُلتقطة 2026-09-18 04:37"
+        ],
+        "article_chars": 1045,
+        "meta_block": "الولاية القضائية\nUK\nالفئة\nlegislation\nنوع النص\nنص موحَّد في تاريخ محدد\nآخر فحص\n2026-09-18 04:37\nآخر حالة\nchanged (+96 bytes vs the previous version)\nالتغييرات المسجّلة\n3\nتاريخ السن\n2018-05-23\nهذا النص نافذ اعتباراً من\n2024-01-01\nالتُقط بواسطة هذه النسخة\n2026-09-18\nعرض\nالنص الحالي (كما التُقط آخر مرة)",
+        "body_chars": 1764,
+        "still_english": [],
+        "page_errors": []
+      },
+      "baseline": {
+        "screenshot": "law-reader-ar-baseline.png",
+        "dir": "rtl",
+        "html_lang": "ar",
+        "versions_listed": 4,
+        "version_links": [
+          "النص الحالي (كما التُقط آخر مرة)",
+          "النص الحالي (كما التُقط آخر مرة)",
+          "تعديل 2026-09-18 04:37 · +96 bytes",
+          "تعديل 2026-09-18 04:37 · +96 bytes",
+          "تعديل 2026-09-18 04:37 · +159 bytes",
+          "تعديل 2026-09-18 04:37 · +159 bytes",
+          "أول لقطة مُلتقطة 2026-09-18 04:37 معروض",
+          "أول لقطة مُلتقطة 2026-09-18 04:37"
+        ],
+        "article_chars": 791,
+        "meta_block": "الولاية القضائية\nUK\nالفئة\nlegislation\nنوع النص\nنص موحَّد في تاريخ محدد\nآخر فحص\n2026-09-18 04:37\nآخر حالة\nchanged (+96 bytes vs the previous version)\nالتغييرات المسجّلة\n3\nتاريخ السن\n2018-05-23\nهذا النص نافذ اعتباراً من\n2024-01-01\nالتُقط بواسطة هذه النسخة\n2026-09-18\nعرض\nأول لقطة مُلتقطة 2026-09-18 04:37",
+        "body_chars": 1452,
+        "still_english": [],
+        "page_errors": []
+      },
+      "law_panel": {
+        "screenshot": "law-panel-ar.png",
+        "dir": "rtl",
+        "visible": true,
+        "rows": 1,
+        "status_titles": [
+          "المملكة المتحدة",
+          "changed (+96 bytes vs the previous version)",
+          "نسخة مخزَّنة دون اتصال + السجل التاريخي",
+          "يفتح المعاينة المحلية أولاً — ما تعرفه قاعدة بياناتك عن هذا الرابط",
+          "إيقاف تتبّع هذا المستند (يبقى سجله محفوظًا)."
+        ],
+        "text": "القانون العالمي — تتبّع التغييرات\n\nAggregate the law — statutes, gazettes, IP records — from official sources worldwide and track how it changes over time (the data is the diff). A research mirror, never the authoritative source and not legal advice: every record links back to its official gazette. Fetched only through the ethical, robots-respecting path. See the User Manual (law chapter).\n\nتتبّع التغييرات الآن\nإعادة تهيئة الكتالوج\nتحديث\n1\nLAWS\n1\nWITH BASELINE\n2\nCHANGES\n0\nFLAGGED\n1\nJURISDICTIONS\nالتغييرات القانونية\nالمُعلَّمة فقط\n\nA research mirror, not the authoritative source and not legal advice. Every document links back to its official gazette; changes are surfaced, never judged.\n\nGBR · Measurement Act 2018 +96 bytes\n18 سبتمبر 2026 في 04:37 ص · open reader · official source ↗\n-This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. This Act makes provision about the measurement of things. A duty to publish measurement standards is inserted. A duty to publish measurement standards is inserted. A duty to publish measurement standar",
+        "page_errors": []
+      }
+    }
+  }
+}

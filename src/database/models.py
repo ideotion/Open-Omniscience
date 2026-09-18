@@ -2404,6 +2404,22 @@ class LawDocument(Base):
     # jurisdictions are ambiguous).
     language: Mapped[str | None] = mapped_column(String(8))
     country: Mapped[str | None] = mapped_column(String(8))
+    # L0 defect 3 (Q917): the CLML adapter reads three independent dates and, until this
+    # column existed, `track.py` used only `parsed.text` and dropped all three -- so the
+    # reader showed the day we captured a 2018 Act as the only date it had. `enacted_on`
+    # is the one that belongs to the DOCUMENT (when the legislature made it): it does not
+    # change between consolidations, so a per-revision copy would be N copies of one fact.
+    # The version-level date (`valid_on`) lives on LawRevision, and the third
+    # (`retrieved_on`) is LawRevision.observed_at, already stored -- see the note there.
+    # FILL-A-NULL, never overwrite: a later parse that states a DIFFERENT enactment date
+    # is a disagreement between two readings, and picking the newer one silently would
+    # re-date a statute. As a date string exactly as the document stated it, never parsed
+    # into a datetime, because a partial date ("2018") is a real thing a document states.
+    enacted_on: Mapped[str | None] = mapped_column(String(32))
+    # The stable link into `law.db`'s `law_document_meta.lane_key` -- the document's
+    # identity group, translation provenance and licence. Minted once, never reused,
+    # and a string for the reason the sibling column on LawRevision states.
+    lane_key: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     revisions = relationship("LawRevision", back_populates="document", cascade="all, delete-orphan")
@@ -2442,6 +2458,63 @@ class LawRevision(Base):
     full_text: Mapped[str | None] = mapped_column(CompressedText)
     flagged: Mapped[bool | None] = mapped_column(Boolean, default=False)
     flag_reasons: Mapped[str | None] = mapped_column(String(500))
+    # L0 defect 2 (Q917): "diffs run against the previous revision (the baseline diff kept
+    # as a derived view)". Until these columns existed both `diff` and `delta_bytes` were
+    # anchored on the IMMUTABLE BASELINE, so a document that grew 100 bytes per amendment
+    # reported +100, +200, +300 -- a cumulative figure printed on a row that reads as one
+    # amendment, and a large-change flag that fires forever once a document has drifted far
+    # from its first capture.
+    #
+    # THE COLUMNS EXIST BECAUSE THE MEANING CHANGED AND THE OLD ROWS ARE STILL THERE. A
+    # store that predates this carries baseline-anchored rows, and a history that silently
+    # mixes two quantities is the one-key-two-meanings defect this ledger names repeatedly.
+    # So each row says which anchor it used:
+    #   diff_basis = "previous" -> `diff`/`delta_bytes` measure this revision against
+    #                              `diff_base_revision_id`;
+    #   diff_basis = "baseline" -> measured against the document's immutable baseline,
+    #                              because the previous revision carries no stored
+    #                              full_text to measure against (a legacy row, or a
+    #                              revision recorded before `full_text` shipped);
+    #   diff_basis IS NULL      -> recorded before the basis was tracked. NOT a synonym for
+    #                              "baseline": it means nobody wrote it down, and the
+    #                              reading happens to be baseline-anchored.
+    # `diff_base_revision_id` is a plain integer naming a row in this same table. It is not
+    # a ForeignKey deliberately: a revision may legitimately be deleted (cascade from its
+    # document) while a sibling still names it, and a dangling anchor must read as an
+    # honest gap rather than block the delete.
+    diff_basis: Mapped[str | None] = mapped_column(String(16))
+    diff_base_revision_id: Mapped[int | None] = mapped_column(Integer)
+    # The point in time this consolidated text represents, exactly as the document stated
+    # it (Q905's `valid_from` half; Q917's second persisted date). A version-level fact --
+    # a re-consolidation changes it while the enactment date does not -- so it lives here
+    # and not on the document. There is NO fallback to `observed_at`: falling back is how a
+    # capture date becomes a consolidation date, which is the defect the adapter's own date
+    # discipline was written to prevent.
+    #
+    # THE THIRD DATE (`retrieved_on`) IS `observed_at`, ABOVE, AND GETS NO COLUMN. Both are
+    # set from the same `now` in one call of `track_document`, so a second column would be
+    # two records of one fact -- the shape that produced the S04-13 per-host stamp defect.
+    # The API composes `retrieved_on` from `observed_at` and names that basis.
+    valid_on: Mapped[str | None] = mapped_column(String(32))
+    # HOW `valid_on` WAS DETERMINED (Q905 = a's second clause: "an observed snapshot
+    # without official dating becomes a version dated by observation and labelled so").
+    # It sits HERE, beside the date it qualifies, rather than in `law.db` with the rest
+    # of the new model, because a reader that can fetch the date without its label is a
+    # reader that will eventually print an observation date as a consolidation date --
+    # which is the exact fabrication this ruling exists to prevent. A value and the
+    # method that produced it are one fact.
+    #
+    #   "official" -> the source stated the date; `valid_on` IS that date.
+    #   "observed" -> the source stated none. The version is placed at `observed_at`,
+    #                 `valid_on` stays NULL, and every surface must SAY it was dated by
+    #                 observation (the string ships x12).
+    #   NULL       -> recorded before the label existed. Not a synonym for either.
+    valid_on_dating: Mapped[str | None] = mapped_column(String(16))
+    # The stable link into `law.db`'s `law_provisions.revision_lane_key`. A MINTED
+    # STRING, not this row's id, because `src/backup/merge.py` renumbers law revisions
+    # on an incoming merge and an integer link would then attach one version's
+    # provisions to another -- silently, and plausibly. See src/law/lane_models.py.
+    lane_key: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     document = relationship("LawDocument", back_populates="revisions")

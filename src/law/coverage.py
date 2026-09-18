@@ -185,28 +185,38 @@ def _pdf_reach(session: Session, catalog: dict | None = None) -> dict:
         "catalog_sources_publishing_pdf_only": len(pdf_only),
         "catalog_sources": len(catalog.get("sources", [])),
         "method": (
-            "pypdf's presence (the [pdf] extra) and the OCR fallback's, reported as "
-            "found; the tracked-document figure counts this install's own rows whose "
-            "url ends .pdf; the catalog figures count rows whose declared format list "
-            "is exactly [pdf]. BOTH catalog and tracked figures are FLOORS: a portal "
-            "serving a PDF from an extensionless URL is invisible to a suffix test, and "
-            "rows that declare no format list at all are not counted either way."
+            "pypdf's presence and the OCR fallback's, reported as found; the "
+            "tracked-document figure counts this install's own rows whose url ends "
+            ".pdf; the catalog figures count rows whose declared format list is exactly "
+            "[pdf]. BOTH catalog and tracked figures are FLOORS: a portal serving a PDF "
+            "from an extensionless URL is invisible to a suffix test, and rows that "
+            "declare no format list at all are not counted either way."
         ),
+        # RULING L6 (2026-09-15) RETIRED THE "WITHOUT [pdf]" FRAMING, and the retirement
+        # is not cosmetic: pypdf ships in the DEFAULT install now, so "the [pdf] extra is
+        # not installed" no longer describes a choice an operator made — it describes a
+        # broken or deliberately-stripped environment. Telling that operator to "install
+        # the [pdf] extra to close it" would point them at a knob that is already on, and
+        # the sibling sentence ("what a default install would lose") became false in the
+        # same edit, because a default install now loses nothing. The COUNTS are
+        # unchanged: they measure the catalogue, not the environment.
         "caveat": (
             (
-                "The [pdf] extra is NOT installed, so this install cannot read a PDF "
-                f"statute at all: {tracked_pdf} of the {total_tracked} documents it "
-                f"tracks are PDFs by URL, and {len(pdf_only)} of the "
+                "pypdf is missing from this install, so it cannot read a PDF statute at "
+                f"all: {tracked_pdf} of the {total_tracked} documents it tracks are PDFs "
+                f"by URL, and {len(pdf_only)} of the "
                 f"{len(catalog.get('sources', []))} catalog sources publish nothing but "
                 "PDF. Everything below is therefore narrower than the catalog, and that "
-                "narrowing is a property of the install rather than of the law. "
-                "Install the [pdf] extra to close it."
+                "narrowing is a property of this install rather than of the law. pypdf "
+                "ships in the default install, so this is a dependency that did not "
+                "arrive rather than a capability anyone chose to leave out — reinstall "
+                "to close it."
             )
             if not available
             else (
-                "The [pdf] extra is installed, so a PDF statute is readable here. The "
-                "counts below are kept because they are what a default install would "
-                "lose, not because anything is currently degraded."
+                "pypdf ships in the default install, so a PDF statute is readable here. "
+                "The counts below measure how much of the catalogue is PDF-only; they "
+                "are a property of the world's gazettes, not a shortfall of this install."
             )
         ),
     }

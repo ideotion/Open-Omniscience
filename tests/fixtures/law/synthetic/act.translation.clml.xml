@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic. An OFFICIAL TRANSLATION of the same Act: a different tracked document with
+     the SAME identity (act-number ZZZ 2019/7). Language tag zxx-fr, where zxx is ISO 639-2
+     for "no linguistic content", so this cannot be mistaken for real French. -->
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+    <dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Loi sur les normes de mesure</dc:title>
+    <ukm:Number Value="7"/>
+    <ukm:Year Value="2019"/>
+    <ukm:EnactmentDate Date="2019-03-04"/>
+    <dct:valid xmlns:dct="http://purl.org/dc/terms/">2019-06-01</dct:valid>
+  </ukm:Metadata>
+  <Body>
+    <Part id="part-1">
+      <Number>Partie 1</Number>
+      <Title>Preliminaire</Title>
+      <P1 id="section-1">
+        <Pnumber>1</Pnumber>
+        <P1para><Text>La presente loi etablit les normes selon lesquelles les mesures sont effectuees.</Text></P1para>
+      </P1>
+      <P1 id="section-2">
+        <Pnumber>2</Pnumber>
+        <P1para><Text>Dans la presente loi, "mesure" designe une quantite determinee par comparaison avec une norme.</Text></P1para>
+      </P1>
+    </Part>
+    <Part id="part-2">
+      <Number>Partie 2</Number>
+      <Title>Obligations</Title>
+      <P1 id="section-3">
+        <Pnumber>3</Pnumber>
+        <P1para><Text>Une autorite de mesure doit publier la norme qu'elle applique.</Text></P1para>
+      </P1>
+    </Part>
+  </Body>
+</Legislation>

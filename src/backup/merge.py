@@ -1872,6 +1872,15 @@ _MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
     # Listed rather than left undeclared precisely so the next reader does not "fix" a
     # column that is already handled.
     "keyword_categories.parent_id": "self-FK; remapped by a dedicated UPDATE after map_kwcat is built",
+    # The same shape, one table over (Q917, 2026-09-18): a revision's diff anchor names
+    # another row in `law_revisions`, so copying the incoming local id would point at
+    # whatever row happens to hold it here. `_merge_law` runs a dedicated remap UPDATE
+    # through temp.map_law_rev immediately after that map is built. Listed rather than
+    # left undeclared precisely so the next reader does not "fix" a column that is
+    # already handled -- the note the parent_id entry above earned.
+    "law_revisions.diff_base_revision_id": (
+        "self-reference; remapped by a dedicated UPDATE after map_law_rev is built"
+    ),
     # (d) DERIVED FROM ROWS THIS MERGE DELIBERATELY DOES NOT COPY. The article's own top
     # keyword (rulings 23/38/39) is computed from that article's keyword_mentions -- and
     # `_merge_keyword_mentions` deliberately copies NONE of them (maintainer ruling
@@ -3183,11 +3192,22 @@ def _merge_law(con, batch_id, results) -> None:
         # `index_article`, so dropping it hands French text to the keyword engine as
         # unknown-language and the stoplist/segmenter path degrades with no error.
         # `latest_text` is the law side of the same living-source payload as wiki above.
-        " country, language, latest_text, latest_text_revid)"
+        # 2026-09-18 (Q917, the law L0 dates): `enacted_on` is when the legislature made
+        # the document, read from the document itself. Dropping it on a merge would hand
+        # the reader back the defect Q917 was ruled to close -- a statute whose only date
+        # is the day somebody's instance captured it.
+        # 2026-09-18 (brief S04-10 S2): `lane_key` is the STABLE link to this document's
+        # row in `law.db` -- its identity group, its translation provenance and its
+        # licence. It is carried VERBATIM, which is the whole reason it is a minted
+        # string rather than a row id: this very INSERT renumbers `law_documents`, so an
+        # integer link would arrive pointing at whatever row inherited its number, and
+        # the reader would show one law's licence under another law's title.
+        " country, language, latest_text, latest_text_revid, enacted_on, lane_key)"
         " SELECT i.jurisdiction, i.title, i.url, i.official_url, i.category,"
         " i.consolidated, i.watched, i.baseline_text, i.baseline_hash, i.last_hash,"
         " i.last_size, i.last_checked_at, i.last_status, i.created_at,"
-        " i.country, i.language, i.latest_text, i.latest_text_revid"
+        " i.country, i.language, i.latest_text, i.latest_text_revid, i.enacted_on,"
+        " i.lane_key"
         " FROM inc.law_documents i"
         " WHERE NOT EXISTS (SELECT 1 FROM law_documents m"
         "  WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)",
@@ -3210,9 +3230,22 @@ def _merge_law(con, batch_id, results) -> None:
         " diff, flagged, flag_reasons, created_at,"
         # 2026-08-03 (the AST column diff): as wiki_revisions above -- the stored full
         # text is what makes a past version of a law readable at all.
-        " full_text)"
+        # 2026-09-18 (Q917): `valid_on` is the point in time this version's text
+        # represents, and `diff_basis` says which anchor its `diff`/`delta_bytes` were
+        # measured against. Dropping the basis is the worse half: the figures arrive
+        # looking exactly like the neighbouring rows' while meaning a different thing,
+        # which is the one-key-two-meanings defect the column exists to prevent.
+        # `diff_base_revision_id` is a LOCAL id and is remapped by its own UPDATE below --
+        # copying it verbatim would point at whatever row happens to hold that id here.
+        # 2026-09-18 (brief S04-10 S2): `valid_on_dating` says HOW `valid_on` was
+        # determined, and travels with it for the same reason it lives on this table
+        # rather than in `law.db` -- a date that arrives without its method is a capture
+        # date a reader will take for a consolidation date. `lane_key` is the stable link
+        # to this version's provisions, carried verbatim like the document's.
+        " full_text, valid_on, diff_basis, valid_on_dating, lane_key)"
         " SELECT ml.new, i.observed_at, i.content_hash, i.size, i.delta_bytes, i.diff,"
-        " i.flagged, i.flag_reasons, i.created_at, i.full_text"
+        " i.flagged, i.flag_reasons, i.created_at, i.full_text, i.valid_on, i.diff_basis,"
+        " i.valid_on_dating, i.lane_key"
         " FROM inc.law_revisions i JOIN temp.map_law ml ON ml.old = i.document_id"
         " WHERE NOT EXISTS (SELECT 1 FROM law_revisions t"
         "  WHERE t.document_id = ml.new AND t.content_hash = i.content_hash)",
@@ -3229,6 +3262,32 @@ def _merge_law(con, batch_id, results) -> None:
         " JOIN temp.map_law ml ON ml.old = i.document_id"
         " JOIN law_revisions t ON t.document_id = ml.new AND t.content_hash = i.content_hash",
     )
+    # `diff_base_revision_id` is a self-reference within this table, so it is remapped
+    # here rather than copied -- the same shape as `keyword_categories.parent_id`, and for
+    # the same reason: an incoming local id names whatever row happens to hold it locally.
+    #
+    # A ROW THE MAP CANNOT RESOLVE KEEPS A NULL POINTER, AND THAT IS A STATE, NOT A GAP.
+    # `map_law_rev` covers every revision the incoming corpus HELD, so a miss means the
+    # incoming pointer was already dangling there. The result -- `diff_basis = 'previous'`
+    # with a NULL `diff_base_revision_id` -- cannot be produced by the tracker, which sets
+    # the id whenever it sets that basis, so it is unambiguously "measured against the
+    # previous version, which is not in this corpus" rather than one of the other three
+    # things a NULL pointer means under the other bases.
+    con.execute(
+        # No `# nosec B608` here, deliberately: every neighbouring marker in this file sits
+        # on a statement built with an f-string, and this one is adjacent string LITERALS
+        # that the parser folds into a single constant with nothing interpolated. A marker
+        # bandit never reports is silently inert and prints "nosec encountered, but no
+        # failed test" — clutter that teaches the next reader the wrong rule.
+        "UPDATE law_revisions SET diff_base_revision_id = ("
+        "  SELECT mr.new FROM temp.map_law_rev mr"
+        "  JOIN inc.law_revisions ir ON ir.diff_base_revision_id = mr.old"
+        "  JOIN temp.map_law_rev self ON self.old = ir.id"
+        "  WHERE self.new = law_revisions.id"
+        ") WHERE diff_base_revision_id IS NULL AND diff_basis = 'previous'"
+        "  AND EXISTS (SELECT 1 FROM temp.map_law_rev s WHERE s.new = law_revisions.id)"
+    )
+
     summ = DomainResult()
     # IDENTITY RULED 2026-08-03 (maintainer): (revision, model) -- one summary per model,
     # so two models' readings of the same legal change sit SIDE BY SIDE rather than one

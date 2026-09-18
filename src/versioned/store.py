@@ -60,7 +60,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.versioned.lanes import LaneSpec, lane
 
@@ -290,6 +290,26 @@ def create_lane(kind: str) -> Path:
     return path
 
 
+def _lane_specific_models(kind: str) -> tuple[type[DeclarativeBase], ...]:
+    """The tables only ONE lane has, imported lazily so this module stays dependency-free.
+
+    The shared schema is deliberately lane-agnostic (``versioned_entity_facts`` exists
+    so a lane can state its own facts without its own columns), but a lane whose data
+    is RELATIONAL — a law document's identity group, its provisions' addresses — needs
+    real tables with real uniqueness, and a fact-row bag cannot carry a unique index.
+
+    Returning them per kind rather than letting ``create_all`` take the whole metadata
+    is what keeps those tables OUT of the other lanes' files: importing
+    ``src.law.lane_models`` anywhere registers its tables on the shared
+    ``LaneBase.metadata``, so a bare ``metadata.create_all(engine)`` would put three
+    empty law tables into ``wiki.db`` for any operator who happened to load the module.
+    """
+    if kind == "law":
+        from src.law.lane_models import LAW_LANE_MODELS
+
+        return LAW_LANE_MODELS
+    return ()
+
 class LaneSchemaError(RuntimeError):
     """A lane file whose schema this build cannot reconcile without a real migration."""
 
@@ -378,11 +398,24 @@ def create_schema(kind: str, engine: Engine | None = None) -> None:
     ``LaneBase.metadata`` — never the corpus ``Base.metadata``. The two are separate
     declarative roots precisely so this line cannot put lane tables in ``corpus.db``
     and ``alembic check`` cannot demand migrations for them (see ``models.py``).
+
+    The table list is EXPLICIT — the shared models plus this kind's own — rather than
+    the whole metadata; see ``_lane_specific_models`` for why that distinction is
+    load-bearing rather than tidy.
     """
-    from src.versioned.models import LaneBase, LaneMeta
+    from src.versioned.models import LANE_MODELS, LaneBase, LaneMeta
 
     eng = engine if engine is not None else lane_engine(kind, create=True)
-    LaneBase.metadata.create_all(eng)
+    # The two changes that met here compose, and the reason is one line in
+    # `add_missing_columns`: it SKIPS a table the file does not have. So creating only
+    # this kind's tables (which is what keeps three empty law tables out of every
+    # operator's wiki.db) leaves the column pass nothing to do for the tables this lane
+    # does not own, rather than pointing it at tables that were never created.
+    wanted = [
+        LaneBase.metadata.tables[m.__tablename__]
+        for m in (*LANE_MODELS, *_lane_specific_models(kind))
+    ]
+    LaneBase.metadata.create_all(eng, tables=wanted)
     add_missing_columns(eng)
     factory = _factories[(kind, str(lane_path(kind)))]
     with factory() as session:
