@@ -269,10 +269,18 @@ _JS_SHAPES = (
     # have kept missing the strings that matter most.
     *(
         re.compile(rf"<{_tag}[^>]*>([A-Za-zÀ-ɏ][^<{{`$]{{2,300}}?)</{_tag}>", re.S)
+        # `span` and `div` are the two COMMONEST tags in this codebase's generated
+        # markup, so leaving them out would have left the barn door open while the
+        # list looked thorough -- `caption` and `figcaption` are in it and those
+        # two were not. Measured when they were added: +83 unkeyed strings, every
+        # one a real empty state, status pill or error line, including a security
+        # caveat about SSD erasure that had never been translatable. They are safe
+        # here only because the character class excludes `<`, so a match is always
+        # a LEAF node's text and never swallows nested markup.
         for _tag in (
             "h1", "h2", "h3", "h4", "h5", "h6", "p", "td", "label", "option",
             "summary", "legend", "figcaption", "caption", "strong", "b", "em",
-            "small", "li",
+            "small", "li", "span", "div",
         )
     ),
 )

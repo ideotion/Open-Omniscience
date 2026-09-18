@@ -9136,10 +9136,14 @@ nineteen more element tags, at a 300-character cap rather than 80 because a cave
 nature and the three longest findings (97, 104, 118 chars) were exactly the honesty text the
 non-negotiables require to ship ×12.
 
-**Measured both directions: 0 → 35 on widening, 35 → 0 on keying.** The gate's NUMBER did not
-move; what it MEASURES did. Two more strings joined them — one `tf()` frame created by the Home
-markup surgery below, and one reader caveat — for 37 keyed ×12 by eleven per-locale translator
-agents working against a written brief and a glossary mined from each locale's own existing pairs.
+**Measured both directions, twice: 0 → 35 on the first widening and back to 0 on keying; then
+0 → 83 when `<span>` and `<div>` were added, and back to 0 again.** The gate's NUMBER never moved;
+what it MEASURES did. With one `tf()` frame created by the Home markup surgery below and one reader
+caveat, that is **120 keys ×12** — 1,320 translations — produced by eleven per-locale agents working
+against a written brief and a glossary mined from each locale's own existing pairs. The second
+widening matters most: after the first, the tag list *looked* thorough and the gate read 0 again,
+but a list carrying `figcaption` and not `div` is arbitrary rather than thorough, and what exposed
+it was the Arabic Home strip showing `SOURCES QUALIFIED` in English beside a translated `Articles`.
 
 **The Home empty state needed surgery, not keys.** Seven `<b>` Lead-type names cut that paragraph
 into nine text nodes, so the connective prose could not be keyed at all while the bold names could

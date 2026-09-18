@@ -42,6 +42,7 @@ revision) and re-measuring.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import re
 from pathlib import Path
 
@@ -566,12 +567,14 @@ def test_strip_js_comments_is_shared_by_all_three_scanners():
     literal in a comment. The 2026-09-18 session hit this and reworded its own
     comment; the session after it wrote `t("...")` while explaining that very fix
     and hit the identical false positive. Rewording is not a fix, so the helper is
-    shared -- this pins that all three call it."""
-    src = _SCRIPT.read_text(encoding="utf-8")
+    shared -- this pins that all three call it.
+
+    Reads each function through ``inspect.getsource`` rather than slicing the file
+    between two literal anchors: ``test_source_slicing_discipline`` budgets exactly
+    that hand-rolled shape, and it caught this test's first draft."""
+    mod = _module()
     for fn in ("_js_chrome", "unkeyed_t_calls", "unkeyed_tf_frames"):
-        start = src.index(f"def {fn}(")
-        nxt = src.find("\ndef ", start + 1)
-        body = src[start:nxt if nxt != -1 else len(src)]
+        body = inspect.getsource(getattr(mod, fn))
         assert "_strip_js_comments" in body, (
             f"{fn}() does not strip comments -- a call-shaped literal written inside "
             f"a comment will be reported as an untranslated UI string"
@@ -591,4 +594,34 @@ def test_a_call_shaped_literal_in_a_comment_is_not_a_finding():
     sample = '// Each name is a LITERAL t("...") at its slot rather than a helper call\n'
     assert mod._js_chrome(sample) == set(), (
         "a t() example written in a comment was captured as a live UI string"
+    )
+
+
+_SPAN_DIV_SAMPLE = """
+      host.innerHTML = `<div class="muted">No entity families yet — index first.</div>
+        <span class="pill">insufficient data</span>`;
+"""
+
+
+def test_span_and_div_are_scanned_too():
+    """`span` and `div` are the two commonest tags in this codebase's generated
+    markup, so a widened list that skipped them would have looked thorough while
+    leaving the barn door open. Measured when they were added: +83 unkeyed strings,
+    every one a real empty state, pill or error line -- including a security caveat
+    about SSD erasure that had never been translatable in any locale."""
+    found = _module()._js_chrome(_SPAN_DIV_SAMPLE)
+    assert "No entity families yet — index first." in found, "<div> prose is not captured"
+    assert "insufficient data" in found, "<span> pill text is not captured"
+
+
+def test_a_div_wrapping_other_markup_is_not_captured_whole():
+    """The character class excludes `<`, so a match is always a LEAF node's text.
+    Without that, `<div>` would swallow nested markup and ask for a key built from
+    several text nodes at once -- one that could never match any of them."""
+    mod = _module()
+    sample = '`<div class="card"><h4>Title here</h4><p>Body here.</p></div>`'
+    found = mod._js_chrome(sample)
+    assert "Title here" in found and "Body here." in found
+    assert not any("Title here" in s and "Body here." in s for s in found), (
+        f"a wrapper div swallowed its children into one pseudo-key: {found}"
     )

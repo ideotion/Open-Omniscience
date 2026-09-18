@@ -11429,10 +11429,19 @@ and `tf()` frames. This is the sixth. **The only instrument that can find the ne
 RENDERED UI in a non-Latin locale**, because a locale whose script differs makes leftover English
 visible at a glance in a way no count can. Read the app, not the scanner.
 
-Measured, both directions: adding the missing shapes took `--max-untranslatable` from 0 to **35**;
-keying those 35 ×12 took it back to 0. **The gate's number did not move. What it MEASURES did** —
-which is the only reason the 0 now means something it did not mean before. When a ratchet is
-already at its floor, the remaining work is not lowering the number; it is widening the lens.
+Measured, both directions, TWICE. Adding nineteen prose tags took `--max-untranslatable` from 0
+to **35**; keying those ×12 took it back to 0. Then `<span>` and `<div>` — the two COMMONEST tags
+in this codebase's generated markup, and the two the first pass had left out while `caption` and
+`figcaption` were in it — took it from 0 to **83**, and keying those took it back to 0 again. 120
+new keys ×12 in total, and **the gate's number never moved. What it MEASURES did** — which is the
+only reason the 0 now means something it did not mean before. When a ratchet is already at its
+floor, the remaining work is not lowering the number; it is widening the lens.
+
+**The second widening is the part worth copying.** After the first one the list looked thorough,
+the gate read 0 again, and it would have been easy to stop — but a list containing `figcaption`
+and not `div` is not a thorough list, it is an arbitrary one. The check that caught it was not
+reading the scanner: it was seeing `SOURCES QUALIFIED` still in English on the Arabic Home strip
+while `Articles` and `Sources` beside it had translated, and asking why those three differed.
 
 ### The corollary that cost a false positive twice
 
