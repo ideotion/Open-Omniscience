@@ -194,6 +194,7 @@ def lane_places(limit: int = Query(2000, ge=1, le=20000)) -> dict:
                 # drawn at the edge of the world as though it had been measured there.
                 if not (-90.0 <= float(lat) <= 90.0 and -180.0 <= float(lon) <= 180.0):
                     continue
+                edition: str | None
                 try:
                     edition = parse_external_id(entity.external_id).wiki
                 except ValueError:
@@ -275,6 +276,12 @@ def lane_sections(external_id: str = Query(..., min_length=3, max_length=512)) -
                     ),
                 }
             newest = revisions[0]
+            # Both are OPTIONAL: a page whose only stored text is its baseline has no
+            # previous revision, and one with neither has no previous anything. The
+            # annotation says so rather than letting the first branch's non-null type
+            # win and the second branch look like a bug.
+            previous: str | None
+            previous_ref: str | None
             if len(revisions) > 1:
                 previous, previous_ref = revisions[1].content, revisions[1].revision_ref
             else:

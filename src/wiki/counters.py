@@ -59,6 +59,14 @@ def _aware(value: Any) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
+def _iso(value: Any) -> str | None:
+    """``_aware`` then ISO, in ONE call. Written because the inline form called
+    ``_aware`` twice -- once to test and once to format -- which is both a second
+    decision on the same value and something no reader can see is equivalent."""
+    aware = _aware(value)
+    return aware.isoformat() if aware is not None else None
+
+
 def record_size_sample(lane: Any, file_bytes: int | None, *, now: datetime | None = None) -> bool:
     """Record one lane-file size reading, at most once per :data:`SAMPLE_INTERVAL_S`.
 
@@ -117,8 +125,8 @@ def changes_per_day(lane: Any, *, window_days: int, now: datetime) -> dict[str, 
         .group_by(func.date(VersionedChange.recorded_at))
     ).all()
     by_day = {str(day): int(n) for day, n in rows if day}
-    series = [{"day": d, "changes": by_day.get(d, 0)} for d in labels]
-    total = sum(p["changes"] for p in series)
+    series: list[dict[str, Any]] = [{"day": d, "changes": by_day.get(d, 0)} for d in labels]
+    total = sum(int(p["changes"]) for p in series)
     return {
         "measured": bool(by_day),
         "series": series,
@@ -209,8 +217,8 @@ def gap_history(lane: Any, *, window_days: int, now: datetime, limit: int = 50) 
                 "feed": row.feed,
                 "reason": row.reason,
                 "detected_at": (_aware(row.detected_at) or _utcnow()).isoformat(),
-                "from_time": (_aware(row.from_time).isoformat() if _aware(row.from_time) else None),
-                "to_time": (_aware(row.to_time).isoformat() if _aware(row.to_time) else None),
+                "from_time": _iso(row.from_time),
+                "to_time": _iso(row.to_time),
                 "closed": row.closed_at is not None,
             }
         )

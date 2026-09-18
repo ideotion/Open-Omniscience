@@ -352,8 +352,14 @@ def add_missing_columns(engine: Engine) -> list[str]:
                 )
             ddl = column.type.compile(engine.dialect)
             clause = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}'
-            if column.server_default is not None:
-                clause += f" DEFAULT {column.server_default.arg}"  # type: ignore[union-attr]
+            default = getattr(column.server_default, "arg", None)
+            if default is not None:
+                # A ``FetchedValue`` server default has no literal to write, and one
+                # that is a SQL expression rather than a scalar is not something this
+                # additive path should be inventing DDL for. Both fall through to a
+                # plain nullable ADD COLUMN, which is the honest behaviour: the rows
+                # get NULL and the model's Python-side default fills new writes.
+                clause += f" DEFAULT {default}"
             plan.append((table.name, column.name, clause))
 
     added: list[str] = []

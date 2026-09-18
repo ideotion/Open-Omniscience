@@ -41,9 +41,8 @@ def older_build(tmp_path):
 
 def test_the_defect_REPRODUCES_before_anything_is_fixed(older_build):
     session = sessionmaker(bind=older_build)
-    with pytest.raises(Exception) as exc:  # noqa: PT011 - the driver's own error type
-        with session() as db:
-            db.query(VersionedEntity).first()
+    with pytest.raises(Exception) as exc, session() as db:  # noqa: PT011 - the driver's own type
+        db.query(VersionedEntity).first()
     assert "no such column" in str(exc.value)
     assert "deleted_at" in str(exc.value)
 

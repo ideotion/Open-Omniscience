@@ -1188,11 +1188,16 @@
         return;
       }
       // Shown to ONE decimal and never rounded to zero: a twelve-way split of a
-      // small budget is a real number the operator is entitled to see.
+      // small budget is a real number the operator is entitled to see. Formatted
+      // through toLocaleString rather than toFixed, because toFixed always emits a
+      // POINT -- which a German or Spanish reader reads as a thousands separator, so
+      // "1.7 GB" would say 1,700 to them.
       const share = gb / n;
+      const digits = share < 0.1 ? 2 : 1;
       el.textContent = _wizTf(
         "About {share} GB for each of {n} editions — the total divided by the editions you follow.",
-        {share: (share < 0.1 ? share.toFixed(2) : share.toFixed(1)), n: n});
+        {share: share.toLocaleString(undefined, {minimumFractionDigits: digits,
+                                                 maximumFractionDigits: digits}), n: n});
     }
 
     function _wizSelectAll(on) {

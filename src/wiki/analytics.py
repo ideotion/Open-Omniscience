@@ -101,8 +101,8 @@ def edit_velocity(
         edition = _edition_of(feed or "")
         per_edition.setdefault(edition, dict.fromkeys(labels, 0))[key] = int(n)
 
-    series = [{"day": d, "changes": overall.get(d, 0)} for d in labels]
-    total = sum(p["changes"] for p in series)
+    series: list[dict[str, Any]] = [{"day": d, "changes": overall.get(d, 0)} for d in labels]
+    total = sum(int(p["changes"]) for p in series)
     return {
         "measured": total > 0,
         "series": series,
@@ -261,8 +261,8 @@ def newly_created(
         if len(recent) < top_n and external_id:
             recent.append({"external_id": str(external_id), "edition": edition, "day": str(day)})
 
-    series = [{"day": d, "created": per_day.get(d, 0)} for d in labels]
-    total = sum(p["created"] for p in series)
+    series: list[dict[str, Any]] = [{"day": d, "created": per_day.get(d, 0)} for d in labels]
+    total = sum(int(p["created"]) for p in series)
     return {
         "measured": total > 0,
         "series": series,

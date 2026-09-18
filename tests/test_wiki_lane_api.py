@@ -17,7 +17,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import wiki_lane
-from src.versioned.models import VersionedChange, VersionedEntity, VersionedEntityFact
+from src.versioned.models import VersionedChange, VersionedEntityFact
 from src.versioned.pipeline import ensure_entity
 from src.versioned.store import create_lane, dispose_all, lane_session
 from src.wiki.pagefacts import encode
