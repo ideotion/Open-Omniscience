@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 from src.database.models import LawDocument, LawRevision
 from src.database.write import is_integrity_error
+from src.law.model import mint_lane_key
 from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
 from src.wiki.flagging import flag_revision
 
@@ -267,6 +268,20 @@ def _ingest_to_corpus(session, doc: LawDocument, extractor) -> None:
         _LOG.warning("law corpus ingest failed for doc %s", doc.id, exc_info=True)
 
 
+def _record_lane(doc: LawDocument, revision: LawRevision | None, parsed: object | None) -> str:
+    """Mirror this pass into ``law.db``'s metadata model, and never let it break tracking.
+
+    Imported lazily: the lane opens a second encrypted database, and ``track.py`` is on
+    the collect path of an install that may never have tracked a law. The bridge itself
+    returns a named outcome rather than raising -- see ``src/law/lane_sync.py`` for why
+    the corpus write is the primary record and this one is not.
+    """
+    from src.law.lane_sync import record_document
+
+    provisions = getattr(parsed, "provisions", None)
+    return record_document(doc, revision, parsed, provisions=provisions)
+
+
 def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dict:
     """Fetch one tracked legal document and record a baseline or a change. Honest status.
 
@@ -319,6 +334,18 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
     if enacted_on and not doc.enacted_on:
         doc.enacted_on = enacted_on
 
+    # Q905 = a's second clause: "an observed snapshot without official dating becomes a
+    # version dated by observation and labelled so". The LABEL is what makes the fallback
+    # honest -- without it a surface reading `valid_on or observed_at` would print a
+    # capture date as a consolidation date, which is the fabrication the ruling names.
+    valid_on_dating = "official" if valid_on else "observed"
+
+    # The stable link into `law.db`. Minted ONCE per document and kept: a new key on a
+    # later pass would orphan the identity group, the licence and the provenance this
+    # document already has. See src/law/lane_models.py for why it is a string.
+    if not doc.lane_key:
+        doc.lane_key = mint_lane_key()
+
     # First sighting → immutable baseline + a baseline revision (delta 0, not flagged).
     if doc.baseline_text is None:
         doc.baseline_text = text
@@ -343,6 +370,8 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
             # the exact column added to stop that happening.
             diff_basis="first",
             valid_on=valid_on,
+            valid_on_dating=valid_on_dating,
+            lane_key=mint_lane_key(),
         )
         session.add(rev)
         try:
@@ -380,6 +409,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
             _ingest_to_corpus(session, doc, extractor)
             return {"document_id": doc.id, "status": "duplicate"}
         _ingest_to_corpus(session, doc, extractor)
+        _record_lane(doc, rev, parsed)
         return {"document_id": doc.id, "status": "baseline", "size": len(text)}
 
     if h == doc.last_hash:
@@ -400,6 +430,12 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         session.commit()
         if backfilled:
             _ingest_to_corpus(session, doc, extractor)
+        # An UNCHANGED document still gets its lane row. This is the path that carries
+        # the 23 documents a fresh install already tracks into the model: they change
+        # rarely, and a metadata model that only reached a law on the day it was amended
+        # would leave most of the corpus without an identity, a licence or a provenance
+        # for as long as the law stood.
+        _record_lane(doc, None, parsed)
         return {"document_id": doc.id, "status": "unchanged"}
 
     # THE EXTRACTOR CHANGED, NOT THE LAW. The boilerplate strip removes chrome this
@@ -480,6 +516,8 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         diff_basis=basis,
         diff_base_revision_id=prev_rev.id if (prev_rev is not None and basis == "previous") else None,
         valid_on=valid_on,
+        valid_on_dating=valid_on_dating,
+        lane_key=mint_lane_key(),
     )
     session.add(rev)
     doc.last_hash = h
@@ -519,6 +557,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "duplicate"}
     _ingest_to_corpus(session, doc, extractor)
+    _record_lane(doc, rev, parsed)
     return {
         "document_id": doc.id,
         "status": "changed",

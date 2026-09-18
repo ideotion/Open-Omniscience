@@ -124,6 +124,14 @@ _NOT_AN_ENDPOINT: dict[str, str] = {
         "reproduced as part of a licence statement, so that a reader who opens the "
         "folder years later can look the terms up. src/backup/attribution.py imports "
         "nothing that can open a socket and dereferences nothing",
+    "www.etalab.gouv.fr":
+        "the canonical Licence Ouverte 2.0 URL in src/law/model.py's LICENCES registry "
+        "(Q927 = a records a licence per document and shows it in the reader). The same "
+        "shape as creativecommons.org above, with ONE difference worth stating plainly: "
+        "this one is RENDERED AS A LINK, so a reader can click it. That click is the "
+        "reader's browser, through invariant #7's confirm popup, which names the host "
+        "and asks first -- src/law/model.py imports nothing that can open a socket and "
+        "dereferences nothing itself, and the reader page fetches no licence URL",
     "github.com":
         "this repository's own URL: the contact field of the bot User-Agent, the "
         "docs base URL, and citation strings. The UA value is SENT as a header; the "

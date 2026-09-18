@@ -19,11 +19,32 @@
 
 sources:
 # ---- Europe -------------------------------------------------------------------
-- {name: "UK Legislation (legislation.gov.uk)", domain: legislation.gov.uk, country: gb, language: en, source_type: legal, tags: [law, legislation, official, point-in-time]}
-- {name: "EUR-Lex (European Union law)", domain: eur-lex.europa.eu, country: eu, language: en, source_type: legal, tags: [law, legislation, official, eli, akoma-ntoso]}
+# The three rows below carry the S04-10 fields (2026-09-18): `structured.formats` (Q906's
+# adapter-per-format), `verified` (Q924's tier) and `licence` (Q927, a DEFAULT a document
+# inherits and may override with its own). Every fact here is RECORDED FROM the S04-10
+# brief's own SEARCH-VERIFIED open-data section, not independently confirmed in this tree:
+# all three hosts are egress-blocked from the build sandbox (the proxy answers 403 to
+# CONNECT), so `verified.tier` says what was actually read HERE and nothing more.
+- {name: "UK Legislation (legislation.gov.uk)", domain: legislation.gov.uk, country: gb, language: en, source_type: legal,
+   tags: [law, legislation, official, point-in-time],
+   licence: ogl-3.0,
+   structured: {formats: [clml, html], bulk: "per-document CLML XML at /data.xml (recorded from the S04-10 brief's SEARCH-VERIFIED section; not fetched here)", api: "none confirmed", api_key_required: false},
+   verified: {tier: fixture, as_of: "2026-09-18", method: "the CLML adapter in this tree parses tests/fixtures/law/example_act.clml.xml and tests/fixtures/law/synthetic/*.clml.xml; the live host has never answered from this sandbox"}}
+# Q910 = a, recorded in the row rather than in a comment somewhere else: the EU's OPEN
+# paths are the per-document API, the Cellar SPARQL endpoint and the weekly public RDF
+# bulk. The EU-Login dump is ACCOUNT-GATED and is therefore EXCLUDED under V1-2 — it is
+# named here so that "we did not use it" is a recorded decision rather than an absence.
+- {name: "EUR-Lex (European Union law)", domain: eur-lex.europa.eu, country: eu, language: en, source_type: legal,
+   tags: [law, legislation, official, eli, akoma-ntoso],
+   licence: eu-reuse,
+   structured: {formats: [formex, xml, rdf, html], bulk: "weekly public RDF bulk, and the Cellar SPARQL endpoint (recorded from the S04-10 brief's SEARCH-VERIFIED section; not fetched here). The EU-Login dump is account-gated and is EXCLUDED under Q910/V1-2.", api: "open per-document API, no key", api_key_required: false},
+   verified: {tier: unverified, as_of: "2026-09-18", method: "no adapter in this tree reads Formex or the Cellar RDF; the host is egress-blocked from the build sandbox"}}
 - {name: "EU Court of Justice (CURIA)", domain: curia.europa.eu, country: eu, language: en, source_type: legal, tags: [law, case-law, official]}
 - {name: "Légifrance (France)", domain: legifrance.gouv.fr, country: fr, language: fr, source_type: legal, tags: [law, legislation, gazette, official]}
-- {name: "Gesetze im Internet (Germany)", domain: gesetze-im-internet.de, country: de, language: de, source_type: legal, tags: [law, legislation, official]}
+- {name: "Gesetze im Internet (Germany)", domain: gesetze-im-internet.de, country: de, language: de, source_type: legal,
+   tags: [law, legislation, official],
+   structured: {formats: [xml, html], bulk: "per-act XML (recorded from the S04-10 brief's SEARCH-VERIFIED section; not fetched here)", api: "none confirmed", api_key_required: false},
+   verified: {tier: unverified, as_of: "2026-09-18", method: "no adapter in this tree reads this format; the host is egress-blocked from the build sandbox"}}
 - {name: "Boletín Oficial del Estado (Spain)", domain: boe.es, country: es, language: es, source_type: legal, tags: [law, gazette, official]}
 - {name: "Gazzetta Ufficiale (Italy)", domain: gazzettaufficiale.it, country: it, language: it, source_type: legal, tags: [law, gazette, official]}
 - {name: "Wetten.overheid.nl (Netherlands)", domain: wetten.overheid.nl, country: nl, language: nl, source_type: legal, tags: [law, legislation, official]}

@@ -11,6 +11,8 @@ mirror, never legal advice — every record links back to its official source.
 
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -412,6 +414,8 @@ def _diff_to_html(diff: str | None, _esc) -> str:
 #: How each stored ``diff_basis`` reads to a human. The NULL case is deliberately not
 #: "baseline": a row recorded before the basis was tracked happens to be baseline-anchored,
 #: and saying so as though somebody had decided it would turn an absence into a claim.
+_LOG = logging.getLogger(__name__)
+
 _BASIS_WORDS = {
     "first": "the first captured snapshot — there is nothing earlier to measure it against",
     "previous": "measured against the previous version",
@@ -450,6 +454,96 @@ def _selected_version(doc, revs, version: int | None) -> tuple[object | None, st
     return None, text, None
 
 
+#: How Q905's dating label reads on screen. Q905 = a's second clause: an observed
+#: snapshot without official dating becomes a version dated by observation "and labelled
+#: so". The label is the whole point -- a date shown without it is a capture date wearing
+#: a consolidation date's clothes -- so an UNLABELLED row says that too, rather than
+#: silently borrowing the official wording.
+_DATING_WORDS = {
+    "official": "as the document states it",
+    "observed": "dated by observation — this instance saw the text on this day; the "
+    "source stated no date of its own",
+}
+#: Q927's redistribution states, in words. THREE, never a boolean: "we did not record
+#: the terms" and "the terms forbid it" are different facts, and a bool would have to
+#: fold one into the other -- folding to permitted redistributes terms nobody read.
+_REDISTRIBUTION_WORDS = {
+    "permitted": "This licence permits redistribution",
+    "forbidden": "This licence forbids redistribution — the text is not exported",
+    "unknown": "The terms are not recorded; this app makes no claim about redistribution",
+}
+
+_DATING_UNRECORDED = "recorded before this app tracked how the date was determined"
+
+
+@dataclass(frozen=True, slots=True)
+class _LaneMeta:
+    """What ``law.db`` knows about the document on screen, read once, never raising.
+
+    A frozen record rather than a dict so the template cannot ask for a key that was
+    never set and render an empty string where a fact belongs.
+    """
+
+    licence_name: str
+    licence_url: str | None
+    redistribution: str
+    provenance: str
+    provenance_body: str | None
+    identity: str
+    #: ``(language, title, url)`` per OTHER tracked language version of the same law.
+    siblings: tuple[tuple[str, str, str], ...]
+
+
+def _lane_meta(doc) -> _LaneMeta | None:
+    """Read the law's identity group, licence and provenance from ``law.db``.
+
+    Returns ``None`` when there is nothing to show — no lane key, no lane file, no row,
+    or a lane that will not open. The reader then renders the rows it has, which is the
+    honest outcome: this metadata is an ADDITION to the document, and a page that 500s
+    because a second database is absent would make the text unreachable over a fact
+    about its licence.
+    """
+    lane_key = getattr(doc, "lane_key", None)
+    if not lane_key:
+        return None
+    try:
+        from src.law.lane_models import LawDocumentMeta
+        from src.law.model import identity_group, licence_of, provenance_of, redistribution_state
+        from src.versioned.store import lane_session
+
+        with lane_session("law") as session:
+            meta = session.query(LawDocumentMeta).filter_by(lane_key=lane_key).first()
+            if meta is None:
+                return None
+            licence = licence_of(meta)
+            phrase, body = provenance_of(meta)
+            group = identity_group(session, meta.identity_id)
+            siblings: list[tuple[str, str, str]] = []
+            identity = ""
+            if group is not None:
+                identity = (
+                    f"{group.identity.identity_scheme}:{group.identity.jurisdiction_alpha3}:"
+                    f"{group.identity.document_identity}"
+                )
+                siblings = [
+                    (m.language, m.title or "", m.source_url or "")
+                    for m in group.members
+                    if m.lane_key != lane_key
+                ]
+            return _LaneMeta(
+                licence_name=licence.name,
+                licence_url=licence.url,
+                redistribution=redistribution_state(meta),
+                provenance=phrase,
+                provenance_body=body,
+                identity=identity,
+                siblings=tuple(siblings),
+            )
+    except Exception:  # noqa: BLE001 - the lane is an addition; the text is the document
+        _LOG.debug("law reader: lane metadata unavailable for document %s", doc.id, exc_info=True)
+        return None
+
+
 def _valid_on(shown, revs) -> str | None:
     """The point in time the version ON SCREEN represents, or ``None``.
 
@@ -460,6 +554,53 @@ def _valid_on(shown, revs) -> str | None:
     """
     rev = shown if shown is not None else (revs[0] if revs else None)
     return getattr(rev, "valid_on", None) if rev is not None else None
+
+
+def _valid_on_dating(shown, revs) -> str | None:
+    """How the date ``_valid_on`` returned was determined (Q905). Never inferred.
+
+    Read from the SAME revision, so the date and its method cannot come from two
+    different versions. ``None`` where the row predates the label.
+    """
+    rev = shown if shown is not None else (revs[0] if revs else None)
+    return getattr(rev, "valid_on_dating", None) if rev is not None else None
+
+
+def _in_force_cell(shown, revs, _esc) -> str | None:
+    """The version's point in time, with Q905's dating label BESIDE it.
+
+    Three outcomes, and the middle one is the ruling:
+
+    * the source stated a date -> the date, plainly;
+    * the source stated none   -> the day this instance OBSERVED the text, carrying the
+      "dated by observation" label in its own element, because Q905 = a says such a
+      version is "dated by observation and labelled so" and a date without that label is
+      a capture date being read as a consolidation date;
+    * neither, or a row recorded before the label existed -> no row at all, rather than
+      a date with an unexplained provenance.
+
+    The label is a SEPARATE element from the date, which is what lets the i18n walker
+    translate it: a text node containing both would match no key in any locale.
+    """
+    rev = shown if shown is not None else (revs[0] if revs else None)
+    if rev is None:
+        return None
+    dating = getattr(rev, "valid_on_dating", None)
+    stated = getattr(rev, "valid_on", None)
+    if stated:
+        cell = f"<span>{_esc(stated)}</span>"
+        if dating and dating != "official":
+            cell += f" <span class='muted'>{_esc(_DATING_WORDS.get(dating, _DATING_UNRECORDED))}</span>"
+        return cell
+    if dating == "observed":
+        observed = getattr(rev, "observed_at", None)
+        if observed is None:
+            return None
+        return (
+            f"<span>{_esc(observed.strftime('%Y-%m-%d'))}</span> "
+            f"<span class='muted'>{_esc(_DATING_WORDS['observed'])}</span>"
+        )
+    return None
 
 
 def _retrieved_on(doc, shown, revs) -> str | None:
@@ -553,6 +694,66 @@ def _version_picker(doc, revs, shown, _esc) -> str:
     )
 
 
+@router.get("/documents/{document_id}/provision-timeline")
+def law_provision_timeline(document_id: int, db: Session = Depends(get_db)) -> dict:
+    """Analytic 1 (Q914 = a): which PROVISIONS of this document changed, and when.
+
+    READ-ONLY and LOCAL: it opens no network path and creates nothing — a document whose
+    lane row does not exist gets an honest refusal rather than a lane brought into being
+    by a GET.
+
+    The version ORDER is supplied from ``corpus.db``, oldest first, because the lane holds
+    no ordering of its own: ordering by the lane's own row timestamps would order by when
+    this app wrote the rows, which is not when the versions happened.
+    """
+    doc = db.query(LawDocument).filter_by(id=document_id).first()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    lane_key = getattr(doc, "lane_key", None)
+    if not lane_key:
+        return {
+            "available": False,
+            "reason": (
+                "this document has no law-model row yet; it is recorded on the next "
+                "tracking pass, and until then there are no provisions to compare"
+            ),
+        }
+    order = [
+        key
+        for (key,) in db.query(LawRevision.lane_key)
+        .filter(LawRevision.document_id == doc.id, LawRevision.lane_key.isnot(None))
+        .order_by(LawRevision.observed_at.asc(), LawRevision.id.asc())
+        .all()
+    ]
+    try:
+        from src.law.analytics import provision_timeline
+        from src.versioned.store import lane_session
+
+        with lane_session("law") as lane:
+            payload = provision_timeline(lane, lane_key, revision_order=order)
+    except Exception:  # noqa: BLE001 - the lane is an addition; a GET must not 500 on it
+        _LOG.debug("law provision timeline unavailable for %s", document_id, exc_info=True)
+        return {"available": False, "reason": "the law lane could not be read on this install"}
+    payload["available"] = True
+    return payload
+
+
+@router.get("/amendment-velocity")
+def law_amendment_velocity(
+    period: Annotated[str, Query(pattern="^(month|year)$")] = "month",
+    db: Session = Depends(get_db),
+) -> dict:
+    """Analytic 2 (Q914 = a): captured versions per jurisdiction per period.
+
+    NOT a legislative rate, and the payload says so: the caveat travels with the numbers
+    and ``tracked_documents`` is returned per jurisdiction as the denominator a reader
+    would need — which this endpoint deliberately does not divide by.
+    """
+    from src.law.analytics import amendment_velocity
+
+    return amendment_velocity(db, period=period)
+
+
 @router.get("/documents/{document_id}/view", response_class=HTMLResponse)
 def view_law_document(
     document_id: int,
@@ -601,6 +802,11 @@ def view_law_document(
         "".join(f"<p>{_html.escape(line)}</p>" for line in (text or "").split("\n") if line.strip())
         or f"<p class='muted'>{_html.escape(shown_note or 'No text captured yet — track this document to store a snapshot.')}</p>"
     )
+    # Read ONCE, before anything that renders it: two reads could return two answers
+    # if a concurrent pass rewrote the row between them, and a page showing one
+    # document's licence beside another's language group is the failure this whole
+    # model is shaped to avoid.
+    lane = _lane_meta(doc)
     version_picker = _version_picker(doc, revs, shown, _html.escape)
     rev_items = []
     for r in revs:
@@ -631,6 +837,32 @@ def view_law_document(
             f"<div class='basis'>{_html.escape(basis)}</div>"
             f"<div class='diff'>{_diff_to_html(r.diff, _html.escape)}</div></details>"
         )
+    # Q908 = a: one document identity, N language versions "aligned by identity". This is
+    # the LINK half of it. The reader's language SWITCH is 0.5 (S05-07), so this lists the
+    # other versions and says what they are rather than pretending to be a switcher.
+    #
+    # Each entry is three separate elements -- the language tag, the title, the kind --
+    # because the walker translates a text node only when it matches a key exactly, and a
+    # line reading "fr · Loi … · official translation" matches nothing in any locale.
+    siblings_html = ""
+    if lane is not None and lane.siblings:
+        items = "".join(
+            f"<li><span class='lang'>{_html.escape(language)}</span> "
+            + (
+                f"<a href='{_html.escape(safe_href(url) or '')}' class='ext'>{_html.escape(title or url)}</a>"
+                if url
+                else f"<span>{_html.escape(title)}</span>"
+            )
+            + "</li>"
+            for language, title, url in lane.siblings
+        )
+        siblings_html = (
+            "<section class='versions langs'><h2>Other language versions</h2>"
+            f"<ul>{items}</ul>"
+            "<p class='muted'>Each language version is tracked as its own document, with "
+            "its own history. They are the same law, aligned by identity.</p></section>"
+        )
+
     revs_html = (
         ("<section class='history'><h2>Amendment history</h2>" + "".join(rev_items) + "</section>")
         if rev_items
@@ -672,12 +904,45 @@ def view_law_document(
             # standing in for three. `retrieved_on` is composed from the revision's own
             # `observed_at` rather than stored twice — the label says so.
             _row("Enacted", _html.escape(doc.enacted_on) if doc.enacted_on else None),
-            _row("This text is in force from", _html.escape(_valid_on(shown, revs) or "") or None),
+            _row("This text is in force from", _in_force_cell(shown, revs, _html.escape)),
             _row(
                 "Captured by this instance",
                 _html.escape(_retrieved_on(doc, shown, revs) or "") or None,
             ),
             _row("Showing", _shown_cell(doc, shown, _html.escape)),
+            # The law model's block (Q927's licence, Q901's provenance, Q908's identity).
+            # Absent rather than empty when `law.db` has nothing for this document: a row
+            # reading "Licence: —" states that we looked and found none, which is a
+            # different fact from never having recorded one.
+            _row(
+                "Licence",
+                (
+                    f"<a class='ext' href='{_html.escape(lane.licence_url)}' "
+                    f"rel='noopener noreferrer'>{_html.escape(lane.licence_name)}</a>"
+                    if (lane is not None and lane.licence_url)
+                    else (_html.escape(lane.licence_name) if lane is not None else None)
+                ),
+            ),
+            _row(
+                "Redistribution",
+                _html.escape(_REDISTRIBUTION_WORDS.get(lane.redistribution, lane.redistribution))
+                if lane is not None
+                else None,
+            ),
+            # The phrase and the body are SEPARATE elements: the walker translates a text
+            # node only when it matches a key exactly, so a body name inside the sentence
+            # would freeze the whole line in English.
+            _row(
+                "Provenance",
+                (
+                    f"<span>{_html.escape(lane.provenance)}</span>"
+                    + (f" <span class='muted'>({_html.escape(lane.provenance_body)})</span>"
+                       if lane.provenance_body else "")
+                )
+                if lane is not None
+                else None,
+            ),
+            _row("Identity", _html.escape(lane.identity) if (lane and lane.identity) else None),
         ]
     )
     # The footer used to read "Captured snapshot — it does not change if the official text
@@ -753,6 +1018,7 @@ def view_law_document(
   <div class="crumb">Open Omniscience · World law · offline stored copy — a research mirror, not legal advice</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
   {version_picker}
+  {siblings_html}
   {revs_html}
   <footer>
     {footer_line}

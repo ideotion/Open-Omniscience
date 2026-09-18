@@ -293,6 +293,8 @@ def init_db() -> None:
         ensure_keyword_mention_source_column,
         ensure_law_document_language_columns,
         ensure_law_l0_columns,
+        ensure_law_model_columns,
+        ensure_law_source_type,
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
         ensure_source_catalog_baseline_column,
@@ -381,6 +383,8 @@ def init_db() -> None:
     # populates forward as the tracker records revisions -- a pre-existing row's NULL
     # diff_basis honestly reads "recorded before the basis was tracked").
     ensure_law_l0_columns(engine)
+    ensure_law_model_columns(engine)
+    ensure_law_source_type(engine)
 
     # S6: maintained per-source article counter (self-heal, no backfill; reconcile populates
     # forward + stamps freshness, a NULL count reads live).

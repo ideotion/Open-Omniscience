@@ -459,3 +459,56 @@ def test_every_declared_omission_states_a_reason_and_names_a_real_column() -> No
         table_name, _, col = key.partition(".")
         assert table_name in tables, f"{key} names a table that no longer exists"
         assert col in tables[table_name].columns, f"{key} names a column that no longer exists"
+
+
+def test_the_law_model_lane_keys_and_dating_survive_the_merge(tmp_path):
+    """The three S2 columns, and the pair of lane keys is the one that matters most.
+
+    They are the link into ``law.db`` — the identity group, the translation provenance,
+    the licence, the provisions. This merge RENUMBERS ``law_documents`` and
+    ``law_revisions``, which is exactly why those links are minted STRINGS: a row id
+    carried across would arrive pointing at whatever row inherited its number, and the
+    reader would show one law's licence under another law's title, silently.
+
+    ``valid_on_dating`` rides with ``valid_on`` for the same reason it shares its table:
+    a date that arrives without the method that produced it is a capture date a reader
+    will take for a consolidation date.
+
+    The SECOND revision carries no ``valid_on`` and a dating of ``observed``, so the pair
+    is exercised in both of its states — a fixture where every row was officially dated
+    could not tell a carried label from a defaulted one.
+    """
+
+    def populate(s):
+        doc = LawDocument(
+            jurisdiction="ZZZ",
+            title="Measurement Standards Act",
+            url="https://gazette.zzz.test/a",
+            enacted_on="2019-03-04",
+            lane_key="doc-key-9f2c",
+        )
+        s.add(doc)
+        s.flush()
+        s.add(LawRevision(
+            document_id=doc.id, observed_at=_T0, content_hash="ch-dated", full_text="ONE",
+            delta_bytes=0, valid_on="2019-06-01", valid_on_dating="official",
+            lane_key="rev-key-aaaa",
+        ))
+        s.add(LawRevision(
+            document_id=doc.id, observed_at=_T0, content_hash="ch-undated", full_text="TWO",
+            delta_bytes=3, valid_on=None, valid_on_dating="observed",
+            lane_key="rev-key-bbbb",
+        ))
+
+    with _corpus(_merged(tmp_path, populate))() as s:
+        doc = s.query(LawDocument).filter_by(url="https://gazette.zzz.test/a").one()
+        assert doc.title == "Measurement Standards Act", "control: the merge ran at all"
+        assert doc.lane_key == "doc-key-9f2c"
+        dated = s.query(LawRevision).filter_by(content_hash="ch-dated").one()
+        undated = s.query(LawRevision).filter_by(content_hash="ch-undated").one()
+        assert (dated.valid_on, dated.valid_on_dating) == ("2019-06-01", "official")
+        assert (undated.valid_on, undated.valid_on_dating) == (None, "observed")
+        assert {dated.lane_key, undated.lane_key} == {"rev-key-aaaa", "rev-key-bbbb"}
+        # And the ids DID change, which is what makes the string links load-bearing
+        # rather than decorative: a copied integer would have arrived stale.
+        assert dated.id != undated.id

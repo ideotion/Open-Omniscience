@@ -753,6 +753,102 @@ def ensure_law_l0_columns(engine: Engine) -> list[str]:
     return added
 
 
+# The law METADATA MODEL's corpus-side seam (brief S04-10 S2): the two stable links into
+# `law.db` and Q905's dating label. A SEPARATE function from the L0 one above rather than
+# three more entries in its dicts, because that function's name says which ruling it heals
+# and a function that heals two slices tells a later reader neither.
+_LAW_DOCUMENT_MODEL_COLUMNS: dict[str, str] = {
+    "lane_key": "ALTER TABLE law_documents ADD COLUMN lane_key VARCHAR(36)",
+}
+_LAW_REVISION_MODEL_COLUMNS: dict[str, str] = {
+    "lane_key": "ALTER TABLE law_revisions ADD COLUMN lane_key VARCHAR(36)",
+    "valid_on_dating": "ALTER TABLE law_revisions ADD COLUMN valid_on_dating VARCHAR(16)",
+}
+
+
+def _add_missing_columns(conn, table: str, ddl_by_name: dict[str, str]) -> list[str]:
+    """Add whichever of ``ddl_by_name`` the table lacks. Returns what it added.
+
+    The table-existence check comes first because a store can legitimately predate a
+    whole feature -- `PRAGMA table_info` on a missing table returns no rows rather than
+    raising, so without it every column would read as missing and every ALTER would fail.
+    """
+    if not conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:t"), {"t": table}
+    ).fetchone():
+        return []
+    existing = {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}  # noqa: S608
+    added: list[str] = []
+    for name, ddl in ddl_by_name.items():
+        if name not in existing:
+            conn.execute(text(ddl))
+            added.append(f"{table}.{name}")
+    return added
+
+
+def ensure_law_model_columns(engine: Engine) -> list[str]:
+    """Self-heal the law model's corpus-side columns. Idempotent, additive, no backfill.
+
+    NO BACKFILL is the honest choice for both kinds of column here. A pre-existing
+    document has no minted `lane_key`, and inventing one would create a link to a
+    `law.db` row that does not exist -- the tracker mints it on the next pass, and until
+    then the reader reports the metadata as absent, which is true. A pre-existing
+    revision has no recorded `valid_on_dating`, and guessing "observed" for it would
+    label a date nobody looked at.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        added += _add_missing_columns(conn, "law_documents", _LAW_DOCUMENT_MODEL_COLUMNS)
+        added += _add_missing_columns(conn, "law_revisions", _LAW_REVISION_MODEL_COLUMNS)
+    if added:
+        _LOG.info(f"added law model column(s): {', '.join(added)}")
+    return added
+
+
+def ensure_law_source_type(engine: Engine) -> int:
+    """Q919's vocabulary migration, for stores seeded before it: ``legal`` -> ``law``.
+
+    RETURNS THE ROW COUNT, not a column list, because nothing is being added: this moves
+    rows that already exist onto the token Q919 ruled.
+
+    IT IS KEYED ON THE PROVENANCE TAG, NOT ON A DOMAIN LIST. The obvious implementation
+    reads the law catalogue and updates the 263 domains in it, which would (a) put a
+    277-row YAML load on the boot path of every install and (b) silently MISS a row whose
+    catalogue entry was later removed or renamed, leaving it on the old token forever.
+    The ``via:legal`` tag is what ``seed_sources`` stamps on exactly the rows this
+    catalogue seeded, so it answers the question being asked -- "did this row come from
+    the law catalogue?" -- rather than approximating it.
+
+    ``ip`` ROWS ARE DELIBERATELY UNTOUCHED: an intellectual-property office is a registry,
+    not a law authority, and Q919 names the latter. ``case_law`` likewise, for a stronger
+    reason -- Q902's (e) was not chosen, so moving those rows in would quietly admit a
+    document class this cycle declined.
+
+    Idempotent: a second run matches nothing, because the rows it would match no longer
+    carry the old token.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return 0
+    with engine.begin() as conn:
+        if not conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        ).fetchone():
+            return 0
+        result = conn.execute(
+            text(
+                "UPDATE sources SET source_type = 'law'"
+                " WHERE source_type IN ('legal', 'gazette')"
+                "   AND tags IS NOT NULL AND tags LIKE '%via:legal%'"
+            )
+        )
+        moved = int(result.rowcount or 0)
+    if moved:
+        _LOG.info("moved %d law-catalogue source(s) onto source_type='law' (Q919)", moved)
+    return moved
+
+
 def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     """Self-heal the denormalised ``keyword_mentions.source_id`` column + its index.
 
@@ -1453,8 +1549,11 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         frozenset(_LAW_DOCUMENT_TEXT_COLUMNS)
         | frozenset(_LAW_DOCUMENT_LANGUAGE_COLUMNS)
         | frozenset(_LAW_DOCUMENT_DATE_COLUMNS)
+        | frozenset(_LAW_DOCUMENT_MODEL_COLUMNS)
     ),
-    "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS) | frozenset(_LAW_REVISION_BASIS_COLUMNS),
+    "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS)
+    | frozenset(_LAW_REVISION_BASIS_COLUMNS)
+    | frozenset(_LAW_REVISION_MODEL_COLUMNS),
     # ensure_source_qualification_columns (the admission-gate STAMP columns) +
     # ensure_source_last_crawled_column (§8 crawl-by-default rotation marker).
     # ensure_source_counter_columns joins them for the same reason as the articles note.

@@ -3196,11 +3196,18 @@ def _merge_law(con, batch_id, results) -> None:
         # the document, read from the document itself. Dropping it on a merge would hand
         # the reader back the defect Q917 was ruled to close -- a statute whose only date
         # is the day somebody's instance captured it.
-        " country, language, latest_text, latest_text_revid, enacted_on)"
+        # 2026-09-18 (brief S04-10 S2): `lane_key` is the STABLE link to this document's
+        # row in `law.db` -- its identity group, its translation provenance and its
+        # licence. It is carried VERBATIM, which is the whole reason it is a minted
+        # string rather than a row id: this very INSERT renumbers `law_documents`, so an
+        # integer link would arrive pointing at whatever row inherited its number, and
+        # the reader would show one law's licence under another law's title.
+        " country, language, latest_text, latest_text_revid, enacted_on, lane_key)"
         " SELECT i.jurisdiction, i.title, i.url, i.official_url, i.category,"
         " i.consolidated, i.watched, i.baseline_text, i.baseline_hash, i.last_hash,"
         " i.last_size, i.last_checked_at, i.last_status, i.created_at,"
-        " i.country, i.language, i.latest_text, i.latest_text_revid, i.enacted_on"
+        " i.country, i.language, i.latest_text, i.latest_text_revid, i.enacted_on,"
+        " i.lane_key"
         " FROM inc.law_documents i"
         " WHERE NOT EXISTS (SELECT 1 FROM law_documents m"
         "  WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)",
@@ -3230,9 +3237,15 @@ def _merge_law(con, batch_id, results) -> None:
         # which is the one-key-two-meanings defect the column exists to prevent.
         # `diff_base_revision_id` is a LOCAL id and is remapped by its own UPDATE below --
         # copying it verbatim would point at whatever row happens to hold that id here.
-        " full_text, valid_on, diff_basis)"
+        # 2026-09-18 (brief S04-10 S2): `valid_on_dating` says HOW `valid_on` was
+        # determined, and travels with it for the same reason it lives on this table
+        # rather than in `law.db` -- a date that arrives without its method is a capture
+        # date a reader will take for a consolidation date. `lane_key` is the stable link
+        # to this version's provisions, carried verbatim like the document's.
+        " full_text, valid_on, diff_basis, valid_on_dating, lane_key)"
         " SELECT ml.new, i.observed_at, i.content_hash, i.size, i.delta_bytes, i.diff,"
-        " i.flagged, i.flag_reasons, i.created_at, i.full_text, i.valid_on, i.diff_basis"
+        " i.flagged, i.flag_reasons, i.created_at, i.full_text, i.valid_on, i.diff_basis,"
+        " i.valid_on_dating, i.lane_key"
         " FROM inc.law_revisions i JOIN temp.map_law ml ON ml.old = i.document_id"
         " WHERE NOT EXISTS (SELECT 1 FROM law_revisions t"
         "  WHERE t.document_id = ml.new AND t.content_hash = i.content_hash)",

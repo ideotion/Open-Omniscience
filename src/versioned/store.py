@@ -60,7 +60,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.versioned.lanes import LaneSpec, lane
 
@@ -290,17 +290,46 @@ def create_lane(kind: str) -> Path:
     return path
 
 
+def _lane_specific_models(kind: str) -> tuple[type[DeclarativeBase], ...]:
+    """The tables only ONE lane has, imported lazily so this module stays dependency-free.
+
+    The shared schema is deliberately lane-agnostic (``versioned_entity_facts`` exists
+    so a lane can state its own facts without its own columns), but a lane whose data
+    is RELATIONAL — a law document's identity group, its provisions' addresses — needs
+    real tables with real uniqueness, and a fact-row bag cannot carry a unique index.
+
+    Returning them per kind rather than letting ``create_all`` take the whole metadata
+    is what keeps those tables OUT of the other lanes' files: importing
+    ``src.law.lane_models`` anywhere registers its tables on the shared
+    ``LaneBase.metadata``, so a bare ``metadata.create_all(engine)`` would put three
+    empty law tables into ``wiki.db`` for any operator who happened to load the module.
+    """
+    if kind == "law":
+        from src.law.lane_models import LAW_LANE_MODELS
+
+        return LAW_LANE_MODELS
+    return ()
+
+
 def create_schema(kind: str, engine: Engine | None = None) -> None:
     """Materialise the lane tables and stamp ``lane_meta``. Idempotent.
 
     ``LaneBase.metadata`` — never the corpus ``Base.metadata``. The two are separate
     declarative roots precisely so this line cannot put lane tables in ``corpus.db``
     and ``alembic check`` cannot demand migrations for them (see ``models.py``).
+
+    The table list is EXPLICIT — the shared models plus this kind's own — rather than
+    the whole metadata; see ``_lane_specific_models`` for why that distinction is
+    load-bearing rather than tidy.
     """
-    from src.versioned.models import LaneBase, LaneMeta
+    from src.versioned.models import LANE_MODELS, LaneBase, LaneMeta
 
     eng = engine if engine is not None else lane_engine(kind, create=True)
-    LaneBase.metadata.create_all(eng)
+    wanted = [
+        LaneBase.metadata.tables[m.__tablename__]
+        for m in (*LANE_MODELS, *_lane_specific_models(kind))
+    ]
+    LaneBase.metadata.create_all(eng, tables=wanted)
     factory = _factories[(kind, str(lane_path(kind)))]
     with factory() as session:
         row = session.query(LaneMeta).first()
