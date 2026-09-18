@@ -14463,3 +14463,29 @@ checks against `www.legislation.gov.uk`, `eur-lex.europa.eu` and `gesetze-im-int
 are `not-measurable-here`: this sandbox's egress proxy answers **403 to CONNECT** on all
 three, recorded per host. Q924's `verified` tier is `fixture` for the first and
 `unverified` for the other two precisely so that state is visible rather than assumed.
+
+---
+
+## 2026-09-18 — S04-12 verification pass: two omissions stated, not hidden (PR #1159)
+
+**(1) `admission_audit` IS N+1 BY CONSTRUCTION, AND IT STAYS THAT WAY — MEASURED, NOT ASSUMED.**
+The audit asks `admission_undo_refusal` about each row, and that predicate runs one query per row,
+so the endpoint costs `1 + 1 + n` statements. Hand-measured on a real fixture rather than reasoned
+about: `limit=25` → **31 statements / 26.3 ms**, `limit=100` → **106 / 39.8 ms**, `limit=500` (the
+route's `le=` cap) → **506 / 194.0 ms**. The shipped panel calls `?limit=25`, so the operator's
+actual cost is the first row and the worst case is bounded by a cap the route already enforces.
+**Kept deliberately**, because the alternative is a second batched implementation of "is this
+reversible" beside the one the undo raises from — and ONE predicate read by both the button and the
+handler is the entire property this pass exists to establish. A fast answer that can disagree with
+the endpoint is worse than a slow one that cannot. **RE-OPEN IF** the panel ever paginates past a
+few hundred rows, or a caller outside the UI drives it at the `le=500` cap in a loop; the honest fix
+then is to make the predicate itself take a pre-fetched set, never to duplicate its logic.
+
+**(2) THE UI-WALK HARNESS IS A `docs/audit/` ARTIFACT, NOT A TEST.** `seed.py` and `walk.py` under
+`docs/audit/sources-admission-clickthrough-2026-09-18/` reproduce the run, but nothing in CI
+executes them: the suite has no Playwright dependency and this project has ruled repeatedly that
+browser verification is a human step (fork-3). They are recorded as **reproducible evidence** — the
+commands are in that directory's README and were run end to end here — and NOT as a guard. Anything
+the walk proved that must not regress is pinned separately in `tests/admission_row_node_test.js`
+and `tests/test_admission_row_ui.py`, which do run. **Not a request for a browser-in-CI ruling**;
+stated so a later session does not read the directory as a suite that is silently not running.

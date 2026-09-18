@@ -8909,3 +8909,122 @@ worse", never "is this surface correct". When a slice's ruling is ABOUT a surfac
 Q1114: the headline count carries its label), read that surface's strings against the
 locale files directly, and lower the ratchet by what you fix (466→464, 229→227) rather than
 leaving the room behind.
+
+### 2026-09-18 · S04-12 verification pass (gate row S) · the undo, the stripper, the walk
+
+**A GUARD THAT REFUSES ON "A LATER X IS IN EFFECT" MUST ENUMERATE EVERY OTHER KIND OF
+LATER DECISION — AND THE ONE IT MISSES IS THE ONE THAT LEAVES NO ROW IN THE TABLE IT
+QUERIES.** `undo_admission` already refused when a NEWER ADMISSION of the same source was
+standing, with the argument written out beside it: which admission an operator meant to
+reverse is their decision. That argument applies verbatim to a later **disqualified**
+verdict, and that case was unguarded — structurally, because a disqualification writes no
+`SourceAdmissionEvent`, so the guard's own query cannot see it. Reproduced live before it
+was believed: admit → a later pass disqualifies → the operator undoes the original
+admission → `prior_status="unqualified"` lands over the engine's own refusal.
+
+**The cost is not the column.** Measured on the real selectors: a `disqualified` source
+waits out `select_due_disqualified`'s 1 → 2 → 4 → 6 month ladder (not due at +0d, not at
++20d, due at +40d), and after the undo `select_unqualified` returns it **the same day**
+with no ladder at all. That is the recorded laundering direction — *known-bad sources back
+into the trial queue with their backoff ladder reset* — arriving through a path that lesson
+never touched. By the time such an undo is clicked the admission is not in effect anyway
+(the source is not collecting), so refusing costs the operator nothing real and cannot
+erase a verdict.
+
+**RIDER, and the cheapest tell in the whole finding: the existing test's docstring claimed
+the opposite of its own assertions.** It read *"it does not launder the later disqualified
+verdict away"* with `assert src.status == STATUS_UNQUALIFIED` four lines below. A docstring
+and its assertions disagreeing is a finding about one of them, and the assertion is the one
+that ships. **SECOND RIDER:** the fix had to reach the PANEL too, or the audit view goes on
+drawing an Undo button the endpoint will always refuse — a control that renders claims its
+capability. One `admission_undo_refusal()` now answers the question for both, so the button
+and the handler cannot disagree about a row.
+
+**AND THEN THE ORDER OF THE TWO REFUSALS TURNED OUT TO BE LOAD-BEARING — A REFUSAL THAT
+GIVES ADVICE MUST GIVE ADVICE THAT WORKS.** The new guard was added after the existing one,
+which is the natural place for it and was wrong. `later-admission-in-effect` does not merely
+decline, it instructs: *undo that one first*. With the cheap query first, a source carrying
+TWO standing admissions AND a later disqualification answered `later-admission-in-effect` on
+the older row and `later-verdict-in-effect` on the row it pointed AT — an operator following
+the instruction hit a second refusal, and no row for that source could be reversed at all,
+while the panel drew both as merely "blocked, see the other one". Reading the source's
+CURRENT state first makes the advice true by construction: a row is only ever told to defer
+while the source is still qualified, which is exactly when the row it defers to is itself
+reversible. **GENERAL FORM: when a refusal names a way out, that way out is a claim, and it
+needs a test that FOLLOWS it — not one that merely checks the refusal fired.** The invariant
+is cheap to state over the whole audit ("if any row defers, some row for that source is
+reversible") and it is the kind that only fails when two guards meet, which is precisely
+where per-guard tests do not look. Found by the skeptic pass the brief asked for, confirmed
+on a fixture before it was believed, and the reordering checked against all four
+combinations rather than the one that failed.
+
+**A SOURCE GUARD THAT REPORTS A LINE NUMBER CANNOT USE THE SHARED COMMENT STRIPPER —
+MEASURED: 459 NEWLINES OF 31,552.** This ledger records four times that a source guard must
+read comment-stripped source, and `test_no_app_function_calls_i18n_t_without_binding_it`
+did not: a comment explaining a `t()` call that had just been REPLACED counted as the call,
+and the guard accused correct code of a runtime `ReferenceError`. The prescribed repair is
+`js_source_helper.strip_comments` — and it is wrong **here**, for a reason nothing had
+measured. Its pattern is `^\s*//.*$` under `re.MULTILINE`, where `\s` matches a NEWLINE, so
+a comment preceded by blank lines consumes them. Over this engine that is **459 of 31,552
+newlines**: invisible to every substring assertion the helper was written for, and it
+shifts every line number a *reporting* guard prints. Stripped line by line instead, which
+preserves the numbering by construction.
+
+**Caught by the anti-vacuity assertion added in the same edit** (stripped newlines == raw
+newlines), on its first run. GENERAL FORM: a shared helper's contract is what its docstring
+promises, not what you need. Before routing a guard through one, name the property of the
+input your guard depends on — numbering, byte offsets, ordering — ask whether the helper
+promises to preserve it, and MEASURE rather than assume. And when you repair a guard that
+fired on correct code, re-run the mutation: relaxing it is one edit from deleting it (this
+one still names `_qualScopeCount (line 29054)` on a genuinely unbound call).
+
+**THE RATCHET-ALLOWANCE DEFECT RECURRED ON THE SAME PANEL ONE SLICE LATER, AND ONLY A
+RENDERED PAGE SAW IT.** S04-12's S2 recorded that two English fragments on the
+qualification panel sat inside the untranslatable ratchet's allowance, and lowered the
+ratchet by what it fixed. **Three more were still there** — `sources per collection pass`,
+`What the source gate looks at`, `can disqualify` — plus a scope-count sentence welded from
+four `t()` fragments and two numbers (`t("This will scrape") + n + t("sources") + "(" +
+t("of") + total + …`), two of whose pieces had never had a key and which no locale can
+reorder. Every gate was green over all of them **at zero slack**: `--min 100` compares the
+locale files against `en.json` and is structurally blind to a string that has no key at
+all, and a `tf()` template is excluded from every pattern in `i18n_report.py` by
+construction. What found them was rendering the panel in `fr` and looking at it. GENERAL
+FORM: a ratchet answers *"did this change make it worse"*, never *"is this surface
+correct"* — so a slice whose ruling is ABOUT a surface owes that surface a direct read, and
+the read that is actually complete is a rendered page in a locale whose script makes an
+English fragment unmissable.
+
+**A WALK THAT MUTATES STATE PART-WAY THROUGH INVALIDATES EVERY LOCALE IT HAS NOT REACHED
+YET.** The click-through drove en → fr → ar and clicked the real Undo inside the `en` pass.
+The click is the point of the walk — it is the only thing that proves the safety valve
+works — but it reversed the one reversible row, so `fr` and `ar` then walked a corpus in
+which **no** row had an Undo button, and the per-locale button state (the whole claim) was
+unmeasurable in two locales while the report looked complete and green. Move any
+state-changing step AFTER every read that depends on the state. The tell is a report whose
+later rows are identical to each other and whose first row is the interesting one.
+
+**TWO FINDINGS RULED OUT AS THE HARNESS, WHICH IS WHY THEY ARE HERE.** The same walk read
+`dir` as `ltr` under Arabic (a direct probe measured `documentElement.dir = "rtl"` and
+`getComputedStyle(body).direction = "rtl"` both before and after navigation), and showed
+the top-bar language switcher still reading `🇬🇧 EN` under a French UI (that was the harness
+calling `OOI18N.setLang` instead of clicking the control; driven through the real switcher
+it reads `🇫🇷 FR` and invariant #15 holds). Neither was filed. A UI check's own instrument is
+the first suspect, and the cost of checking is one probe against the cost of a fabricated
+defect in the ledger.
+
+**A WHOLE-FILE TERM TALLY IS THE WRONG INSTRUMENT IN A FILE THAT MIXES VARIANTS; THE SIBLING
+STRING IS THE EVIDENCE.** The ×12 skeptic pass reported eleven terminology drifts in nine new
+strings, and the first check ran the obvious way — count each candidate word across the locale
+file and keep the majority. That instrument is wrong twice over. It matches inside unrelated
+words (Hindi `पास` "pass" also sits inside `पासवर्ड` "password"; Bengali `পাস` inside
+`পাসফ্রেজ`, which alone inflated one count to 285), and `pt.json` mixes European and Brazilian
+Portuguese, so its "majority" is an artefact of which variant happened to be edited more. What
+settled every one of the eleven was the file's own translation of the NEAREST SIBLING: the
+qualification panel already ships `Extraction gate`, so the gate word is whatever that row
+says (`بوابة` / `द्वार` / `ゲート`, not the three synonyms the new strings invented); the
+feature already ships `Undo` and `Admission undone.`, so pt's verb is `anular`, and the
+`desfeito` of "this cannot be undone" is a different sentence doing a different job; `Start a
+collection pass` fixes the pass noun in all three. **GENERAL FORM: consistency is a property
+of a SURFACE, not of a file — measure against the strings the user reads in the same breath.**
+Every correction here carries the sibling that settles it, written into the patch beside it, so
+the next session can check the reasoning rather than re-run the tally.
