@@ -600,6 +600,41 @@ def is_collectable(enabled: bool | None, status: str | None) -> bool:
     return enabled is True and status == STATUS_QUALIFIED
 
 
+def record_admission(
+    session: Session, source: Source, *,
+    prior_enabled: bool | None, prior_status: str | None,
+    now: datetime, verdict: str, criteria_version: str,
+) -> bool:
+    """Write the audit row when a write has just made a source COLLECTABLE that was not.
+
+    THE ONE PLACE AN ADMISSION IS RECORDED, because there is more than one way into
+    collection. ``evaluate_and_stamp`` is the one Q1101 names; the SHIPPED OVERLAY is the
+    other, and an adversarial pass live-reproduced it going unrecorded: a catalogue row
+    (``enabled=True``, awaiting a verdict) adopting a shipped ``qualified`` verdict went
+    from ``select_sources`` returning nothing to returning it, with no audit row and so
+    nothing to undo. Exactly the defect the audit's own unit was rewritten to close, alive
+    in a path that fix never touched -- which is why the decision lives here rather than
+    inline at each call site.
+
+    Both ends are checked against ``is_collectable``: this returns False for a source that
+    was ALREADY collecting (a re-check is not an admission) and for one that still is not
+    (a stamp that admits nothing is not an admission either). ``prior_*`` are read by the
+    caller BEFORE it writes, because the row's purpose is to put the source back.
+    """
+    from src.database.models import SourceAdmissionEvent
+
+    if is_collectable(prior_enabled, prior_status):
+        return False
+    if not is_collectable(source.enabled, source.status):
+        return False
+    session.add(SourceAdmissionEvent(
+        source_id=source.id, occurred_at=now, verdict=verdict,
+        criteria_version=criteria_version,
+        prior_enabled=prior_enabled, prior_status=prior_status,
+    ))
+    return True
+
+
 def evaluate_and_stamp(
     session: Session, sources: list[Source], fails_by_source: dict[int, list[dict]],
     *, now: datetime, criteria_version: str = CRITERIA_VERSION,
@@ -608,7 +643,7 @@ def evaluate_and_stamp(
     source. Never a score: only the three-state status + the DATE + the criteria version
     are stamped. ``qualified_at``/``qualification_criteria_version`` are cleared on a
     disqualified verdict -- a stale 'qualified' stamp must never survive a later failure."""
-    from src.database.models import SourceAdmissionEvent, SourceQualificationAttempt
+    from src.database.models import SourceQualificationAttempt
 
     qualified = disqualified = 0
     admitted = 0
@@ -626,7 +661,6 @@ def evaluate_and_stamp(
         # NULL = never set), so the prior value is captured as-is rather than coerced.
         prior_enabled = source.enabled
         prior_status = source.status
-        was_collecting = is_collectable(prior_enabled, prior_status)
         source.status = verdict
         if verdict == STATUS_QUALIFIED:
             source.qualified_at = now
@@ -654,12 +688,10 @@ def evaluate_and_stamp(
             #
             # So the predicate is the gate itself (`select_sources`), read through the one
             # shared helper both call -- which is what stops the two drifting apart again.
-            if not was_collecting:
-                session.add(SourceAdmissionEvent(
-                    source_id=source.id, occurred_at=now, verdict=verdict,
-                    criteria_version=criteria_version,
-                    prior_enabled=prior_enabled, prior_status=prior_status,
-                ))
+            if record_admission(
+                session, source, prior_enabled=prior_enabled, prior_status=prior_status,
+                now=now, verdict=verdict, criteria_version=criteria_version,
+            ):
                 admitted += 1
         else:
             source.qualified_at = None

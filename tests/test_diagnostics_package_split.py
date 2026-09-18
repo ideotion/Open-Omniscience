@@ -46,6 +46,9 @@ def _live_table() -> list[dict]:
 _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     # 2026-09-16, gate row K / Q310 = a: the country-code duplicate-key scan.
     "country_code_duplicates",
+    # 2026-09-18, gate row S / B5: the qualification-merge action, the run that used to
+    # mean `python scripts/merge_source_qualification.py` on the maintainer's machine.
+    "source_qualification_merge",
 )
 
 

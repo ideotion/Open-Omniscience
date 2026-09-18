@@ -1647,7 +1647,12 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         "min_pathology_articles": _MIN_PATHOLOGY_ARTICLES,
     }
 
+    # Q1114 = a (2026-09-15): `enabled AND qualified` is THE headline count, and every
+    # OTHER predicate is LABELLED WHERE IT APPEARS. These are the other predicates, so
+    # each one says what it counts -- a bare `qualified: 4812` beside a headline of 2600
+    # reads as a contradiction rather than as two different questions.
     counts = {"qualified": 0, "disqualified": 0, "unqualified": 0, "enabled": 0}
+    collecting = 0
     for status, enabled, n in (
         db.query(Source.status, Source.enabled, func.count())
         .group_by(Source.status, Source.enabled)
@@ -1658,6 +1663,25 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             counts[key] += int(n)
         if enabled:
             counts["enabled"] += int(n)
+            if key == STATUS_QUALIFIED:
+                collecting += int(n)
+    # THE headline figure, computed here rather than left to a reader's subtraction: it is
+    # the one predicate `select_sources` admits, and it is what every other number on this
+    # panel is a different question about.
+    counts["collecting"] = collecting
+    counts_labels = {
+        "collecting": (
+            "enabled AND qualified — what collection actually reaches. This is the "
+            "headline figure; every other count below answers a different question."
+        ),
+        "qualified": "qualified, whether or not enabled — a verdict, not a collection state",
+        "disqualified": "judged and found wanting, whether or not enabled",
+        "unqualified": "not yet judged, whether or not enabled",
+        "enabled": (
+            "enabled, whatever the verdict — includes sources awaiting a verdict, which "
+            "collection does not reach"
+        ),
+    }
 
     return {
         "gates": [
@@ -1737,6 +1761,11 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             ),
         },
         "counts": counts,
+        # Q1114's "the other predicates are labelled where they appear", carried IN the
+        # payload so a surface cannot render a count without its predicate being available
+        # beside it. Keyed by the same keys as `counts`, so a renderer that adds a figure
+        # and forgets the label has an obvious hole rather than a plausible number.
+        "counts_labels": counts_labels,
         "statuses": [STATUS_QUALIFIED, STATUS_DISQUALIFIED, STATUS_UNQUALIFIED],
     }
 
@@ -1780,3 +1809,58 @@ def admission_undo(event_id: int, db: Session = Depends(get_db)) -> dict:
         # (already undone, or a source that has since been deleted). A 404 would send an
         # operator looking for a row that is sitting right there in the audit list.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/overlay")
+def overlay_editor_state(db: Session = Depends(get_db)) -> dict:
+    """What the shipped qualification overlay contains, what this install took from it,
+    and what adopting now would change (Q1106 = a, the editor's read half).
+
+    Read-only and local: no network, no writes, nothing judged. The preview figures are
+    published BEFORE the buttons because adopting is a write to the operator's own
+    corpus, and the one direction a reader would not think to ask about -- a shipped
+    ``disqualified`` verdict taking a source OUT of collection -- is the one that has to
+    be on the screen first.
+    """
+    from src.catalog.qualification_overlay import overlay_status
+
+    return overlay_status(db)
+
+
+@router.post("/overlay/adopt", response_model=dict)
+def overlay_adopt(db: Session = Depends(get_db)) -> dict:
+    """Adopt the shipped verdicts now, and resume adopting them at startup.
+
+    Turning the preference back on is HALF THE OPERATION, not a side effect: adoption is
+    idempotent and only ever touches rows this install has never judged, so a run that
+    left the preference off would be undone by the operator's next revert-shaped question
+    -- "why did my sources come back" in reverse. Local only; no network, so no consent
+    gate (invariant #14 covers egress, and this reaches nothing outside the database).
+    """
+    from src.catalog.qualification_overlay import apply_overlay
+
+    try:
+        from src.config.app_settings import save_settings
+
+        save_settings({"adopt_shipped_verdicts": True})
+        preference_held = True
+    except Exception:  # noqa: BLE001 - reported, never swallowed into a clean result
+        logger.warning("adopted the overlay but could not persist the preference", exc_info=True)
+        preference_held = False
+    tally = dict(apply_overlay(db))
+    tally["preference_held"] = preference_held
+    return tally
+
+
+@router.post("/overlay/revert", response_model=dict)
+def overlay_revert(db: Session = Depends(get_db)) -> dict:
+    """Put back every row the shipped overlay stamped here, and stop adopting at startup.
+
+    The rows go back to "no verdict has been reached here", which is what they actually
+    said before adoption touched them. Rows this install has since judged for itself are
+    left alone and counted, as are rows the overlay stamped over a curated catalogue
+    stamp -- reverting those would invent a state rather than restore one. Local only.
+    """
+    from src.catalog.qualification_overlay import revert_overlay
+
+    return revert_overlay(db, now=datetime.now(UTC))

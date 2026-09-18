@@ -150,6 +150,17 @@ class AppSettings:
     # an adopted backoff always expires. Flipping it is this one literal; both settings
     # are pinned by tests, so the flip cannot silently change what the app claims.
     trust_backup_fetch_history: bool = True
+    # ADOPT THE SHIPPED QUALIFICATION VERDICTS AT STARTUP (Q1106 = a, the overlay
+    # editor's third operation). TRUE is the behaviour that shipped: every boot adopts
+    # `configs/source_qualification.yml` onto rows this instance has never judged.
+    #
+    # IT EXISTS BECAUSE "REVERT" HAS TO HOLD. Reverting puts the adopted rows back to
+    # `unqualified` -- which is exactly the state adoption looks for, so the next boot
+    # would re-adopt them and the operator's decision would survive until they closed
+    # the app. A revert the app quietly undoes is not a revert, so reverting also turns
+    # this off and says so; Adopt turns it back on. The overlay FILE is untouched either
+    # way: this is about what this install does with it, not about what ships.
+    adopt_shipped_verdicts: bool = True
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -294,6 +305,7 @@ def load_settings() -> AppSettings:
         "ai_sweep_source_tags",
         "ai_sweep_perception_extract",
         "trust_backup_fetch_history",
+        "adopt_shipped_verdicts",
     ):
         _val = raw.get(_name, getattr(defaults, _name))
         if not isinstance(_val, bool):
@@ -449,6 +461,9 @@ def save_settings(updates: dict) -> AppSettings:
         # make a restore adopt somebody else's fetch history, which is a decision about
         # what this machine will and will not go and download.
         "trust_backup_fetch_history",
+        # And the overlay-adoption preference, for the same reason: a truthy string must
+        # not be able to re-admit sources an operator reverted.
+        "adopt_shipped_verdicts",
     ):
         if _name in updates and updates[_name] is not None:
             _val = updates[_name]

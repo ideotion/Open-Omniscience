@@ -393,6 +393,18 @@ def scheduler_targets(db: Session = Depends(get_db)) -> dict:
         "applies": s.mode in ("rss", "crawl"),
         "matched": matched,
         "total_enabled": total_enabled,
+        # Q1114 = a: `matched` IS the headline predicate (it runs `select_sources`, so it
+        # is enabled AND qualified after any scope narrowing). `total_enabled` is a
+        # DIFFERENT predicate and is labelled here rather than left to read as the same
+        # kind of number -- since Q1101 a source is enabled long before it is admitted, so
+        # the gap between the two is ordinary rather than alarming.
+        "predicates": {
+            "matched": "enabled AND qualified, after any scope narrowing — what this run will reach",
+            "total_enabled": (
+                "enabled, whatever the verdict — the difference from 'matched' is sources "
+                "awaiting a verdict, which collection does not reach"
+            ),
+        },
         # 0 (the default) = UNBOUNDED: every matched source runs. The old
         # min(matched, cap) reported 0 for every default install (cap=0) — a latent bug.
         "will_process_this_run": (

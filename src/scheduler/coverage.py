@@ -30,6 +30,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from src.catalog.qualification import STATUS_QUALIFIED
 from src.database.models import FeedFetchState, Source
 
 DEFAULT_FRESH_WINDOW_HOURS = 24
@@ -100,12 +101,18 @@ def tag_coverage(
     def bucket_for(tag: str) -> dict:
         return tags.setdefault(tag, _new_bucket())
 
+    # Q1114 = a: this panel's population is ENABLED sources, which is NOT the headline
+    # `enabled AND qualified`. Since Q1101 a source is enabled well before it is admitted,
+    # so some of the rows counted here are ones collection will never touch as they stand
+    # -- counted separately and SAID, rather than left inside a total that reads as
+    # "what we collect".
     rows = (
-        session.query(Source.id, Source.tags, Source.rss_url)
+        session.query(Source.id, Source.tags, Source.rss_url, Source.status)
         .filter(Source.enabled.is_(True))
         .all()
     )
-    for sid, raw_tags, rss_url in rows:
+    not_collectable = sum(1 for *_, status in rows if status != STATUS_QUALIFIED)
+    for sid, raw_tags, rss_url, _status in rows:
         tag_list = _split_tags(raw_tags) or [_UNTAGGED]
 
         if not rss_url:  # crawl source — reach not tracked, but counted honestly
@@ -152,7 +159,9 @@ def tag_coverage(
         "method": (
             "Reach = RSS sources ever fetched / total, per tag, from the "
             "collector's own fetch timestamps. Fresh = fetched within the window "
-            "above. A source counts under each of its tags. Counts only, no score."
+            "above. A source counts under each of its tags. Counts only, no score. "
+            "The population is ENABLED sources — not the headline 'enabled and "
+            "qualified', so these totals are larger than what collection reaches."
         ),
         "caveat": (
             "Continuous scraping never finishes — this is reach and freshness, "
@@ -162,5 +171,16 @@ def tag_coverage(
         ),
         "totals": _finalize(totals, now),
         "crawl_sources": crawl_total,
+        # Q1114's "the other predicates are labelled where they appear", as a NUMBER rather
+        # than a sentence: how many of the enabled sources counted above collection will
+        # not touch as they stand, because they carry no qualified verdict. Zero is a real
+        # measurement here (every enabled source is admitted) and is published as one.
+        "enabled_not_collectable": int(not_collectable),
+        "not_collectable_note": (
+            "Counted in the totals above because they are enabled, but collection will "
+            "not touch them as they stand: they carry no qualified verdict. Judging "
+            "admits a source automatically, so this number falls on its own as the "
+            "backlog is worked through."
+        ),
         "tags": out_tags,
     }

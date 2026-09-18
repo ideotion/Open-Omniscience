@@ -1,4 +1,9 @@
-"""The admission audit's strings, ×12 — including the ones NO i18n gate can see.
+"""The Quality-gates panel's strings, ×12 — including the ones NO i18n gate can see.
+
+Covers the two surfaces Q1101 and Q1106 put there: the ADMISSION AUDIT (the reversible
+record of every automatic admission) and the SHIPPED-VERDICT EDITOR (adopt / export /
+revert, plus the merge run B5 moved into the diagnostics). One file, because they fail
+the same way and the extractors are the same ones.
 
 WHY THIS FILE EXISTS. Two classes of string on this surface are structurally invisible to
 `scripts/i18n_report.py`:
@@ -36,9 +41,12 @@ UI = ROOT / "src/static/app-ai-tools.js"
 # The twelve the informed-consent non-negotiable names.
 EXPECTED_LOCALES = {"en", "fr", "es", "de", "pt", "ru", "zh", "ja", "ar", "hi", "bn", "id"}
 
-# The two renderers this surface is built from. Named explicitly: a sweep of the whole
-# file would drag in every other panel's frames and stop being a claim about THIS one.
+# The renderers these surfaces are built from. Named explicitly: a sweep of the whole
+# file would drag in every other panel's frames and stop being a claim about THESE.
 RENDERERS = ("_admissionRow", "loadAdmissionAudit")
+# The overlay editor's four (Q1106 = a). Listed apart from the audit's so a failure names
+# which surface lost its keys, and so neither list can quietly absorb the other.
+OVERLAY_RENDERERS = ("loadOverlayEditor", "overlayAdopt", "overlayRevert", "overlayMerge")
 
 
 def _locale(code: str) -> dict:
@@ -52,39 +60,63 @@ def test_every_locale_file_is_present() -> None:
     assert found >= EXPECTED_LOCALES, f"missing locale files: {EXPECTED_LOCALES - found}"
 
 
-def _renderer_bodies() -> str:
+def _bodies(names: tuple[str, ...]) -> str:
     from tests.js_source_helper import function_body, strip_comments
 
     src = strip_comments(UI.read_text(encoding="utf-8"))
-    bodies = [function_body(src, name) for name in RENDERERS]
-    assert all(bodies), f"a renderer body came back empty: {RENDERERS}"
+    bodies = [function_body(src, name) for name in names]
+    assert all(bodies), f"a renderer body came back empty: {names}"
     return "\n".join(bodies)
+
+
+def _renderer_bodies() -> str:
+    return _bodies(RENDERERS)
+
+
+def _frames(source: str) -> list[str]:
+    return sorted(set(re.findall(r'\btf\(\s*"([^"]+)"', source)))
+
+
+def _assert_frames_keyed(frames: list[str], *, at_least: int, where: str) -> None:
+    """One frame check, used by both surfaces.
+
+    A REORDERED frame is legitimate -- word order is the whole reason to translate a frame
+    rather than its fragments -- so the hole SETS are compared, never the sequence. A lost
+    hole renders a literal `{x}` to a reader.
+    """
+    # Positive control. An extraction that finds nothing satisfies the loop below for free.
+    assert len(frames) >= at_least, (
+        f"the frame extractor found {len(frames)} in {where}; expected at least {at_least}"
+    )
+    en = _locale("en")
+    for frame in frames:
+        assert frame in en, f"tf frame not keyed in en.json ({where}): {frame!r}"
+        holes = set(re.findall(r"\{(\w+)\}", frame))
+        assert holes, f"a tf frame with no hole is a plain string: {frame!r}"
+        for code in sorted(EXPECTED_LOCALES):
+            d = _locale(code)
+            assert frame in d, f"{code}.json is missing the tf frame {frame!r} ({where})"
+            value = d[frame]
+            assert value.strip(), f"{code}.json has an empty value for {frame!r}"
+            assert set(re.findall(r"\{(\w+)\}", value)) == holes, (
+                f"{code}.json changed the frame holes of {frame!r}: {value!r}"
+            )
 
 
 def test_every_tf_frame_the_audit_renders_is_keyed_in_all_twelve_locales() -> None:
     """The frames are harvested from the SHIPPED renderers, so adding one without a key
     reddens here rather than shipping English into eleven locales."""
-    frames = sorted(set(re.findall(r'\btf\(\s*"([^"]+)"', _renderer_bodies())))
-    # Positive control. An extraction that finds nothing satisfies the loop below for free,
-    # and this surface really does use `tf` -- the count is asserted, not assumed.
-    assert len(frames) >= 2, f"the frame extractor found {len(frames)}; it should find at least 2"
+    _assert_frames_keyed(_frames(_renderer_bodies()), at_least=2, where="the admission audit")
 
-    en = _locale("en")
-    for frame in frames:
-        assert frame in en, f"tf frame not keyed in en.json: {frame!r}"
-        holes = set(re.findall(r"\{(\w+)\}", frame))
-        assert holes, f"a tf frame with no hole is a plain string: {frame!r}"
-        for code in sorted(EXPECTED_LOCALES):
-            d = _locale(code)
-            assert frame in d, f"{code}.json is missing the tf frame {frame!r}"
-            value = d[frame]
-            assert value.strip(), f"{code}.json has an empty value for {frame!r}"
-            # A REORDERED frame is legitimate -- word order is the whole reason to
-            # translate a frame rather than its fragments -- so compare the hole SETS,
-            # never the sequence. A lost hole renders a literal `{x}` to a reader.
-            assert set(re.findall(r"\{(\w+)\}", value)) == holes, (
-                f"{code}.json changed the frame holes of {frame!r}: {value!r}"
-            )
+
+def test_every_tf_frame_the_overlay_editor_renders_is_keyed_in_all_twelve_locales() -> None:
+    """The same guard over Q1106's surface. It carries MORE counted prose than the audit --
+    what the file holds, what is in force, what adopting would change -- so it is the more
+    likely of the two to grow a frame, and every one of those frames is a number an
+    operator reads before pressing a button that writes to their corpus."""
+    _assert_frames_keyed(
+        _frames(_bodies(OVERLAY_RENDERERS)), at_least=8, where="the overlay editor"
+    )
 
 
 def test_the_server_prose_this_surface_renders_is_keyed_in_all_twelve_locales() -> None:
@@ -138,6 +170,74 @@ def test_the_server_prose_this_surface_renders_is_keyed_in_all_twelve_locales() 
                 f"English. The key must match the server constant VERBATIM: {sentence!r}"
             )
             assert d[sentence].strip(), f"{code}.json has an empty value for {label}"
+
+
+def test_the_overlay_editors_server_prose_is_keyed_in_all_twelve_locales() -> None:
+    """Q1106's surface renders three sentences composed in Python, and every one of them is
+    a CAVEAT -- what adopting will and will not touch, that nothing was written, that a
+    disagreement was left alone. Those are exactly the strings the informed-consent
+    non-negotiable is about, and exactly the ones no gate can see.
+
+    Read out of the SHIPPED modules with `ast`, never re-typed here: a copy in the test
+    would agree with a defect instead of catching it.
+    """
+    import ast
+
+    wanted: list[tuple[str, str]] = []
+
+    overlay = ast.parse(
+        (ROOT / "src/catalog/qualification_overlay.py").read_text(encoding="utf-8")
+    )
+    for node in ast.walk(overlay):
+        if isinstance(node, ast.FunctionDef) and node.name == "overlay_status":
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Dict):
+                    for k, v in zip(sub.keys, sub.values, strict=False):
+                        # `caveat` is drawn; `method` is evidence in the payload that no
+                        # surface renders, so it needs no key -- the same convention the
+                        # audit's prose test follows.
+                        if isinstance(k, ast.Constant) and k.value == "caveat":
+                            wanted.append(("overlay_status caveat", ast.literal_eval(v)))
+
+    diag = ast.parse(
+        (ROOT / "src/api/diagnostics/qualification_merge.py").read_text(encoding="utf-8")
+    )
+    for node in ast.walk(diag):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "source_qualification_merge":
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Dict):
+                    for k, v in zip(sub.keys, sub.values, strict=False):
+                        if isinstance(k, ast.Constant) and k.value in ("note", "conflicts_note"):
+                            wanted.append((f"merge {k.value}", ast.literal_eval(v)))
+
+    # Positive control: an AST walk that stopped matching (a rename, a move into a helper,
+    # the endpoint turning sync) would leave this empty and read as coverage.
+    assert len(wanted) >= 3, f"the prose extractor found {len(wanted)} strings; expected >= 3"
+
+    for label, sentence in wanted:
+        for code in sorted(EXPECTED_LOCALES):
+            d = _locale(code)
+            assert sentence in d, (
+                f"{code}.json has no key for the server prose {label}; it would render in "
+                f"English. The key must match the server constant VERBATIM: {sentence!r}"
+            )
+            assert d[sentence].strip(), f"{code}.json has an empty value for {label}"
+
+
+def test_the_overlay_editor_passes_the_server_prose_through_the_translator() -> None:
+    """Keys alone prove nothing: a renderer that interpolates `d.caveat` RAW ships English
+    to eleven locales while every locale file is complete and every gate is green. So the
+    wiring is pinned too, at the three places the sentences arrive."""
+    from tests.js_source_helper import function_body, strip_comments
+
+    src = strip_comments(UI.read_text(encoding="utf-8"))
+    editor = function_body(src, "loadOverlayEditor")
+    assert "t(d.caveat" in editor, (
+        "loadOverlayEditor no longer passes the server caveat through t()"
+    )
+    merge = function_body(src, "overlayMerge")
+    for expr in ("t(d.note", "t(d.conflicts_note"):
+        assert expr in merge, f"overlayMerge no longer passes {expr}...) through t()"
 
 
 def test_the_three_statuses_are_keyed_and_DISTINCT_in_every_locale() -> None:

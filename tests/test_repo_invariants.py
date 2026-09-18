@@ -9308,6 +9308,16 @@ def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles
     assert 'id="qual-admission"' in markup, (
         "the admission audit is missing; Q1101's flip has no visible, reversible record"
     )
+    #    THE SHIPPED-VERDICT EDITOR (Q1106 = a): adopt / export / revert over the overlay
+    #    that travels with the app. All three are pinned, because two of them alone is a
+    #    one-way door: adopting without a revert leaves the operator no way back, and the
+    #    export is the half that lets one instance's work reach the next install at all.
+    #    The merge button is B5's -- the run that used to mean a shell.
+    for node in ("qual-overlay", "qual-ov-adopt", "qual-ov-revert", "qual-ov-export",
+                 "qual-ov-merge"):
+        assert f'id="{node}"' in markup, (
+            f"{node} is missing; Q1106's editor needs adopt, export AND revert"
+        )
 
     # 5. Units and the hover explanation ride the SHIPPED convention (invariant #17): a
     #    translated `title` is auto-marked and opens the ONE #oo-tip bubble. No bespoke
