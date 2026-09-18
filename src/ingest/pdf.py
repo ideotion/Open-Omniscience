@@ -101,7 +101,12 @@ def extract_pdf_text(
     if not looks_like_pdf(data):
         return None, "not a pdf"
     if not pdf_available():
-        return None, "pdf extractor not installed (install the [pdf] extra)"
+        # Ruling L6 (2026-09-15) moved pypdf into the DEFAULT install, so this branch no
+        # longer describes an operator who declined an extra — it describes a dependency
+        # that did not arrive. The refusal stays (it is the honest degrade, and a
+        # stripped environment is a real thing), but it no longer sends the reader to a
+        # knob that is already on.
+        return None, "pdf extractor not installed (pypdf is missing from this install)"
 
     try:
         from pypdf import PdfReader

@@ -96,10 +96,20 @@ def test_detects_pdf_by_magic_and_by_content_type():
 
 
 def test_missing_extractor_degrades_gracefully(monkeypatch):
-    # A core install (no pypdf) must record an honest reason, never crash.
+    # An install with no pypdf must record an honest reason, never crash.
+    #
+    # It no longer says "a core install": ruling L6 (2026-09-18) moved pypdf INTO the
+    # core dependency list, so every lane now has it and this branch describes a stripped
+    # or broken environment. That makes this monkeypatch the ONLY driver of the degrade
+    # path — previously the Core-only CI lane exercised it for free — which is why the
+    # patch is on `pdf_available` (the source of truth the production code reads) rather
+    # than on an import.
     monkeypatch.setattr("src.ingest.pdf.pdf_available", lambda: False)
     text, reason = extract_pdf_text(b"%PDF-1.5\nsome bytes")
     assert text is None and "not installed" in reason
+    assert "[pdf] extra" not in reason, (
+        "L6 retired this wording: it points an operator at a knob that is already on"
+    )
 
 
 def test_mis_extraction_guard_rejects_symbol_garbage():

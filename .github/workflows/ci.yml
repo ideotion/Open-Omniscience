@@ -85,10 +85,18 @@ jobs:
           # for real here. [pdf] adds pypdf so the PDF-extraction + PDF-import tests
           # run for real. [ocr] adds pytesseract/pypdfium2/Pillow so the OCR fallback
           # runs for real against the tesseract binary installed above. The Core-only
-          # job below (no [segmentation]/[pdf]/[ocr]) proves the graceful-degrade path
-          # (segmenter absent -> whitespace tokenizer; pypdf absent -> a PDF is
-          # honestly "no usable text"; OCR unavailable -> a scan stays "no usable
-          # text", never a crash).
+          # job below (no [segmentation]/[ocr]) proves the graceful-degrade path
+          # (segmenter absent -> whitespace tokenizer; OCR unavailable -> a scan stays
+          # "no usable text", never a crash).
+          #
+          # `pdf` LEFT THIS LIST'S CLAIM ON 2026-09-18 (ruling L6): pypdf is a CORE
+          # dependency now, so the Core-only job installs it too and no lane has pypdf
+          # absent. That is the point of the ruling — 63 of 275 law sources are PDF-only
+          # — and it means the pypdf-absent degrade is no longer proven by an ENVIRONMENT.
+          # It is proven by a test that patches `pdf_available` instead
+          # (tests/test_law_coverage.py, tests/test_pdf_extract.py), which is the stronger
+          # shape anyway: it runs in every lane rather than in the one nobody reads.
+          # The extra is still named here because it still exists as an alias.
           python -m pip install -e ".[analysis,dev,segmentation,pdf,ocr]"
 
       # PySocks, CI-ONLY (audit 10, P2-03): the three

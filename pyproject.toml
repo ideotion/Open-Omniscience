@@ -114,6 +114,20 @@ dependencies = [
     # in core precisely because it is pure Python; registered in
     # configs/external_artifacts.yml (simplemma-dictionaries) as Q1015 also requires.
     "simplemma>=1.1",
+    # PDF text extraction. MOVED here from the [pdf] extra on 2026-09-18 by ruling L6
+    # (2026-09-15 register round, "Promote [pdf] into the default"), which overrode the
+    # round's own recommended default of "leave it optional". The measurement behind it
+    # is Q922 = a: 63 of the 275 law catalogue sources are PDF-ONLY, so a core install
+    # could not read a fifth of the world's official gazettes at all -- and it did not
+    # fail, it recorded "no usable text" and carried on, which is the honest degrade
+    # doing its job over a gap nobody chose. pypdf is pure Python, BSD, no native build
+    # and no network, so it costs a core install nothing but its own bytes (Q1015's bar).
+    #
+    # WHAT DID NOT MOVE, DELIBERATELY: the [ocr] extra. OCR needs the `tesseract` SYSTEM
+    # binary, which pip cannot install, and its output is a LOWER-TRUST class this
+    # project tags as such -- a scanned PDF is still honestly "no usable text" on a core
+    # install, and that is a different and smaller gap than the one L6 closes.
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -159,13 +173,17 @@ nlp = [
     "spacy>=3.7",
 ]
 
-# Optional PDF text extraction. Used by the world-law tracker (many official
-# gazettes publish legislation as PDFs) AND the local PDF-document importer. pypdf
-# (pure-Python, BSD, no native build, no network) reads the text. A core install has
-# no extractor, so a PDF is recorded honestly as "no usable text" rather than
-# crashing (src/ingest/pdf.py degrades loudly) — and a scanned/image or mis-decoded
-# PDF is NEVER stored as a garbage body even when pypdf IS present (the
-# mis-extraction guard).
+# PDF text extraction. PROMOTED INTO CORE 2026-09-18 (ruling L6) — see the note beside
+# `pypdf` in `dependencies` above for why. This extra is KEPT and now resolves to the
+# same requirement, so `pip install -e ".[pdf]"` in a script, a CI lane, a README or an
+# operator's shell keeps working instead of failing on an unknown extra. It is not a
+# second source of truth: the floor is stated once in core, and this entry references
+# the capability rather than re-pinning it, because two floors for one package is how
+# they come to disagree.
+#
+# The mis-extraction guard is unchanged and still load-bearing: a scanned/image or
+# mis-decoded PDF is NEVER stored as a garbage body even when pypdf IS present, and
+# `src/ingest/pdf.py` still degrades loudly rather than fabricating a body.
 pdf = [
     "pypdf>=4.0",
 ]
