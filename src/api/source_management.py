@@ -30,7 +30,7 @@ Author: Ideotion
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
@@ -1634,7 +1634,7 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         STATUS_UNQUALIFIED,
     )
     from src.database.models import Source
-    from src.scheduler.settings import load_settings
+    from src.scheduler.settings import load_settings, retired_settings_disclosures
 
     settings = load_settings()
     current = {
@@ -1699,14 +1699,16 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             for c in CRITERIA
         ],
         "scope": {
-            "scrape_unqualified": bool(settings.scrape_unqualified),
             "scrape_app_provided_only": bool(settings.scrape_app_provided_only),
             "note": (
-                "Both default to today's behaviour. 'Also scrape unqualified' reaches only "
-                "ENABLED sources and NEVER admits a disqualified one — unqualified means "
-                "not-yet-judged, and the re-qualification ladder is how a disqualified "
-                "source comes back."
+                "Collection reaches a source when it is ENABLED and QUALIFIED. Passing "
+                "qualification now enables a source automatically, so admission and "
+                "collection scope are one decision — see the admission audit, where "
+                "every automatic admission can be undone."
             ),
+            # Named rather than merely absent: an operator who used the retired hatch
+            # needs to know it is gone and why, not to discover that collection narrowed.
+            "retired": retired_settings_disclosures(),
         },
         "ladder": {
             "months": [1, 2, 4, 6],
@@ -1737,3 +1739,44 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         "counts": counts,
         "statuses": [STATUS_QUALIFIED, STATUS_DISQUALIFIED, STATUS_UNQUALIFIED],
     }
+
+
+# --------------------------------------------------------------------------- #
+#  The admission audit trail (Q1101 = a, 2026-09-15) -- the safety valve
+# --------------------------------------------------------------------------- #
+@router.get("/admission/audit")
+def admission_audit_view(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    include_undone: Annotated[bool, Query()] = True,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Every automatic ``enabled`` flip this instance has made, newest first.
+
+    Q1101 makes a ``qualified`` verdict admit a source for collection without anyone
+    clicking anything. This is the surface that makes that decision visible and, through
+    the sibling undo endpoint, reversible -- the ruling names the undo as the safety valve
+    the flip rests on, so the two ship together or neither does.
+
+    Read-only. Counts are taken over the whole table; ``limit`` bounds the LIST only.
+    """
+    from src.catalog.qualification import admission_audit
+
+    return admission_audit(db, limit=limit, include_undone=include_undone)
+
+
+@router.post("/admission/{event_id}/undo", response_model=dict)
+def admission_undo(event_id: int, db: Session = Depends(get_db)) -> dict:
+    """Reverse ONE automatic admission, restoring the source's prior enabled AND status.
+
+    Local only -- no network, so no consent gate: this writes two columns of the operator's
+    own database and reaches nothing outside it.
+    """
+    from src.catalog.qualification import AdmissionUndoRefused, undo_admission
+
+    try:
+        return undo_admission(db, event_id, now=datetime.now(UTC).replace(tzinfo=None))
+    except AdmissionUndoRefused as exc:
+        # 409, not 404: the event id is a real address and the refusal is about STATE
+        # (already undone, or a source that has since been deleted). A 404 would send an
+        # operator looking for a row that is sitting right there in the audit list.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

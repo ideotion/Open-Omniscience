@@ -2477,14 +2477,17 @@
       <div id="qual-gates" style="margin-top:14px"></div>
 
       <h3 style="margin-top:18px">What gets scraped</h3>
-      <p class="hint" style="margin-top:0">Both of these start at what the app does today, so leaving them alone changes nothing.</p>
+      <p class="hint" style="margin-top:0">A source is scraped once it is enabled and has passed judging. Passing judging enables it, so admission and scraping scope are one decision — every automatic admission is listed below, and every one can be undone.</p>
       <div class="row" style="gap:10px;flex-direction:column;align-items:flex-start">
-        <label class="row" style="gap:6px;align-items:center" title="Reaches only sources you have ENABLED — discovered candidates are disabled and stay out either way. A source that was judged and DISQUALIFIED is never admitted by this: the re-qualification ladder is how one comes back.">
-          <input id="qual-scope-unqualified" type="checkbox" onchange="qualSaveScope()"> <span>Also scrape sources not yet judged</span></label>
         <label class="row" style="gap:6px;align-items:center" title="The catalogues committed to the app — the curated list, the markets and diversification batches, the world news catalogue and the legal portals. Excludes every source the running app discovered for itself.">
-          <input id="qual-scope-shipped" type="checkbox" onchange="qualSaveScope()"> <span>Only scrape the sources that came with the app</span></label>
+          <input id="qual-scope-shipped" type="checkbox" style="width:auto" onchange="qualSaveScope()"> <span>Only scrape the sources that came with the app</span></label>
         <div id="qual-scope-count" class="hint"></div>
+        <div id="qual-scope-retired" class="card-caveat" hidden></div>
       </div>
+
+      <h3 style="margin-top:18px">Admission audit</h3>
+      <p class="hint" style="margin-top:0">Every time judging admitted a source to collection on its own. Undoing one puts the source back exactly as it was — it does not disqualify it, so a later round may admit it again.</p>
+      <div id="qual-admission" class="hint">Loading…</div>
 
       <h3 style="margin-top:18px">Catch up the backlog</h3>
       <p class="muted" style="margin-top:0">A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.</p>

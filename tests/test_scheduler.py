@@ -185,33 +185,49 @@ def test_scheduler_api(tmp_path, monkeypatch):
         bad2 = client.put("/api/scheduler/config", json={"interval_minutes": 0})
         assert bad2.status_code == 400
 
-        # Regression (P1-10): the two qualification-scope checkboxes PUT
-        # {scrape_unqualified, scrape_app_provided_only} and the Settings panel re-GETs
-        # /api/sources/qualification/config's "scope" block to confirm the save. Both fields
-        # were previously absent from SchedulerConfigUpdate, so Pydantic silently dropped them
-        # before save_settings() ever saw them -- a PUT that reported 200/"Saved" and never
+        # Regression (P1-10): the qualification-scope checkbox PUTs
+        # {scrape_app_provided_only} and the Settings panel re-GETs
+        # /api/sources/qualification/config's "scope" block to confirm the save. The field
+        # was previously absent from SchedulerConfigUpdate, so Pydantic silently dropped it
+        # before save_settings() ever saw it -- a PUT that reported 200/"Saved" and never
         # actually persisted. This must round-trip through the real HTTP path, not just
         # select_sources() against a hand-built SchedulerSettings.
         scoped = client.put(
             "/api/scheduler/config",
-            json={"scrape_unqualified": True, "scrape_app_provided_only": True},
+            json={"scrape_app_provided_only": True},
         )
         assert scoped.status_code == 200
-        assert scoped.json()["scrape_unqualified"] is True
         assert scoped.json()["scrape_app_provided_only"] is True
         scope = client.get("/api/sources/qualification/config").json()["scope"]
-        assert scope["scrape_unqualified"] is True
         assert scope["scrape_app_provided_only"] is True
 
         # And back off, to confirm the write is a real two-way toggle, not a stuck default.
         unscoped = client.put(
             "/api/scheduler/config",
-            json={"scrape_unqualified": False, "scrape_app_provided_only": False},
+            json={"scrape_app_provided_only": False},
         )
         assert unscoped.status_code == 200
         scope2 = client.get("/api/sources/qualification/config").json()["scope"]
-        assert scope2["scrape_unqualified"] is False
         assert scope2["scrape_app_provided_only"] is False
+
+        # THE RETIRED HATCH IS REFUSED BY NAME, never accepted and dropped (Q1101 = a).
+        # The field stays DECLARED on SchedulerConfigUpdate precisely so this refusal can
+        # happen: Pydantic drops an undeclared key silently, and the caller would then get
+        # a 200 saying their scope decision took effect when nothing changed. Driven
+        # through the real HTTP path, because a direct call receives Query/Field sentinels
+        # and would not exercise the same thing.
+        retired = client.put("/api/scheduler/config", json={"scrape_unqualified": True})
+        assert retired.status_code == 400, (
+            "the retired hatch was accepted; a silent 200 tells the operator a scope "
+            "decision took effect when it did not"
+        )
+        assert "retired" in retired.text.lower()
+        # The refusal carries the ruling, so the caller learns WHY rather than only that.
+        assert "Q1101" in retired.text
+        # And the refusal must not have written anything on its way past.
+        scope3 = client.get("/api/sources/qualification/config").json()["scope"]
+        assert scope3["scrape_app_provided_only"] is False
+        assert "scrape_unqualified" not in scope3
 
         try:
             started = client.post("/api/scheduler/start").json()

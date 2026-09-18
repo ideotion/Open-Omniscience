@@ -148,10 +148,16 @@ def test_the_payload_carries_the_live_value_not_only_the_default() -> None:
 
 
 # --------------------------------------------------------------------------- #
-#  Toggle A -- "also scrape sources not yet qualified"
+#  The admission gate -- `scrape_unqualified` RETIRED (Q1101 = a, 2026-09-15)
+#
+#  These three replace the two toggle-A tests that pinned the retired hatch. They were
+#  amended DELIBERATELY, not by reflex: the hatch's own guards were right about the hatch,
+#  and what Q1101 changed is that the question they answered no longer exists. The
+#  property they protected -- a source judged and found wanting is never scraped -- is
+#  asserted here more strongly, because it now holds with no setting able to widen it.
 # --------------------------------------------------------------------------- #
 def test_an_untouched_install_scrapes_exactly_what_it_scraped_before(tmp_path) -> None:
-    """Both toggles default to today's behaviour."""
+    """The gate is ENABLED and QUALIFIED, unconditionally."""
     s = _session(tmp_path)
     _src(s, "qualified.example", status=STATUS_QUALIFIED)
     _src(s, "unqualified.example", status=STATUS_UNQUALIFIED)
@@ -162,32 +168,48 @@ def test_an_untouched_install_scrapes_exactly_what_it_scraped_before(tmp_path) -
     assert picked == {"qualified.example"}
 
 
-def test_toggle_a_admits_the_unjudged_and_still_refuses_the_judged_bad(tmp_path) -> None:
-    """THE data-safety line on this toggle. Unqualified means NOT YET JUDGED; disqualified
-    is a verdict, and the re-qualification ladder is how a disqualified source comes back --
-    not a checkbox that forgets the verdict was ever reached."""
+def test_the_unqualified_hatch_is_gone_from_the_settings_shape(tmp_path) -> None:
+    """Q1101 retires `scrape_unqualified`. Asserted on the DATACLASS rather than on a
+    behaviour, because a field that still exists defaulting to False is one edit from
+    being turned back on -- and the ruling removed the lever, not just its default."""
+    from dataclasses import fields
+
+    names = {f.name for f in fields(SchedulerSettings)}
+    assert "scrape_unqualified" not in names, (
+        "the retired hatch is back on SchedulerSettings; Q1101 removed the lever itself"
+    )
+    # Anti-vacuity: the sibling toggle is still there, so this is not passing because the
+    # dataclass moved or `fields` returned nothing.
+    assert "scrape_app_provided_only" in names
+
+
+def test_no_setting_can_widen_the_gate_to_an_unjudged_or_judged_bad_source(tmp_path) -> None:
+    """THE data-safety line, now unconditional. Previously a toggle could admit a
+    not-yet-judged source; nothing can. A disqualified source was never admissible and
+    still is not -- the re-qualification ladder is how it comes back, never a setting.
+
+    Driven over EVERY boolean field the settings carry, so a future toggle that widens
+    this query reddens here rather than being discovered in the field.
+    """
+    from dataclasses import fields
+
     s = _session(tmp_path)
     _src(s, "qualified.example", status=STATUS_QUALIFIED)
     _src(s, "unqualified.example", status=STATUS_UNQUALIFIED)
     _src(s, "disqualified.example", status=STATUS_DISQUALIFIED)
     s.commit()
 
-    picked = {x.domain for x in select_sources(s, SchedulerSettings(scrape_unqualified=True))}
-    assert "unqualified.example" in picked, "the toggle did not admit a not-yet-judged source"
-    assert "disqualified.example" not in picked, (
-        "a source that was judged and found wanting was scraped anyway"
-    )
-
-
-def test_toggle_a_still_reaches_only_enabled_sources(tmp_path) -> None:
-    """What makes the toggle much safer than it sounds: the ~42,600 discovered candidates
-    are DISABLED, so they stay out either way."""
-    s = _session(tmp_path)
-    _src(s, "candidate.example", status=STATUS_UNQUALIFIED, enabled=False)
-    s.commit()
-
-    picked = {x.domain for x in select_sources(s, SchedulerSettings(scrape_unqualified=True))}
-    assert picked == set()
+    bool_fields = [f.name for f in fields(SchedulerSettings) if f.type in ("bool", bool)]
+    assert bool_fields, "no boolean settings found -- the sweep would prove nothing"
+    for name in bool_fields:
+        for value in (True, False):
+            picked = {x.domain for x in select_sources(s, SchedulerSettings(**{name: value}))}
+            assert "unqualified.example" not in picked, (
+                f"{name}={value} admitted a source the engine has not judged"
+            )
+            assert "disqualified.example" not in picked, (
+                f"{name}={value} admitted a source that was judged and found wanting"
+            )
 
 
 # --------------------------------------------------------------------------- #

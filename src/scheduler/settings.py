@@ -140,21 +140,23 @@ class SchedulerSettings:
     # order of magnitude larger than today's. 0 disables re-verification entirely.
     qualification_recheck_per_pass: int = 2
 
-    # SCRAPING SCOPE (maintainer amendment 2026-08-03). Both default to TODAY'S behaviour,
-    # so an untouched install's `select_sources` query is byte-identical.
-    #
-    # `scrape_unqualified` RELAXES a maintainer ruling ("only QUALIFIED sources are
-    # scraped", 0.3 close gate) and is recorded as an amendment to it rather than as an
-    # ordinary settings row. Two facts make it much safer than it first sounds: it reaches
-    # only ENABLED sources -- the ~42,600 discovered candidates are DISABLED and stay out
-    # either way -- and it NEVER admits a `disqualified` source. Unqualified means
-    # not-yet-judged; disqualified is a verdict, and the re-qualification ladder is how a
-    # disqualified source comes back.
-    scrape_unqualified: bool = False
-    # `scrape_app_provided_only` narrows collection to the sources that SHIPPED with the
-    # app, by their seed-time provenance tag. See catalog.provenance_scope.is_app_provided
-    # for why this is an exact-set match and not a prefix one.
+    # SCRAPING SCOPE. `scrape_app_provided_only` narrows collection to the sources that
+    # SHIPPED with the app, by their seed-time provenance tag. See
+    # catalog.provenance_scope.is_app_provided for why this is an exact-set match and not
+    # a prefix one.
     scrape_app_provided_only: bool = False
+    #
+    # `scrape_unqualified` IS RETIRED (Q1101 = a, 2026-09-15; brief S04-12 S1). It was a
+    # 2026-08-03 amendment relaxing the close-gate ruling so collection could reach
+    # sources the engine had not judged. Q1101 settles the same question the other way and
+    # settles it at the source: a `qualified` verdict now flips `enabled=True`, so
+    # qualification IS the admission gate and there is nothing left for a hatch to relax.
+    # The field is GONE rather than defaulted-off, because a dormant relaxation of a
+    # ruling is a relaxation somebody eventually turns on.
+    #
+    # A persisted `true` is dropped by `load_settings` and DISCLOSED ONCE (see
+    # `_RETIRED_KEYS`): an operator who had opted in is told their setting no longer
+    # exists and why, rather than finding collection quietly narrower.
 
     # Optional per-language cadence lever (default OFF). ``language_equilibrium``
     # is a {lang: weight} TARGET the operator opts into; when set, over-
@@ -471,12 +473,67 @@ def _require_wiki_lane_budget_gb(value) -> int:
         )
     return gb
 
+# Settings that existed once, were REMOVED by a ruling, and may still sit in an
+# operator's stored file. Each maps to the sentence an operator gets, ONCE, when their
+# stored value is dropped -- because a control that silently stops existing is
+# indistinguishable, from the outside, from a control that stopped working.
+#
+# The disclosure fires only for a value that was actually SET to something other than the
+# retired default: an operator who never touched the hatch is told nothing, since nothing
+# about their install changed.
+_RETIRED_KEYS: dict[str, str] = {
+    "scrape_unqualified": (
+        "The 'also scrape unqualified sources' setting has been retired (ruling Q1101, "
+        "2026-09-15). A source that passes qualification is now enabled for collection "
+        "automatically, so there is nothing left for the setting to relax. Every "
+        "automatic admission is listed in Settings > Sources > Admission audit, where it "
+        "can be undone."
+    ),
+}
+# Process-global, so one boot emits one disclosure per retired key rather than one per
+# `load_settings()` call -- and it is per PROCESS rather than persisted, because a
+# disclosure an operator may have missed is worth repeating on the next run and a
+# persisted "already told them" flag is a second thing to get wrong.
+_RETIRED_DISCLOSED: set[str] = set()
+
+
+def _disclose_retired(raw: dict) -> list[str]:
+    """Drop any retired key's stored value and return the disclosures owed for it."""
+    owed: list[str] = []
+    for key, sentence in _RETIRED_KEYS.items():
+        if key not in raw:
+            continue
+        # A stored falsy value is the retired default: nothing the operator chose is being
+        # taken away, so there is nothing to disclose.
+        if not raw.get(key):
+            continue
+        owed.append(sentence)
+        if key not in _RETIRED_DISCLOSED:
+            _RETIRED_DISCLOSED.add(key)
+            _LOG.warning("retired scheduler setting %r dropped: %s", key, sentence)
+    return owed
+
+
+def retired_settings_disclosures() -> list[str]:
+    """The disclosures a UI surface should show. Reads the stored file, never a cache, so
+    a fresh import that carries the retired key is disclosed too."""
+    raw = _read_raw()
+    if not raw:
+        return []
+    return [
+        sentence
+        for key, sentence in _RETIRED_KEYS.items()
+        if raw.get(key)
+    ]
+
+
 def load_settings() -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
     d = SchedulerSettings()
     raw = _read_raw()
     if raw is None:
         return d
+    _disclose_retired(raw)
     mode = raw.get("mode", d.mode)
     if mode not in VALID_MODES:
         _LOG.warning("ignoring invalid stored scheduler mode %r", mode)
@@ -519,7 +576,6 @@ def load_settings() -> SchedulerSettings:
         qualification_recheck_per_pass=_coerce_int(
             raw.get("qualification_recheck_per_pass"), d.qualification_recheck_per_pass, 0, 100
         ),
-        scrape_unqualified=_coerce_bool(raw.get("scrape_unqualified"), d.scrape_unqualified),
         scrape_app_provided_only=_coerce_bool(
             raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
         ),
@@ -555,6 +611,16 @@ def load_settings() -> SchedulerSettings:
 
 def save_settings(updates: dict) -> SchedulerSettings:
     """Apply a partial update and persist atomically. Validates before writing."""
+    # A RETIRED key is REFUSED BY NAME, never accepted and dropped. Pydantic would drop an
+    # undeclared field silently and this endpoint would answer 200 having changed nothing,
+    # which tells a caller their scope decision took effect when it did not (the
+    # 2026-09-16 `auto_track_signals` lesson). The refusal carries the ruling, so a caller
+    # learns why rather than only that.
+    for key in _RETIRED_KEYS:
+        if key in updates and updates[key] is not None:
+            raise SchedulerSettingsError(
+                f"{key} has been retired and can no longer be set. {_RETIRED_KEYS[key]}"
+            )
     current = load_settings()
 
     if "mode" in updates and updates["mode"] is not None:
@@ -588,10 +654,6 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
-        )
-    if "scrape_unqualified" in updates and updates["scrape_unqualified"] is not None:
-        current.scrape_unqualified = _coerce_bool(
-            updates["scrape_unqualified"], current.scrape_unqualified
         )
     if "scrape_app_provided_only" in updates and updates["scrape_app_provided_only"] is not None:
         current.scrape_app_provided_only = _coerce_bool(

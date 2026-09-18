@@ -125,10 +125,19 @@
         </div>`).join("");
 
         const scope = cfg.scope || {};
-        const u = $("qual-scope-unqualified"), sh = $("qual-scope-shipped");
-        if (u) u.checked = !!scope.scrape_unqualified;
+        const sh = $("qual-scope-shipped");
         if (sh) sh.checked = !!scope.scrape_app_provided_only;
+        // A setting an operator had TURNED ON and that a ruling has since removed is
+        // named, once, where that setting used to be. Silently narrower collection with
+        // no explanation is the failure this exists to prevent.
+        const ret = $("qual-scope-retired");
+        if (ret) {
+          const lines = scope.retired || [];
+          ret.hidden = !lines.length;
+          ret.textContent = lines.map((s) => t(s)).join(" ");
+        }
         _qualScopeCount();
+        loadAdmissionAudit();
       } catch (e) {
         state.textContent = _apiErrorMessage(e);
       }
@@ -164,9 +173,96 @@
 
     async function qualSaveScope() {
       await _qualPut({
-        scrape_unqualified: !!($("qual-scope-unqualified") || {}).checked,
         scrape_app_provided_only: !!($("qual-scope-shipped") || {}).checked,
       });
+    }
+
+    // THE ADMISSION AUDIT (ruling Q1101). Judging now enables a source by itself, so this
+    // is the surface that makes each such decision visible and reversible. Loopback only
+    // -- it reads this machine's own record and writes two columns of it, so there is no
+    // egress and therefore no consent gate.
+    function _admissionRow(e) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      // A label:value shape, never a sentence with the count inside it -- an interpolated
+      // sentence cannot conjugate and cannot be keyed.
+      const was = (e.prior_enabled === null || e.prior_enabled === undefined)
+        ? t("never set")
+        : (e.prior_enabled ? t("on") : t("off"));
+      const when = e.occurred_at ? `<span dir="ltr">⁨${esc(e.occurred_at)}⁩</span>` : "";
+      const undone = e.undone
+        ? `<span class="muted">${t("Undone")}${e.undone_at
+            ? ` ⁨${esc(e.undone_at)}⁩` : ""}</span>`
+        : `<button class="secondary" data-undo="${esc(String(e.id))}">${t("Undo")}</button>`;
+      // The three statuses are a CLOSED app vocabulary, not data, and the app already
+      // keys `qualified`/`disqualified` -- so they go through t() like every other
+      // vocabulary word. A Chromium walk in ar is what caught this: the raw English token
+      // rendered inside an otherwise fully-translated line, which no source test and no
+      // i18n gate can see (the value sits inside a composed node the DOM walker cannot
+      // match). The DOMAIN beside it is data and stays untranslated, deliberately.
+      const wasStatus = e.prior_status ? t(e.prior_status) : t("never judged");
+      return `<div class="row" style="gap:10px;align-items:center;justify-content:space-between;padding:4px 0">
+        <div>
+          <strong>${esc(e.domain || e.name || "")}</strong>
+          <span class="muted"> · ${t("Collection was")}: ${was}`
+        + ` · ${t("Status was")}: ${esc(wasStatus)}`
+        + ` · ${when}</span>
+        </div>
+        <div>${undone}</div>
+      </div>`;
+    }
+
+    async function loadAdmissionAudit() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const host = $("qual-admission");
+      if (!host) return;
+      try {
+        const d = await api("/api/sources/admission/audit?limit=25");
+        const evs = d.events || [];
+        if (!evs.length) {
+          // An honest empty state, never a zeroed panel: no admissions yet and "we could
+          // not read them" are different facts, and a failed read lands in catch below.
+          host.textContent = t("Judging has not admitted any source on its own yet.");
+          return;
+        }
+        // The exact total, never the length of the list -- the list is capped and the
+        // count is not.
+        const shown = tf("Showing {shown} of {total} admissions", {shown: evs.length, total: d.total});
+        const undoneNote = d.undone_total
+          ? ` · ${tf("{n} undone", {n: d.undone_total})}` : "";
+        // The GAP, published as a gap: sources collection reaches that this audit has no
+        // record of admitting (the shipped catalogue, an inherited stamp, a restore).
+        // Drawn only when there IS one -- a caveat may claim only what the data exhibits.
+        const gap = (d.unaccounted > 0)
+          ? `<div class="card-caveat" style="margin-top:8px">`
+            + esc(tf("{n} of {total} collecting sources are not accounted for here",
+                     {n: d.unaccounted, total: d.collecting}))
+            + ` ${esc(t(d.coverage_note || ""))}</div>`
+          : "";
+        host.innerHTML = `<div class="muted" style="margin-bottom:6px">${esc(shown)}${esc(undoneNote)}</div>`
+          + evs.map(_admissionRow).join("")
+          + `<div class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</div>`
+          + gap;
+        host.querySelectorAll("button[data-undo]").forEach((b) => {
+          b.addEventListener("click", () => undoAdmission(b.getAttribute("data-undo"), b));
+        });
+      } catch (e) {
+        host.textContent = _apiErrorMessage(e);
+      }
+    }
+
+    async function undoAdmission(id, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api(`/api/sources/admission/${encodeURIComponent(id)}/undo`, {method: "POST"});
+        toast(t("Admission undone."), "ok");
+        loadAdmissionAudit();
+        _qualScopeCount();
+      } catch (e) {
+        toast(_apiErrorMessage(e), "err");
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function _qualPut(body) {

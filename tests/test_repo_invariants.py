@@ -9291,9 +9291,23 @@ def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles
             f"{restated} is restated in HTML; it must be rendered from CRITERIA"
         )
 
-    # 4. Both gates, and both scope toggles.
-    assert 'id="qual-scope-unqualified"' in markup and 'id="qual-scope-shipped"' in markup
+    # 4. Both gates, the surviving scope toggle, and the ADMISSION AUDIT.
+    #
+    #    `qual-scope-unqualified` is GONE (Q1101 = a, 2026-09-15): the hatch it controlled
+    #    is retired, because qualification now admits a source by itself. Its absence is
+    #    asserted rather than merely dropped -- re-adding the control would put a lever
+    #    back on a ruling, and nothing else in the tree would notice.
+    assert 'id="qual-scope-unqualified"' not in markup, (
+        "the retired 'also scrape unqualified' control is back; Q1101 removed it"
+    )
+    assert 'id="qual-scope-shipped"' in markup
     assert 'id="qual-enabled"' in markup, "the on/off switch must be present and first"
+    #    The audit view is what Q1101's automatic admission rests on: the ruling names the
+    #    undo as its safety valve, so a panel that admits without one is the ruling half
+    #    implemented.
+    assert 'id="qual-admission"' in markup, (
+        "the admission audit is missing; Q1101's flip has no visible, reversible record"
+    )
 
     # 5. Units and the hover explanation ride the SHIPPED convention (invariant #17): a
     #    translated `title` is auto-marked and opens the ONE #oo-tip bubble. No bespoke
@@ -9312,17 +9326,43 @@ def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles
 
 
 def test_the_scope_toggles_never_widen_what_the_engine_may_claim():
-    """The two hard fences, asserted at the source level because they are the whole
-    reason these toggles are safe to expose.
+    """The hard fences, asserted at the source level because they are the whole reason a
+    scope toggle is safe to expose.
 
     A scope toggle changes WHICH sources are scraped. It must never touch a VERDICT, and
     it must never let a disqualified source back in -- the re-qualification ladder is the
     only way back, by design.
+
+    AMENDED for Q1101 = a (2026-09-15), deliberately and not by reflex. This used to
+    assert that `select_sources` names `STATUS_DISQUALIFIED`, because the retired
+    `scrape_unqualified` hatch widened the gate and had to carve that verdict back out.
+    With the hatch gone the gate is an unconditional `status == STATUS_QUALIFIED`, which
+    excludes a disqualified source BY CONSTRUCTION -- so the old needle is absent from
+    correct code while the property it stood for is strictly stronger than before. The
+    assertion therefore moves to the property: the equality must be there, and it must not
+    be conditional on anything. Its behavioural twin
+    (test_qualification_gates_config.py::test_no_setting_can_widen_the_gate_to_an_unjudged_or_judged_bad_source)
+    drives every boolean setting and is what proves this is not merely a source grep.
     """
     runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
     body = runner.split("def select_sources", 1)[1].split("\ndef ", 1)[0]
-    assert "STATUS_DISQUALIFIED" in body, (
-        "the unqualified toggle must exclude the DISQUALIFIED verdict explicitly"
+    code = "\n".join(
+        line for line in body.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert "Source.status == STATUS_QUALIFIED" in code, (
+        "the admission gate must require the QUALIFIED verdict; without it an unjudged or "
+        "disqualified source is collected"
+    )
+    # ...and unconditionally. A guard that only checks the filter is PRESENT passes with
+    # the filter sitting inside an `if some_setting:` that re-opens the hatch under a new
+    # name -- which is exactly the shape Q1101 retired.
+    gate_line = next(
+        ln for ln in code.splitlines() if "Source.status == STATUS_QUALIFIED" in ln
+    )
+    gate_indent = len(gate_line) - len(gate_line.lstrip())
+    assert gate_indent == 4, (
+        "the QUALIFIED filter is nested inside a branch, so some condition can skip it: "
+        f"{gate_line!r}"
     )
     assert "app_provided_filter" in body, (
         "the app-provided scope must use the shared exact-tag filter, never an inline "

@@ -584,6 +584,22 @@ def stamp_curated_catalog(session: Session, *, now: datetime | None = None) -> d
     return counts
 
 
+def is_collectable(enabled: bool | None, status: str | None) -> bool:
+    """Can regular collection reach a source in this state?
+
+    THE ONE AUTHORITY on that question, in Python. ``select_sources`` asks it in SQL
+    (``enabled=True AND status == STATUS_QUALIFIED``) and this is the same predicate for a
+    row already in hand -- the admission audit needs it to decide whether a verdict
+    ADMITTED anything, and two separate readings of "is this source collecting" is exactly
+    how a surface and a gate come to disagree about one quantity.
+
+    ``enabled`` is three-valued: NULL means "never set", which is not True, so a
+    never-set source is not collecting. That matches the SQL, where ``enabled=True``
+    excludes NULL.
+    """
+    return enabled is True and status == STATUS_QUALIFIED
+
+
 def evaluate_and_stamp(
     session: Session, sources: list[Source], fails_by_source: dict[int, list[dict]],
     *, now: datetime, criteria_version: str = CRITERIA_VERSION,
@@ -592,9 +608,10 @@ def evaluate_and_stamp(
     source. Never a score: only the three-state status + the DATE + the criteria version
     are stamped. ``qualified_at``/``qualification_criteria_version`` are cleared on a
     disqualified verdict -- a stale 'qualified' stamp must never survive a later failure."""
-    from src.database.models import SourceQualificationAttempt
+    from src.database.models import SourceAdmissionEvent, SourceQualificationAttempt
 
     qualified = disqualified = 0
+    admitted = 0
     qualified_ids: list[int] = []
     for source in sources:
         fails = fails_by_source.get(source.id, [])
@@ -603,12 +620,47 @@ def evaluate_and_stamp(
             source_id=source.id, attempted_at=now, verdict=verdict,
             criteria_version=criteria_version,
         ))
+        # Q1101 = a (2026-09-15): QUALIFICATION IS THE ADMISSION GATE. Read the prior
+        # state BEFORE anything is written, because the audit row's whole purpose is to
+        # let an operator put it back -- and `enabled` is three-valued (True / False /
+        # NULL = never set), so the prior value is captured as-is rather than coerced.
+        prior_enabled = source.enabled
+        prior_status = source.status
+        was_collecting = is_collectable(prior_enabled, prior_status)
         source.status = verdict
         if verdict == STATUS_QUALIFIED:
             source.qualified_at = now
             source.qualification_criteria_version = criteria_version
             qualified += 1
             qualified_ids.append(source.id)
+            # THE FLIP, and ONLY on this verdict. `disqualified` never reaches here, and
+            # a source that produced no evidence never reaches `evaluate_and_stamp` at
+            # all (`log_no_evidence_attempts` handles it and touches neither status nor
+            # `enabled`) -- which is what keeps the 2026-07-24 inversion class closed:
+            # a never-judged source cannot be admitted by an absence of findings.
+            source.enabled = True
+            # THE AUDIT'S UNIT IS "BECAME COLLECTABLE", NOT "`enabled` CHANGED".
+            #
+            # An earlier cut of this recorded a row only when `enabled` itself moved, and
+            # an adversarial pass live-reproduced what that misses: the shipped catalogue
+            # seeds essentially every source `enabled: true`, so the ordinary first
+            # qualification of a catalogue source goes `enabled=True/unqualified` ->
+            # `enabled=True/qualified` -- from excluded to actively scraped -- while
+            # `enabled` never moves and no row was written. The same hole swallowed every
+            # re-admission on the disqualification ladder, where `enabled` stays True
+            # across the whole cycle. That is the recorded "a proxy for a fact drifts from
+            # it" defect: `enabled` moving was a PROXY for admission, and the FACT is
+            # whether collection can now reach the source.
+            #
+            # So the predicate is the gate itself (`select_sources`), read through the one
+            # shared helper both call -- which is what stops the two drifting apart again.
+            if not was_collecting:
+                session.add(SourceAdmissionEvent(
+                    source_id=source.id, occurred_at=now, verdict=verdict,
+                    criteria_version=criteria_version,
+                    prior_enabled=prior_enabled, prior_status=prior_status,
+                ))
+                admitted += 1
         else:
             source.qualified_at = None
             source.qualification_criteria_version = None
@@ -618,7 +670,202 @@ def evaluate_and_stamp(
     # enqueue archive backfill only AFTER the "qualified" stamp is actually
     # committed -- a rollback between this call and the commit must never
     # queue a backfill for a source that was never really admitted.
-    return {"qualified": qualified, "disqualified": disqualified, "qualified_ids": qualified_ids}
+    return {
+        "qualified": qualified,
+        "disqualified": disqualified,
+        "qualified_ids": qualified_ids,
+        # How many of those `qualified` stamps actually ADMITTED a source that was not
+        # already collecting. A re-check of an enabled source is a qualified verdict and
+        # not an admission, so reporting `qualified` where a reader wants "how many new
+        # sources did this pass let in" would over-state it on every later pass.
+        "admitted": admitted,
+    }
+
+
+def admission_audit(
+    session: Session, *, limit: int = 100, include_undone: bool = True,
+) -> dict:
+    """The AUDIT VIEW behind Q1101's safety valve: every automatic ``enabled`` flip this
+    instance has made, newest first, with the state each one replaced.
+
+    Counts are taken over the WHOLE table and the LIST is what the limit bounds -- the
+    anti-capping rule (a displayed figure is never secretly a cap). ``shown`` and
+    ``total`` are both published so a reader can tell a short list from a short history.
+    """
+    from src.database.models import Source, SourceAdmissionEvent
+
+    q = session.query(SourceAdmissionEvent)
+    if not include_undone:
+        q = q.filter(SourceAdmissionEvent.undone_at.is_(None))
+    total = int(q.count())
+    undone_total = int(
+        session.query(func.count(SourceAdmissionEvent.id))
+        .filter(SourceAdmissionEvent.undone_at.isnot(None))
+        .scalar()
+        or 0
+    )
+    rows = q.order_by(SourceAdmissionEvent.occurred_at.desc(), SourceAdmissionEvent.id.desc()).limit(
+        max(1, int(limit))
+    ).all()
+
+    names: dict[int, tuple[str, str]] = {}
+    if rows:
+        for sid, domain, name in (
+            session.query(Source.id, Source.domain, Source.name)
+            .filter(Source.id.in_([r.source_id for r in rows]))
+            .all()
+        ):
+            names[int(sid)] = (str(domain or ""), str(name or ""))
+
+    events = []
+    for r in rows:
+        domain, name = names.get(int(r.source_id), ("", ""))
+        events.append({
+            "id": int(r.id),
+            "source_id": int(r.source_id),
+            "domain": domain,
+            "name": name,
+            "occurred_at": r.occurred_at.isoformat() if r.occurred_at else None,
+            "verdict": r.verdict,
+            "criteria_version": r.criteria_version,
+            "prior_enabled": r.prior_enabled,
+            "prior_status": r.prior_status,
+            "undone_at": r.undone_at.isoformat() if r.undone_at else None,
+            "undone": r.undone_at is not None,
+        })
+    # WHAT THIS AUDIT DOES NOT COVER, counted rather than described.
+    #
+    # The audit records admissions made by the qualification ENGINE'S VERDICT. It is not
+    # the whole population of "how did this source come to be collecting": the shipped
+    # curated catalogue stamps its own domains at boot (`stamp_curated_catalog`), a
+    # shipped overlay can carry an inherited stamp (`qualification_overlay.apply_overlay`),
+    # and a restore-merge copies another corpus's `enabled`/`status` verbatim. None of
+    # those is an unattended judgement by this engine, so none writes an admission row --
+    # and a panel that said "every admission" while three other routes existed would be
+    # making a claim its own table cannot support. So the DIFFERENCE is published: how
+    # many sources collection can currently reach, and how many of those this audit can
+    # account for. A gap is published as a gap.
+    collecting = int(
+        session.query(func.count(Source.id))
+        .filter(Source.enabled.is_(True), Source.status == STATUS_QUALIFIED)
+        .scalar()
+        or 0
+    )
+    accounted = int(
+        session.query(func.count(func.distinct(SourceAdmissionEvent.source_id)))
+        .join(Source, Source.id == SourceAdmissionEvent.source_id)
+        .filter(
+            SourceAdmissionEvent.undone_at.is_(None),
+            Source.enabled.is_(True),
+            Source.status == STATUS_QUALIFIED,
+        )
+        .scalar()
+        or 0
+    )
+    return {
+        "events": events,
+        "shown": len(events),
+        "total": total,
+        "undone_total": undone_total,
+        "collecting": collecting,
+        "accounted_for": accounted,
+        "unaccounted": max(0, collecting - accounted),
+        "method": (
+            "Every row is one automatic admission: the qualification engine judged the "
+            "source's extraction valid, so collection can now reach it. The stored prior "
+            "state is what an undo restores. A row is written when a verdict makes a "
+            "source COLLECTABLE -- not merely when it changes the enabled flag, because "
+            "a catalogue source is already enabled and is admitted by the verdict alone."
+        ),
+        "caveat": (
+            "Admission is about EXTRACTION VALIDITY only -- never editorial merit, and "
+            "never a score. An undo reverses this instance's decision; it does not "
+            "disqualify the source, so a later pass may admit it again."
+        ),
+        "coverage_note": (
+            "This lists admissions made by judging. Sources can also be collecting "
+            "because they came stamped in the shipped catalogue, carried an inherited "
+            "stamp, or arrived in a restored backup -- those are not judgements made "
+            "here and have no row to undo."
+        ),
+    }
+
+
+class AdmissionUndoRefused(Exception):
+    """A named refusal, so a caller can tell 'we declined' from 'we crashed'."""
+
+
+def undo_admission(session: Session, event_id: int, *, now: datetime) -> dict:
+    """Reverse ONE automatic admission, restoring BOTH halves of the prior state.
+
+    Restoring only ``enabled`` would leave a source stamped ``qualified`` and disabled --
+    a state the next pass has no reason to re-examine and no surface reports as reversed,
+    so the undo would look like it worked and quietly strand the row. The stamp columns
+    (``qualified_at`` / ``qualification_criteria_version``) follow the status for the same
+    reason: a cleared status beside a live ``qualified_at`` is two answers to one question.
+
+    Append-only: the event is STAMPED, never deleted. Refuses an already-undone event by
+    name rather than writing a second reversal over the first.
+    """
+    from src.database.models import Source, SourceAdmissionEvent
+
+    ev = session.get(SourceAdmissionEvent, int(event_id))
+    if ev is None:
+        raise AdmissionUndoRefused("no such admission event")
+    if ev.undone_at is not None:
+        raise AdmissionUndoRefused("this admission was already undone")
+    source = session.get(Source, int(ev.source_id))
+    if source is None:
+        raise AdmissionUndoRefused("the source this admission refers to no longer exists")
+    # ORDER MATTERS, and an adversarial pass live-reproduced why. A source can be admitted
+    # more than once (admit, the operator disables it, a later pass admits it again), and
+    # each event stores the state IT replaced. Undoing the OLDER one writes a prior state
+    # that the newer admission has since superseded -- so the source silently takes a
+    # value from two decisions ago, while the newer event still renders as live and
+    # reversible, inviting a second click that would revive a status the operator had
+    # deliberately cleared.
+    #
+    # Refuse, rather than silently reordering: which admission an operator meant to
+    # reverse is their decision, and the honest move is to tell them a later one is in
+    # effect. Undone events do not block -- only one still standing can be superseded.
+    newer = (
+        session.query(SourceAdmissionEvent)
+        .filter(
+            SourceAdmissionEvent.source_id == ev.source_id,
+            SourceAdmissionEvent.undone_at.is_(None),
+            SourceAdmissionEvent.id != ev.id,
+            SourceAdmissionEvent.occurred_at >= ev.occurred_at,
+        )
+        .order_by(SourceAdmissionEvent.occurred_at.desc(), SourceAdmissionEvent.id.desc())
+        .first()
+    )
+    if newer is not None and (newer.occurred_at, newer.id) > (ev.occurred_at, ev.id):
+        raise AdmissionUndoRefused(
+            "a later admission of this source is still in effect; undo that one first"
+        )
+
+    source.enabled = ev.prior_enabled
+    # NARROWED, not cast. `Source.status` is NOT NULL with `server_default="unqualified"`,
+    # so a stored `prior_status` of NULL cannot be written back as one -- and NULL on that
+    # column means exactly what "unqualified" means there, never judged. `prior_status` is
+    # nullable in the audit table anyway, because a column that can only ever hold one
+    # shape is a column nobody checks; a cast would assert the union away and turn a
+    # legacy row into a constraint violation at flush, where this lands on the value the
+    # schema itself calls "no verdict".
+    source.status = ev.prior_status if ev.prior_status is not None else STATUS_UNQUALIFIED
+    if ev.prior_status != STATUS_QUALIFIED:
+        source.qualified_at = None
+        source.qualification_criteria_version = None
+    ev.undone_at = now
+    session.commit()
+    return {
+        "undone": True,
+        "event_id": int(ev.id),
+        "source_id": int(source.id),
+        "domain": source.domain,
+        "restored_enabled": ev.prior_enabled,
+        "restored_status": ev.prior_status,
+    }
 
 
 def log_no_evidence_attempts(

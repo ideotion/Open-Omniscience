@@ -415,15 +415,15 @@ def select_sources(session, settings: SchedulerSettings):
     priority first. Used by rss/crawl runs and by the targets-preview endpoint so "what
     will be scraped" is explicit.
 
-    TWO SCOPE TOGGLES (maintainer amendment 2026-08-03), both defaulting to the behaviour
-    above so an untouched install's query is byte-identical:
+    THE ``scrape_unqualified`` HATCH IS RETIRED (Q1101 = a, 2026-09-15). It admitted
+    sources the engine had not judged, as a 2026-08-03 amendment to the close-gate ruling.
+    Q1101 answers the same question at the source instead: a ``qualified`` verdict now
+    flips ``enabled=True`` (src.catalog.qualification.evaluate_and_stamp), so qualification
+    IS the admission gate and the gate below is unconditional. What made the hatch
+    tempting was that qualification admitted nothing on its own; that is no longer true.
 
-    ``scrape_unqualified`` also admits sources that have not been judged YET. It is an
-    amendment to the close-gate ruling rather than an ordinary setting, and it is narrower
-    than it sounds: it reaches only ENABLED sources (the ~42,600 discovered candidates are
-    disabled and stay out either way), and it NEVER admits a ``disqualified`` source --
-    unqualified means not-yet-judged, disqualified is a verdict, and the re-qualification
-    ladder is how a disqualified source comes back.
+    ONE SCOPE TOGGLE remains, defaulting to the behaviour above so an untouched install's
+    query is byte-identical:
 
     ``scrape_app_provided_only`` narrows to the sources that shipped with the app, by their
     seed-time provenance tag. The definition lives in ``catalog.provenance_scope`` because
@@ -434,17 +434,13 @@ def select_sources(session, settings: SchedulerSettings):
     from sqlalchemy import or_
 
     from src.catalog.provenance_scope import app_provided_filter
-    from src.catalog.qualification import STATUS_DISQUALIFIED, STATUS_QUALIFIED
+    from src.catalog.qualification import STATUS_QUALIFIED
     from src.database.models import Source
 
-    q = session.query(Source).filter_by(enabled=True)
-    if getattr(settings, "scrape_unqualified", False):
-        # Everything except a source that was JUDGED and found wanting. Stated as an
-        # explicit exclusion of the verdict rather than an inclusion list, so a status
-        # added later cannot silently become scrapeable.
-        q = q.filter(Source.status != STATUS_DISQUALIFIED)
-    else:
-        q = q.filter(Source.status == STATUS_QUALIFIED)
+    # Q1101 = a: the gate is unconditional. ENABLED *and* QUALIFIED, with no setting able
+    # to widen it -- the widening now happens where the verdict is reached, under an audit
+    # trail with an undo, rather than here where nothing recorded it.
+    q = session.query(Source).filter_by(enabled=True).filter(Source.status == STATUS_QUALIFIED)
     if getattr(settings, "scrape_app_provided_only", False):
         q = q.filter(app_provided_filter(Source.tags))
     if settings.select_languages:

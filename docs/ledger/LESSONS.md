@@ -10973,3 +10973,66 @@ guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statement
   scan itself, and run it against the ancestor rather than against zero.
   The resolution is not a preference between two copies: **keep the one that is true.**
   The stale line states a measured falsehood that the other line exists to fix.
+
+## 2026-09-18 — `S04-12` S1: AN AUDIT'S UNIT IS THE FACT, NOT THE COLUMN THAT USUALLY MOVES WITH IT
+
+**The setting.** Q1101 makes a `qualified` verdict enable a source for collection
+unattended, and names the audit view's undo as the safety valve the flip rests on. So the
+audit had to answer one question: *what did the app let in, and how do I put it back?*
+
+**The first cut wrote a row only when `enabled` itself changed**, which reads as exactly
+right — the ruling's own words are "flips `enabled=True`" — and is a PROXY. The shipped
+catalogue seeds essentially every source `enabled: true, status: unqualified`, so the
+ordinary first qualification of a catalogue source runs `enabled=True/unqualified` →
+`enabled=True/qualified`: from excluded to actively scraped, with `enabled` never moving
+and no audit row written. Measured on the real seed path, the row came back `admitted: 0`
+and zero events while `select_sources` began returning the domain. The same hole swallowed
+every **re-admission on the disqualification ladder**, where `enabled` stays `True` across
+admit → disqualify → re-qualify, so the second, genuine re-opening of collection was
+invisible and had no undo.
+
+**The fact is COLLECTABILITY**, and the repair is to read it from the gate itself: one
+`is_collectable(enabled, status)` that `select_sources` mirrors in SQL and the audit calls
+in Python, so the two cannot drift into disagreeing about one quantity. This is the
+recorded *"a proxy for a fact drifts from it, and the drift is invisible"* entry with a new
+tell worth naming: **the proxy was the ruling's own vocabulary.** A ruling names a
+mechanism because that is how a person describes the change; implementing the NOUN it used
+rather than the EFFECT it wanted is how a faithful reading ships a hole.
+
+**THREE RIDERS, each found by an adversarial pass and each hand-re-verified before it was
+believed.**
+
+(a) **An undo over an append-only log needs an ORDER guard, not just an "already undone"
+one.** A source can be admitted twice (admit, the operator disables it, a later pass
+admits it again), and each event stores the state IT replaced — so undoing the OLDER one
+writes a prior state the newer admission has already superseded, while the newer row still
+renders as reversible and invites a second click that revives a status the operator had
+deliberately cleared. Refuse, and name the way out; which admission someone meant to
+reverse is their decision, not an ordering the code picks silently.
+
+(b) **A panel that says "every admission" owes the population it cannot see.** The curated
+catalogue stamp, the shipped overlay's inherited stamp and the restore-merge each make a
+source collecting without any verdict being reached here. Publishing the DIFFERENCE
+(`collecting` vs `accounted_for`) costs two counts and makes the claim true; describing the
+exceptions in prose would not.
+
+(c) **A retired setting must be REFUSED BY NAME, which is why its field stays declared.**
+Deleting it from the request model looks like the tidy end of a retirement and is the
+accepted-and-discarded shape: Pydantic drops an undeclared key silently and the endpoint
+answers 200 having changed nothing, telling an operator their scope decision took effect.
+
+**AND THE ONE ONLY THE BROWSER COULD FIND.** The prior status rendered as the raw English
+token `unqualified` inside an otherwise fully-translated Arabic line. Two of the three
+statuses were already keyed, so the house convention was to translate this closed
+vocabulary and the renderer simply was not reaching for it — and no gate can see that: the
+value sits inside a composed text node the DOM walker cannot match, and a key that is never
+requested is not a key that is missing. The guard added for it asserts the three statuses
+are keyed **and DISTINCT**, because "never judged" and "judged and rejected" collapsing onto
+one word would assert an equivalence the engine does not make.
+
+**PROCESS NOTE, on the fixture that hid all of it.** The test file's own helper defaulted
+to `enabled=False` — the DISCOVERED-CANDIDATE shape, the opposite of production's — so a
+fully green suite coexisted with the hole for as long as it existed. The recorded
+"a probe's data distribution is part of the lookalike" trap, with the SEED DEFAULT as the
+varying axis: when a fixture picks a value the real writer never picks, the tests are about
+a population the field does not contain.
