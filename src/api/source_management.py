@@ -303,6 +303,76 @@ def overlay_revert(db: Session = Depends(get_db)) -> dict:
 
     return revert_overlay(db, now=datetime.now(UTC))
 
+@router.get("/official-instruments")
+def official_instruments_observable(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    headlines_per_source: Annotated[int, Query(ge=5, le=500)] = 60,
+    db: Session = Depends(get_db),
+) -> dict:
+    """The `primary_source` axis as an OBSERVABLE (Q1110 = a) — a PROPOSAL SURFACE, never a
+    gate and never a verdict.
+
+    The institutions review deferred rather than rejected the judgement axis and asked for it
+    to be rewritten as something checkable: *does this feed publish dated official
+    instruments?* That is answerable from the headlines this install already stored, and it
+    does not require a model to hold opinions about which countries' institutions are real —
+    which is the whole point, because a model calibrated on Western administrative norms
+    under-admits small-language and global-South bodies while looking like a quality filter.
+
+    THREE OUTCOMES, and the last two are kept apart on purpose: `observed`, `none_observed`
+    (headlines were read and none carried the shape) and `no_evidence` (there were none to
+    read). Collapsing them records "we could not tell" as "no", which is the shape the robots
+    ruling already rejected and which this ruling exists to stop repeating.
+
+    It writes nothing, decides nothing and gates nothing. Whether the observable ever becomes
+    a splice gate is explicitly not this slice's to decide, so no caller is offered an
+    `apply`. Read-only and local: no network. Must stay ABOVE `/{source_id}` — see the note
+    on the overlay routes.
+    """
+    from src.catalog.official_instruments import (
+        NO_EVIDENCE,
+        OBSERVED,
+        lexicon_coverage,
+        observe_headlines,
+    )
+    from src.database.models import Article, Source
+
+    rows: list[dict] = []
+    tally = {OBSERVED: 0, "none_observed": 0, NO_EVIDENCE: 0}
+    for source in db.query(Source).order_by(Source.id.asc()).limit(limit).all():
+        titles = [
+            t for (t,) in db.query(Article.title)
+            .filter(Article.source_id == source.id, Article.quarantined.isnot(True))
+            .order_by(Article.id.desc())
+            .limit(headlines_per_source)
+        ]
+        seen = observe_headlines(titles)
+        tally[seen["outcome"]] = tally.get(seen["outcome"], 0) + 1
+        rows.append({
+            "source_id": source.id, "domain": source.domain,
+            "language": source.language, **seen,
+        })
+
+    return {
+        "sources": rows,
+        "counts": {**tally, "examined": len(rows)},
+        "headlines_per_source": headlines_per_source,
+        "lexicon": lexicon_coverage(),
+        "method": (
+            "A headline counts when it names an instrument (decision, tender, regulation or "
+            "statistics release) AND carries a date or reference number. The date half is "
+            "script-independent and understands non-Gregorian calendars; the instrument half "
+            "is a lexicon that is deliberately incomplete and publishes its own coverage."
+        ),
+        "caveat": (
+            "This is an observation, not a verdict and not a gate. `none_observed` means the "
+            "rule found no dated instrument in the headlines available — never that the "
+            "source publishes none, and never a judgement about whether the body behind it "
+            "is a real institution. Nothing here is applied to any source."
+        ),
+    }
+
+
 @router.get("/{source_id}/provenance", response_model=dict)
 @limiter.limit("100/hour")
 def get_source_provenance(request: Request, source_id: int, db: Session = Depends(get_db)):
@@ -1683,13 +1753,15 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
     so this endpoint cannot change a verdict or a setting by being called.
     """
     from src.analytics.source_audit import (
+        _MIN_PATHOLOGY_ARTICLES,
         CRITERIA,
         MIN_SOURCE_ARTICLES,
         PATHOLOGY_ABS_FLOOR,
-        PATHOLOGY_ABS_FLOOR_STATUS as FLOOR_STATUS,
         SOURCE_COHORT_FLOOR,
         TAIL_P,
-        _MIN_PATHOLOGY_ARTICLES,
+    )
+    from src.analytics.source_audit import (
+        PATHOLOGY_ABS_FLOOR_STATUS as FLOOR_STATUS,
     )
     from src.catalog.gates import (
         ARTICLE_GATE_TUNABLES,
