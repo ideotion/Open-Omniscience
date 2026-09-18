@@ -8858,3 +8858,54 @@ fully green suite coexisted with the hole for as long as it existed. The recorde
 "a probe's data distribution is part of the lookalike" trap, with the SEED DEFAULT as the
 varying axis: when a fixture picks a value the real writer never picks, the tests are about
 a population the field does not contain.
+
+### 2026-09-18 · sources/overlay-editor-and-headline-count (gate row S, S04-12's S2) · PR #1158
+
+**FIXING A FACT AT ONE CALL SITE LEAVES IT BROKEN AT EVERY OTHER — MOVE THE DECISION, NOT
+THE PATCH.** S1 established that the admission audit's unit is "became COLLECTABLE", not
+"`enabled` changed", and fixed it inside `evaluate_and_stamp`. One slice later,
+`apply_overlay` — the shipped-verdict adoption that runs on every boot — was found doing
+exactly the thing the fix was about: a catalogue row (`enabled=True`, awaiting a verdict)
+adopting a shipped `qualified` verdict went from unreachable to actively scraped, with
+`select_sources` measured going from `[]` to `[the domain]` and the admission audit
+measured staying EMPTY. The undo had nothing to act on, and the "revert" being built over
+it would have had nothing to revert. The remedy that holds is not "fix the second site":
+it is `record_admission()`, ONE function both paths call, which reads the prior and the
+posterior state through the same `is_collectable` and decides for itself whether anything
+was admitted. A rule enforced at call sites is a rule that is only as good as the reader's
+memory of how many call sites there are. **How to find the others:** ask what FACT the fix
+is about (here: "can collection now reach this source"), then grep for every place that
+fact can CHANGE — not for the code the fix touched.
+
+**A HANDLER TESTED AS A FUNCTION IS NOT A TESTED ROUTE.** Seventeen tests of the overlay
+editor were green while `GET /api/sources/overlay` answered **422 — "Input should be a
+valid integer, unable to parse string as an integer"** — into the panel, where its counts
+belong. FastAPI matches in REGISTRATION order and `GET /api/sources/{source_id}`, defined
+earlier on the same router, swallows any single segment; the S1 endpoints escaped only
+because `/admission/audit` happens to have two. Every test called `overlay_status(db)`
+directly, so not one of them ever spoke HTTP. Only the Chromium walk saw it. **Whenever a
+new route is a single literal segment under a prefix that also carries a `/{id}` route, it
+must be registered above it AND driven through `TestClient` at least once** — assert a
+non-422 rather than a body, so the guard fails for the shadowing and nothing else.
+
+**A REVERT A LATER BOOT UNDOES IS NOT A REVERT.** Overlay adoption only touches rows
+reading `unqualified` — which is precisely the state a revert restores — so a revert that
+only put the rows back would be silently re-applied at the next startup, and the operator's
+decision would last until they closed the app. The restore and the preference
+(`AppSettings.adopt_shipped_verdicts`) therefore land in ONE operation, and the result
+reports `preference_held` so a half-completed revert is visible rather than reported clean.
+**Generally: when an operation's inverse is something a scheduled or boot-time step
+re-applies, restoring the state is half the work; the other half is persisting the
+decision.** A corollary found the same day: a boot-path preference read must fail OPEN
+(unreadable settings cost the operator their revert, never their app), which is a different
+default from every other refusal in this area and is worth stating where it is written.
+
+**A RATCHET'S EXISTING ALLOWANCE HIDES DEFECTS IN THE SURFACE YOU ARE WORKING ON.** The
+qualification panel's own headline line rendered `Collecte en cours: 1 · Judged so far: 1
+qualifié · … · 3 not yet judged` in French, and the same two English fragments in Arabic.
+Both strings predate the slice and sat inside the untranslatable ratchet's 466, so the gate
+was green and could not have said otherwise — a ratchet answers "did this change make it
+worse", never "is this surface correct". When a slice's ruling is ABOUT a surface (here
+Q1114: the headline count carries its label), read that surface's strings against the
+locale files directly, and lower the ratchet by what you fix (466→464, 229→227) rather than
+leaving the room behind.

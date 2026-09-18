@@ -3771,5 +3771,7 @@
   "{n} added": "新增 {n} 条",
   "{n} updated": "更新 {n} 条",
   "{n} carried through untouched": "{n} 条原样保留",
-  "{n} domains disagree across instances and were left unchanged": "有 {n} 个域名在各实例间存在分歧，已保持不变"
+  "{n} domains disagree across instances and were left unchanged": "有 {n} 个域名在各实例间存在分歧，已保持不变",
+  "Judged so far": "迄今已判定",
+  "not yet judged": "尚未判定"
 }

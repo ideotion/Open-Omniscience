@@ -3771,5 +3771,7 @@
   "{n} added": "{n} ditambahkan",
   "{n} updated": "{n} diperbarui",
   "{n} carried through untouched": "{n} diteruskan tanpa perubahan",
-  "{n} domains disagree across instances and were left unchanged": "{n} domain tidak disepakati antar-instansi dan dibiarkan tidak berubah"
+  "{n} domains disagree across instances and were left unchanged": "{n} domain tidak disepakati antar-instansi dan dibiarkan tidak berubah",
+  "Judged so far": "Dinilai sejauh ini",
+  "not yet judged": "belum dinilai"
 }

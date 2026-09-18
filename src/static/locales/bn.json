@@ -3771,5 +3771,7 @@
   "{n} added": "{n}টি যোগ হয়েছে",
   "{n} updated": "{n}টি হালনাগাদ হয়েছে",
   "{n} carried through untouched": "{n}টি অপরিবর্তিত রাখা হয়েছে",
-  "{n} domains disagree across instances and were left unchanged": "{n}টি ডোমেন নিয়ে ইনস্ট্যান্সগুলির মধ্যে দ্বিমত আছে, সেগুলি অপরিবর্তিত রাখা হয়েছে"
+  "{n} domains disagree across instances and were left unchanged": "{n}টি ডোমেন নিয়ে ইনস্ট্যান্সগুলির মধ্যে দ্বিমত আছে, সেগুলি অপরিবর্তিত রাখা হয়েছে",
+  "Judged so far": "এ পর্যন্ত বিচার করা",
+  "not yet judged": "এখনও বিচার হয়নি"
 }

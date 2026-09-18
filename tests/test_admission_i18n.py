@@ -203,7 +203,7 @@ def test_the_overlay_editors_server_prose_is_keyed_in_all_twelve_locales() -> No
         (ROOT / "src/api/diagnostics/qualification_merge.py").read_text(encoding="utf-8")
     )
     for node in ast.walk(diag):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "source_qualification_merge":
+        if isinstance(node, ast.FunctionDef) and node.name == "source_qualification_merge":
             for sub in ast.walk(node):
                 if isinstance(sub, ast.Dict):
                     for k, v in zip(sub.keys, sub.values, strict=False):

@@ -3771,5 +3771,7 @@
   "{n} added": "{n} añadidos",
   "{n} updated": "{n} actualizados",
   "{n} carried through untouched": "{n} conservados sin cambios",
-  "{n} domains disagree across instances and were left unchanged": "{n} dominios generan desacuerdo entre instancias y se dejaron sin cambios"
+  "{n} domains disagree across instances and were left unchanged": "{n} dominios generan desacuerdo entre instancias y se dejaron sin cambios",
+  "Judged so far": "Juzgadas hasta ahora",
+  "not yet judged": "aún sin juzgar"
 }

@@ -424,3 +424,60 @@ def test_adopt_then_revert_then_adopt_returns_the_corpus_to_the_adopted_state(
         "the curated row was refused by the revert, so it is already adopted"
     )
     assert _collecting(db) == collecting_after_adopt
+
+
+# --------------------------------------------------------------------------- #
+# The ROUTES, not the functions
+# --------------------------------------------------------------------------- #
+def test_the_three_endpoints_are_reachable_and_not_shadowed_by_the_by_id_route() -> None:
+    """A handler exercised as a function is not a tested ROUTE, and this is what that
+    costs.
+
+    Every test above calls `overlay_status(db)` / `revert_overlay(db)` directly. All of
+    them passed while `GET /api/sources/overlay` answered **422** -- `Input should be a
+    valid integer, unable to parse string as an integer` -- because FastAPI matches in
+    REGISTRATION order and `GET /api/sources/{source_id}`, defined earlier on the same
+    router, swallows any single segment. The panel rendered that sentence where its counts
+    belong, and only the Chromium walk saw it.
+
+    So this drives the real app. It asserts a NON-422 rather than a 200, because the
+    failure being guarded is the shadowing, and pinning a success body here would make the
+    test fail for reasons that have nothing to do with route order.
+    """
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        r = c.get("/api/sources/overlay")
+        assert r.status_code != 422, (
+            "GET /api/sources/overlay is shadowed by /{source_id} again -- move the "
+            f"overlay routes back above it. Body: {r.text[:300]}"
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        for key in ("file", "in_overlay", "would_adopt", "would_admit", "would_withdraw",
+                    "adopting_at_startup", "revertible", "declined", "caveat"):
+            assert key in body, f"the editor's payload lost {key!r}"
+
+        # The two POSTs travel the same road and would be shadowed the same way by a
+        # future `POST /{source_id}/...`, so neither is assumed from the GET.
+        for path in ("/api/sources/overlay/adopt", "/api/sources/overlay/revert"):
+            assert c.post(path).status_code != 422, f"{path} is shadowed"
+
+
+def test_the_overlay_routes_are_registered_before_the_by_id_route() -> None:
+    """The structural half, so a reordering is named rather than merely observed as a 422.
+
+    Read off the router's OWN definitions (immutable), never the shared mutable
+    `app.routes` singleton -- the recorded flaky-guard lesson.
+    """
+    from src.api.source_management import router
+
+    paths = [r.path for r in router.routes]
+    first_overlay = min(i for i, p in enumerate(paths) if "/overlay" in p)
+    first_by_id = min(i for i, p in enumerate(paths) if "{source_id}" in p)
+    assert first_overlay < first_by_id, (
+        f"an /overlay route ({paths[first_overlay]}) is registered after "
+        f"{paths[first_by_id]}; FastAPI matches in order, so it will answer 422"
+    )

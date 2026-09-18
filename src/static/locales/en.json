@@ -3771,5 +3771,7 @@
   "{n} added": "{n} added",
   "{n} updated": "{n} updated",
   "{n} carried through untouched": "{n} carried through untouched",
-  "{n} domains disagree across instances and were left unchanged": "{n} domains disagree across instances and were left unchanged"
+  "{n} domains disagree across instances and were left unchanged": "{n} domains disagree across instances and were left unchanged",
+  "Judged so far": "Judged so far",
+  "not yet judged": "not yet judged"
 }

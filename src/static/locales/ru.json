@@ -3771,5 +3771,7 @@
   "{n} added": "{n} добавлено",
   "{n} updated": "{n} обновлено",
   "{n} carried through untouched": "{n} перенесено без изменений",
-  "{n} domains disagree across instances and were left unchanged": "По {n} доменам экземпляры расходятся; они оставлены без изменений"
+  "{n} domains disagree across instances and were left unchanged": "По {n} доменам экземпляры расходятся; они оставлены без изменений",
+  "Judged so far": "Оценено на данный момент",
+  "not yet judged": "ещё не оценено"
 }

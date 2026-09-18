@@ -3771,5 +3771,7 @@
   "{n} added": "{n} जोड़े गए",
   "{n} updated": "{n} अद्यतन किए गए",
   "{n} carried through untouched": "{n} ज्यों के त्यों आगे लाए गए",
-  "{n} domains disagree across instances and were left unchanged": "{n} डोमेन पर इंस्टेंस असहमत हैं और उन्हें अपरिवर्तित छोड़ा गया"
+  "{n} domains disagree across instances and were left unchanged": "{n} डोमेन पर इंस्टेंस असहमत हैं और उन्हें अपरिवर्तित छोड़ा गया",
+  "Judged so far": "अब तक परखे गए",
+  "not yet judged": "अभी तक नहीं परखे गए"
 }

@@ -3771,5 +3771,7 @@
   "{n} added": "{n} 件を追加",
   "{n} updated": "{n} 件を更新",
   "{n} carried through untouched": "{n} 件をそのまま引き継ぎ",
-  "{n} domains disagree across instances and were left unchanged": "{n} 件のドメインでインスタンス間の判断が食い違い、変更せずに残しました"
+  "{n} domains disagree across instances and were left unchanged": "{n} 件のドメインでインスタンス間の判断が食い違い、変更せずに残しました",
+  "Judged so far": "これまでの判定",
+  "not yet judged": "未判定"
 }

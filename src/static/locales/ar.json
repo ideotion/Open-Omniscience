@@ -3771,5 +3771,7 @@
   "{n} added": "أُضيف {n}",
   "{n} updated": "حُدِّث {n}",
   "{n} carried through untouched": "نُقل {n} دون تغيير",
-  "{n} domains disagree across instances and were left unchanged": "تختلف النسخ على {n} نطاقًا، وقد تُركت دون تغيير"
+  "{n} domains disagree across instances and were left unchanged": "تختلف النسخ على {n} نطاقًا، وقد تُركت دون تغيير",
+  "Judged so far": "ما حُكم عليه حتى الآن",
+  "not yet judged": "لم يُحكم عليها بعد"
 }

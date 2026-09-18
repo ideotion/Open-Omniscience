@@ -235,6 +235,74 @@ def promote_cited_sources_endpoint(
 # descriptive counts only, never a score/grade.
 
 
+# --------------------------------------------------------------------------- #
+# THE SHIPPED-VERDICT EDITOR (Q1106 = a)
+#
+# THESE THREE MUST STAY ABOVE EVERY `/{source_id}` ROUTE ON THIS ROUTER, and the reason is
+# not style. FastAPI matches in REGISTRATION order, and `GET /api/sources/{source_id}`
+# matches any single segment -- so with these defined further down, `/api/sources/overlay`
+# reached the by-id handler, which answered 422 "Input should be a valid integer, unable to
+# parse string as an integer". The panel rendered that sentence where its counts belong.
+#
+# Found by the Chromium walk, not by the suite: every test of this feature called
+# `overlay_status(db)` directly, and a handler exercised as a function is not a tested
+# ROUTE. `tests/test_overlay_editor.py` now drives all three through the real app, which is
+# what will catch the next reordering.
+# --------------------------------------------------------------------------- #
+@router.get("/overlay")
+def overlay_editor_state(db: Session = Depends(get_db)) -> dict:
+    """What the shipped qualification overlay contains, what this install took from it,
+    and what adopting now would change (Q1106 = a, the editor's read half).
+
+    Read-only and local: no network, no writes, nothing judged. The preview figures are
+    published BEFORE the buttons because adopting is a write to the operator's own
+    corpus, and the one direction a reader would not think to ask about -- a shipped
+    ``disqualified`` verdict taking a source OUT of collection -- is the one that has to
+    be on the screen first.
+    """
+    from src.catalog.qualification_overlay import overlay_status
+
+    return overlay_status(db)
+
+
+@router.post("/overlay/adopt", response_model=dict)
+def overlay_adopt(db: Session = Depends(get_db)) -> dict:
+    """Adopt the shipped verdicts now, and resume adopting them at startup.
+
+    Turning the preference back on is HALF THE OPERATION, not a side effect: adoption is
+    idempotent and only ever touches rows this install has never judged, so a run that
+    left the preference off would be undone by the operator's next revert-shaped question
+    -- "why did my sources come back" in reverse. Local only; no network, so no consent
+    gate (invariant #14 covers egress, and this reaches nothing outside the database).
+    """
+    from src.catalog.qualification_overlay import apply_overlay
+
+    try:
+        from src.config.app_settings import save_settings
+
+        save_settings({"adopt_shipped_verdicts": True})
+        preference_held = True
+    except Exception:  # noqa: BLE001 - reported, never swallowed into a clean result
+        logger.warning("adopted the overlay but could not persist the preference", exc_info=True)
+        preference_held = False
+    tally = dict(apply_overlay(db))
+    tally["preference_held"] = preference_held
+    return tally
+
+
+@router.post("/overlay/revert", response_model=dict)
+def overlay_revert(db: Session = Depends(get_db)) -> dict:
+    """Put back every row the shipped overlay stamped here, and stop adopting at startup.
+
+    The rows go back to "no verdict has been reached here", which is what they actually
+    said before adoption touched them. Rows this install has since judged for itself are
+    left alone and counted, as are rows the overlay stamped over a curated catalogue
+    stamp -- reverting those would invent a state rather than restore one. Local only.
+    """
+    from src.catalog.qualification_overlay import revert_overlay
+
+    return revert_overlay(db, now=datetime.now(UTC))
+
 @router.get("/{source_id}/provenance", response_model=dict)
 @limiter.limit("100/hour")
 def get_source_provenance(request: Request, source_id: int, db: Session = Depends(get_db)):
@@ -1809,58 +1877,3 @@ def admission_undo(event_id: int, db: Session = Depends(get_db)) -> dict:
         # (already undone, or a source that has since been deleted). A 404 would send an
         # operator looking for a row that is sitting right there in the audit list.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
-@router.get("/overlay")
-def overlay_editor_state(db: Session = Depends(get_db)) -> dict:
-    """What the shipped qualification overlay contains, what this install took from it,
-    and what adopting now would change (Q1106 = a, the editor's read half).
-
-    Read-only and local: no network, no writes, nothing judged. The preview figures are
-    published BEFORE the buttons because adopting is a write to the operator's own
-    corpus, and the one direction a reader would not think to ask about -- a shipped
-    ``disqualified`` verdict taking a source OUT of collection -- is the one that has to
-    be on the screen first.
-    """
-    from src.catalog.qualification_overlay import overlay_status
-
-    return overlay_status(db)
-
-
-@router.post("/overlay/adopt", response_model=dict)
-def overlay_adopt(db: Session = Depends(get_db)) -> dict:
-    """Adopt the shipped verdicts now, and resume adopting them at startup.
-
-    Turning the preference back on is HALF THE OPERATION, not a side effect: adoption is
-    idempotent and only ever touches rows this install has never judged, so a run that
-    left the preference off would be undone by the operator's next revert-shaped question
-    -- "why did my sources come back" in reverse. Local only; no network, so no consent
-    gate (invariant #14 covers egress, and this reaches nothing outside the database).
-    """
-    from src.catalog.qualification_overlay import apply_overlay
-
-    try:
-        from src.config.app_settings import save_settings
-
-        save_settings({"adopt_shipped_verdicts": True})
-        preference_held = True
-    except Exception:  # noqa: BLE001 - reported, never swallowed into a clean result
-        logger.warning("adopted the overlay but could not persist the preference", exc_info=True)
-        preference_held = False
-    tally = dict(apply_overlay(db))
-    tally["preference_held"] = preference_held
-    return tally
-
-
-@router.post("/overlay/revert", response_model=dict)
-def overlay_revert(db: Session = Depends(get_db)) -> dict:
-    """Put back every row the shipped overlay stamped here, and stop adopting at startup.
-
-    The rows go back to "no verdict has been reached here", which is what they actually
-    said before adoption touched them. Rows this install has since judged for itself are
-    left alone and counted, as are rows the overlay stamped over a curated catalogue
-    stamp -- reverting those would invent a state rather than restore one. Local only.
-    """
-    from src.catalog.qualification_overlay import revert_overlay
-
-    return revert_overlay(db, now=datetime.now(UTC))

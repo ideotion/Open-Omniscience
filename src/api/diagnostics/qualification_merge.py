@@ -33,7 +33,7 @@ _MAX_MERGE_UPLOADS = 25
 
 
 @router.post("/source-qualification-merge")
-async def source_qualification_merge(
+def source_qualification_merge(
     files: list[UploadFile] = File(default=[]),
     accept_newest: bool = Form(default=False),
     include_this_instance: bool = Form(default=True),
@@ -60,6 +60,14 @@ async def source_qualification_merge(
     and an endpoint that edited what the app ships to every install would be automating a
     decision that is nobody's to automate. LOCAL AND READ-ONLY besides: no network, and
     nothing in this corpus is judged, stamped or altered.
+
+    PLAIN ``def`` -> threadpool, off the event loop. It was written ``async`` for
+    ``await upload.read()`` and ``tests/test_handlers_off_the_event_loop`` refused it:
+    ``build_overlay_export`` walks every source in the corpus, and on the single loop that
+    freezes every other request (the guard records a measured 12.6 s handler turning a
+    trivial poll into 41.7 s). The uploads are read through ``upload.file``, the
+    ``SpooledTemporaryFile`` underneath, which is exactly what a threadpool handler should
+    read synchronously -- so nothing is lost by not awaiting.
     """
     from src.catalog.qualification_export import build_overlay_export
     from src.catalog.qualification_merge import (
@@ -91,7 +99,7 @@ async def source_qualification_merge(
     # down rather than inferred from what was clicked.
     inputs: list[dict] = []
     for upload in uploads:
-        raw = await upload.read()
+        raw = upload.file.read()
         name = (upload.filename or "upload").strip()
         if len(raw) > MAX_MEMBER_BYTES:
             raise HTTPException(
