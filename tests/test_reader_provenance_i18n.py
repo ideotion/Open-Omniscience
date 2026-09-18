@@ -94,17 +94,42 @@ def test_provenance_labels_are_really_translated_not_echoed():
 
 
 def test_failure_toasts_use_the_translatable_frame_not_concatenation():
-    """No `toast("X failed: " + err)` may survive.
+    """No `toast("X: " + err.message)` may survive, whatever the label says.
 
     That shape is unreachable by the DOM walker (the text node is the whole
     concatenation) AND unreachable by t() (no lookup happens), so it is
     permanently English however many keys exist.
+
+    WIDENED 2026-09-18 (S04-14): the needle used to be a "failed: " literal, so it
+    only ever saw the toasts whose label happened to contain the word "failed".
+    Measured on the tree it was green over: **26 concatenated failure toasts**
+    survived it -- `toast("AI: " + e.message)`, `toast("Could not load sources: " +
+    e.message)` and 24 more -- every one permanently English in eleven locales
+    while the guard reported the class closed. The docstring named the class; the
+    regex named one spelling of it. The needle is now the SHAPE (a literal
+    concatenated with an error's message), which is what the class actually is.
     """
     src = app_js()
-    leftovers = re.findall(r'toast\("[^"]*failed: "\s*\+', src)
+    leftovers = re.findall(r'toast\(\s*"[^"]*"\s*\+\s*\w+\.message', src)
     assert not leftovers, (
         f"{len(leftovers)} concatenated failure toast(s) remain: {leftovers[:3]} "
-        "-- route them through _failMsg(\"<Action> failed: {error}\", err)"
+        "-- route them through _failMsg(\"<Action>: {error}\", err)"
+    )
+
+
+def test_failure_status_text_uses_the_frame_too():
+    """The same class one element over. A `textContent = "X: " + e.message` is
+    exactly as unreachable as the toast was, and it lives on screen longer -- these
+    are the status lines beside a control, not a note that fades.
+
+    Found by the same sweep: seven of them, none of which the toast-shaped guard
+    above could ever have seen.
+    """
+    src = app_js()
+    leftovers = re.findall(r'textContent\s*=\s*"[^"]*"\s*\+\s*\w+\.message', src)
+    assert not leftovers, (
+        f"{len(leftovers)} concatenated failure status line(s) remain: {leftovers[:3]} "
+        "-- route them through _failMsg(\"<Action>: {error}\", err)"
     )
 
 

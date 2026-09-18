@@ -111,6 +111,8 @@
     // Nothing here is computed from the request the page made; a panel that quoted its
     // own inputs back would report what was asked for, not what happened.
     function _uxRenderExportPanel(facts, t) {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const host = document.getElementById("ux-summary");
       if (!host || !facts) return;
       // Kept so a live language switch can redraw the SAME facts (the panel is
@@ -124,7 +126,14 @@
       const enc = facts.encryption || {};
       const dash = "—";
       const bytes = (n) => (n == null ? dash : humanBytes(n));
-      const secs = (n) => (n == null ? null : (n < 90 ? `${n.toFixed(1)} ${esc(t("s"))}` : `${Math.round(n / 60)} ${esc(t("min"))}`));
+      // The UNIT rides inside the frame. The old form put the seconds abbreviation
+      // through t() on its own -- ONE character, where --audit-chrome floors at three,
+      // so the audit never saw it, and it had no en.json key either: every locale
+      // rendered a Latin s for seconds, including the ones that write с, ث or 秒.
+      // (Described, not pasted as a call: both i18n scans read RAW SOURCE, so a
+      // call-shaped literal in a comment is counted as a live UI string.)
+      const secs = (n) => (n == null ? null
+        : (n < 90 ? esc(TF("{n} s", {n: n.toFixed(1)})) : esc(TF("{n} min", {n: Math.round(n / 60)}))));
       const rows = [];
       const row = (label, value, title) =>
         rows.push(`<div class="row" style="gap:6px;align-items:baseline"><span class="muted" style="min-width:150px"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span><span>${value}</span></div>`);
@@ -320,12 +329,14 @@
     }
 
     function _uxEta(secs, t, approx) {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       if (secs == null) return "";
       const m = Math.round(secs / 60);
-      const txt = m >= 1 ? `${m} ${t("min")}` : `${Math.max(1, Math.round(secs))} ${t("s")}`;
+      const txt = m >= 1 ? TF("{n} min", {n: m}) : TF("{n} s", {n: Math.max(1, Math.round(secs))});
       // "~" (and the word "estimate") signals a rule-of-three guess, not a promise —
       // the maintainer's ask: humans prefer an approximate number to none at all.
-      return ` · ${approx ? "~" : ""}${txt} ${t("left")}`;
+      return ` · ${approx ? "~" : ""}${TF("{d} left", {d: txt})}`;
     }
     // A rule-of-three time-remaining estimate from wall-clock elapsed and the fraction
     // done: remaining ≈ elapsed × (1 − frac) / frac. Deliberately simple + honest — it

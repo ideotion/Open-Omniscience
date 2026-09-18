@@ -871,7 +871,7 @@
       const btn = $("brief-refresh-btn");
       if (btn) { btn.disabled = true; btn.textContent = "Refreshing…"; }
       try { const data = await api("/api/briefing/refresh", {method:"POST"}); renderBriefing(data); toast("Briefing refreshed."); }
-      catch (e) { toast("Could not refresh briefing: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Could not refresh briefing: {error}", e), "err"); }
       finally { if (btn) { btn.disabled = false; btn.textContent = "Refresh"; } }
     }
 
@@ -1622,7 +1622,7 @@
         await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
         const el = document.querySelector(`.card[data-card="${id}"]`);
         if (el) el.remove();
-      } catch (e) { toast("Could not dismiss: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not dismiss: {error}", e), "err"); }
     }
 
     // --- Local link preview (invariant #6 extension) ---------------------------
@@ -1750,7 +1750,7 @@
         updateDraftCount(d.items.length);
         // Clickable (maintainer-ruled 2026-06-10): the confirmation IS the way in.
         toast("Added to draft — click to open it.", "ok", () => { showTab("home"); openDraft(); });
-      } catch (e) { toast("Could not add to draft: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not add to draft: {error}", e), "err"); }
     }
     async function refreshDraftCount() {
       try { const d = await api("/api/briefing/draft"); updateDraftCount((d.items||[]).length);
@@ -1792,7 +1792,7 @@
     }
     async function saveDraftItemNote(id, note) {
       try { await api("/api/briefing/draft/note", {method:"PUT", body: JSON.stringify({id, note})}); }
-      catch (e) { toast("Could not save note: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Could not save note: {error}", e), "err"); }
     }
     async function saveDraftTitle() {
       try { await api("/api/briefing/draft/title", {method:"PUT", body: JSON.stringify({title: $("draft-title").value})}); }
@@ -1809,7 +1809,7 @@
         const md = await (await fetch("/api/briefing/draft/export.md")).text();
         await navigator.clipboard.writeText(md);
         toast("Draft Markdown copied to clipboard.");
-      } catch (e) { toast("Could not copy: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not copy: {error}", e), "err"); }
     }
 
     // ===================================================================== //
@@ -1821,7 +1821,7 @@
           {method:"POST", body: JSON.stringify({signature})});
         toast(apply ? "Collapsed to one actor (reversible)." : "Expanded — raw equal view restored.");
         await refreshBriefing();            // counts that measure consensus now reflect the choice
-      } catch (e) { toast("Could not update collapse: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not update collapse: {error}", e), "err"); }
     }
 
     function loadIntegrity() { loadMineAnnotations(); loadAuthors(); }

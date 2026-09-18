@@ -986,7 +986,7 @@
         }
         syncThemeSelect();
         _syncRerunGuide();   // reflect the local one-time guide state in the toggle
-      } catch (e) { toast("Could not load settings: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not load settings: {error}", e), "err"); }
       // LLM models load lazily when the dedicated Models subtab opens (showSetCat).
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
@@ -1075,6 +1075,8 @@
     // (read-only — it is curated + language-scoped; the toggle above turns it on/off).
     // Bounded + searchable so we never dump ~2,500 words at once.
     async function loadBuiltinStoplist() {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const qEl = $("kf-builtin-q"), listEl = $("kf-builtin-list"), cEl = $("kf-builtin-count");
       if (!listEl) return;
@@ -1083,7 +1085,7 @@
         const r = await api("/api/insights/filter/builtin?limit=500&q=" + encodeURIComponent(q));
         if (cEl) cEl.textContent = (r.total || 0).toLocaleString();
         const chips = (r.terms || []).map(w => `<span class="fam-chip" style="cursor:default">${esc(w)}</span>`).join("");
-        const capNote = r.capped ? `<div class="muted" style="width:100%">${r.matched.toLocaleString()} ${esc(t("matches"))} — ${esc(t("showing the first"))} ${(r.terms || []).length}. ${esc(t("Refine your search."))}</div>` : "";
+        const capNote = r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: r.matched.toLocaleString(), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "";
         const empty = !r.terms || !r.terms.length;
         listEl.innerHTML = empty
           ? `<span class="muted">${esc(q ? t("No built-in stopword matches that.") : t("No built-in stoplist."))}</span>`

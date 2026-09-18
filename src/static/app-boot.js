@@ -64,6 +64,12 @@
       // prose, so the walker cannot reach them. It redraws from the payload it already
       // has and NEVER fetches, so a switch cannot re-run a search behind the reader.
       try { if (typeof _anRepaintXLang === "function") _anRepaintXLang(); } catch (_e) {}
+      // S04-14 (Q1124): the Patterns-lens gate panel is built at render time from
+      // t() calls plus measured numbers, so the walker cannot repaint its composed
+      // lines -- the same frozen-locale class. Measured in the Chromium walk: the
+      // "Corpus size" line stayed English in fr while the pills beside it translated.
+      // Repaints from the CACHED payload, so a switch costs no request.
+      try { if (typeof _renderPatternsGate === "function") _renderPatternsGate(); } catch (_e) {}
       // S04-09: the Wikipedia toggle's hover is built at paint time from t() calls,
       // so it is the frozen-locale class too -- the button carries `data-i18n-dyn`
       // (its title is ALREADY translated, and letting the walker cache that as "the

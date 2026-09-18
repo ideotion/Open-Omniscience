@@ -194,10 +194,71 @@
     }
     // Diagnostics: force the local corpus source-topic enrichment now (it also runs
     // automatically in the background). Zero-network; additive to Source.tags.
+    // Q1124 = a (2026-09-15): the manipulation-pattern lens "flips on only when the
+    // corpus is >= 100k articles and a labelled sample shows a false-positive rate
+    // <= 5%; both numbers on the toggle." Both numbers are rendered here, and the
+    // point of the surface is that it says which of the two is MEASURED.
+    //
+    // The corpus size is a count this app owns. The false-positive rate is not: it
+    // needs a person judging a sample of flagged pairs, so the server OMITS the
+    // field rather than defaulting it, and this reads the omission as "unmeasured"
+    // rather than as 0 -- `!= null` and not a truthiness test, because 0.0 is a
+    // legal rate and would be a different, much stronger claim.
+    // The last payload, kept so a language switch can REPAINT without fetching. The
+    // panel is built at render time from t() calls, so the i18n DOM walker cannot
+    // reach the composed lines -- the frozen-locale class -- and a re-fetch on every
+    // switch would be work nobody asked for.
+    let _patternsGate = null;
+
+    function _renderPatternsGate() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("patterns-gate"), state = $("patterns-gate-state");
+      if (!box || !_patternsGate) return;
+      const g = _patternsGate;
+      const num = (typeof fmtNum === "function") ? fmtNum : (x => String(x));
+      // Each LABEL is its own element. The walker matches a text node EXACTLY, so a
+      // label welded to its value ("Corpus size: 24 / 100000") is not a key and can
+      // never be translated -- measured in the Chromium walk, where this line stayed
+      // English in fr while the pills beside it translated.
+      const corpus = `<span>${esc(t("Corpus size"))}</span>: <b>${num(g.corpus_articles)}</b> / ${num(g.corpus_bar)}`
+        + ` <span class="pill ${g.corpus_met ? "ok" : "warn"}">${esc(g.corpus_met ? t("met") : t("not met"))}</span>`;
+      // ABSENT, never zero -- `!= null`, because 0.0 is a legal rate and a much
+      // stronger claim than "we have not measured it".
+      const fp = g.false_positive_rate != null
+        ? `<span>${esc(t("False-positive rate"))}</span>: <b>${(100 * g.false_positive_rate).toFixed(1)}%</b> / ${(100 * g.false_positive_bar).toFixed(0)}%`
+        : `<span>${esc(t("False-positive rate"))}</span>: <span class="pill warn">${esc(t("unmeasured"))}</span>`
+          + ` <span class="muted">${esc(t("needs a labelled sample judged by a person"))}</span>`;
+      box.innerHTML = `<div>${corpus}</div><div>${fp}</div>`
+        + `<div class="card-caveat">${esc(t(g.caveat || ""))}</div>`;
+      if (state) state.textContent = g.can_flip ? "" : t("off — the gate is not met");
+      const cb = $("patterns-lens");
+      if (cb) { cb.checked = !!g.can_flip; cb.disabled = !g.can_flip; }
+    }
+
+    // Q1124 = a (2026-09-15): the manipulation-pattern lens "flips on only when the
+    // corpus is >= 100k articles and a labelled sample shows a false-positive rate
+    // <= 5%; both numbers on the toggle." Both are rendered, and the point of the
+    // surface is that it says which of the two is MEASURED: the corpus size is a
+    // count this app owns, the false-positive rate needs a person judging a sample
+    // of flagged pairs, so the server OMITS that field rather than defaulting it.
+    async function loadPatternsGate() {
+      const box = $("patterns-gate"), state = $("patterns-gate-state");
+      if (!box) return;
+      try {
+        _patternsGate = await api("/api/signals/patterns-gate");
+        _renderPatternsGate();
+      } catch (e) {
+        _patternsGate = null;
+        box.innerHTML = "";
+        if (state) state.textContent = _failMsg("Could not read the Patterns gate: {error}", e);
+      }
+    }
+
     async function enrichSources(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = "Enriching…";
+      btn.textContent = t("Enriching…");
       try {
         const d = await api("/api/diagnostics/enrich-sources", { method: "POST" });
         btn.textContent = `Enriched ${d.sources_updated || 0} sources (+${d.tags_added || 0} tags)`;
@@ -340,12 +401,12 @@
           && !await ensureOnline(t("Discover sources from Wikidata (egresses to Wikidata over your transport)"))) return;
       const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = "Discovering…";
+      btn.textContent = t("Discovering…");
       try {
         const d = await api("/api/diagnostics/discover-sources?countries=" + encodeURIComponent(cc), { method: "POST" });
         btn.textContent = `Added ${d.added || 0} disabled sources — review in Settings → Sources`;
       } catch (e) {
-        btn.textContent = "Discovery failed — see console";
+        btn.textContent = t("Discovery failed — see console");
         console.error("discoverSources", e);
       }
       setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
@@ -1411,6 +1472,7 @@
     // Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3.
     let _gbQueries = null;
     async function goldBuilderLoad(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const body = $("gold-builder-body"); if (!body) return;
       if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
       try {
@@ -1418,7 +1480,7 @@
         _gbQueries = (d.queries || []).map((q) => ({ ...q, relevances: {} }));
         _gbRenderBuilder(d.note, d.grading);
       } catch (e) { body.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      if (btn) { btn.disabled = false; btn.textContent = "Build an IR gold set (grade queries 0/1/2)"; }
+      if (btn) { btn.disabled = false; btn.textContent = t("Build an IR gold set (grade queries 0/1/2)"); }
     }
     function _gbRenderBuilder(note, grading) {
       const body = $("gold-builder-body"); if (!body) return;

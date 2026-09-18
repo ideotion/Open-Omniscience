@@ -496,10 +496,37 @@
         const cx = X(p.t), by = Yv(p.v), x0 = Math.max(padL, cx - bw / 2);
         return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="var(--muted)" fill-opacity="0.30"></rect>`;
       }).join("");
-      // Price line + real sample dots (LEFT axis): dots keep the true n honest.
-      const line = P.length >= 2
+      // Price series (LEFT axis). RC08.6 / register L5 (2026-09-15) brings this
+      // renderer under the SAME sparse rule the rest of the app already uses:
+      // `_SPARSE_BAR_MAX` (app-markets.js, shared) -- under 10 real points a BAR
+      // graph, at 10 or more the full-resolution line. It used to draw a polyline
+      // from TWO points, which is the curve-faked-through-a-handful-of-points that
+      // invariant #16 forbids. The invariant is unchanged; only this renderer was
+      // still outside it.
+      //
+      // Price is a LEVEL series, so the bars anchor to the window MIN that the left
+      // axis already LABELS -- never a fabricated zero, which for a price would
+      // exaggerate every difference. A 2px cap marks each bar's true value so a
+      // point sitting flush on the min, an all-equal window, or a single point
+      // stays VISIBLE rather than drawing as a zero-height bar.
+      //
+      // The coverage bars beside them are on the RIGHT axis, drawn first, muted and
+      // wider; these are accent-coloured and narrower, so a reader cannot take the
+      // pair for one stacked total (the misreading the toolkit's own grouped-bar
+      // note records).
+      const priceBars = P.length < _SPARSE_BAR_MAX;
+      const pslot = (W - padL - padR) / Math.max(P.length, 1);
+      const pbw = Math.max(2, Math.min(pslot * 0.35, 9));
+      const line = (!priceBars && P.length >= 2)
         ? `<polyline fill="none" stroke="var(--accent)" stroke-width="1.6" points="${P.map(p => `${X(p.t).toFixed(1)},${Yp(p.v).toFixed(1)}`).join(" ")}"></polyline>` : "";
-      const dots = P.map(p => `<circle cx="${X(p.t).toFixed(1)}" cy="${Yp(p.v).toFixed(1)}" r="1.5" fill="var(--accent)"></circle>`).join("");
+      const pbarsSvg = priceBars ? P.map(p => {
+        const cx = X(p.t), py = Yp(p.v), x0 = Math.max(padL, cx - pbw / 2);
+        return `<rect x="${x0.toFixed(1)}" y="${py.toFixed(1)}" width="${pbw.toFixed(1)}" height="${Math.max(0, baseY - py).toFixed(1)}" fill="var(--accent)" fill-opacity="0.55"></rect>`
+          + `<rect x="${x0.toFixed(1)}" y="${(py - 1).toFixed(1)}" width="${pbw.toFixed(1)}" height="2" fill="var(--accent)"></rect>`;
+      }).join("") : "";
+      // In LINE mode the dots keep the true n honest; in BAR mode each bar IS a
+      // sample, so a dot on top of its own cap would claim nothing extra.
+      const dots = priceBars ? "" : P.map(p => `<circle cx="${X(p.t).toFixed(1)}" cy="${Yp(p.v).toFixed(1)}" r="1.5" fill="var(--accent)"></circle>`).join("");
       const leftAxis = P.length ? [pMin, pMin + pSpan / 2, pMax].map(v =>
         `<text x="${(padL - 5).toFixed(1)}" y="${(Yp(v) + 3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="var(--accent)">${fmt(v)}</text>`).join("") : "";
       const rightAxis = V.length ? [0, vMax].map(v =>
@@ -510,7 +537,7 @@
       return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;background:var(--panel2);border:1px solid var(--border);border-radius:8px" role="img" aria-label="${esc(aria)}">`
         + (P.length ? `<text x="${padL}" y="11" font-size="8.5" fill="var(--accent)">${esc(t9("Price"))} ${esc(priceUnit || "")}</text>` : "")
         + (V.length ? `<text x="${W - padR}" y="11" text-anchor="end" font-size="8.5" fill="var(--muted)">${esc(t9("Articles"))}</text>` : "")
-        + bars + line + dots + leftAxis + rightAxis + dts + `</svg>`;
+        + bars + pbarsSvg + line + dots + leftAxis + rightAxis + dts + `</svg>`;
     }
 
     // --- Combined time-aligned TREND overlay (Analysis window; maintainer-ruled
@@ -1121,10 +1148,19 @@
     let _anArtParams = null, _anArtPage = 0;
     function _anArtPager(total, pages) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       if (pages <= 1) return "";
       const cur = _anArtPage;
-      const lbl = esc(t("Page")) + " " + (cur + 1) + " " + esc(t("of")) + " " + pages
-        + ' <span class="muted">(' + total.toLocaleString() + " " + esc(t("Articles")) + ")</span>";
+      // ONE FRAME per sentence, not five pieces welded to two numbers. The old form put
+      // the word "of" through t() on its own -- two characters, where --audit-chrome
+      // floors at three -- so the audit could not see it at all, and it had no en.json
+      // key either: every locale rendered "Page 1 of 5" with an English "of" wedged
+      // between two translated words. A gate that cannot see a string is not evidence
+      // the string is fine. (Written out rather than pasted as a call: both i18n scans
+      // read RAW SOURCE, so a literal in a comment is counted as a live UI string.)
+      const lbl = esc(TF("Page {n} of {total}", {n: cur + 1, total: pages}))
+        + ' <span class="muted">(' + esc(TF("{n} Articles", {n: total.toLocaleString()})) + ")</span>";
       return '<div class="an-pager" style="display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap">'
         + '<button class="tiny ghost" ' + (cur <= 0 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur - 1) + ')">' + esc(t("← Previous")) + "</button>"
         + "<span>" + lbl + "</span>"
@@ -2322,6 +2358,8 @@
     }
 
     function _synthRenderSelect() {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = _synthT();
       const c = _synthCandidates; if (!c) return;
       const rows = c.results;
@@ -2341,12 +2379,12 @@
       $("synth-win-body").innerHTML = `
         <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
         <div class="card" style="margin-bottom:12px">
-          <div>${esc(t("Matched"))}: <b>${c.total}</b>${c.total > rows.length ? ` <span class="muted">(${esc(t("showing the top"))} ${rows.length} ${esc(t("by search relevance"))})</span>` : ""}</div>
-          <div class="muted" style="font-size:12px;margin-top:4px">${esc(t("Pick up to"))} ${_SYNTH_MAX} ${esc(t("articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)"))}</div>
+          <div>${esc(t("Matched"))}: <b>${c.total}</b>${c.total > rows.length ? ` <span class="muted">(${esc(TF("showing the top {n} by search relevance", {n: rows.length}))})</span>` : ""}</div>
+          <div class="muted" style="font-size:12px;margin-top:4px">${esc(TF("Pick up to {n} articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)", {n: _SYNTH_MAX}))}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
           <span id="synth-count" class="chip"></span>
-          <button class="ghost tiny" onclick="_synthSelectAll(true)">${esc(t("Select first"))} ${_SYNTH_MAX}</button>
+          <button class="ghost tiny" onclick="_synthSelectAll(true)">${esc(TF("Select first {n}", {n: _SYNTH_MAX}))}</button>
           <button class="ghost tiny" onclick="_synthSelectAll(false)">${esc(t("Clear"))}</button>
           <span style="margin-inline-start:auto"></span>
           <button class="primary" id="synth-run-btn" onclick="_synthRun()">${esc(t("Run synthesis"))}</button>
@@ -2389,6 +2427,8 @@
     }
 
     function _synthRenderResult() {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = _synthT();
       const r = _synthData; if (!r) return;
       $("synth-win-actions").innerHTML = `
@@ -2404,8 +2444,8 @@
       $("synth-win-body").innerHTML = `
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
           <span class="chip">${esc(t("synthesis"))} · ${esc(r.model || "")}</span>
-          <span class="chip">${r.member_count} ${esc(t("articles"))}</span>
-          ${r.truncated ? `<span class="chip" title="${esc(t("Only the bounded set was synthesized."))}">${esc(t("top"))} ${r.max_articles} ${esc(t("of"))} ${r.total_matched}</span>` : ""}
+          <span class="chip">${esc(TF("{n} articles", {n: r.member_count}))}</span>
+          ${r.truncated ? `<span class="chip" title="${esc(t("Only the bounded set was synthesized."))}">${esc(TF("top {n} of {total}", {n: r.max_articles, total: r.total_matched}))}</span>` : ""}
         </div>
         <div style="white-space:pre-wrap;line-height:1.55">${esc(r.result || "")}</div>
         <div class="card-caveat" style="margin-top:10px">${esc(r.caveat || "")}</div>

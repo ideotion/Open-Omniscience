@@ -246,7 +246,7 @@
     async function loadSources() {
       let sources = [];
       try { sources = await api("/api/sources?fields=id,name,rss_url"); }
-      catch (e) { toast("Could not load sources: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Could not load sources: {error}", e), "err"); }
       const sel = $("ing-source");
       sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
         `<option value="${s.id}">${esc(s.name)}</option>`).join("")
@@ -399,7 +399,7 @@
           srcTh("Articles","articles") + "<th>Enabled</th><th></th></tr>" +
           (d.sources.length ? d.sources.map(s => sourceRow(s)).join("")
             : `<tr><td colspan="9" class="muted">No sources match. Adjust filters, add one, or seed the starter set.</td></tr>`);
-      } catch (e) { toast("Could not load sources: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not load sources: {error}", e), "err"); }
     }
 
     function sourceRow(s) {
@@ -627,12 +627,13 @@
     }
 
     async function ingestSource() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const id = $("ing-source").value;
       if (!id) { toast("No RSS source selected.", "err"); return; }
       $("ingest-result").textContent = "Fetching feed… (rate-limited, may take a moment)";
       try {
         const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
-        $("ingest-result").textContent = "Feed result — " + tally(r.tally);
+        $("ingest-result").textContent = t("Feed result —") + " " + tally(r.tally);
         toast("Ingest complete."); doSearch();
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
@@ -880,23 +881,32 @@
     const SCHED_SPEED_STOPS = [100, 250, 500, 1000, 2500, 5000, "max"];
     function schedSpeedLabel() {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v2) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v2[k]));
       const sl = $("sch-speed"); if (!sl) return;
       const v = SCHED_SPEED_STOPS[Number(sl.value)];
       const el = $("sch-speed-val");
-      if (el) el.textContent = (v === "max") ? T("Maximum") : (v + " kbps");
+      // The UNIT rides inside the frame, not welded to the number. `v + " kbps"` is
+      // untranslatable by construction and neither i18n gate can see it: the shapes
+      // that catch a bare literal all require it to sit in a t() call or an attribute.
+      // Measured consequence: ru.json renders the static placeholder "500 kbps" as
+      // "500 кбит/с", so the field a reader sees before the slider moves disagreed
+      // with the one it shows after -- same number, two unit systems, one panel.
+      if (el) el.textContent = (v === "max") ? T("Maximum") : TF("{n} kbps", {n: v});
     }
     // Live "Now: X kbps" readout — polls the activity endpoint ONLY while the
     // Collect settings panel is visible (self-stops when it isn't).
     let _schedRateTimer = null;
     async function _pollSchedRate() {
-      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const el = $("sch-speed-now"), view = $("set-collect");
       if (!el || !view || view.style.display === "none") { stopSchedRatePoll(); return; }
       let a; try { a = await api("/api/scheduler/activity"); } catch { return; }
       const r = a && a.download_rate_kbps, cp = a && a.collect_perf;
       if (r == null || !a.active) { el.textContent = ""; return; }
-      let txt = T("Now") + ": " + r + " kbps";
-      if (cp && cp.active_workers != null) txt += " · " + cp.active_workers + " " + T("workers");
+      let txt = TF("Now: {n} kbps", {n: r});
+      if (cp && cp.active_workers != null) txt += " · " + TF("{n} workers", {n: cp.active_workers});
       el.textContent = txt;
     }
     // Field diagnostics 2026-09-11 (A4, same defect one file over): this was a
@@ -993,7 +1003,7 @@
         toast(next === "maximum"
           ? t9("Collection speed set to Maximum — applies from the next pass.")
           : t9("Collection speed set to the 500 KiB/s target — applies from the next pass."));
-      } catch (e) { toast("Could not change the collection speed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Could not change the collection speed: {error}", e), "err"); }
     }
 
 
@@ -1338,7 +1348,7 @@
 
     async function loadScheduler() {
       try { const s = await api("/api/scheduler/status"); renderSchedStatus(s); _paintCollectToggle(!!(s && s.running)); }
-      catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }
+      catch (e) { $("sched-status").textContent = _failMsg("Scheduler status unavailable: {error}", e); }
       try { applySchedConfig(await api("/api/scheduler/config")); }
       catch (e) { /* config panel stays at defaults */ }
       previewTargets();
@@ -1375,7 +1385,7 @@
           `of ${t.total_enabled} enabled · this run will process up to <strong>${t.will_process_this_run}</strong>` +
           `<div class="muted" style="font-size:12px;margin-top:4px">by language: ${langs||'—'}</div>` +
           `<div class="muted" style="font-size:12px">by type: ${types||'—'}</div>`;
-      } catch (e) { el.textContent = "Could not preview targets: " + e.message; }
+      } catch (e) { el.textContent = _failMsg("Could not preview targets: {error}", e); }
     }
 
     async function schedulerStart() {

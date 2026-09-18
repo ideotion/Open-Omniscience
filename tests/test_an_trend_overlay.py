@@ -88,3 +88,25 @@ def test_trend_caveats_are_visible_and_honest():
         assert "score" not in strip_comments(function_body(_JS, fn)).lower(), (
             f"{fn} must not compute or name a score"
         )
+
+
+def test_the_overlay_sparse_rule_is_driven_not_grepped():
+    """RC08.6 / register L5 (2026-09-15): the price series obeys the shared
+    ``_SPARSE_BAR_MAX`` -- bars under it, the full-resolution line at or above.
+
+    A source assertion cannot tell a line GATED on the threshold from one that
+    merely mentions it, so ``tests/commodity_overlay_node_test.js`` EXECUTES the
+    shipped ``commodityOverlaySvg`` and reads the SVG back: both sides of the
+    boundary, a single point, and an all-equal window (where a bar anchored at the
+    window min is zero-height and only the 2px value cap keeps it visible).
+    """
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    r = subprocess.run(
+        ["node", str(root / "tests" / "commodity_overlay_node_test.js")],
+        capture_output=True, text=True, cwd=str(root),
+    )
+    assert r.returncode == 0, f"commodity overlay node suite failed:\n{r.stdout}\n{r.stderr}"
+    assert "6 passed" in r.stdout, f"expected 6 node assertions, got:\n{r.stdout}"

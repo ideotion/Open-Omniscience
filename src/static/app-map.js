@@ -1765,7 +1765,7 @@
     async function loadWiki() {
       loadWikiLanguages();
       try { renderWikiStatus(await api("/api/wiki/status")); }
-      catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = "Status unavailable: " + e.message; }
+      catch (e) { if (!_wikiStatusBuilt) $("wiki-status").textContent = _failMsg("Status unavailable: {error}", e); }
       loadWikiPages(); loadWikiChanges();
     }
 
@@ -2363,12 +2363,12 @@
     }
     async function toggleStatSub(id, enabled) {
       try { await api("/api/stats/subscriptions/" + id, { method: "PATCH", body: JSON.stringify({ enabled }) }); loadStatSubs(); }
-      catch (e) { toast("Could not update: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Could not update: {error}", e), "err"); }
     }
     async function deleteStatSub(id) {
       if (!confirm("Stop tracking this figure for auto-refresh? (Stored vintages are kept.)")) return;
       try { await api("/api/stats/subscriptions/" + id, { method: "DELETE" }); loadStatSubs(); }
-      catch (e) { toast("Could not remove: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Could not remove: {error}", e), "err"); }
     }
     async function refreshStatSubs() {
       try {
@@ -2689,7 +2689,7 @@
               <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${esc(JSON.stringify(p.title))})">Delete</button>
             </td></tr>`).join("")
             : `<tr><td colspan="7" class="muted">No watched pages yet. Add one above.</td></tr>`);
-      } catch (e) { toast("Wiki pages: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Wiki pages: {error}", e), "err"); }
     }
 
     async function addWikiPage() {
@@ -2757,7 +2757,7 @@
               <button class="tiny secondary" onclick="viewWikiDiff(${c.id})">Diff</button>
               <a class="tiny" href="${esc(c.diff_url)}" target="_blank" rel="noopener">live</a></td></tr>`).join("")
             : `<tr><td colspan="7" class="muted">No changes yet. Add pages and press “Track now”.</td></tr>`);
-      } catch (e) { toast("Wiki changes: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Wiki changes: {error}", e), "err"); }
     }
 
     async function viewWikiDiff(id) {
@@ -2772,7 +2772,7 @@
         el.innerHTML = `<div class="note" style="max-width:none">
           <div class="muted" style="font-size:12px;margin-bottom:6px">${esc(d.wiki)} · ${esc(d.title)} · rev ${d.revid}
             · <a href="${esc(d.diff_url)}" target="_blank" rel="noopener">view on Wikipedia</a></div>${lines}</div>`;
-      } catch (e) { el.innerHTML=""; toast("Diff: " + e.message, "err"); }
+      } catch (e) { el.innerHTML=""; toast(_failMsg("Diff: {error}", e), "err"); }
     }
 
     // --- Wikipedia tracked-changes view (wave 5) --------------------------- //

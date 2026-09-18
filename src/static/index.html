@@ -623,7 +623,7 @@
       <h2>World coverage</h2>
       <div class="hint" style="margin-bottom:10px">A world map of how many ARTICLES you have collected per
         country (by each source's catalogued country). Measured from the data; refreshes live.
-        <strong>Click a country</strong> to filter the catalogue table below to it.</div>
+        <strong>Click a country to filter the catalogue table below to it.</strong></div>
       <div id="coverage-map" style="margin-bottom:10px"><div class="muted">Loading…</div></div>
       <div id="coverage-unlocated" style="margin-bottom:10px"></div>
       <div class="hint" style="margin-bottom:6px;margin-top:14px">Source-catalogue reach (how many countries
@@ -818,11 +818,10 @@
       <div class="gov-view" id="gov-law" style="display:none">
       <section class="panel">
         <h2>World law — change tracking</h2>
-        <p class="hint">Aggregate the <b>law</b> — statutes, gazettes, IP records — from official
-          sources worldwide and track how it changes over time (the data <i>is</i> the diff). A
-          <b>research mirror</b>, never the authoritative source and <b>not legal advice</b>: every
-          record links back to its official gazette. Fetched only through the ethical, robots-respecting
-          path. See <a href="#" onclick="showTab('help');openDoc('user-manual');return false">the User Manual (law chapter)</a>.</p>
+        <p class="hint"><span>Aggregate the law — statutes, gazettes, IP records — from official sources worldwide and track how it changes over time (the data is the diff).</span>
+          <b>A research mirror, never the authoritative source and not legal advice:</b>
+          <span>every record links back to its official gazette. Fetched only through the ethical, robots-respecting path.</span>
+          <a href="#" onclick="showTab('help');openDoc('user-manual');return false">See the User Manual (law chapter).</a></p>
         <div class="row">
           <button onclick="lawTrack(this)" style="margin-top:0">Track changes now</button>
           <button class="secondary" onclick="lawSeed()" style="margin-top:0">Re-seed catalog</button>
@@ -852,9 +851,9 @@
         </div>
         <div class="row">
           <div style="flex:1"><label for="law-add-url">URL</label>
-            <input type="text" id="law-add-url" placeholder="https://…"></div>
+            <input type="text" id="law-add-url" placeholder="For example: https://…"></div>
           <div style="flex:1"><label for="law-add-official">Official URL (optional)</label>
-            <input type="text" id="law-add-official" placeholder="https://…"></div>
+            <input type="text" id="law-add-official" placeholder="For example: https://…"></div>
         </div>
         <button onclick="lawAddDocument(this)" style="margin-top:0">Add &amp; track now</button>
         <div id="law-add-msg" class="hint" style="margin-top:8px"></div>
@@ -878,13 +877,13 @@
             <option value="worldbank">World Bank</option>
             <option value="eurostat">Eurostat (SDMX-JSON)</option>
           </select></label>
-          <label>Indicator / dataset id<br><input id="statfig-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+          <label>Indicator / dataset id<br><input id="statfig-series" placeholder="For example: NY.GDP.MKTP.CD" size="22"></label>
           <label>Country (World Bank)<br><input id="statfig-country" placeholder="FR or all" size="10"></label>
           <button class="secondary" id="statfig-fetch" onclick="fetchStatFigure()">Fetch figures</button>
         </div>
         <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
         <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
-          <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+          <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="For example: NY.GDP.MKTP.CD" size="22"></label>
           <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FR" size="8"></label>
           <button class="secondary" onclick="loadStatFigures()">Show stored</button>
           <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
@@ -892,7 +891,7 @@
         </div>
         <div id="statfig-chart" style="margin-top:10px"></div>
         <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
-          <label>Map producer (optional)<br><input id="statfig-map-agency" placeholder="worldbank" size="12"></label>
+          <label>Map producer (optional)<br><input id="statfig-map-agency" placeholder="For example: worldbank" size="12"></label>
           <label title="A level (a count or total like population or GDP) is shown as proportional symbols, never colour — colouring a level makes a big country look like 'more' just for being big. Tick this for a count/total; leave unticked for a rate / ratio / % / per-capita indicator."><input type="checkbox" id="statfig-map-level"> This is a level (count/total)</label>
           <button class="secondary" onclick="renderStatMap()" title="Colour a world map by this indicator (series id above). Only areas sharing the same unit / base year / seasonal adjustment are coloured; an area on a different basis is shown as no-data, never recoloured onto one scale. A level is shown as proportional symbols, not colour.">Map by country</button>
         </div>
@@ -1122,42 +1121,40 @@
         <div><label for="mkt-label">Label</label><input id="mkt-label" placeholder="Neodymium spot"></div>
       </div>
       <div class="row">
-        <div style="flex:3"><label for="mkt-url">Page URL</label><input id="mkt-url" placeholder="https://exchange.example/quote/nd"></div>
+        <div style="flex:3"><label for="mkt-url">Page URL</label><input id="mkt-url" placeholder="For example: https://exchange.example/quote/nd"></div>
       </div>
       <div class="row">
         <div style="flex:2"><label for="mkt-selector">CSS selector <span class="muted">(where the number is)</span></label>
-          <input id="mkt-selector" placeholder="#last-price  /  .quote .value"></div>
+          <input id="mkt-selector" placeholder="For example: #last-price  /  .quote .value"></div>
         <div><label for="mkt-attr">Attribute <span class="muted">(optional)</span></label>
-          <input id="mkt-attr" placeholder="data-value"></div>
+          <input id="mkt-attr" placeholder="For example: data-value"></div>
       </div>
       <div class="row">
         <div style="flex:2"><label for="mkt-regex">Value regex <span class="muted">(optional capture group)</span></label>
-          <input id="mkt-regex" placeholder="at\\s+([\\d.,]+)\\s*USD"></div>
+          <input id="mkt-regex" placeholder="For example: at\\s+([\\d.,]+)\\s*USD"></div>
         <div><label for="mkt-currency">Currency</label><input id="mkt-currency" value="USD"></div>
         <div><label for="mkt-unit">Unit</label><input id="mkt-unit" value="kg"></div>
-        <div><label for="mkt-market">Market label</label><input id="mkt-market" placeholder="china_spot"></div>
+        <div><label for="mkt-market">Market label</label><input id="mkt-market" placeholder="For example: china_spot"></div>
       </div>
       <button onclick="addMarketRule()">Add rule</button>
-      <div class="hint">After adding, use <strong>Test</strong> in the table to fetch the page once and see the
-        exact value found — or the exact reason it didn't match — before relying on it.</div>
+      <div class="hint">After adding, use Test in the table to fetch the page once and see the exact value found — or the exact reason it didn't match — before relying on it.</div>
 
       <hr>
       <h2 style="font-size:13px">Custom feed (any CSV URL)</h2>
       <div class="row">
         <div style="flex:3"><label for="feed-url">CSV URL</label>
-          <input id="feed-url" placeholder="https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"></div>
-        <div><label for="feed-symbol">Symbol</label><input id="feed-symbol" placeholder="WTI"></div>
+          <input id="feed-url" placeholder="For example: https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"></div>
+        <div><label for="feed-symbol">Symbol</label><input id="feed-symbol" placeholder="For example: WTI"></div>
       </div>
       <div class="row">
         <div><label for="feed-unit">Unit</label><input id="feed-unit" value="t"></div>
         <div><label for="feed-currency">Currency</label><input id="feed-currency" value="USD"></div>
-        <div><label for="feed-market">Market label</label><input id="feed-market" placeholder="world-bank"></div>
+        <div><label for="feed-market">Market label</label><input id="feed-market" placeholder="For example: world-bank"></div>
         <div><label for="feed-datecol">Date column <span class="muted">(opt)</span></label><input id="feed-datecol" placeholder="auto (col 1)"></div>
         <div><label for="feed-valcol">Value column <span class="muted">(opt)</span></label><input id="feed-valcol" placeholder="auto (col 2)"></div>
       </div>
       <button onclick="importCustomFeed()">Import custom feed</button>
-      <div class="hint">Default mapping is column&nbsp;1 = date, column&nbsp;2 = value (the FRED convention).
-        Works with any CSV; missing values (<code>.</code>/blank) are skipped, never stored as zero.</div>
+      <div class="hint">Default mapping is column&nbsp;1 = date, column&nbsp;2 = value (the FRED convention). Works with any CSV; a missing value (a dot or a blank cell) is skipped, never stored as zero.</div>
       <div id="feed-result" class="hint"></div>
       </div>
     </section>
@@ -1289,7 +1286,7 @@
       <div id="cs-promote-box" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
         <button class="secondary" onclick="promoteCitedSources()" title="Register a domain cited by ≥2 DISTINCT sources as a new DISABLED source (metadata only — never fetched until you enable it). Independence is counted by distinct sources, not article count; commerce/social storefronts are excluded and existing outlets are alias-deduped.">Register cited domains as sources ↗</button>
         <span id="cs-promote-result" class="muted" style="margin-left:8px"></span>
-        <p class="hint" style="margin:6px 0 0">Turns frequently-cited external domains into new <b>disabled</b> sources, tagged with the <b>“cited”</b> provenance class — the sources' sources. Metadata only: enabling one to actually scrape it stays your consented choice, and “cited” is a descriptive channel, never a quality score.</p>
+        <p class="hint" style="margin:6px 0 0">Turns frequently-cited external domains into new disabled sources, tagged with the “cited” provenance class — the sources' sources. Metadata only: enabling one to actually scrape it stays your consented choice, and “cited” is a descriptive channel, never a quality score.</p>
       </div>
     </section>
 
@@ -1599,10 +1596,7 @@
         Switch one off and it stops appearing — that changes nothing about the articles
         themselves, only which prompts reach your Home. Where a Lead has thresholds, they are
         the ones it already applied; you can now see and adjust them.</p>
-      <p class="hint" id="cards-fence" style="margin-top:6px">Each setting states a safe range.
-        You can always make a Lead <em>stricter</em>; the lower bounds exist so a Lead can never
-        claim more than the evidence behind it supports — where a bound is there for that reason,
-        it says so.</p>
+      <p class="hint" id="cards-fence" style="margin-top:6px">Each setting states a safe range. You can always make a Lead stricter; the lower bounds exist so a Lead can never claim more than the evidence behind it supports — where a bound is there for that reason, it says so.</p>
       <div id="cards-host"><div class="muted">Loading…</div></div>
       <div id="cards-msg" class="hint" style="margin-top:8px"></div>
     </section>
@@ -1662,7 +1656,7 @@
           <span id="aic-status" class="small"></span>
         </div>
         <div class="row" style="margin-top:8px;gap:14px;flex-wrap:wrap">
-          <label class="small"><input type="checkbox" id="aic-m-perception_extract" onchange="saveAiSweepMembership()"> When / where / who</label>
+          <label class="small"><input type="checkbox" id="aic-m-perception_extract" onchange="saveAiSweepMembership()"> When/Where/Who</label>
           <label class="small"><input type="checkbox" id="aic-m-source_tags" onchange="saveAiSweepMembership()"> Source topic tags</label>
           <label class="small"><input type="checkbox" id="aic-m-keyword_triage" onchange="saveAiSweepMembership()"> Keyword triage</label>
           <label class="small"><input type="checkbox" id="aic-m-langdetect" onchange="saveAiSweepMembership()"> Unknown languages <span id="langdetect-status" class="muted"></span></label>
@@ -1926,7 +1920,7 @@
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
-          <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
+          <input id="nl-folder" placeholder="For example: /home/you/newsletters" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
       </div>
@@ -1952,7 +1946,7 @@
       <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="pdf-folder">Folder path (on this machine)</label>
-          <input id="pdf-folder" placeholder="/home/you/pdfs" size="30"></div>
+          <input id="pdf-folder" placeholder="For example: /home/you/pdfs" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('pdf-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="importPdfFolder(this)">Import folder</button></div>
       </div>
@@ -1966,7 +1960,7 @@
       <p class="hint" style="margin-top:5px"><span class="warn">This is a network action.</span> It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label>Protocol<br><select id="mbox-proto"><option value="imap">IMAP</option><option value="pop3">POP3</option></select></label>
-        <label>Host<br><input id="mbox-host" placeholder="imap.example.com" size="18"></label>
+        <label>Host<br><input id="mbox-host" placeholder="For example: imap.example.com" size="18"></label>
         <label>Port<br><input id="mbox-port" type="number" placeholder="auto" style="width:80px"></label>
         <label>User<br><input id="mbox-user" placeholder="you@example.com" size="16"></label>
         <label>Password<br><input id="mbox-pass" type="password" size="14"></label>
@@ -2246,7 +2240,8 @@
       <summary><span class="adv-sec-t">Collection</span> <span class="muted">— schedule, crawl modes, manual and batch ingest</span></summary>
     <section class="panel">
       <h2>Collection</h2>
-      <p class="hint">Scraping, source aggregation and crawling run <strong>continuously and automatically</strong> whenever collection is on and you are online — RSS feeds, recursive crawl, markets, laws and Wikipedia, every source. There is nothing to schedule or program; just switch it on. (It pauses itself if the machine runs low on memory and resumes on its own.)</p>
+      <p class="hint"><strong>Scraping, source aggregation and crawling run continuously and automatically whenever collection is on and you are online.</strong>
+        <span>That covers RSS feeds, recursive crawl, markets, laws and Wikipedia — every source. There is nothing to schedule or program; just switch it on. (It pauses itself if the machine runs low on memory and resumes on its own.)</span></p>
       <div id="sched-status" class="hint" style="margin-top:6px">Loading scheduler status…</div>
       <div class="row" style="margin-top:10px">
         <button id="collect-toggle" onclick="collectToggle()" aria-pressed="false" title="Turn continuous background collection on or off">Collection</button>
@@ -2334,7 +2329,7 @@
       </div>
       <label for="ing-url">…or ingest a single article URL</label>
       <div class="row">
-        <div><input id="ing-url" placeholder="https://example.com/article"></div>
+        <div><input id="ing-url" placeholder="For example: https://example.com/article"></div>
         <div style="flex:0 0 auto;"><button onclick="ingestUrl()">Ingest URL</button></div>
       </div>
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
@@ -2356,7 +2351,7 @@
           <input id="bi-search" placeholder="name or domain" oninput="reloadBatchPicker()"></div>
         <div><label for="bi-lang">Language</label><input id="bi-lang" placeholder="en" oninput="reloadBatchPicker()"></div>
         <div><label for="bi-country">Country</label><input id="bi-country" placeholder="fr" oninput="reloadBatchPicker()"></div>
-        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="news" oninput="reloadBatchPicker()"></div>
+        <div><label for="bi-type">Type</label><input id="bi-type" placeholder="For example: news" oninput="reloadBatchPicker()"></div>
         <div><label for="bi-enabled">Show</label>
           <select id="bi-enabled" onchange="reloadBatchPicker()">
             <option value="">all</option><option value="1" selected>enabled</option><option value="0">disabled</option>
@@ -2391,8 +2386,8 @@
       <h2>Add a source</h2>
       <div class="row">
         <div><label for="s-name">Name</label><input id="s-name" placeholder="Example News"></div>
-        <div><label for="s-domain">Domain</label><input id="s-domain" placeholder="example.com"></div>
-        <div><label for="s-rss">RSS URL</label><input id="s-rss" placeholder="https://example.com/feed.xml"></div>
+        <div><label for="s-domain">Domain</label><input id="s-domain" placeholder="For example: example.com"></div>
+        <div><label for="s-rss">RSS URL</label><input id="s-rss" placeholder="For example: https://example.com/feed.xml"></div>
         <div><label for="s-tags">Tags</label><input id="s-tags" placeholder="politics,world"></div>
       </div>
       <button onclick="addSource()">Add source</button>
@@ -2439,12 +2434,13 @@
     <section class="panel">
       <h2>Import / export source list (CSV)</h2>
       <div class="hint" style="margin-bottom:8px">
-        Columns: <code>name</code>, <code>domain</code> (required) · <code>rss_url</code>,
-        <code>source_type</code>, <code>country</code> (2-letter), <code>language</code>,
-        <code>region</code>, <code>tags</code> (comma-separated, quote the cell),
-        <code>priority</code> (1–3), <code>rate_limit_ms</code>, <code>enabled</code>,
-        <code>reliability_score</code> (1–10, <span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.">operator-set, not computed</span>). Import upserts by domain (new ones created,
-        existing updated); bad rows are reported, not dropped.
+        <div><span>Columns:</span> <code>name</code>, <code>domain</code>, <code>rss_url</code>,
+        <code>source_type</code>, <code>country</code>, <code>language</code>,
+        <code>region</code>, <code>tags</code>, <code>priority</code>,
+        <code>rate_limit_ms</code>, <code>enabled</code>, <code>reliability_score</code>.</div>
+        <div>Name and domain are required. Country is a 2-letter code. Tags are comma-separated, so quote the cell. Priority runs 1–3 and reliability_score runs 1–10.</div>
+        <div><span title="reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.">reliability_score is operator-set, not computed.</span></div>
+        <div>Import upserts by domain (new ones created, existing updated); bad rows are reported, not dropped.</div>
       </div>
       <div class="row">
         <button class="secondary" onclick="window.open('/api/catalog/export.csv','_blank')">Export all (CSV)</button>
@@ -2601,7 +2597,7 @@
       <button onclick="saveKeywordFilter()">Save keyword filter</button>
       <div id="kf-result" class="hint"></div>
       <details id="kf-builtin-view" style="margin-top:10px">
-        <summary style="cursor:pointer">See the built-in stoplist (<span id="kf-builtin-count">…</span> words filtered automatically)</summary>
+        <summary style="cursor:pointer">See the built-in stoplist of automatically filtered words <span class="muted">(<span id="kf-builtin-count">…</span>)</span></summary>
         <p class="muted" style="margin:6px 0">These are the automatic multilingual filter words (function words like the·you·not across your corpus languages). They are curated and language-scoped, so this view is read-only — the toggle above turns the whole list on or off. Search it to see whether a term is filtered.</p>
         <input id="kf-builtin-q" type="search" placeholder="search the stoplist…" oninput="loadBuiltinStoplist()" style="max-width:280px">
         <div id="kf-builtin-list" class="hint" style="max-height:180px;overflow:auto;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
@@ -2655,7 +2651,7 @@
         <button class="secondary" onclick="importIcsFile(this)">Import calendar</button>
       </div>
       <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:1 1 240px"><label for="ics-url">…or subscribe by URL (webcal / https)</label><input id="ics-url" placeholder="https://example.org/calendar.ics"></div>
+        <div style="flex:1 1 240px"><label for="ics-url">…or subscribe by URL (webcal / https)</label><input id="ics-url" placeholder="For example: https://example.org/calendar.ics"></div>
         <button class="secondary" onclick="importIcsUrl(this)">Add from URL</button>
       </div>
     </section>
@@ -2782,6 +2778,21 @@
         <button class="secondary" onclick="window.open('/api/signals/bury','_blank')" title="Sources UNDER-covering a topic that is big across the rest of the corpus (the bury half of card #4). Every (source, broad topic) pair is Benjamini-Hochberg FDR-corrected so screening thousands of pairs cannot manufacture a finding; the innocent explanation (specialization) is stated. 'Absence of a flag is not absence of manipulation.' No score.">Bury signal (.json)</button>
         <button class="secondary" onclick="window.open('/api/insights/lunar-correlation','_blank')" title="Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score.">Lunar-correlation screen (.json)</button>
       </div>
+      <!-- Q1124 = a (2026-09-15): the Patterns lens flips on only when the corpus is
+           >= 100,000 articles AND a labelled sample shows a false-positive rate <= 5%,
+           with BOTH numbers on the toggle. In 0.4 the second number cannot exist -- a
+           labelled sample is a person judging which flags were wrong, and nothing in the
+           app produces one -- so the control renders DISABLED with the reason, and the
+           rate reads "unmeasured" rather than 0. A zero there would claim a perfect
+           detector on the one number that decides whether this lens may be believed. -->
+      <div class="row" style="margin-top:10px;align-items:center;gap:8px">
+        <label class="small" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="patterns-lens" style="width:auto" disabled>
+          <span>Patterns lens</span>
+        </label>
+        <span id="patterns-gate-state" class="muted" style="font-size:12px"></span>
+      </div>
+      <div id="patterns-gate" class="hint" style="margin-top:4px"></div>
       <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
       <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
@@ -2889,11 +2900,9 @@
 
       <hr>
       <h3 style="margin-bottom:6px">External topic discovery</h3>
-      <p class="muted" style="margin-top:0">The <em>one</em> feature that sends a free-text search
-        query to an external service: <strong>Settings → External topic discovery</strong> sends your topic query to
-        <strong>DuckDuckGo</strong> to find candidate outlets. <strong>Your query leaves this
-        machine.</strong> Off by default; everything else works without it. (Discovering RSS feeds
-        for sources you added yourself stays local-path and is not affected.)</p>
+      <p class="muted" style="margin-top:0"><span>External topic discovery is the one feature that sends a free-text search query to an external service: it sends your topic query to DuckDuckGo to find candidate outlets.</span>
+        <strong>Your query leaves this machine.</strong>
+        <span>Off by default; everything else works without it. (Discovering RSS feeds for sources you added yourself stays local-path and is not affected.)</span></p>
       <div class="row">
         <div style="flex:0 0 auto">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -2923,8 +2932,8 @@
       <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
     <section class="panel" id="bulletin-panel">
       <h2>Bulletin</h2>
-      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in <em>this corpus</em>, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
-        <span>Nothing here touches the network. The document is a <strong>draft</strong> until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
+      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in this corpus, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
+        <span>Nothing here touches the network. The document is a draft until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
       <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
       <div id="bulletin-controls" hidden>
         <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
@@ -3008,10 +3017,9 @@
                  oninput="filterDoc()" onkeydown="if(event.key==='Escape'){this.value='';filterDoc();}">
         </div>
         <p class="hint" style="margin-top:0">Tabs opened from Leads and readers are suffixed “· FOOS” — Free Open OmniScience, the alpha working name.</p>
-        <p class="muted" style="margin-top:0">Everything you need to operate the tool — rendered here,
-          offline. The <strong>User Manual</strong> is the detailed notice; the other guides go deeper on
-          specific subjects. Developers: the raw
-          <a href="/docs" target="_blank" rel="noopener">API reference (Swagger) ↗</a> is also available.</p>
+        <p class="muted" style="margin-top:0"><span>Everything you need to operate the tool — rendered here, offline. The User Manual is the detailed notice; the other guides go deeper on specific subjects.</span>
+          <span>Developers: a raw API reference is also available.</span>
+          <a href="/docs" target="_blank" rel="noopener">API reference (Swagger) ↗</a></p>
         <div class="doc-layout">
           <div class="doc-nav" id="doc-nav"><div class="muted">Loading…</div></div>
           <div id="doc-prose" class="prose"><div class="muted">Pick a document on the left.</div></div>

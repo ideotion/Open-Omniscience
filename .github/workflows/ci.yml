@@ -242,6 +242,22 @@ jobs:
       - name: i18n unkeyed t() call sites
         run: python scripts/i18n_report.py --max-unkeyed-t-calls 224
 
+      # The blind spot the two ratchets above SHARE, found 2026-09-18 (S04-14) by doing
+      # the work they exist to drive. Both exclude `{` from every literal they match --
+      # deliberately, so a template literal's ${...} never becomes a key nobody can
+      # write -- which means the app's OWN interpolation frame, tf("Page {n} of
+      # {total}", ...), is invisible to both. That frame is also the FIX for a chain of
+      # welded fragments, so converting fragments into a frame lowered both numbers
+      # whether or not a key was ever added: the ratchets paid the same for half the
+      # work as for all of it. Measured when this step landed: 17 live frames with no
+      # en.json key, 7 of them in app-backup.js and shipped long before this slice --
+      # import summaries and timings rendering English in all 11 other locales with
+      # both ratchets green over them the whole time. Aliases are DISCOVERED from each
+      # file's own bindings rather than listed, because the tf name varies (tf, TF,
+      # tfa) and _JS_SHAPES already carries the scar of a hand-written alias list.
+      - name: i18n unkeyed tf() frames
+        run: python scripts/i18n_report.py --max-unkeyed-tf-frames 20
+
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
         # became the default (PR-E), creating a store without a passphrase

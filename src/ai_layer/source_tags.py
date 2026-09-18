@@ -125,8 +125,16 @@ def build_source_tag_prompt(
     ``case_law`` asks it to distinguish two spellings of one tag. Only the PROMPT is
     folded -- ``parse_source_tags`` still takes the full vocabulary, so the dropped
     spelling remains a valid answer. Canaries are mixed in with the real items
-    exactly like triage's, so the model cannot tell them apart."""
-    prompt_vocab, _dropped = fold_separator_variants(vocabulary)
+    exactly like triage's, so the model cannot tell them apart.
+
+    RC17 (2026-09-15) additionally removes the ``via:*`` provenance prefixes and
+    the coverage-state markers from what is OFFERED -- they live in the same
+    ``Source.tags`` column as the topics but are not topics, and a closed
+    vocabulary that contains them invites the model to assert one. The judgement
+    words (``lean-*``, ``state-media``, ``independent`` ...) stay, per the ruling.
+    Filtering the OFFER only, never the parser, keeps the change non-narrowing."""
+    topical, _non_topical = topical_vocabulary(vocabulary)
+    prompt_vocab, _dropped = fold_separator_variants(topical)
     system = _SOURCE_TAG_SYSTEM_TEMPLATE.format(vocab=", ".join(prompt_vocab))
     lines: list[str] = []
     expected: list[str] = []
@@ -436,7 +444,14 @@ def _sep_fold_key(tag: str) -> str:
 
 
 #: Vocabulary entries this codebase writes into ``Source.tags`` for reasons other
-#: than topic. Reported, never filtered -- see the module comment above.
+#: than topic. THIS COMMENT USED TO READ "Reported, never filtered"; RC17
+#: (2026-09-15, following register L10 over sheet Q1130 = a, both recorded, the
+#: CONFLICT unresolved) changed that stated position for TWO of the four classes:
+#: ``provenance`` and ``coverage-state`` are now filtered out of the vocabulary
+#: OFFERED to the model (``topical_vocabulary`` below), while
+#: ``stance-or-ownership`` -- the judgement words -- and ``format-or-schema``
+#: remain reported and never filtered. The parser still sees every class, so
+#: nothing a source already carries stops resolving.
 _NON_TOPICAL_CLASSES: dict[str, tuple[str, ...]] = {
     "provenance": ("via:", "world-catalog"),
     "coverage-state": (
@@ -470,6 +485,47 @@ _NON_TOPICAL_CLASSES: dict[str, tuple[str, ...]] = {
     ),
     "format-or-schema": ("akoma-ntoso", "eli", "codes", "dockets", "filings", "gazette"),
 }
+
+#: The classes RC17 (2026-09-15) takes OUT of the offered topical vocabulary. The
+#: other two stay: ``stance-or-ownership`` is the judgement words the ruling
+#: explicitly leaves reported, and ``format-or-schema`` was not asked about.
+_FILTERED_FROM_TOPICAL: tuple[str, ...] = ("provenance", "coverage-state")
+
+
+def _is_non_topical(tag: str, classes: tuple[str, ...] = _FILTERED_FROM_TOPICAL) -> bool:
+    """True when ``tag`` belongs to one of the named non-topical classes.
+
+    Matches a ``prefix:`` marker by ``startswith`` and every other marker by
+    EQUALITY -- the same rule ``vocabulary_collisions`` reports with, so the
+    filter and the report can never disagree about what is non-topical.
+    """
+    for label in classes:
+        for marker in _NON_TOPICAL_CLASSES.get(label, ()):
+            if tag.startswith(marker) if marker.endswith(":") else tag == marker:
+                return True
+    return False
+
+
+def topical_vocabulary(vocabulary: list[str]) -> tuple[list[str], list[str]]:
+    """Split a live vocabulary into (topical, filtered) for RC17.
+
+    ``Source.tags`` is this codebase's one tag column and it carries provenance
+    (``via:*``), coverage state, political lean and file formats as well as
+    topics -- so a vocabulary resolved live from it is not a topical vocabulary,
+    and offering a provenance marker as a topic invites the model to assert one.
+
+    This filters what is OFFERED and nothing else. ``parse_source_tags`` keeps the
+    FULL vocabulary, exactly as ``fold_separator_variants`` does for separator
+    duplicates, so a source that already carries ``via:curated`` still resolves and
+    no answer that used to be valid becomes a rejection. Returns both halves
+    because the filtered set is REPORTED, never silently dropped: ``vocabulary_
+    collisions`` still walks ALL FOUR classes and ``source_tag_run_header``
+    embeds its report in every run record, so what was withheld from the model is
+    on the record beside what was offered.
+    """
+    topical = [t for t in vocabulary if not _is_non_topical(t)]
+    filtered = [t for t in vocabulary if _is_non_topical(t)]
+    return topical, filtered
 
 
 def vocabulary_collisions(vocabulary: list[str]) -> dict:

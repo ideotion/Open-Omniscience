@@ -297,6 +297,89 @@ _T_CALL = (
 )
 
 
+# THE tf() FRAMES, which BOTH gates above are blind to BY CONSTRUCTION.
+#
+# Every pattern in _JS_SHAPES and _T_CALL excludes `{` from the literal -- deliberately,
+# so a template literal's `${...}` never lands in the count as a key nobody can ever
+# write. The side effect is that `tf("Page {n} of {total}", ...)`, the app's OWN
+# interpolation frame, is invisible to both. That is not a small corner: converting a
+# welded chain of fragments into one frame is exactly the fix the untranslatable count
+# is supposed to drive, and doing it makes the strings LEAVE the count whether or not a
+# key was ever added. A number that falls when you do the right thing AND when you do
+# half of it is not measuring the right thing.
+#
+# Measured on 2026-09-18: 17 live frames had no en.json key, 7 of them in app-backup.js
+# and shipped long before this slice -- user-facing import summaries and timings that
+# rendered English in all 11 other locales, with both ratchets green over them the
+# whole time.
+#
+# ALIASES ARE DISCOVERED, NOT LISTED. _JS_SHAPES carries a scar about `t9(`/`t9m(`
+# being structurally invisible to a hand-written `\bt\(`; the same trap is worse here,
+# because modules bind tf under at least `tf`, `TF` and `tfa`, and a new name costs
+# nothing to invent. So the alias set is read out of each file's OWN bindings.
+_TF_BINDING = re.compile(r"\b(\w+)\s*=\s*\(\s*window\.OOI18N\s*&&\s*OOI18N\.tf\s*\)")
+
+
+def _js_unescape(lit: str) -> str:
+    r"""Decode the JS escapes that change what the runtime key actually is.
+
+    Not cosmetic: three of the frames this gate first reported were written with
+    ``—`` for an em dash, so a raw-source comparison called them unkeyed while
+    en.json held the very key they resolve to. A gate that cries wolf on an escape
+    is a gate someone turns off.
+    """
+    out: list[str] = []
+    i = 0
+    simple = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "'": "'", '"': '"', "`": "`",
+              "/": "/", "b": "\b", "f": "\f"}
+    while i < len(lit):
+        if lit[i] == "\\" and i + 1 < len(lit):
+            c = lit[i + 1]
+            if c == "u" and len(lit) >= i + 6:
+                try:
+                    out.append(chr(int(lit[i + 2:i + 6], 16)))
+                    i += 6
+                    continue
+                except ValueError:
+                    pass
+            if c in simple:
+                out.append(simple[c])
+                i += 2
+                continue
+        out.append(lit[i])
+        i += 1
+    return "".join(out)
+
+
+_FRAME_SLOT = re.compile(r"\{\w+\}")
+
+
+def unkeyed_tf_frames() -> dict:
+    """Every tf("... {slot} ...") frame in the JS whose frame has no en.json key."""
+    en_keys = _keys(_load(_LOCALES / "en.json"))
+    sources = {name: (_static_dir() / name).read_text(encoding="utf-8")
+               for name in (*_aux_js(), *_guis_js())}
+    sources.update(_aux_inline_js())
+    sites = 0
+    unkeyed: dict[str, list[str]] = {}
+    for name, text in sources.items():
+        names = {"OOI18N.tf"} | set(_TF_BINDING.findall(text))
+        for alias in names:
+            esc_alias = re.escape(alias)
+            for quote, body in (('"', r'(?:[^"\\]|\\.)*'), ("'", r"(?:[^'\\]|\\.)*"),
+                                ("`", r"(?:[^`\\$]|\\.)*")):
+                rx = re.compile(rf"(?<![\w.]){esc_alias}\(\s*{re.escape(quote)}({body}){re.escape(quote)}")
+                for m in rx.finditer(text):
+                    k = re.sub(r"\s+", " ", _js_unescape(m.group(1))).strip()
+                    if not k or not _FRAME_SLOT.search(k):
+                        continue
+                    sites += 1
+                    if k not in en_keys:
+                        unkeyed.setdefault(k, []).append(name)
+    return {"sites": sites, "unkeyed_count": len(unkeyed),
+            "unkeyed": sorted(unkeyed), "where": {k: sorted(set(v)) for k, v in unkeyed.items()}}
+
+
 def unkeyed_t_calls() -> dict:
     """Every t("literal") in the JS whose literal has no en.json key."""
     en_keys = _keys(_load(_LOCALES / "en.json"))
@@ -470,6 +553,17 @@ def main(argv: list[str] | None = None) -> int:
             "key. The tight half of the ratchet above: these are certainly user-facing."
         ),
     )
+    ap.add_argument(
+        "--max-unkeyed-tf-frames",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "fail (exit 1) if MORE than N distinct tf(\"... {slot} ...\") frames have no "
+            "en.json key. The blind spot the two ratchets above share: both exclude `{` "
+            "from a literal, so the app's own interpolation frames are invisible to them."
+        ),
+    )
     args = ap.parse_args(argv)
 
     if args.max_unkeyed_t_calls is not None:
@@ -494,6 +588,37 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"    ... and {n - 20} more (--audit-chrome --json)", file=sys.stderr)
             return 1
         if n < args.max_unkeyed_t_calls:
+            print(f"  (the ratchet can now be lowered to {n})", file=sys.stderr)
+        return 0
+
+    # The THIRD gate, and the reason it exists is worth stating where it is enforced:
+    # the two ratchets above both exclude `{` from a literal, so neither can see a
+    # tf() frame. Converting a chain of welded fragments into one frame -- the fix
+    # those ratchets are meant to drive -- therefore LOWERS them whether or not the
+    # frame was ever keyed. This gate is what makes the other two honest.
+    if args.max_unkeyed_tf_frames is not None:
+        frames = unkeyed_tf_frames()
+        n = frames["unkeyed_count"]
+        print(
+            f'unkeyed tf("...") frames: {n} of {frames["sites"]} frame sites '
+            f"(ratchet {args.max_unkeyed_tf_frames})",
+            file=sys.stderr,
+        )
+        if n > args.max_unkeyed_tf_frames:
+            print(
+                f"\nFAIL: {n} tf() frames have no en.json key, above the ratchet of "
+                f"{args.max_unkeyed_tf_frames}. tf() translates the FRAME and then "
+                f"interpolates -- an unkeyed frame renders verbatim English in all 11 "
+                f"other locales, exactly like an unkeyed t(). Add the key to all 12 "
+                f"locale files. This number may only go down.",
+                file=sys.stderr,
+            )
+            for k in frames["unkeyed"][:20]:
+                print(f"    {k[:110]}   <- {', '.join(frames['where'][k])}", file=sys.stderr)
+            if n > 20:
+                print(f"    ... and {n - 20} more", file=sys.stderr)
+            return 1
+        if n < args.max_unkeyed_tf_frames:
             print(f"  (the ratchet can now be lowered to {n})", file=sys.stderr)
         return 0
 

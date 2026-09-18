@@ -37,8 +37,13 @@
     // simply navigates to the SPA — no handler, degrades gracefully. data-kwstat lets
     // the hover enrich its title with the keyword's real corpus stats (lazy, cached).
     return '<a class="' + cls + '" data-kwstat="' + esc(term) + '" href="' + esc(analysisUrl(term))
-      + '" target="_blank" rel="noopener" title="Analyse “' + esc(term)
-      + '” across your corpus ↗">' + inner + "</a>";
+      // The title is a STATIC sentence, not one composed around the term: the i18n
+      // walker matches an attribute by EXACT value, so a title carrying the keyword
+      // could never match a key and rendered English in eleven locales. The term is
+      // already the link's own text and rides in data-kwstat, so naming it twice
+      // bought nothing and cost the translation.
+      + '" target="_blank" rel="noopener" title="Analyse this keyword across your corpus ↗">'
+      + inner + "</a>";
   }
 
   // --- In-article keyword marking (pure core; unit-verified) -----------------
@@ -108,7 +113,7 @@
           a.className = "r-kw-mark";
           a.href = analysisUrl(s.term);
           a.target = "_blank"; a.rel = "noopener";
-          a.title = "Analyse “" + s.term + "” across your corpus ↗";
+          a.title = "Analyse this keyword across your corpus ↗";   // static: see makeKwLink
           a.setAttribute("data-kwstat", s.term);   // hover enriches the title with real stats
           a.textContent = s.surface;
           frag.appendChild(a);

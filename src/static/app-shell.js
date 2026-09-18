@@ -492,6 +492,11 @@
       // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
       // subtab (invariant #8). It no longer loads with the agenda — only on expand.
       calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too
+      // DIAGNOSTICS had no on-expand loader at all, so the Patterns-lens gate panel
+      // (Q1124) that lives in it had nothing to fill it -- a panel whose loader stayed
+      // behind is the recorded "can't find your keyword triage button" shape. One
+      // loopback read of a COUNT, on expand only: folded must not mean fetched.
+      diagnostics: () => { loadPatternsGate(); },
       // The Bulletin (§16): last section, folded, and its availability check +
       // edition list run on EXPAND like the rest. Both are loopback.
       bulletin: () => { loadBulletin(); },
