@@ -123,6 +123,57 @@ def _resume_from() -> str | None:
         return None
 
 
+def _refresh_one_pageview_top(client: Any) -> str | None:
+    """Q706's cadence in production: ONE due edition's top-1,000, at most once a day.
+
+    THE STORE IS THE CORPUS KEY-VALUE TABLE, so the cached list inherits the corpus's
+    encryption instead of sitting beside it as a plaintext file. The list itself is
+    public — it is the same list for every reader in the world — but a file naming what
+    this machine asked Wikimedia about is still one more thing on an operator's disk
+    that nothing required.
+
+    The DUE DAY is yesterday's, UTC (see ``pageviews.due_day``): the service aggregates
+    a day after it ends, and asking for today returns nothing that a caller could tell
+    apart from "nobody read anything".
+    """
+    from datetime import UTC, datetime
+
+    from src.config.kv_store import kv_get_json, kv_set_json
+    from src.wiki.hotset import pageview_kv_key
+    from src.wiki.pageviews import due_day, fetch_top, is_due
+
+    want = due_day(datetime.now(UTC))
+    for edition in _editions():
+        key = pageview_kv_key(edition)
+        blob = kv_get_json(key) or {}
+        stored = blob.get("day")
+        try:
+            last = datetime.strptime(str(stored), "%Y-%m-%d").date() if stored else None
+        except ValueError:
+            # An unreadable stored day is treated as NEVER FETCHED rather than as
+            # today's: the cost of being wrong that way is one request, and the cost of
+            # the other way is an edition that never refreshes again.
+            last = None
+        if not is_due(last, want):
+            continue
+        rows = fetch_top(client.session, edition, want)
+        kv_set_json(
+            key,
+            {
+                "day": want.isoformat(),
+                "titles": [r["title"] for r in rows if r.get("title")],
+                # The SOURCE's own figures, kept beside the titles rather than folded
+                # into them: a rank is the service's ordinal and a view count is its
+                # measurement, and this app computes neither.
+                "rows": rows[:50],
+                "n": len(rows),
+            },
+        )
+        _LOG.info("refreshed the %s top-1,000 for %s (%d titles)", edition, want, len(rows))
+        return edition
+    return None
+
+
 def _build():
     """Construct the runner with the real client, stream and sessions."""
     from src.database.session import SessionLocal
@@ -151,6 +202,7 @@ def _build():
         hot_sets=_hot_sets,
         budget=_budget,
         resume_from=_resume_from,
+        pageviews=lambda: _refresh_one_pageview_top(client),
     )
 
 

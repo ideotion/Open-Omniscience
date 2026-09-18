@@ -335,3 +335,78 @@ def test_the_stream_and_the_drain_can_run_at_once_without_sharing_a_handle(lane)
             db, adapter, hot_sets=_hot(corpus_mention_titles={"Fixture Alpha"}), budget=_plenty()
         )
     assert report.changes_recorded == 15
+
+
+# --------------------------------------------------------------------------- #
+# Q706's cadence: twelve requests a day, spent one at a time.
+# --------------------------------------------------------------------------- #
+def test_the_daily_top_up_asks_for_YESTERDAY_not_today(lane):
+    """The service aggregates a day after it ends. Asking for today returns nothing,
+    and the caller cannot tell that from "nobody read anything"."""
+    from datetime import UTC, datetime
+
+    from src.wiki.pageviews import due_day
+
+    now = datetime(2026, 9, 18, 0, 5, tzinfo=UTC)
+    assert due_day(now).isoformat() == "2026-09-17"
+
+
+def test_an_edition_never_fetched_is_DUE_and_one_fetched_today_is_not(lane):
+    from datetime import date
+
+    from src.wiki.pageviews import is_due
+
+    want = date(2026, 9, 17)
+    assert is_due(None, want) is True, "never fetched"
+    assert is_due(date(2026, 9, 16), want) is True, "stale"
+    assert is_due(want, want) is False, "already have it"
+    assert is_due(date(2026, 9, 18), want) is False, (
+        "a clock that moved backwards must not spend a request to learn nothing"
+    )
+
+
+def test_the_top_up_spends_ONE_request_per_tick_not_twelve(lane):
+    """Twelve at once is the same daily budget arriving as a burst -- twelve times
+    harder on the service and no faster for the operator."""
+    calls: list[str] = []
+    runner = _runner(_filled_adapter(), {"value": "running"})
+    runner._pageviews = lambda: (calls.append("one") or "en")
+    runner.refresh_one_pageview_top()
+    assert calls == ["one"]
+
+
+def test_a_FAILING_top_up_does_not_end_the_drain_loop(lane):
+    def explode():
+        raise RuntimeError("the analytics host is down")
+
+    state = {"value": "running"}
+    runner = _runner(_filled_adapter(), state)
+    runner._pageviews = explode
+    original = runner.drain
+
+    def drain_then_halt():
+        result = original()
+        state["value"] = "halted"
+        return result
+
+    runner.drain = drain_then_halt  # type: ignore[method-assign]
+    assert runner.run_until_stopped() == 1, "the drain still happened and still counted"
+
+
+def test_the_top_up_runs_AFTER_the_drain(lane):
+    """The drain is the lane's job; the attention signal is a top-up for the NEXT one."""
+    order: list[str] = []
+    state = {"value": "running"}
+    runner = _runner(_filled_adapter(), state)
+    original = runner.drain
+
+    def drain_then_halt():
+        order.append("drain")
+        result = original()
+        state["value"] = "halted"
+        return result
+
+    runner.drain = drain_then_halt  # type: ignore[method-assign]
+    runner._pageviews = lambda: (order.append("pageviews") or "en")
+    runner.run_until_stopped()
+    assert order == ["drain", "pageviews"]

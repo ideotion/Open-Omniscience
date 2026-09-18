@@ -2647,6 +2647,17 @@
       } catch (e) { $("wiki-progress").textContent=""; toast(_failMsg("Track now failed: {error}", e), "err"); }
     }
 
+    // Q717 = a's approximate label. ORES is a third party's machine-learning model
+    // giving a PROBABILITY, and this app publishes no scores of its own -- so the
+    // number is marked approximate on the visible surface and the hover names whose
+    // model it is and what it does not mean. Never a verdict, never a ranking, and
+    // never folded with anything else.
+    function _oresCell(value) {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const why = t9("A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.");
+      return '<span title="' + esc(why) + '">≈ ' + esc(value.toFixed(2)) + '</span>';
+    }
+
     async function loadWikiChanges() {
       const flagged = $("wiki-flagged-only").checked ? "true" : "false";
       const w = $("wiki-filter-lang").value.trim();
@@ -2660,7 +2671,7 @@
             <td class="muted">${esc(c.editor||"—")}${c.editor_anon?' <span class="pill warn">anon</span>':''}</td>
             <td class="${(c.delta_bytes||0)<0?'':''}" style="color:${(c.delta_bytes||0)<0?'var(--err)':'var(--ok)'}">${c.delta_bytes==null?'—':(c.delta_bytes>0?'+':'')+c.delta_bytes}</td>
             <td>${(c.flag_reasons||[]).map(r=>`<span class="pill warn">${esc(r)}</span>`).join(" ")}</td>
-            <td class="muted">${c.ores_damaging!=null?'dmg '+c.ores_damaging.toFixed(2):'—'}</td>
+            <td class="muted">${c.ores_damaging!=null?_oresCell(c.ores_damaging):'—'}</td>
             <td style="white-space:nowrap">
               <button class="tiny secondary" onclick="viewWikiDiff(${c.id})">Diff</button>
               <a class="tiny" href="${esc(c.diff_url)}" target="_blank" rel="noopener">live</a></td></tr>`).join("")

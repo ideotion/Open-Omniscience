@@ -252,6 +252,7 @@ class WikiLaneRunner:
         budget: Callable[[], BudgetState],
         corpus_session: Callable[[], Any] | None = None,
         resume_from: Callable[[], str | None] | None = None,
+        pageviews: Callable[[], str | None] | None = None,
         max_connections: int | None = None,
         drain_interval_s: float = DRAIN_INTERVAL_S,
         sleep: Callable[[float], None] = time.sleep,
@@ -265,6 +266,10 @@ class WikiLaneRunner:
         self._hot_sets = hot_sets
         self._budget = budget
         self._resume_from = resume_from
+        #: Q706's once-a-day attention signal, injected so the runner never owns a
+        #: fetch of its own. ``None`` disables it entirely, which is what every test
+        #: that is not about the cadence passes.
+        self._pageviews = pageviews
         #: A ceiling on how many times the stream may (re)connect in one run. ``None``
         #: — the production value — means "as long as the setting says running", which
         #: is what a stream held open for days needs. A number is for a caller that
@@ -364,6 +369,32 @@ class WikiLaneRunner:
         self.drains += 1
         return report
 
+    def refresh_one_pageview_top(self) -> str | None:
+        """Fetch ONE edition's daily top-1,000 if any is due. Returns the edition, or None.
+
+        ONE PER TICK, NOT TWELVE. Q706's budget is twelve requests a day, and this
+        spends them one at a time so they spread across the day's drains instead of
+        arriving as a burst the moment the app starts — which is what a loop over
+        twelve editions would do, twelve times harder on the service and no faster for
+        the operator.
+
+        It is a NO-OP while offline, and says so through the client's own refusal
+        rather than by checking a flag here: the guarded session refuses under the kill
+        switch and names it (invariant #14e's corollary), and a second check here would
+        be a second place to keep that behaviour in step.
+
+        Returns ``None`` when nothing was due, which is the ordinary case — the
+        difference between "nothing was due" and "it failed" is in the log and in the
+        caller's own report, never collapsed into one silent return.
+        """
+        if self._pageviews is None:
+            return None
+        try:
+            return self._pageviews()
+        except Exception as exc:  # noqa: BLE001 - an attention signal must not end a drain
+            _LOG.warning("the daily pageview top-up failed: %s", exc, exc_info=True)
+            return None
+
     def run_until_stopped(self, *, max_drains: int | None = None) -> int:
         """Drain every ``drain_interval_s`` until the setting stops saying ``running``.
 
@@ -375,6 +406,11 @@ class WikiLaneRunner:
             if max_drains is not None and done >= max_drains:
                 break
             self.drain()
+            # AFTER the drain, deliberately. The drain is the lane's job; the attention
+            # signal is a top-up for the NEXT one, and running it first would delay
+            # storing what the stream already handed us in order to fetch something
+            # nothing is waiting for.
+            self.refresh_one_pageview_top()
             done += 1
             if self._should_stop():
                 break

@@ -46,6 +46,12 @@
       // second enumerator, and the two guards that inspect this event already walk every
       // handler for exactly that reason.
       try { if (typeof ooKwRepaintOnLangChange === "function") ooKwRepaintOnLangChange(); } catch (_e) {}
+      // S04-09: the Wikipedia wizard's share line and the lane summary are built at
+      // render time from tf() frames plus measured numbers, which is the same
+      // frozen-locale class -- nothing in the walker can repaint a sentence it never
+      // saw in English. Registered in THIS listener for the reason stated above.
+      try { if (typeof _wizShare === "function") _wizShare(); } catch (_e) {}
+      try { if (typeof loadWikiLaneSummary === "function") loadWikiLaneSummary(); } catch (_e) {}
       // S04-07: the analysis window's cross-language rail is the same frozen-locale
       // class -- its sentences are built at render time from a tf() frame plus server
       // prose, so the walker cannot reach them. It redraws from the payload it already
@@ -472,6 +478,42 @@
         showTab("settings", false);
         try { _setSubtabs.select("wikipedia"); } catch (e) { showSetCat("wikipedia"); }
         openWikiTC(id, "", "");
+      } catch (e) { /* a malformed deep link must never break boot */ }
+    })();
+
+    // Q725's wizard, reached BOTH ways the ruling asks for. The Settings button is
+    // the door an operator can go back through at any time; "/?wikiwizard=1" is the
+    // hand-off unlock.html makes for a FRESH corpus only, so an operator who has
+    // already answered is never asked again on launch.
+    //
+    // The deep link deliberately does NOT check ``wizard_done``: a returning operator
+    // never arrives with this parameter (unlock.html only adds it after a create),
+    // and refusing to open a screen the operator explicitly navigated to would be the
+    // app second-guessing a link they followed.
+    (function _wireWikiWizard() {
+      const open = $("wiki-wizard-open");
+      if (open) open.addEventListener("click", () => openWikiWizard());
+      const save = $("wiki-wizard-save");
+      if (save) save.addEventListener("click", () => saveWikiWizard());
+      const cancel = $("wiki-wizard-cancel");
+      if (cancel) cancel.addEventListener("click", () => {
+        const dlg = $("wiki-wizard");
+        // "Not now" LEAVES THE SETTINGS ALONE, including wizard_done. An operator who
+        // dismissed the screen has not been through it, and recording that they had
+        // would make the defaults look like a choice they made.
+        if (dlg) { try { dlg.close(); } catch (_e) { dlg.removeAttribute("open"); } }
+      });
+      const all = $("wiki-wizard-all");
+      if (all) all.addEventListener("click", () => _wizSelectAll(true));
+      const none = $("wiki-wizard-none");
+      if (none) none.addEventListener("click", () => _wizSelectAll(false));
+      const budget = $("wiki-wizard-budget");
+      if (budget) budget.addEventListener("input", () => _wizShare());
+      try {
+        if (new URLSearchParams(location.search).get("wikiwizard") === "1"
+            && typeof openWikiWizard === "function") {
+          openWikiWizard();
+        }
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();
 

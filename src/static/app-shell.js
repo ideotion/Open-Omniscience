@@ -420,6 +420,10 @@
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
+      // S04-09: the lane's own summary loads on the same show. Lazily, like the rest
+      // of this panel: a status read on every boot for a panel nobody opened is a
+      // poll nobody asked for.
+      if (cat === "wikipedia" && typeof loadWikiLaneSummary === "function") loadWikiLaneSummary();
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       // The newsletter/PDF import panels moved into Data & backup (2026-07-31). Both
       // calls are cheap and loopback-only -- a count query and a job-status poll -- so

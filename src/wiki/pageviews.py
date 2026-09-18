@@ -51,6 +51,42 @@ PAGEVIEWS_PATH: str = "/api/rest_v1/metrics/pageviews/top/{project}/all-access/{
 TOP_LIMIT: int = 1000
 
 
+#: Q706's cadence, as a NUMBER rather than as a habit: "the daily top-1,000 per
+#: edition (12 requests a day)". One request per edition per calendar day, UTC.
+#:
+#: WHY UTC AND NOT THE MACHINE'S DAY: the endpoint is per-day and its days are the
+#: service's, so two installs in different timezones asking for "yesterday" would ask
+#: for different days and then disagree about what the top-1,000 was. The day this app
+#: reads is the day the service published.
+REQUESTS_PER_EDITION_PER_DAY: int = 1
+
+
+def due_day(now: Any, *, lag_days: int = 1) -> Any:
+    """The day whose top-1,000 is worth asking for, given ``now`` (a UTC datetime).
+
+    ``lag_days=1`` — YESTERDAY, not today. The service aggregates a day after it ends,
+    so asking for today's returns nothing and the caller cannot tell that from "nobody
+    read anything", which is the pair this module refuses to merge everywhere else.
+    Named as a parameter so a caller that knows better can say so, and defaulted to the
+    honest value so one that does not cannot get it wrong.
+    """
+    from datetime import timedelta
+
+    return (now - timedelta(days=lag_days)).date()
+
+
+def is_due(last_fetched_day: Any, want_day: Any) -> bool:
+    """Whether this edition's top-1,000 should be asked for.
+
+    ``None`` for ``last_fetched_day`` means never fetched, which is due. A stored day
+    EQUAL to or LATER than the wanted one is not due — later can happen when a clock
+    moves backwards, and re-asking then would spend a request to learn nothing.
+    """
+    if last_fetched_day is None:
+        return True
+    return last_fetched_day < want_day
+
+
 def project_for(edition: str) -> str:
     """``en`` -> ``en.wikipedia``. The ONE place the analytics project name is built."""
     if not edition:
