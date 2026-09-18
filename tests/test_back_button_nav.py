@@ -45,6 +45,30 @@ def test_unlock_hops_replace_so_back_never_returns_to_passphrase():
     # A locked API response replaces (not href) the current entry with /unlock.
     assert 'location.replace("/unlock")' in _INDEX
     assert 'location.href = "/unlock"' not in _INDEX
-    # After a successful unlock, the app replaces /unlock with / (not href).
-    assert 'location.replace("/")' in _UNLOCK
-    assert 'location.href = "/"' not in _UNLOCK
+    # After a successful unlock, the app REPLACES /unlock (never href), so Back cannot
+    # return to the passphrase screen.
+    #
+    # ASSERTED AS THE PROPERTY, NOT AS ONE SPELLING. This used to read
+    # `'location.replace("/")' in _UNLOCK`, and S04-09 gave the FRESH-corpus path a
+    # different destination (`/?wikiwizard=1`, the first-run wizard hand-off) while
+    # keeping `replace`. The literal check reddened on a change that preserved
+    # everything it exists to protect. What matters is that every navigation out of
+    # this page replaces rather than pushes, and that each destination is a same-origin
+    # path -- which is strictly more than the old line checked.
+    import re
+
+    assert "location.href" not in _UNLOCK, "a href assignment would leave /unlock on the stack"
+    targets = re.findall(r"location\.replace\(([^)]*)\)", _UNLOCK)
+    assert targets, "nothing navigates away from the unlock page at all"
+    for target in targets:
+        literal = target.strip()
+        if literal.startswith(("'", '"')):
+            assert literal[1:].startswith("/"), f"replace() leaves the origin: {literal}"
+        else:
+            # A variable destination: the value must be built from same-origin literals
+            # in this file, and every one of them checked the same way.
+            values = re.findall(rf"{re.escape(literal)}\s*=\s*([^;\n]+)", _UNLOCK)
+            assert values, f"replace({literal}) reads a destination this file never sets"
+            for value in values:
+                for lit in re.findall(r"""["']([^"']*)["']""", value):
+                    assert lit.startswith("/"), f"replace({literal}) can leave the origin: {lit!r}"
