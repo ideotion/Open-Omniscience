@@ -1337,7 +1337,17 @@ def test_analysis_articles_paginated():
     assert 'q.set("offset"' in app and 'q.set("limit"' in app, "pagination must fetch by limit+offset"
     assert "_anLoadArticles(p, 0)" in app, "loadAnalysis must use the paginated loader"
     assert app.count("+ pager") >= 2, "the pager must render BOTH above and below the results list"
-    assert 't("Page")' in app and 't("of")' in app, "the 'Page X of Y' control must exist"
+    # RE-ANCHORED 2026-09-18 (S04-14) ONTO A STRICTLY STRONGER FACT, not a looser one.
+    # This line used to assert the two FRAGMENTS the label was welded from, t("Page") and
+    # t("of") -- and t("of") is two characters, below the floor of both i18n gates, with no
+    # en.json key at all, so every locale rendered "Page 1 of 5" with an English "of" wedged
+    # between two translated words while this guard called the control present. The control
+    # is now ONE frame, and the assertion pins the whole sentence, both slots, AND the key
+    # the fragments never had.
+    import json as _json
+    assert 'TF("Page {n} of {total}"' in app, "the 'Page X of Y' control must exist"
+    _en = _json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "Page {n} of {total}" in _en, "the pager frame must be keyed, or it is English x12"
 
 
 def test_synthesis_opens_a_window_with_selection_metadata_and_export():
@@ -2453,6 +2463,25 @@ def test_ui_invariants():
     )
     assert "dots shown, no curve interpolated through sparse points" not in html, (
         "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
+    )
+    #     EXTENDED by RC08.6 / register L5 (2026-09-15): the analysis window's
+    #     commodity price x coverage overlay was the one renderer still outside the
+    #     rule -- it drew a polyline from TWO points. Invariant #16 is UNCHANGED;
+    #     the renderer now reads the SAME shared `_SPARSE_BAR_MAX` rather than a
+    #     second threshold of its own, which is what "ONE toolkit" means here (the
+    #     rules are not re-derived per surface). The behavioural half is driven in
+    #     tests/commodity_overlay_node_test.js -- a source grep cannot tell a line
+    #     that is gated on the threshold from one that merely mentions it.
+    _overlay = _strip_js_comments(_js_function_body(html, "commodityOverlaySvg"))
+    assert "_SPARSE_BAR_MAX" in _overlay, (
+        "commodityOverlaySvg must read the SHARED sparse threshold, not a second "
+        "number that can drift from it (RC08.6 / L5)"
+    )
+    assert re.search(r"priceBars\s*=\s*P\.length\s*<\s*_SPARSE_BAR_MAX", _overlay), (
+        "the price series must switch to bars BELOW the shared threshold (RC08.6)"
+    )
+    assert re.search(r"!priceBars\s*&&", _overlay), (
+        "the price polyline must be gated on the threshold, not drawn from 2 points"
     )
     #     AMENDED AGAIN by the AXIS-HONESTY pass (field impressions 2026-08-01,
     #     ruling 10): a tick must be a value the axis ACTUALLY spans. The

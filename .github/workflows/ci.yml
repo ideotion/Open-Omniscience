@@ -215,8 +215,13 @@ jobs:
       # English in fr and ar. Both ratchets were green over them -- a ratchet answers "did
       # this change make it worse", never "is this surface correct" -- so the walk is what
       # saw them, and the slack they leave behind is lowered in the PR that keys them.
+      # 461 -> 0: S04-14 (Q1152 = a) keyed the remainder x12. ZERO IS A DIFFERENT KIND OF
+      # NUMBER from the ones above it: every one of those was a debt this gate was
+      # tolerating, and there is now none to tolerate. From here the ratchet is a floor
+      # rather than a ceiling -- any single new unkeyed string reddens CI on the PR that
+      # writes it, which is the state this gate was always aiming at and never reached.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 461
+        run: python scripts/i18n_report.py --max-untranslatable 0
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says
@@ -239,8 +244,30 @@ jobs:
       # 227 -> 224: the same three, plus the scope-count sentence that was welded from
       # four fragments (`t("This will scrape") + n + t("sources") + t("of") + ...`) and is
       # now one keyable tf() frame -- two of its pieces had never had a key.
+      # 224 -> 0: S04-14. The last nine were the ones NEITHER number above could reach
+      # before: seven literals longer than the audit's 200-character cap, and two shorter
+      # than its 3-character floor -- `OK` and `ok`, two characters each, rendering Latin
+      # in eleven locales for as long as the app has existed.
       - name: i18n unkeyed t() call sites
-        run: python scripts/i18n_report.py --max-unkeyed-t-calls 224
+        run: python scripts/i18n_report.py --max-unkeyed-t-calls 0
+
+      # The blind spot the two ratchets above SHARE, found 2026-09-18 (S04-14) by doing
+      # the work they exist to drive. Both exclude `{` from every literal they match --
+      # deliberately, so a template literal's ${...} never becomes a key nobody can
+      # write -- which means the app's OWN interpolation frame, tf("Page {n} of
+      # {total}", ...), is invisible to both. That frame is also the FIX for a chain of
+      # welded fragments, so converting fragments into a frame lowered both numbers
+      # whether or not a key was ever added: the ratchets paid the same for half the
+      # work as for all of it. Measured when this step landed: 17 live frames with no
+      # en.json key, 7 of them in app-backup.js and shipped long before this slice --
+      # import summaries and timings rendering English in all 11 other locales with
+      # both ratchets green over them the whole time. Aliases are DISCOVERED from each
+      # file's own bindings rather than listed, because the tf name varies (tf, TF,
+      # tfa) and _JS_SHAPES already carries the scar of a hand-written alias list.
+      # 20 at the moment this step was written, 0 by the end of the same PR: the 17
+      # pre-existing frames are keyed and so are the three the PR itself created.
+      - name: i18n unkeyed tf() frames
+        run: python scripts/i18n_report.py --max-unkeyed-tf-frames 0
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption

@@ -360,3 +360,63 @@ def signals_weather_signals_refresh(
     payload = refresh_weather_signals(db, min_articles=min_articles, lookback_days=lookback_days)
     return {"derived": len(payload.get("signals", [])), "derived_at": payload.get("derived_at"),
             "signals": payload.get("signals", []), "caveat": payload.get("caveat")}
+
+
+#: Q1124 = a (2026-09-15): the manipulation-pattern lens "flips on only when the corpus
+#: is >= 100 k articles AND a labelled sample shows a false-positive rate <= 5%; both
+#: numbers on the toggle." These are the two bars, named once so the endpoint and the
+#: panel cannot disagree about what the ruling asked for.
+PATTERNS_CORPUS_BAR = 100_000
+PATTERNS_FALSE_POSITIVE_BAR = 0.05
+
+
+@router.get("/patterns-gate")
+def signals_patterns_gate(db: Session = Depends(get_db)) -> dict:
+    """The two numbers Q1124 puts on the Patterns-lens toggle, and whether they are met.
+
+    ONE of them is measurable here and one is not, and the whole honesty of this
+    surface is that it says which is which:
+
+    * the corpus size is a COUNT this app owns, so it is reported exactly, beside
+      its bar;
+    * the false-positive rate needs a LABELLED SAMPLE — a human deciding, for a set
+      of flagged (source, topic) pairs, which flags were wrong. Nothing in the app
+      can produce that, so the field is **ABSENT with a reason**, never ``0.0``: a
+      zero there would read as "measured, and perfect", which is the opposite of
+      what is true, on the one number that decides whether a manipulation lens may
+      be believed.
+
+    ``can_flip`` is therefore false in 0.4 on every corpus, and ``blocked_by`` names
+    which half blocks it rather than leaving the reader to infer it. Read-only; no
+    network; no score.
+    """
+    from sqlalchemy import func
+
+    from src.database.models import Article
+
+    articles = int(db.query(func.count(Article.id)).scalar() or 0)
+    corpus_met = articles >= PATTERNS_CORPUS_BAR
+    blocked_by = []
+    if not corpus_met:
+        blocked_by.append("corpus")
+    blocked_by.append("false_positive_rate")  # unmeasured until a labelled sample exists
+    return {
+        "corpus_articles": articles,
+        "corpus_bar": PATTERNS_CORPUS_BAR,
+        "corpus_met": corpus_met,
+        # NO "false_positive_rate" key: an omitted field and a 0.0 are different
+        # facts, and only one of them is true here.
+        "false_positive_bar": PATTERNS_FALSE_POSITIVE_BAR,
+        "false_positive_basis": "unmeasured",
+        "can_flip": False,
+        "blocked_by": blocked_by,
+        "method": (
+            "Corpus size is an exact COUNT of stored articles. The false-positive rate "
+            "is not computed here and has no default: it needs a labelled sample of "
+            "flagged pairs judged by a person."
+        ),
+        "caveat": (
+            "The Patterns lens stays off until BOTH numbers are measured and met. "
+            "An unmeasured false-positive rate is shown as unmeasured, never as zero."
+        ),
+    }

@@ -14489,3 +14489,33 @@ commands are in that directory's README and were run end to end here — and NOT
 the walk proved that must not regress is pinned separately in `tests/admission_row_node_test.js`
 and `tests/test_admission_row_ui.py`, which do run. **Not a request for a browser-in-CI ruling**;
 stated so a later session does not read the directory as a suite that is silently not running.
+
+---
+
+**DELIBERATE OMISSION, MEASURED 2026-09-18 (S04-14, PR #1160): 60 bare `.toLocaleString()`
+sites bypass the ruled shared formatter, and this PR fixed only the three it already
+touched (63 → 60).** The maintainer's units/precision ruling (2026-06-10, APP-WIDE) is ONE shared
+smart formatter; `fmtNum` is it, and it groups thousands with a NARROW NO-BREAK SPACE
+(U+202F, the SI convention that the same ruling's "scientific/SI metric units" clause
+implies). A bare `.toLocaleString()` instead reads the **browser's** locale, which
+`OOI18N.setLang` never touches — so the separator is fixed at whatever the browser was
+started with, no matter what language the UI is in.
+
+**Measured, not inferred.** The S04-14 Chromium walk read the built-in stoplist summary in
+a French UI and got `Voir la liste d'exclusion intégrée des mots filtrés automatiquement
+(2,555)` — an English comma — in a panel whose sibling figure three lines up reads
+`100 000` with the SI space, because that one goes through `fmtNum`. The population is 60
+call sites across 13 files, counted with `\.toLocaleString\(\s*\)`: app-settings.js 13,
+app-backup.js 12, app-diagnostics.js 10, app-home.js 7, app-map.js 7, app-corpus.js 3,
+app-analysis.js 2, and one each in app-ai-tools.js, app-insights.js, app-markets.js,
+app-shell.js, reader.js and taskmanager.html.
+
+**Why only three were fixed here.** They are the three inside code this PR already changed
+(the stoplist count and cap note in `loadBuiltinStoplist`, and the pager's article count in
+`_anArtPager`). The other 60 are a different ruling's debt in files this slice has no other
+business in, and sweeping them would widen an i18n-remainder PR into an app-wide formatting
+change with its own screenshot burden. **This is a note, not a to-do left silently:** the
+sweep wants its own slice, a `fmtNum`-or-nothing guard in `test_repo_invariants.py` like the
+one that pins the chart toolkit, and a decision the code cannot make for itself — whether a
+DATE rendered by `toLocaleDateString` is in scope too, since that one arguably SHOULD follow
+the reader's locale where a number should follow the app's SI convention.

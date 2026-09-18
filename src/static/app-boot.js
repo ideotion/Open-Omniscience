@@ -64,6 +64,12 @@
       // prose, so the walker cannot reach them. It redraws from the payload it already
       // has and NEVER fetches, so a switch cannot re-run a search behind the reader.
       try { if (typeof _anRepaintXLang === "function") _anRepaintXLang(); } catch (_e) {}
+      // S04-14 (Q1124): the Patterns-lens gate panel is built at render time from
+      // t() calls plus measured numbers, so the walker cannot repaint its composed
+      // lines -- the same frozen-locale class. Measured in the Chromium walk: the
+      // "Corpus size" line stayed English in fr while the pills beside it translated.
+      // Repaints from the CACHED payload, so a switch costs no request.
+      try { if (typeof _renderPatternsGate === "function") _renderPatternsGate(); } catch (_e) {}
       // S04-09: the Wikipedia toggle's hover is built at paint time from t() calls,
       // so it is the frozen-locale class too -- the button carries `data-i18n-dyn`
       // (its title is ALREADY translated, and letting the walker cache that as "the
@@ -298,7 +304,18 @@
       let hovered = null;
       function fmt(d) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-        if (!d || !d.resolved) return t("Not in your corpus yet — no stats.");
+        // NAME THE TERM even when there are no stats to show. The reader's hover title
+        // is a STATIC sentence -- it has to be, because the i18n walker matches an
+        // attribute by exact value and a title carrying the keyword could never match
+        // a key -- so this line is the only place the keyword's own name reaches the
+        // bubble. Dropping it here left an unindexed keyword generic BEFORE and AFTER
+        // hover. Built in the same shape as the resolved branch twenty lines below
+        // (name, em dash, the line), so the two readings of this bubble agree.
+        if (!d || !d.resolved) {
+          const unresolved = (d && d.term) || "";
+          const none = t("Not in your corpus yet — no stats.");
+          return unresolved ? `${unresolved} — ${none}` : none;
+        }
         const bits = [`${d.mentions} ${t("mentions")} · ${d.articles} ${t("articles")}`];
         const tr = d.trend || {};
         if (tr.recent || tr.prior) {

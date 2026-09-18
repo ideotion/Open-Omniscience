@@ -322,10 +322,154 @@ def test_ci_unkeyed_t_calls_ratchet_matches_the_real_count():
     )
 
 
-@pytest.mark.parametrize("flag", ["--max-untranslatable", "--max-unkeyed-t-calls"])
+@pytest.mark.parametrize(
+    "flag",
+    ["--max-untranslatable", "--max-unkeyed-t-calls", "--max-unkeyed-tf-frames"],
+)
 def test_ci_ratchet_values_are_sane(flag):
-    """A trivial sanity floor so a typo (e.g. a stray extra digit, or 0) fails
-    loudly here instead of only as a mysteriously-red or mysteriously-lenient
-    CI run."""
+    """A trivial sanity floor so a typo (e.g. a stray extra digit) fails loudly here
+    instead of only as a mysteriously-red or mysteriously-lenient CI run.
+
+    ZERO IS NOW LEGAL, and the change is not a relaxation. This floor was written as
+    ``0 < value`` when a zero was unreachable and therefore could only be a typo; on
+    2026-09-18 --max-untranslatable actually reached it, and the twin test above
+    already pins every one of these to the REAL measured count, so a wrong zero fails
+    there by name. Keeping ``0 <`` here would have made arriving at the goal the one
+    outcome CI refuses."""
     value = _ci_ratchet(flag)
-    assert 0 < value < 5000
+    assert 0 <= value < 5000
+
+
+# --------------------------------------------------------------------------- #
+# (5) THE tf() FRAMES -- the blind spot the two ratchets SHARE, found 2026-09-18
+# by doing the work they exist to drive. Both --max-untranslatable and
+# --max-unkeyed-t-calls exclude `{` from every literal they match, deliberately,
+# so `${...}` in a template literal never becomes a key nobody can write. The
+# consequence: `tf("Page {n} of {total}", ...)` -- the app's own interpolation
+# frame, and the FIX for a chain of welded fragments -- is invisible to both.
+# Converting fragments into a frame therefore lowers both numbers whether or not
+# a key is ever added, which makes the ratchets reward half the work as much as
+# all of it. Measured when this landed: 17 live frames with no en.json key, 7 of
+# them shipped long before, rendering English in all 11 other locales.
+# --------------------------------------------------------------------------- #
+
+
+def test_both_existing_gates_are_structurally_blind_to_a_tf_frame():
+    """The premise, proven rather than asserted: a frame with a `{slot}` cannot be
+    seen by either gate's own patterns, whatever the literal says."""
+    mod = _module()
+    frame = 'tf("Page {n} of {total}")'
+    seen = set()
+    for rx in mod._JS_SHAPES:
+        seen |= {m.group(1) for m in rx.finditer(frame)}
+    for rx in mod._T_CALL:
+        seen |= {m.group(1) for m in rx.finditer(frame)}
+    assert seen == set(), (
+        f"the premise of the third gate is stale -- an existing shape now matches a "
+        f"tf() frame: {seen}"
+    )
+
+
+def test_the_frame_scanner_discovers_aliases_instead_of_listing_them():
+    """_JS_SHAPES carries a scar about `t9(`/`t9m(` being invisible to a hand-written
+    `\\bt\\(`. The same trap is worse for tf, which is bound under at least tf, TF and
+    tfa in the shipped tree. A name invented tomorrow must be covered too."""
+    mod = _module()
+    invented = (
+        'const zzqFrame = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s) => s);\n'
+        'el.textContent = zzqFrame("a frame under a name nobody listed {n}");\n'
+    )
+    assert "zzqFrame" in mod._TF_BINDING.findall(invented), (
+        "the alias binding regex no longer reads a plain house-idiom tf binding"
+    )
+
+
+def test_the_frame_scanner_decodes_js_escapes_before_comparing():
+    """Three of the frames this gate first reported were written with `\\u2014` for an
+    em dash, so a RAW-source comparison called them unkeyed while en.json held the very
+    key they resolve to. A gate that cries wolf on an escape is one someone turns off."""
+    mod = _module()
+    # THE INPUT IS BUILT, NOT WRITTEN AS A LITERAL, and that is the whole point of
+    # this comment. Python processes \uXXXX inside a RAW str literal too (raw
+    # suppresses the other escapes, not that one), so `r"a \u2014 b"` is already
+    # an em dash -- the first draft of this test read `_js_unescape("a - b") == "a - b"`
+    # with a real dash on both sides, a tautology that passed with the decoder ripped
+    # out. Found by mutating the decoder away and watching this test SURVIVE.
+    escaped = "a " + chr(92) + "u2014 b"
+    assert len(escaped) == 10 and chr(92) in escaped, "the fixture stopped being escaped"
+    assert mod._js_unescape(escaped) == "a \u2014 b"
+    assert mod._js_unescape(r'say \"hi\"') == 'say "hi"'
+
+
+def test_the_frame_scanner_ignores_a_literal_with_no_slot():
+    """A frame is a frame because it interpolates. A bare tf("hello") carries no slot
+    and belongs to the t() gate's population, not this one -- counting it in both
+    would double-charge the same string."""
+    mod = _module()
+    assert mod._FRAME_SLOT.search("Page {n} of {total}")
+    assert not mod._FRAME_SLOT.search("Page one of five")
+
+
+def test_ci_unkeyed_tf_frames_ratchet_matches_the_real_count():
+    mod = _module()
+    real = mod.unkeyed_tf_frames()["unkeyed_count"]
+    ci_value = _ci_ratchet("--max-unkeyed-tf-frames")
+    assert ci_value == real, (
+        f"ci.yml's --max-unkeyed-tf-frames is {ci_value} but the real measured count "
+        f"is {real} -- a ratchet with slack enforces nothing, and one below the "
+        f"real count reddens CI for no fixable reason"
+    )
+
+
+def test_every_tf_frame_slot_is_actually_supplied_at_its_call_site():
+    """A `{slot}` the call site never passes renders a literal `{n}` on screen.
+
+    tf() translates the frame and THEN interpolates, so a mismatched name is not a
+    crash and not a fallback -- it is the brace text, in front of the reader, in every
+    locale at once. Nothing else in the suite looks at the second argument, and no
+    amount of translation review can catch it because the English frame reads fine.
+
+    ES6 SHORTHAND IS A PROPERTY, and this check learned that the hard way: its first
+    run reported eleven failures, every one of them `tf("...", { n })` -- which IS
+    `{n: n}`. A guard that cannot read the language's own sugar reports the correct
+    code as broken, which is how a guard gets deleted instead of fixed.
+    """
+    mod = _module()
+    static = mod._static_dir()
+    checked, bad = 0, []
+    for name in (*mod._aux_js(), *mod._guis_js()):
+        path = static / name
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for alias in {"OOI18N.tf"} | set(mod._TF_BINDING.findall(text)):
+            for m in re.finditer(rf"(?<![\w.]){re.escape(alias)}\(", text):
+                open_at = m.end() - 1
+                depth, close_at = 0, None
+                for j in range(open_at, min(len(text), open_at + 4000)):
+                    if text[j] == "(":
+                        depth += 1
+                    elif text[j] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            close_at = j
+                            break
+                if close_at is None:
+                    continue
+                call = text[open_at + 1:close_at]
+                lit = re.match(r'\s*(["\'`])((?:[^\\]|\\.)*?)\1\s*,', call, re.S)
+                if not lit:
+                    continue
+                slots = set(re.findall(r"\{(\w+)\}", mod._js_unescape(lit.group(2))))
+                if not slots:
+                    continue
+                checked += 1
+                arg = call[lit.end():]
+                supplied = set(re.findall(r"[{,]\s*([A-Za-z_$][\w$]*)\s*:", arg))
+                supplied |= set(re.findall(r"[{,]\s*([A-Za-z_$][\w$]*)\s*(?=[,}]|$)", arg))
+                missing = slots - supplied
+                if missing:
+                    line = text[:open_at].count("\n") + 1
+                    bad.append(f"{name}:{line} frame needs {sorted(missing)}, got {arg.strip()[:80]!r}")
+    assert checked > 100, f"only {checked} tf() frames inspected -- the scan went blind"
+    assert not bad, "tf() frames whose slots are never supplied:\n  " + "\n  ".join(bad)

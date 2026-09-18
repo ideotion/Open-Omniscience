@@ -897,9 +897,10 @@
     }
 
     async function kxHide(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term: btn.dataset.norm})});
-        btn.textContent = "hidden"; btn.disabled = true;
+        btn.textContent = t("hidden"); btn.disabled = true;
       } catch (e) { toast(_failMsg("Hide failed: {error}", e), "err"); }
     }
 
@@ -1034,9 +1035,10 @@
     // DISTINCT sources as new DISABLED "cited" sources (metadata only — never scraped
     // until the user enables them). Previews via dry_run, then confirms before creating.
     async function promoteCitedSources() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("cs-promote-result");
       try {
-        if (out) out.textContent = "Scanning citations…";
+        if (out) out.textContent = t("Scanning citations…");
         const preview = await api("/api/sources/promote-cited?dry_run=true", {method: "POST"});
         const cands = preview.candidates || [];
         const gate = preview.min_source_citers;
@@ -1054,7 +1056,7 @@
         const n = (res.created || []).length;
         if (out) out.textContent = `Added ${n} disabled “cited” source(s) — find them in Settings → Sources.`;
         toast(`Registered ${n} cited source(s) — disabled; review them in Sources.`);
-      } catch (e) { if (out) out.textContent = "Could not register: " + e.message; }
+      } catch (e) { if (out) out.textContent = _failMsg("Could not register: {error}", e); }
     }
 
     async function expandCitedSource(head) {
@@ -1409,7 +1411,7 @@
         $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
         $("ins-remaining").innerHTML = s.remaining ? `· <strong>${s.remaining.toLocaleString()}</strong> to index` : "";
         if (s.remaining > 0 && !_indexing) autoIndexInsights();  // background top-up; no button (§6)
-      } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = "Status unavailable: " + e.message; }
+      } catch (e) { if (!_insStatusBuilt) $("ins-status").textContent = _failMsg("Status unavailable: {error}", e); }
       loadLandscape();
     }
 

@@ -11296,3 +11296,108 @@ collection pass` fixes the pass noun in all three. **GENERAL FORM: consistency i
 of a SURFACE, not of a file — measure against the strings the user reads in the same breath.**
 Every correction here carries the sibling that settles it, written into the patch beside it, so
 the next session can check the reasoning rather than re-run the tally.
+
+**A COMMENT THAT PASTES A CALL-SHAPED LITERAL IS COUNTED AS A LIVE UI STRING, AND IT
+HAPPENED THREE TIMES IN ONE SESSION.** Both i18n scanners read RAW SOURCE — `_JS_SHAPES`
+and `_T_CALL` are regexes over the file, not over a parse — so `// the old form was
+t("This will scrape") + n + ...` contributes an untranslatable string exactly as a live
+call does. Each of the three was a comment documenting the broken form the commit had
+just fixed, which is the most natural comment to write and the one that re-opens the
+finding it closes. Measured cost of the first: a phantom entry in the untranslatable
+count, and five independent translator agents each hunting for a surface that does not
+exist and flagging it back (which is how it was caught — by them, not by the tooling).
+**GENERAL FORM: in a comment, DESCRIBE the old call, never paste it.** Every such comment
+in this tree now says so inline, because the third occurrence proved that knowing the
+rule is not the same as remembering it while writing prose about the rule.
+
+**A RATCHET CAN BE LOWERED BY DOING THE RIGHT THING AND BY DOING HALF OF IT — CHECK WHICH
+BEFORE TRUSTING THE NUMBER.** Every pattern in both i18n gates excludes `{` from the
+literal it matches, deliberately, so a template literal's `${...}` never lands in the
+count as a key nobody can write. The side effect is that `tf("Page {n} of {total}", ...)`
+— the app's OWN interpolation frame, and the prescribed FIX for a chain of welded
+fragments — is invisible to both. So converting fragments into a frame lowers both
+numbers whether or not a key was ever added, and the gate pays the same for half the work
+as for all of it. Measured when this was found (2026-09-18, S04-14): 17 live frames with
+no `en.json` key, seven of them in `app-backup.js` and shipped long before that slice —
+import summaries and timings rendering English in all 11 other locales with both ratchets
+green over them the whole time. Closed by a third gate,
+`--max-unkeyed-tf-frames`, whose alias set is DISCOVERED from each file's own bindings
+rather than listed (the tf name varies: `tf`, `TF`, `tfa`), which is the same scar
+`_JS_SHAPES` already carries about `t9(`/`t9m(`. **GENERAL FORM: when a metric's fix
+changes the shape the metric matches on, the metric stops measuring the thing.**
+
+**PYTHON PROCESSES `\uXXXX` INSIDE A RAW STRING LITERAL, SO A TEST FIXTURE WRITTEN AS
+`r"a — b"` IS ALREADY AN EM DASH.** Raw suppresses the other escapes, not that one.
+A guard for a JS-escape decoder was written that way and read `_js_unescape("a — b") ==
+"a — b"` — a tautology that passes with the decoder ripped out. It was caught by mutating
+the decoder away and watching the test SURVIVE while its three siblings died, which is
+the whole argument for running the mutation matrix on a guard you just wrote rather than
+only on the code it guards. The fixture is now BUILT (`"a " + chr(92) + "u2014 b"`) with
+an assertion that it is still escaped, so the next person to "tidy" it back into a
+literal fails loudly.
+
+**ES6 SHORTHAND IS A PROPERTY; A CHECKER THAT DOES NOT READ THE LANGUAGE'S OWN SUGAR
+REPORTS CORRECT CODE AS BROKEN.** A scan for `tf()` frames whose `{slot}` the call site
+never supplies matched `key: value` pairs only, and reported eleven failures — every one
+of them `tf("...", { n })`, which IS `{n: n}`. Eleven false positives on eleven correct
+call sites is how a guard gets deleted instead of fixed. The real answer after teaching it
+shorthand was zero across 141 frame sites.
+
+**A TRANSLATION BRIEF'S "KEEP THIS VERBATIM" LIST MUST BE CHECKED AGAINST THE LOCALE FILE
+FIRST — THE FILE IS THE AUTHORITY, NOT THE BRIEF.** A brief for eleven locales said
+"product names stay verbatim: Ollama, AI, Wiki", and the shipped files already translate
+AI everywhere (`IA`, `KI`, `ИИ`, `एआई`) and transliterate Wiki in Arabic and Russian. The
+agent followed the brief, flagged the conflict, and was right to do both. The correction
+was then DERIVED from the existing `"AI"` and `"Wiki pages"` entries in each file rather
+than re-translated, so the new strings read exactly like their siblings by construction —
+43 values across 11 locales, none of them a fresh judgement call. **GENERAL FORM: a rule
+about wording that contradicts the shipped wording is a rule that manufactures
+inconsistency.**
+
+**FIVE INDEPENDENT TRANSLATORS OF THE SAME STRING LIST ARE A FREE SOURCE-CODE AUDIT, IF
+THE FLAGS ARE READ AS FINDINGS.** Twelve locale agents translated one 410-string list and
+reported back what they could not translate faithfully. The overlap was not linguistic: a
+key that had captured raw JS concatenation syntax; a string that lives only inside a `//`
+comment; a `" kbps"` unit welded to a number outside any `t()` (so `ru.json`'s static
+placeholder said `кбит/с` while the live readout beside it said `kbps`); a `t("of")` two
+characters long, under both gates' floor, with no key at all, wedged in English between
+two translated words in `Page 1 of 5`; a triad labelled `When / where / who` where every
+other surface says who/where/when. None is a translation problem and all were real. Three
+of them were fixed in the same pass only because the flags were read rather than filed.
+
+**A GUARD ANCHORED TO AN IMPLEMENTATION GOES RED ON A CORRECT CHANGE, AND THE TEMPTING
+FIX IS THE WRONG ONE.** `test_analysis_articles_paginated` asserted `t("Page")` and
+`t("of")` — the two FRAGMENTS the label was welded from — to prove "a Page X of Y control
+must exist". Re-framing the label as one keyed sentence reddened it. Relaxing the
+assertion would have been indistinguishable from deleting it; re-anchoring onto the frame
+PLUS its `en.json` key is strictly stronger, and doing that is what surfaced that
+`t("of")` had never had a key in the first place. The old guard had been calling a control
+present while a word inside it was permanently English.
+
+**A SECTION'S STANDING PROPERTY CAN BE "NOTHING HAPPENS WHEN YOU OPEN IT", AND A NEW PANEL'S
+LOADER IS HOW THAT PROPERTY DIES QUIETLY.** A gate panel added to Settings → Advanced →
+Diagnostics was wired the obvious way — an `_ADV_LOADERS` entry, so the panel fills when the
+section expands — and the targeted tests around the panel were all green. The FULL suite was
+not: `test_opening_advanced_still_fetches_nothing_for_diagnostics` exists precisely for that
+edit, and its docstring is the whole lesson — *"the diagnostics section needs no loader; adding
+one means something now fetches on expand, which is a decision, not a refactor."* The property
+was satisfied **by construction** (every report in that section is button-driven), which is
+exactly the kind of invariant a newcomer cannot infer from the code around them, because
+nothing in the section says "we do not do this here" — the test does. Measured cost of the
+loader had it shipped: this panel reads a COUNT over every article, a table scan on the
+~1M-article instance the release gate targets, paid on an accidental expand.
+**GENERAL FORM: when a guard reddens on a plainly reasonable change, read what it is protecting
+before deciding which of the two is wrong** — here the guard was right and the reasonable change
+was the mistake, and the fix (a button, reusing the already-keyed `Check now` label, so it cost
+no new string in any locale) is better than what it replaced. The panel's own guard was then
+re-anchored to pin BOTH halves — the control exists AND no loader entry does — so the two tests
+agree with each other instead of taking turns being red. A mutation that puts the loader back
+now reddens both, by name.
+
+**AND THE TARGETED TEST RUN IS NOT THE SUITE.** Everything about this panel was covered:
+endpoint, wire format, absence-versus-zero, the language repaint, the toggle's disabled state,
+a ten-test file with a mutation matrix behind it. All of it green, all of it about the panel,
+and none of it about the SECTION the panel was put in. The failure lived in a file whose name
+has nothing to do with the feature. That is the ordinary shape of a cross-surface regression,
+and it is the argument for running the whole suite before calling a slice done rather than the
+files the diff touches.

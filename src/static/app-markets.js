@@ -522,7 +522,7 @@
         // renderDashboard() on every change; render once now for the default.
         buildMktTimeScope();
         renderDashboard();
-      } catch (e) { status.textContent = "Could not load series: " + e.message; }
+      } catch (e) { status.textContent = _failMsg("Could not load series: {error}", e); }
     }
 
     // The commodities board is windowed by ABSOLUTE dates [from,to] (the

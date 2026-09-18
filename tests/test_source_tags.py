@@ -317,14 +317,55 @@ def test_the_collision_report_names_judgements_without_making_them():
     assert report["non_topical"]["stance-or-ownership"] == ["lean-left"]
 
 
-def test_a_non_topical_entry_is_reported_but_never_filtered_out():
+def test_a_judgement_word_is_reported_but_never_filtered_out():
     """propose-never-auto-apply: deciding ``independent`` is not a topic is a taxonomy
-    ruling a human makes. The prompt still offers it; the report names it."""
-    vocabulary = ["finance", "independent", "via:curated"]
+    ruling a human makes, and RC17 did not make it. The prompt still offers the
+    judgement words; the report names them.
+
+    SUPERSEDED IN PART, deliberately: this test used to assert ``via:curated`` was
+    offered too. RC17 (2026-09-15) filters the provenance and coverage-state classes
+    out of the OFFER, so that half moved to the test below and this one keeps the
+    half the ruling left standing.
+    """
+    vocabulary = ["finance", "independent", "lean-left", "state-media", "gazette"]
     folded, _ = ST.fold_separator_variants(vocabulary)
     assert folded == vocabulary
     system, _user, _expected = ST.build_source_tag_prompt([], vocabulary)
-    assert "independent" in system and "via:curated" in system
+    for kept in ("independent", "lean-left", "state-media", "gazette"):
+        assert kept in system, f"RC17 leaves {kept!r} offered; it was filtered"
+    report = ST.vocabulary_collisions(vocabulary)
+    assert report["non_topical"]["stance-or-ownership"] == ["independent", "lean-left", "state-media"]
+
+
+def test_rc17_filters_provenance_and_coverage_state_out_of_the_offered_vocabulary():
+    """RC17 = (a): the ``via:*`` provenance prefixes AND the coverage-state markers
+    leave the topical vocabulary; the judgement words stay."""
+    vocabulary = [
+        "finance", "via:curated", "world-catalog", "data-gap", "thin-coverage",
+        "fragmented", "independent", "lean-right",
+    ]
+    topical, filtered = ST.topical_vocabulary(vocabulary)
+    assert topical == ["finance", "independent", "lean-right"]
+    assert filtered == ["via:curated", "world-catalog", "data-gap", "thin-coverage", "fragmented"]
+
+    system, _user, _expected = ST.build_source_tag_prompt([], vocabulary)
+    for gone in ("via:curated", "world-catalog", "data-gap", "thin-coverage", "fragmented"):
+        assert gone not in system, f"RC17 filters {gone!r} from the offer; it is still there"
+    # the NEGATIVE-SPACE TWIN: an over-eager filter that swallowed real topics or the
+    # judgement words would satisfy every assertion above.
+    for kept in ("finance", "independent", "lean-right"):
+        assert kept in system, f"RC17 keeps {kept!r}; the filter is too wide"
+
+
+def test_rc17_filters_the_offer_and_never_the_parser():
+    """The whole safety of RC17 is that it is NON-NARROWING: a source that already
+    carries ``via:curated`` must still resolve, or the filter turns a valid stored
+    tag into a rejection. ``parse_source_tags`` keeps the FULL vocabulary."""
+    vocabulary = ["finance", "via:curated", "data-gap"]
+    system, _user, _expected = ST.build_source_tag_prompt([], vocabulary)
+    assert "via:curated" not in system  # not OFFERED
+    pb = ST.parse_source_tags("a.example :: via:curated", ["a.example"], vocabulary)
+    assert pb is not None and pb.tags == {"a.example": ("via:curated",)}  # still ACCEPTED
 
 
 def test_the_prompt_states_the_folded_vocabulary_and_the_parser_gets_the_full_one():
@@ -458,3 +499,73 @@ def test_a_source_with_real_evidence_is_a_candidate_with_its_top_terms(db):
     assert items[0].domain == "ok.test"
     assert "quarterly earnings" in items[0].top_terms
     assert skipped == []
+
+
+def test_rc17_withholds_from_the_offer_but_never_from_the_record():
+    """The filter's honesty condition, and the one a reader would doubt.
+
+    RC17 takes the provenance and coverage-state markers OUT of the vocabulary the
+    model is offered. Withholding something from a model and withholding it from the
+    record are different acts, and only the first was ruled: the run header must still
+    say what the live vocabulary contained, so a later reader can see that the offer
+    was narrower than the column -- and why.
+    """
+    vocabulary = ["economy", "via:curated", "data-gap", "state-media", "gazette"]
+    system, _user, _expected = ST.build_source_tag_prompt([], vocabulary)
+    assert "via:curated" not in system and "data-gap" not in system, (
+        "RC17: the provenance and coverage-state markers must not be OFFERED as topics"
+    )
+    assert "state-media" in system, "the judgement words stay -- the ruling says so"
+    assert "economy" in system and "gazette" in system
+
+    header = ST.source_tag_run_header(model="stub:test", vocabulary=vocabulary)
+    assert header["vocabulary"] == vocabulary, "the FULL vocabulary stays on the record"
+    non_topical = header["vocabulary_collisions"]["non_topical"]
+    assert non_topical.get("provenance") == ["via:curated"]
+    assert non_topical.get("coverage-state") == ["data-gap"]
+    assert non_topical.get("stance-or-ownership") == ["state-media"], (
+        "the report walks ALL FOUR classes -- narrowing it to the filtered two would "
+        "make the record agree with the offer instead of describing it"
+    )
+
+
+def test_rc17_is_non_narrowing_through_the_RUNNER_not_only_the_two_functions():
+    """The seam the other non-narrowing test cannot see.
+
+    ``test_rc17_filters_the_offer_and_never_the_parser`` calls the prompt builder and
+    the parser SEPARATELY, so it proves each behaves -- and proves nothing about the
+    one place that hands a vocabulary to both. ``run_source_tag_batch`` passes the
+    SAME list to ``build_source_tag_prompt`` and to ``parse_source_tags``; narrowing
+    it there would make a stored ``via:curated`` an out-of-vocabulary REJECTION while
+    every other test in this file stayed green. Measured: that exact edit survived the
+    RC17 mutation matrix until this test existed.
+    """
+
+    class _Stub:
+        """Answers with the withheld tag -- the case the filter must still accept."""
+
+        def __init__(self):
+            self.system = None
+
+        def generate(self, user, model=None, system=None, options=None, keep_alive=None):
+            self.system = system
+
+            class _R:
+                text = "a.example :: via:curated"
+
+            return _R()
+
+    vocabulary = ["finance", "via:curated", "data-gap"]
+    client = _Stub()
+    out = ST.run_source_tag_batch(
+        client,
+        [ST.SourceTagItem(domain="a.example", article_count=12, mention_count=40)],
+        vocabulary=vocabulary,
+        model="stub:test",
+    )
+    assert "via:curated" not in client.system, "RC17: still not OFFERED through the runner"
+    pb = out["parsed"]
+    assert pb is not None and pb.tags == {"a.example": ("via:curated",)}, (
+        "the runner must hand the PARSER the full vocabulary -- a tag the source "
+        f"already carries must not become a rejection (got {pb!r})"
+    )
