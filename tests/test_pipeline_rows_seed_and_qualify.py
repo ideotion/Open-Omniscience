@@ -143,8 +143,20 @@ def test_the_two_admitted_catalogues_seed_under_their_own_provenance_and_qualify
     from src.ingest.seed_sources import ACADEMIC_SOURCES_PATH, OFFICIAL_SOURCES_PATH
 
     news = set(_catalogue_domains())
+    # AMENDED 2026-09-18 (Q1109 = b, Q1111 = a). `academic-research` is now legitimate in the
+    # ACADEMIC catalogue, because Q1109 = b settles that a research institute belongs there
+    # rather than in `official_sources.yml` — so a guard that admitted only
+    # `scientific-journal` would reject the very rows the ruling sends this way.
+    #
+    # It also stays legitimate in the OFFICIAL catalogue for now, and that is deliberate
+    # rather than an oversight: Q1111 = a moved the 16 mis-shelved JOURNALS and said nothing
+    # about retyping them, so they arrived carrying the `source_type` the docket itself calls
+    # wrong (`academic-research` on rows named *Chilean Journal of Agricultural Research*,
+    # *Lebanese Science Journal*, *Helminthologia*). Correcting the type is a SECOND change
+    # nobody ruled on, so it is recorded in `docs/product/ACADEMIC_CATALOGUE_GROWTH.md` §3
+    # rather than made here under cover of a move.
     for path, kinds in (
-        (ACADEMIC_SOURCES_PATH, {"scientific-journal"}),
+        (ACADEMIC_SOURCES_PATH, {"scientific-journal", "academic-research"}),
         (OFFICIAL_SOURCES_PATH,
          {"government-primary", "academic-research", "think-tank", "statistics", "igo"}),
     ):

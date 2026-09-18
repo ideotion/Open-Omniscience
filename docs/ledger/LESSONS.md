@@ -11133,3 +11133,47 @@ written over `{s.id ...}` sets that cannot tell them apart. A shipped test in th
 had the identical collision and had been measuring the wrong sources. **Whenever a test
 asserts a property holds, ask what arrangement would violate it and assert that it does —
 the control catches fixture defects the assertion itself is structurally blind to.**
+
+### 2026-09-18 · sources/institutions-moves-and-stage-b-splice (gate row S, S04-12's S4) · PR #1158
+
+**"ADMIT WHERE BOTH JUDGES AGREE" IS NOT A COMPLETE ADMISSION RULE, AND READING IT AS ONE
+NEARLY DOUBLED A REPORTED NUMBER.** Q1119 = a says exactly that sentence, and the first cut
+implemented exactly that sentence: every row the two judges agreed about was admitted. But
+`official_sources.yml` is a list OF PRIMARY SOURCES, and 623 of the agreeing rows are ones
+both judges agreed are institutions and agreed are **not** primary sources — so admitting
+them asserted into that file the precise opposite of what both judges said, and reported
+1,471 admissions against the 807 actually earned. Rejecting them would have been equally
+wrong, because Q1110 = a DEFERS the `primary_source` axis rather than rejecting it while it
+is rewritten as an observable. The resolution is a third bucket whose reason names the ruling
+it rests on. **The general shape: a ruling phrased as a criterion ("admit where X") states a
+NECESSARY condition, and the target's own definition supplies the rest. Check what the
+destination is a list OF before implementing the sentence.**
+
+**THE DISCLOSURE CAUGHT THE DEFECT THAT THE TESTS DID NOT.** Nothing failed. What surfaced it
+was Q1117's balance-shift table — an artifact built for a completely different purpose, to
+show an operator how a splice moves the corpus's geography — reporting a `??` country bucket
+of 719 rows as the largest mover. Seven hundred admitted rows with no country meant seven
+hundred rows that were not in the triage output at all, which meant they had been admitted by
+a rule looser than the one the catalogue was built with. **A report written to be READ by a
+person finds things a test written to PASS does not, and the reason is that the report has to
+make sense as a whole while a test only has to be satisfied.** Build the disclosure early and
+look at its numbers, not just at whether it renders.
+
+**RECOMPUTING A PUBLISHED FIGURE FROM ITS RAW INPUTS IS WORTH THE HOUR.** The two-judge README
+states `kind` 97.1 % and `primary_source` 84.6 %. Recomputing both from the committed result
+files reproduced them to the decimal — which converts a number in a document into a number
+with a reproduction, and made it safe to publish a THIRD, stricter statistic beside them. That
+third figure (83.6 %, both axes at once) is necessarily the lowest of the three, and without
+all three carrying their own denominators a reader comparing it to the README's 84.6 % would
+find a discrepancy that is purely a definition. **Three statistics with three denominators,
+each labelled with what it is over, beats one number that has to be the right one.**
+
+**MOVING ROWS BETWEEN CURATED FILES IS A TEXT OPERATION, AND THE VALIDATION IS A PARSE.** 16
+rows moved from a 43-row file to a 606-row one. Re-serialising either would have buried the
+real diff (the recorded "never re-serialise a curated file to edit one entry" lesson), so each
+row's text span was cut and appended verbatim — and then BOTH files were parsed and the moved
+rows compared as dicts against their originals, which is what makes "verbatim" a measurement
+rather than an intention. The seed guard then caught what the move could not: the rows carry a
+`source_type` the docket itself calls wrong. **The ruling said MOVE, not RETYPE, so it was
+recorded as an unruled inconsistency rather than fixed in passing — a move is a bad place to
+hide a second change.**
