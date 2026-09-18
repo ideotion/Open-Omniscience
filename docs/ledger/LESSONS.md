@@ -10834,3 +10834,61 @@ guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statement
     inverse is already here: a guard that stayed GREEN because the string it wanted
     survived inside `// callName();`. Same root, opposite symptom, and both are fixed by
     the same line.)
+
+- **A CROSS-FILE LINK WHOSE TARGET IS A *CLAIM* SHOULD BE A MINTED STRING, NOT A ROW ID
+  (2026-09-18, S04-10 S2).** `src/versioned/models.py` documents the house pattern for a
+  link into `corpus.db` — a plain integer with no referential integrity, checked after
+  the fact by `integrity.check_article_links` — and that pattern is right for
+  `article_id`, where a restore that renumbers rows leaves a link pointing somewhere
+  visibly wrong. It is NOT right when the fact at the far end is a **licence** or a
+  **translation provenance**: `src/backup/merge.py` genuinely renumbers `law_documents`
+  and `law_revisions` (`temp.map_law_doc` and `temp.map_law_rev` exist for that reason),
+  so an integer would survive the merge pointing at whatever row inherited its number,
+  and the reader would show one law's licence under another law's title — silently,
+  plausibly, and in a claim this app repeats at every export point about somebody else's
+  material. A minted key survives renumbering untouched, so the worst a merge can do is
+  leave a document with NO metadata, which every reader reports as absent. **Failing to
+  absent beats failing to wrong**, and that is the whole argument for departing from a
+  house pattern: not that the pattern is bad, but that the consequence of its failure
+  mode changed.
+- **A FUNCTION THAT WRITES BEFORE IT VALIDATES TURNS A NAMED REFUSAL INTO AN
+  `IntegrityError` FROM A HALF-WRITTEN ROW (2026-09-18).** `register_document` added its
+  row to the session and validated the closed vocabularies afterwards, so a bad
+  `translation_kind` surfaced as `NOT NULL constraint failed` on flush: the caller could
+  not tell "you handed me a value outside the vocabulary" from "the database is broken",
+  and the transaction was already dirty. The sibling `ensure_identity` had it right —
+  every vocabulary checked BEFORE the session is touched, so a refusal leaves the store
+  exactly as it found it. The habit is cheap and the asymmetry is not: one of them
+  refuses, the other corrupts a transaction and blames SQLite.
+- **A REPORT WHOSE FILTER REQUIRES THE PROPERTY THAT DEFINES ITS FIRST BUCKET LEAVES
+  EVERY OTHER BUCKET EMPTY *BY CONSTRUCTION* (2026-09-18).** The Q925 seam report groups
+  sources by Q909's three classes (bulk / enumeration / gazette-feed) and admitted a row
+  only if it declared a bulk channel or a machine format — so every candidate was `bulk`
+  by definition and the other two sections could never be populated. Every assertion
+  passed; the numbers were right; the report could not show an enumeration source. **The
+  only thing that catches this is reading the output**, and the tell is a section that is
+  empty and would be empty for any input. (Same family as the recorded chart that painted
+  a fabricated area while satisfying every source assertion ever written about it.)
+- **A CURATED CATALOGUE ROW CARRIES NO RESEARCH-VERIFICATION BLOCK BECAUSE A DIFFERENT
+  PROCESS VOUCHED FOR IT (2026-09-18, same report).** The generated harvest records
+  `verification.status` per row; the 51 hand-maintained rows have none and never needed
+  one. A filter requiring the block silently excluded all of them — including the three
+  portals the slice's own live checks name. **An absence that means "somebody else
+  vouched for this" is not an absence of vouching**, and a filter over a field only half
+  the population carries needs to say what the other half means.
+- **A DECLARED COPY OF A CONSTANT THAT LIVES IN ANOTHER LANGUAGE MUST BE PINNED BY A
+  TEST — AND WRAPPING AN IMPORT OF A NAME THAT DOES NOT EXIST IN A `try/except` IS WORSE
+  THAN COPYING IT (2026-09-18).** Invariant #16's sparse threshold lives in
+  `src/static/app-markets.js`; the first Python draft did
+  `try: from src.api.insights import _SPARSE_BAR_MAX / except: _SPARSE_BAR_MAX = 10`,
+  which *looks* like it reads the shared value and never can, because that name has never
+  existed in Python. It would have gone on looking right forever. A declared copy with a
+  test that reads the JS and asserts equality is honest about being a copy and fails the
+  day the renderer moves.
+- **A MUTATION THAT CHANGES ONLY ONE OF TWO CALL SITES IS NOT EVIDENCE (2026-09-18).**
+  A matrix entry replaced `lane_key=mint_lane_key(),\n    )` — an eight-space indent
+  matching only one of the two revision constructions — and the survivor looked like a
+  coverage gap. It was not: the other site kept minting real keys, so the property under
+  test genuinely still held and the guard was right to stay green. **A survivor is a
+  claim about the MUTATION until you have written the one that expresses the defect**;
+  the regex version, hitting both sites, was killed by name on the first run.
