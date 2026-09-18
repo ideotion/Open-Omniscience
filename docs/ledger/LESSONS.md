@@ -10954,3 +10954,22 @@ guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statement
   test genuinely still held and the guard was right to stay green. **A survivor is a
   claim about the MUTATION until you have written the one that expresses the defect**;
   the regex version, hitting both sites, was killed by name on the first run.
+
+- **THE `shipped.csv` UNION TRAP FIRED A THIRD TIME, AND THIS IS THE FIRST TIME THE
+  PRESCRIBED CHECK IS RECORDED AS HAVING CAUGHT IT (2026-09-18, merging main into the
+  S04-10 branch).** `.gitattributes` sets `merge=union`, so the file never produces a
+  conflict marker and `git merge` reported success across fifteen other conflicts. main
+  had **corrected** one of its own rows — it had claimed Russian spells Wikipedia in the
+  Latin form, which it does not — and this branch carried the ancestor's stale copy.
+  Union kept both, and both look legitimate: same date, same area, same item, same `refs`,
+  and the first sixty characters of the summary identical. The difference was 131
+  characters buried at offset 2113.
+  **What found it was the duplicate-key scan over `(date, area, item)` compared against
+  the COMMON ANCESTOR** — 6 duplicates on the ancestor, 7 after the merge, and it named
+  the row. Nothing else would have: the marker grep is blind by construction, the numstat
+  tell *did* fire (21 added / 18 deleted) but 17 of those 18 turned out to be lines the
+  union had merely relocated, so pairing deletions against replacements would have come
+  back clean — which is the exact substitution the previous entry warns against. Run the
+  scan itself, and run it against the ancestor rather than against zero.
+  The resolution is not a preference between two copies: **keep the one that is true.**
+  The stale line states a measured falsehood that the other line exists to fix.
