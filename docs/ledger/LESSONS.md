@@ -11087,3 +11087,49 @@ worse", never "is this surface correct". When a slice's ruling is ABOUT a surfac
 Q1114: the headline count carries its label), read that surface's strings against the
 locale files directly, and lower the ratchet by what you fix (466→464, 229→227) rather than
 leaving the room behind.
+
+### 2026-09-18 · sources/s3-small-rulings (gate row S, S04-12's S3) · PR #1158
+
+**A RULE WRITTEN WHEN THERE WAS ONE OF SOMETHING READS THE ONE BY NAME, AND THE SECOND ONE
+INHERITS IT.** `flag_criteria` had exactly one extraction-failure criterion for its whole
+life, so it read `pathology_articles` and `PATHOLOGY_ABS_FLOOR` directly — correct, obvious,
+and a trap the moment a second criterion arrives. Adding `link_density_rate` without changing
+that would have gated the new criterion on the OLD one's evidence: a source with 400
+link-dense articles and no pathology goes silently un-flagged, and a source with 6
+pathological articles carries a link-density flag with nothing behind it — in the one place
+the app can take a source out of collection. **The tell is a constant or a dict key named
+after a specific instance of the thing you are adding a second of.** Each member now declares
+its own `evidence_key` and its own `abs_floor`, and the test that would have caught it asserts
+the evidence keys are DISTINCT rather than merely present.
+
+**A THRESHOLD NOBODY HAS MEASURED IS NOT IMPROVED BY COPYING THE ONE NEXT TO IT.**
+`pathology_rate` carries an absolute floor of 0.5 because a catastrophe level was argued for
+it. `link_density_rate` has none, and declares `None` — because nobody has measured what
+fraction of a source's articles being link-dense amounts to a broken scrape, and filling the
+column to match its neighbour would be a fabricated threshold wearing a measured criterion's
+clothes. The panel renders the absence with its reason rather than a blank. Corollary from the
+same ruling: a threshold that is kept but never fires should SAY it never fires, with the
+measurement that establishes it — a number an operator reads as live when it has never fired
+is a quiet overstatement, and `PATHOLOGY_ABS_FLOOR_STATUS` exists to carry that evidence
+beside the constant.
+
+**ACCENT-FOLDING IS NOT SCRIPT-NEUTRAL, AND THE LANGUAGES IT BREAKS ARE THE ONES NOBODY
+CHECKS.** A lexicon matcher folded its haystack (NFKD, strip combining marks) and not its
+needles. In Latin scripts that is invisible. In Bengali, Devanagari and Arabic the virama, the
+vowel signs and the harakat ARE combining marks, so `প্রজ্ঞাপন` — a real Bangladeshi gazette
+notification — went unmatched against its own lexicon entry. It would have shipped, because
+the entries it silently failed on are the ones fewest readers of that code would have tested.
+**Fold both sides, once, at import.** The same pass found the calendar twin: a Gregorian-only
+date test reads `令和6年`, `民国113年` and `1445هـ` as UNDATED, so a rule about "dated official
+documents" quietly under-observes exactly the administrations an equity ruling was written to
+stop under-observing. **When a rule's output is a judgement about legitimacy, its blind spots
+are not bugs of equal weight — they land on the same populations every time.**
+
+**A POSITIVE CONTROL PAYS FOR ITSELF ON THE DAY IT IS WRITTEN.** Q1156 asked for a
+measurement, so the measurement got a control: build the arrangement the ruling REJECTS and
+assert it fails the same check. It did fail — and in failing it exposed that the fixture's
+singleton ids (100..109) overlapped the bulk population's (0..199), while every assertion was
+written over `{s.id ...}` sets that cannot tell them apart. A shipped test in the same file
+had the identical collision and had been measuring the wrong sources. **Whenever a test
+asserts a property holds, ask what arrangement would violate it and assert that it does —
+the control catches fixture defects the assertion itself is structurally blind to.**

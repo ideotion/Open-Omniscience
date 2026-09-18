@@ -23,6 +23,8 @@ because each one is a way this rule could be wrong while looking right:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.catalog.official_instruments import (
@@ -152,7 +154,7 @@ def test_the_endpoint_is_a_proposal_surface_and_applies_nothing() -> None:
     `/{source_id}` (the lesson this branch already paid for once)."""
     from src.api import source_management as sm
 
-    src = (sm.__file__ and open(sm.__file__, encoding="utf-8").read()) or ""
+    src = Path(sm.__file__).read_text(encoding="utf-8")
     assert "official-instruments" in src
     # No mutating sibling: a proposal surface with an apply button is not a proposal surface.
     assert "/official-instruments/apply" not in src

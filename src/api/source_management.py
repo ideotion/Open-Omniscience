@@ -373,6 +373,116 @@ def official_instruments_observable(
     }
 
 
+@router.get("/country-domain-audit")
+def country_domain_audit(
+    limit: Annotated[int, Query(ge=1, le=5000)] = 1000,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Rows whose stored COUNTRY contradicts their own DOMAIN — PROPOSALS for review, never
+    an automatic ccTLD rule (Q1115 = a).
+
+    Institutions C7 found `cityofvancouver.us` carrying `country: ca`, and said in the same
+    breath what the fix must not be: a naive ccTLD check is not the audit, because `.uk`
+    against `gb` and `.eu` for European bodies are both legitimate. A rule that rewrote
+    `country` from the ccTLD would fix the one row and break those two whole classes, with
+    the damage invisible at the moment it ran.
+
+    So nothing is applied and no `apply` exists. The payload carries what was NOT proposed
+    and why, in as much detail as what was: a diagnostic that publishes only its hits cannot
+    be checked for over-reach or for quietly examining almost nothing.
+
+    Read-only and local — no network. Must stay ABOVE `/{source_id}`.
+    """
+    from src.catalog.country_domain_audit import audit_rows
+    from src.database.models import Source
+
+    rows = (
+        db.query(Source.id, Source.domain, Source.country)
+        .order_by(Source.id.asc())
+        .limit(limit)
+        .all()
+    )
+    out = audit_rows((sid, dom, country) for sid, dom, country in rows)
+    out["limit"] = limit
+    return out
+
+
+@router.post("/resolve-qid-names", response_model=dict)
+def resolve_qid_names(
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Resolve sources whose NAME is a bare Wikidata Q-id, at the polite rate (Q1116 = a).
+
+    Institutions C8: 26 of 267 verified rows carry a bare Q-id where their name should be,
+    so splicing them as they stand would put ``Q133293483`` in the catalogue. The ruling
+    takes both halves — resolve the label, **or decline to admit the row** — and the second
+    is not a fallback: an unresolved row is never admitted under its identifier and never
+    under a guess.
+
+    EGRESSES to ``www.wikidata.org`` at most once per 10 seconds (R8), under ONE consent for
+    the whole batch, and REFUSES up front under airplane mode with a 409 that NAMES the kill
+    switch — never a generic failure that would send an operator looking at Wikidata for
+    their own setting (invariant #14e's corollary).
+
+    It renames nothing on its own: the resolved labels come back for review beside the
+    declines, because a name is an identity field and identity fields are evidence, not fact.
+    """
+    from src.catalog.qid_labels import (
+        AirplaneRefusal,
+        admit_or_decline,
+        bare_qid_rows,
+        resolve_labels,
+    )
+    from src.database.models import Source
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        # Named as the kill switch, before anything is built.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "network refused: airplane mode is engaged, so Wikidata labels cannot be "
+                "resolved. Nothing was fetched and no row was declined for it."
+            ),
+        )
+
+    rows = [(sid, name) for sid, name in db.query(Source.id, Source.name).all()]
+    targets = bare_qid_rows(rows)[:limit]
+    if not targets:
+        return {
+            "examined": len(rows), "bare_qid_rows": 0, "labels": {}, "declined": {},
+            "note": "No source carries a bare Wikidata identifier as its name.",
+        }
+
+    def _fetch(url: str) -> dict:
+        # The SAME guarded getter the other Wikidata caller uses (`wikidata_apply`): the
+        # kill switch and the protected-mode proxy live inside it, and a per-URL isolation
+        # token gives each lookup its own Tor circuit so distinct ones are unlinkable.
+        from src.catalog.wikidata_apply import _default_getter
+
+        return _default_getter(url).json()
+
+    try:
+        out = resolve_labels([q for _rid, q in targets], fetch=_fetch)
+    except AirplaneRefusal as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    applied = admit_or_decline(targets, out["labels"])
+    return {
+        "examined": len(rows),
+        "bare_qid_rows": len(targets),
+        **out,
+        "proposed_names": [a for a in applied["admitted"] if a["renamed_from"]],
+        "declined_rows": applied["declined"],
+        "applied": False,
+        "note": (
+            "Nothing was renamed. A name is an identity field and identity fields are "
+            "evidence, not fact, so the resolved labels are returned for review."
+        ),
+    }
+
+
 @router.get("/{source_id}/provenance", response_model=dict)
 @limiter.limit("100/hour")
 def get_source_provenance(request: Request, source_id: int, db: Session = Depends(get_db)):
