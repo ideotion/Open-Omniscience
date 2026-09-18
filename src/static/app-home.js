@@ -60,6 +60,50 @@
             `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`).join("")
           + (note ? `<span class="s muted">${esc(note)}</span>` : "")
         : `<div class="muted">${esc(t("Your library is empty — head to Collect to gather your first material."))}</div>`;
+      // Q714 = a: the Wikipedia lane gets "its own figure" on the strip, appended
+      // rather than merged. Its own, because a page this lane FOLLOWS is not an
+      // article in the press corpus unless its text was stored -- adding it to the
+      // articles headline would inflate a number the ruling says "stays press unless
+      // a lane filter is chosen".
+      renderHomeWikiFigure();
+    }
+
+    // Q714's own figure: "Wikipedia: N pages · M changes today".
+    //
+    // APPENDED ASYNCHRONOUSLY AND NEVER BLOCKING THE STRIP. The lane read is a second
+    // request; making the strip wait for it would delay every figure on it for one that
+    // is absent on most installs. A lane that has never run renders NOTHING here rather
+    // than a zero -- an operator who has not turned it on is not owed a figure saying
+    // their Wikipedia is empty, and a zero beside real counts reads as a measurement.
+    async function renderHomeWikiFigure() {
+      const el = $("home-stats");
+      if (!el) return;
+      let lane = null;
+      try { lane = await api("/api/wiki/lane/status"); } catch (_e) { return; }
+      if (!lane || lane.measured !== true) return;
+      const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
+      const F = (i18n && i18n.tf)
+        ? i18n.tf
+        : ((s2, v) => s2.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const span = document.createElement("span");
+      span.className = "s";
+      span.id = "home-wiki-figure";
+      span.textContent = F("Wikipedia: {pages} pages · {changes} changes today", {
+        pages: (lane.pages || 0).toLocaleString(),
+        changes: (lane.changes_today || 0).toLocaleString(),
+      });
+      // The method and the SEPARATENESS in the hover (invariant #17's layering); the
+      // figure itself stays whole on the visible surface.
+      span.title = (i18n && i18n.t ? i18n.t : ((x) => x))(
+        "Counted by the Wikipedia lane itself, separately from your article count: a page this lane follows is not an article in your corpus unless its text was stored. Today means since local midnight."
+      );
+      // The strip is inside a [data-i18n-dyn] subtree, so this node owns its own text
+      // and the walker must not cache it -- the frozen-locale trap this file already
+      // records one function up.
+      span.setAttribute("data-i18n-dyn", "");
+      const existing = $("home-wiki-figure");
+      if (existing) existing.remove();
+      el.appendChild(span);
     }
     function renderHomeStatus(running) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

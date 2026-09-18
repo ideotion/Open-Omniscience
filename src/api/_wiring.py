@@ -75,6 +75,7 @@ def wire(app) -> None:
     from src.api.watches import router as watches_router
     from src.api.weather import router as weather_router
     from src.api.wiki import router as wiki_router
+    from src.api.wiki_lane import router as wiki_lane_router
 
     # Ordered exactly as main.py included them (path-based routing makes order
     # immaterial for dispatch, but the route set + order stay identical).
@@ -99,6 +100,7 @@ def wire(app) -> None:
         link_analysis_router,
         link_preview_router,
         wiki_router,
+        wiki_lane_router,
         llm_router,
         ingestion_router,
         system_router,

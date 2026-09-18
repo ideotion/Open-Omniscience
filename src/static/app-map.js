@@ -510,6 +510,60 @@
       return { markup, kinds, visible };
     }
 
+    // ------------------------------------------------------------------ //
+    // Q819 STEP 1: the wiki lane's located pages, drawn through THE seam.
+    //
+    // "Through the seam" is the whole point of the ruling's ordering. This layer does
+    // not own a projection, a graticule or an aspect ratio -- it calls project(lon,
+    // lat) like every other surface, so a page and a country border can never end up
+    // drawn on two different worlds. That is also what makes step 2 (0.5) a join
+    // rather than a second map: an OSM object tagged with the same QID lands on the
+    // same coordinate because it goes through the same function.
+    //
+    // A POINT IS A POINT, NOT A MAGNITUDE. Every marker is the same size: the lane
+    // knows a page HAS a coordinate and nothing else about it, and sizing by edit
+    // count or by anything else would encode a quantity onto a channel the operator
+    // would read as importance. The one visual distinction is the QID -- filled means
+    // joinable in 0.5, hollow means not -- and it is stated in the legend rather than
+    // left as a pattern to notice.
+    //
+    // NOTHING IS THINNED. The detailed-curves rule ("no arbitrary downsampling
+    // anywhere") is about points on a map as much as about a series on a chart; the
+    // endpoint bounds its answer and SAYS so, and this draws what it was given.
+    let _wikiLayerCache = null;
+
+    async function ooWikiPlaces(force) {
+      if (_wikiLayerCache !== null && !force) return _wikiLayerCache;
+      try {
+        const d = await api("/api/wiki/lane/places");
+        _wikiLayerCache = (d && d.measured === true) ? d : false;
+      } catch (_e) {
+        // FALSE means "asked and could not read", which the caller renders as an
+        // honest absence. NULL would mean "not asked yet" and would make it ask again
+        // on every redraw.
+        _wikiLayerCache = false;
+      }
+      return _wikiLayerCache;
+    }
+
+    function _ooWikiLayer(payload) {
+      if (!payload || payload.measured !== true || !Array.isArray(payload.points)) {
+        return { markup: "", n: 0 };
+      }
+      const markup = payload.points.map((pt) => {
+        if (typeof pt.lat !== "number" || typeof pt.lon !== "number") return "";
+        const sp = project(pt.lon, pt.lat);
+        const x = (+sp.x).toFixed(1), y = (+sp.y).toFixed(1);
+        const joinable = pt.joinable === true;
+        const paint = joinable
+          ? 'fill="var(--accent)" fill-opacity="0.8" stroke="var(--bg)" stroke-width="0.4"'
+          : 'fill="transparent" stroke="var(--accent)" stroke-width="1"';
+        const label = (pt.title || pt.external_id || "") + (pt.edition ? " (" + pt.edition + ")" : "");
+        return `<circle cx="${x}" cy="${y}" r="2.4" ${paint}><title>${esc(label)}</title></circle>`;
+      }).join("");
+      return { markup, n: payload.points.length };
+    }
+
     // The kind chips of the legend, as their own fragment: the visible KINDS change as
     // the focus window slides (a window with no floods should not keep claiming a flood
     // chip), so the cheap path has to refresh them too. Same markup either way -- one
@@ -669,6 +723,13 @@
 
       const _sig = _ooSignalLayer(opts);
       const signalPts = opts.signalsOn ? `<g data-oomap-siglayer>${_sig.markup}</g>` : "";
+      // Q819 step 1's layer. OPT-IN via ``opts.wikiPlaces`` and drawn LAST of the
+      // point layers, above the fills and below the labels -- a page's marker sitting
+      // under a choropleth patch would be a layer nobody could click. The payload is
+      // the caller's: ``ooMap`` fetches nothing of its own, which is what keeps every
+      // one of its surfaces free to decide whether this layer belongs on it.
+      const _wikiL = _ooWikiLayer(opts.wikiPlaces);
+      const wikiPts = _wikiL.markup ? `<g data-oomap-wikilayer>${_wikiL.markup}</g>` : "";
       const sigKinds = _sig.kinds, sigVisible = _sig.visible;
 
       // sr-only top list + aria summary (chart a11y pattern, PR G).
@@ -733,6 +794,7 @@
           ${opts.onGranularity ? `<button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>` : ""}
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
+          ${opts.onWiki ? `<button class="tiny secondary" data-oomap-wiki aria-pressed="${opts.wikiOn ? "true" : "false"}"${opts.wikiOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Wikipedia pages your lane follows that carry a coordinate. A page with no coordinate is absent, never placed at 0,0."))}">${esc(t("Wikipedia"))}</button>` : ""}
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
           ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
@@ -796,7 +858,7 @@
                  mistaken for one another. -->
             <pattern id="oomap-contested" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
               <line x1="0" y1="0" x2="0" y2="5" stroke="var(--caveat)" stroke-width="1.1" opacity="0.75"/></pattern></defs>
-          ${_mapSphere()}${grid}${paths}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${osmHtml}
+          ${_mapSphere()}${grid}${paths}${_disp.markup}${pts}${overlayPts}${serverPts}${signalPts}${wikiPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
@@ -823,6 +885,7 @@
             : t("attributed under") + " " + _ooWorldviewLabel(_ooMapWorldview))}</span></span>` : ""}
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
+        ${opts.wikiPlaces && opts.wikiPlaces.measured ? `<span class="muted">● ${esc(t("Wikipedia page (linked to Wikidata)"))} · ○ ${esc(t("Wikipedia page (not yet linked)"))}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
@@ -931,6 +994,7 @@
         b.addEventListener("click", () => opts.onGranularity(b.dataset.oomapGran)));
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
+      if (opts && opts.onWiki) { const wb = host.querySelector("[data-oomap-wiki]"); if (wb) wb.addEventListener("click", () => opts.onWiki()); }
       if (opts && opts.onServer) { const vb = host.querySelector("[data-oomap-server]"); if (vb) vb.addEventListener("click", () => opts.onServer()); }
       if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
       if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
@@ -980,6 +1044,11 @@
     // The endpoint returns every measure per country in ONE payload, so switching
     // dimension is instant (no re-fetch) — the picker just re-colours the map.
     let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null, _ooMapLabelsOn = false;
+    // Q819 step 1's layer state. ``_ooMapWikiPlaces`` is NULL until asked for and then
+    // holds the payload or ``false`` -- three states, because "not asked", "asked and
+    // got points" and "asked and could not read" lead to three different renders and
+    // collapsing any two of them would make one of those a silent lie.
+    let _ooMapWikiOn = false, _ooMapWikiPlaces = null;
     let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     // _ooMapTimeScale = how the slider position maps to a focus YEAR (batch F item 1):
@@ -1273,6 +1342,18 @@
         onDimension: id => { _ooMapDim = id; _renderOoMapDim(); },
         granularity: _ooMapGran,
         onGranularity: g => { _ooMapGran = (g === "continent" ? "continent" : "country"); _renderOoMapDim(); },
+        // Q819 step 1, OFF by default and fetched only when switched on. A layer that
+        // loaded itself would spend a request on every map render for a lane most
+        // installs have not turned on, and would put "0 Wikipedia places" in front of
+        // an operator who never asked about them.
+        wikiOn: _ooMapWikiOn, wikiPlaces: _ooMapWikiOn ? _ooMapWikiPlaces : null,
+        onWiki: async () => {
+          _ooMapWikiOn = !_ooMapWikiOn;
+          if (_ooMapWikiOn && _ooMapWikiPlaces === null) {
+            _ooMapWikiPlaces = await ooWikiPlaces();
+          }
+          _renderOoMapDim();
+        },
         placesOn: _ooMapPlacesOn, overlayPoints,
         onPlaces: async () => {
           _ooMapPlacesOn = !_ooMapPlacesOn;
