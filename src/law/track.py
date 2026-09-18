@@ -74,8 +74,17 @@ def _diff(baseline: str, new: str) -> str:
     return "\n".join(changed[:_MAX_DIFF_LINES])
 
 
-def _document_text(result) -> tuple[str | None, str]:
-    """The document's normalised visible text + an honest status.
+def _document_text(result, *, retrieved_on: str | None = None) -> tuple[str | None, str, object | None]:
+    """The document's normalised visible text, an honest status, and the parse behind it.
+
+    THE THIRD ELEMENT IS THE L0 DATE FIX (Q917). Until 2026-09-18 this function
+    returned ``parsed.text`` and dropped the :class:`~src.law.adapters.ParsedLaw`
+    it came from, so the three dates the adapter had already read -- the whole
+    reason the date discipline in its package docstring exists -- reached nothing
+    that could store them, and the reader's only date was the day we captured the
+    document. It is ``None`` for every non-CLML body, which is the honest state:
+    an HTML page states no dates this adapter can read, and inventing one from the
+    fetch is exactly the collapse the discipline forbids.
 
     A PDF body (detected by the ``%PDF`` magic bytes or the content-type) is
     routed to the optional PDF extractor, which returns ``(None, reason)`` for a
@@ -110,7 +119,8 @@ def _document_text(result) -> tuple[str | None, str]:
     if looks_like_pdf(raw, content_type=content_type):
         from src.ingest.pdf import extract_pdf_text
 
-        return extract_pdf_text(raw)
+        pdf_text, pdf_reason = extract_pdf_text(raw)
+        return pdf_text, pdf_reason, None
 
     body = result.content
     if _looks_like_xml(body, content_type=content_type):
@@ -118,15 +128,15 @@ def _document_text(result) -> tuple[str | None, str]:
         from src.law.adapters.clml import parse_clml
 
         try:
-            parsed = parse_clml(body)
+            parsed = parse_clml(body, retrieved_on=retrieved_on)
         except AdapterRefusal:
             pass  # not CLML (or not enough of it) — the HTML path below is correct
         except Exception:  # noqa: BLE001 - an adapter must never break tracking
             _LOG.warning("law: CLML adapter raised; falling back to HTML", exc_info=True)
         else:
-            return parsed.text, "clml"
+            return parsed.text, "clml", parsed
 
-    return page_text(body), "ok"
+    return page_text(body), "ok", None
 
 
 def _looks_like_xml(body, *, content_type: str) -> bool:
@@ -143,6 +153,102 @@ def _looks_like_xml(body, *, content_type: str) -> bool:
     if not head.startswith(("<?xml", "<legislation", "<clml")):
         return False
     return "html" not in (content_type or "").lower() or "xml" in (content_type or "").lower()
+
+
+def _adapter_date(parsed: object | None, field: str) -> str | None:
+    """One date off a :class:`~src.law.adapters.ParsedLaw`, or ``None``.
+
+    ``None`` here always means *the document did not state it* — there is no fallback
+    chain between the three dates, which is the whole point of the adapter's date
+    discipline: falling back is how a capture date becomes a publication date.
+    """
+    if parsed is None:
+        return None
+    value = getattr(parsed, field, None)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _diff_anchor(session, doc: LawDocument) -> tuple[LawRevision | None, str, str]:
+    """The revision a new change is measured against, the text to measure against, and
+    the NAME of that anchor.
+
+    Q917 anchors a change on the PREVIOUS revision. Three things stop that being a
+    one-liner, and each produces a DIFFERENT recorded basis rather than a silent fallback.
+
+    ``"previous"`` — the ordinary case: the previous revision's stored ``full_text``, and
+    ``diff_base_revision_id`` names it. ``latest_text_revid`` is the document's own pointer
+    at its newest revision and is the right first question; it can be NULL on a document
+    baselined before that column shipped, so the newest row by ``(observed_at, id)`` is the
+    fallback. Ordering on ``id`` as well as ``observed_at`` matters — two revisions can
+    share an observed instant, and ``ORDER BY observed_at`` alone then returns whichever
+    the planner likes, which is a resume-cursor-shaped hazard on a table that grows.
+
+    ``"previous-text"`` — the document's materialised ``latest_text`` differs from every
+    stored revision's text. This is the RE-EXTRACTION path directly above: when the
+    boilerplate strip improves, the tracker deliberately records NO revision (nothing was
+    amended) and re-baselines, so the text the document held before this change is real
+    and correct while no revision reproduces it byte for byte. Anchoring on the stale
+    revision instead would charge the next genuine amendment with the chrome the strip
+    removed. ``diff_base_revision_id`` is NULL here because there is honestly no revision
+    to name.
+
+    ``"baseline"`` — neither is available: the previous revision carries no stored
+    ``full_text`` (a row from before that column shipped) and the document has no
+    materialised latest text either. The baseline is a different quantity and saying so is
+    the whole reason the basis is stored.
+
+    Returns ``(previous_revision_or_None, text_to_measure_against, basis)``.
+    """
+    prev: LawRevision | None = None
+    if doc.latest_text_revid:
+        prev = session.query(LawRevision).filter_by(id=doc.latest_text_revid).first()
+    if prev is None or prev.document_id != doc.id:
+        prev = (
+            session.query(LawRevision)
+            .filter_by(document_id=doc.id)
+            .order_by(LawRevision.observed_at.desc(), LawRevision.id.desc())
+            .first()
+        )
+    if prev is not None and prev.full_text is not None:
+        if doc.latest_text is None or doc.latest_text == prev.full_text:
+            return prev, prev.full_text, "previous"
+        return prev, doc.latest_text, "previous-text"
+    if doc.latest_text is not None:
+        return prev, doc.latest_text, "previous-text"
+    return prev, (doc.baseline_text or ""), "baseline"
+
+
+def baseline_diff(doc: LawDocument, revision: LawRevision) -> dict:
+    """The baseline comparison as a DERIVED view, computed on demand (Q917).
+
+    The stored ``diff``/``delta_bytes`` measure a revision against the one before it, which
+    is the question a reader of an amendment history asks. "How far has this document
+    moved since we first saw it" is a different and also useful question, and it needs no
+    second stored column: both texts are already on disk, so it is derived here.
+
+    REFUSES RATHER THAN GUESSES. A revision with no stored ``full_text`` (recorded before
+    that column shipped) cannot be compared to anything, and a document with no captured
+    baseline has nothing to compare against — each returns ``available: False`` with the
+    reason named, never a diff of one side against the empty string, which would render as
+    "the entire document was added".
+    """
+    if revision.full_text is None:
+        return {
+            "available": False,
+            "reason": "this revision was recorded before the full text of each version was stored",
+        }
+    if doc.baseline_text is None:
+        return {"available": False, "reason": "no baseline text has been captured for this document"}
+    return {
+        "available": True,
+        "delta_bytes": len(revision.full_text) - len(doc.baseline_text),
+        "diff": _diff(doc.baseline_text, revision.full_text),
+        "method": (
+            "Derived on demand: this version's stored text compared with the document's "
+            "immutable baseline. The amendment history above measures each change against "
+            "the version before it, which is a different quantity."
+        ),
+    }
 
 
 def _ingest_to_corpus(session, doc: LawDocument, extractor) -> None:
@@ -190,7 +296,7 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         session.commit()
         return {"document_id": doc.id, "status": "error", "detail": str(exc)}
 
-    text, reason = _document_text(result)
+    text, reason, parsed = _document_text(result, retrieved_on=now.date().isoformat())
     # Kept for the extractor-change check below. Only HTML has chrome to strip, so a
     # PDF body leaves this None and the check is simply skipped -- never a re-baseline
     # decided on a comparison we could not make.
@@ -203,6 +309,15 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         return {"document_id": doc.id, "status": "empty", "detail": doc.last_status}
 
     h = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    # L0 defect 3 (Q917): the adapter's dates reach storage. FILL-A-NULL on the document,
+    # because a later parse stating a DIFFERENT enactment date is two readings disagreeing
+    # and picking the newer one silently would re-date a statute. `valid_on` is per-version
+    # and is written on the revision below, where it describes the text it came from.
+    valid_on = _adapter_date(parsed, "valid_on")
+    enacted_on = _adapter_date(parsed, "enacted_on")
+    if enacted_on and not doc.enacted_on:
+        doc.enacted_on = enacted_on
 
     # First sighting → immutable baseline + a baseline revision (delta 0, not flagged).
     if doc.baseline_text is None:
@@ -220,6 +335,14 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
             delta_bytes=0,
             full_text=text,  # the exact baseline text, locally reconstructable
             flagged=False,
+            # "first", never "baseline". They are different facts and one value cannot
+            # carry both: on a LATER row "baseline" means "measured against the first
+            # capture" (the fallback when the previous revision has no stored text),
+            # while this row IS that first capture and has nothing earlier to measure
+            # against at all. Reusing the value would put two meanings under one key on
+            # the exact column added to stop that happening.
+            diff_basis="first",
+            valid_on=valid_on,
         )
         session.add(rev)
         try:
@@ -329,8 +452,20 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "reverted"}
 
-    # A genuine new version: record the change vs the immutable baseline.
-    delta = len(text) - (len(doc.baseline_text or "") or doc.last_size or 0)
+    # A genuine new version. L0 defect 2 (Q917): the change is measured against the
+    # PREVIOUS REVISION, not the immutable baseline. Anchoring on the baseline made
+    # `delta_bytes` cumulative -- a document that grows 100 bytes per amendment reported
+    # +100, +200, +300 on rows that each read as one amendment -- and made
+    # `flag_revision` fire forever once a document had drifted far from its first capture,
+    # because the quantity it judges never came back down. The baseline comparison is not
+    # lost: `baseline_diff()` derives it on demand from the stored `full_text`.
+    #
+    # THE ANCHOR IS NAMED, NEVER GUESSED. A previous revision that carries no stored
+    # `full_text` (a row recorded before that column shipped) cannot be measured against,
+    # so this falls back to the baseline AND records `diff_basis="baseline"` -- a reader
+    # can then see that this one row measures a different quantity from its neighbours.
+    prev_rev, base_text, basis = _diff_anchor(session, doc)
+    delta = len(text) - len(base_text)
     flag = flag_revision(delta_bytes=delta)
     rev = LawRevision(
         document_id=doc.id,
@@ -338,15 +473,22 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         content_hash=h,
         size=len(text),
         delta_bytes=delta,
-        diff=_diff(doc.baseline_text or "", text),
+        diff=_diff(base_text, text),
         full_text=text,  # the exact new version, locally reconstructable
         flagged=flag.flagged,
         flag_reasons=flag.reasons_csv() if flag.flagged else None,
+        diff_basis=basis,
+        diff_base_revision_id=prev_rev.id if (prev_rev is not None and basis == "previous") else None,
+        valid_on=valid_on,
     )
     session.add(rev)
     doc.last_hash = h
     doc.last_size = len(text)
-    doc.last_status = f"changed ({delta:+d} bytes vs baseline)"
+    # The sentence names its own anchor, because the number means a different thing under
+    # each one and a status that said "vs baseline" while measuring the previous revision
+    # would be the more convincing kind of wrong.
+    anchor = "baseline" if basis == "baseline" else "the previous version"
+    doc.last_status = f"changed ({delta:+d} bytes vs {anchor})"
     doc.latest_text = text
     try:
         session.flush()  # materialise rev.id so latest_text_revid can anchor it

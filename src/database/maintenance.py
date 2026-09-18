@@ -703,6 +703,56 @@ def ensure_law_document_language_columns(engine: Engine) -> list[str]:
     return added
 
 
+# The law L0 columns (Q917, brief S04-10 S1): the adapter's dates and the diff's anchor.
+# Additive, no backfill. A NULL `diff_basis` on a pre-existing revision is the honest
+# record of "recorded before the basis was tracked" -- see the models.py note on why that
+# is NOT a synonym for "baseline", and why re-deriving it is impossible for a row whose
+# previous revision carries no stored full_text.
+_LAW_DOCUMENT_DATE_COLUMNS: dict[str, str] = {
+    "enacted_on": "ALTER TABLE law_documents ADD COLUMN enacted_on VARCHAR(32)",
+}
+_LAW_REVISION_BASIS_COLUMNS: dict[str, str] = {
+    "valid_on": "ALTER TABLE law_revisions ADD COLUMN valid_on VARCHAR(32)",
+    "diff_basis": "ALTER TABLE law_revisions ADD COLUMN diff_basis VARCHAR(16)",
+    "diff_base_revision_id": "ALTER TABLE law_revisions ADD COLUMN diff_base_revision_id INTEGER",
+}
+
+
+def ensure_law_l0_columns(engine: Engine) -> list[str]:
+    """Self-heal ``law_documents.enacted_on`` and the ``law_revisions`` basis/date columns.
+
+    Idempotent and additive, the established pattern. Literal-string SQL (no f-string) so
+    bandit B608 stays clean; the table names are fixed constants either way.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        if conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_documents'")
+        ).fetchone():
+            existing = {
+                r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()
+            }
+            for name, ddl in _LAW_DOCUMENT_DATE_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(text(ddl))
+                    added.append(f"law_documents.{name}")
+        if conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_revisions'")
+        ).fetchone():
+            existing = {
+                r[1] for r in conn.execute(text("PRAGMA table_info(law_revisions)")).fetchall()
+            }
+            for name, ddl in _LAW_REVISION_BASIS_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(text(ddl))
+                    added.append(f"law_revisions.{name}")
+    if added:
+        _LOG.info(f"added law L0 column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     """Self-heal the denormalised ``keyword_mentions.source_id`` column + its index.
 
@@ -1399,8 +1449,12 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
-    "law_documents": frozenset(_LAW_DOCUMENT_TEXT_COLUMNS) | frozenset(_LAW_DOCUMENT_LANGUAGE_COLUMNS),
-    "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS),
+    "law_documents": (
+        frozenset(_LAW_DOCUMENT_TEXT_COLUMNS)
+        | frozenset(_LAW_DOCUMENT_LANGUAGE_COLUMNS)
+        | frozenset(_LAW_DOCUMENT_DATE_COLUMNS)
+    ),
+    "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS) | frozenset(_LAW_REVISION_BASIS_COLUMNS),
     # ensure_source_qualification_columns (the admission-gate STAMP columns) +
     # ensure_source_last_crawled_column (§8 crawl-by-default rotation marker).
     # ensure_source_counter_columns joins them for the same reason as the articles note.

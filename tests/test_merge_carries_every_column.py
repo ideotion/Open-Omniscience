@@ -183,6 +183,54 @@ def test_law_country_language_and_full_text_survive_the_merge(tmp_path):
         assert rev.full_text == "REV FULL TEXT"
 
 
+def test_the_law_L0_dates_and_diff_basis_survive_the_merge(tmp_path):
+    """Q917's four columns, and the one that needs remapping rather than copying.
+
+    ``enacted_on`` and ``valid_on`` are the dates the reader's date rows are built from;
+    ``diff_basis`` says which anchor a revision's ``diff``/``delta_bytes`` were measured
+    against, and dropping it is the worse half — the figures arrive looking exactly like
+    their neighbours' while meaning a different quantity.
+
+    ``diff_base_revision_id`` is a SELF-REFERENCE, so it is remapped through
+    ``temp.map_law_rev`` rather than copied. This drives two revisions of one document so
+    the pointer has a real target on both sides: a single-revision fixture would leave the
+    column NULL on both, and the assertion would pass whether or not the remap ran.
+    """
+    def populate(s):
+        doc = LawDocument(
+            jurisdiction="uk", title="Measurement Act", url="https://example.uk/act",
+            enacted_on="2018-05-23",
+        )
+        s.add(doc)
+        s.flush()
+        first = LawRevision(
+            document_id=doc.id, observed_at=_T0, content_hash="ch-first",
+            full_text="FIRST", delta_bytes=0, diff_basis="first", valid_on="2018-06-01",
+        )
+        s.add(first)
+        s.flush()
+        s.add(LawRevision(
+            document_id=doc.id, observed_at=_T0, content_hash="ch-second",
+            full_text="SECOND", delta_bytes=6, diff="+SECOND", diff_basis="previous",
+            diff_base_revision_id=first.id, valid_on="2024-01-01",
+        ))
+
+    with _corpus(_merged(tmp_path, populate))() as s:
+        doc = s.query(LawDocument).filter_by(url="https://example.uk/act").one()
+        assert doc.title == "Measurement Act", "control: the merge ran at all"
+        assert doc.enacted_on == "2018-05-23"
+        first = s.query(LawRevision).filter_by(content_hash="ch-first").one()
+        second = s.query(LawRevision).filter_by(content_hash="ch-second").one()
+        assert first.diff_basis == "first"
+        assert first.valid_on == "2018-06-01"
+        assert second.diff_basis == "previous"
+        assert second.valid_on == "2024-01-01"
+        # THE DISCRIMINATING ASSERTION: the pointer names the row it means HERE, which is
+        # the merged corpus's own id for the first revision, not the incoming corpus's.
+        assert second.diff_base_revision_id == first.id
+        assert second.diff_base_revision_id is not None
+
+
 # --------------------------------------------------------------------------- #
 #  provenance columns
 # --------------------------------------------------------------------------- #

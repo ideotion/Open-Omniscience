@@ -50,7 +50,7 @@ def clml() -> str:
 
 
 def test_a_clml_body_is_read_by_the_adapter_not_the_html_stripper(clml) -> None:
-    text, reason = _document_text(_Result(clml, "application/xml"))
+    text, reason, _parsed = _document_text(_Result(clml, "application/xml"))
     assert reason == "clml", "the structured reader must be the one that ran"
     assert text
     # Its provisions are present as law text, not as a page reduced by chrome-guessing.
@@ -62,7 +62,7 @@ def test_the_status_is_not_ok_so_the_html_extractor_check_stays_out_of_it(clml) 
     re-reads it with the LEGACY stripper to tell "our extractor improved" from "the
     law changed". Running that comparison over XML would compare a structured
     document against a web-page heuristic."""
-    _text, reason = _document_text(_Result(clml, "application/xml"))
+    _text, reason, _parsed = _document_text(_Result(clml, "application/xml"))
     assert reason != "ok"
     src = (Path(__file__).resolve().parents[1] / "src" / "law" / "track.py").read_text(
         encoding="utf-8"
@@ -77,7 +77,7 @@ def test_an_html_page_is_untouched_by_the_new_branch() -> None:
         "<html><body><nav>menu</nav><main><p>" + ("The law says a thing. " * 20)
         + "</p></main></body></html>"
     )
-    text, reason = _document_text(_Result(html, "text/html"))
+    text, reason, _parsed = _document_text(_Result(html, "text/html"))
     assert reason == "ok", "an ordinary page must still take the HTML path"
     assert "The law says a thing." in text
     assert "menu" not in text, "the boilerplate strip must still run"
@@ -88,14 +88,14 @@ def test_xml_that_is_not_clml_falls_back_rather_than_failing(clml) -> None:
     document. It parses as XML and is not law, and the adapter's root check is
     what catches it."""
     not_law = '<?xml version="1.0"?><error><message>' + ("Not found. " * 40) + "</message></error>"
-    text, reason = _document_text(_Result(not_law, "application/xml"))
+    text, reason, _parsed = _document_text(_Result(not_law, "application/xml"))
     assert reason == "ok", "a refusal must fall back, never abort the poll"
     assert "Not found." in text
 
 
 def test_malformed_xml_falls_back_rather_than_raising() -> None:
     broken = "<?xml version='1.0'?><Legislation><Body><P1>unclosed" + ("x" * 400)
-    text, reason = _document_text(_Result(broken, "application/xml"))
+    text, reason, _parsed = _document_text(_Result(broken, "application/xml"))
     assert reason == "ok"
     assert text is not None, "tracking must survive a body no parser can read"
 
@@ -162,6 +162,6 @@ def test_an_adapter_that_raises_something_else_still_falls_back(clml, monkeypatc
         raise RuntimeError("an adapter bug, not a refusal")
 
     monkeypatch.setattr(clml_mod, "parse_clml", _boom)
-    text, reason = _document_text(_Result(clml, "application/xml"))
+    text, reason, _parsed = _document_text(_Result(clml, "application/xml"))
     assert reason == "ok", "an adapter crash must fall back to the HTML reading"
     assert text, "and must still produce a body, not None"

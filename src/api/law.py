@@ -11,6 +11,8 @@ mirror, never legal advice — every record links back to its official source.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
@@ -407,15 +409,177 @@ def _diff_to_html(diff: str | None, _esc) -> str:
     return "".join(rows) or "<div class='muted'>(no textual diff recorded)</div>"
 
 
+#: How each stored ``diff_basis`` reads to a human. The NULL case is deliberately not
+#: "baseline": a row recorded before the basis was tracked happens to be baseline-anchored,
+#: and saying so as though somebody had decided it would turn an absence into a claim.
+_BASIS_WORDS = {
+    "first": "the first captured snapshot — there is nothing earlier to measure it against",
+    "previous": "measured against the previous version",
+    "previous-text": "measured against the text this document held before the change",
+    "baseline": "measured against the first captured snapshot",
+}
+_BASIS_UNRECORDED = "recorded before the comparison's anchor was stored — the figures are against the first captured snapshot"
+
+
+def _selected_version(doc, revs, version: int | None) -> tuple[object | None, str | None, str | None]:
+    """The revision to display, its text, and an honest note when there is no text.
+
+    Returns ``(revision_or_None, text_or_None, note_or_None)``. ``revision`` is ``None``
+    for the document's current text, which is the default and is what ``latest_text``
+    holds. A requested version that does not exist is a 404 — silently showing the
+    current text under a URL that names another version is the wrong-version-under-the-
+    right-date defect the endpoint docstring describes.
+    """
+    if version is not None:
+        rev = next((r for r in revs if r.id == version), None)
+        if rev is None:
+            raise HTTPException(status_code=404, detail="Version not found for this document.")
+        if rev.full_text is not None:
+            return rev, rev.full_text, None
+        # A revision from before per-version text was stored. Refuse BY NAME: the diff for
+        # this version is still shown below, so the reader loses the full text and keeps
+        # the evidence, rather than being handed a neighbouring version's words.
+        return rev, None, (
+            "This version was recorded before the full text of each version was stored, so "
+            "its text is not held locally. Its change is still shown in the amendment "
+            "history below."
+        )
+    text = doc.latest_text if doc.latest_text is not None else doc.baseline_text
+    if text is None:
+        return None, None, "No text captured yet — track this document to store a snapshot."
+    return None, text, None
+
+
+def _valid_on(shown, revs) -> str | None:
+    """The point in time the version ON SCREEN represents, or ``None``.
+
+    For the current text that is the newest revision's ``valid_on`` — the same row
+    ``latest_text`` came from — because the date belongs to the version, not to the
+    document. ``None`` where the document never stated one: there is no fallback to the
+    capture date, which is the collapse the adapter's date discipline exists to prevent.
+    """
+    rev = shown if shown is not None else (revs[0] if revs else None)
+    return getattr(rev, "valid_on", None) if rev is not None else None
+
+
+def _retrieved_on(doc, shown, revs) -> str | None:
+    """When THIS instance captured the version on screen — the adapter's third date.
+
+    It gets no column of its own. ``LawRevision.observed_at`` and the ``retrieved_on``
+    handed to the parser are set from the same ``now`` inside one call of
+    ``track_document``, so a second column would be two records of one fact, which is the
+    shape that produced the S04-13 per-host-stamp defect. For the current text the answer
+    is the newest revision's ``observed_at``; ``None`` where no revision carries one,
+    because a date we cannot read is absent, never today's.
+    """
+    rev = shown if shown is not None else (revs[0] if revs else None)
+    if rev is None or rev.observed_at is None:
+        return None
+    return rev.observed_at.strftime("%Y-%m-%d")
+
+
+def _version_label(doc, rev) -> tuple[str, str]:
+    """One version, as ``(phrase, data)`` — never one welded string.
+
+    The i18n DOM walker matches a text node EXACTLY, so "2026-01-02 14:00 — +42 bytes"
+    can never be a key: the numbers vary and no locale file can hold every corpus. The
+    PHRASE is fixed and keyable; the DATA (a timestamp, a signed byte count) is data and
+    renders the same in every language. The caller puts them in separate elements, which
+    is the only arrangement the walker can translate half of.
+    """
+    if rev is None:
+        return "Current text (as last captured)", ""
+    when = rev.observed_at.strftime("%Y-%m-%d %H:%M") if rev.observed_at else ""
+    if not rev.diff and not (rev.delta_bytes or 0):
+        return "first captured snapshot", when
+    delta = rev.delta_bytes or 0
+    return "an amendment", f"{when} · {delta:+d} bytes"
+
+
+def _shown_cell(doc, shown, _esc) -> str:
+    """The "Showing" row's value: the same phrase/data split the picker uses.
+
+    Two elements, because the i18n DOM walker matches a text node exactly — a phrase
+    welded to a timestamp is a string no locale file can hold.
+    """
+    phrase, data = _version_label(doc, shown)
+    out = f"<span class='vp'>{_esc(phrase)}</span>"
+    return out + (f" <span class='vd'>{_esc(data)}</span>" if data else "")
+
+
+def _version_picker(doc, revs, shown, _esc) -> str:
+    """The version selector. A plain ``<form>`` of links, so it needs no JavaScript.
+
+    The reader page is served standalone (its own document, not the SPA), and a control
+    that needs script to work is a control that does not work when script is blocked — on
+    a page whose whole job is to show a legal text. Each entry is a link carrying
+    ``?version=``; the current text is the link with no parameter.
+
+    A version with no stored text is still LISTED and still selectable, marked as such:
+    hiding it would make the amendment history and the selector disagree about how many
+    versions exist, and the entry's own page says why its text is missing.
+    """
+    if not revs:
+        return ""
+    items = []
+    here = f"/api/law/documents/{doc.id}/view"
+
+    def _entry(href: str, rev, selected: bool) -> str:
+        phrase, data = _version_label(doc, rev)
+        # Two elements, always: the walker translates the phrase and leaves the data
+        # alone. One element carrying both could never match a key.
+        body = f"<span class='vp'>{_esc(phrase)}</span>"
+        if data:
+            body += f" <span class='vd'>{_esc(data)}</span>"
+        missing = (
+            ""
+            if rev is None or rev.full_text is not None
+            else " <span class='muted'>text not stored</span>"
+        )
+        tag = " <span class='now'>shown</span>" if selected else ""
+        return (
+            f"<li><a class='vsel{' on' if selected else ''}' href='{_esc(href)}'>{body}</a>"
+            f"{missing}{tag}</li>"
+        )
+
+    items.append(_entry(here, None, shown is None))
+    for r in revs:
+        items.append(_entry(f"{here}?version={r.id}", r, shown is not None and r.id == shown.id))
+    return (
+        "<nav class='versions'><h2>Versions</h2><ol>"
+        + "".join(items)
+        + "</ol><p class='muted vnote'>Every version this instance captured. The current "
+        "text is the newest capture, not a live consolidation.</p></nav>"
+    )
+
+
 @router.get("/documents/{document_id}/view", response_class=HTMLResponse)
-def view_law_document(document_id: int, db: Session = Depends(get_db)):
+def view_law_document(
+    document_id: int,
+    version: Annotated[int | None, Query(description="A LawRevision id to display instead of the current text.")] = None,
+    db: Session = Depends(get_db),
+):
     """Render the locally-stored copy of a tracked law as a clean reading page.
 
-    Shows the captured baseline text plus the full amendment timeline (each change
-    as a coloured diff), and links back to the official gazette as an explicit,
-    confirmed external action. A research mirror, never the authoritative source —
-    nothing here is legal advice, and the text is whatever we captured, not a live
-    consolidation unless ``consolidated`` says so.
+    Shows the CURRENT text with a version selector, plus the full amendment timeline
+    (each change as a coloured diff), and links back to the official gazette as an
+    explicit, confirmed external action. A research mirror, never the authoritative
+    source — nothing here is legal advice, and the text is whatever we captured, not a
+    live consolidation unless ``consolidated`` says so.
+
+    L0 DEFECT 1 (Q917), AND WHY IT WAS WORTH A RULING. This page rendered
+    ``doc.baseline_text`` — the FIRST snapshot ever taken — under a heading carrying the
+    document's title, with every later amendment shown only as a diff underneath. So a
+    reader of a much-amended Act was shown the superseded text as *the law*, and the
+    materialised current text (``latest_text``, written by the tracker since the
+    versioned-sources ruling) was read by nothing. The failure direction is the bad one:
+    an out-of-date statute is plausible, complete and wrong, where an empty page would at
+    least have announced itself.
+
+    ``?version=<revision id>`` shows one stored past version instead. A revision that
+    carries no stored text REFUSES by name rather than falling through to another
+    version's text — showing the wrong version's words under the right version's date is
+    the same defect this endpoint is being fixed for, one level down.
     """
     import html as _html
 
@@ -425,18 +589,19 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    text = doc.baseline_text or ""
-    paras = (
-        "".join(f"<p>{_html.escape(line)}</p>" for line in text.split("\n") if line.strip())
-        or "<p class='muted'>No baseline text captured yet — track this document to store a snapshot.</p>"
-    )
-
     revs = (
         db.query(LawRevision)
         .filter_by(document_id=doc.id)
-        .order_by(LawRevision.observed_at.desc())
+        .order_by(LawRevision.observed_at.desc(), LawRevision.id.desc())
         .all()
     )
+
+    shown, text, shown_note = _selected_version(doc, revs, version)
+    paras = (
+        "".join(f"<p>{_html.escape(line)}</p>" for line in (text or "").split("\n") if line.strip())
+        or f"<p class='muted'>{_html.escape(shown_note or 'No text captured yet — track this document to store a snapshot.')}</p>"
+    )
+    version_picker = _version_picker(doc, revs, shown, _html.escape)
     rev_items = []
     for r in revs:
         when = r.observed_at.strftime("%Y-%m-%d %H:%M") if r.observed_at else "—"
@@ -444,8 +609,9 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
         # labelled as a change confused the live test — say what it is.
         if not r.diff and not (r.delta_bytes or 0):
             rev_items.append(
-                f"<details class='rev'><summary>{when} · baseline captured "
-                f"(the reference text — amendments are measured against it)</summary>"
+                f"<details class='rev'><summary>{when} · <span>baseline captured "
+                f"(the reference text — amendments are measured against it)</span></summary>"
+                f"<div class='basis'>{_html.escape(_BASIS_WORDS.get(r.diff_basis or '', _BASIS_UNRECORDED))}</div>"
                 f"<div class='diff'><div class='muted'>No change: this is the first "
                 f"snapshot.</div></div></details>"
             )
@@ -456,8 +622,13 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
             if r.flagged
             else ""
         )
+        # The anchor the byte figure and the diff were measured against. A history that
+        # mixes baseline-anchored rows (recorded before Q917) with previous-anchored ones
+        # is showing two quantities under one heading, so every row says which it is.
+        basis = _BASIS_WORDS.get(r.diff_basis or "", _BASIS_UNRECORDED)
         rev_items.append(
             f"<details class='rev'><summary>{when} · {delta}{flags}</summary>"
+            f"<div class='basis'>{_html.escape(basis)}</div>"
             f"<div class='diff'>{_diff_to_html(r.diff, _html.escape)}</div></details>"
         )
     revs_html = (
@@ -474,8 +645,18 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
         [
             _row("Jurisdiction", _html.escape((doc.jurisdiction or "").upper())),
             _row("Category", _html.escape(doc.category or "")),
+            # The Chromium click-through of this block (2026-09-18, en/fr/de/ar) caught
+            # three of its labels rendering in English under every locale. Two were simply
+            # unkeyed; this one ALSO could not safely become a key, because the i18n walker
+            # matches a text node EXACTLY and a bare "Text" would then translate every
+            # element anywhere in the app whose whole content is that word. The label is
+            # renamed to what the row actually says -- which KIND of text is stored -- so it
+            # is both unambiguous to a reader and safe as a key. Its two values are phrases
+            # this page itself emits (not stored data), so they are keyed as well; `_row`
+            # puts label and value in separate elements, which is what lets each translate.
             _row(
-                "Text", "point-in-time consolidation" if doc.consolidated else "raw captured fetch"
+                "Text kind",
+                "point-in-time consolidation" if doc.consolidated else "raw captured fetch",
             ),
             _row(
                 "Last checked",
@@ -485,7 +666,32 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
             ),
             _row("Last status", _html.escape(doc.last_status) if doc.last_status else None),
             _row("Changes recorded", str(len(revs)) if revs else None),
+            # L0 defect 3 (Q917): the adapter's three dates, each shown only where it is
+            # known, and each labelled with what it MEANS. "Published 2026-07-31" for a
+            # 2018 Act was the maintainer's original complaint, and it came from one field
+            # standing in for three. `retrieved_on` is composed from the revision's own
+            # `observed_at` rather than stored twice — the label says so.
+            _row("Enacted", _html.escape(doc.enacted_on) if doc.enacted_on else None),
+            _row("This text is in force from", _html.escape(_valid_on(shown, revs) or "") or None),
+            _row(
+                "Captured by this instance",
+                _html.escape(_retrieved_on(doc, shown, revs) or "") or None,
+            ),
+            _row("Showing", _shown_cell(doc, shown, _html.escape)),
         ]
+    )
+    # The footer used to read "Captured snapshot — it does not change if the official text
+    # is later amended", which was true of the baseline this page used to show and became
+    # FALSE the moment it started showing the current text. A sentence about what the
+    # reader is looking at has to be derived from what is on screen, or it is a fabricated
+    # caveat pointing the wrong way.
+    footer_line = (
+        "This is the newest text this instance captured — not a live consolidation. It "
+        "moves when a later capture finds the official text amended (each change is shown "
+        "above)."
+        if shown is None
+        else "A stored past version. The current captured text is the first entry in the "
+        "version list above."
     )
     title = _html.escape(doc.title or "(untitled)")
     official_html = (
@@ -511,8 +717,15 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
   .mrow {{ display:flex; justify-content:space-between; gap:14px; padding:3px 0; border-top:1px solid var(--line); }}
   .mrow:first-child {{ border-top:0; }} .mrow span {{ color:var(--mut); }} .mrow b {{ font-weight:600; text-align:right; }}
   article p {{ margin:0 0 1.05em; }} .muted {{ color:var(--mut); }}
-  .history {{ margin-top:30px; }}
-  .history h2, .src-h {{ font:600 14px system-ui,sans-serif; color:var(--mut); text-transform:uppercase;
+  .history, .versions {{ margin-top:30px; }}
+  .versions ol {{ list-style:none; margin:0; padding:0; font:13px/1.9 system-ui,sans-serif; }}
+  .versions li {{ border-top:1px solid var(--line); padding:4px 0; }}
+  .versions li:first-child {{ border-top:0; }}
+  a.vsel.on {{ font-weight:700; }}
+  .now {{ font:11px system-ui,sans-serif; color:var(--mut); }}
+  .vnote {{ font:12px/1.6 system-ui,sans-serif; margin:8px 0 0; }}
+  .basis {{ font:12px/1.5 system-ui,sans-serif; color:var(--mut); padding:2px 12px 6px; }}
+  .history h2, .versions h2, .src-h {{ font:600 14px system-ui,sans-serif; color:var(--mut); text-transform:uppercase;
     letter-spacing:.04em; margin:0 0 10px; }}
   details.rev {{ border:1px solid var(--line); border-radius:8px; margin-bottom:7px; background:var(--card); }}
   details.rev summary {{ cursor:pointer; padding:8px 12px; font:13px system-ui,sans-serif; }}
@@ -526,13 +739,23 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
   footer {{ margin-top:34px; padding-top:18px; border-top:1px solid var(--line);
     font:13px/1.6 system-ui,sans-serif; color:var(--mut); }}
   .src-link {{ display:inline-block; margin-top:6px; font-weight:600; }}
-</style></head><body>
+  .vp {{ }} .vd {{ color:var(--mut); font-variant-numeric:tabular-nums; }}
+</style>
+<!-- The i18n engine, as the ARTICLE reader already loads it. This page is served
+     standalone (its own browser tab, not the SPA), and until 2026-09-18 it loaded
+     nothing, so every word on it was English whatever the operator's UI language —
+     on a surface whose whole job is a legal text. The walker matches a text node
+     EXACTLY, which is why every phrase this page emits is in its own element with
+     the dates and byte counts beside it as data. -->
+<script src="/static/i18n.js" defer></script>
+</head><body>
 <div class="wrap">
   <div class="crumb">Open Omniscience · World law · offline stored copy — a research mirror, not legal advice</div>
   <article><h1>{title}</h1><div class="meta">{meta_rows}</div>{paras}</article>
+  {version_picker}
   {revs_html}
   <footer>
-    Captured snapshot — it does not change if the official text is later amended (amendments show above).
+    {footer_line}
     <div style="margin-top:8px">{official_html}</div>
     <div style="font-size:12px">Opening the gazette makes a live request from your machine; you'll be asked to confirm.</div>
   </footer>
@@ -541,8 +764,9 @@ def view_law_document(document_id: int, db: Session = Depends(get_db)):
   document.addEventListener('click', function(e){{
     var a = e.target.closest && e.target.closest('a.ext');
     if(!a) return; e.preventDefault();
-    if(window.confirm("Open the official source on the public web?\\n\\n" + a.href +
-      "\\n\\nThis leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?"))
+    var t = (window.OOI18N && OOI18N.t) ? OOI18N.t : function(x){{ return x; }};
+    if(window.confirm(t("Open the official source on the public web?") + "\\n\\n" + a.href +
+      "\\n\\n" + t("This leaves your local copy and makes a live request from your machine — the site may see your visit. Continue?")))
       window.open(a.href, '_blank', 'noopener');
   }});
 </script>

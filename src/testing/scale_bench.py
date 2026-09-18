@@ -243,6 +243,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
         ensure_law_document_language_columns,
+        ensure_law_l0_columns,
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
         ensure_source_counter_columns,
@@ -280,6 +281,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_external_source_discovery_columns(engine)
     ensure_law_text_columns(engine)
     ensure_law_document_language_columns(engine)
+    ensure_law_l0_columns(engine)
     ensure_source_counter_columns(engine)
     ensure_source_qualification_columns(engine)
     ensure_source_last_crawled_column(engine)
