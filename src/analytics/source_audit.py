@@ -48,6 +48,35 @@ TAIL_P = 90                # a per-source value beyond its cohort's p90/p10 fail
 # flag legitimate terse or atypical prose (the reframe forbids it).
 PATHOLOGY_ABS_FLOOR = 0.5
 
+# RULED 2026-09-15 (Q1107 = a): KEEP 0.5, RECORD IT AS UNREACHABLE, AND LET THE MEASURED
+# CRITERIA DECIDE. The field bundle of 2026-08-02 is the measurement: all 63 sources the
+# report called "failing" were flagged by the cohort tail, every one of them at a
+# pathology_rate BELOW this floor by two to three orders of magnitude — aljazeera.net at
+# 0.0010, ladepeche.fr at 0.0023, nicematin.com at 0.0005 (ONE article in 1,992). Not one
+# source in that corpus reached 0.5, and none is expected to: half a source's articles being
+# nav-DOM furniture repetition is a catastrophe, not a degradation.
+#
+# So it is kept as the RARE-CATASTROPHE DETECTOR it always was, and the panel SAYS it has
+# never fired in the field rather than presenting it as a live threshold. Lowering it to
+# something that fires would be inventing a number to make a control look busy; removing it
+# would give up the one guard that survives a wholly-degraded cohort. B6 answers the real
+# gap — that pathology was the ONLY extraction-failure criterion — by adding a second
+# MEASURED one beside it.
+PATHOLOGY_ABS_FLOOR_STATUS: dict[str, Any] = {
+    "value": PATHOLOGY_ABS_FLOOR,
+    "reachable_in_the_field": False,
+    "measured": (
+        "2026-08-02 field bundle: 63 sources reported failing, every one flagged by the "
+        "cohort tail at a pathology_rate below 0.0025 — the highest observed was 0.0023. "
+        "Nothing reached 0.5."
+    ),
+    "kept_because": (
+        "It is the only guard that still fires when a whole same-language cohort is "
+        "degrading, which is exactly when the cohort tail goes blind. A rare-catastrophe "
+        "detector that never fires in a healthy corpus is doing its job."
+    ),
+}
+
 # MINIMUM EVIDENCE for the extraction-failure criterion to fire from the COHORT TAIL.
 #
 # The tail test is `value > cohort p90`, and for pathology_rate a healthy cohort's p90 is
@@ -80,8 +109,24 @@ CRITERIA: tuple[dict, ...] = (
              "in their cohort tail — a proxy for degenerate extraction, but atypical-legit sources "
              "also run high, so this alone is a WATCH flag, never failing."},
     {"name": "pathology_rate", "bad": "high", "extraction_failure": True,
+     "abs_floor": PATHOLOGY_ABS_FLOOR, "evidence_key": "pathology_articles",
      "desc": "fraction with the furniture-repetition pathology (high mention_density + low "
              "type_token + high single_kw_dominance) — the nav-DOM 'Share Now x30' signature."},
+    # B6 (2026-09-15): THE SECOND EXTRACTION-FAILURE CRITERION, and the reason it is this one
+    # rather than a new invention — the 2026-08-03 field measurement put 415 of 675 pre-label
+    # hits on `high_link_density`, most of the discriminating power in the export, at no
+    # decrypt cost. Q1107 asks the MEASURED criteria to decide; this is the measured one.
+    #
+    # NO ABSOLUTE FLOOR, deliberately and statedly. Pathology has 0.5 because a catastrophe
+    # level was argued for it; nobody has measured what fraction of a source's articles being
+    # link-dense constitutes a broken scrape, and picking a number here to match pathology's
+    # would be a fabricated threshold wearing a measured criterion's clothes. It fires from
+    # the cohort tail, under the same minimum-evidence guard, and the panel says so.
+    {"name": "link_density_rate", "bad": "high", "extraction_failure": True,
+     "abs_floor": None, "evidence_key": "link_dense_articles",
+     "desc": "fraction of the source's articles whose outbound-link density crosses the "
+             "shipped threshold (external links per word) — the link-farm / nav-index "
+             "extraction signature, measured from link counts alone."},
     {"name": "furniture_share", "bad": "high", "extraction_failure": False,
      "desc": "fraction of the source's top-12 keywords that are cross-source furniture (DF-ubiquity)."},
     {"name": "language_mismatch_rate", "bad": "high", "extraction_failure": False,
@@ -189,6 +234,12 @@ def per_source_metrics(
     outliers = sq.flag_outliers(stats, baselines, floor=COHORT_ARTICLE_FLOOR)
     outlier_ids = {o["article_id"] for o in outliers}
     pathology_ids = {o["article_id"] for o in outliers if o.get("pathology_furniture_repetition")}
+    # B6's second extraction-failure signal. Scoped with the scan for the same reason the
+    # source metadata below is: this runs per batch, and reading every link row in the corpus
+    # each time is the same defect one table over. It is a COUNT query on article_links plus a
+    # word-count read -- no content decrypt, which is the property that made this signal worth
+    # promoting from a sampling hint to a criterion.
+    link_dense_ids = sq.link_dense_article_ids(session, source_ids=source_ids)
 
     # source metadata + regions (scoped with the scan -- the catalog is tens of thousands of
     # rows and reading all of them per batch is the same defect one table over)
@@ -204,7 +255,7 @@ def per_source_metrics(
             continue
         d = per.setdefault(sid, {
             "n": 0, "n_segmented": 0, "outliers": 0, "pathology": 0, "short": 0,
-            "lang_counts": {}, "langs_seen": set(),
+            "link_dense": 0, "lang_counts": {}, "langs_seen": set(),
         })
         d["n"] += 1
         d["lang_counts"][s.language] = d["lang_counts"].get(s.language, 0) + 1
@@ -213,6 +264,8 @@ def per_source_metrics(
             d["outliers"] += 1
         if s.article_id in pathology_ids:
             d["pathology"] += 1
+        if s.article_id in link_dense_ids:
+            d["link_dense"] += 1
         if not s.unsegmented:
             d["n_segmented"] += 1
             cut = lang_short_cut.get(s.language)
@@ -242,6 +295,13 @@ def per_source_metrics(
             # in 1,992 from 600 in 1,200, and the cohort-tail test cannot either when the
             # cohort's p90 is 0.0 -- see _MIN_PATHOLOGY_ARTICLES.
             "pathology_articles": d["pathology"],
+            # B6. Over ALL articles rather than the segmented ones: the ratio is
+            # links-per-word, which a segmenter does not change, and excluding unsegmented
+            # articles here would make a zh/ja source's link-farm invisible.
+            "link_density_rate": round(d["link_dense"] / n, 4) if n else 0.0,
+            # The raw count behind it, for the same reason pathology carries one: a rate
+            # cannot tell 1 link-dense article in 1,992 from 600 in 1,200.
+            "link_dense_articles": d["link_dense"],
             "language_mismatch_rate": round(mism / n, 4) if (n and src_base) else 0.0,
             "short_article_rate": round(d["short"] / nseg, 4) if nseg else 0.0,
         }
@@ -434,10 +494,11 @@ def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COH
     """For each auditable source, the LIST of criteria whose value sits in the BAD tail of the
     source's SAME-LANGUAGE cohort — each with value + baseline + n + how it was ``flagged_by``. A
     cohort below ``cohort_floor`` sources gets NO baseline, so the SOFT (style-ambiguous) criteria
-    are not flaggable there (said honestly, ``baseline: null``). The one EXTRACTION-FAILURE criterion
-    (pathology) additionally flags on an ABSOLUTE floor (``PATHOLOGY_ABS_FLOOR``) so a broken scrape
-    stays visible even with no usable cohort / a wholly-degraded cohort (the nearest-rank tail trap).
-    PURE."""
+    are not flaggable there (said honestly, ``baseline: null``). An EXTRACTION-FAILURE criterion that
+    declares an ``abs_floor`` additionally flags on it, so a broken scrape stays visible even with no
+    usable cohort / a wholly-degraded cohort (the nearest-rank tail trap) — today that is
+    ``pathology_rate`` alone, at ``PATHOLOGY_ABS_FLOOR``; ``link_density_rate`` declares none because
+    none has been measured. Each EF criterion is gated on ITS OWN raw article count. PURE."""
     auditable = {sid: m for sid, m in per_source.items() if m["article_count"] >= min_articles}
     # The cohort baselines: derived from THESE sources unless a frozen cut is supplied
     # (S5.1). Each rs carries n; usable only when n >= cohort_floor.
@@ -461,14 +522,24 @@ def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COH
             tail_hit = has_baseline and ((v > rs["p90"]) if bad == "high" else (v < rs["p10"]))
             # An extraction-failure verdict needs enough evidence to BE a signature. On a
             # clean cohort (p90 == 0.0) the tail test degenerates to "> 0", so a single
-            # pathological article would otherwise read as a broken scrape. The absolute
-            # floor below is untouched by this.
-            if tail_hit and crit["extraction_failure"]:
-                if m.get("pathology_articles", 0) < _MIN_PATHOLOGY_ARTICLES:
-                    tail_hit = False
-            # the absolute-floor escape fires ONLY for an extraction-failure criterion (pathology) —
-            # it is what keeps a broken source visible when its cohort can't (see PATHOLOGY_ABS_FLOOR).
-            abs_hit = crit["extraction_failure"] and v >= PATHOLOGY_ABS_FLOOR
+            # pathological article would otherwise read as a broken scrape.
+            #
+            # EACH EF CRITERION COUNTS ITS OWN EVIDENCE (B6, 2026-09-15). Before there was
+            # exactly one, so this guard read `pathology_articles` directly; with a second,
+            # that would have gated `link_density_rate` on the PATHOLOGY count — a source
+            # with 400 link-dense articles and no pathology would have been silently
+            # un-flagged, and a source with 6 pathological articles would have carried a
+            # link-density flag it had no evidence for. A criterion's evidence is its own.
+            evidence_key = crit.get("evidence_key")
+            evidence = m.get(evidence_key, 0) if evidence_key else 0
+            if tail_hit and crit["extraction_failure"] and evidence < _MIN_PATHOLOGY_ARTICLES:
+                tail_hit = False
+            # The absolute-floor escape fires only where a floor has actually been ARGUED for
+            # that criterion -- pathology's 0.5 (kept, and recorded unreachable, per Q1107).
+            # `link_density_rate` declares None: no catastrophe level has been measured for
+            # it, and inventing one to fill the column is the fabricated-threshold defect.
+            abs_floor = crit.get("abs_floor")
+            abs_hit = abs_floor is not None and v >= abs_floor
             if not (tail_hit or abs_hit):
                 continue
             flagged_by = (["cohort_tail"] if tail_hit else []) + (["absolute_floor"] if abs_hit else [])
@@ -478,12 +549,17 @@ def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COH
                 "flagged_by": flagged_by,
                 "baseline": ({"median": rs["median"], "p10": rs["p10"], "p90": rs["p90"],
                               "mad": rs["mad"], "n": rs["n"]} if has_baseline else None),
-                "absolute_floor": PATHOLOGY_ABS_FLOOR if crit["extraction_failure"] else None,
+                "absolute_floor": abs_floor,
                 # The raw evidence behind an extraction-failure flag, so a reader can see
-                # whether a rate rests on 6 articles or 600 without recomputing it.
-                **({"pathology_articles": m.get("pathology_articles"),
+                # whether a rate rests on 6 articles or 600 without recomputing it. Named,
+                # because with two EF criteria "the count" is ambiguous.
+                **({"evidence_key": evidence_key, "evidence_articles": evidence,
                     "min_articles_for_tail": _MIN_PATHOLOGY_ARTICLES}
                    if crit["extraction_failure"] else {}),
+                # Kept under its old name for the one criterion that had it, so a reader or
+                # a stored report from before B6 is not silently reinterpreted.
+                **({"pathology_articles": m.get("pathology_articles")}
+                   if name == "pathology_rate" else {}),
             })
         out[sid] = fails
     return out
@@ -649,12 +725,17 @@ def run_source_audit_selftest() -> dict:
         checks.append({"check": name, "passed": bool(ok), "detail": detail})
 
     def m(sid, *, lang="en", region="gb", n=100, outlier=0.1, path=0.02, mism=0.0, short=0.1,
-          furn=0.1, path_articles=None):
+          furn=0.1, path_articles=None, link=0.0, link_articles=None):
         return {"domain": f"s{sid}.example", "language": lang, "region": region, "article_count": n,
                 "dominant_lang": lang, "outlier_rate": outlier, "pathology_rate": path,
                 # Derived from the rate so the fixture stays self-consistent: the real
                 # per_source_metrics carries both, and the tail guard reads the COUNT.
                 "pathology_articles": round(path * n) if path_articles is None else path_articles,
+                # B6's second extraction-failure criterion, with its OWN count -- the fixture
+                # keeps them independent on purpose, because the defect this guards against is
+                # one criterion being gated on the other's evidence.
+                "link_density_rate": link,
+                "link_dense_articles": round(link * n) if link_articles is None else link_articles,
                 "language_mismatch_rate": mism, "short_article_rate": short, "furniture_share": furn}
 
     # a healthy cohort (>= floor sources) + one clear EXTRACTION-FAILURE (high pathology + high short)
@@ -689,6 +770,36 @@ def run_source_audit_selftest() -> dict:
     check("small_cohort_no_baseline", small_fails.get(8) == [], str(small_fails.get(8)))
     check("small_cohort_pathology_caught_by_absolute_floor",
           [f["criterion"] for f in small_fails.get(9, [])] == ["pathology_rate"])
+
+    # B6 (2026-09-15): THE SECOND EXTRACTION-FAILURE CRITERION, and the separation that makes
+    # it safe. Two sources, each carrying ONE of the two signatures and none of the other:
+    # before the per-criterion evidence key, the link-dense source would have been gated on a
+    # pathology count it does not have (silently un-flagged) and the pathological source would
+    # have carried a link-density flag it has no evidence for.
+    b6 = {i: m(i) for i in range(10)}
+    b6[70] = m(70, link=0.9, link_articles=90, path=0.0, path_articles=0)   # link farm only
+    b6[71] = m(71, path=0.9, path_articles=90, link=0.0, link_articles=0)   # furniture only
+    b6f = flag_criteria(b6, cohort_floor=8, min_articles=20)
+    check("link_density_is_flagged_on_its_own_evidence",
+          any(f["criterion"] == "link_density_rate" for f in b6f.get(70, []))
+          and not any(f["criterion"] == "pathology_rate" for f in b6f.get(70, [])),
+          str([f["criterion"] for f in b6f.get(70, [])]))
+    check("pathology_is_not_credited_with_link_density",
+          any(f["criterion"] == "pathology_rate" for f in b6f.get(71, []))
+          and not any(f["criterion"] == "link_density_rate" for f in b6f.get(71, [])),
+          str([f["criterion"] for f in b6f.get(71, [])]))
+    # ...and the criterion with NO absolute floor never reports one, however high the value.
+    check("link_density_declares_no_absolute_floor",
+          all(f.get("absolute_floor") is None
+              for f in b6f.get(70, []) if f["criterion"] == "link_density_rate"),
+          str(b6f.get(70, [])))
+    # Q1107 = a: 0.5 is KEPT and recorded UNREACHABLE. The selftest carries the record so the
+    # claim travels with the artifact rather than living only in a comment.
+    check("pathology_absolute_floor_recorded_unreachable",
+          PATHOLOGY_ABS_FLOOR_STATUS["value"] == 0.5
+          and PATHOLOGY_ABS_FLOOR_STATUS["reachable_in_the_field"] is False
+          and bool(PATHOLOGY_ABS_FLOOR_STATUS["measured"].strip()),
+          str(PATHOLOGY_ABS_FLOOR_STATUS))
 
     # H1 regression: a DEGRADED cohort where extraction-failure sources are a large fraction — the
     # robust p90 lands on a bad value so the cohort tail can't see them, but the absolute floor keeps

@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "نُقل {n} دون تغيير",
   "{n} domains disagree across instances and were left unchanged": "تختلف النسخ على {n} نطاقًا، وقد تُركت دون تغيير",
   "Judged so far": "ما حُكم عليه حتى الآن",
-  "not yet judged": "لم يُحكم عليها بعد"
+  "not yet judged": "لم يُحكم عليها بعد",
+  "no absolute floor": "بلا عتبة مطلقة",
+  "absolute floor": "عتبة مطلقة",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "معيار قادر على استبعاد مصدر — وهو بصمة فشل في الاستخراج، لا حكم على ما ينشره المصدر. أما البقية فملتبسة أسلوبيًا، فلا تتجاوز أبدًا علامة المراقبة؛ وهذا السقف مقصود وغير قابل للضبط.",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "أُبقي عليه ككاشف لكارثة نادرة. لم يُفعَّل قط في الميدان — فكل مصدر وصفه التدقيق بأنه فاشل وسمته مجموعته المرجعية عند قيم أدنى بكثير من هذا الرقم — ومن ثم فإن المعايير المقيسة هي ما يحسم عمليًا.",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "لا عتبة مطلقة: لم يقس أحد النسبة التي يصبح عندها كِثَف الروابط في مقالات مصدرٍ ما دليلًا على استخراج معطوب، لذا لا ينطلق هذا المعيار إلا من ذيل مجموعته المرجعية. ونسخ رقم المعيار الآخر هنا سيكون عتبة لم يقسها أحد."
 }

@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n} 件をそのまま引き継ぎ",
   "{n} domains disagree across instances and were left unchanged": "{n} 件のドメインでインスタンス間の判断が食い違い、変更せずに残しました",
   "Judged so far": "これまでの判定",
-  "not yet judged": "未判定"
+  "not yet judged": "未判定",
+  "no absolute floor": "絶対しきい値なし",
+  "absolute floor": "絶対しきい値",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "ソースを不適格にしうる基準です。これは抽出失敗のシグネチャであって、そのソースが何を公開しているかへの評価ではありません。ほかの基準は文体的に曖昧なため、決して「監視」フラグを超えません。この上限は意図的なもので、変更できません。",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "まれな破局を検知するものとして残しています。実運用で作動したことは一度もなく、監査が「不良」とした各ソースはいずれも、この数値をはるかに下回る値でコホートによって検知されました。したがって実際に判断しているのは測定された基準です。",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "絶対しきい値はありません。ソースの記事のうちどれだけがリンク過密なら抽出が壊れていると言えるのか、誰も測定していないため、この基準は自身のコホートの裾からのみ発火します。もう一方の基準の数値をここに複製すれば、誰も測っていないしきい値になります。"
 }

@@ -68,7 +68,14 @@ _LOG = logging.getLogger("catalog.qualification")
 # The criteria VERSION stamped on every verdict (Source.qualification_criteria_version +
 # SourceQualificationAttempt.criteria_version). Bump this if the judging criteria change
 # so the history stays honest about which rules judged an old attempt.
-CRITERIA_VERSION = "oo-source-qualification-2"
+CRITERIA_VERSION = "oo-source-qualification-3"
+# -3 (B6, 2026-09-15): the criteria SET changed -- `link_density_rate` joins `pathology_rate`
+# as a second extraction-failure criterion, so a source can now reach `failing` on two
+# independent extraction signatures rather than one signature plus a soft corroborator. That
+# is exactly what this field is for: a verdict reached under -2 was measured against a
+# different set of criteria, and must read as such in the history rather than be silently
+# reinterpreted. Nothing re-judges on a version mismatch -- the field is a LABEL, not a
+# trigger -- so bumping it costs no re-qualification pass.
 # -2 (S5.1, 2026-09-02 crash analysis): the cohort baselines a verdict is measured against
 # are computed ONCE PER RUN and frozen, instead of re-read from the whole corpus for every
 # batch of 20. A batch is therefore judged against a baseline up to one run old, and an

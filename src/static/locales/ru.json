@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n} перенесено без изменений",
   "{n} domains disagree across instances and were left unchanged": "По {n} доменам экземпляры расходятся; они оставлены без изменений",
   "Judged so far": "Оценено на данный момент",
-  "not yet judged": "ещё не оценено"
+  "not yet judged": "ещё не оценено",
+  "no absolute floor": "без абсолютного порога",
+  "absolute floor": "абсолютный порог",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "Критерий, способный дисквалифицировать источник, — это признак сбоя извлечения, а не суждение о том, что источник публикует. Остальные стилистически неоднозначны и потому никогда не выходят за пределы пометки «наблюдение»; этот потолок задан намеренно и не настраивается.",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "Сохранён как детектор редкой катастрофы. В поле он ни разу не срабатывал: каждый источник, признанный аудитом неисправным, был отмечен своей когортой — далеко ниже этого числа, — так что на практике решают измеряемые критерии.",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "Абсолютного порога нет: никто не измерял, при какой доле статей с высокой плотностью ссылок извлечение считается сломанным, поэтому этот критерий срабатывает только по хвосту собственной когорты. Перенести сюда число другого критерия значило бы задать порог, который никто не измерял."
 }

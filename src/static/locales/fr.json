@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n} repris tels quels",
   "{n} domains disagree across instances and were left unchanged": "{n} domaines font l’objet d’un désaccord entre instances et ont été laissés inchangés",
   "Judged so far": "Jugées jusqu’ici",
-  "not yet judged": "pas encore jugées"
+  "not yet judged": "pas encore jugées",
+  "no absolute floor": "aucun seuil absolu",
+  "absolute floor": "seuil absolu",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "Un critère qui peut disqualifier une source — c’est une signature d’échec d’extraction, pas un jugement sur ce que la source publie. Les autres sont ambigus quant au style : ils ne peuvent donc jamais dépasser un signalement de surveillance ; ce plafond est délibéré et n’est pas réglable.",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "Conservé comme détecteur de catastrophe rare. Il ne s’est jamais déclenché sur le terrain — chaque source que l’audit a qualifiée de défaillante avait été signalée par sa cohorte, très en dessous de ce chiffre — de sorte que ce sont les critères mesurés qui décident en pratique.",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "Aucun seuil absolu : personne n’a mesuré à partir de quelle proportion d’articles à forte densité de liens un extracteur est cassé, ce critère ne se déclenche donc que depuis la queue de sa propre cohorte. Recopier ici le chiffre de l’autre critère reviendrait à poser un seuil que personne n’a mesuré."
 }

@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n} unverändert übernommen",
   "{n} domains disagree across instances and were left unchanged": "Bei {n} Domains sind sich die Instanzen uneinig; sie blieben unverändert",
   "Judged so far": "Bisher beurteilt",
-  "not yet judged": "noch nicht beurteilt"
+  "not yet judged": "noch nicht beurteilt",
+  "no absolute floor": "keine absolute Schwelle",
+  "absolute floor": "absolute Schwelle",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "Ein Kriterium, das eine Quelle disqualifizieren kann — es ist eine Extraktionsfehler-Signatur, kein Urteil darüber, was die Quelle veröffentlicht. Die übrigen sind stilistisch mehrdeutig und können daher nie über eine Beobachtungsmarkierung hinausgehen; diese Obergrenze ist gewollt und nicht einstellbar.",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "Als Detektor für den seltenen Katastrophenfall beibehalten. Er hat im Feld nie ausgelöst — jede Quelle, die das Audit als fehlerhaft bezeichnet hat, wurde von ihrer Kohorte markiert, weit unterhalb dieser Zahl — in der Praxis entscheiden also die gemessenen Kriterien.",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "Keine absolute Schwelle: Niemand hat gemessen, ab welchem Anteil linkdichter Artikel ein Scrape als kaputt gilt, also löst dieses Kriterium nur aus dem Rand der eigenen Kohorte aus. Die Zahl des anderen Kriteriums hierher zu kopieren wäre eine Schwelle, die niemand gemessen hat."
 }

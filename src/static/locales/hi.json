@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n} ज्यों के त्यों आगे लाए गए",
   "{n} domains disagree across instances and were left unchanged": "{n} डोमेन पर इंस्टेंस असहमत हैं और उन्हें अपरिवर्तित छोड़ा गया",
   "Judged so far": "अब तक परखे गए",
-  "not yet judged": "अभी तक नहीं परखे गए"
+  "not yet judged": "अभी तक नहीं परखे गए",
+  "no absolute floor": "कोई निरपेक्ष सीमा नहीं",
+  "absolute floor": "निरपेक्ष सीमा",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "ऐसा मानदंड जो किसी स्रोत को अयोग्य ठहरा सकता है — यह निष्कर्षण-विफलता का चिह्न है, इस बारे में निर्णय नहीं कि स्रोत क्या प्रकाशित करता है। बाकी शैली के लिहाज़ से अस्पष्ट हैं, इसलिए वे कभी भी निगरानी-चिह्न से आगे नहीं जा सकते; यह सीमा जानबूझकर रखी गई है और समायोज्य नहीं है।",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "दुर्लभ आपदा का संकेतक मानकर रखा गया है। यह मैदान में कभी सक्रिय नहीं हुआ — ऑडिट ने जिस भी स्रोत को विफल कहा, उसे उसके समूह ने ही चिह्नित किया था, इस संख्या से कहीं नीचे — इसलिए व्यवहार में निर्णय मापे गए मानदंड करते हैं।",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "कोई निरपेक्ष सीमा नहीं: किसी ने नहीं मापा कि किसी स्रोत के कितने अंश लेख लिंक-सघन होने पर निष्कर्षण टूटा माना जाए, इसलिए यह मानदंड केवल अपने ही समूह की पूँछ से सक्रिय होता है। दूसरे मानदंड का आँकड़ा यहाँ नकल करना ऐसी सीमा होगी जिसे किसी ने मापा ही नहीं।"
 }

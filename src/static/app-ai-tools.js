@@ -119,13 +119,32 @@
             : t("off — candidates stay unjudged; nothing is deleted and no verdict changes");
         }
 
+        // B6 (2026-09-15): there are now TWO criteria that can disqualify, each with its
+        // OWN absolute floor -- and one of them has none. So the floor is rendered PER
+        // CRITERION rather than as a single number beside the list, and a criterion with no
+        // floor says why instead of showing a blank where the other shows 0.5.
+        const floorBits = (x) => {
+          if (!x.can_disqualify) return "";
+          const val = (x.absolute_floor === null || x.absolute_floor === undefined)
+            ? t("no absolute floor")
+            : `${t("absolute floor")}: ${x.absolute_floor}`;
+          return ` <span class="muted" title="${esc(t(x.absolute_floor_note || ""))}">· ${esc(val)}</span>`;
+        };
+        const floor = cfg.pathology_floor_status || {};
+        // Q1107 = a: the floor is kept AND said to be unreachable, VISIBLY -- a number an
+        // operator reads as a live threshold when it has never fired is the kind of quiet
+        // overstatement the caveats rule exists for, so it is not behind a hover.
+        const floorLine = (floor.reachable_in_the_field === false)
+          ? `<div class="card-caveat" style="margin-top:8px" title="${esc(t(floor.measured || ""))}">`
+            + esc(t(floor.label || "")) + `</div>`
+          : "";
         crit.innerHTML = `<h3 style="margin:0 0 6px">${t("What the source gate looks at")}</h3>` +
           (cfg.criteria || []).map(x => `<div style="margin:6px 0">
             <span title="${esc(x.desc)}"><b>${esc(x.name)}</b></span>
             ${x.can_disqualify
-              ? `<span class="warn" title="${esc(t("The ONLY criterion that can disqualify a source. The others are style-ambiguous, so they can never exceed a watch flag — that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
-              : `<span class="muted">${t("watch only")}</span>`}
-          </div>`).join("");
+              ? `<span class="warn" title="${esc(t("A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
+              : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
+          </div>`).join("") + floorLine;
 
         host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">
           <h3 style="margin:0">${esc(g.question)}</h3>

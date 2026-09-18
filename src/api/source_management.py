@@ -1686,6 +1686,7 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         CRITERIA,
         MIN_SOURCE_ARTICLES,
         PATHOLOGY_ABS_FLOOR,
+        PATHOLOGY_ABS_FLOOR_STATUS as FLOOR_STATUS,
         SOURCE_COHORT_FLOOR,
         TAIL_P,
         _MIN_PATHOLOGY_ARTICLES,
@@ -1779,17 +1780,43 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             },
         ],
         # Straight from source_audit.CRITERIA so the panel can never describe a criterion
-        # the engine does not apply. `extraction_failure` marks the ONLY one that can
-        # disqualify -- a reader cannot tell that from the list otherwise.
+        # the engine does not apply. `extraction_failure` marks the ones that can
+        # disqualify -- a reader cannot tell that from the list otherwise. Since B6 there
+        # are TWO, so each carries its own floor rather than the panel implying one shared
+        # number.
         "criteria": [
             {
                 "name": c["name"],
                 "bad_direction": c["bad"],
                 "can_disqualify": bool(c["extraction_failure"]),
                 "desc": c["desc"],
+                # Per-criterion, and NULL is a real answer: `link_density_rate` has no
+                # absolute floor because none has been measured for it.
+                "absolute_floor": c.get("abs_floor"),
+                "absolute_floor_note": (
+                    None if not c["extraction_failure"] else (
+                        FLOOR_STATUS["measured"] + " " + FLOOR_STATUS["kept_because"]
+                        if c.get("abs_floor") is not None else
+                        "No absolute floor: nobody has measured what fraction of a source's "
+                        "articles being link-dense amounts to a broken scrape, so this "
+                        "criterion fires only from its own cohort's tail. Copying the other "
+                        "criterion's number here would be a threshold nobody measured."
+                    )
+                ),
             }
             for c in CRITERIA
         ],
+        # Q1107 = a: the floor is KEPT and RECORDED AS UNREACHABLE, where an operator
+        # looking at the number can see that it has never fired rather than reading it as a
+        # live threshold.
+        "pathology_floor_status": {
+            **FLOOR_STATUS,
+            "label": (
+                "Kept as a rare-catastrophe detector. It has never fired in the field — "
+                "every source the audit has called failing was flagged by its cohort, far "
+                "below this number — so the measured criteria are what decide in practice."
+            ),
+        },
         "scope": {
             "scrape_app_provided_only": bool(settings.scrape_app_provided_only),
             "note": (

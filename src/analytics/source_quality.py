@@ -574,6 +574,58 @@ def select_source_fingerprint(
     return chosen
 
 
+def link_dense_article_ids(
+    session: Session, *, source_ids: set[int] | None = None,
+) -> set[int]:
+    """Articles whose OUTBOUND-LINK DENSITY crosses ``_HIGH_LINK_DENSITY`` — the raw signal
+    behind the source audit's second extraction-failure criterion (B6, 2026-09-15).
+
+    IT IS THE SAME THRESHOLD ``_pre_label`` AND ``select_cheap_signals`` USE, read from the
+    same constant rather than restated: three surfaces disagreeing about what "link-dense"
+    means is how a criterion comes to flag sources its own sampler never showed anybody.
+
+    WHY THIS SIGNAL AND NOT ANOTHER. The 2026-08-03 field measurement put 415 of 675
+    pre-label hits on ``high_link_density`` — most of the discriminating power in the whole
+    export — and it costs no content decrypt and no keyword join: ``external_link_count`` and
+    ``word_count`` alone. B6 promotes it from a sampling hint to a criterion because it is
+    the one cheap signal that has already been shown to find broken extraction.
+
+    QUARANTINED ARTICLES ARE EXCLUDED, exactly as ``collect_article_stats`` excludes them: an
+    article the article gate already condemned must not count toward its SOURCE's verdict.
+    An article with no word count, or a word count of zero, yields no ratio and is skipped —
+    never counted as dense on a division it cannot do.
+    """
+    counts: dict[int, int] = {}
+    link_q = (
+        session.query(ArticleLink.article_id, func.count())
+        .filter(ArticleLink.link_type == "external")
+        .group_by(ArticleLink.article_id)
+    )
+    for aid, cnt in link_q:
+        counts[int(aid)] = int(cnt)
+    if not counts:
+        return set()
+
+    art_q = session.query(Article.id, Article.word_count, Article.source_id).filter(
+        Article.quarantined.isnot(True)
+    )
+    if source_ids is not None:
+        art_q = art_q.filter(Article.source_id.in_(sorted(source_ids)))
+    dense: set[int] = set()
+    for aid, wc, sid in art_q:
+        if sid is None:
+            continue
+        links = counts.get(int(aid), 0)
+        if not links:
+            continue
+        wc_i = int(wc) if wc is not None else None
+        if wc_i is None or wc_i <= 0:
+            continue
+        if (links / wc_i) >= _HIGH_LINK_DENSITY:
+            dense.add(int(aid))
+    return dense
+
+
 def select_cheap_signals(
     session: Session, audited_ids: set[int], *, cap_per_source: int = CHEAP_SIGNAL_CAP_PER_SOURCE,
 ) -> set[int]:

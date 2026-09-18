@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n}টি অপরিবর্তিত রাখা হয়েছে",
   "{n} domains disagree across instances and were left unchanged": "{n}টি ডোমেন নিয়ে ইনস্ট্যান্সগুলির মধ্যে দ্বিমত আছে, সেগুলি অপরিবর্তিত রাখা হয়েছে",
   "Judged so far": "এ পর্যন্ত বিচার করা",
-  "not yet judged": "এখনও বিচার হয়নি"
+  "not yet judged": "এখনও বিচার হয়নি",
+  "no absolute floor": "কোনো পরম সীমা নেই",
+  "absolute floor": "পরম সীমা",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "এমন একটি মানদণ্ড যা কোনো উৎসকে অযোগ্য করতে পারে — এটি নিষ্কাশন-ব্যর্থতার স্বাক্ষর, উৎসটি কী প্রকাশ করে সে বিষয়ে রায় নয়। বাকিগুলি শৈলীগতভাবে দ্ব্যর্থক, তাই সেগুলি কখনও নজরদারি-চিহ্ন ছাড়িয়ে যেতে পারে না; এই সীমা ইচ্ছাকৃত এবং সমন্বয়যোগ্য নয়।",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "বিরল বিপর্যয়ের শনাক্তকারী হিসেবে রাখা হয়েছে। বাস্তব ক্ষেত্রে এটি কখনও সক্রিয় হয়নি — নিরীক্ষা যে উৎসকেই ব্যর্থ বলেছে, তাকে তার নিজের গোষ্ঠীই চিহ্নিত করেছে, এই সংখ্যার অনেক নিচে — তাই বাস্তবে যা সিদ্ধান্ত নেয় তা হল মাপা মানদণ্ডগুলি।",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "কোনো পরম সীমা নেই: কোনো উৎসের কত অংশ নিবন্ধ লিংক-ঘন হলে নিষ্কাশন ভাঙা বলে গণ্য হবে, তা কেউ মাপেনি, তাই এই মানদণ্ড কেবল নিজের গোষ্ঠীর প্রান্ত থেকেই সক্রিয় হয়। অন্য মানদণ্ডের সংখ্যাটি এখানে অনুলিপি করলে তা হবে এমন এক সীমা যা কেউ মাপেনি।"
 }

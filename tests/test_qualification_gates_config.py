@@ -319,11 +319,27 @@ def test_every_criterion_reaches_the_config_payload(tmp_path) -> None:
     names = {c["name"] for c in payload["criteria"]}
     assert names == {c["name"] for c in CRITERIA}
 
-    disqualifiers = [c for c in payload["criteria"] if c["can_disqualify"]]
-    assert len(disqualifiers) == 1 and disqualifiers[0]["name"] == "pathology_rate", (
-        "exactly one criterion can disqualify, and the panel must mark WHICH -- a reader "
-        "cannot tell from the list otherwise"
+    # AMENDED by B6 (2026-09-15): TWO criteria can disqualify, not one. The panel must mark
+    # WHICH -- a reader cannot tell from the list otherwise -- and each must carry its OWN
+    # absolute floor, because they do not share one.
+    disqualifiers = {c["name"] for c in payload["criteria"] if c["can_disqualify"]}
+    assert disqualifiers == {"pathology_rate", "link_density_rate"}, (
+        f"the panel's disqualifying set drifted from the engine's: {disqualifiers}"
     )
+    by_name = {c["name"]: c for c in payload["criteria"]}
+    assert by_name["pathology_rate"]["absolute_floor"] == 0.5
+    # NULL is a real answer here, and the panel says why rather than leaving a blank.
+    assert by_name["link_density_rate"]["absolute_floor"] is None
+    assert "measured" in by_name["link_density_rate"]["absolute_floor_note"].lower()
+    # A soft criterion must never acquire a floor by accident.
+    assert all(
+        c["absolute_floor"] is None for c in payload["criteria"] if not c["can_disqualify"]
+    )
+
+    # Q1107 = a: the floor is kept AND recorded unreachable, on the panel itself.
+    floor = payload["pathology_floor_status"]
+    assert floor["value"] == 0.5 and floor["reachable_in_the_field"] is False
+    assert floor["measured"].strip() and floor["label"].strip()
     assert {g["id"] for g in payload["gates"]} == {"article", "source"}
     for gate in payload["gates"]:
         assert gate["tunables"], f"{gate['id']} gate rendered with no tunables"

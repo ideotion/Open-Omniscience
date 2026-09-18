@@ -3773,5 +3773,10 @@
   "{n} carried through untouched": "{n} 条原样保留",
   "{n} domains disagree across instances and were left unchanged": "有 {n} 个域名在各实例间存在分歧，已保持不变",
   "Judged so far": "迄今已判定",
-  "not yet judged": "尚未判定"
+  "not yet judged": "尚未判定",
+  "no absolute floor": "无绝对阈值",
+  "absolute floor": "绝对阈值",
+  "A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable.": "一条可以使来源不合格的判据——它是抽取失败的特征，而不是对该来源所发布内容的评价。其余判据在文体上存在歧义，因此永远不会超过“观察”标记；这一上限是刻意设定的，且不可调整。",
+  "Kept as a rare-catastrophe detector. It has never fired in the field — every source the audit has called failing was flagged by its cohort, far below this number — so the measured criteria are what decide in practice.": "作为罕见灾难探测器保留。它在实际运行中从未触发过——审计判定为失败的每一个来源，都是由其同类群标记的，远低于这个数值——因此实际做决定的是那些经过测量的判据。",
+  "No absolute floor: nobody has measured what fraction of a source's articles being link-dense amounts to a broken scrape, so this criterion fires only from its own cohort's tail. Copying the other criterion's number here would be a threshold nobody measured.": "无绝对阈值：没有人测量过一个来源的文章中链接密集的比例达到多少才算抽取损坏，因此该判据只从其自身同类群的尾部触发。把另一条判据的数字照搬到这里，等于设定一个无人测量过的阈值。"
 }

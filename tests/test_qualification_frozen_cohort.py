@@ -410,9 +410,17 @@ def test_the_staleness_rides_the_result_and_the_criteria_version_is_bumped():
     assert out["baseline_articles"] > 0
     assert out["baseline_sources"] > 0
     assert out["baseline_frozen_by_caller"] is False
-    assert CRITERIA_VERSION == "oo-source-qualification-2", (
-        "the frozen cohort changes what a verdict was measured against, so an attempt row "
-        "must not read as though it were judged the old way"
+    # THE VERSION IS PINNED TO A LITERAL ON PURPOSE, and every bump is a deliberate edit
+    # here. What a verdict was measured against must be visible in the attempt history
+    # rather than silently reinterpreted, so a change to the cohort machinery OR to the
+    # criteria set has to move this string and to say why beside the constant.
+    #   -2  the frozen per-run cohort (S5.1, 2026-09-02)
+    #   -3  `link_density_rate` joins `pathology_rate` as a second extraction-failure
+    #       criterion (B6, 2026-09-15) -- a source can now reach `failing` on two
+    #       independent extraction signatures rather than one plus a soft corroborator
+    assert CRITERIA_VERSION == "oo-source-qualification-3", (
+        "the criteria set or the cohort machinery changed, so an attempt row must not read "
+        "as though it were judged the old way -- bump the version and record why"
     )
 
 
