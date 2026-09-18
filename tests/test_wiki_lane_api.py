@@ -249,3 +249,61 @@ def test_the_node_driver_runs_the_real_map_layer():
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     assert proc.returncode == 0, proc.stderr or proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# An exception's own words must not travel in a response body.
+#
+# CodeQL flagged `POST /api/wiki/pages`'s pin result for exactly this, and it was
+# right: `LaneAbsentError` names the database FILE, and a generic failure carries
+# whatever the driver put in its message. Loopback-only is not a reason to hand
+# internals to a surface -- the response carries the TOKEN the UI translates plus a
+# fixed explanation, and the exception goes to the log.
+# --------------------------------------------------------------------------- #
+def test_a_pin_that_fails_returns_a_TOKEN_and_never_the_exceptions_own_words(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from src.api import wiki as wiki_api
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+
+    secret = "/a/path/that/should/never/reach/a/response.db"
+
+    def explode(*_a, **_kw):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr("src.versioned.store.lane_session", explode)
+    with caplog.at_level(logging.WARNING, logger="api.wiki"):
+        out = wiki_api._pin_to_hot("en", "Rome", 101)
+
+    assert out["ok"] is False
+    assert out["reason"] == "pin_failed", "a token the UI can translate"
+    blob = " ".join(str(v) for v in out.values())
+    assert secret not in blob, "the exception's message reached the response body"
+    assert "RuntimeError" not in blob, "so did its type"
+    assert any(secret in r.getMessage() or secret in str(r.exc_info) for r in caplog.records), (
+        "and it must still be in the LOG -- an operator debugging needs it"
+    )
+
+
+def test_an_ABSENT_lane_says_so_without_naming_the_database_file(tmp_path, monkeypatch):
+    from src.api import wiki as wiki_api
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+
+    from src.versioned.store import LaneAbsentError
+
+    def absent(*_a, **_kw):
+        raise LaneAbsentError("the wiki lane has no database file at wiki.db")
+
+    monkeypatch.setattr("src.versioned.store.lane_session", absent)
+    out = wiki_api._pin_to_hot("en", "Rome", 101)
+    assert out["reason"] == "lane_absent"
+    assert "wiki.db" not in " ".join(str(v) for v in out.values())
+    assert "has not been started" in out["detail"], "and still says what happened"

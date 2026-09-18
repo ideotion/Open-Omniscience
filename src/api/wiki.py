@@ -216,11 +216,28 @@ def _pin_to_hot(wiki: str, title: str, page_id: int | None) -> dict:
                 admitted_reason="pinned",
             )
         return {"ok": True, "external_id": external_id}
-    except LaneAbsentError as exc:
-        return {"ok": False, "reason": "lane_absent", "detail": str(exc)}
-    except Exception as exc:  # noqa: BLE001 - a watched page must still be added
+    except LaneAbsentError:
+        # THE EXCEPTION'S OWN WORDS DO NOT TRAVEL IN THE RESPONSE (CodeQL, and it is
+        # right). ``LaneAbsentError`` names the database FILE; a generic failure carries
+        # whatever the driver put in its message -- a path, a SQL fragment, an internal.
+        # This app is loopback-only, so the reader is the operator themselves, and that
+        # is still not a reason to hand internals to a surface: the response carries the
+        # TOKEN the UI translates (the shape every other field in this slice already
+        # uses) plus a fixed explanation, and the exception goes to the log, where an
+        # operator debugging can find it and a page rendering it cannot.
+        _LOG.info("the wiki lane has no database file yet; %s was not pinned", external_id)
+        return {
+            "ok": False,
+            "reason": "lane_absent",
+            "detail": "the Wikipedia lane has not been started on this machine yet",
+        }
+    except Exception:  # noqa: BLE001 - a watched page must still be added
         _LOG.warning("could not pin %s to the HOT tier", external_id, exc_info=True)
-        return {"ok": False, "reason": "pin_failed", "detail": f"{type(exc).__name__}: {exc}"}
+        return {
+            "ok": False,
+            "reason": "pin_failed",
+            "detail": "the page was added to your watch list but could not be pinned; see the log",
+        }
 
 
 @router.delete("/pages/{page_id}")
