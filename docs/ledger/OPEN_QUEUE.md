@@ -14519,3 +14519,51 @@ sweep wants its own slice, a `fmtNum`-or-nothing guard in `test_repo_invariants.
 one that pins the chart toolkit, and a decision the code cannot make for itself — whether a
 DATE rendered by `toLocaleDateString` is in scope too, since that one arguably SHOULD follow
 the reader's locale where a number should follow the app's SI convention.
+
+---
+
+**DELIBERATE OMISSION, MEASURED 2026-09-18 (S04-14 session 2): 8 UI strings are built by JS
+STRING CONCATENATION, so no key can reach them, and the widened chrome gate deliberately
+does NOT report them.** The chrome audit now scans nineteen more element tags inside the
+`app-*.js` template literals (it previously read only `<th>` and `<button>`, which is why
+all three gates could report 0 while Home's empty state was English in twelve locales).
+Widening it surfaced 35 strings, all keyed ×12 in that PR. The scan ALSO matched ten
+captures carrying a concatenation signature, and those are a different problem: a literal
+like `'<p>No ' + word + " stored yet</p>'` is three text nodes at runtime, so the i18n DOM
+walker — which matches a WHOLE text node against its key — can never match any key added
+for it. Reporting them in a gate whose only available fix cannot work is how a gate starts
+crying wolf, so `_JS_CONCAT_ARTIFACT` filters them out and they are recorded here instead.
+
+**Two of the ten were fixed in that PR** because they were merely line-WRAPPED constants
+rather than genuinely dynamic — both `r-caveat` strings in `reader.js`, and a caveat that
+cannot be translated is the informed-consent non-negotiable failing. Joining each into one
+literal made it keyable, and both now ship ×12.
+
+**The remaining 8 need MARKUP SURGERY, not a key**, and the shape of the fix differs per
+site, which is why they are a slice rather than a sweep: six in `reader.js` interpolate a
+runtime value (`esc(e.message)`, `word`, `reason`, `an.prompt_version`) and want a `tf()`
+frame with a named slot — the pattern `_failMsg` already uses; two in `guis/gallery.js` are
+long prose split across `+` joins. **What a session picking this up must decide first,
+because the code cannot:** `reader.js` binds no `t()` at all and relies entirely on the DOM
+walker, so adding `tf()` there means giving that file an i18n binding it has never had —
+a structural change to the reader, not a string fix, and worth being deliberate about.
+
+**AND A THIRD POCKET, MEASURED THE SAME DAY AND DELIBERATELY NOT SWEPT: 22 chrome strings on
+the SERVER-RENDERED reader page** (`src/api/main.py`'s article-reader template plus the panes
+`reader.js` fills), of which 4 are composed around a runtime number (`1 mention`, `+ 9 more
+keywords not shown.`, `6 article(s) collected from this source`, and the honesty line `Counts
+only, never a score — scoped to the top {n} matched article(s) by relevance.`) and so need a
+`tf()` frame rather than a key. Measured by walking the rendered page in `ar` and diffing its
+visible Latin-only text nodes against `en.json` — NOT by reading the scanner, which is the whole
+point: `audit_chrome()` reaches this surface only through `_reader_template_html()`, a
+**best-effort textual approximation** of a page assembled by string concatenation in Python, so
+what it misses there it misses silently. Several of the 22 sit inside `<button>`/`<section>` tags
+that the approximation does not reconstruct, which is why they were never reported.
+
+Not swept here because this slice's PR already carries 120 strings ×12 and two repaint fixes, and
+because the honest fix for the reader template is the same open question recorded just above —
+whether `reader.js` and the Python template gain a real i18n binding, or keep relying on the DOM
+walker. That is one decision covering both pockets and it wants to be made once, deliberately,
+rather than twice by whoever touches each file next.
+
+

@@ -944,6 +944,9 @@
 
     function renderBriefing(data) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
       _briefCards = {};
       renderCorpusTier(data.corpus_tier);
       // Same key shape as the guard that reads it, or the two describe different
@@ -962,16 +965,34 @@
       const banner = refreshing ? briefProgressHtml(data, t) : "";
       if (!data.buckets || !data.buckets.length) {
         if (refreshing) { feed.innerHTML = banner; return; }
+        // ONE frame, not nine fragments. This paragraph was nine text nodes, because
+        // seven <b> Lead-type names cut it into pieces, and the i18n walker keys whole
+        // text nodes -- so the connective prose ("As the corpus grows you'll see:", "on
+        // tracked Wikipedia pages", "from offline discovery") could not be keyed at all
+        // while the bold names could. Keying only what was keyable would have produced
+        // an English sentence with translated words wedged into it: the mixed-language-
+        // glance defect the ledger already records against this very tab. As a tf()
+        // frame the whole sentence is one key, so its WORD ORDER belongs to the
+        // translator -- which is the point, since the bold names do not sit in the same
+        // place in every language.
+        //
+        // Each name is a LITERAL t("...") at its slot rather than a call through a
+        // helper: the scanner reads source, so routing these through `_b(s) => t(s)`
+        // would hide all seven from both gates again -- the greppability rule _failMsg
+        // states in app-core.js.
+        const b = (s) => `<b>${esc(s)}</b>`;
         feed.innerHTML = `<div class="card">
-          <h4>No Leads yet — that's expected on a young corpus</h4>
-          <p class="sum">Leads are computed from YOUR collected material; an empty feed means the
-          signals haven't accumulated, never that the engine is gone. As the corpus grows you'll see:
-          <b>Rising now</b> (terms accelerating vs their own baseline), <b>Overtold/Undertold</b>,
-          <b>framing splits</b>, <b>promises due</b> (a mentioned future date arrives),
-          <b>edit-war bursts</b> on tracked Wikipedia pages, <b>regions gone quiet</b>,
-          and <b>source candidates</b> from offline discovery.</p>
-          <p class="muted" style="margin-top:6px">Collection and Leads update automatically in the
-          background while you're online — there's nothing to start by hand.</p></div>`;
+          <h4>${esc(t("No Leads yet — that's expected on a young corpus"))}</h4>
+          <p class="sum">${tf("Leads are computed from YOUR collected material; an empty feed means the signals haven't accumulated, never that the engine is gone. As the corpus grows you'll see: {rising} (terms accelerating vs their own baseline), {overtold}, {framing}, {promises} (a mentioned future date arrives), {editwar} on tracked Wikipedia pages, {quiet}, and {candidates} from offline discovery.", {
+            rising: b(t("Rising now")),
+            overtold: b(t("Overtold/Undertold")),
+            framing: b(t("framing splits")),
+            promises: b(t("promises due")),
+            editwar: b(t("edit-war bursts")),
+            quiet: b(t("regions gone quiet")),
+            candidates: b(t("source candidates")),
+          })}</p>
+          <p class="muted" style="margin-top:6px">${esc(t("Collection and Leads update automatically in the background while you're online — there's nothing to start by hand."))}</p></div>`;
         return;
       }
       // Family-type colors: see famHue -- keyed on the family's STABLE name, so a

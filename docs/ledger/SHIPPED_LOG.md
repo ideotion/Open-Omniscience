@@ -9116,3 +9116,64 @@ C targets, paid on an accidental expand. The panel now has a **Check now** butto
 already-keyed label, so it cost no new string in any of the twelve locales, and the panel's own
 guard was re-anchored to pin both halves — the control exists AND no loader entry does — so a
 mutation putting the loader back reddens both tests by name rather than letting them take turns.
+
+---
+
+### 2026-09-18 — S04-14 session 2: the chrome gate widened past `<th>`/`<button>`, and two surfaces that never repainted on a language switch
+
+**How this started: all three i18n gates read 0, and the app was English in Arabic.** The
+2026-09-18 session closed `--max-untranslatable`, `--max-unkeyed-t-calls` and a new
+`--max-unkeyed-tf-frames` at zero, each pinned by a test asserting `ci.yml`'s number equals the
+real measured count. Opening the app in `ar` showed Home's empty state — the surface the
+never-blank-and-silent rule exists for — entirely in English, with four `r-caveat` lines in the
+reader beside it.
+
+**The cause.** `index.html` gets a real `HTMLParser` pass. The `app-*.js` modules, where most of
+this app's markup actually lives, were scanned by a regex list carrying exactly two HTML shapes:
+`<th>` and `<button>`. Prose in any other tag was never extracted, contributed zero to the count
+by construction, and so could accumulate indefinitely behind a green gate. `_JS_SHAPES` now carries
+nineteen more element tags, at a 300-character cap rather than 80 because a caveat is long by
+nature and the three longest findings (97, 104, 118 chars) were exactly the honesty text the
+non-negotiables require to ship ×12.
+
+**Measured both directions: 0 → 35 on widening, 35 → 0 on keying.** The gate's NUMBER did not
+move; what it MEASURES did. Two more strings joined them — one `tf()` frame created by the Home
+markup surgery below, and one reader caveat — for 37 keyed ×12 by eleven per-locale translator
+agents working against a written brief and a glossary mined from each locale's own existing pairs.
+
+**The Home empty state needed surgery, not keys.** Seven `<b>` Lead-type names cut that paragraph
+into nine text nodes, so the connective prose could not be keyed at all while the bold names could
+— and keying only what was keyable would have produced an English sentence with translated words
+wedged into it, the mixed-language-glance defect already recorded against this very tab. It is now
+ONE `tf()` frame with seven named slots, so word order belongs to the translator, and each name is
+a literal `t("...")` at its slot rather than a call through a helper, because routing them through
+`_b(s) => t(s)` would have hidden all seven from both gates again.
+
+**Three scanner-honesty fixes came with it.** HTML entities are decoded before comparison (the DOM
+walker matches `nodeValue`, so asking for the key `your data &amp; keys` asks for one that can
+never match); captures carrying a concatenation signature are filtered out and recorded in
+`OPEN_QUEUE.md` rather than reported, because a gate whose only available fix cannot work is one
+someone switches off; and all three scanners now share `_strip_js_comments`, after a call-shaped
+literal in a COMMENT produced the same false positive in two consecutive sessions — the first
+reworded its comment, which leaves the trap armed for the next person.
+
+**THE EMPIRICAL FACT WORTH KEEPING, from the eleven translators.** The brief told them to keep `&`
+as it appears. Three independently refused and said why, so the convention was measured across all
+57 keys containing `&` in every locale: a literal `&` survives in **1 of 57** for `ar`, `bn`, `hi`
+and `zh`, 2 for `ja`, 3 for `es`/`pt`/`ru`, 12 for `fr` — but **40 of 57 for `de` and 44 for `id`**.
+There is no app-wide ampersand rule; there are eleven house styles, and a blanket instruction was
+wrong for eight of them. The same shape applies to "never translate Wikipedia": `zh`, `ru` and `pt`
+localise it in every existing key, so the rule meant *do not paraphrase the brand*, not *keep Latin
+script against the app's own universal spelling*. Both were corrected on the measurement.
+
+**The second half: two surfaces frozen in the boot locale.** A composed text node cannot be matched
+by the DOM walker, so it repaints only if registered in `app-boot.js`'s one `oo:langchange`
+listener. A differential probe — render every tab twice, once by booting `en` and switching to `ar`
+with the real switcher, once by booting straight into `ar`, treating the boot render as correct by
+construction — named exactly two across thirteen tabs. Home's "By channel" total line kept reading
+"24 articles across 1 channels" in English; and the analysis window's near-duplicate `card-caveat`
+kept its English text although **every locale already carried a translation for it** — nothing was
+missing anywhere for a count to find. `loadHomeChannels` FETCHES, so registering it as-is would
+have made a language switch ask the backend a question behind the reader; it was split into a
+caching fetch half and a pure render half, and only the render half is registered. The probe
+reports 0 now, in `ar`, `zh` and `hi`.

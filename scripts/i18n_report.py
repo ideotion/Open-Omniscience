@@ -31,6 +31,7 @@ import argparse
 import json
 import re
 import sys
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -251,14 +252,75 @@ _JS_SHAPES = (
     re.compile(r"\.textContent\s*=\s*`([^`{$]{3,120})`"),
     re.compile(r"\btoast\(\s*`([^`{$]{3,140})`"),
     re.compile(r"\bt(?:9m|9)?\(\s*`((?:[^`\\{$]|\\.){3,200})`"),
+    # THE OTHER ELEMENTS (S04-14 session 2). The two HTML shapes above are `<th>`
+    # and `<button>` only, so prose a module builds inside a template literal using
+    # ANY other tag was never extracted -- while index.html, which gets a real
+    # HTMLParser pass, had no such hole. That asymmetry is the whole defect: the
+    # gate read 0 untranslatable while Home's empty state (the surface the
+    # never-blank-and-silent rule exists for) and four `r-caveat` lines in the
+    # reader were English in all twelve locales.
+    #
+    # Measured before/after, because a count is a fact about the tree that carries
+    # it: adding these shapes took --max-untranslatable from 0 to 35.
+    #
+    # The cap is 300 rather than 80 on purpose -- a caveat is long by nature, and
+    # the three longest findings here (97, 104 and 118 characters) are exactly the
+    # honesty text the non-negotiables require to ship x12, so an 80-char cap would
+    # have kept missing the strings that matter most.
+    *(
+        re.compile(rf"<{_tag}[^>]*>([A-Za-zÀ-ɏ][^<{{`$]{{2,300}}?)</{_tag}>", re.S)
+        for _tag in (
+            "h1", "h2", "h3", "h4", "h5", "h6", "p", "td", "label", "option",
+            "summary", "legend", "figcaption", "caption", "strong", "b", "em",
+            "small", "li",
+        )
+    ),
 )
+
+# A capture carrying a JS concatenation signature is an artifact of reading SOURCE
+# rather than a text node the browser will ever show: `'<p>No ' + word + " stored
+# yet</p>'` is three nodes at runtime, not one string. Such a fragment needs markup
+# surgery into a tf() frame, which is a different job from keying a literal -- and
+# reporting it HERE, where the only available fix is to add a key that can never
+# match, is how a gate starts crying wolf. Filtered out, and the population it
+# covers is recorded in OPEN_QUEUE.md rather than silently dropped.
+_JS_CONCAT_ARTIFACT = re.compile(r"""["']\s*\+|\+\s*["']|esc\(|\.join\(|\.map\(|\.slice\(""")
+
+
+def _strip_js_comments(text: str) -> str:
+    """Blank out JS comments before any shape is matched.
+
+    A COMMENT IS NOT CHROME, and pasting a call-shaped example into one is a thing
+    people do constantly while explaining the very code these gates watch. The
+    2026-09-18 session recorded hitting this and reworded its own comment to get
+    green; the session after it wrote ``t("...")`` in a comment and hit the identical
+    false positive the same afternoon. Rewording is not a fix -- the next person
+    writing a comment about t() gets to discover it again -- so the scanners stop
+    reading comments instead.
+
+    Line comments are stripped only when ``//`` OPENS the line, which is what keeps
+    this from eating the ``//`` in a ``https://`` URL inside a real string. Block
+    comments are stripped wholesale; a string literal containing ``/*`` would be
+    mangled, which no file in this tree does and which would cost a missed string
+    rather than a false one -- the safe direction for a gate to err.
+    """
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    return re.sub(r"(?m)^\s*//.*$", " ", text)
 
 
 def _js_chrome(text: str) -> set[str]:
     out: set[str] = set()
+    text = _strip_js_comments(text)
     for rx in _JS_SHAPES:
         for m in rx.finditer(text):
             k = re.sub(r"\s+", " ", m.group(1)).strip()
+            if _JS_CONCAT_ARTIFACT.search(k):
+                continue
+            # The DOM walker matches against nodeValue, which is DECODED, so a
+            # source that writes `&amp;` needs the key `&`. Asking for the raw
+            # source form would be asking for a key that can never match -- the
+            # same failure the _js_unescape scar records for JS escapes.
+            k = unescape(k)
             if len(k) < 3 or "${" in k:
                 continue
             if re.fullmatch(r"[\W\d_…→↗·—-]+", k):
@@ -363,6 +425,7 @@ def unkeyed_tf_frames() -> dict:
     sites = 0
     unkeyed: dict[str, list[str]] = {}
     for name, text in sources.items():
+        text = _strip_js_comments(text)
         names = {"OOI18N.tf"} | set(_TF_BINDING.findall(text))
         for alias in names:
             esc_alias = re.escape(alias)
@@ -393,6 +456,7 @@ def unkeyed_t_calls() -> dict:
     # neither _ChromeExtractor nor the .js-file glob above could ever reach it.
     sources.update(_aux_inline_js())
     for text in sources.values():
+        text = _strip_js_comments(text)
         for rx in _T_CALL:
             for m in rx.finditer(text):
                 k = re.sub(r"\s+", " ", m.group(1)).strip()

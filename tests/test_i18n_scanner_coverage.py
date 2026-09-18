@@ -473,3 +473,122 @@ def test_every_tf_frame_slot_is_actually_supplied_at_its_call_site():
                     bad.append(f"{name}:{line} frame needs {sorted(missing)}, got {arg.strip()[:80]!r}")
     assert checked > 100, f"only {checked} tf() frames inspected -- the scan went blind"
     assert not bad, "tf() frames whose slots are never supplied:\n  " + "\n  ".join(bad)
+
+
+# --------------------------------------------------------------------------- #
+# (6) THE OTHER ELEMENTS -- the fifth blind spot, found 2026-09-18 (S04-14
+# session 2) by walking the app in Arabic rather than by reading the scanner.
+#
+# _JS_SHAPES carried exactly two HTML shapes, `<th>` and `<button>`. index.html
+# is parsed by a real HTMLParser and so had no such hole, but every app-*.js
+# module builds its markup as template literals, and those were scanned by the
+# regex list alone. Prose inside ANY other tag was therefore never extracted --
+# so all three gates read 0 untranslatable while Home's empty state (the surface
+# the never-blank-and-silent rule exists for) and four `r-caveat` lines in the
+# reader rendered English in all twelve locales.
+#
+# Measured before/after: adding the shapes took --max-untranslatable 0 -> 35,
+# and keying those 35 x12 took it back to 0. The gate's NUMBER did not move; what
+# it MEASURES did, which is the only reason the 0 now means something it did not.
+# --------------------------------------------------------------------------- #
+
+_PROSE_SAMPLE = """
+      feed.innerHTML = `<div class="card">
+        <h4>No Leads yet on this corpus</h4>
+        <p class="sum">Leads are computed from your own collected material.</p>
+        <td class="muted">No feeds configured.</td>
+        <strong>your data &amp; keys</strong></div>`;
+"""
+
+
+def test_prose_element_shapes_capture_html_built_in_a_template_literal():
+    found = _module()._js_chrome(_PROSE_SAMPLE)
+    assert "No Leads yet on this corpus" in found, "<h4> prose is not captured"
+    assert "Leads are computed from your own collected material." in found, "<p> prose is not captured"
+    assert "No feeds configured." in found, "<td> prose is not captured"
+
+
+def test_prose_shapes_did_not_exist_before_this_fix():
+    """The regression anchor: with only the ORIGINAL two HTML shapes, none of the
+    sample's prose matches -- which is exactly how the gate could report zero."""
+    original_html_shapes = (
+        re.compile(r"<th[^>]*>([A-Za-z][^<{`$]{2,80})</th>"),
+        re.compile(r"<button[^>]*>([A-Za-z][^<{`$]{2,80})</button>"),
+    )
+    out = set()
+    for rx in original_html_shapes:
+        for m in rx.finditer(_PROSE_SAMPLE):
+            out.add(m.group(1))
+    assert out == set(), (
+        f"the pre-fix (th/button-only) shapes unexpectedly matched prose: {out} "
+        f"-- this test's premise is stale"
+    )
+
+
+def test_html_entities_are_decoded_before_comparing():
+    """The DOM walker matches against nodeValue, which is DECODED. Asking for the
+    key `your data &amp; keys` would be asking for one that can never match, so
+    the capture is unescaped first -- the same reasoning as the _js_unescape scar
+    for JS escapes one section up."""
+    found = _module()._js_chrome(_PROSE_SAMPLE)
+    assert "your data & keys" in found, "an HTML entity was not decoded before comparison"
+    assert "your data &amp; keys" not in found, "the raw (undecoded) form leaked into the gate"
+
+
+def test_a_concatenated_fragment_is_never_captured_as_a_key():
+    """`'<p>No ' + word + ' stored yet</p>'` is three text nodes at runtime, not
+    one string, so no key added for it could ever match. Reporting it here -- where
+    the only available fix cannot work -- is how a gate starts crying wolf."""
+    mod = _module()
+    sample = """html += '<p class="r-muted">No ' + word + " stored yet at all.</p>";"""
+    found = mod._js_chrome(sample)
+    assert not any("stored yet" in s for s in found), (
+        f"a concatenated fragment was captured as if it were a constant key: {found}"
+    )
+
+
+def test_prose_inside_a_comment_is_not_chrome():
+    """Sample markup in a comment is not a string any user can see; asking for a
+    key for one is the same false positive in a different costume."""
+    mod = _module()
+    sample = """
+    /* Renders like: <p>This sentence lives only in a comment.</p> */
+    // <h4>So does this one.</h4>
+    """
+    found = mod._js_chrome(sample)
+    assert not any("only in a comment" in s or "So does this one" in s for s in found), (
+        f"prose inside a comment was captured as chrome: {found}"
+    )
+
+
+def test_strip_js_comments_is_shared_by_all_three_scanners():
+    """All three gates read SOURCE, so all three can be fooled by a call-shaped
+    literal in a comment. The 2026-09-18 session hit this and reworded its own
+    comment; the session after it wrote `t("...")` while explaining that very fix
+    and hit the identical false positive. Rewording is not a fix, so the helper is
+    shared -- this pins that all three call it."""
+    src = _SCRIPT.read_text(encoding="utf-8")
+    for fn in ("_js_chrome", "unkeyed_t_calls", "unkeyed_tf_frames"):
+        start = src.index(f"def {fn}(")
+        nxt = src.find("\ndef ", start + 1)
+        body = src[start:nxt if nxt != -1 else len(src)]
+        assert "_strip_js_comments" in body, (
+            f"{fn}() does not strip comments -- a call-shaped literal written inside "
+            f"a comment will be reported as an untranslated UI string"
+        )
+
+
+def test_a_url_inside_a_string_survives_comment_stripping():
+    """The line-comment rule only fires when `//` OPENS the line, precisely so that
+    the `//` in an https:// URL inside a real string is not treated as a comment."""
+    mod = _module()
+    kept = mod._strip_js_comments('const u = "https://example.org/a"; // trailing note\n')
+    assert "https://example.org/a" in kept, "a URL inside a string was eaten as a comment"
+
+
+def test_a_call_shaped_literal_in_a_comment_is_not_a_finding():
+    mod = _module()
+    sample = '// Each name is a LITERAL t("...") at its slot rather than a helper call\n'
+    assert mod._js_chrome(sample) == set(), (
+        "a t() example written in a comment was captured as a live UI string"
+    )
