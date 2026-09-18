@@ -11,6 +11,7 @@ client (UA + maxlag + rate limit); ORES scores are optional and fail-open.
 
 from __future__ import annotations
 
+import logging
 import re
 from urllib.parse import unquote
 
@@ -23,6 +24,8 @@ from src.database.models import WikiPage, WikiRevision
 from src.database.session import get_db
 from src.wiki.client import WikiClient
 from src.wiki.ores import OresClient
+
+_LOG = logging.getLogger("api.wiki")
 
 router = APIRouter(prefix="/api/wiki", tags=["wikipedia"])
 
@@ -166,7 +169,75 @@ def add_page(payload: AddPage, db: Session = Depends(get_db)) -> dict:
         )
     wiki = _validated_wiki(wiki)
     page = ensure_page(db, wiki, title, category=payload.category)
-    return _serialize_page(page)
+    out = _serialize_page(page)
+    out["pinned_to_hot"] = _pin_to_hot(wiki, title, page.pageid)
+    return out
+
+
+def _pin_to_hot(wiki: str, title: str, page_id: int | None) -> dict:
+    """Q716 = a: this endpoint "survives as 'pin this page to HOT'".
+
+    The operator asking for a page BY HAND is the strongest HOT reason there is
+    (``HOT_REASONS`` lists it first), and it is the only one a rule may never set for
+    them. So the pin is written on the LANE entity, which is what the tier reads --
+    adding a row to the legacy watch list alone would leave the lane following nothing
+    new and the operator wondering why their page never arrived.
+
+    IT IS KEYED BY TITLE WHEN THE PAGE ID IS UNKNOWN, WHICH IS THE ORDINARY CASE HERE:
+    nothing has fetched this page yet, so ``WikiPage.pageid`` is NULL, and asking the
+    wiki for it would be a network call inside an endpoint the operator did not consent
+    to egress from. The legacy title form exists for exactly this, and the stream's own
+    reconciliation upgrades the row to Q715's ``(wiki, pageid)`` identity the first time
+    an event names both -- no migration, no guess.
+
+    DEGRADES, never 500s: a corpus with no lane file yet is the ordinary state on a
+    fresh install, and refusing to add a watched page because of it would be the tail
+    wagging the dog. The result says what happened either way.
+    """
+    from src.versioned.store import LaneAbsentError
+    from src.wiki.identity import external_id_for, legacy_external_id_for
+
+    external_id = (
+        external_id_for(wiki, page_id)
+        if page_id is not None and page_id > 0
+        else legacy_external_id_for(wiki, title)
+    )
+    try:
+        from src.versioned.pipeline import ensure_entity
+        from src.versioned.store import lane_session
+
+        with lane_session("wiki", create=True) as lane:
+            ensure_entity(
+                lane,
+                external_id,
+                title=title,
+                language=wiki,
+                pinned=True,
+                admitted_reason="pinned",
+            )
+        return {"ok": True, "external_id": external_id}
+    except LaneAbsentError:
+        # THE EXCEPTION'S OWN WORDS DO NOT TRAVEL IN THE RESPONSE (CodeQL, and it is
+        # right). ``LaneAbsentError`` names the database FILE; a generic failure carries
+        # whatever the driver put in its message -- a path, a SQL fragment, an internal.
+        # This app is loopback-only, so the reader is the operator themselves, and that
+        # is still not a reason to hand internals to a surface: the response carries the
+        # TOKEN the UI translates (the shape every other field in this slice already
+        # uses) plus a fixed explanation, and the exception goes to the log, where an
+        # operator debugging can find it and a page rendering it cannot.
+        _LOG.info("the wiki lane has no database file yet; %s was not pinned", external_id)
+        return {
+            "ok": False,
+            "reason": "lane_absent",
+            "detail": "the Wikipedia lane has not been started on this machine yet",
+        }
+    except Exception:  # noqa: BLE001 - a watched page must still be added
+        _LOG.warning("could not pin %s to the HOT tier", external_id, exc_info=True)
+        return {
+            "ok": False,
+            "reason": "pin_failed",
+            "detail": "the page was added to your watch list but could not be pinned; see the log",
+        }
 
 
 @router.delete("/pages/{page_id}")

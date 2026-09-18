@@ -406,6 +406,44 @@ def _interrupted() -> dict[str, Any]:
     return out
 
 
+def _wiki_lane(bar_hours: float) -> dict[str, Any]:
+    """The Wikipedia lane's own counters, for row P's ≥ 72 h operator run.
+
+    S04-09's operator step 1 asks for "rows / day, bytes / day, gap history" read
+    "from ONE artifact ... where the soak bundle reads". This is that seam. The
+    figures are not accumulated here — ``src.wiki.counters`` COMPUTES them from rows
+    the lane already wrote, so they survive the restart that a ≥ 72 h run is likeliest
+    to contain, and there is no counters file to disagree with the database.
+
+    A lane that has never run reports ABSENT with a reason. That is not the same as a
+    lane that ran and collected nothing, and this block refuses to merge them: the
+    first has no file, the second has a file full of zeros, and an operator reading a
+    72-hour run needs to be able to tell which one they are looking at.
+    """
+    from src.versioned.store import lane_file_bytes, lane_path
+
+    if not lane_path("wiki").is_file():
+        return {
+            "measured": False,
+            "reason": (
+                "the Wikipedia lane has no database file yet -- it has never run. "
+                "This is not a reading of zero."
+            ),
+        }
+    from src.versioned.store import lane_session
+    from src.wiki.counters import lane_counters
+
+    window_days = max(1, int(round(bar_hours / 24.0)) + 4)
+    with lane_session("wiki") as lane:
+        out = lane_counters(lane, window_days=window_days, file_bytes=lane_file_bytes("wiki"))
+    # MEASURED means the lane produced a reading at all. The per-block ``measured``
+    # flags inside it stay exactly as ``lane_counters`` set them; flattening them into
+    # one verdict here is what would let an absent growth series hide behind a present
+    # row count.
+    out["measured"] = True
+    return out
+
+
 def _block(name: str, fn: Any) -> dict[str, Any]:
     """Run one block, and turn a crash into an honest absence.
 
@@ -439,6 +477,7 @@ def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[
         "write_gate": _block("write_gate", lambda: _write_gate(window)),
         "database_stats_latency": _block("database_stats_latency", _db_stats_latency),
         "interrupted": _block("interrupted", _interrupted),
+        "wiki_lane": _block("wiki_lane", lambda: _wiki_lane(bar_hours)),
     }
     unmeasured = sorted(k for k, v in blocks.items() if not v.get("measured"))
     return {
@@ -451,7 +490,8 @@ def soak_window(session: Session, *, bar_hours: float = SOAK_BAR_HOURS) -> dict[
             "Composes readings that already exist: process uptime (the soak clock), "
             "the memory-guard and write-gate process-cumulative counters, the at-most-hourly "
             "wal_bytes snapshot series filtered to this window, the "
-            f"{_DB_STATS_ROUTE} latency reservoir, and the rolling error log. No new "
+            f"{_DB_STATS_ROUTE} latency reservoir, the rolling error log, and the "
+            "Wikipedia lane's counters computed from its own rows. No new "
             "sampler, no estimate, no composite."
         ),
         "caveat": (

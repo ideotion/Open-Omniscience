@@ -89,6 +89,11 @@ def edition_of(feed: str) -> str:
 #: it protects; ``tests/test_wiki_stream.py`` asserts the two are equal.
 CURSOR_TOKEN_MAX: int = 256
 
+#: How many distinct titles one entity's seen-list keeps per batch. See the
+#: ``_seen`` comment: a page renamed back and forth would otherwise grow one list
+#: without limit, and the earliest names are the ones a corpus mention matches.
+SEEN_TITLES_MAX: int = 8
+
 
 def change_token(change: StreamChange) -> str | None:
     """The cursor position for one change: the stream's OWN event id.
@@ -178,6 +183,22 @@ class StreamBuffer:
             return report
 
 
+def external_id_of(change: StreamChange) -> str | None:
+    """The entity id one streamed change belongs to, or ``None`` when it names none.
+
+    ONE function rather than an expression inlined wherever it is needed: the seen-map
+    in :class:`WikiStreamAdapter` and the :class:`FeedChange` it builds must agree
+    about which entity a change belongs to, and two copies of this three-branch
+    decision are two chances to disagree — which would show up as a HOT page whose
+    text never arrives, with nothing anywhere saying why.
+    """
+    if change.page_id is not None and change.page_id > 0:
+        return external_id_for(change.wiki, change.page_id)
+    if change.title:
+        return legacy_external_id_for(change.wiki, change.title)
+    return None
+
+
 def to_feed_change(change: StreamChange) -> FeedChange:
     """One stream change in the substrate's vocabulary.
 
@@ -186,12 +207,7 @@ def to_feed_change(change: StreamChange) -> FeedChange:
     fallback is why :func:`src.wiki.identity.parse_external_id` must read both forms
     rather than the lane declaring a cut-over date it cannot enforce.
     """
-    if change.page_id is not None and change.page_id > 0:
-        external = external_id_for(change.wiki, change.page_id)
-    elif change.title:
-        external = legacy_external_id_for(change.wiki, change.title)
-    else:
-        external = None
+    external = external_id_of(change)
     ref = _change_ref(change)
     return FeedChange(
         change_ref=ref,
@@ -229,6 +245,28 @@ class WikiStreamAdapter:
         #: including for events it filtered. See ``read_changes`` for why.
         self._positions: dict[str, str] = {}
         self._positions_lock = threading.Lock()
+        #: EVERY name the SOURCE used for each entity in the batch this adapter last
+        #: drained: ``external_id -> (titles, page_id)``. Kept because the identity
+        #: Q715 rules is ``(wiki, pageid)`` while every one of Q707's HOT sources
+        #: speaks TITLES, and the stream is the one place both are in hand at once.
+        #:
+        #: ALL the titles, not the newest, and that is a MEASURED correction rather
+        #: than caution. The recorded fixture moves page 101 from "Fixture Alpha" to
+        #: "Fixture Alpha (renamed)" mid-batch; a map keeping only the last name
+        #: offered the tier the new title alone, so a page the corpus plainly mentions
+        #: was not admitted — and nothing anywhere would have said why. A move event
+        #: carries only the NEW title (verified against the fixture's own payload), so
+        #: the earlier edits in the same batch are the only in-batch record of the old
+        #: one. What this still cannot do is match a page whose move happened BEFORE
+        #: this run: the corpus then mentions a title the wiki no longer has, and no
+        #: local lookup can bridge that. Stated rather than silently half-solved.
+        #:
+        #: Bounded twice: REPLACED on each ``read_changes`` rather than appended to,
+        #: and at :data:`SEEN_TITLES_MAX` distinct names per id, keeping the FIRST
+        #: seen — a move war would otherwise let one page's name list grow without
+        #: limit, and the oldest names are the ones a corpus mention is likeliest to
+        #: match.
+        self._seen: dict[str, tuple[tuple[str, ...], int | None]] = {}
 
     # -- the contract ------------------------------------------------------- #
     def feeds(self) -> tuple[str, ...]:
@@ -276,6 +314,15 @@ class WikiStreamAdapter:
             raise ValueError(f"{feed!r} is not a feed of this adapter")
         drained = buf.drain(budget.max_requests if budget.max_requests else None)
         changes = [to_feed_change(c) for c in drained]
+        self._seen = {}
+        for c in drained:
+            eid = external_id_of(c)
+            if not eid:
+                continue
+            titles, page_id = self._seen.get(eid, ((), None))
+            if c.title and c.title not in titles and len(titles) < SEEN_TITLES_MAX:
+                titles = titles + (c.title,)
+            self._seen[eid] = (titles, page_id if page_id is not None else c.page_id)
         last_token = None
         for change in reversed(changes):
             if change.cursor_token:
@@ -305,6 +352,16 @@ class WikiStreamAdapter:
             resumed_from=since,
             gap=buf.take_gap(),
         )
+
+    def seen(self, external_id: str) -> tuple[tuple[str, ...], int | None]:
+        """Every name the source used for ``external_id`` in the batch just drained.
+
+        ``((), None)`` for an id this adapter has not just seen — an absence, not an
+        error, and callers treat it as "decide without a title" rather than inventing
+        one. The titles are in FIRST-SEEN order, so ``[0]`` is the oldest name in this
+        batch and ``[-1]`` the newest.
+        """
+        return self._seen.get(external_id, ((), None))
 
     def fetch_version(self, external_id: str) -> FetchedVersion | None:
         """The current wikitext of one page, or ``None`` when the wiki says it is gone."""

@@ -1142,6 +1142,200 @@
       }
     }
 
+    // ----------------------------------------------------------------- //
+    // Q725's first-run wizard: which editions, and how much disk.
+    //
+    // NOT A CONSENT SURFACE. Every call it makes is loopback -- it reads and writes
+    // three settings. Going online is the ONE popup's job (invariant #14) and the
+    // lane starts there, so this screen is deliberately never ``ensureOnline``-gated:
+    // gating it would teach an operator that choosing a setting costs them a network
+    // decision, which is exactly backwards.
+    //
+    // THE DEFAULTS ARE THE RULED ONES AND THE SCREEN SAYS SO: all twelve editions
+    // (Q725 = a) and 20 GB total (Q707 = a, published). An operator who reads the
+    // three disclosures and presses "Use these settings" unchanged has still been
+    // through the wizard, and the stored ``wiki_lane_wizard_done`` records that --
+    // which is a different fact from "the values differ from the defaults", and the
+    // two would be indistinguishable if it were inferred.
+    // ----------------------------------------------------------------- //
+    let _wizEditions = [];        // [{code, name, autonym}] for the twelve, in app order
+    let _wizChosen = new Set();
+
+    // The file's own idiom, and app-core.js records why it is written this way:
+    // OOI18N is dereferenced off ``window`` rather than relied on as a bare global,
+    // which a browser happens to provide and a module scope does not.
+    function _wizTf(template, vars) {
+      const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
+      const F = (i18n && i18n.tf)
+        ? i18n.tf
+        : ((s2, v) => s2.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      return F(template, vars || {});
+    }
+
+    function _wizShare() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const gb = Math.max(0, parseInt(($("wiki-wizard-budget") || {}).value, 10) || 0);
+      const n = _wizChosen.size;
+      const countEl = $("wiki-wizard-count");
+      if (countEl) countEl.textContent = _wizTf("{n} of {total} editions",
+        {n: n, total: _wizEditions.length});
+      const el = $("wiki-wizard-share");
+      if (!el) return;
+      if (!n || !gb) {
+        // An ABSENCE with a reason, not a "0 GB each": a share of nothing divided
+        // between nothing is not a measurement.
+        el.textContent = t9("Pick at least one edition and a budget to see the share.");
+        return;
+      }
+      // Shown to ONE decimal and never rounded to zero: a twelve-way split of a
+      // small budget is a real number the operator is entitled to see. Formatted
+      // through toLocaleString rather than toFixed, because toFixed always emits a
+      // POINT -- which a German or Spanish reader reads as a thousands separator, so
+      // "1.7 GB" would say 1,700 to them.
+      const share = gb / n;
+      const digits = share < 0.1 ? 2 : 1;
+      el.textContent = _wizTf(
+        "About {share} GB for each of {n} editions — the total divided by the editions you follow.",
+        {share: share.toLocaleString(undefined, {minimumFractionDigits: digits,
+                                                 maximumFractionDigits: digits}), n: n});
+    }
+
+    function _wizSelectAll(on) {
+      _wizChosen = on ? new Set(_wizEditions.map((l) => l.code)) : new Set();
+      _wizRender();
+    }
+
+    function _wizRender() {
+      const host = $("wiki-wizard-editions");
+      if (!host) return;
+      host.innerHTML = "";
+      _wizEditions.forEach((lang) => {
+        const label = document.createElement("label");
+        label.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.value = lang.code;
+        box.style.width = "auto";
+        box.checked = _wizChosen.has(lang.code);
+        box.addEventListener("change", () => {
+          if (box.checked) _wizChosen.add(lang.code); else _wizChosen.delete(lang.code);
+          _wizShare();
+        });
+        const text = document.createElement("span");
+        // THE NATIVE NAME LEADS (invariant #15's rule, applied here too): the autonym
+        // is the identifier a speaker recognises; the English name and the code are
+        // the disambiguators beside it.
+        text.textContent = (lang.autonym || lang.name || lang.code) + " (" + lang.code + ")";
+        if (lang.name && lang.name !== lang.autonym) text.title = lang.name;
+        label.appendChild(box);
+        label.appendChild(text);
+        host.appendChild(label);
+      });
+      _wizShare();
+    }
+
+    // Q1001: the hosts come from the ONE table, never from a literal in the markup.
+    // A second copy in index.html would be a second thing to keep in step with
+    // docs/SECURITY.md -- and the copy nobody updates is the one an operator reads
+    // before deciding. Renders the lane's own row, in the table's own order.
+    function _wizPaintHosts() {
+      const el = $("wiki-wizard-hosts");
+      if (!el) return;
+      let hosts = [];
+      try {
+        const rows = (typeof OO_NET_LANES !== "undefined" && OO_NET_LANES)
+          || window.OO_NET_LANES || [];
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+          if (row && row.id === "wikipedia" && Array.isArray(row.hosts)) hosts = row.hosts;
+        });
+      } catch (_e) { hosts = []; }
+      // An ABSENCE with a reason rather than a blank line: an operator reading a
+      // disclosure is entitled to know when it could not be filled in.
+      el.textContent = hosts.length
+        ? hosts.join(" · ")
+        : ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("The host list could not be read.");
+    }
+
+    async function openWikiWizard() {
+      const dlg = $("wiki-wizard");
+      if (!dlg) return;
+      _wizPaintHosts();
+      try {
+        const langs = await api("/api/wiki/languages");
+        const all = (langs && langs.languages) || [];
+        const cfg = await api("/api/scheduler/config");
+        const chosen = (cfg && cfg.wiki_lane_editions) || [];
+        // The twelve the LANE can follow are the app's own locales, which is the set
+        // the stored default names. Filtering the curated list against it keeps this
+        // picker honest about what the lane actually supports -- offering an edition
+        // the lane will not follow would be a control that does nothing.
+        const supported = new Set(chosen.length ? chosen : []);
+        const defaults = ["en","fr","de","es","pt","ru","ar","zh","ja","hi","bn","id"];
+        defaults.forEach((c) => supported.add(c));
+        _wizEditions = all.filter((l) => supported.has(l.code));
+        _wizChosen = new Set(chosen.length ? chosen : defaults);
+        const budget = $("wiki-wizard-budget");
+        if (budget) budget.value = (cfg && cfg.wiki_lane_budget_gb) || 20;
+        _wizRender();
+      } catch (e) {
+        // The dialog still opens with the ruled defaults rather than not at all: a
+        // first-run screen that refuses to appear because a read failed leaves the
+        // operator with no way to answer the question at all.
+        toast(_failMsg("Update failed: {error}", e), "err");
+      }
+      try { dlg.showModal(); } catch (_e) { dlg.setAttribute("open", "open"); }
+    }
+
+    async function saveWikiWizard() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const budget = parseInt(($("wiki-wizard-budget") || {}).value, 10);
+      if (!_wizChosen.size) {
+        // REFUSED, not silently defaulted. A lane following no editions would report
+        // itself as running while following nothing; the top-bar control already says
+        // "off" honestly and is where that belongs.
+        toast(t9("Pick at least one edition — a lane with none follows nothing."), "err");
+        return;
+      }
+      try {
+        await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify({
+          wiki_lane_editions: _wizEditions.map((l) => l.code).filter((c) => _wizChosen.has(c)),
+          wiki_lane_budget_gb: budget,
+          wiki_lane_wizard_done: true,
+        })});
+        const dlg = $("wiki-wizard");
+        if (dlg) { try { dlg.close(); } catch (_e) { dlg.removeAttribute("open"); } }
+        toast(t9("Saved. The stream starts when you go online."));
+        loadWikiLane();
+        loadWikiLaneSummary();
+      } catch (e) {
+        toast(_failMsg("Update failed: {error}", e), "err");
+      }
+    }
+
+    async function loadWikiLaneSummary() {
+      const el = $("wiki-lane-summary");
+      if (!el) return;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const st = await api("/api/scheduler/status");
+        const lane = (st && st.wiki_lane) || {};
+        const n = (lane.editions || []).length;
+        const bits = [_wizTf("{n} editions · {gb} GB budget", {n: n, gb: lane.budget_gb})];
+        const b = lane.budget || {};
+        if (b.measured && typeof b.disk_bytes === "number") {
+          bits.push(_wizTf("holding {used}", {used: humanBytes(b.disk_bytes)}));
+        } else {
+          // ABSENT with a reason, never "0 bytes": a lane that has never run holds
+          // no bytes, and a zero here would read as one that ran and stored nothing.
+          bits.push(t9("not yet measured — this lane has not run"));
+        }
+        if (!lane.wizard_done) bits.push(t9("using the defaults"));
+        el.textContent = bits.join(" · ");
+      } catch (_e) {
+        el.textContent = t9("The lane's settings could not be read.");
+      }
+    }
+
     async function loadScheduler() {
       try { const s = await api("/api/scheduler/status"); renderSchedStatus(s); _paintCollectToggle(!!(s && s.running)); }
       catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }

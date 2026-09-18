@@ -10834,7 +10834,69 @@ guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statement
     inverse is already here: a guard that stayed GREEN because the string it wanted
     survived inside `// callName();`. Same root, opposite symptom, and both are fixed by
     the same line.)
-
+  - **`create_all` CREATES MISSING TABLES AND NEVER A MISSING COLUMN, so a lane file
+    written by yesterday's build is unreadable by today's (2026-09-18, S04-09's S4):**
+    `src/versioned/models.py` recorded that lane files need no migration because "these
+    tables are born here", and that was true for exactly as long as ONE build had
+    declared them. The next slice added a column and a lane file from the previous one
+    raised `no such column: versioned_entities.deleted_at` on its first read — the TABLE
+    arrived through `create_all`, the COLUMN had nowhere to arrive from. Reproduced on a
+    file built to look like the older build's before anything was written. The fix that
+    is safe is additive and **plans before it applies**: collect every column to add,
+    REFUSE by name if any is `NOT NULL` with no default, and only then execute — one
+    that applied as it went would add every column before the one it refuses and leave a
+    file that is neither shape, with nothing on disk to say which. It never drops,
+    renames or retypes: the file may have been written by a build NEWER than this one.
+  - **A CACHE KEYED "THE LATEST NAME" SILENTLY LOSES THE ONE THAT MATCHES (2026-09-18,
+    the HOT tier's seen-map):** the wiki adapter kept `external_id -> (title, page_id)`
+    from the batch it drained, overwriting per event, so a page MOVED mid-batch was
+    offered to the tier under its NEW title only — and a page the corpus plainly
+    mentions under its old name was never followed, with no surface anywhere saying why.
+    Found by running the tier over the recorded fixture and counting admissions (2
+    expected, 1 seen), not by reading. The shape generalises: when a downstream decision
+    matches on a value the source can CHANGE within one batch, keep every value the
+    batch carried, bounded and first-seen-first, rather than the last one — and say out
+    loud what that still cannot fix (here: a move that happened before the run, where
+    the corpus's title no longer exists anywhere and no local lookup can bridge it).
+  - **A `tf()` TEMPLATE IS INVISIBLE TO BOTH i18n GATES, BY CONSTRUCTION (2026-09-18):**
+    every pattern in `scripts/i18n_report.py` excludes `{` from its character class on
+    purpose, so a literal like `"{n} of {total} editions"` registers neither as an
+    untranslatable UI string nor as an unkeyed `t()` call — both gates report green
+    while eleven locales render English. This is one level past the already-recorded
+    "a string that never requests a key is missing none": there the extraction could
+    have been widened, here the exclusion is deliberate and correct for what the gates
+    measure. A surface that uses templates needs its OWN test naming its renderers and
+    checking their literals against every locale file, with a positive control that the
+    extraction finds something — a guard that extracts nothing passes every assertion
+    below it.
+  - **"THE FEATURE IS UNBUILT" IS AS WRONG AS "THE FEATURE IS RUNNING" ONCE IT IS BUILT
+    (2026-09-18):** the lane status reported `reason: "no-collector-yet"`, which was
+    honest while nothing in the tree constructed a stream and became, the day one
+    landed, a message telling an operator the feature does not exist while their own
+    airplane mode is what is holding it — the same wrong-place-to-look failure invariant
+    #14e's corollary was written from, arriving from the opposite direction. A
+    placeholder reason is a claim with an expiry date: when the thing it stands in for
+    ships, the placeholder is a lie, and the commit that ships it is the only one that
+    will ever be looking.
+  - **A DOCSTRING'S PREMISE EXPIRES WITHOUT ANYTHING GOING RED (2026-09-18, Q721's
+    backup member):** it read "nothing is understated in the meantime — no shipped path
+    creates a lane file in this slice, so an operator cannot yet have lane data for a
+    dialog to omit", which was true when written and false one slice later. Nothing
+    tests a rationale. When a slice makes another slice's stated premise false, correct
+    the prose in the same commit: a later reader trusts a claim nobody rechecked, and
+    the reason a number is safe is exactly the kind of claim that is never revisited.
+  - **REFUSING A BARE STRING WHERE A SEQUENCE IS EXPECTED IS NOT PEDANTRY (2026-09-18):**
+    `decide(titles="Rome")` iterates into five one-letter titles that match nothing, and
+    the page falls silently to the wrong tier — no exception, no empty result, just a
+    decision made on garbage. Two places in one slice needed the same refusal (an
+    edition list and a title list). Any parameter documented as "a list of strings" that
+    a caller might reasonably pass one string to should refuse `str`/`bytes` BY NAME.
+  - **NAMING THE RIGHT YOU DO NOT HOLD IS NOT USING IT, AND A BAN ON THE WORD BANS THE
+    EXPLANATION (2026-09-18, Q718):** a guard forbidding `apihighlimits` anywhere in the
+    tree reddened on the comment explaining why the anonymous page cap is 50 — the right
+    has to be nameable for the number to be explicable. The guard that works asserts the
+    token never leaves the COMMENTS, which is the property actually wanted: not "this
+    word is absent" but "this right is never requested".
 - **A CROSS-FILE LINK WHOSE TARGET IS A *CLAIM* SHOULD BE A MINTED STRING, NOT A ROW ID
   (2026-09-18, S04-10 S2).** `src/versioned/models.py` documents the house pattern for a
   link into `corpus.db` — a plain integer with no referential integrity, checked after

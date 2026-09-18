@@ -11,6 +11,8 @@ result -- never a simulated "healthy".
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -27,6 +29,8 @@ from src.scheduler.settings import (
     load_settings,
     save_settings,
 )
+
+_LOG = logging.getLogger("api.scheduler")
 
 router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
 
@@ -93,6 +97,11 @@ class SchedulerConfigUpdate(BaseModel):
     # told their opt-out succeeded when it did not. That is the ``settingUnreachable``
     # state the table has a flag for, and it is a worse failure than no control at all.
     wiki_lane_state: str | None = None
+    # DECLARED, or ``model_dump(exclude_unset=True)`` drops them and the wizard's
+    # answers never reach ``save_settings`` -- the recorded settingUnreachable trap.
+    wiki_lane_editions: list[str] | None = None
+    wiki_lane_budget_gb: int | None = None
+    wiki_lane_wizard_done: bool | None = None
 
 
 def _status_payload() -> dict:
@@ -163,10 +172,68 @@ def _wiki_lane_block() -> dict:
         # A literal token, never prose: the sentence is composed by the UI through
         # OOI18N.t and ships x12, because this reaches a caveat surface. Absent while
         # a stream IS running -- there is nothing to explain then.
-        "reason": None if live else "no-collector-yet",
+        #
+        # ``no-collector-yet`` WAS the honest answer while nothing in this tree
+        # constructed a stream. A collector exists now, so leaving that token would be
+        # the same overclaim in reverse: an operator told the feature is unbuilt while
+        # their own airplane mode is what is holding it. The reason is MEASURED --
+        # each branch reads a real fact, and none of them guesses.
+        "reason": _wiki_lane_reason(state, bool(live)),
         "editions_live": sorted({code for editions in live for code in editions}),
         "states": list(WIKI_LANE_STATES),
+        **_wiki_lane_settings_block(),
     }
+
+
+def _wiki_lane_reason(state: str, live: bool) -> str | None:
+    """WHY nothing is streaming, in one token the UI translates. ``None`` when it is."""
+    from src.ingest import kill_switch_active
+
+    if live:
+        return None
+    if state != "running":
+        # The state itself is the explanation; a second one beside it would be noise.
+        return None
+    if kill_switch_active():
+        # NAMED AS OURS (invariant #14e's corollary): airplane mode is this app
+        # refusing, and an operator sent looking at Wikimedia for their own setting is
+        # exactly the failure that corollary was written from.
+        return "airplane-mode"
+    return "not-started"
+
+
+def _wiki_lane_settings_block() -> dict:
+    """The operator's own choices for the lane, with the budget MEASURED against disk.
+
+    Degrades to an absence rather than a 500: a status panel that cannot render
+    because a lane file is missing is worse than one that says the lane has not run.
+    """
+    from src.scheduler.settings import load_settings
+    from src.wiki.service import lane_service_status
+
+    settings = load_settings()
+    editions = tuple(getattr(settings, "wiki_lane_editions", ()) or ())
+    out: dict = {
+        "editions": list(editions),
+        "budget_gb": int(getattr(settings, "wiki_lane_budget_gb", 20)),
+        "wizard_done": bool(getattr(settings, "wiki_lane_wizard_done", False)),
+        "service": lane_service_status(),
+    }
+    try:
+        from src.versioned.store import lane_file_bytes
+        from src.wiki.tiers import budget_state
+
+        out["budget"] = budget_state(
+            total_gb=out["budget_gb"],
+            disk_bytes=lane_file_bytes("wiki"),
+            editions=max(1, len(editions)),
+        ).as_dict()
+    except Exception as exc:  # noqa: BLE001 - a status panel must not 500
+        out["budget"] = {
+            "measured": False,
+            "reason": f"the lane's size could not be read: {type(exc).__name__}",
+        }
+    return out
 
 
 @router.get("/status")
@@ -356,11 +423,41 @@ def scheduler_config() -> dict:
 @router.put("/config")
 def scheduler_update_config(update: SchedulerConfigUpdate) -> dict:
     """Apply a partial config update (validated; a running loop picks up changes)."""
+    fields = update.model_dump(exclude_unset=True)
     try:
-        save_settings(update.model_dump(exclude_unset=True))
+        save_settings(fields)
     except SchedulerSettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if "wiki_lane_state" in fields and fields["wiki_lane_state"] is not None:
+        # A SETTING THAT NOTHING ACTS ON IS A LIE ON A CONTROL. Writing "stopped" and
+        # leaving a stream open would show a stopped toggle over a live connection --
+        # the exact overclaim the toggle's ``state``/``active`` split exists to
+        # prevent, arriving from the other direction. Starting is still gated on being
+        # online: ``start_wiki_lane`` refuses when the setting does not say running,
+        # and the stream itself refuses BY NAME under the kill switch, so this can
+        # never bring the app online.
+        _apply_wiki_lane_state(str(fields["wiki_lane_state"]))
     return {**load_settings().to_dict(), "valid_modes": list(VALID_MODES)}
+
+
+def _apply_wiki_lane_state(state: str) -> None:
+    """Make the process match the setting just written. Never raises into a request."""
+    import os
+
+    if os.getenv("OO_NO_SCHEDULER", "0") == "1":
+        # Tests and headless runs drive the lane themselves, exactly as they drive
+        # the article scheduler.
+        return
+    try:
+        from src.ingest import kill_switch_active
+        from src.wiki.service import start_wiki_lane, stop_wiki_lane
+
+        if state == "running" and not kill_switch_active():
+            start_wiki_lane()
+        else:
+            stop_wiki_lane()
+    except Exception:  # noqa: BLE001 - a lane hiccup must never fail the setting write
+        _LOG.warning("could not apply the wiki lane state %r", state, exc_info=True)
 
 
 @router.get("/runs")

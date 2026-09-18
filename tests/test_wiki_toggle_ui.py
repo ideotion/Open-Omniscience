@@ -312,7 +312,10 @@ def test_the_backend_reports_the_two_facts_SEPARATELY():
         "something now consumes wiki_lane_state -- good, but this block and the UI "
         "sentence that depends on it both have to learn about it"
     )
-    assert block["reason"] == "no-collector-yet"
+    # Was ``no-collector-yet`` while nothing in this tree constructed a stream. A
+    # collector exists now (``src/wiki/service.py``), so the honest reasons are the
+    # two MEASURED ones: our own airplane mode, or a lane nobody has started.
+    assert block["reason"] in ("not-started", "airplane-mode"), block["reason"]
     banned = ("score", "ranking", "rating", "grade")
     for key in block:
         assert not any(b in key.lower() for b in banned), key
@@ -325,6 +328,37 @@ def test_the_reason_travels_as_a_TOKEN_never_as_prose():
 
     reason = _wiki_lane_block()["reason"]
     assert " " not in reason and reason.islower(), f"{reason!r} reads as prose, not a token"
+
+
+def test_OUR_OWN_airplane_mode_is_named_as_ours_and_not_as_the_lane_being_unbuilt():
+    """Invariant #14e's corollary: a refusal BY THE KILL SWITCH is named as such
+    wherever it can surface. An operator told the feature is unbuilt, while their own
+    setting is what is holding it, has been sent to look in the wrong place."""
+    from src.api.scheduler import _wiki_lane_reason
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    assert _wiki_lane_reason("running", False) == "not-started"
+    activate_kill_switch()
+    try:
+        assert _wiki_lane_reason("running", False) == "airplane-mode"
+    finally:
+        clear_kill_switch()
+    assert _wiki_lane_reason("running", True) is None, "a live stream needs no excuse"
+    assert _wiki_lane_reason("halted", False) is None, (
+        "the state is its own explanation; a second one beside it is noise"
+    )
+
+
+def test_the_lane_block_carries_the_operators_own_choices_and_a_MEASURED_budget():
+    from src.api.scheduler import _wiki_lane_block
+
+    block = _wiki_lane_block()
+    assert len(block["editions"]) == 12, "Q725 = a's 'default: all twelve'"
+    assert block["budget_gb"] == 20, "Q707's published default"
+    assert block["wizard_done"] is False, "nobody has been through it in a fresh install"
+    assert "method" in block["budget"] or "reason" in block["budget"], (
+        "every figure carries how it was obtained, or why there is none"
+    )
 
 
 def test_ACTIVE_is_measured_from_the_running_loop_not_hardcoded():

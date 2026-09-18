@@ -1721,6 +1721,30 @@
       <div class="hint" style="margin-top:6px">Optional, heavy offline full-text baselines (per-language dumps) are configured further down in this panel — pick an edition from the list and download it. Not needed for the change-tracking above.</div>
     </section>
 
+    <!-- Q726 = a's robots statement, ON the Wikipedia surface, worded the way
+         src/safety/fetcher.py and src/stats/fetch.py word it for the statistics
+         endpoints. Visible, not a hover: it is a disclosure about what this app does
+         to someone else's servers, and the operator running it is the one answerable
+         for it. The hover carries the longer form (invariant #17's layering). -->
+    <section class="panel">
+      <h2>The live edit stream</h2>
+      <p class="muted" style="margin-top:0">The stream follows every edit in the editions you
+        choose and keeps the full text of the pages your corpus already touches. The top-bar
+        control starts, pauses and stops it; nothing connects until you go online.</p>
+      <div id="wiki-lane-summary" class="hint">Loading…</div>
+      <div class="row" style="margin-top:8px;gap:8px">
+        <button id="wiki-wizard-open" type="button">Editions and storage budget…</button>
+      </div>
+      <div class="hint" style="margin-top:8px" title="The same reasoning this app applies to the World Bank and SDMX statistics endpoints: robots.txt governs crawling, not documented public APIs, and blanket-applying it would wrongly block legitimate API use.">
+        <b>Robots.</b>
+        <span>These are documented public API endpoints and follow their own service etiquette rather than generic crawl robots — blanket-applying robots.txt would wrongly block legitimate API use. The kill switch, the honest bot User-Agent and the single fetch path still apply to every request.</span>
+      </div>
+      <div class="hint" style="margin-top:6px">
+        <b>Licence.</b>
+        <span>Wikipedia's text is published under CC BY-SA 4.0. Pages stored here show that, with a link to the page history — its editors are its authors. Images are not stored and carry their own separate licences.</span>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>Watch a page</h2>
       <div class="row">
@@ -3220,6 +3244,69 @@
     <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end">
       <button class="secondary" type="button" onclick="document.getElementById('folder-picker').close()">Cancel</button>
       <button id="fp-use" type="button" onclick="ooFolderPickerUse()">Use this folder</button>
+    </div>
+  </dialog>
+
+  <!-- Q725 = a's first-run wizard for the Wikipedia lane: "Edition choice (default:
+       all twelve) + the storage budget (Q707) + the plain statement of what the lane
+       contacts". Reached from the fresh-corpus hand-off (unlock.html sends a NEW
+       corpus to /?wikiwizard=1) and from Settings -> Wikipedia, which is the "AND"
+       in the ruling -- one dialog, two doors, never two copies to keep in step.
+
+       IT IS NOT A CONSENT POPUP AND MUST NEVER BECOME ONE. Nothing here goes online:
+       it writes three settings through a loopback PUT. Crossing online is the ONE
+       popup's job (invariant #14), and the lane starts there. What this screen owes
+       the operator is the three DISCLOSURES (Q726) before they choose, which is why
+       they are above the controls and visible rather than in a hover. -->
+  <dialog id="wiki-wizard" style="width:min(680px,96vw);max-height:92vh;padding:0">
+    <h3 style="margin:0;padding:18px 18px 8px">Following Wikipedia as it changes</h3>
+    <div id="wiki-wizard-body" style="padding:0 18px;max-height:64vh;overflow:auto">
+      <p class="muted" style="margin-top:0">This app can follow the edit stream of the twelve
+        Wikipedia editions it speaks, and keep the full text of the pages your work already
+        touches. Nothing starts until you go online, and you are asked before that separately.</p>
+
+      <div class="hint" style="margin-bottom:10px" title="Every host this lane can reach is listed in the app's own consent hover and in its security documentation. The lane never contacts anything else.">
+        <b>What it contacts.</b>
+        <span>Every host this lane can reach is below, and no others — the live change stream, each edition's daily most-read list, each edition's own API for the text of a page you follow, and (only if you switch them on) the optional edit-quality models and the offline dumps.</span>
+        <div id="wiki-wizard-hosts" style="font-family:var(--mono,monospace);margin-top:4px"></div>
+      </div>
+      <div class="hint" style="margin-bottom:10px" title="The same reasoning this app applies to the World Bank and SDMX statistics endpoints: robots.txt governs crawling, not documented public APIs, and blanket-applying it would wrongly block legitimate API use.">
+        <b>Robots.</b>
+        <span>These are documented public API endpoints and follow their own service etiquette rather than generic crawl robots — blanket-applying robots.txt would wrongly block legitimate API use. The kill switch, the honest bot User-Agent and the single fetch path still apply to every request.</span>
+      </div>
+      <div class="hint" style="margin-bottom:14px">
+        <b>Licence.</b>
+        <span>Wikipedia's text is published under CC BY-SA 4.0. Pages stored here show that, with a link to the page history — its editors are its authors. Images are not stored and carry their own separate licences.</span>
+      </div>
+
+      <div style="margin-bottom:6px"><b>Editions to follow</b></div>
+      <div class="muted" style="font-size:12.5px;margin-bottom:6px">All twelve by default — the
+        languages this app speaks. Fewer editions means less to store and fewer changes to read.</div>
+      <div id="wiki-wizard-editions" class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:6px"></div>
+      <div class="row" style="gap:8px;margin-bottom:14px">
+        <button class="secondary" id="wiki-wizard-all" type="button">Select all</button>
+        <button class="secondary" id="wiki-wizard-none" type="button">Clear</button>
+        <span id="wiki-wizard-count" class="hint" style="align-self:center"></span>
+      </div>
+
+      <div style="margin-bottom:6px"><b>Storage budget</b></div>
+      <div class="muted" style="font-size:12.5px;margin-bottom:6px">How much disk this lane may
+        come to hold, in total. When it is spent the app keeps recording WHAT changed and stops
+        storing the text — it says so rather than going quiet.</div>
+      <div class="row" style="gap:8px;margin-bottom:6px">
+        <input id="wiki-wizard-budget" type="number" min="1" max="2000" step="1" value="20"
+               style="max-width:120px" aria-label="Storage budget in GB">
+        <span class="hint" style="align-self:center">GB in total</span>
+      </div>
+      <div id="wiki-wizard-share" class="hint" style="margin-bottom:8px"
+           title="The share is the total divided by the number of editions you follow. It is shown rather than folded in, so adding an edition visibly lowers each one's share."></div>
+      <div class="hint" style="margin-bottom:8px">This is a limit on what is STORED, not on how
+        fast it is fetched. Speed stays with the collection-speed control in the top bar — one
+        place, so two settings can never disagree about it.</div>
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px;padding:12px 18px 16px;border-top:1px solid var(--line)">
+      <button class="secondary" id="wiki-wizard-cancel">Not now</button>
+      <button id="wiki-wizard-save">Use these settings</button>
     </div>
   </dialog>
 

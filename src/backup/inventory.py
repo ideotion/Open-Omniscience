@@ -85,9 +85,17 @@ def _lane_member() -> dict:
     guessing from the presence of ``categories``.
 
     ``exportable`` is False until S04-04 owns the format, and the reason travels WITH
-    the flag: a disabled row with no explanation reads as a bug. Nothing is understated
-    in the meantime — no shipped path creates a lane file in this slice, so an operator
-    cannot yet have lane data for a dialog to omit.
+    the flag: a disabled row with no explanation reads as a bug.
+
+    THAT LAST SENTENCE USED TO CONTINUE "no shipped path creates a lane file in this
+    slice, so an operator cannot yet have lane data for a dialog to omit", AND S04-09
+    MADE IT FALSE. The Wikipedia lane now collects, so an operator can have gigabytes
+    here; the SIZE below is measured from their real file and is what Q721 = a asks to
+    be shown, and ``exportable`` stays False because the FORMAT is still S04-04's. The
+    difference matters: a row saying "0" would understate what is at stake, and a row
+    saying "exportable" would promise a restore nothing can perform. Corrected rather
+    than left, because a docstring whose premise expired is how a later reader comes to
+    trust a claim nobody rechecked.
     """
     from src.versioned.lanes import all_lanes
     from src.versioned.store import lane_file_bytes

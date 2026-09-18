@@ -1,0 +1,144 @@
+{
+ "stream_counters": {
+  "events_seen": 20,
+  "events_kept": 15,
+  "events_malformed": 1,
+  "events_other_edition": 1,
+  "events_other_namespace": 1,
+  "events_redirect": 1,
+  "connections": 1,
+  "reconnects": 0,
+  "read_timeouts": 0,
+  "transport_errors": 0,
+  "last_event_id": "[{\"topic\": \"codfw.mediawiki.recentchange\", \"partition\": 0, \"offset\": 1020}]",
+  "idle_seconds": 0.06156241000007867,
+  "consecutive_failures": 0,
+  "per_edition": {
+   "oo": 15
+  }
+ },
+ "drain": {
+  "passes": {
+   "stream:oo": {
+    "feed": "stream:oo",
+    "changes_recorded": 15,
+    "changes_duplicate": 0,
+    "changes_unknown_kind": 0,
+    "gap_recorded": false,
+    "baselines_captured": 2,
+    "revisions_stored": 0,
+    "revisions_unchanged": 0,
+    "articles_indexed": 0,
+    "text_deferred": 0,
+    "entities_admitted": 2,
+    "text_withheld": 0,
+    "text_withheld_reasons": {},
+    "deleted_reported": 0,
+    "errors": []
+   }
+  },
+  "entities_admitted": 2,
+  "changes_recorded": 15,
+  "revisions_stored": 0,
+  "articles_indexed": 0,
+  "text_withheld": 0,
+  "text_withheld_reasons": {},
+  "gaps_recorded": 0,
+  "size_sampled": true,
+  "errors": [],
+  "budget": {
+   "total_gb": 20,
+   "total_bytes": 21474836480,
+   "disk_bytes": 358256,
+   "editions": 1,
+   "per_edition_bytes": 21474836480,
+   "remaining_bytes": 21474478224,
+   "measured": true,
+   "exhausted": false,
+   "method": "budget: the operator's total, set in the first-run wizard (default 20 GB, published). spend: the lane file on disk including its -wal/-shm sidecars. rate is the collection-speed governor's, not a second budget."
+  }
+ },
+ "lane_counters": {
+  "kind": "wiki",
+  "window_days": 7,
+  "read_at": "2026-09-18T02:33:12.863416+00:00",
+  "file_bytes": 428296,
+  "rows_per_day": {
+   "measured": true,
+   "series": [
+    {
+     "day": "2026-09-11",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-12",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-13",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-14",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-15",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-16",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-17",
+     "changes": 0
+    },
+    {
+     "day": "2026-09-18",
+     "changes": 15
+    }
+   ],
+   "total": 15,
+   "n": 8,
+   "method": "versioned_changes rows, grouped by the day THIS APP recorded them (not the day the edit happened -- a resumed stream replays yesterday)",
+   "caveat": "A day inside the window with no rows is a real zero for that day; the block reports measured:false only when the whole window is empty."
+  },
+  "bytes_per_day": {
+   "samples": 2,
+   "method": "the lane file on disk (stat + -wal/-shm), sampled at most hourly",
+   "measured": true,
+   "first_at": "2026-09-18T02:33:12.807171+00:00",
+   "last_at": "2026-09-18T04:33:12.862544+00:00",
+   "first_bytes": 358256,
+   "last_bytes": 420056,
+   "span_seconds": 7200.055373,
+   "bytes_per_day": 741594.2966248629,
+   "caveat": "Measured between the first and last samples in this window only. A lane that was stopped for part of it grew for less time than the span suggests, and this figure does not know that."
+  },
+  "gaps": {
+   "measured": true,
+   "gaps": [],
+   "by_reason": {},
+   "n": 0,
+   "truncated": false,
+   "method": "versioned_gaps rows the lane wrote itself, newest first",
+   "caveat": "A gap says a stretch of the change log was not handed to this app. It is never a percentage: a lane cannot know how much it missed, only that it missed a named stretch."
+  },
+  "entities": {
+   "measured": true,
+   "followed": 2,
+   "by_admitted_reason": {
+    "corpus_mention": 2
+   },
+   "marked_deleted_upstream": 0,
+   "method": "versioned_entities rows, grouped by the reason each was admitted",
+   "caveat": "'unrecorded' means the row predates the column, not that no rule applied."
+  },
+  "unmeasured": [],
+  "method": "Composed from rows the lane already wrote -- there is no counters file. Every block survives a restart, because nothing here is a process-cumulative counter."
+ },
+ "name_resolutions": 0,
+ "resolved_names": [],
+ "bar": "every figure above is read from the lane's own rows; the resolution count is taken at socket.getaddrinfo, because a DNS lookup is itself egress"
+}

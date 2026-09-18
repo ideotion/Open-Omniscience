@@ -458,7 +458,16 @@
     // unlock feels instant on a large encrypted corpus (field report: "unlocking takes
     // ages" while CPU/SSD sat idle waiting on that serial best-effort work). The app is
     // fully usable meanwhile; the upkeep finishes behind the scenes.
-    async function waitReadyThenEnter() {
+    // Q725 = a: the Wikipedia lane's first-run wizard is "reachable from unlock.html
+    // AND #set-wikipedia". It is reachable from here by HANDING OFF rather than by
+    // being duplicated: this page runs BEFORE the corpus is open, so it cannot read
+    // or write a lane setting, and a second copy of the wizard living here would be
+    // a second copy to keep in step with the rulings. A fresh corpus enters the app
+    // at "/?wikiwizard=1" and the app opens the dialog once; an ordinary unlock
+    // enters at "/" exactly as before, because an operator who has already answered
+    // must not be asked again on every launch.
+    async function waitReadyThenEnter(fresh) {
+      const dest = fresh ? "/?wikiwizard=1" : "/";
       ["view-unlock", "view-create", "view-open"].forEach((v) => $(v).classList.add("hidden"));
       $("view-preparing").classList.remove("hidden");
       const phaseEl = $("prep-phase");
@@ -475,10 +484,10 @@
         if (s && s.phase) phaseEl.textContent = PHRASES[s.phase] || s.phase;
         // Enter as soon as the corpus is queryable (or fully ready) — the upkeep
         // keeps running in the background; nothing the app does needs it finished.
-        if (s && (s.queryable || s.state === "ready")) { location.replace("/"); return; }
+        if (s && (s.queryable || s.state === "ready")) { location.replace(dest); return; }
         await new Promise((r) => setTimeout(r, 300));
       }
-      location.replace("/");  // fail-open: enter anyway rather than trap the user
+      location.replace(dest);  // fail-open: enter anyway rather than trap the user
     }
 
     // Honest elapsed-time clock (E3 / P0.4 UI half). The unlock POST runs init_db
@@ -517,7 +526,7 @@
       // synchronous init_db that runs inside fn() -- but tell _startPrep which view is
       // being hidden (btn.id says which form this is) so a failure can restore it.
       _startPrep(btn.id === "btn-unlock" ? "view-unlock" : "view-create");
-      try { await fn(); await waitReadyThenEnter(); }
+      try { await fn(); await waitReadyThenEnter(btn.id === "btn-create"); }
       catch (e) {
         _stopPrep();
         const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
