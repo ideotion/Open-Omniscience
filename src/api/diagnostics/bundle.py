@@ -690,6 +690,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("soak-window.json", lambda: soak_window_report(db=db)),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
+        # The 0.4 release acceptance run's last report (2026-09-18; read-only, never runs
+        # one) -- so the bundle taken at the end of the run carries the run's own record.
+        ("release-run.json", lambda: _release_run_last()),
         # §6 recursive-improvement loop instruments: the two cheap, decrypt-light DATA reports
         # that were missing from the bundle, plus the loop SELF-INVENTORY (are the loop's own
         # mechanism-proof gates green?). Kept last so a heavy corpus never delays them.
@@ -1102,6 +1105,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/country-code-duplicates": "country-code-duplicates.json",
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
+    "/release-run/last": "release-run.json",  # the 0.4 release acceptance run (2026-09-18)
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
     "/law-ingest": "law-ingest.json",  # ruling 34c (field feedback 2026-08-07)
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
@@ -1147,6 +1151,7 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     ),
     "/all-job/volumes/{name}": "job control — one volume of the split bundle",
     "/p0-validation/status": "job control", "/p0-validation/download": "job control",
+    "/release-run/status": "job control", "/release-run/download": "job control",
     "/discover-world/status": "job control",
     "/enrich-source-types/status": "job control",
     "/keyword-triage/status": "job control", "/keyword-triage/download": "job control",
@@ -1230,6 +1235,18 @@ def _diagnostics_coverage_report() -> dict:
         }
     except Exception as exc:  # noqa: BLE001 - a coverage-recompute glitch must not sink the run
         return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+def _release_run_last() -> dict:
+    """The newest 0.4 release-run report as a bundle member (read-only; never runs one).
+
+    A named function with a LAZY import, for the same two reasons ``_country_code_scan``
+    is one: the lambda in the members list reads as one call, and importing the route
+    slice here would register its routes at the bundle's import position, which the
+    Q1139 split guard pins by name."""
+    from src.monitoring.release_run import last_release_run_report
+
+    return last_release_run_report()
 
 
 def _country_code_scan(db) -> dict:

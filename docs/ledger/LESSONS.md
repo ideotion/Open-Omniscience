@@ -11485,3 +11485,31 @@ because nothing is missing anywhere for a count to find.
 `loadHomeChannels` FETCHES. That would have made a language switch ask the backend a question behind
 the reader — the thing every other entry in that listener is carefully written not to do. Split the
 fetch from the render, cache the payload, register only the render half.
+
+
+## 2026-09-18 — A ROUTE THAT CLEARS THE KILL SWITCH IS AN OFFLINE→ONLINE TRANSITION WHATEVER ITS BUTTON IS CALLED (the unattended "arm" button; found by composing it into the 0.4 release-run button)
+
+**The setting.** The 0.4 release-run button composes the unattended-run kit for its soak, so the
+session read what that kit's button does before calling it. `POST /api/system/unattended/start`
+clears the kill switch, notes the operator crossing online and starts the collector — the ruled
+path, the same two calls the top-bar toggle makes, in the same order, deliberately "never a second
+way in". And the button that calls it, `unattendedStart`, called it directly: no `ensureOnline`,
+so the ONE offline→online consent popup invariant #14 names never opened. The verb on the button
+was *arm*; the effect on the machine was *go online*.
+
+**The general form, one notch past #14e.** #14e says the gate covers what the UI does to help you
+decide (an estimate, a preview) and not only the action. This is the mirror case: the ACTION was
+gated on every path that said "online" and ungated on the one path that said something else. The
+rule is about the TRANSITION, not the word: any control whose server-side effect includes
+`clear_kill_switch()` is the network toggle wearing another label, and the client half owes the
+popup. A grep for `clear_kill_switch` in `src/api/` against a grep for `ensureOnline` on the
+buttons that reach each route is the whole audit, and it takes a minute.
+
+**Two riders from the same hour.** (1) The first pin on the fix asserted `"await ensureOnline(" in
+start` and a mutant that turned the condition to `false` and kept the call text SURVIVED — the
+recorded needle-inside-the-dead-branch class, in a file whose author had just read that lesson.
+Pin the CONDITION (`if (typeof ensureOnline === "function" && !await ensureOnline(`) and the
+mutant reddens by name. (2) An instance booted with `OO_NO_SCHEDULER=1` is ONLINE from boot,
+because the boot-time airplane engagement lives inside that same block; a click-through that
+"proves the press did not go online" against such an instance proves nothing unless it compares
+before and after — which is what the record now does, and says.

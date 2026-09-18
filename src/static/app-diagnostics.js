@@ -728,6 +728,11 @@
       const el = $("unatt-status");
       const set = (m) => { if (el) el.textContent = m; };
       const note = (($("unatt-note") && $("unatt-note").value) || "").trim();
+      // Invariant #14: the arming goes ONLINE (the server clears the kill switch), so the
+      // press passes the ONE consent popup like every other offline->online transition.
+      // Found while composing this button into the 0.4 release run (2026-09-18).
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Start the unattended run (goes online: continuous collection and the qualification drain)"))) return;
       if (btn) btn.disabled = true;
       set(t("Arming…"));
       try {
@@ -879,6 +884,174 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/p0-validation/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
       const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
+    // ---- The 0.4 release run (2026-09-18) --------------------------------------------
+    // ONE press that sequences the board's operator rows (src/monitoring/release_run.py):
+    // the P0 trio into a dated backup folder, the committed fresh-install restore, the
+    // >= 72 h soak, the end-of-window readings, one report with a status per row.
+    // Mirrors runP0Validation: start (the passphrase leaves the DOM the moment it is
+    // handed over), poll with the same honesty latch, render the rows + download links.
+    // The run goes ONLINE for the soak, so the press passes the ONE consent popup
+    // (invariant #14) BEFORE anything starts -- a job that flips the kill switch on the
+    // server is still an offline->online transition the operator must consent to.
+    function _rrParams(profile) {
+      const dest = (($("rr-dest") && $("rr-dest").value) || "").trim();
+      const pass = ($("rr-pass") && $("rr-pass").value) || "";
+      const legacy = (($("rr-legacy") && $("rr-legacy").value) || "").trim();
+      const hoursRaw = parseFloat(($("rr-hours") && $("rr-hours").value) || "72");
+      const hours = (isFinite(hoursRaw) && hoursRaw > 0) ? hoursRaw : 72;
+      return {
+        dest_dir: dest, passphrase: pass, profile: profile,
+        soak_hours: hours,
+        include_newsletters: !!($("rr-newsletters") && $("rr-newsletters").checked),
+        online_probes: !!($("rr-probes") && $("rr-probes").checked),
+        run_row5_quarantine: !!($("rr-row5") && $("rr-row5").checked),
+        legacy_backup_path: legacy,
+      };
+    }
+
+    function _rrRenderReport(out, rep) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const rows = (rep && rep.board_rows) || [];
+      let html = "";
+      rows.forEach((r) => {
+        const v = String(r.status || "?");
+        const color = v === "measured" ? "var(--ok)" : (v === "error" || v === "refused" ? "var(--err)" : "var(--caveat)");
+        html += '<div><span style="color:' + color + ';font-weight:600">[' + esc(v.toUpperCase())
+          + ']</span> ' + esc(r.row) + ' — ' + esc(r.clause || "")
+          + (r.note ? '<div class="hint" style="margin-left:14px">' + esc(r.note) + '</div>' : '') + '</div>';
+      });
+      const sum = (rep && rep.summary) || {};
+      const tally = sum.rows_by_status || {};
+      const tallyTxt = Object.keys(tally).map((k) => esc(k) + " " + esc(tally[k])).join(" · ");
+      const warns = ((rep && rep.warnings) || []).map((w) => '<div class="hint">' + esc(w) + '</div>').join("");
+      const soak = (rep && rep.soak) || {};
+      const soakTxt = soak.hours_requested != null
+        ? ('<div>' + esc(soak.elapsed_hours) + ' / ' + esc(soak.hours_requested) + ' h · ' + esc(soak.ended_by || "") + '</div>') : "";
+      out.innerHTML = html + soakTxt
+        + '<div style="margin-top:4px">' + tallyTxt + (rep && rep.interim ? ' · INTERIM' : '') + '</div>'
+        + warns
+        + '<div class="hint">' + esc(sum.note || "") + '</div>'
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/release-run/download?format=json" target="_blank">'
+        + t("Download report (.json)") + '</a> · <a href="/api/diagnostics/release-run/download?format=txt" target="_blank">'
+        + t("readable (.txt)") + '</a></div>';
+    }
+
+    // The poll, shared by the start button and "Check now". Returns when the run reaches
+    // a terminal state, the poll ceiling passes, or the status says the run is not live.
+    async function _rrPoll(set, out, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const once = !!(opts && opts.once);
+      let miss = 0;
+      let settled = false;
+      // A soak is days long; the panel poll is not the record (the state file is), so
+      // the ceiling is short and the line says where to look afterwards.
+      const deadline = Date.now() + (once ? 0 : 10 * 60 * 1000);
+      do {
+        let s;
+        try { s = await api("/api/diagnostics/release-run/status"); miss = 0; }
+        catch (e) {
+          miss++;
+          set(t("Connection hiccup — retrying…"));
+          await sleep(Math.min(2000 * miss, 10000));
+          if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+          continue;
+        }
+        const state = s && s.state;
+        const p = (s && s.persisted) || {};
+        if (s && s.interrupted) {
+          settled = true;
+          set(t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
+            + t("the soak window ended there; press the button again for a new window."));
+          break;
+        }
+        if (state === "done" && s.ready) { settled = true; set(t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
+        if (state === "error") { settled = true; set(t("Failed:") + " " + (s.error || t("unknown error"))); break; }
+        if (state === "cancelled") {
+          settled = true; set(t("Cancelled."));
+          if (s.result && s.result.report) _rrRenderReport(out, s.result.report);
+          break;
+        }
+        if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+        if (state !== "running") {
+          settled = true;
+          set(p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
+          break;
+        }
+        const member = s.detail ? " · " + s.detail : "";
+        set(t("Running in the background…") + member);
+        if (once) { settled = true; break; }
+        await sleep(5000);
+      } while (Date.now() < deadline);
+      if (!settled) set(t("Still running — check the task manager."));
+    }
+
+    async function releaseRunStart(btn, profile) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("rr-status"); const out = $("rr-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const params = _rrParams(profile || "release-scale");
+      if (!params.dest_dir || !params.passphrase) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      // The consent, at the press: the run goes online for the soak.
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
+      if (btn) btn.disabled = true;
+      if (out) out.innerHTML = "";
+      set(t("Starting…"));
+      try {
+        try {
+          await api("/api/diagnostics/release-run", { method: "POST", body: JSON.stringify(params) });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          return;
+        }
+        // Hand-off done: the passphrase leaves the DOM now.
+        if ($("rr-pass")) $("rr-pass").value = "";
+        await _rrPoll(set, out, {});
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function releaseRunStatus(btn) {
+      const el = $("rr-status"); const out = $("rr-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      if (btn) btn.disabled = true;
+      try {
+        await _rrPoll(set, out, { once: true });
+        // Whatever the live state, the newest saved report (final or interim) is worth
+        // showing on a check -- it is the thing a returning operator came for.
+        try {
+          const last = await api("/api/diagnostics/release-run/last");
+          if (last && last.available) _rrRenderReport(out, last);
+        } catch (_e) { /* the status line already says what is known */ }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function releaseRunCollect(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("rr-status");
+      const set = (m) => { if (el) el.textContent = m; };
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/diagnostics/release-run/collect", { method: "POST" });
+        set(r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
+      } catch (e) {
+        set(t("Failed:") + " " + ((e && e.message) || ""));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function releaseRunCancel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/diagnostics/release-run/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+      const el = $("rr-status"); if (el) el.textContent = t("Cancelling…");
     }
 
 

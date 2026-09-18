@@ -1,0 +1,219 @@
+{
+  "base": "http://127.0.0.1:8231",
+  "locales": {
+    "en": {
+      "first_run_wizard_dismissed": true,
+      "expand": {
+        "resource_requests_before_expand": 75,
+        "resource_requests_after_expand": 75
+      },
+      "controls": {
+        "rr-dest": {
+          "present": true,
+          "width": 1120,
+          "checked": null,
+          "type": "text",
+          "text": ""
+        },
+        "rr-pass": {
+          "present": true,
+          "width": 200,
+          "checked": null,
+          "type": "password",
+          "text": ""
+        },
+        "rr-legacy": {
+          "present": true,
+          "width": 1120,
+          "checked": null,
+          "type": "text",
+          "text": ""
+        },
+        "rr-hours": {
+          "present": true,
+          "width": 70,
+          "checked": null,
+          "type": "number",
+          "text": ""
+        },
+        "rr-newsletters": {
+          "present": true,
+          "width": 13,
+          "checked": true,
+          "type": "checkbox",
+          "text": ""
+        },
+        "rr-probes": {
+          "present": true,
+          "width": 13,
+          "checked": true,
+          "type": "checkbox",
+          "text": ""
+        },
+        "rr-row5": {
+          "present": true,
+          "width": 13,
+          "checked": false,
+          "type": "checkbox",
+          "text": ""
+        },
+        "rr-run-btn": {
+          "present": true,
+          "width": 203,
+          "checked": null,
+          "type": "submit",
+          "text": "Run on this instance"
+        },
+        "rr-run-million-btn": {
+          "present": true,
+          "width": 301,
+          "checked": null,
+          "type": "submit",
+          "text": "Run as the ~1M-article instance"
+        },
+        "rr-status": {
+          "present": true,
+          "width": 0,
+          "checked": null,
+          "type": null,
+          "text": ""
+        },
+        "rr-result": {
+          "present": true,
+          "width": 1120,
+          "checked": null,
+          "type": null,
+          "text": ""
+        },
+        "box_text_head": "0.4 release run (the board's operator rows) One press before a multi-day absence. In order: the P0 data-safety trio into a dated backup folder on the destinatio",
+        "buttons": [
+          "Run on this instance",
+          "Run as the ~1M-article instance",
+          "Collect now",
+          "Check now",
+          "Cancel"
+        ]
+      },
+      "status_after_check_now": "Not running.",
+      "status_after_collect_now": "No run is in progress.",
+      "status_after_empty_run": "Enter a destination directory and a backup passphrase first.",
+      "consent_popup_opened_on_empty_run": false,
+      "network_online_before_empty_run": true,
+      "network_online_after_empty_run": true,
+      "dir": {
+        "attr": "ltr",
+        "lang": "en",
+        "computed": "ltr"
+      },
+      "ui_lang": "en"
+    },
+    "ar": {
+      "first_run_wizard_dismissed": true,
+      "expand": {
+        "resource_requests_before_expand": 76,
+        "resource_requests_after_expand": 76
+      },
+      "controls": {
+        "rr-dest": {
+          "present": true,
+          "width": 1120,
+          "checked": null,
+          "type": "text",
+          "text": ""
+        },
+        "rr-pass": {
+          "present": true,
+          "width": 200,
+          "checked": null,
+          "type": "password",
+          "text": ""
+        },
+        "rr-legacy": {
+          "present": true,
+          "width": 1120,
+          "checked": null,
+          "type": "text",
+          "text": ""
+        },
+        "rr-hours": {
+          "present": true,
+          "width": 70,
+          "checked": null,
+          "type": "number",
+          "text": ""
+        },
+        "rr-newsletters": {
+          "present": true,
+          "width": 13,
+          "checked": true,
+          "type": "checkbox",
+          "text": ""
+        },
+        "rr-probes": {
+          "present": true,
+          "width": 13,
+          "checked": true,
+          "type": "checkbox",
+          "text": ""
+        },
+        "rr-row5": {
+          "present": true,
+          "width": 13,
+          "checked": false,
+          "type": "checkbox",
+          "text": ""
+        },
+        "rr-run-btn": {
+          "present": true,
+          "width": 217,
+          "checked": null,
+          "type": "submit",
+          "text": "التشغيل على هذه النسخة"
+        },
+        "rr-run-million-btn": {
+          "present": true,
+          "width": 268,
+          "checked": null,
+          "type": "submit",
+          "text": "التشغيل كنسخة ~1 مليون مقالة"
+        },
+        "rr-status": {
+          "present": true,
+          "width": 0,
+          "checked": null,
+          "type": null,
+          "text": ""
+        },
+        "rr-result": {
+          "present": true,
+          "width": 1120,
+          "checked": null,
+          "type": null,
+          "text": ""
+        },
+        "box_text_head": "تشغيل إصدار 0.4 (صفوف المشغّل في اللوحة) ضغطة واحدة قبل غياب يمتد أياماً. بالترتيب: ثلاثية سلامة البيانات P0 في مجلد نسخة احتياطية مؤرَّخ على الوجهة؛ ثم استعادة",
+        "buttons": [
+          "التشغيل على هذه النسخة",
+          "التشغيل كنسخة ~1 مليون مقالة",
+          "اجمع الآن",
+          "تحقق الآن",
+          "إلغاء"
+        ]
+      },
+      "status_after_check_now": "غير جارٍ.",
+      "status_after_collect_now": "لا يوجد تشغيل جارٍ.",
+      "status_after_empty_run": "أدخل دليل الوجهة وعبارة مرور النسخة الاحتياطية أولاً.",
+      "consent_popup_opened_on_empty_run": false,
+      "network_online_before_empty_run": true,
+      "network_online_after_empty_run": true,
+      "dir": {
+        "attr": "rtl",
+        "lang": "ar",
+        "computed": "rtl"
+      },
+      "ui_lang": "ar"
+    }
+  },
+  "console_errors": [],
+  "page_errors": []
+}
