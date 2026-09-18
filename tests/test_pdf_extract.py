@@ -230,3 +230,56 @@ def test_real_tesseract_reads_a_scanned_pdf():
     text, reason = extract_pdf_text(_SCANNED_TEXT_PDF.read_bytes(), ocr=True)
     assert reason == "ocr"
     assert text and "liberty" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Ruling L6's packaging half.
+#
+# WHY THIS EXISTS. The behavioural tests above all run in an environment that HAS pypdf,
+# so every one of them would stay green if a future edit moved the requirement back into
+# the [pdf] extra — and the one test that drives the missing-extractor path monkeypatches
+# `pdf_available`, so it would stay green too. The ruling's substance is a PACKAGING fact,
+# and nothing was reading the packaging.
+#
+# The alias clause is the half that is easy to lose: the ruling promotes pypdf into the
+# default install, and an obvious "cleanup" is to delete the now-redundant extra. That
+# would break every script, CI lane, README line and operator shell that says
+# `pip install -e ".[pdf]"`, with an error about an unknown extra rather than about
+# anything the operator did.
+def test_L6_pypdf_is_a_default_dependency_and_the_extra_survives_as_an_alias():
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    core = [d for d in cfg["project"]["dependencies"] if d.split(">=")[0].strip() == "pypdf"]
+    assert core, (
+        "ruling L6 puts pypdf in the DEFAULT install: 63 of the 275 law catalogue sources "
+        "are PDF-only, and a core install that cannot read them does not fail — it records "
+        "'no usable text' and carries on, over a gap nobody chose"
+    )
+
+    extras = cfg["project"]["optional-dependencies"]
+    assert "pdf" in extras, (
+        "the [pdf] extra must SURVIVE as an alias: deleting it breaks every "
+        'pip install -e ".[pdf]" that already exists, with an unknown-extra error'
+    )
+    assert [d for d in extras["pdf"] if d.split(">=")[0].strip() == "pypdf"]
+
+    # The lock file is what a reproducible install actually reads.
+    #
+    # The block is CUT at the next top-level requirement before its hashes are counted.
+    # The first draft counted them in everything after the pin, which is hundreds of other
+    # packages' hashes — deleting pypdf's own two left that assertion green, and the
+    # mutation matrix is the only reason anybody knows it.
+    lock = (root / "requirements.lock").read_text(encoding="utf-8")
+    assert "\npypdf==" in lock, "pypdf must be pinned in requirements.lock"
+    block: list[str] = []
+    for line in lock.split("\npypdf==", 1)[1].split("\n")[1:]:
+        if line and not line[0].isspace():
+            break
+        block.append(line)
+    assert sum(line.count("--hash=sha256:") for line in block) >= 2, (
+        "a pinned requirement without its publisher-attested hashes is a pin in name only"
+    )
