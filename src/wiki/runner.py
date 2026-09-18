@@ -48,6 +48,7 @@ from typing import Any
 
 from src.versioned.adapters.base import ReadBudget
 from src.versioned.pipeline import Admission, PassResult, run_feed_once
+from src.wiki.counters import record_size_sample
 from src.wiki.identity import parse_external_id
 from src.wiki.lane import WikiStreamAdapter, edition_of
 from src.wiki.tiers import BudgetState, HotSet
@@ -82,6 +83,9 @@ class DrainReport:
     text_withheld: int = 0
     text_withheld_reasons: dict[str, int] = field(default_factory=dict)
     gaps_recorded: int = 0
+    #: Whether this drain recorded a lane-file size sample. At most one an hour, so
+    #: ``False`` is the ordinary case and not a failure.
+    size_sampled: bool = False
     errors: list[str] = field(default_factory=list)
     #: The budget as it was read at the START of this drain, never recomputed after —
     #: a report whose budget line was measured after the writes it describes would
@@ -111,6 +115,7 @@ class DrainReport:
             "text_withheld": self.text_withheld,
             "text_withheld_reasons": dict(self.text_withheld_reasons),
             "gaps_recorded": self.gaps_recorded,
+            "size_sampled": self.size_sampled,
             "errors": list(self.errors),
             "budget": self.budget,
         }
@@ -193,6 +198,16 @@ def drain_once(
     armed and a fixture client, resolving no names at all.
     """
     report = DrainReport(budget=budget.as_dict())
+    # THE GROWTH SERIES IS FED FROM THE MEASUREMENT ALREADY IN HAND. ``budget`` was
+    # built from one ``lane_file_bytes`` call at the start of this drain; sampling
+    # from it costs nothing and, crucially, records the SAME number the budget
+    # decision was made on. A second stat here would produce a slightly different
+    # figure and the two surfaces would disagree about one quantity.
+    try:
+        report.size_sampled = record_size_sample(lane, budget.disk_bytes)
+    except Exception as exc:  # noqa: BLE001 - a missing sample must not end a drain
+        _LOG.debug("could not record a lane size sample", exc_info=True)
+        report.errors.append(f"size sample: {type(exc).__name__}: {exc}")
     admit = make_admit(adapter, hot_sets)
     policy = make_text_policy(budget)
     for feed in adapter.feeds():
