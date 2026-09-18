@@ -1,0 +1,88 @@
+{
+  "base": "http://127.0.0.1:8213",
+  "locales": {
+    "en": {
+      "first_run_wizard_dismissed": true,
+      "headline_state": "Collecting now: 3 · Judged so far: 4 qualified · 2 disqualified · 5 not yet judged",
+      "admission_rows": [
+        {
+          "text": "admitted-undone.example · Collection was: off · Status was: unqualified · ⁨2026-09-18T12:00:00⁩ Undone ⁨2026-09-18T13:00:00⁩",
+          "hasUndoButton": false
+        },
+        {
+          "text": "admitted-then-refused.example · Collection was: off · Status was: unqualified · ⁨2026-09-18T10:00:00⁩ A later verdict replaced this one",
+          "hasUndoButton": false
+        },
+        {
+          "text": "admitted-live.example · Collection was: off · Status was: unqualified · ⁨2026-09-18T09:00:00⁩ Undo",
+          "hasUndoButton": true
+        }
+      ],
+      "overlay_text": "This install ships no record of earlier verdicts, so there is nothing to adopt. Sources are judged here as they always were.",
+      "audit_text": "Showing 3 of 3 admissions · 1 undone\nadmitted-undone.example · Collection was: off · Status was: unqualified · ⁨2026-09-18T12:00:00⁩\nUndone ⁨2026-09-18T13:00:00⁩\nadmitted-then-refused.example · Collection was: off · Status was: unqualified · ⁨2026-09-18T10:00:00⁩\nA later verdict replaced this one\nadmitted-live.example · Collection was: off · Status was: unqualified · ⁨2026-09-18T09:00:00⁩\nUndo\nAdmission is about EXTRACTION VALIDITY only -- never editorial merit, and never a score. An undo reverses this instance's decision; it does not disqualify the source, so a later pass may admit it again.\n2 of 3 collecting sources are not accounted for here This lists admissions made by judging. Sources can also be collecting because they came stamped in the shipped catalogue, carried an inherited stamp, or arrived in a restored backup -- those are not judgements made here and have no row to undo.",
+      "dir": {
+        "attr": "ltr",
+        "lang": "en",
+        "computed": "ltr"
+      }
+    },
+    "fr": {
+      "first_run_wizard_dismissed": true,
+      "headline_state": "Collecte en cours: 3 · Jugées jusqu’ici: 4 qualifié · 2 disqualifié · 5 pas encore jugées",
+      "admission_rows": [
+        {
+          "text": "admitted-undone.example · Collecte était: désactivée · Statut était: non jugé · ⁨2026-09-18T12:00:00⁩ Annulée ⁨2026-09-18T13:00:00⁩",
+          "hasUndoButton": false
+        },
+        {
+          "text": "admitted-then-refused.example · Collecte était: désactivée · Statut était: non jugé · ⁨2026-09-18T10:00:00⁩ Un verdict plus récent a remplacé celui-ci",
+          "hasUndoButton": false
+        },
+        {
+          "text": "admitted-live.example · Collecte était: désactivée · Statut était: non jugé · ⁨2026-09-18T09:00:00⁩ Annuler",
+          "hasUndoButton": true
+        }
+      ],
+      "overlay_text": "Cette installation ne contient aucun relevé de verdicts antérieurs : il n’y a donc rien à adopter. Les sources sont jugées ici comme elles l’ont toujours été.",
+      "audit_text": "Affichage de 3 admissions sur 3 · 1 annulées\nadmitted-undone.example · Collecte était: désactivée · Statut était: non jugé · ⁨2026-09-18T12:00:00⁩\nAnnulée ⁨2026-09-18T13:00:00⁩\nadmitted-then-refused.example · Collecte était: désactivée · Statut était: non jugé · ⁨2026-09-18T10:00:00⁩\nUn verdict plus récent a remplacé celui-ci\nadmitted-live.example · Collecte était: désactivée · Statut était: non jugé · ⁨2026-09-18T09:00:00⁩\nAnnuler\nL'admission ne porte que sur la VALIDITÉ DE L'EXTRACTION — jamais sur le mérite éditorial, et jamais sur une note. Une annulation revient sur la décision de cette instance ; elle ne disqualifie pas la source, donc un passage ultérieur peut l'admettre à nouveau.\n2 des 3 sources collectées ne sont pas expliquées ici Cette liste ne couvre que les admissions issues du jugement. Une source peut aussi être collectée parce qu'elle est arrivée déjà validée dans le catalogue fourni, portait un statut hérité, ou provenait d'une sauvegarde restaurée — ce ne sont pas des jugements rendus ici et ils n'ont aucune ligne à annuler.",
+      "dir": {
+        "attr": "ltr",
+        "lang": "fr",
+        "computed": "ltr"
+      }
+    },
+    "ar": {
+      "first_run_wizard_dismissed": true,
+      "headline_state": "قيد الجمع الآن: 3 · ما حُكم عليه حتى الآن: 4 مؤهل · 2 غير مؤهل · 5 لم يُحكم عليها بعد",
+      "admission_rows": [
+        {
+          "text": "admitted-undone.example · كان الجمع: معطّلة · كانت الحالة: لم يُقيّم بعد · ⁨2026-09-18T12:00:00⁩ تمّ التراجع ⁨2026-09-18T13:00:00⁩",
+          "hasUndoButton": false
+        },
+        {
+          "text": "admitted-then-refused.example · كان الجمع: معطّلة · كانت الحالة: لم يُقيّم بعد · ⁨2026-09-18T10:00:00⁩ حكم أحدث حلّ محل هذا الحكم",
+          "hasUndoButton": false
+        },
+        {
+          "text": "admitted-live.example · كان الجمع: معطّلة · كانت الحالة: لم يُقيّم بعد · ⁨2026-09-18T09:00:00⁩ تراجع",
+          "hasUndoButton": true
+        }
+      ],
+      "overlay_text": "لا تتضمّن هذه النسخة أي سجل لأحكام سابقة، فلا شيء لاعتماده. تُقيَّم المصادر هنا كما كانت دائمًا.",
+      "audit_text": "عرض 3 من أصل 3 قبول · تمّ التراجع عن 1\nadmitted-undone.example · كان الجمع: معطّلة · كانت الحالة: لم يُقيّم بعد · ⁨2026-09-18T12:00:00⁩\nتمّ التراجع ⁨2026-09-18T13:00:00⁩\nadmitted-then-refused.example · كان الجمع: معطّلة · كانت الحالة: لم يُقيّم بعد · ⁨2026-09-18T10:00:00⁩\nحكم أحدث حلّ محل هذا الحكم\nadmitted-live.example · كان الجمع: معطّلة · كانت الحالة: لم يُقيّم بعد · ⁨2026-09-18T09:00:00⁩\nتراجع\nالقبول يتعلق بصحة الاستخلاص فقط — وليس بالقيمة التحريرية ولا بدرجة تقييم. التراجع يلغي قرار هذه النسخة فحسب؛ وهو لا يُسقط أهلية المصدر، لذا قد يقبله مرور لاحق مرة أخرى.\n2 من أصل 3 مصدرًا قيد الجمع غير مُفسّرة هنا يسرد هذا القبولات الناتجة عن التقييم فقط. وقد يُجمع مصدر أيضًا لأنه وصل مختومًا في الفهرس المُرفق، أو حمل ختمًا موروثًا، أو أتى من نسخة احتياطية مُستعادة — وهذه ليست أحكامًا صدرت هنا ولا توجد لها سطور يُتراجع عنها.",
+      "dir": {
+        "attr": "rtl",
+        "lang": "ar",
+        "computed": "rtl"
+      },
+      "undo_click": {
+        "undone_before": 1,
+        "undone_after": 2,
+        "collecting_before": 3,
+        "collecting_after": 2
+      }
+    }
+  },
+  "console_errors": [],
+  "page_errors": []
+}

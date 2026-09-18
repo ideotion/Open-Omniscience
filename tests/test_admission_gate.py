@@ -35,10 +35,14 @@ from src.catalog.qualification import (  # noqa: E402
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
+    UNDO_ALREADY_UNDONE,
+    UNDO_LATER_ADMISSION,
+    UNDO_LATER_VERDICT,
     AdmissionUndoRefused,
     admission_audit,
     evaluate_and_stamp,
     log_no_evidence_attempts,
+    select_unqualified,
     undo_admission,
 )
 from src.database.models import Base, Source, SourceAdmissionEvent  # noqa: E402
@@ -483,13 +487,21 @@ def test_a_verdict_flipped_then_undone_then_re_judged_admits_again_and_records_t
     assert src.enabled is True
 
 
-def test_a_source_disqualified_after_being_admitted_can_still_have_its_admission_undone(
-    tmp_path,
-) -> None:
-    """The interleaving the ruling's safety valve has to survive: admit, then a later pass
-    disqualifies, then the operator undoes the original admission. The undo restores what
-    the ADMISSION replaced -- it does not launder the later disqualified verdict away, and
-    it does not leave a `qualified_at` stamp behind a non-qualified status."""
+def test_undoing_an_admission_a_LATER_VERDICT_replaced_is_REFUSED_by_name(tmp_path) -> None:
+    """Admit, then a later pass DISQUALIFIES, then the operator undoes the admission.
+
+    Found by the skeptic pass Q1101's acceptance asks for, and REPRODUCED before it was
+    believed. The earlier cut allowed this and restored ``prior_status="unqualified"``
+    over a ``disqualified`` the engine had reached on its own evidence -- so a source the
+    app had judged and REFUSED went back to reading never-judged. Measured on the real
+    selectors, that is not a cosmetic column rewrite: ``select_due_disqualified`` holds a
+    disqualified source behind its 1 -> 2 -> 4 -> 6 month ladder (not due at +0d or +20d,
+    due at +40d), while ``select_unqualified`` returns it the SAME DAY with no ladder at
+    all. The recorded laundering direction, through a path that lesson never touched.
+
+    By this point the admission is not in effect anyway -- the source is not collecting --
+    so refusing takes nothing away and cannot erase a verdict.
+    """
     s = _session(tmp_path)
     src = _src(s, "later-bad.example", status=STATUS_UNQUALIFIED, enabled=False)
     evaluate_and_stamp(s, [src], {}, now=NOW)
@@ -501,12 +513,200 @@ def test_a_source_disqualified_after_being_admitted_can_still_have_its_admission
     assert src.status == STATUS_DISQUALIFIED
     assert src.enabled is True  # the disqualification does not revoke, per the mirror above
 
-    undo_admission(s, ev.id, now=NOW + timedelta(days=2))
+    with pytest.raises(AdmissionUndoRefused) as excinfo:
+        undo_admission(s, ev.id, now=NOW + timedelta(days=2))
+    assert "later verdict" in str(excinfo.value)
 
-    assert src.enabled is False
+    # THE VERDICT SURVIVES, which is the whole point -- and so does the audit row, which
+    # is append-only and must not read as undone by a refusal.
+    assert src.status == STATUS_DISQUALIFIED
+    assert src.enabled is True
+    assert _events(s)[0].undone_at is None
+    # And it is NOT back in the un-laddered trial queue.
+    assert select_unqualified(s, limit=10) == []
+
+
+def test_the_later_verdict_refusal_does_NOT_fire_while_the_ADMISSION_STILL_STANDS(
+    tmp_path,
+) -> None:
+    """THE NEGATIVE-SPACE TWIN, and the one that makes the guard a guard rather than a
+    blanket refusal: an operator who merely turns a still-qualified source OFF has not
+    replaced the verdict, so their undo must still work. A fix that refused here would be
+    the same defect pointing the other way -- conservative-looking, and it would take the
+    safety valve away in the ordinary case."""
+    s = _session(tmp_path)
+    src = _src(s, "still-good.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [src], {}, now=NOW)
+    s.commit()
+    (ev,) = _events(s)
+
+    src.enabled = False           # the operator's own hand, no new verdict
+    s.commit()
+    assert src.status == STATUS_QUALIFIED
+
+    out = undo_admission(s, ev.id, now=NOW + timedelta(days=1))
+
+    assert out["undone"] is True
     assert src.status == STATUS_UNQUALIFIED
-    assert src.qualified_at is None
-    assert src.qualification_criteria_version is None
+    assert src.enabled is False
+    assert _events(s)[0].undone_at is not None
+
+
+def test_a_refusal_that_says_UNDO_THAT_ONE_FIRST_always_points_at_a_REVERSIBLE_row(
+    tmp_path,
+) -> None:
+    """THE ORDER of the two refusals, pinned -- found by the skeptic pass and reproduced
+    before it was believed.
+
+    ``later-admission-in-effect`` does not merely refuse, it gives ADVICE: *undo that one
+    first*. Advice that leads to a second refusal is a dead end wearing the costume of a
+    way out. With the guards in the other order, a source carrying TWO standing admissions
+    AND a later disqualification answered ``later-admission-in-effect`` on the older row
+    and ``later-verdict-in-effect`` on the row it pointed at -- so an operator following
+    the instruction hit a second refusal and NO row for that source could be reversed at
+    all, while the panel drew both as merely "blocked, see the other one".
+
+    Reading the source's CURRENT state first makes the advice true by construction, and
+    that is the property this test exists to keep: a row is only ever told to defer to a
+    newer admission while the source is still qualified, which is exactly when that newer
+    admission is itself reversible.
+    """
+    s = _session(tmp_path)
+    # TWO standing admissions (admit, the operator disables it, a later pass admits it
+    # again) -- the shape the older-admission guard was written for...
+    doomed = _src(s, "advice-dead-end.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [doomed], {}, now=NOW)
+    s.commit()
+    doomed.enabled = False
+    s.commit()
+    evaluate_and_stamp(s, [doomed], {}, now=NOW + timedelta(days=1))
+    s.commit()
+    # ...and THEN the later verdict, which writes no admission row of its own.
+    evaluate_and_stamp(s, [doomed], {doomed.id: _EXTRACTION_FAIL}, now=NOW + timedelta(days=2))
+    s.commit()
+    assert doomed.status == STATUS_DISQUALIFIED
+    assert len(_events(s)) == 2, "the fixture needs both admissions standing"
+
+    # A second source, still qualified, carrying the same two-admission shape: the case
+    # the older-admission refusal is FOR, so this test cannot pass by never firing it.
+    ok = _src(s, "advice-works.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [ok], {}, now=NOW)
+    s.commit()
+    ok.enabled = False
+    s.commit()
+    evaluate_and_stamp(s, [ok], {}, now=NOW + timedelta(days=1))
+    s.commit()
+
+    rows = admission_audit(s, limit=25)["events"]
+    by_source: dict[int, list[dict]] = {}
+    for row in rows:
+        by_source.setdefault(int(row["source_id"]), []).append(row)
+
+    # THE INVARIANT, stated over every source in the audit rather than over this fixture:
+    # if any row is told to defer to a newer admission, SOME row for that source must
+    # actually be reversible, or the advice cannot be followed.
+    deferring = [r for r in rows if r["blocked_by"] == UNDO_LATER_ADMISSION]
+    assert deferring, "anti-vacuity: no row deferred, so the invariant was never tested"
+    for row in deferring:
+        siblings = by_source[int(row["source_id"])]
+        assert any(sib["reversible"] for sib in siblings), (
+            f"{row['domain']} was told to undo a later admission first, but no admission "
+            f"of it is reversible: {[(x['id'], x['blocked_by']) for x in siblings]}"
+        )
+
+    # And the two fixtures say the two different things, so the invariant above is holding
+    # because of the ORDER and not because one branch stopped happening.
+    doomed_rows = by_source[int(doomed.id)]
+    assert {r["blocked_by"] for r in doomed_rows} == {UNDO_LATER_VERDICT}, (
+        "a disqualified source's rows must ALL name the verdict -- naming each other "
+        "sends the operator in a circle"
+    )
+    ok_rows = sorted(by_source[int(ok.id)], key=lambda r: r["id"])
+    assert [r["blocked_by"] for r in ok_rows] == [UNDO_LATER_ADMISSION, None]
+
+    # The advice, followed for real: the row it names really does undo, and then the older
+    # one does too. (The doomed source's rows stay refused, which is the point -- there is
+    # nothing left for an undo to take back once the engine has refused the source.)
+    undo_admission(s, ok_rows[1]["id"], now=NOW + timedelta(days=3))
+    undo_admission(s, ok_rows[0]["id"], now=NOW + timedelta(days=4))
+    with pytest.raises(AdmissionUndoRefused, match="later verdict"):
+        undo_admission(s, doomed_rows[0]["id"], now=NOW + timedelta(days=3))
+
+
+def test_the_audit_says_which_rows_the_ENDPOINT_WOULD_REFUSE(tmp_path) -> None:
+    """A button that renders claims its capability, so the panel must not offer an Undo
+    the handler will always refuse. Both read ONE predicate, so they cannot disagree about
+    a row: the audit publishes ``reversible`` + the ``blocked_by`` TOKEN the client keys,
+    and every blocked row here is one ``undo_admission`` really does refuse."""
+    s = _session(tmp_path)
+    live = _src(s, "live.example", status=STATUS_UNQUALIFIED, enabled=False)
+    gone = _src(s, "gone-verdict.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [live, gone], {}, now=NOW)
+    s.commit()
+    evaluate_and_stamp(s, [gone], {gone.id: _EXTRACTION_FAIL}, now=NOW + timedelta(days=1))
+    s.commit()
+
+    by_domain = {e["domain"]: e for e in admission_audit(s, limit=25)["events"]}
+
+    assert by_domain["live.example"]["reversible"] is True
+    assert by_domain["live.example"]["blocked_by"] is None
+    assert by_domain["gone-verdict.example"]["reversible"] is False
+    assert by_domain["gone-verdict.example"]["blocked_by"] == UNDO_LATER_VERDICT
+
+    # ANTI-VACUITY, both ways: the published verdict is the endpoint's own answer, not a
+    # second opinion that happens to agree today.
+    undo_admission(s, by_domain["live.example"]["id"], now=NOW + timedelta(days=2))
+    with pytest.raises(AdmissionUndoRefused):
+        undo_admission(s, by_domain["gone-verdict.example"]["id"], now=NOW + timedelta(days=2))
+
+
+def test_an_undone_row_is_not_reversible_and_says_so_with_its_own_token(tmp_path) -> None:
+    """``undone`` and ``reversible`` are different questions and must not collapse: an
+    undone row is not reversible either, and the reason it gives is its OWN, so the panel
+    never has to infer one state from the other."""
+    s = _session(tmp_path)
+    src = _src(s, "twice.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [src], {}, now=NOW)
+    s.commit()
+    (ev,) = _events(s)
+    undo_admission(s, ev.id, now=NOW + timedelta(days=1))
+
+    (row,) = admission_audit(s, limit=25)["events"]
+    assert row["undone"] is True
+    assert row["reversible"] is False
+    assert row["blocked_by"] == UNDO_ALREADY_UNDONE
+
+
+def test_every_blocked_by_token_the_audit_can_publish_is_keyed_in_every_locale(
+    tmp_path,
+) -> None:
+    """The tokens are a CLOSED vocabulary the renderer keys, so a token with no key is a
+    raw identifier on screen -- the exact defect a Chromium walk in ar caught for the
+    status vocabulary. Read the tokens from the MODULE, never a retyped list, so a new one
+    reddens here instead of shipping untranslated."""
+    import json
+    from pathlib import Path
+
+    from src.catalog import qualification as q
+
+    tokens = {
+        q.UNDO_ALREADY_UNDONE, q.UNDO_LATER_ADMISSION,
+        q.UNDO_LATER_VERDICT, q.UNDO_SOURCE_GONE,
+    }
+    assert len(tokens) == 4, "the tokens must stay distinct -- two reasons, two words"
+    js = Path("src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    labels = {}
+    for tok in tokens:
+        # the renderer's own map: "<token>": t("<label>")
+        i = js.index(f'"{tok}": t("')
+        start = i + len(f'"{tok}": t("')
+        labels[tok] = js[start : js.index('")', start)]
+    locales = Path("src/static/locales")
+    for lang_file in sorted(locales.glob("*.json")):
+        data = json.loads(lang_file.read_bytes())
+        for tok, label in labels.items():
+            assert label in data, f"{lang_file.name} is missing {label!r} (token {tok})"
+            assert str(data[label]).strip(), f"{lang_file.name}: {label!r} is empty"
 
 
 # --------------------------------------------------------------------------- #
