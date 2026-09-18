@@ -9028,3 +9028,78 @@ collection pass` fixes the pass noun in all three. **GENERAL FORM: consistency i
 of a SURFACE, not of a file — measure against the strings the user reads in the same breath.**
 Every correction here carries the sibling that settles it, written into the patch beside it, so
 the next session can check the reasoning rather than re-run the tally.
+
+### 2026-09-18 · `S04-14` the i18n remainder, and the gate the other two were blind to · PR #1160
+
+**THE FIGURES, WITH THE METHOD, because the two classifiers disagree by 176 strings.** Counted
+with `audit_chrome()` — the function `--max-untranslatable` itself calls; CI runs that gate
+WITHOUT `--audit-chrome`, which only prints — the untranslatable count went **461 → 0**.
+Counted with `unkeyed_t_calls()`, the unkeyed `t()` literals went **224 → 0**. The two
+populations are **not nested**: 11 of the 224 sat outside the 461, because the audit shapes cap
+at 200 characters and floor at 3 while the `t()` gate runs 1–400. That gap is where `OK` and
+`ok` lived — two characters each, no key, rendering Latin in eleven locales for as long as the
+app has existed, with both ratchets green over them.
+
+**THE REAL FINDING IS THAT A RATCHET CAN BE LOWERED BY DOING HALF THE WORK.** Every pattern in
+`_JS_SHAPES` and `_T_CALL` excludes `{` from the literal — deliberately, so a template
+literal's `${…}` never becomes a key nobody can write — which means `tf("Page {n} of {total}",
+…)`, the app's OWN interpolation frame, is invisible to both. A frame is also the prescribed
+FIX for a chain of welded fragments, so converting fragments into a frame removes them from
+both counts whether or not a key is ever added. Measured: **17 live frames with no `en.json`
+key**, seven of them in `app-backup.js` and shipped long before this slice — import summaries
+and timings rendering English in all 11 other locales. `--max-unkeyed-tf-frames` closes it, and
+is at 0 too. Its alias set is DISCOVERED from each file's own bindings rather than listed
+(`tf`, `TF` and `tfa` all occur), which is the same scar `_JS_SHAPES` carries about
+`t9(`/`t9m(`; and it decodes JS escapes before comparing, because three frames are written with
+`—` and a raw-source comparison called them unkeyed while `en.json` held the very key they
+resolve to.
+
+**TWELVE TRANSLATOR AGENTS ARE A FREE SOURCE-CODE AUDIT.** Each translated the same 410-string
+list and reported what it could not translate faithfully; the overlap was not linguistic. A
+`" kbps"` unit welded to a number outside any `t()`, so `ru.json` rendered the static
+placeholder `500 кбит/с` while the live readout beside it said `500 kbps`. `t("of")`, two
+characters, under both gates' floor and with no key at all, wedged in English between two
+translated words in `Page 1 of 5` — while `test_analysis_articles_paginated` asserted those two
+FRAGMENTS and called the control present. The seconds abbreviation, one character, same story.
+One label spelled `When / where / who` in exactly one checkbox and `When/Where/Who` in the other
+eight places, so it was a second key for one label. A key that had captured raw JS concatenation
+syntax. And a comment of this session's own that pasted a call-shaped literal, which both
+scanners read as a live UI string — done three times in one session, each time while
+documenting the broken form the commit had just fixed.
+
+**THE CHROMIUM WALK EARNED ITS KEEP TWICE, AND ITS OWN HARNESS WAS THE FIRST SUSPECT BOTH
+TIMES.** It caught the new Patterns-lens panel rendering `Corpus size: 24 / 100 000` in English
+under `fr` while the pills beside it translated — a render-once panel whose composed text nodes
+the walker can never match, fixed by splitting the renderer and repainting it from the CACHED
+payload on `oo:langchange`. And it caught the built-in stoplist summary rendering `(2,555)` with
+an English comma inside a French panel whose sibling figure three lines up reads `100 000`,
+because a bare `.toLocaleString()` reads the BROWSER locale, which `OOI18N.setLang` never
+touches. But three of its eight selectors were also wrong: `#tab-law p.hint` matched the FIRST
+hint in that tab (the World Bank panel), so the law text was never read at all, and `innerText`
+is EMPTY for a hidden element, so three surfaces inside a collapsed `<details>` came back as
+`""` and read as findings about the app. **GENERAL FORM: a UI check's own instrument is the
+first suspect, and the cost of checking is one probe against the cost of a fabricated defect in
+the ledger.**
+
+**RC17 filters the OFFER, never the parser** — `topical_vocabulary()` on the existing
+`fold_separator_variants` precedent, so a source already carrying `via:curated` still resolves,
+and the run header keeps reporting ALL FOUR non-topical classes so what was withheld from the
+model is on the record beside what was offered. The non-narrowing guard originally called the
+prompt builder and the parser SEPARATELY, and a mutation narrowing `run_source_tag_batch` — the
+seam that actually hands a vocabulary to both — survived it. **A guard that proves each half
+behaves proves nothing about the one place that composes them.**
+
+**Q1124 ships the absence, not a zero.** `GET /api/signals/patterns-gate` OMITS
+`false_positive_rate` while it is unmeasured, and the panel branches on `!= null` rather than
+truthiness: a `0.0` on a false-positive rate claims a perfect detector, which is a different
+fact from having no measurement. The flip needs an operator-labelled sample 0.4 does not
+produce; that is recorded rather than worked around.
+
+**TWO OF THE NEW GUARDS WERE DEFECTIVE AND THE MUTATION MATRIX IS WHAT SAID SO.** A fixture
+written as `r"a — b"` was a tautology, because Python processes `\uXXXX` inside a RAW string
+literal too — it passed with the decoder ripped out, and survived while its three siblings died.
+And a scan for unsupplied `tf()` slots reported eleven failures on eleven correct call sites,
+every one of them `tf("…", { n })`, which IS `{n: n}`: ES6 shorthand is a property, and a guard
+that cannot read the language's own sugar reports correct code as broken, which is how a guard
+gets deleted instead of fixed. The real answer, after teaching it shorthand, was zero across 141
+frame sites.
