@@ -1083,9 +1083,16 @@
       const q = (qEl && qEl.value || "").trim();
       try {
         const r = await api("/api/insights/filter/builtin?limit=500&q=" + encodeURIComponent(q));
-        if (cEl) cEl.textContent = (r.total || 0).toLocaleString();
+        // fmtNum, NOT toLocaleString(): the maintainer's units/precision ruling is one
+        // shared smart formatter app-wide, and it groups with a NARROW NO-BREAK SPACE
+        // (U+202F, the SI convention) rather than the browser's locale separator.
+        // toLocaleString() reads the BROWSER locale, which OOI18N never changes -- the
+        // Chromium walk measured this line rendering "2,555" inside an otherwise
+        // French panel whose sibling figures read "100 000".
+        const num = (typeof fmtNum === "function") ? fmtNum : ((x) => String(x));
+        if (cEl) cEl.textContent = num(r.total || 0, 0);
         const chips = (r.terms || []).map(w => `<span class="fam-chip" style="cursor:default">${esc(w)}</span>`).join("");
-        const capNote = r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: r.matched.toLocaleString(), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "";
+        const capNote = r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: num(r.matched, 0), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "";
         const empty = !r.terms || !r.terms.length;
         listEl.innerHTML = empty
           ? `<span class="muted">${esc(q ? t("No built-in stopword matches that.") : t("No built-in stoplist."))}</span>`

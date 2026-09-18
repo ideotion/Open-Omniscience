@@ -304,7 +304,18 @@
       let hovered = null;
       function fmt(d) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-        if (!d || !d.resolved) return t("Not in your corpus yet — no stats.");
+        // NAME THE TERM even when there are no stats to show. The reader's hover title
+        // is a STATIC sentence -- it has to be, because the i18n walker matches an
+        // attribute by exact value and a title carrying the keyword could never match
+        // a key -- so this line is the only place the keyword's own name reaches the
+        // bubble. Dropping it here left an unindexed keyword generic BEFORE and AFTER
+        // hover. Built in the same shape as the resolved branch twenty lines below
+        // (name, em dash, the line), so the two readings of this bubble agree.
+        if (!d || !d.resolved) {
+          const unresolved = (d && d.term) || "";
+          const none = t("Not in your corpus yet — no stats.");
+          return unresolved ? `${unresolved} — ${none}` : none;
+        }
         const bits = [`${d.mentions} ${t("mentions")} · ${d.articles} ${t("articles")}`];
         const tr = d.trend || {};
         if (tr.recent || tr.prior) {

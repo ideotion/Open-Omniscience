@@ -1150,6 +1150,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const TF = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      // See the note on the same change in app-settings.js: toLocaleString() reads the
+      // BROWSER locale, which the language switcher never touches, so it prints an
+      // English separator inside a translated sentence. fmtNum is the ruled one.
+      const _anNum = (n) => (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
       if (pages <= 1) return "";
       const cur = _anArtPage;
       // ONE FRAME per sentence, not five pieces welded to two numbers. The old form put
@@ -1160,7 +1164,7 @@
       // the string is fine. (Written out rather than pasted as a call: both i18n scans
       // read RAW SOURCE, so a literal in a comment is counted as a live UI string.)
       const lbl = esc(TF("Page {n} of {total}", {n: cur + 1, total: pages}))
-        + ' <span class="muted">(' + esc(TF("{n} Articles", {n: total.toLocaleString()})) + ")</span>";
+        + ' <span class="muted">(' + esc(TF("{n} Articles", {n: _anNum(total)})) + ")</span>";
       return '<div class="an-pager" style="display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap">'
         + '<button class="tiny ghost" ' + (cur <= 0 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur - 1) + ')">' + esc(t("← Previous")) + "</button>"
         + "<span>" + lbl + "</span>"
