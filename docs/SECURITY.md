@@ -65,6 +65,19 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 | **Newsletter mailbox** | The **mail server you configure** (IMAP/POP3) | Click — only when you trigger a pull | **Not the ethical fetcher:** raw `imaplib`/`poplib` (mail protocols have no robots.txt or HTML to parse). Its own explicit kill-switch check refuses while offline is engaged. | `src/ingest/email.py` · `POST /api/newsletters/mailbox` |
 | **Chain of custody** | `a.pool.opentimestamps.org`, `b.pool.opentimestamps.org`, `alice.btc.calendar.opentimestamps.org` | **Opt-in, off by default** — the "opentimestamps" anchoring mode. All three reachable paths are consent-gated (invariant #14f): the "Anchor root" button, the endpoint itself (`consent: true`), and turning the setting on (`ots_consent: true`, demanded once on the local→OTS transition, never re-stamped on every save). | **Not the ethical fetcher:** the OpenTimestamps client library's own HTTP calls. `ots_stamp()` refuses **by name** when the kill switch is on. | `src/custody/timestamp.py:40` |
 
+  **No key-gated source, and Wikimedia Enterprise in particular (Q718 = a).** This app
+  reaches Wikimedia only through the public, anonymous endpoints named in the Wikipedia
+  row above. It does not use **Wikimedia Enterprise** — the paid, contract-and-API-key
+  service — and it holds no API key, account or credential for any Wikimedia property.
+  That is a V1-2 constraint applied deliberately, not an omission waiting to be filled:
+  a key-gated source ties a local-first app to an account somebody administers, makes
+  the operator's traffic attributable to that account, and cannot be reproduced by a
+  reader who wants to check the same source themselves. The practical cost is stated
+  rather than hidden: the anonymous Action API serves **50 pages per request** where a
+  client holding `apihighlimits` is served 500, so this app's reads are ten times more
+  numerous and correspondingly slower — and it stays inside the etiquette the service
+  publishes for anonymous clients. Enforced by `tests/test_wiki_no_keyed_apis.py`.
+
   **The four calendar hosts that are never fetched.** `configs/calendar_feeds.yml` still
   ships `calendar.google.com`, `www.webcal.guru`, `cantonbecker.com` and
   `space.floern.com`, each with its dated record — and `src/events/feeds.py:58` filters all

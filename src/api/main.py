@@ -1898,16 +1898,22 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # NULL is NOT rendered as "unknown": an article with no anchor came from no
     # versioned source (or predates the column), and printing a blank version row
     # would invent a question that does not apply to a news article.
+    # RESOLVED ONCE, for two different jobs. The version row needs it; so does the
+    # licence notice below, and an article ingested from a DUMP carries no
+    # ``source_revision`` while being Wikipedia text under exactly the same licence.
+    # Computing it inside the version branch would have silently withheld the
+    # attribution from every dump-ingested page.
+    _ref = None
+    try:
+        from src.wiki.corpus import wiki_page_ref
+
+        _ref = wiki_page_ref(a.canonical_url or a.url or "")
+    except Exception:  # noqa: BLE001 - the reader must never break on provenance
+        logger.warning("wiki page ref failed in reader", exc_info=True)
+
     version_row = ""
     if a.source_revision:
         _rev = _html.escape(a.source_revision)
-        _ref = None
-        try:
-            from src.wiki.corpus import wiki_page_ref
-
-            _ref = wiki_page_ref(a.canonical_url or a.url or "")
-        except Exception:  # noqa: BLE001 - the reader must never break on provenance
-            logger.warning("wiki page ref failed in reader", exc_info=True)
         _bits = [f"<code>{_rev}</code>"]
         if _ref and a.source_revision.isdigit():
             # The revision AS PUBLISHED, on the wiki. An external link, so it goes
@@ -2415,6 +2421,42 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     except Exception:  # noqa: BLE001 - the badge is optional, never breaks the reader
         logger.warning("near-dup reader badge failed", exc_info=True)
 
+    # Q726 = a: "the reader shows the CC BY-SA 4.0 attribution with a link to the page
+    # history". VISIBLE BY DEFAULT, never behind a toggle -- it is a licence
+    # obligation, and the informed-consent non-negotiable makes caveat-shaped text
+    # visible anyway. The HISTORY link is the attribution: a wiki article has no
+    # byline, and its authors ARE its edit history.
+    #
+    # Both links carry ``class="ext"``, which is what puts them through this page's
+    # own external-link confirm (invariant #7). Their SHAPE under invariant #6 (a
+    # local preview page first) is explicitly NOT this slice's to decide -- the
+    # brief's section 6 lists it among what this slice may not settle -- so they match
+    # the "view this revision" link the reader already had.
+    licence_block = ""
+    if _ref:
+        try:
+            from src.wiki.attribution import attribution as _attr
+
+            _a = _attr(_ref[0], _ref[1], revision=a.source_revision)
+        except Exception:  # noqa: BLE001 - a licence notice must never break the reader
+            logger.warning("wiki attribution failed in reader", exc_info=True)
+            _a = None
+        if _a:
+            _hist = _html.escape(safe_href(_a["history_url"]) or "")
+            _lic = _html.escape(safe_href(_a["licence_url"]) or "")
+            _page = _html.escape(safe_href(_a["page_url"]) or "")
+            licence_block = (
+                '<div class="licence" role="note">'
+                "<b>Wikipedia text, reused under a free licence.</b> "
+                "The authors are the page's editors — credited through its history. "
+                f'<a class="ext" href="{_page}">the article on Wikipedia ↗</a> · '
+                f'<a class="ext" href="{_hist}">page history (the authors) ↗</a> · '
+                f'<a class="ext" href="{_lic}">{_html.escape(_a["licence"])} ↗</a>'
+                '<div class="mnote">This licence covers the TEXT. Images on Wikipedia '
+                "carry their own separate licences and are not stored here.</div>"
+                "</div>"
+            )
+
     doc = f"""<!DOCTYPE html><html lang="{lang}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{(title[:40] + "…") if len(title) > 40 else title} · FOOS</title><style>
@@ -2462,6 +2504,11 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
   .dup-pill {{ display:inline-block; font-weight:700; color:var(--warn); margin-inline-end:6px; }}
   .dup-cap {{ color:var(--fg); }}
   .dup-badge details {{ margin-top:6px; }} .dup-badge ul {{ margin:6px 0 0; padding-inline-start:18px; }}
+  /* Q726's licence notice. Its own border rather than the warning colour: a licence
+     is an obligation being met, not a problem being reported. */
+  .licence {{ margin: 0 0 18px; padding:10px 14px; border:1px solid var(--line);
+    border-radius:10px; background:var(--card); font: 13px/1.6 system-ui,sans-serif; }}
+  .licence b {{ color:var(--fg); }}
 </style>
 <link rel="stylesheet" href="/static/reader.css">
 <!-- i18n engine: makes the reader follow the UI language (same localStorage as the
@@ -2487,6 +2534,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
   <section class="rpane" id="rp-read" role="tabpanel" aria-label="Read">
     <div class="meta">{meta_rows}</div>
     {dup_badge}
+    {licence_block}
     <article>{paras}</article>
     {dates_section}
   </section>

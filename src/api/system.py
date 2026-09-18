@@ -236,6 +236,26 @@ def set_network_mode(payload: dict) -> dict:
             _LOG.warning(
                 "network toggle: scheduler %s failed", "start" if online else "stop", exc_info=True
             )
+        # THE WIKIPEDIA LANE RIDES THE SAME SEAM (S04-09, Q702's NOTE). Its default is
+        # ON, which is a statement about what happens when the operator goes online --
+        # never a reason to go online for them. So it starts HERE, behind the same one
+        # consent popup as every other collection, and stops the moment airplane mode
+        # is engaged. It is deliberately NOT started by the boot path: the app boots
+        # into airplane mode and makes zero calls.
+        #
+        # Its own functions never raise, and this call is still wrapped, because the
+        # rule one block up is the rule: a lane hiccup must never fail the toggle.
+        try:
+            from src.wiki.service import start_wiki_lane, stop_wiki_lane
+
+            if online:
+                start_wiki_lane()
+            else:
+                stop_wiki_lane()
+        except Exception:  # noqa: BLE001 - see above
+            _LOG.warning(
+                "network toggle: wiki lane %s failed", "start" if online else "stop", exc_info=True
+            )
     return {"online": not kill_switch_active()}
 
 

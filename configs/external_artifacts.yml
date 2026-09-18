@@ -426,6 +426,25 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-06-16"
 
+  - id: wikimedia-scoring-endpoint
+    title: Wikimedia edit-scoring endpoint (ORES / Lift Wing)
+    kind: dated-data
+    description: >-
+      The v3 ORES scores path and response shape the parser targets. Q717 = a asks for
+      this to be VERIFIED against the live service and kept opt-in and approximate-labelled;
+      the verification is an operator step (gate row V) because every Wikimedia host answers
+      000 from the build sandbox. Wikimedia announced a migration of its scoring models from
+      ORES to Lift Wing -- FROM MEMORY, unconfirmed here, and deliberately NOT acted on: a
+      guessed replacement URL is worse than an old one that fails loudly. OresClient names a
+      404/410 as "endpoint_gone" rather than returning the same empty dict as a dropped packet.
+    upstream: "ores.wikimedia.org v3 (successor: Lift Wing)"
+    check_upstream: "confirm the v3 path still answers and the response shape is unchanged; if it 404s, the migration has landed"
+    license: per-provider
+    pin: {file: src/wiki/ores.py, const: ORES_AS_OF}
+    refresh: "verify the live endpoint + shape on a networked machine, update the parser fixtures, bump ORES_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-06-06"
+
   - id: tracker-denylist
     title: Newsletter tracker-param denylist
     kind: dated-data

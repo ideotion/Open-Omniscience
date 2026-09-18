@@ -26,6 +26,27 @@ _MIN_TARGET_KBPS, _MAX_TARGET_KBPS = 50, 50_000
 _MAX_PARALLELISM = 50
 _MIN_INTERVAL, _MAX_INTERVAL = 1, 7 * 24 * 60  # minutes: 1 min .. 1 week
 
+#: The twelve editions the Wikipedia lane follows by default (Q725 = a's "default:
+#: all twelve"), in the app's own locale order.
+#:
+#: SPELLED OUT HERE rather than imported, because this module deliberately has no
+#: ``src.`` imports -- it is read on the boot path and a settings file that could not
+#: be loaded without pulling in the wiki package would be a boot dependency nobody
+#: chose. The duplication is PINNED instead of trusted:
+#: ``tests/test_wiki_tiers.py`` asserts this tuple equals
+#: ``src.wiki.languages.UI_LOCALE_CODES``, so the two cannot drift apart silently.
+WIKI_LANE_DEFAULT_EDITIONS: tuple = (
+    "en", "fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id",
+)
+
+#: Q707's published default budget, in whole GB, TOTAL for the lane. Duplicated from
+#: ``src.wiki.tiers.DEFAULT_TOTAL_BUDGET_GB`` for the same no-imports reason, and
+#: pinned to it by the same test.
+WIKI_LANE_DEFAULT_BUDGET_GB: int = 20
+
+#: What the wizard will accept. Mirrors ``src.wiki.tiers.BUDGET_GB_MIN/MAX``, pinned.
+WIKI_LANE_BUDGET_GB_MIN, WIKI_LANE_BUDGET_GB_MAX = 1, 2000
+
 
 class SchedulerSettingsError(ValueError):
     """Raised when a scheduler settings update carries an invalid value."""
@@ -177,6 +198,28 @@ class SchedulerSettings:
     # cursor outside EventStreams' retention, and the lane then records a gap saying
     # so (Q727) rather than resuming as though nothing had happened.
     wiki_lane_state: str = "running"
+
+    # THE FIRST-RUN WIZARD'S TWO ANSWERS (Q725 = a: "Edition choice (default: all
+    # twelve) + the storage budget (Q707) + the plain statement of what the lane
+    # contacts"). Stored beside the run state because they are the same operator's
+    # same decision about the same lane, and a second settings file for two fields
+    # is a second thing to keep in step.
+    #
+    # ``wiki_lane_editions`` is a TUPLE, not a set: the order is the order the wizard
+    # showed and the hover lists, and a set would re-order it differently on every
+    # process. Empty is REFUSED on the way in (a lane with no editions is a lane that
+    # is off, and the toggle already says that honestly).
+    wiki_lane_editions: tuple = WIKI_LANE_DEFAULT_EDITIONS
+    # Whole GB, TOTAL for the lane. Q707's published default. See
+    # ``src/wiki/tiers.py`` for the arithmetic and for why this is a STORAGE cap and
+    # never a second rate authority beside the collection-speed governor (Q1012).
+    wiki_lane_budget_gb: int = WIKI_LANE_DEFAULT_BUDGET_GB
+    # Whether the operator has been THROUGH the wizard, which is a different fact
+    # from whether the values differ from the defaults. An operator who read the
+    # three disclosures and pressed "Use the defaults" has consented; one who never
+    # saw the screen has not, and the two would be indistinguishable if this were
+    # inferred from the values.
+    wiki_lane_wizard_done: bool = False
 
     # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled: Governments-
     # tab figures should load automatically, not only via the manual "Load standard
@@ -352,6 +395,82 @@ def _coerce_wiki_lane_state(value, default: str) -> str:
         _LOG.warning("ignoring an unreadable wiki_lane_state %r; using %r", value, default)
         return default
 
+
+_EDITION_MAX_LEN = 16
+
+
+def _require_wiki_lane_editions(value) -> tuple:
+    """Refuse anything that is not a non-empty list of edition CODES.
+
+    WHAT THIS CHECKS AND WHAT IT DELIBERATELY DOES NOT. It checks the SHAPE -- a
+    non-empty sequence of short lowercase codes, de-duplicated with the operator's
+    order kept. It does NOT check that a code names a real Wikipedia edition, because
+    that answer lives in ``src.wiki.languages`` and this module has no ``src.``
+    imports by design (see :data:`WIKI_LANE_DEFAULT_EDITIONS`). The API layer, which
+    already owns ``_validated_wiki``, is where an unknown edition is refused -- said
+    out loud so nobody reads this function as the guarantee it is not.
+    """
+    if isinstance(value, (str, bytes)):
+        # A bare string is the classic shape bug here: "en" would iterate into
+        # ("e", "n"), two editions that do not exist, and the lane would follow
+        # neither. Refused by name rather than iterated.
+        raise SchedulerSettingsError(
+            "wiki_lane_editions must be a list of edition codes, not a single string"
+        )
+    try:
+        items = list(value)
+    except TypeError:
+        raise SchedulerSettingsError(
+            f"wiki_lane_editions must be a list of edition codes, got {value!r}"
+        ) from None
+    out: list[str] = []
+    for item in items:
+        code = str(item).strip().lower()
+        if not code or len(code) > _EDITION_MAX_LEN or not code.replace("-", "").isalnum():
+            raise SchedulerSettingsError(f"not an edition code: {item!r}")
+        if code not in out:
+            out.append(code)
+    if not out:
+        # A lane with no editions follows nothing while reporting itself as running.
+        # The toggle already expresses "off" honestly; this would be a second, silent
+        # way to say it.
+        raise SchedulerSettingsError("wiki_lane_editions must name at least one edition")
+    return tuple(out)
+
+
+def _coerce_wiki_lane_editions(value, default: tuple) -> tuple:
+    """Read a PERSISTED value, falling back for an unreadable one. Same reasoning as
+    :func:`_coerce_wiki_lane_state`: a settings file must never stop the app booting."""
+    if value is None:
+        return tuple(default)
+    try:
+        return _require_wiki_lane_editions(value)
+    except SchedulerSettingsError:
+        _LOG.warning("ignoring unreadable wiki_lane_editions %r; using %r", value, default)
+        return tuple(default)
+
+
+def _require_wiki_lane_budget_gb(value) -> int:
+    """Refuse a budget outside the wizard's bounds, by name rather than clamping.
+
+    A clamp turns a slipped keystroke into a silently tiny lane whose owner finds out
+    weeks later; a refusal puts the disagreement on screen while they are looking at
+    it. The same function's twin lives in ``src.wiki.tiers.require_budget_gb`` for
+    callers that are not settings; the bounds are pinned equal by test.
+    """
+    try:
+        gb = int(value)
+    except (TypeError, ValueError):
+        raise SchedulerSettingsError(
+            f"wiki_lane_budget_gb must be a whole number of GB, got {value!r}"
+        ) from None
+    if gb < WIKI_LANE_BUDGET_GB_MIN or gb > WIKI_LANE_BUDGET_GB_MAX:
+        raise SchedulerSettingsError(
+            f"wiki_lane_budget_gb must be between {WIKI_LANE_BUDGET_GB_MIN} and "
+            f"{WIKI_LANE_BUDGET_GB_MAX} GB, got {gb}"
+        )
+    return gb
+
 def load_settings() -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
     d = SchedulerSettings()
@@ -411,6 +530,18 @@ def load_settings() -> SchedulerSettings:
         country_priority=_coerce_target(raw.get("country_priority")),
         auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
         wiki_lane_state=_coerce_wiki_lane_state(raw.get("wiki_lane_state"), d.wiki_lane_state),
+        wiki_lane_editions=_coerce_wiki_lane_editions(
+            raw.get("wiki_lane_editions"), d.wiki_lane_editions
+        ),
+        wiki_lane_budget_gb=_coerce_int(
+            raw.get("wiki_lane_budget_gb"),
+            d.wiki_lane_budget_gb,
+            WIKI_LANE_BUDGET_GB_MIN,
+            WIKI_LANE_BUDGET_GB_MAX,
+        ),
+        wiki_lane_wizard_done=_coerce_bool(
+            raw.get("wiki_lane_wizard_done"), d.wiki_lane_wizard_done
+        ),
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
@@ -446,6 +577,14 @@ def save_settings(updates: dict) -> SchedulerSettings:
         # back to a default on a typo would be running when the operator asked it to
         # stop, which is the one direction this control must never fail in.
         current.wiki_lane_state = _require_wiki_lane_state(updates["wiki_lane_state"])
+    if "wiki_lane_editions" in updates and updates["wiki_lane_editions"] is not None:
+        current.wiki_lane_editions = _require_wiki_lane_editions(updates["wiki_lane_editions"])
+    if "wiki_lane_budget_gb" in updates and updates["wiki_lane_budget_gb"] is not None:
+        current.wiki_lane_budget_gb = _require_wiki_lane_budget_gb(updates["wiki_lane_budget_gb"])
+    if "wiki_lane_wizard_done" in updates and updates["wiki_lane_wizard_done"] is not None:
+        current.wiki_lane_wizard_done = _coerce_bool(
+            updates["wiki_lane_wizard_done"], current.wiki_lane_wizard_done
+        )
     if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
         current.crawl_supplement = _coerce_bool(
             updates["crawl_supplement"], current.crawl_supplement
