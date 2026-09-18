@@ -30,7 +30,7 @@ Author: Ideotion
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
@@ -233,6 +233,254 @@ def promote_cited_sources_endpoint(
 # source was discovered (with the citing trail so a user can check "the source's
 # source"), and how many of its OWN cited domains are qualified/disqualified --
 # descriptive counts only, never a score/grade.
+
+
+# --------------------------------------------------------------------------- #
+# THE SHIPPED-VERDICT EDITOR (Q1106 = a)
+#
+# THESE THREE MUST STAY ABOVE EVERY `/{source_id}` ROUTE ON THIS ROUTER, and the reason is
+# not style. FastAPI matches in REGISTRATION order, and `GET /api/sources/{source_id}`
+# matches any single segment -- so with these defined further down, `/api/sources/overlay`
+# reached the by-id handler, which answered 422 "Input should be a valid integer, unable to
+# parse string as an integer". The panel rendered that sentence where its counts belong.
+#
+# Found by the Chromium walk, not by the suite: every test of this feature called
+# `overlay_status(db)` directly, and a handler exercised as a function is not a tested
+# ROUTE. `tests/test_overlay_editor.py` now drives all three through the real app, which is
+# what will catch the next reordering.
+# --------------------------------------------------------------------------- #
+@router.get("/overlay")
+def overlay_editor_state(db: Session = Depends(get_db)) -> dict:
+    """What the shipped qualification overlay contains, what this install took from it,
+    and what adopting now would change (Q1106 = a, the editor's read half).
+
+    Read-only and local: no network, no writes, nothing judged. The preview figures are
+    published BEFORE the buttons because adopting is a write to the operator's own
+    corpus, and the one direction a reader would not think to ask about -- a shipped
+    ``disqualified`` verdict taking a source OUT of collection -- is the one that has to
+    be on the screen first.
+    """
+    from src.catalog.qualification_overlay import overlay_status
+
+    return overlay_status(db)
+
+
+@router.post("/overlay/adopt", response_model=dict)
+def overlay_adopt(db: Session = Depends(get_db)) -> dict:
+    """Adopt the shipped verdicts now, and resume adopting them at startup.
+
+    Turning the preference back on is HALF THE OPERATION, not a side effect: adoption is
+    idempotent and only ever touches rows this install has never judged, so a run that
+    left the preference off would be undone by the operator's next revert-shaped question
+    -- "why did my sources come back" in reverse. Local only; no network, so no consent
+    gate (invariant #14 covers egress, and this reaches nothing outside the database).
+    """
+    from src.catalog.qualification_overlay import apply_overlay
+
+    try:
+        from src.config.app_settings import save_settings
+
+        save_settings({"adopt_shipped_verdicts": True})
+        preference_held = True
+    except Exception:  # noqa: BLE001 - reported, never swallowed into a clean result
+        logger.warning("adopted the overlay but could not persist the preference", exc_info=True)
+        preference_held = False
+    tally = dict(apply_overlay(db))
+    tally["preference_held"] = preference_held
+    return tally
+
+
+@router.post("/overlay/revert", response_model=dict)
+def overlay_revert(db: Session = Depends(get_db)) -> dict:
+    """Put back every row the shipped overlay stamped here, and stop adopting at startup.
+
+    The rows go back to "no verdict has been reached here", which is what they actually
+    said before adoption touched them. Rows this install has since judged for itself are
+    left alone and counted, as are rows the overlay stamped over a curated catalogue
+    stamp -- reverting those would invent a state rather than restore one. Local only.
+    """
+    from src.catalog.qualification_overlay import revert_overlay
+
+    return revert_overlay(db, now=datetime.now(UTC))
+
+@router.get("/official-instruments")
+def official_instruments_observable(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    headlines_per_source: Annotated[int, Query(ge=5, le=500)] = 60,
+    db: Session = Depends(get_db),
+) -> dict:
+    """The `primary_source` axis as an OBSERVABLE (Q1110 = a) — a PROPOSAL SURFACE, never a
+    gate and never a verdict.
+
+    The institutions review deferred rather than rejected the judgement axis and asked for it
+    to be rewritten as something checkable: *does this feed publish dated official
+    instruments?* That is answerable from the headlines this install already stored, and it
+    does not require a model to hold opinions about which countries' institutions are real —
+    which is the whole point, because a model calibrated on Western administrative norms
+    under-admits small-language and global-South bodies while looking like a quality filter.
+
+    THREE OUTCOMES, and the last two are kept apart on purpose: `observed`, `none_observed`
+    (headlines were read and none carried the shape) and `no_evidence` (there were none to
+    read). Collapsing them records "we could not tell" as "no", which is the shape the robots
+    ruling already rejected and which this ruling exists to stop repeating.
+
+    It writes nothing, decides nothing and gates nothing. Whether the observable ever becomes
+    a splice gate is explicitly not this slice's to decide, so no caller is offered an
+    `apply`. Read-only and local: no network. Must stay ABOVE `/{source_id}` — see the note
+    on the overlay routes.
+    """
+    from src.catalog.official_instruments import (
+        NO_EVIDENCE,
+        OBSERVED,
+        lexicon_coverage,
+        observe_headlines,
+    )
+    from src.database.models import Article, Source
+
+    rows: list[dict] = []
+    tally = {OBSERVED: 0, "none_observed": 0, NO_EVIDENCE: 0}
+    for source in db.query(Source).order_by(Source.id.asc()).limit(limit).all():
+        titles = [
+            t for (t,) in db.query(Article.title)
+            .filter(Article.source_id == source.id, Article.quarantined.isnot(True))
+            .order_by(Article.id.desc())
+            .limit(headlines_per_source)
+        ]
+        seen = observe_headlines(titles)
+        tally[seen["outcome"]] = tally.get(seen["outcome"], 0) + 1
+        rows.append({
+            "source_id": source.id, "domain": source.domain,
+            "language": source.language, **seen,
+        })
+
+    return {
+        "sources": rows,
+        "counts": {**tally, "examined": len(rows)},
+        "headlines_per_source": headlines_per_source,
+        "lexicon": lexicon_coverage(),
+        "method": (
+            "A headline counts when it names an instrument (decision, tender, regulation or "
+            "statistics release) AND carries a date or reference number. The date half is "
+            "script-independent and understands non-Gregorian calendars; the instrument half "
+            "is a lexicon that is deliberately incomplete and publishes its own coverage."
+        ),
+        "caveat": (
+            "This is an observation, not a verdict and not a gate. `none_observed` means the "
+            "rule found no dated instrument in the headlines available — never that the "
+            "source publishes none, and never a judgement about whether the body behind it "
+            "is a real institution. Nothing here is applied to any source."
+        ),
+    }
+
+
+@router.get("/country-domain-audit")
+def country_domain_audit(
+    limit: Annotated[int, Query(ge=1, le=5000)] = 1000,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Rows whose stored COUNTRY contradicts their own DOMAIN — PROPOSALS for review, never
+    an automatic ccTLD rule (Q1115 = a).
+
+    Institutions C7 found `cityofvancouver.us` carrying `country: ca`, and said in the same
+    breath what the fix must not be: a naive ccTLD check is not the audit, because `.uk`
+    against `gb` and `.eu` for European bodies are both legitimate. A rule that rewrote
+    `country` from the ccTLD would fix the one row and break those two whole classes, with
+    the damage invisible at the moment it ran.
+
+    So nothing is applied and no `apply` exists. The payload carries what was NOT proposed
+    and why, in as much detail as what was: a diagnostic that publishes only its hits cannot
+    be checked for over-reach or for quietly examining almost nothing.
+
+    Read-only and local — no network. Must stay ABOVE `/{source_id}`.
+    """
+    from src.catalog.country_domain_audit import audit_rows
+    from src.database.models import Source
+
+    rows = (
+        db.query(Source.id, Source.domain, Source.country)
+        .order_by(Source.id.asc())
+        .limit(limit)
+        .all()
+    )
+    out = audit_rows((sid, dom, country) for sid, dom, country in rows)
+    out["limit"] = limit
+    return out
+
+
+@router.post("/resolve-qid-names", response_model=dict)
+def resolve_qid_names(
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Resolve sources whose NAME is a bare Wikidata Q-id, at the polite rate (Q1116 = a).
+
+    Institutions C8: 26 of 267 verified rows carry a bare Q-id where their name should be,
+    so splicing them as they stand would put ``Q133293483`` in the catalogue. The ruling
+    takes both halves — resolve the label, **or decline to admit the row** — and the second
+    is not a fallback: an unresolved row is never admitted under its identifier and never
+    under a guess.
+
+    EGRESSES to ``www.wikidata.org`` at most once per 10 seconds (R8), under ONE consent for
+    the whole batch, and REFUSES up front under airplane mode with a 409 that NAMES the kill
+    switch — never a generic failure that would send an operator looking at Wikidata for
+    their own setting (invariant #14e's corollary).
+
+    It renames nothing on its own: the resolved labels come back for review beside the
+    declines, because a name is an identity field and identity fields are evidence, not fact.
+    """
+    from src.catalog.qid_labels import (
+        AirplaneRefusal,
+        admit_or_decline,
+        bare_qid_rows,
+        resolve_labels,
+    )
+    from src.database.models import Source
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        # Named as the kill switch, before anything is built.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "network refused: airplane mode is engaged, so Wikidata labels cannot be "
+                "resolved. Nothing was fetched and no row was declined for it."
+            ),
+        )
+
+    rows = [(sid, name) for sid, name in db.query(Source.id, Source.name).all()]
+    targets = bare_qid_rows(rows)[:limit]
+    if not targets:
+        return {
+            "examined": len(rows), "bare_qid_rows": 0, "labels": {}, "declined": {},
+            "note": "No source carries a bare Wikidata identifier as its name.",
+        }
+
+    def _fetch(url: str) -> dict:
+        # The SAME guarded getter the other Wikidata caller uses (`wikidata_apply`): the
+        # kill switch and the protected-mode proxy live inside it, and a per-URL isolation
+        # token gives each lookup its own Tor circuit so distinct ones are unlinkable.
+        from src.catalog.wikidata_apply import _default_getter
+
+        return _default_getter(url).json()
+
+    try:
+        out = resolve_labels([q for _rid, q in targets], fetch=_fetch)
+    except AirplaneRefusal as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    applied = admit_or_decline(targets, out["labels"])
+    return {
+        "examined": len(rows),
+        "bare_qid_rows": len(targets),
+        **out,
+        "proposed_names": [a for a in applied["admitted"] if a["renamed_from"]],
+        "declined_rows": applied["declined"],
+        "applied": False,
+        "note": (
+            "Nothing was renamed. A name is an identity field and identity fields are "
+            "evidence, not fact, so the resolved labels are returned for review."
+        ),
+    }
 
 
 @router.get("/{source_id}/provenance", response_model=dict)
@@ -1615,12 +1863,15 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
     so this endpoint cannot change a verdict or a setting by being called.
     """
     from src.analytics.source_audit import (
+        _MIN_PATHOLOGY_ARTICLES,
         CRITERIA,
         MIN_SOURCE_ARTICLES,
         PATHOLOGY_ABS_FLOOR,
         SOURCE_COHORT_FLOOR,
         TAIL_P,
-        _MIN_PATHOLOGY_ARTICLES,
+    )
+    from src.analytics.source_audit import (
+        PATHOLOGY_ABS_FLOOR_STATUS as FLOOR_STATUS,
     )
     from src.catalog.gates import (
         ARTICLE_GATE_TUNABLES,
@@ -1634,7 +1885,7 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         STATUS_UNQUALIFIED,
     )
     from src.database.models import Source
-    from src.scheduler.settings import load_settings
+    from src.scheduler.settings import load_settings, retired_settings_disclosures
 
     settings = load_settings()
     current = {
@@ -1647,7 +1898,12 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         "min_pathology_articles": _MIN_PATHOLOGY_ARTICLES,
     }
 
+    # Q1114 = a (2026-09-15): `enabled AND qualified` is THE headline count, and every
+    # OTHER predicate is LABELLED WHERE IT APPEARS. These are the other predicates, so
+    # each one says what it counts -- a bare `qualified: 4812` beside a headline of 2600
+    # reads as a contradiction rather than as two different questions.
     counts = {"qualified": 0, "disqualified": 0, "unqualified": 0, "enabled": 0}
+    collecting = 0
     for status, enabled, n in (
         db.query(Source.status, Source.enabled, func.count())
         .group_by(Source.status, Source.enabled)
@@ -1658,6 +1914,25 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             counts[key] += int(n)
         if enabled:
             counts["enabled"] += int(n)
+            if key == STATUS_QUALIFIED:
+                collecting += int(n)
+    # THE headline figure, computed here rather than left to a reader's subtraction: it is
+    # the one predicate `select_sources` admits, and it is what every other number on this
+    # panel is a different question about.
+    counts["collecting"] = collecting
+    counts_labels = {
+        "collecting": (
+            "enabled AND qualified — what collection actually reaches. This is the "
+            "headline figure; every other count below answers a different question."
+        ),
+        "qualified": "qualified, whether or not enabled — a verdict, not a collection state",
+        "disqualified": "judged and found wanting, whether or not enabled",
+        "unqualified": "not yet judged, whether or not enabled",
+        "enabled": (
+            "enabled, whatever the verdict — includes sources awaiting a verdict, which "
+            "collection does not reach"
+        ),
+    }
 
     return {
         "gates": [
@@ -1687,26 +1962,54 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             },
         ],
         # Straight from source_audit.CRITERIA so the panel can never describe a criterion
-        # the engine does not apply. `extraction_failure` marks the ONLY one that can
-        # disqualify -- a reader cannot tell that from the list otherwise.
+        # the engine does not apply. `extraction_failure` marks the ones that can
+        # disqualify -- a reader cannot tell that from the list otherwise. Since B6 there
+        # are TWO, so each carries its own floor rather than the panel implying one shared
+        # number.
         "criteria": [
             {
                 "name": c["name"],
                 "bad_direction": c["bad"],
                 "can_disqualify": bool(c["extraction_failure"]),
                 "desc": c["desc"],
+                # Per-criterion, and NULL is a real answer: `link_density_rate` has no
+                # absolute floor because none has been measured for it.
+                "absolute_floor": c.get("abs_floor"),
+                "absolute_floor_note": (
+                    None if not c["extraction_failure"] else (
+                        FLOOR_STATUS["measured"] + " " + FLOOR_STATUS["kept_because"]
+                        if c.get("abs_floor") is not None else
+                        "No absolute floor: nobody has measured what fraction of a source's "
+                        "articles being link-dense amounts to a broken scrape, so this "
+                        "criterion fires only from its own cohort's tail. Copying the other "
+                        "criterion's number here would be a threshold nobody measured."
+                    )
+                ),
             }
             for c in CRITERIA
         ],
+        # Q1107 = a: the floor is KEPT and RECORDED AS UNREACHABLE, where an operator
+        # looking at the number can see that it has never fired rather than reading it as a
+        # live threshold.
+        "pathology_floor_status": {
+            **FLOOR_STATUS,
+            "label": (
+                "Kept as a rare-catastrophe detector. It has never fired in the field — "
+                "every source the audit has called failing was flagged by its cohort, far "
+                "below this number — so the measured criteria are what decide in practice."
+            ),
+        },
         "scope": {
-            "scrape_unqualified": bool(settings.scrape_unqualified),
             "scrape_app_provided_only": bool(settings.scrape_app_provided_only),
             "note": (
-                "Both default to today's behaviour. 'Also scrape unqualified' reaches only "
-                "ENABLED sources and NEVER admits a disqualified one — unqualified means "
-                "not-yet-judged, and the re-qualification ladder is how a disqualified "
-                "source comes back."
+                "Collection reaches a source when it is ENABLED and QUALIFIED. Passing "
+                "qualification now enables a source automatically, so admission and "
+                "collection scope are one decision — see the admission audit, where "
+                "every automatic admission can be undone."
             ),
+            # Named rather than merely absent: an operator who used the retired hatch
+            # needs to know it is gone and why, not to discover that collection narrowed.
+            "retired": retired_settings_disclosures(),
         },
         "ladder": {
             "months": [1, 2, 4, 6],
@@ -1735,5 +2038,51 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             ),
         },
         "counts": counts,
+        # Q1114's "the other predicates are labelled where they appear", carried IN the
+        # payload so a surface cannot render a count without its predicate being available
+        # beside it. Keyed by the same keys as `counts`, so a renderer that adds a figure
+        # and forgets the label has an obvious hole rather than a plausible number.
+        "counts_labels": counts_labels,
         "statuses": [STATUS_QUALIFIED, STATUS_DISQUALIFIED, STATUS_UNQUALIFIED],
     }
+
+
+# --------------------------------------------------------------------------- #
+#  The admission audit trail (Q1101 = a, 2026-09-15) -- the safety valve
+# --------------------------------------------------------------------------- #
+@router.get("/admission/audit")
+def admission_audit_view(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    include_undone: Annotated[bool, Query()] = True,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Every automatic ``enabled`` flip this instance has made, newest first.
+
+    Q1101 makes a ``qualified`` verdict admit a source for collection without anyone
+    clicking anything. This is the surface that makes that decision visible and, through
+    the sibling undo endpoint, reversible -- the ruling names the undo as the safety valve
+    the flip rests on, so the two ship together or neither does.
+
+    Read-only. Counts are taken over the whole table; ``limit`` bounds the LIST only.
+    """
+    from src.catalog.qualification import admission_audit
+
+    return admission_audit(db, limit=limit, include_undone=include_undone)
+
+
+@router.post("/admission/{event_id}/undo", response_model=dict)
+def admission_undo(event_id: int, db: Session = Depends(get_db)) -> dict:
+    """Reverse ONE automatic admission, restoring the source's prior enabled AND status.
+
+    Local only -- no network, so no consent gate: this writes two columns of the operator's
+    own database and reaches nothing outside it.
+    """
+    from src.catalog.qualification import AdmissionUndoRefused, undo_admission
+
+    try:
+        return undo_admission(db, event_id, now=datetime.now(UTC).replace(tzinfo=None))
+    except AdmissionUndoRefused as exc:
+        # 409, not 404: the event id is a real address and the refusal is about STATE
+        # (already undone, or a source that has since been deleted). A 404 would send an
+        # operator looking for a row that is sitting right there in the audit list.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

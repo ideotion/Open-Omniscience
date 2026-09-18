@@ -602,6 +602,57 @@ class SourceQualificationAttempt(Base):
         )
 
 
+class SourceAdmissionEvent(Base):
+    """One row per AUTOMATIC ``enabled`` flip made by the qualification engine
+    (Q1101 = a, 2026-09-15: "a ``qualified`` verdict flips ``enabled=True``;
+    qualification IS the admission gate ... the audit view's undo is the safety valve").
+
+    THIS TABLE IS THE SAFETY VALVE. The flip is the app deciding, unattended, that a
+    source may now be collected from; an operator must be able to SEE every such decision
+    and REVERSE it. So the row records what the source looked like BEFORE the flip --
+    both ``prior_enabled`` and ``prior_status`` -- because an undo that restored only
+    ``enabled`` would leave a source stamped ``qualified`` and disabled, which the next
+    pass has no reason to re-examine and no surface reports as reversed.
+
+    Append-only, exactly like ``SourceQualificationAttempt``: an undo does not delete the
+    row, it STAMPS ``undone_at``. A deleted record of a reversed decision is a record that
+    the decision was never made.
+
+    ``prior_enabled`` is deliberately nullable and deliberately three-valued: ``Source.enabled``
+    is itself ``Boolean`` NULLABLE, and a NULL there means "never set", which is a different
+    fact from ``False``. Storing it as NULL preserves that, so an undo restores the exact
+    value rather than a plausible one.
+    """
+
+    __tablename__ = "source_admission_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Categorical, never a score. Today only "qualified" can produce a row -- the column
+    # exists so a future admission route is visible in the history rather than merged
+    # silently into this one.
+    verdict: Mapped[str] = mapped_column(String(20), nullable=False)
+    criteria_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    prior_enabled: Mapped[bool | None] = mapped_column(Boolean)
+    prior_status: Mapped[str | None] = mapped_column(String(20))
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    __table_args__ = (
+        Index("idx_admission_event_time", "occurred_at"),
+        Index("idx_admission_event_source_time", "source_id", "occurred_at"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<SourceAdmissionEvent(source_id={self.source_id}, "
+            f"verdict={self.verdict!r}, occurred_at={self.occurred_at}, "
+            f"undone_at={self.undone_at})>"
+        )
+
+
 class Article(Base):
     """
     Represents a scraped article.

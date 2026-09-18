@@ -93,11 +93,20 @@
         const cfg = await api("/api/sources/qualification/config");
         _qualCfg = cfg;
         const c = cfg.counts || {};
+        const cl = cfg.counts_labels || {};
+        // Q1114 = a: the HEADLINE (`enabled AND qualified`) leads, because it is the one
+        // number that answers "what is this app collecting from", and the verdict tallies
+        // below it answer a different question. Each figure carries its own predicate in
+        // the hover (invariant #17's one bubble), so a reader who notices the gap between
+        // "collecting" and "qualified" can find out why instead of guessing at a
+        // contradiction -- the gap is ordinary since judging began enabling sources.
         // "How many could the current floor actually disqualify" is worth more than any
         // control on the page: on the field corpus that number is zero.
-        state.innerHTML = `${t("Judged so far")}: <b>${c.qualified || 0}</b> ${t("qualified")}
-          · <b>${c.disqualified || 0}</b> ${t("disqualified")}
-          · <b>${c.unqualified || 0}</b> ${t("not yet judged")}`;
+        const _n = (k) => `<b title="${esc(t(cl[k] || ""))}">${c[k] || 0}</b>`;
+        state.innerHTML = `${t("Collecting now")}: ${_n("collecting")}`
+          + ` · ${t("Judged so far")}: ${_n("qualified")} ${t("qualified")}`
+          + ` · ${_n("disqualified")} ${t("disqualified")}`
+          + ` · ${_n("unqualified")} ${t("not yet judged")}`;
 
         const en = $("qual-enabled");
         const perPass = (cfg.gates || []).flatMap(g => g.tunables || [])
@@ -110,13 +119,32 @@
             : t("off — candidates stay unjudged; nothing is deleted and no verdict changes");
         }
 
+        // B6 (2026-09-15): there are now TWO criteria that can disqualify, each with its
+        // OWN absolute floor -- and one of them has none. So the floor is rendered PER
+        // CRITERION rather than as a single number beside the list, and a criterion with no
+        // floor says why instead of showing a blank where the other shows 0.5.
+        const floorBits = (x) => {
+          if (!x.can_disqualify) return "";
+          const val = (x.absolute_floor === null || x.absolute_floor === undefined)
+            ? t("no absolute floor")
+            : `${t("absolute floor")}: ${x.absolute_floor}`;
+          return ` <span class="muted" title="${esc(t(x.absolute_floor_note || ""))}">· ${esc(val)}</span>`;
+        };
+        const floor = cfg.pathology_floor_status || {};
+        // Q1107 = a: the floor is kept AND said to be unreachable, VISIBLY -- a number an
+        // operator reads as a live threshold when it has never fired is the kind of quiet
+        // overstatement the caveats rule exists for, so it is not behind a hover.
+        const floorLine = (floor.reachable_in_the_field === false)
+          ? `<div class="card-caveat" style="margin-top:8px" title="${esc(t(floor.measured || ""))}">`
+            + esc(t(floor.label || "")) + `</div>`
+          : "";
         crit.innerHTML = `<h3 style="margin:0 0 6px">${t("What the source gate looks at")}</h3>` +
           (cfg.criteria || []).map(x => `<div style="margin:6px 0">
             <span title="${esc(x.desc)}"><b>${esc(x.name)}</b></span>
             ${x.can_disqualify
-              ? `<span class="warn" title="${esc(t("The ONLY criterion that can disqualify a source. The others are style-ambiguous, so they can never exceed a watch flag — that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
-              : `<span class="muted">${t("watch only")}</span>`}
-          </div>`).join("");
+              ? `<span class="warn" title="${esc(t("A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
+              : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
+          </div>`).join("") + floorLine;
 
         host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">
           <h3 style="margin:0">${esc(g.question)}</h3>
@@ -125,10 +153,20 @@
         </div>`).join("");
 
         const scope = cfg.scope || {};
-        const u = $("qual-scope-unqualified"), sh = $("qual-scope-shipped");
-        if (u) u.checked = !!scope.scrape_unqualified;
+        const sh = $("qual-scope-shipped");
         if (sh) sh.checked = !!scope.scrape_app_provided_only;
+        // A setting an operator had TURNED ON and that a ruling has since removed is
+        // named, once, where that setting used to be. Silently narrower collection with
+        // no explanation is the failure this exists to prevent.
+        const ret = $("qual-scope-retired");
+        if (ret) {
+          const lines = scope.retired || [];
+          ret.hidden = !lines.length;
+          ret.textContent = lines.map((s) => t(s)).join(" ");
+        }
         _qualScopeCount();
+        loadAdmissionAudit();
+        loadOverlayEditor();
       } catch (e) {
         state.textContent = _apiErrorMessage(e);
       }
@@ -164,9 +202,262 @@
 
     async function qualSaveScope() {
       await _qualPut({
-        scrape_unqualified: !!($("qual-scope-unqualified") || {}).checked,
         scrape_app_provided_only: !!($("qual-scope-shipped") || {}).checked,
       });
+    }
+
+    // THE ADMISSION AUDIT (ruling Q1101). Judging now enables a source by itself, so this
+    // is the surface that makes each such decision visible and reversible. Loopback only
+    // -- it reads this machine's own record and writes two columns of it, so there is no
+    // egress and therefore no consent gate.
+    function _admissionRow(e) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      // A label:value shape, never a sentence with the count inside it -- an interpolated
+      // sentence cannot conjugate and cannot be keyed.
+      const was = (e.prior_enabled === null || e.prior_enabled === undefined)
+        ? t("never set")
+        : (e.prior_enabled ? t("on") : t("off"));
+      const when = e.occurred_at ? `<span dir="ltr">⁨${esc(e.occurred_at)}⁩</span>` : "";
+      const undone = e.undone
+        ? `<span class="muted">${t("Undone")}${e.undone_at
+            ? ` ⁨${esc(e.undone_at)}⁩` : ""}</span>`
+        : `<button class="secondary" data-undo="${esc(String(e.id))}">${t("Undo")}</button>`;
+      // The three statuses are a CLOSED app vocabulary, not data, and the app already
+      // keys `qualified`/`disqualified` -- so they go through t() like every other
+      // vocabulary word. A Chromium walk in ar is what caught this: the raw English token
+      // rendered inside an otherwise fully-translated line, which no source test and no
+      // i18n gate can see (the value sits inside a composed node the DOM walker cannot
+      // match). The DOMAIN beside it is data and stays untranslated, deliberately.
+      const wasStatus = e.prior_status ? t(e.prior_status) : t("never judged");
+      return `<div class="row" style="gap:10px;align-items:center;justify-content:space-between;padding:4px 0">
+        <div>
+          <strong>${esc(e.domain || e.name || "")}</strong>
+          <span class="muted"> · ${t("Collection was")}: ${was}`
+        + ` · ${t("Status was")}: ${esc(wasStatus)}`
+        + ` · ${when}</span>
+        </div>
+        <div>${undone}</div>
+      </div>`;
+    }
+
+    async function loadAdmissionAudit() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const host = $("qual-admission");
+      if (!host) return;
+      try {
+        const d = await api("/api/sources/admission/audit?limit=25");
+        const evs = d.events || [];
+        if (!evs.length) {
+          // An honest empty state, never a zeroed panel: no admissions yet and "we could
+          // not read them" are different facts, and a failed read lands in catch below.
+          host.textContent = t("Judging has not admitted any source on its own yet.");
+          return;
+        }
+        // The exact total, never the length of the list -- the list is capped and the
+        // count is not.
+        const shown = tf("Showing {shown} of {total} admissions", {shown: evs.length, total: d.total});
+        const undoneNote = d.undone_total
+          ? ` · ${tf("{n} undone", {n: d.undone_total})}` : "";
+        // The GAP, published as a gap: sources collection reaches that this audit has no
+        // record of admitting (the shipped catalogue, an inherited stamp, a restore).
+        // Drawn only when there IS one -- a caveat may claim only what the data exhibits.
+        const gap = (d.unaccounted > 0)
+          ? `<div class="card-caveat" style="margin-top:8px">`
+            + esc(tf("{n} of {total} collecting sources are not accounted for here",
+                     {n: d.unaccounted, total: d.collecting}))
+            + ` ${esc(t(d.coverage_note || ""))}</div>`
+          : "";
+        host.innerHTML = `<div class="muted" style="margin-bottom:6px">${esc(shown)}${esc(undoneNote)}</div>`
+          + evs.map(_admissionRow).join("")
+          + `<div class="card-caveat" style="margin-top:8px">${esc(t(d.caveat || ""))}</div>`
+          + gap;
+        host.querySelectorAll("button[data-undo]").forEach((b) => {
+          b.addEventListener("click", () => undoAdmission(b.getAttribute("data-undo"), b));
+        });
+      } catch (e) {
+        host.textContent = _apiErrorMessage(e);
+      }
+    }
+
+    async function undoAdmission(id, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api(`/api/sources/admission/${encodeURIComponent(id)}/undo`, {method: "POST"});
+        toast(t("Admission undone."), "ok");
+        loadAdmissionAudit();
+        _qualScopeCount();
+      } catch (e) {
+        toast(_apiErrorMessage(e), "err");
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // THE SHIPPED-OVERLAY EDITOR (ruling Q1106 = a): adopt / export / revert over the
+    // verdicts that travel with the app. Loopback only -- the overlay is a FILE that came
+    // with the install, so none of these four buttons reaches the network and none is
+    // ensureOnline-gated. The merge is B5's "automate the script run within the
+    // diagnostics": the same core the command line runs, reachable without a shell.
+    async function loadOverlayEditor() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const host = $("qual-overlay");
+      if (!host) return;
+      try {
+        const d = await api("/api/sources/overlay");
+        const f = d.file || {};
+        if (!f.exists || !d.in_overlay) {
+          // An install that ships no overlay behaves exactly as it did before the file
+          // existed. Said plainly, because an empty panel would read as a failed read.
+          host.textContent = t("This install ships no record of earlier verdicts, so there is nothing to adopt. Sources are judged here as they always were.");
+          _overlayButtons(false, false);
+          return;
+        }
+        const since = f.generated_at
+          ? ` · ${t("Measured up to")}: <span dir="ltr">⁨${esc(String(f.generated_at))}⁩</span>` : "";
+        // The counts the operator needs BEFORE pressing anything, each answering one
+        // question: what the file holds, what this install already took from it, and what
+        // adopting now would change. Kept apart -- a single total answers none of them.
+        const head = `<div>${esc(tf("{n} verdicts ship with this install", {n: d.in_overlay}))}`
+          + ` (${esc(tf("{n} qualified", {n: d.shipped_qualified}))}`
+          + `, ${esc(tf("{n} disqualified", {n: d.shipped_disqualified}))})${since}</div>`
+          + `<div>${esc(tf("{n} of them are in force here", {n: d.adopted_here}))}`
+          + ` · ${esc(tf("{n} can be put back", {n: d.revertible}))}</div>`;
+        const dec = d.declined || {};
+        // A refusal with its reason, never a silent skip. Drawn only when there IS one.
+        const declined = (dec.judged_here_since || dec.was_curated_before)
+          ? `<div>${esc(t("Left alone by a revert"))}: `
+            + (dec.judged_here_since
+                ? esc(tf("{n} judged here since", {n: dec.judged_here_since})) + " " : "")
+            + (dec.was_curated_before
+                ? esc(tf("{n} that carried the catalogue's own stamp", {n: dec.was_curated_before})) : "")
+            + `</div>`
+          : "";
+        // THE PREVIEW. Adopting is a write, so both directions are on the screen first --
+        // including the one a reader would not think to ask about, where a shipped
+        // `disqualified` verdict takes a source OUT of collection.
+        const preview = d.would_adopt
+          ? `<div>${esc(t("Adopting now would"))}: `
+            + esc(tf("stamp {n} sources", {n: d.would_adopt}))
+            + (d.would_admit ? `, ${esc(tf("start collecting {n}", {n: d.would_admit}))}` : "")
+            + (d.would_withdraw ? `, ${esc(tf("stop collecting {n}", {n: d.would_withdraw}))}` : "")
+            + `</div>`
+          : `<div class="muted">${esc(t("Adopting now would change nothing: every shipped verdict is either already in force here or overruled by one this install reached itself."))}</div>`;
+        const startup = d.adopting_at_startup
+          ? t("Shipped verdicts are adopted at startup.")
+          : t("Adopting at startup is off, so a revert holds. Adopt turns it back on.");
+        host.innerHTML = head + declined + preview
+          + `<div class="card-caveat" style="margin-top:8px">${esc(startup)} ${esc(t(d.caveat || ""))}</div>`;
+        _overlayButtons(true, d.revertible > 0);
+      } catch (e) {
+        host.textContent = _apiErrorMessage(e);
+        _overlayButtons(false, false);
+      }
+    }
+
+    function _overlayButtons(canAdopt, canRevert) {
+      const a = $("qual-ov-adopt"), r = $("qual-ov-revert");
+      if (a) a.disabled = !canAdopt;
+      if (r) r.disabled = !canRevert;
+    }
+
+    async function overlayAdopt(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/sources/overlay/adopt", {method: "POST"});
+        toast(tf("Adopted {n} verdicts; {admitted} sources started being collected.",
+                 {n: r.adopted || 0, admitted: r.admitted || 0}), "ok");
+        if (r.preference_held === false) {
+          // Half an operation is worse than none if nobody is told which half.
+          toast(t("The verdicts were adopted, but the startup preference could not be saved."), "err");
+        }
+        loadQualificationGates();
+      } catch (e) { toast(_apiErrorMessage(e), "err"); }
+      finally { if (btn) btn.disabled = false; }
+    }
+
+    async function overlayRevert(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      if (!confirm(t("Put back every source the shipped verdicts stamped here, and stop adopting them at startup? Sources you have judged on this install are left exactly as they are, and the shipped file is not edited."))) return;
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/sources/overlay/revert", {method: "POST"});
+        toast(tf("Put back {n} sources; {undone} admissions undone.",
+                 {n: r.reverted || 0, undone: r.admissions_undone || 0}), "ok");
+        if (r.preference_held === false) {
+          toast(t("The sources were put back, but the startup preference could not be saved, so the next start will adopt them again."), "err");
+        }
+        loadQualificationGates();
+      } catch (e) { toast(_apiErrorMessage(e), "err"); }
+      finally { if (btn) btn.disabled = false; }
+    }
+
+    async function overlayExport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch("/api/diagnostics/source-qualification-export?fmt=yaml");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _overlaySaveAs(await res.text(), "source_qualification.yml");
+        toast(t("Exported what this install measured."), "ok");
+      } catch (e) { toast(_apiErrorMessage(e), "err"); }
+      finally { if (btn) btn.disabled = false; }
+    }
+
+    function _overlaySaveAs(text, filename) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], {type: "text/yaml"}));
+      a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+    }
+
+    async function overlayMerge(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const out = $("qual-ov-merge-out");
+      const picker = $("qual-ov-files");
+      const body = new FormData();
+      const files = (picker && picker.files) ? Array.from(picker.files) : [];
+      files.forEach((f) => body.append("files", f, f.name));
+      // This instance's own verdicts always go in: merging "everyone else" and calling the
+      // result the record would drop what this machine measured.
+      body.append("include_this_instance", "true");
+      if (btn) btn.disabled = true;
+      if (out) out.textContent = t("Merging…");
+      try {
+        const res = await fetch("/api/diagnostics/source-qualification-merge",
+                                {method: "POST", body});
+        const d = await res.json();
+        if (!res.ok) throw new Error(d && d.detail ? d.detail : `HTTP ${res.status}`);
+        const rep = d.report || {};
+        const conflicts = (rep.conflicts || []).length;
+        const lines = [
+          `<div>${esc(tf("{n} verdicts in the merged file", {n: d.merged_verdicts || 0}))}`
+          + ` · ${esc(tf("{n} added", {n: rep.added || 0}))}`
+          + ` · ${esc(tf("{n} updated", {n: rep.updated || 0}))}`
+          + ` · ${esc(tf("{n} carried through untouched", {n: rep.carried_through_untouched || 0}))}</div>`,
+          `<div class="muted">${(rep.inputs || []).map((i) =>
+            `${esc(i.name)} (${esc(String(i.verdicts))})`).join(" · ")}</div>`,
+        ];
+        if (conflicts) {
+          // A disagreement between instances is a FINDING. Named, listed, and left at
+          // whatever the existing file said -- never resolved on the operator's behalf.
+          lines.push(`<div class="card-caveat">${esc(tf("{n} domains disagree across instances and were left unchanged", {n: conflicts}))}`
+            + ` ${esc(t(d.conflicts_note || ""))}</div>`);
+          lines.push(`<div class="muted" dir="ltr">${(rep.conflicts || []).slice(0, 20)
+            .map((c) => esc(`${c.domain}: ${(c.verdicts || []).join(" / ")}`)).join("<br>")}</div>`);
+        }
+        lines.push(`<div class="card-caveat">${esc(t(d.note || ""))}</div>`);
+        if (out) out.innerHTML = lines.join("");
+        _overlaySaveAs(d.overlay_yaml || "", "source_qualification.yml");
+      } catch (e) {
+        if (out) out.textContent = _apiErrorMessage(e);
+      } finally { if (btn) btn.disabled = false; }
     }
 
     async function _qualPut(body) {

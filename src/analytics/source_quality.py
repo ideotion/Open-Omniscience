@@ -36,6 +36,7 @@ import json
 import random
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func
@@ -211,6 +212,7 @@ def collect_article_stats(
     session: Session, *, audited_ids: set[int] | None = None,
     source_ids: set[int] | None = None,
     should_pause: Callable[[], bool] | None = None,
+    since: datetime | None = None,
 ) -> list[ArticleStat]:
     """Whole-corpus, COUNT-ONLY. One pass over the small article columns (word_count, language,
     source_id — the article_length_report pattern; the codec decrypts each page once, the
@@ -243,6 +245,16 @@ def collect_article_stats(
     ``should_pause`` (S5.2) is consulted every ``_PAUSE_CHECK_EVERY`` rows of BOTH loops and
     raises :class:`ScanPaused`. The raise is ours, not the callback's, so a caller cannot
     accidentally provide a "pause" that returns a partial list.
+
+    ``since`` (RC06, 2026-09-15) bounds the pass to articles INGESTED on or after that
+    instant -- the recency window the re-verification reads. It filters on
+    ``Article.created_at``, deliberately, and not on ``published_at``: the question a
+    re-check asks is whether THIS INSTALL'S EXTRACTION of a source still works, so the axis
+    is when we fetched and parsed the page, not when the publisher dated it. ``created_at``
+    is also always set, where ``published_at`` is frequently NULL -- and an article silently
+    dropped from a window for having no publication date would shrink the very population
+    the window is supposed to measure. ``None`` is the whole history, byte-identical to
+    before this parameter existed.
     """
     if source_ids is not None and not source_ids:
         return []  # an empty scope is an empty answer, never the whole corpus
@@ -260,6 +272,8 @@ def collect_article_stats(
     art_q = session.query(
         Article.id, Article.word_count, Article.language, Article.source_id, Article.url
     ).filter(Article.quarantined.isnot(True))
+    if since is not None:
+        art_q = art_q.filter(Article.created_at >= since)
     if scope is not None:
         art_q = art_q.filter(Article.source_id.in_(scope))
     art_rows = list(art_q) if scope is not None else None
@@ -572,6 +586,64 @@ def select_source_fingerprint(
         rng.shuffle(ids)
         chosen.update(ids[:cap])
     return chosen
+
+
+def link_dense_article_ids(
+    session: Session, *, source_ids: set[int] | None = None,
+    since: datetime | None = None,
+) -> set[int]:
+    """Articles whose OUTBOUND-LINK DENSITY crosses ``_HIGH_LINK_DENSITY`` — the raw signal
+    behind the source audit's second extraction-failure criterion (B6, 2026-09-15).
+
+    IT IS THE SAME THRESHOLD ``_pre_label`` AND ``select_cheap_signals`` USE, read from the
+    same constant rather than restated: three surfaces disagreeing about what "link-dense"
+    means is how a criterion comes to flag sources its own sampler never showed anybody.
+
+    WHY THIS SIGNAL AND NOT ANOTHER. The 2026-08-03 field measurement put 415 of 675
+    pre-label hits on ``high_link_density`` — most of the discriminating power in the whole
+    export — and it costs no content decrypt and no keyword join: ``external_link_count`` and
+    ``word_count`` alone. B6 promotes it from a sampling hint to a criterion because it is
+    the one cheap signal that has already been shown to find broken extraction.
+
+    QUARANTINED ARTICLES ARE EXCLUDED, exactly as ``collect_article_stats`` excludes them: an
+    article the article gate already condemned must not count toward its SOURCE's verdict.
+    An article with no word count, or a word count of zero, yields no ratio and is skipped —
+    never counted as dense on a division it cannot do.
+    """
+    counts: dict[int, int] = {}
+    link_q = (
+        session.query(ArticleLink.article_id, func.count())
+        .filter(ArticleLink.link_type == "external")
+        .group_by(ArticleLink.article_id)
+    )
+    for aid, cnt in link_q:
+        counts[int(aid)] = int(cnt)
+    if not counts:
+        return set()
+
+    art_q = session.query(Article.id, Article.word_count, Article.source_id).filter(
+        Article.quarantined.isnot(True)
+    )
+    if since is not None:
+        # The SAME window and the SAME column collect_article_stats uses. Two criteria
+        # measured over different populations would make one verdict's n a lie about the
+        # other's.
+        art_q = art_q.filter(Article.created_at >= since)
+    if source_ids is not None:
+        art_q = art_q.filter(Article.source_id.in_(sorted(source_ids)))
+    dense: set[int] = set()
+    for aid, wc, sid in art_q:
+        if sid is None:
+            continue
+        links = counts.get(int(aid), 0)
+        if not links:
+            continue
+        wc_i = int(wc) if wc is not None else None
+        if wc_i is None or wc_i <= 0:
+            continue
+        if (links / wc_i) >= _HIGH_LINK_DENSITY:
+            dense.add(int(aid))
+    return dense
 
 
 def select_cheap_signals(

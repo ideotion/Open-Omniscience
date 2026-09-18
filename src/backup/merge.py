@@ -1810,6 +1810,18 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # is exactly what the note forbids. It now has a handler (`_merge_fetch_history`)
     # whose adoption the operator's trust toggle gates.
     "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
+    # Q1101 = a (2026-09-15). An admission event records that THIS instance's engine
+    # enabled THIS instance's row, and its prior_enabled/prior_status describe that row
+    # before the flip. Carrying another corpus's events would offer an undo that restores
+    # a state this corpus never had -- a reversal to a fabricated prior. So it is not
+    # carried, and it is here rather than in _MERGE_IGNORED precisely because an audit
+    # trail's whole value is accountability: the restore report should SAY that N
+    # admission records were left behind, not drop them silently.
+    "source_admission_events": (
+        "this instance's own admission decisions; prior_enabled/prior_status describe a "
+        "row in THIS corpus, so an imported event's undo would restore a state that "
+        "never existed here"
+    ),
     # (c) GENUINELY OWED A HANDLER: not recomputable from the corpus, not per-machine, and
     # dropped by a fresh-install restore. The four with a unique constraint the SCHEMA
     # defines were built 2026-08-03 (stat_figures, stat_subscriptions, hazard_event_details,

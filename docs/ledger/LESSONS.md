@@ -10973,3 +10973,207 @@ guard is pinned by asserting the work is SPLIT (805 ids must produce 3 statement
   scan itself, and run it against the ancestor rather than against zero.
   The resolution is not a preference between two copies: **keep the one that is true.**
   The stale line states a measured falsehood that the other line exists to fix.
+
+## 2026-09-18 — `S04-12` S1: AN AUDIT'S UNIT IS THE FACT, NOT THE COLUMN THAT USUALLY MOVES WITH IT
+
+**The setting.** Q1101 makes a `qualified` verdict enable a source for collection
+unattended, and names the audit view's undo as the safety valve the flip rests on. So the
+audit had to answer one question: *what did the app let in, and how do I put it back?*
+
+**The first cut wrote a row only when `enabled` itself changed**, which reads as exactly
+right — the ruling's own words are "flips `enabled=True`" — and is a PROXY. The shipped
+catalogue seeds essentially every source `enabled: true, status: unqualified`, so the
+ordinary first qualification of a catalogue source runs `enabled=True/unqualified` →
+`enabled=True/qualified`: from excluded to actively scraped, with `enabled` never moving
+and no audit row written. Measured on the real seed path, the row came back `admitted: 0`
+and zero events while `select_sources` began returning the domain. The same hole swallowed
+every **re-admission on the disqualification ladder**, where `enabled` stays `True` across
+admit → disqualify → re-qualify, so the second, genuine re-opening of collection was
+invisible and had no undo.
+
+**The fact is COLLECTABILITY**, and the repair is to read it from the gate itself: one
+`is_collectable(enabled, status)` that `select_sources` mirrors in SQL and the audit calls
+in Python, so the two cannot drift into disagreeing about one quantity. This is the
+recorded *"a proxy for a fact drifts from it, and the drift is invisible"* entry with a new
+tell worth naming: **the proxy was the ruling's own vocabulary.** A ruling names a
+mechanism because that is how a person describes the change; implementing the NOUN it used
+rather than the EFFECT it wanted is how a faithful reading ships a hole.
+
+**THREE RIDERS, each found by an adversarial pass and each hand-re-verified before it was
+believed.**
+
+(a) **An undo over an append-only log needs an ORDER guard, not just an "already undone"
+one.** A source can be admitted twice (admit, the operator disables it, a later pass
+admits it again), and each event stores the state IT replaced — so undoing the OLDER one
+writes a prior state the newer admission has already superseded, while the newer row still
+renders as reversible and invites a second click that revives a status the operator had
+deliberately cleared. Refuse, and name the way out; which admission someone meant to
+reverse is their decision, not an ordering the code picks silently.
+
+(b) **A panel that says "every admission" owes the population it cannot see.** The curated
+catalogue stamp, the shipped overlay's inherited stamp and the restore-merge each make a
+source collecting without any verdict being reached here. Publishing the DIFFERENCE
+(`collecting` vs `accounted_for`) costs two counts and makes the claim true; describing the
+exceptions in prose would not.
+
+(c) **A retired setting must be REFUSED BY NAME, which is why its field stays declared.**
+Deleting it from the request model looks like the tidy end of a retirement and is the
+accepted-and-discarded shape: Pydantic drops an undeclared key silently and the endpoint
+answers 200 having changed nothing, telling an operator their scope decision took effect.
+
+**AND THE ONE ONLY THE BROWSER COULD FIND.** The prior status rendered as the raw English
+token `unqualified` inside an otherwise fully-translated Arabic line. Two of the three
+statuses were already keyed, so the house convention was to translate this closed
+vocabulary and the renderer simply was not reaching for it — and no gate can see that: the
+value sits inside a composed text node the DOM walker cannot match, and a key that is never
+requested is not a key that is missing. The guard added for it asserts the three statuses
+are keyed **and DISTINCT**, because "never judged" and "judged and rejected" collapsing onto
+one word would assert an equivalence the engine does not make.
+
+**PROCESS NOTE, on the fixture that hid all of it.** The test file's own helper defaulted
+to `enabled=False` — the DISCOVERED-CANDIDATE shape, the opposite of production's — so a
+fully green suite coexisted with the hole for as long as it existed. The recorded
+"a probe's data distribution is part of the lookalike" trap, with the SEED DEFAULT as the
+varying axis: when a fixture picks a value the real writer never picks, the tests are about
+a population the field does not contain.
+
+### 2026-09-18 · sources/overlay-editor-and-headline-count (gate row S, S04-12's S2) · PR #1158
+
+**FIXING A FACT AT ONE CALL SITE LEAVES IT BROKEN AT EVERY OTHER — MOVE THE DECISION, NOT
+THE PATCH.** S1 established that the admission audit's unit is "became COLLECTABLE", not
+"`enabled` changed", and fixed it inside `evaluate_and_stamp`. One slice later,
+`apply_overlay` — the shipped-verdict adoption that runs on every boot — was found doing
+exactly the thing the fix was about: a catalogue row (`enabled=True`, awaiting a verdict)
+adopting a shipped `qualified` verdict went from unreachable to actively scraped, with
+`select_sources` measured going from `[]` to `[the domain]` and the admission audit
+measured staying EMPTY. The undo had nothing to act on, and the "revert" being built over
+it would have had nothing to revert. The remedy that holds is not "fix the second site":
+it is `record_admission()`, ONE function both paths call, which reads the prior and the
+posterior state through the same `is_collectable` and decides for itself whether anything
+was admitted. A rule enforced at call sites is a rule that is only as good as the reader's
+memory of how many call sites there are. **How to find the others:** ask what FACT the fix
+is about (here: "can collection now reach this source"), then grep for every place that
+fact can CHANGE — not for the code the fix touched.
+
+**A HANDLER TESTED AS A FUNCTION IS NOT A TESTED ROUTE.** Seventeen tests of the overlay
+editor were green while `GET /api/sources/overlay` answered **422 — "Input should be a
+valid integer, unable to parse string as an integer"** — into the panel, where its counts
+belong. FastAPI matches in REGISTRATION order and `GET /api/sources/{source_id}`, defined
+earlier on the same router, swallows any single segment; the S1 endpoints escaped only
+because `/admission/audit` happens to have two. Every test called `overlay_status(db)`
+directly, so not one of them ever spoke HTTP. Only the Chromium walk saw it. **Whenever a
+new route is a single literal segment under a prefix that also carries a `/{id}` route, it
+must be registered above it AND driven through `TestClient` at least once** — assert a
+non-422 rather than a body, so the guard fails for the shadowing and nothing else.
+
+**A REVERT A LATER BOOT UNDOES IS NOT A REVERT.** Overlay adoption only touches rows
+reading `unqualified` — which is precisely the state a revert restores — so a revert that
+only put the rows back would be silently re-applied at the next startup, and the operator's
+decision would last until they closed the app. The restore and the preference
+(`AppSettings.adopt_shipped_verdicts`) therefore land in ONE operation, and the result
+reports `preference_held` so a half-completed revert is visible rather than reported clean.
+**Generally: when an operation's inverse is something a scheduled or boot-time step
+re-applies, restoring the state is half the work; the other half is persisting the
+decision.** A corollary found the same day: a boot-path preference read must fail OPEN
+(unreadable settings cost the operator their revert, never their app), which is a different
+default from every other refusal in this area and is worth stating where it is written.
+
+**A RATCHET'S EXISTING ALLOWANCE HIDES DEFECTS IN THE SURFACE YOU ARE WORKING ON.** The
+qualification panel's own headline line rendered `Collecte en cours: 1 · Judged so far: 1
+qualifié · … · 3 not yet judged` in French, and the same two English fragments in Arabic.
+Both strings predate the slice and sat inside the untranslatable ratchet's 466, so the gate
+was green and could not have said otherwise — a ratchet answers "did this change make it
+worse", never "is this surface correct". When a slice's ruling is ABOUT a surface (here
+Q1114: the headline count carries its label), read that surface's strings against the
+locale files directly, and lower the ratchet by what you fix (466→464, 229→227) rather than
+leaving the room behind.
+
+### 2026-09-18 · sources/s3-small-rulings (gate row S, S04-12's S3) · PR #1158
+
+**A RULE WRITTEN WHEN THERE WAS ONE OF SOMETHING READS THE ONE BY NAME, AND THE SECOND ONE
+INHERITS IT.** `flag_criteria` had exactly one extraction-failure criterion for its whole
+life, so it read `pathology_articles` and `PATHOLOGY_ABS_FLOOR` directly — correct, obvious,
+and a trap the moment a second criterion arrives. Adding `link_density_rate` without changing
+that would have gated the new criterion on the OLD one's evidence: a source with 400
+link-dense articles and no pathology goes silently un-flagged, and a source with 6
+pathological articles carries a link-density flag with nothing behind it — in the one place
+the app can take a source out of collection. **The tell is a constant or a dict key named
+after a specific instance of the thing you are adding a second of.** Each member now declares
+its own `evidence_key` and its own `abs_floor`, and the test that would have caught it asserts
+the evidence keys are DISTINCT rather than merely present.
+
+**A THRESHOLD NOBODY HAS MEASURED IS NOT IMPROVED BY COPYING THE ONE NEXT TO IT.**
+`pathology_rate` carries an absolute floor of 0.5 because a catastrophe level was argued for
+it. `link_density_rate` has none, and declares `None` — because nobody has measured what
+fraction of a source's articles being link-dense amounts to a broken scrape, and filling the
+column to match its neighbour would be a fabricated threshold wearing a measured criterion's
+clothes. The panel renders the absence with its reason rather than a blank. Corollary from the
+same ruling: a threshold that is kept but never fires should SAY it never fires, with the
+measurement that establishes it — a number an operator reads as live when it has never fired
+is a quiet overstatement, and `PATHOLOGY_ABS_FLOOR_STATUS` exists to carry that evidence
+beside the constant.
+
+**ACCENT-FOLDING IS NOT SCRIPT-NEUTRAL, AND THE LANGUAGES IT BREAKS ARE THE ONES NOBODY
+CHECKS.** A lexicon matcher folded its haystack (NFKD, strip combining marks) and not its
+needles. In Latin scripts that is invisible. In Bengali, Devanagari and Arabic the virama, the
+vowel signs and the harakat ARE combining marks, so `প্রজ্ঞাপন` — a real Bangladeshi gazette
+notification — went unmatched against its own lexicon entry. It would have shipped, because
+the entries it silently failed on are the ones fewest readers of that code would have tested.
+**Fold both sides, once, at import.** The same pass found the calendar twin: a Gregorian-only
+date test reads `令和6年`, `民国113年` and `1445هـ` as UNDATED, so a rule about "dated official
+documents" quietly under-observes exactly the administrations an equity ruling was written to
+stop under-observing. **When a rule's output is a judgement about legitimacy, its blind spots
+are not bugs of equal weight — they land on the same populations every time.**
+
+**A POSITIVE CONTROL PAYS FOR ITSELF ON THE DAY IT IS WRITTEN.** Q1156 asked for a
+measurement, so the measurement got a control: build the arrangement the ruling REJECTS and
+assert it fails the same check. It did fail — and in failing it exposed that the fixture's
+singleton ids (100..109) overlapped the bulk population's (0..199), while every assertion was
+written over `{s.id ...}` sets that cannot tell them apart. A shipped test in the same file
+had the identical collision and had been measuring the wrong sources. **Whenever a test
+asserts a property holds, ask what arrangement would violate it and assert that it does —
+the control catches fixture defects the assertion itself is structurally blind to.**
+
+### 2026-09-18 · sources/institutions-moves-and-stage-b-splice (gate row S, S04-12's S4) · PR #1158
+
+**"ADMIT WHERE BOTH JUDGES AGREE" IS NOT A COMPLETE ADMISSION RULE, AND READING IT AS ONE
+NEARLY DOUBLED A REPORTED NUMBER.** Q1119 = a says exactly that sentence, and the first cut
+implemented exactly that sentence: every row the two judges agreed about was admitted. But
+`official_sources.yml` is a list OF PRIMARY SOURCES, and 623 of the agreeing rows are ones
+both judges agreed are institutions and agreed are **not** primary sources — so admitting
+them asserted into that file the precise opposite of what both judges said, and reported
+1,471 admissions against the 807 actually earned. Rejecting them would have been equally
+wrong, because Q1110 = a DEFERS the `primary_source` axis rather than rejecting it while it
+is rewritten as an observable. The resolution is a third bucket whose reason names the ruling
+it rests on. **The general shape: a ruling phrased as a criterion ("admit where X") states a
+NECESSARY condition, and the target's own definition supplies the rest. Check what the
+destination is a list OF before implementing the sentence.**
+
+**THE DISCLOSURE CAUGHT THE DEFECT THAT THE TESTS DID NOT.** Nothing failed. What surfaced it
+was Q1117's balance-shift table — an artifact built for a completely different purpose, to
+show an operator how a splice moves the corpus's geography — reporting a `??` country bucket
+of 719 rows as the largest mover. Seven hundred admitted rows with no country meant seven
+hundred rows that were not in the triage output at all, which meant they had been admitted by
+a rule looser than the one the catalogue was built with. **A report written to be READ by a
+person finds things a test written to PASS does not, and the reason is that the report has to
+make sense as a whole while a test only has to be satisfied.** Build the disclosure early and
+look at its numbers, not just at whether it renders.
+
+**RECOMPUTING A PUBLISHED FIGURE FROM ITS RAW INPUTS IS WORTH THE HOUR.** The two-judge README
+states `kind` 97.1 % and `primary_source` 84.6 %. Recomputing both from the committed result
+files reproduced them to the decimal — which converts a number in a document into a number
+with a reproduction, and made it safe to publish a THIRD, stricter statistic beside them. That
+third figure (83.6 %, both axes at once) is necessarily the lowest of the three, and without
+all three carrying their own denominators a reader comparing it to the README's 84.6 % would
+find a discrepancy that is purely a definition. **Three statistics with three denominators,
+each labelled with what it is over, beats one number that has to be the right one.**
+
+**MOVING ROWS BETWEEN CURATED FILES IS A TEXT OPERATION, AND THE VALIDATION IS A PARSE.** 16
+rows moved from a 43-row file to a 606-row one. Re-serialising either would have buried the
+real diff (the recorded "never re-serialise a curated file to edit one entry" lesson), so each
+row's text span was cut and appended verbatim — and then BOTH files were parsed and the moved
+rows compared as dicts against their originals, which is what makes "verbatim" a measurement
+rather than an intention. The seed guard then caught what the move could not: the rows carry a
+`source_type` the docket itself calls wrong. **The ruling said MOVE, not RETYPE, so it was
+recorded as an unruled inconsistency rather than fixed in passing — a move is a bad place to
+hide a second change.**

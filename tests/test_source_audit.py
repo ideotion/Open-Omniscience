@@ -72,20 +72,78 @@ def test_derive_status_soft_signals_never_exceed_watch():
     assert derive_status([]) == "healthy"
 
 
-def test_only_pathology_is_an_extraction_failure_criterion():
-    # the design contract: exactly one EF criterion (the furniture-repetition / nav-DOM signature),
-    # so a 'failing' verdict can only be built on an actual extraction-failure signal.
+def test_the_extraction_failure_criteria_are_exactly_the_two_measured_ones():
+    """The design contract, AMENDED by B6 (2026-09-15): a 'failing' verdict can only be built
+    on an actual extraction-failure signal, and there are now TWO such signals rather than
+    one — the furniture-repetition / nav-DOM signature and the outbound-link density that the
+    2026-08-03 field measurement showed carries most of the discriminating power (415 of 675
+    pre-label hits) at no decrypt cost.
+
+    Pinned as a SET, so a third one cannot arrive unnoticed: every entry here widens what can
+    reach `failing`, which is the only status auto-demote acts on.
+    """
     ef = {c["name"] for c in CRITERIA if c["extraction_failure"]}
-    assert ef == {"pathology_rate"}
+    assert ef == {"pathology_rate", "link_density_rate"}
+
+
+def test_each_extraction_failure_criterion_declares_its_own_floor_and_evidence() -> None:
+    """The property that made a SECOND criterion safe to add.
+
+    With one EF criterion the code could read `pathology_articles` and `PATHOLOGY_ABS_FLOOR`
+    directly, and it did. With two, that silently gates the new criterion on the old one's
+    evidence — a source with 400 link-dense articles and no pathology would be un-flagged,
+    and a source with 6 pathological articles would carry a link-density flag it has no
+    evidence for. So each EF criterion must name its own count and its own floor.
+    """
+    ef = [c for c in CRITERIA if c["extraction_failure"]]
+    assert len(ef) >= 2, "this test is vacuous with fewer than two EF criteria"
+    keys = {c["name"]: c.get("evidence_key") for c in ef}
+    assert all(keys.values()), f"an EF criterion names no evidence count: {keys}"
+    assert len(set(keys.values())) == len(keys), (
+        f"two EF criteria share one evidence count, which is the defect: {keys}"
+    )
+    # The floors are per-criterion and MAY be None. `pathology_rate` keeps 0.5 (Q1107 = a);
+    # `link_density_rate` declares none, because no catastrophe level has been measured for
+    # it and filling the column with pathology's number would be a fabricated threshold.
+    floors = {c["name"]: c.get("abs_floor") for c in ef}
+    assert floors["pathology_rate"] == 0.5
+    assert floors["link_density_rate"] is None
+    # A soft criterion must never acquire one by accident.
+    assert all(c.get("abs_floor") is None for c in CRITERIA if not c["extraction_failure"])
+
+
+def test_the_pathology_floor_is_kept_and_recorded_unreachable() -> None:
+    """Q1107 = a. The 2026-08-02 field bundle measured 63 'failing' sources, every one flagged
+    by the cohort tail at a pathology_rate below 0.0025 — nothing reached 0.5. The ruling keeps
+    the floor and asks that this be RECORDED, so the panel presents a rare-catastrophe detector
+    rather than a live threshold that happens never to fire."""
+    from src.analytics.source_audit import PATHOLOGY_ABS_FLOOR, PATHOLOGY_ABS_FLOOR_STATUS
+
+    assert PATHOLOGY_ABS_FLOOR == 0.5, "the ruling is to KEEP it, not to tune it"
+    assert PATHOLOGY_ABS_FLOOR_STATUS["value"] == PATHOLOGY_ABS_FLOOR, (
+        "the recorded status drifted from the constant it describes"
+    )
+    assert PATHOLOGY_ABS_FLOOR_STATUS["reachable_in_the_field"] is False
+    # The claim must carry its evidence, not just its conclusion.
+    assert "0.0023" in PATHOLOGY_ABS_FLOOR_STATUS["measured"], (
+        "the unreachability claim must cite the measurement it rests on"
+    )
+    assert PATHOLOGY_ABS_FLOOR_STATUS["kept_because"].strip()
 
 
 # --------------------------------------------------------------------------- #
 # PURE — flag_criteria: cohort-relative tails, baselines, and honest gaps
 # --------------------------------------------------------------------------- #
 
-def _m(sid, *, lang="en", region="gb", n=100, outlier=0.1, path=0.02, mism=0.0, short=0.1, furn=0.1):
+def _m(sid, *, lang="en", region="gb", n=100, outlier=0.1, path=0.02, mism=0.0, short=0.1,
+       furn=0.1, link=0.0, link_articles=None):
+    # `link_density_rate` defaults to 0.0 so every test below keeps the meaning it had before
+    # B6: the new criterion is present (source_cohort_cut reads every criterion by name) and
+    # quiet, so an existing assertion about pathology is still an assertion about pathology.
     return {"domain": f"s{sid}.example", "language": lang, "region": region, "article_count": n,
             "dominant_lang": lang, "outlier_rate": outlier, "pathology_rate": path,
+            "link_density_rate": link,
+            "link_dense_articles": round(link * n) if link_articles is None else link_articles,
             "language_mismatch_rate": mism, "short_article_rate": short, "furniture_share": furn}
 
 

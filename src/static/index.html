@@ -2477,14 +2477,32 @@
       <div id="qual-gates" style="margin-top:14px"></div>
 
       <h3 style="margin-top:18px">What gets scraped</h3>
-      <p class="hint" style="margin-top:0">Both of these start at what the app does today, so leaving them alone changes nothing.</p>
+      <p class="hint" style="margin-top:0">A source is scraped once it is enabled and has passed judging. Passing judging enables it, so admission and scraping scope are one decision — every automatic admission is listed below, and every one can be undone.</p>
       <div class="row" style="gap:10px;flex-direction:column;align-items:flex-start">
-        <label class="row" style="gap:6px;align-items:center" title="Reaches only sources you have ENABLED — discovered candidates are disabled and stay out either way. A source that was judged and DISQUALIFIED is never admitted by this: the re-qualification ladder is how one comes back.">
-          <input id="qual-scope-unqualified" type="checkbox" onchange="qualSaveScope()"> <span>Also scrape sources not yet judged</span></label>
         <label class="row" style="gap:6px;align-items:center" title="The catalogues committed to the app — the curated list, the markets and diversification batches, the world news catalogue and the legal portals. Excludes every source the running app discovered for itself.">
-          <input id="qual-scope-shipped" type="checkbox" onchange="qualSaveScope()"> <span>Only scrape the sources that came with the app</span></label>
+          <input id="qual-scope-shipped" type="checkbox" style="width:auto" onchange="qualSaveScope()"> <span>Only scrape the sources that came with the app</span></label>
         <div id="qual-scope-count" class="hint"></div>
+        <div id="qual-scope-retired" class="card-caveat" hidden></div>
       </div>
+
+      <h3 style="margin-top:18px">Admission audit</h3>
+      <p class="hint" style="margin-top:0">Every time judging admitted a source to collection on its own. Undoing one puts the source back exactly as it was — it does not disqualify it, so a later round may admit it again.</p>
+      <div id="qual-admission" class="hint">Loading…</div>
+
+      <h3 style="margin-top:18px">Shipped verdicts</h3>
+      <p class="hint" style="margin-top:0">Earlier instances measured these and the record ships with the app, so a fresh install does not have to re-earn every verdict over the network. Adopting only touches sources this install has never judged for itself — a verdict you reached here always wins, in both directions. Nothing here is fetched: it is a file that came with the app.</p>
+      <div id="qual-overlay" class="hint">Loading…</div>
+      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="secondary" id="qual-ov-adopt" onclick="overlayAdopt(this)" title="Stamp the shipped verdicts onto sources this install has never judged, and resume doing so at startup. A source that is already enabled and gains a qualified verdict starts being collected — those appear in the admission audit above and can be undone one by one.">Adopt the shipped verdicts</button>
+        <button class="secondary" id="qual-ov-revert" onclick="overlayRevert(this)" title="Put those rows back to having no verdict, and stop adopting at startup so the change holds. Sources you have judged here since are left alone, and the shipped file is never edited.">Revert them</button>
+        <button class="secondary" id="qual-ov-export" onclick="overlayExport(this)" title="Download what THIS install measured, in the same format the app ships — the half of the loop that lets one instance's work reach the next fresh install.">Export what this install measured</button>
+      </div>
+      <p class="hint" style="margin-top:10px">To build the file the app ships, merge exports from other instances with this one. Nothing is written: the merged file is handed back for you to review and commit.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="file" id="qual-ov-files" accept=".json,.zip" multiple style="width:auto">
+        <button class="secondary" id="qual-ov-merge" onclick="overlayMerge(this)" title="Merges the selected exports (or all-diagnostics bundles) together with this instance's own verdicts. A domain two instances disagree about is reported and left alone, never resolved automatically; an inherited verdict is never counted as a second opinion.">Build a merged file</button>
+      </div>
+      <div id="qual-ov-merge-out" class="hint" style="margin-top:8px"></div>
 
       <h3 style="margin-top:18px">Catch up the backlog</h3>
       <p class="muted" style="margin-top:0">A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.</p>

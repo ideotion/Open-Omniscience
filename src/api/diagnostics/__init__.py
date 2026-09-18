@@ -325,7 +325,18 @@ from .country_codes import (
     country_code_duplicates,
 )
 
+# LAST again, for the same reason (2026-09-18, B5 / row S): a slice imported here appends
+# its route to the end of the table, where the split guard's `_ADDED_AFTER_THE_SPLIT`
+# list records it by name. Adding this endpoint to `sources.py` instead renumbered 84
+# positions the snapshot pins -- which is the failure the comment above describes,
+# observed.
+from .qualification_merge import (
+    _MAX_MERGE_UPLOADS,
+    source_qualification_merge,
+)
+
 __all__ = [
+    "_MAX_MERGE_UPLOADS",
     "AiCheckRunBody",
     "CardAuditRunBody",
     "KeywordTriageRunBody",
@@ -547,6 +558,7 @@ __all__ = [
     "source_audit_selftest",
     "source_coverage_benchmark",
     "source_qualification_export",
+    "source_qualification_merge",
     "source_quality",
     "source_tags_cancel",
     "source_tags_download",
