@@ -109,6 +109,20 @@ def parse_recentchanges(payload: dict) -> list[dict]:
             {
                 "revid": c.get("revid"),
                 "parent_revid": c.get("old_revid"),
+                # THE PAGE ID WAS ALWAYS IN THE RESPONSE; THIS PARSER DROPPED IT.
+                # ``rcprop`` above already asks for ``ids``, and ``revid`` /
+                # ``old_revid`` — kept two lines up — come from that SAME prop, so a
+                # response carrying them carries ``pageid`` too. That is verifiable
+                # here, in this file, without reaching the API: the request asks for
+                # the group and the parser keeps two of its three members.
+                #
+                # It matters beyond tidiness. Q715 keys the wiki lane on
+                # ``(wiki, pageid)`` because a page MOVE changes the title, and
+                # src/versioned/adapters/wiki.py recorded that it could not build
+                # that identity from a change "without a second request per change"
+                # — a conclusion drawn from this parser's output rather than from the
+                # API's. Carrying the field makes the ruled identity free.
+                "pageid": c.get("pageid"),
                 "title": c.get("title"),
                 "timestamp": _parse_ts(c.get("timestamp")),
                 "editor": c.get("user"),
@@ -257,3 +271,98 @@ def diff_summary(added: str, removed: str, *, limit: int = 2000) -> str:
     if added:
         parts.append("+ " + added[:limit])
     return "\n".join(parts)
+
+
+# --------------------------------------------------------------------------- #
+# The HOT tier's batched read (Q706 / Q707), keyed on page ids (Q715).
+# --------------------------------------------------------------------------- #
+#: THE PER-REQUEST UNIT IS **TITLES (or page ids), AND IT IS 50**. Read from
+#: ``docs/design/ROADMAP_ANSWER_SHEET_2026-09-12_BETA_PATHWAY.md`` §8 "Etiquette
+#: (SEARCH-VERIFIED)" — "up to **50 titles per request**, and for several pages only
+#: the **latest** revision's content may be fetched in one call (``rvlimit`` is
+#: refused with multiple titles; with content it is capped at 50)" — corroborated in
+#: ``docs/design/ROADMAP_INTAKE_2026-09-12_BETA_PATHWAY.md:408``. It is a limit on
+#: PAGES PER REQUEST, not on revisions per page and not on bytes; the same 50 already
+#: bounds ``build_revision_texts_params`` above, which is the in-tree corroboration.
+#:
+#: NOT RE-VERIFIED AGAINST THE LIVE API BY THE SESSION THAT WROTE THIS: every
+#: Wikimedia host answers ``000`` from this sandbox (probed 2026-09-17:
+#: stream.wikimedia.org, en.wikipedia.org, wikimedia.org, api.wikimedia.org,
+#: ores.wikimedia.org all ``000``; api.github.com ``200`` as the control). The
+#: operator's own >= 72 h run is what confirms it against the service (gate row V).
+#:
+#: A wiki that grants ``apihighlimits`` serves 500. This app is an anonymous client
+#: and asks for no rights, so 50 is the number that applies to it — raising it on the
+#: assumption of a right we never requested is how a polite client becomes a rejected
+#: one at somebody else's expense.
+MAX_PAGES_PER_REQUEST: int = 50
+
+#: The ``prop`` set Q705's field list needs, in ONE request per batch. Each member is
+#: here because a Q705 field reads from it; nothing is requested "while we are at it",
+#: because every extra prop is bytes over somebody else's bandwidth.
+_HOT_PROPS = "revisions|info|pageprops|categories|coordinates|images|extlinks"
+
+
+def build_hot_pages_params(pageids: list[int], *, with_assessments: bool = False) -> dict:
+    """Params for the current text + Q705 metadata of up to 50 pages, by page id.
+
+    BY ID, NOT BY TITLE. A title is not an identity (Q715): between the change
+    arriving and this request being made, the page may have MOVED, and a title
+    request would then fetch whatever now occupies the old name — silently, with a
+    perfectly ordinary-looking response. An id cannot be wrong in that way.
+
+    ``with_assessments`` is opt-in because ``prop=pageassessments`` exists only on
+    editions that installed the extension; asking an edition that has not is a
+    warning in the response and a field that is simply absent, which
+    :func:`src.wiki.pagefacts.facts_from_page` already handles as absent.
+    """
+    props = _HOT_PROPS + ("|pageassessments" if with_assessments else "")
+    return {
+        "action": "query",
+        "prop": props,
+        "pageids": "|".join(str(p) for p in pageids[:MAX_PAGES_PER_REQUEST]),
+        "rvprop": "ids|timestamp|content|size|user|flags|comment",
+        "rvslots": "main",
+        "inprop": "protection",
+        "cllimit": "max",
+        "ellimit": "max",
+        "imlimit": "max",
+        "format": "json",
+        "formatversion": 2,
+    }
+
+
+def parse_hot_pages(payload: dict) -> dict[int, dict]:
+    """Parse a batched HOT response -> ``{pageid: page-object}``.
+
+    The page object is handed on VERBATIM with two additions this parser is the right
+    place for: ``text`` (the main slot's wikitext, lifted out of the revision) and
+    ``missing`` (the API's own flag, normalised to a bool). Everything else stays as
+    the API spelled it, so :func:`src.wiki.pagefacts.facts_from_page` reads the
+    source's own field names and a new prop needs no change here.
+    """
+    pages = (payload or {}).get("query", {}).get("pages", [])
+    out: dict[int, dict] = {}
+    for page in pages if isinstance(pages, list) else []:
+        if not isinstance(page, dict):
+            continue
+        pid = page.get("pageid")
+        if not isinstance(pid, int):
+            # A page the query could not resolve has no id. It is reported under its
+            # title with ``missing: true``; there is nothing to key it on here, and
+            # inventing a key would make an absence look like a page.
+            continue
+        enriched = dict(page)
+        enriched["missing"] = bool(page.get("missing"))
+        revisions = page.get("revisions")
+        if isinstance(revisions, list) and revisions:
+            newest = revisions[0]
+            if isinstance(newest, dict):
+                slots = newest.get("slots")
+                main = slots.get("main") if isinstance(slots, dict) else None
+                if isinstance(main, dict) and isinstance(main.get("content"), str):
+                    enriched["text"] = main["content"]
+                enriched["revid"] = newest.get("revid")
+                enriched["timestamp"] = _parse_ts(newest.get("timestamp"))
+        out[pid] = enriched
+    return out

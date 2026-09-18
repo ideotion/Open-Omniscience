@@ -3590,5 +3590,18 @@
   "No points in this window.": "لا نقاط في هذه النافذة.",
   "running total {n}": "إجمالي تراكمي {n}",
   "not reported in this bucket": "غير مُبلَّغ في هذه الفترة",
-  "open in analysis (trend + worldwide spread)": "افتح في التحليل (الاتجاه + الانتشار العالمي)"
+  "open in analysis (trend + worldwide spread)": "افتح في التحليل (الاتجاه + الانتشار العالمي)",
+  "Chosen, but nothing is collecting yet on this build.": "مُختار، لكن لا شيء يُجمَع بعد في هذا الإصدار.",
+  "Every edit in the editions you chose arrives as it happens.": "يصل كل تعديل في النسخ التي اخترتها فور حدوثه.",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "لا شيء متصل الآن. قد يترك البدء من جديد فجوة، وهذا المسار يسجّلها بدلاً من إخفائها.",
+  "Pause the Wikipedia stream": "إيقاف تدفق ويكيبيديا مؤقتًا",
+  "Resume the Wikipedia stream": "استئناف تدفق ويكيبيديا",
+  "Start the Wikipedia stream": "بدء تدفق ويكيبيديا",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "الاتصال مغلق ومكانك محفوظ؛ الاستئناف يكمل من حيث توقف.",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "يتواصل هذا المسار مع stream.wikimedia.org، وواجهة Action API الخاصة بكل نسخة، ومع wikimedia.org لعدد مشاهدات الصفحات اليومي.",
+  "Wikipedia live stream": "تدفق ويكيبيديا المباشر",
+  "Wikipedia stream: paused": "تدفق ويكيبيديا: متوقف مؤقتًا",
+  "Wikipedia stream: running": "تدفق ويكيبيديا: يعمل",
+  "Wikipedia stream: stopped": "تدفق ويكيبيديا: متوقف",
+  "Stop the Wikipedia stream": "إيقاف تدفق ويكيبيديا"
 }

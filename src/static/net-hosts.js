@@ -76,9 +76,11 @@
     {
       "id": "wikipedia",
       "label": "Wikipedia / Wikimedia",
-      "hosts": ["*.wikipedia.org", "ores.wikimedia.org", "dumps.wikimedia.org"],
-      "trigger": "click",
-      "setting": null,
+      "hosts": ["*.wikipedia.org", "stream.wikimedia.org", "wikimedia.org", "ores.wikimedia.org", "dumps.wikimedia.org"],
+      "trigger": "ride-along",
+      "setting": "wiki_lane_state",
+      "settingFrom": "scheduler",
+      "settingOn": "running",
       "fetcher": true
     },
     {

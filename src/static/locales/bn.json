@@ -3590,5 +3590,18 @@
   "No points in this window.": "এই উইন্ডোতে কোনো পয়েন্ট নেই।",
   "running total {n}": "চলমান মোট {n}",
   "not reported in this bucket": "এই সময়কালে প্রতিবেদন করা হয়নি",
-  "open in analysis (trend + worldwide spread)": "বিশ্লেষণে খুলুন (প্রবণতা + বিশ্বব্যাপী বিস্তার)"
+  "open in analysis (trend + worldwide spread)": "বিশ্লেষণে খুলুন (প্রবণতা + বিশ্বব্যাপী বিস্তার)",
+  "Chosen, but nothing is collecting yet on this build.": "বাছাই করা হয়েছে, কিন্তু এই রিলিজে এখনও কিছু সংগ্রহ হচ্ছে না।",
+  "Every edit in the editions you chose arrives as it happens.": "আপনার বাছাই করা সংস্করণগুলোর প্রতিটি পরিবর্তন ঘটার সাথে সাথে চলে আসে।",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "এখন কিছুই সংযুক্ত নেই। আবার শুরু করলে একটি ফাঁক থেকে যেতে পারে, যা এই লেন লুকানোর বদলে নথিভুক্ত করে।",
+  "Pause the Wikipedia stream": "উইকিপিডিয়া স্ট্রিমে বিরতি দিন",
+  "Resume the Wikipedia stream": "উইকিপিডিয়া স্ট্রিম পুনরায় শুরু করুন",
+  "Start the Wikipedia stream": "উইকিপিডিয়া স্ট্রিম শুরু করুন",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "সংযোগ বন্ধ, তবে আপনার অবস্থান সংরক্ষিত আছে; পুনরায় শুরু করলে যেখানে থেমেছিল সেখান থেকেই চলবে।",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "এই লেন stream.wikimedia.org-এর সাথে, প্রতিটি সংস্করণের Action API-এর সাথে, এবং দৈনিক পৃষ্ঠা-দর্শনের জন্য wikimedia.org-এর সাথে যোগাযোগ করে।",
+  "Wikipedia live stream": "উইকিপিডিয়া লাইভ স্ট্রিম",
+  "Wikipedia stream: paused": "উইকিপিডিয়া স্ট্রিম: বিরতিতে",
+  "Wikipedia stream: running": "উইকিপিডিয়া স্ট্রিম: চলছে",
+  "Wikipedia stream: stopped": "উইকিপিডিয়া স্ট্রিম: থেমে গেছে",
+  "Stop the Wikipedia stream": "উইকিপিডিয়া স্ট্রিম থামান"
 }

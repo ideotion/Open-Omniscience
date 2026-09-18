@@ -3590,5 +3590,18 @@
   "No points in this window.": "此窗口内没有数据点。",
   "running total {n}": "累计总数 {n}",
   "not reported in this bucket": "此时段未上报",
-  "open in analysis (trend + worldwide spread)": "在分析中打开（趋势 + 全球覆盖）"
+  "open in analysis (trend + worldwide spread)": "在分析中打开（趋势 + 全球覆盖）",
+  "Chosen, but nothing is collecting yet on this build.": "已选择，但本版本目前并未采集任何内容。",
+  "Every edit in the editions you chose arrives as it happens.": "你选择的语言版本中的每一次更改，一发生就会送达。",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "当前没有任何连接。重新开始可能会留下空缺，这条通道会记录它，而不是隐藏它。",
+  "Pause the Wikipedia stream": "暂停维基百科流",
+  "Resume the Wikipedia stream": "继续维基百科流",
+  "Start the Wikipedia stream": "开始维基百科流",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "连接已关闭，但你的位置已保留；「继续」会从中断处接着运行。",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "这条通道会连接 stream.wikimedia.org、各语言版本的 Action API，以及提供每日页面浏览量的 wikimedia.org。",
+  "Wikipedia live stream": "维基百科实时流",
+  "Wikipedia stream: paused": "维基百科流：已暂停",
+  "Wikipedia stream: running": "维基百科流：运行中",
+  "Wikipedia stream: stopped": "维基百科流：已停止",
+  "Stop the Wikipedia stream": "停止维基百科流"
 }

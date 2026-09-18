@@ -234,6 +234,21 @@ class VersionedEntity(LaneBase):
     #: Two different facts; one column each, because "we have not looked" and "nothing
     #: happened" are the pair every freshness reading gets wrong.
     last_checked_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
+    #: When the SOURCE said this entity is gone. Q713 = a: "a deleted page keeps its
+    #: last text and is marked deleted."
+    #:
+    #: A TIMESTAMP, NOT A BOOLEAN, for two reasons. A ``deleted: bool`` cannot say
+    #: WHEN, and every surface that shows a deletion wants to — a page deleted an hour
+    #: ago and one deleted last year are read differently. And ``None`` is
+    #: unambiguous: there is no "false" that might mean "we never checked", which is
+    #: the pair this schema already keeps apart for freshness one field up.
+    #:
+    #: The pass that finds a page gone SETS it and stores nothing else; the revisions
+    #: stay exactly where they were, because deleting them to express "the page is
+    #: gone" destroys the only remaining record of what it said. A page restored
+    #: upstream clears it on the next successful fetch, so the column tracks the
+    #: source rather than accumulating our history of it.
+    deleted_at: Mapped[datetime | None] = mapped_column(LaneUTCDateTime)
 
     __table_args__ = (
         UniqueConstraint("external_id", name="uq_versioned_entity_external_id"),
@@ -485,10 +500,62 @@ class VersionedDisclosure(LaneBase):
     note: Mapped[str | None] = mapped_column(Text)
 
 
+class VersionedEntityFact(LaneBase):
+    """One named fact a source states about one entity, as the source stated it.
+
+    Q705 = a confirms a fourteen-field list for a wiki page (``pageid``, QID,
+    sitelink count, categories, length, revision count, protection level, last editor
+    class, infobox fields, coordinates, image count, external-link count,
+    citation-needed count, page assessment class, creation date, the edition). This
+    table is where they live, and the shape is a ROW PER FACT rather than a column
+    per field for one reason that outranks tidiness: **absence has to be literal.**
+
+    The brief's S1 says the fields are "absent when unanswered, never 0". A typed
+    column gives every page every field, filled with ``NULL`` — and a ``NULL`` in an
+    integer column is read as a zero by the first consumer that writes
+    ``row.image_count or 0``, which is the recorded fabricated-gap failure wearing
+    its most ordinary clothes. Here an unanswered field has no row, so "we never
+    asked", "we asked and the wiki said nothing" and "the wiki said zero" are three
+    distinguishable states instead of one.
+
+    It also generalises. ``law`` and ``osm`` state different things about their
+    entities; a wiki-shaped column list in the shared schema would either be dead
+    weight in ``law.db`` or the start of three parallel tables.
+
+    THE VALUE IS JSON, ALWAYS. One column with one meaning — "what the source said,
+    encoded" — so a caller never has to know which of three value columns to read,
+    and a list (categories, infobox keys) needs no second table. The vocabulary of
+    NAMES is the lane's, not the substrate's: see ``src/wiki/pagefacts.py``.
+    """
+
+    __tablename__ = "versioned_entity_facts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("versioned_entities.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The fact's name, from the lane's own vocabulary. A literal token.
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: ``json.dumps`` of the value the source stated. Never a rendered sentence.
+    value_json: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The source revision this fact was read from, where the source names one. It
+    #: is what lets a stale fact be recognised as stale rather than trusted.
+    revision_ref: Mapped[str | None] = mapped_column(String(128))
+    observed_at: Mapped[datetime] = mapped_column(
+        LaneUTCDateTime, nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("entity_id", "name", name="uq_versioned_entity_fact_name"),
+        Index("ix_versioned_entity_fact_name", "name"),
+    )
+
+
 #: Every model in this schema, for the guards and for ``create_all``'s twin check.
 LANE_MODELS: tuple[type[LaneBase], ...] = (
     LaneMeta,
     VersionedEntity,
+    VersionedEntityFact,
     VersionedBaseline,
     VersionedRevision,
     VersionedChange,

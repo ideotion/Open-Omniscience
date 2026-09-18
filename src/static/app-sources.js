@@ -996,6 +996,152 @@
       } catch (e) { toast("Could not change the collection speed: " + e.message, "err"); }
     }
 
+
+    // -- Top-bar Wikipedia-stream toggle (Q702's NOTE, ruled 2026-09-15) ---- //
+    //
+    // THE NOTE IS THE RULING. Q702's answer label said "a dedicated Wikipedia
+    // toggle, default off"; the note attached to it says "make it default on, and
+    // add a toggle on the taskbar -like the AI toggle, with a nice and consistent
+    // animation- , to allow users to stop / start / halt / resume wikipedia
+    // streaming". Where the two disagree the note wins (the beta pathway's working
+    // mode states this explicitly), so: DEFAULT ON, four verbs, top bar.
+    //
+    // WHAT "LIKE THE AI TOGGLE" MAPS ONTO, stated because the brief says this
+    // slice may not decide it and the maintainer may move it. The only AI element
+    // in the top bar is `#llm`, which is a STATUS PILL and not a toggle — it has no
+    // click behaviour to mirror. The controls that ARE top-bar toggles are
+    // `#net-toggle` (airplane mode) and `#rate-toggle` (collection speed), and they
+    // share one grammar: an icon button of constant footprint (invariant #3) whose
+    // GLYPH never changes and whose FILL/accent carries the state (invariant #14 —
+    // never an action glyph), with the action named in a translated hover. This
+    // follows that grammar, and the "consistent animation" is the same accent
+    // transition `.rate-max` uses, plus a slow pulse while the stream is live.
+    //
+    // THREE STATES, FOUR VERBS. The backend stores `wiki_lane_state` ∈ {running,
+    // halted, stopped}; start and resume both ARRIVE at running and differ only in
+    // what the lane can promise about continuity (see the field's own comment in
+    // src/scheduler/settings.py). A click cycles running -> halted -> running;
+    // the full stop lives on the hover menu, because an accidental click on a
+    // top-bar icon should never be the thing that ends a multi-day stream.
+    let _wikiLaneState = null;
+    let _wikiLaneActive = false;
+
+    //: The three states the backend can store (src/scheduler/settings.py's
+    //: WIKI_LANE_STATES). Named here rather than derived by elimination, because an
+    //: else-branch cannot tell "stopped" from "a state this build does not know" and
+    //: would draw the second as the first -- a control quietly claiming the lane is
+    //: off when it is something else. tests/test_wiki_toggle_ui.py pins the two lists
+    //: against each other so they cannot drift apart in silence.
+    const WIKI_LANE_STATES = ["running", "halted", "stopped"];
+    function _paintWikiLane(state, active) {
+      const btn = $("wiki-toggle");
+      if (!btn) return;
+      if (WIKI_LANE_STATES.indexOf(state) === -1) {
+        // REFUSE rather than guess. The button keeps whatever it last showed, which
+        // is the most recent thing we actually knew, and the console says why. Drawing
+        // an unknown state as "stopped" would be the one failure direction this
+        // control must not have: telling an operator the lane is off when it is not.
+        try { console.warn("wiki lane: unknown state", state, "- the toggle was left as it was"); } catch (_e) {}
+        return;
+      }
+      _wikiLaneState = state;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const running = state === "running";
+      const halted = state === "halted";
+      // ``active`` is whether a collector is ACTING on the choice, which on this
+      // build is never, because no scheduler job constructs a stream yet. Kept
+      // separate from ``state`` so the hover can say "chosen" where it cannot
+      // honestly say "happening" -- the alternative is a top-bar control telling an
+      // operator that every edit is arriving while nothing is connected.
+      _wikiLaneActive = active === true;
+      // FILL = state, one constant glyph (invariant #14's grammar).
+      const mark = document.getElementById("wiki-mark");
+      if (mark) mark.setAttribute("fill", running ? "currentColor" : "none");
+      // The BREATHING accent means "something is happening right now", so it is
+      // gated on ``active`` and not on the choice. The FILL still carries the
+      // chosen state, which is what invariant #14's grammar is about.
+      btn.classList.toggle("wiki-live", running && _wikiLaneActive);
+      btn.classList.toggle("wiki-chosen", running && !_wikiLaneActive);
+      btn.classList.toggle("wiki-halted", halted);
+      // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY. Every state names the action
+      // the click performs AND what the lane is doing, so the button is never a
+      // promise the app will refuse on click.
+      const detail = (running && !_wikiLaneActive)
+        ? t9("Chosen, but nothing is collecting yet on this build.")
+        : running
+        ? t9("Every edit in the editions you chose arrives as it happens.")
+        : halted
+          ? t9("The connection is closed and your place is kept; Resume continues from where it stopped.")
+          : t9("Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.");
+      const heading = running
+        ? t9("Wikipedia stream: running")
+        : halted
+          ? t9("Wikipedia stream: paused")
+          : t9("Wikipedia stream: stopped");
+      const action = running ? t9("Pause the Wikipedia stream")
+                             : halted ? t9("Resume the Wikipedia stream")
+                                      : t9("Start the Wikipedia stream");
+      // The hover carries the CAVEAT (invariant #17's bubble reads the live title),
+      // including what the lane contacts — a hover is a consent surface, so it
+      // names the hosts rather than only the state.
+      btn.title = heading + " — " + detail + "\n" + action + "\n"
+        + t9("This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.");
+      btn.setAttribute("aria-label", action);
+      btn.setAttribute("aria-pressed", running ? "true" : "false");
+    }
+
+    async function loadWikiLane() {
+      try {
+        // The STATUS, not the config: the config holds the operator's choice and the
+        // status holds the choice AND whether anything is acting on it. Reading only
+        // the first is what would let this button claim a stream that is not running.
+        const st = await api("/api/scheduler/status");
+        const lane = (st && st.wiki_lane) || {};
+        _paintWikiLane(lane.state || "running", lane.active === true);
+      } catch (_e) {
+        // The chrome keeps the boot paint. NOT a silent "stopped": claiming the
+        // lane is off when we simply could not ask would be a fabricated state on
+        // the one control whose whole job is to tell the truth about egress.
+      }
+    }
+
+    async function toggleWikiLane() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Resolve the truth before acting rather than trusting the paint: a click
+      // that lands before the first config read would otherwise act on a guess.
+      if (_wikiLaneState === null) { await loadWikiLane(); }
+      const from = _wikiLaneState || "running";
+      const next = from === "running" ? "halted" : "running";
+      if (next === "running") {
+        // GOING TO RUNNING IS AN EGRESS. Invariant #14: every offline -> online
+        // transition passes the ONE consent popup, and this is one, because the
+        // stream opens a connection to stream.wikimedia.org the moment it starts.
+        // The airplane check is the gate; the settings write below is loopback.
+        if (!await ensureOnline(t9("Start the Wikipedia stream"))) return;
+      }
+      try {
+        const c = await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({wiki_lane_state: next})});
+        _paintWikiLane((c && c.wiki_lane_state) || next, _wikiLaneActive);
+        toast(next === "running" ? t9("Resume the Wikipedia stream")
+                                 : t9("Pause the Wikipedia stream"));
+      } catch (e) {
+        toast(_failMsg("Update failed: {error}", e), "err");
+      }
+    }
+
+    async function stopWikiLane() {
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const c = await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({wiki_lane_state: "stopped"})});
+        _paintWikiLane((c && c.wiki_lane_state) || "stopped", _wikiLaneActive);
+        toast(t9("Stop the Wikipedia stream"));
+      } catch (e) {
+        toast(_failMsg("Update failed: {error}", e), "err");
+      }
+    }
+
     async function loadScheduler() {
       try { const s = await api("/api/scheduler/status"); renderSchedStatus(s); _paintCollectToggle(!!(s && s.running)); }
       catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }

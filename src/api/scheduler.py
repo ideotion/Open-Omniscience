@@ -85,6 +85,14 @@ class SchedulerConfigUpdate(BaseModel):
     # crawl_per_pass=0 disables the supplement (mode="crawl" stays orthogonal).
     crawl_supplement: bool | None = None
     crawl_per_pass: int | None = None
+    # THE WIKIPEDIA LANE'S RUN STATE (Q702's NOTE): "running" | "halted" | "stopped".
+    # DECLARED HERE ON PURPOSE. ``net-hosts.js``'s own header records the trap this
+    # line avoids: a field that exists on the settings dataclass and is honoured by
+    # save_settings, but is NOT declared on this request model, is DROPPED by Pydantic
+    # -- and the endpoint then returns 200 having changed nothing, so the operator is
+    # told their opt-out succeeded when it did not. That is the ``settingUnreachable``
+    # state the table has a flag for, and it is a worse failure than no control at all.
+    wiki_lane_state: str | None = None
 
 
 def _status_payload() -> dict:
@@ -110,7 +118,55 @@ def _status_payload() -> dict:
     # 429/503 it was served), because a server too loaded to answer cannot tell
     # anyone it is loaded.
     status["server_load"] = server_load()
+    # THE WIKIPEDIA LANE'S STATE, AND WHETHER ANYTHING IS ACTING ON IT (Q702's NOTE).
+    #
+    # TWO FIELDS, NOT ONE, and the second is the honest half. `state` is what the
+    # operator chose; `active` is whether a collector is currently acting on that
+    # choice. They are not the same fact, and on this build they DIFFER: the lane's
+    # stream client, its storage and its consent gate are built, and no scheduler job
+    # constructs one yet (S04-09's S4). A toggle that read only `state` would tell an
+    # operator "running -- every edit arrives as it happens" while nothing was
+    # connected, which is the shape of a control that claims a capability it does not
+    # have. `reason` names what is missing, so the UI can say it rather than imply it.
+    status["wiki_lane"] = _wiki_lane_block()
     return status
+
+
+def _wiki_lane_block() -> dict:
+    """What the operator chose for the Wikipedia lane, and what is acting on it.
+
+    ``active`` is computed, never stored: the day a scheduler job owns a stream, this
+    is the one place that has to learn about it, and every surface reading the status
+    becomes correct at once.
+    """
+    from src.scheduler.settings import WIKI_LANE_STATES, load_settings
+    from src.wiki.stream import live_streams
+
+    state = getattr(load_settings(), "wiki_lane_state", "running")
+    # MEASURED, not asserted. ``live_streams()`` is maintained by the read loop
+    # itself, so this is true in both directions: false while nothing runs one, and
+    # true the moment something does, without anyone remembering to come back here.
+    live = live_streams()
+    if state not in WIKI_LANE_STATES:
+        # A persisted value this build does not know. Reported as itself rather than
+        # coerced: the UI refuses to draw an unknown state, which is better than
+        # either of us guessing.
+        return {
+            "state": state,
+            "active": bool(live),
+            "reason": "unknown-state",
+            "states": list(WIKI_LANE_STATES),
+        }
+    return {
+        "state": state,
+        "active": bool(live),
+        # A literal token, never prose: the sentence is composed by the UI through
+        # OOI18N.t and ships x12, because this reaches a caveat surface. Absent while
+        # a stream IS running -- there is nothing to explain then.
+        "reason": None if live else "no-collector-yet",
+        "editions_live": sorted({code for editions in live for code in editions}),
+        "states": list(WIKI_LANE_STATES),
+    }
 
 
 @router.get("/status")

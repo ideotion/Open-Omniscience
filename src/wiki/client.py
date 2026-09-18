@@ -94,6 +94,42 @@ class WikiClient:
     def fetch_current_text(self, wiki: str, title: str) -> dict:
         return mw.parse_current_text(self._get(wiki, mw.build_current_text_params(title)))
 
+    def fetch_hot_pages(
+        self, wiki: str, pageids: list[int], *, with_assessments: bool = False
+    ) -> dict[int, dict]:
+        """Current text + Q705 metadata for up to 50 pages, ONE request.
+
+        THE UNIT IS PAGES AND THE CAP IS 50 -- see
+        ``mediawiki.MAX_PAGES_PER_REQUEST`` for where that was read. This method
+        does NOT chunk: a caller handing it 200 ids would silently get 50 back and
+        believe it had 200, which is the shape of an undercount nothing reports.
+        Chunking belongs to the caller that knows its budget
+        (``src.wiki.hot.fetch_hot_batch``), and this refuses rather than truncates.
+        """
+        if not pageids:
+            return {}
+        if len(pageids) > mw.MAX_PAGES_PER_REQUEST:
+            raise ValueError(
+                f"{len(pageids)} pages asked for in one request; the Action API serves "
+                f"{mw.MAX_PAGES_PER_REQUEST} to an anonymous client. Chunk before calling."
+            )
+        return mw.parse_hot_pages(
+            self._get(wiki, mw.build_hot_pages_params(pageids, with_assessments=with_assessments))
+        )
+
+    def fetch_current_text_by_id(self, wiki: str, pageid: int) -> dict:
+        """One page's current wikitext, addressed by ID rather than by title.
+
+        A title can have MOVED between the change arriving and this call; an id
+        cannot. Returns the same shape ``fetch_current_text`` does, so the two are
+        interchangeable at a call site that has either key.
+        """
+        pages = self.fetch_hot_pages(wiki, [pageid])
+        page = pages.get(pageid)
+        if page is None or page.get("missing"):
+            return {"missing": True, "pageid": pageid}
+        return page
+
     def fetch_categories(self, wiki: str, title: str) -> list[str]:
         return mw.parse_categories(self._get(wiki, mw.build_categories_params(title)))
 

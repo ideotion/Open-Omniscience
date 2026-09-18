@@ -3590,5 +3590,18 @@
   "No points in this window.": "この範囲にポイントがありません。",
   "running total {n}": "累計 {n}",
   "not reported in this bucket": "この期間は未報告",
-  "open in analysis (trend + worldwide spread)": "分析で開く（トレンド + 世界的な広がり）"
+  "open in analysis (trend + worldwide spread)": "分析で開く（トレンド + 世界的な広がり）",
+  "Chosen, but nothing is collecting yet on this build.": "選択済みですが、このリリースではまだ何も収集されていません。",
+  "Every edit in the editions you chose arrives as it happens.": "選んだ言語版でのすべての編集が、起きたその瞬間に届きます。",
+  "Nothing is connected. Starting again may leave a gap, which this lane records rather than hides.": "何も接続されていません。ここでもう一度開始すると欠落が生じることがありますが、このレーンはそれを隠さず記録します。",
+  "Pause the Wikipedia stream": "Wikipediaストリームを一時停止",
+  "Resume the Wikipedia stream": "Wikipediaストリームを再開",
+  "Start the Wikipedia stream": "Wikipediaストリームを開始",
+  "The connection is closed and your place is kept; Resume continues from where it stopped.": "接続は切れていますが、位置は保持されています。「再開」を押すと止まった場所から続きます。",
+  "This lane contacts stream.wikimedia.org, each edition's Action API, and wikimedia.org for daily pageviews.": "このレーンは stream.wikimedia.org、各言語版の Action API、そして日次のページビューのために wikimedia.org に接続します。",
+  "Wikipedia live stream": "Wikipediaライブストリーム",
+  "Wikipedia stream: paused": "Wikipediaストリーム: 一時停止中",
+  "Wikipedia stream: running": "Wikipediaストリーム: 稼働中",
+  "Wikipedia stream: stopped": "Wikipediaストリーム: 停止中",
+  "Stop the Wikipedia stream": "Wikipediaストリームを停止"
 }

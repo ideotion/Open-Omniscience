@@ -856,6 +856,34 @@
     #rate-toggle.rate-max { color:var(--accent);
                             box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
     #rate-toggle #rate-needle { transition:transform .35s ease; }
+    /* Wikipedia-stream toggle (Q702's NOTE, 2026-09-15). Same discipline as
+       #rate-toggle above: theme-derived accent via color-mix from tokens, never a
+       hardcoded hue. The "nice and consistent animation" the note asks for is the
+       accent transition these two already share, plus a slow breathing ring while
+       the stream is LIVE — the one state where something is genuinely happening
+       that the operator cannot otherwise see. It is a 2.4s opacity cycle on a
+       box-shadow, not a layout or transform loop, so it costs nothing on the
+       2-core reference VM; and it is disabled outright under prefers-reduced-motion,
+       where the static accent still carries the state (the glyph FILL always does). */
+    #wiki-toggle.wiki-live { color:var(--accent);
+                             box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+                             animation: wikilive 2.4s ease-in-out infinite; }
+    /* CHOSEN but not collecting: the operator asked for the stream and nothing is
+       acting on it yet. A static accent, deliberately NOT the breathing ring --
+       the animation means "something is happening right now", and an animation
+       over an idle lane is the picture telling a different story from the words. */
+    #wiki-toggle.wiki-chosen { color:var(--accent); opacity:.72; }
+    #wiki-toggle.wiki-halted { color:var(--muted);
+                               box-shadow:0 0 0 3px color-mix(in srgb, var(--muted) 12%, transparent); }
+    #wiki-toggle #wiki-mark { transition:fill .35s ease; }
+    @keyframes wikilive {
+      0%, 100% { box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+      50%      { box-shadow:0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #wiki-toggle.wiki-live { animation:none; }
+      #wiki-toggle #wiki-mark { transition:none; }
+    }
     #net-flash { position:fixed; inset:0; z-index:200; pointer-events:none; opacity:0; }
     /* Direction-aware transition color. Field test 2026-06-19 #O-5: going ONLINE flashes
        GREEN (--ok, the "go" signal the maintainer expects); going OFFLINE flashes a

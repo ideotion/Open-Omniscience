@@ -1,0 +1,95 @@
+:ok
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1001}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"create the page","length":{"new":206},"meta":{"domain":"oo.example.invalid","dt":"2026-03-01T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":101,"page_is_redirect":false,"revision":{"new":1001},"server_name":"oo.example.invalid","timestamp":1772366400,"title":"Fixture Alpha","type":"new","user":"FixtureEditorOne","wiki":"oowiki"}
+
+:
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1002}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"expand the background","length":{"new":216,"old":206},"meta":{"domain":"oo.example.invalid","dt":"2026-03-04T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":101,"page_is_redirect":false,"revision":{"new":1005,"old":1001},"server_name":"oo.example.invalid","timestamp":1772625600,"title":"Fixture Alpha","type":"edit","user":"FixtureEditorTwo","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1003}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"add a sentence","length":{"new":254,"old":216},"meta":{"domain":"oo.example.invalid","dt":"2026-03-10T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":101,"page_is_redirect":false,"revision":{"new":1011,"old":1005},"server_name":"oo.example.invalid","timestamp":1773144000,"title":"Fixture Alpha","type":"edit","user":"FixtureEditorOne","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1004}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"create the page","length":{"new":191},"meta":{"domain":"oo.example.invalid","dt":"2026-03-02T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":102,"page_is_redirect":false,"revision":{"new":1002},"server_name":"oo.example.invalid","timestamp":1772452800,"title":"Fixture Beta","type":"new","user":"FixtureEditorThree","wiki":"oowiki"}
+
+:
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1005}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"vandalise","length":{"new":189,"old":191},"meta":{"domain":"oo.example.invalid","dt":"2026-03-05T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":102,"page_is_redirect":false,"revision":{"new":1006,"old":1002},"server_name":"oo.example.invalid","timestamp":1772712000,"title":"Fixture Beta","type":"edit","user":"FixtureEditorTwo","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1006}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"revert","length":{"new":191,"old":189},"meta":{"domain":"oo.example.invalid","dt":"2026-03-06T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":102,"page_is_redirect":false,"revision":{"new":1007,"old":1006},"server_name":"oo.example.invalid","timestamp":1772798400,"title":"Fixture Beta","type":"edit","user":"FixtureEditorThree","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1007}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"create a long page","length":{"new":17718},"meta":{"domain":"oo.example.invalid","dt":"2026-03-03T12:30:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":104,"page_is_redirect":false,"revision":{"new":1004},"server_name":"oo.example.invalid","timestamp":1772541000,"title":"Fixture Delta","type":"new","user":"FixtureEditorFive","wiki":"oowiki"}
+
+:
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1008}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"extend the long page","length":{"new":35318,"old":17718},"meta":{"domain":"oo.example.invalid","dt":"2026-03-08T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":104,"page_is_redirect":false,"revision":{"new":1009,"old":1004},"server_name":"oo.example.invalid","timestamp":1772971200,"title":"Fixture Delta","type":"edit","user":"FixtureEditorFive","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1009}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"create an old page","length":{"new":191},"meta":{"domain":"oo.example.invalid","dt":"2025-01-25T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":105,"page_is_redirect":false,"revision":{"new":900},"server_name":"oo.example.invalid","timestamp":1737806400,"title":"Fixture Epsilon","type":"new","user":"FixtureEditorSix","wiki":"oowiki"}
+
+:
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1010}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"tidy","length":{"new":202,"old":191},"meta":{"domain":"oo.example.invalid","dt":"2025-02-04T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":105,"page_is_redirect":false,"revision":{"new":901,"old":900},"server_name":"oo.example.invalid","timestamp":1738670400,"title":"Fixture Epsilon","type":"edit","user":"FixtureEditorSix","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1011}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"create the page","length":{"new":197},"meta":{"domain":"oo.example.invalid","dt":"2026-03-03T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":103,"page_is_redirect":false,"revision":{"new":1003},"server_name":"oo.example.invalid","timestamp":1772539200,"title":"Fixture Gamma","type":"new","user":"FixtureEditorFour","wiki":"oowiki"}
+
+:
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1012}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"correct the figure","length":{"new":198,"old":197},"meta":{"domain":"oo.example.invalid","dt":"2026-03-07T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":103,"page_is_redirect":false,"revision":{"new":1008,"old":1003},"server_name":"oo.example.invalid","timestamp":1772884800,"title":"Fixture Gamma","type":"edit","user":"FixtureEditorFour","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1013}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"deleted","length":{"new":0,"old":198},"log_action":"delete","log_type":"delete","meta":{"domain":"oo.example.invalid","dt":"2026-03-09T12:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":103,"page_is_redirect":false,"server_name":"oo.example.invalid","timestamp":1773057600,"title":"Fixture Gamma","type":"log","user":"FixtureAdmin","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1014}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"moved","length":{"new":0},"log_action":"move","log_type":"move","meta":{"domain":"oo.example.invalid","dt":"2026-03-10T09:00:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":101,"page_is_redirect":false,"server_name":"oo.example.invalid","timestamp":1773133200,"title":"Fixture Alpha (renamed)","type":"log","user":"FixtureAdmin","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1015}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"not ours","length":{"new":10},"meta":{"domain":"zz.example.invalid","dt":"2026-03-10T09:05:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":900,"page_is_redirect":false,"revision":{"new":9001},"server_name":"zz.example.invalid","timestamp":1773133500,"title":"Somewhere Else","type":"edit","user":"Someone","wiki":"zzwiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1016}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"category","length":{"new":10},"meta":{"domain":"oo.example.invalid","dt":"2026-03-10T09:06:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":14,"page_id":901,"page_is_redirect":false,"revision":{"new":9002},"server_name":"oo.example.invalid","timestamp":1773133560,"title":"Category:Fixtures","type":"edit","user":"Someone","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1017}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0","bot":false,"comment":"redirect","length":{"new":30},"meta":{"domain":"oo.example.invalid","dt":"2026-03-10T09:07:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":902,"page_is_redirect":true,"revision":{"new":9003},"server_name":"oo.example.invalid","timestamp":1773133620,"title":"Fixture Alpha (redirect)","type":"edit","user":"Someone","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1018}]
+event: message
+data: {"wiki": "oowiki", truncated
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1019}]
+event: message
+data: {"$schema":"/mediawiki/recentchange/1.0.0",
+data: "bot":false,"comment":"split across lines","length":{"new":44,"old":40},"meta":{"domain":"oo.example.invalid","dt":"2026-03-10T09:08:00Z","stream":"mediawiki.recentchange"},"minor":false,"namespace":0,"page_id":105,"page_is_redirect":false,"revision":{"new":9100},"server_name":"oo.example.invalid","timestamp":1773133680,"title":"Fixture Epsilon","type":"edit","user":"Multiline","wiki":"oowiki"}
+
+id: [{"topic": "codfw.mediawiki.recentchange", "partition": 0, "offset": 1020}]
+event: other
+data: {"note":"unrelated"}
+
+:
+
