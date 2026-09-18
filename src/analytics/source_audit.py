@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -187,6 +188,7 @@ def per_source_metrics(
     cohort: dict | None = None,
     stats: list | None = None,
     should_pause: Callable[[], bool] | None = None,
+    since: datetime | None = None,
 ) -> dict[int, dict]:
     """Count-only per-source extraction-validity metrics, derived from the shipped source_quality
     collectors (no article-content decrypt). Returns ``{source_id: {metrics..., language, region,
@@ -216,7 +218,7 @@ def per_source_metrics(
     # once here -- which the once-per-run statement count caught immediately: 2, not 1.
     if stats is None:
         stats = sq.collect_article_stats(
-            session, source_ids=source_ids, should_pause=should_pause
+            session, source_ids=source_ids, should_pause=should_pause, since=since
         )
     if cohort is None:
         # No frozen cohort -> derive it from THESE stats, which is only meaningful over the
@@ -239,7 +241,7 @@ def per_source_metrics(
     # each time is the same defect one table over. It is a COUNT query on article_links plus a
     # word-count read -- no content decrypt, which is the property that made this signal worth
     # promoting from a sampling hint to a criterion.
-    link_dense_ids = sq.link_dense_article_ids(session, source_ids=source_ids)
+    link_dense_ids = sq.link_dense_article_ids(session, source_ids=source_ids, since=since)
 
     # source metadata + regions (scoped with the scan -- the catalog is tens of thousands of
     # rows and reading all of them per batch is the same defect one table over)
@@ -311,6 +313,7 @@ def per_source_metrics(
 def frozen_cohort(
     session: Session, *, should_pause: Callable[[], bool] | None = None,
     with_furniture: bool = True, min_articles: int = MIN_SOURCE_ARTICLES,
+    since: datetime | None = None,
 ) -> dict:
     """Every COHORT statistic a qualification verdict is measured against, computed ONCE over
     the whole corpus so a batch of candidates does not re-read it (S5.1).
@@ -342,9 +345,19 @@ def frozen_cohort(
     """
     from src.analytics import serve_gate
 
-    stats = sq.collect_article_stats(session, should_pause=should_pause)
+    stats = sq.collect_article_stats(session, should_pause=should_pause, since=since)
     cohort = cohort_from_stats(stats)
-    per = per_source_metrics(session, cohort=cohort, stats=stats, should_pause=should_pause)
+    per = per_source_metrics(
+        session, cohort=cohort, stats=stats, should_pause=should_pause, since=since
+    )
+    # RC06: when a window is in force, the furniture fingerprints below must be built from
+    # the SAME articles as every other criterion. Computing them over the whole history
+    # inside a windowed verdict would make one criterion answer a different question from
+    # its five neighbours, and the two verdicts this feeds would stop being comparable --
+    # which is the only reason to publish them side by side.
+    in_window: set[int] | None = (
+        {int(st.article_id) for st in stats} if since is not None else None
+    )
     furn_df: dict[str, int] | None = None
     furn_n: int | None = None
     if with_furniture and per:
@@ -355,6 +368,8 @@ def frozen_cohort(
         per_top: dict[int, list[str]] = {}
         for sid in shares_input:
             ids = source_to_articles.get(sid, [])
+            if in_window is not None:
+                ids = [a for a in ids if int(a) in in_window]
             if not ids:
                 per_top[sid] = []
                 continue
@@ -382,6 +397,10 @@ def frozen_cohort(
         "token": serve_gate.change_token(session, articles=True, sources=True),
         "articles": len(stats),
         "sources": len(per),
+        # Present and NULL on a whole-history cut, so a reader can always tell which of the
+        # two a cut is without inferring it from the article count.
+        "window_start": since.isoformat() if since is not None else None,
+        "per_source": per,
     }
 
 
@@ -857,4 +876,145 @@ def run_source_audit_selftest() -> dict:
                   "should_auto_demote/region_self_audit.",
         "caveat": "Verifies the pure mechanism + the load-bearing reframe (terse prose is not "
                   "failing); the DB aggregation is covered by the pytest corpus. No score.",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# RC06 (2026-09-15): the RECENCY-WINDOWED verdict, published BESIDE the whole-history one
+# --------------------------------------------------------------------------- #
+
+#: The window, in days. RC06's blank answer takes the register's stated default (a): a
+#: 90-day window published BESIDE the whole-history verdict, never replacing it. The sheet's
+#: Q1108 = a says six months over the whole history instead; BOTH ANSWERS STAND and the
+#: CONFLICT is recorded rather than resolved here, so this constant is a labelled ASSUMPTION
+#: and changing it is a one-line edit if the maintainer writes the other letter.
+RECENCY_WINDOW_DAYS = 90
+
+
+def recency_window_start(now: datetime | None = None, *, days: int = RECENCY_WINDOW_DAYS):
+    """The instant the window opens. Naive UTC, matching what ``Article.created_at`` holds."""
+    ref = now or datetime.now(UTC)
+    start = ref - timedelta(days=max(1, int(days)))
+    return start.replace(tzinfo=None) if start.tzinfo is not None else start
+
+
+def paired_verdicts(
+    session: Session, *, now: datetime | None = None, days: int = RECENCY_WINDOW_DAYS,
+    source_ids: set[int] | None = None,
+    min_articles: int = MIN_SOURCE_ARTICLES,
+) -> dict:
+    """Both verdicts for every auditable source: the whole history AND the recent window,
+    each with its own n, side by side and never merged.
+
+    WHY BESIDE AND NOT INSTEAD (RC06). A source that was broken for two years and fixed last
+    month, and a source that worked for two years and broke last month, have the SAME
+    whole-history rate and opposite futures; a window alone loses the first source's history
+    and the whole history alone loses the second's news. Publishing one number would have to
+    choose which of those two failures to ship. Publishing both, each labelled with its own
+    n, chooses neither -- and the DISAGREEMENT between them is the actual signal, which is
+    why ``changed`` is computed and named rather than left to a reader's subtraction.
+
+    EACH WINDOW IS JUDGED AGAINST ITS OWN COHORT. A windowed source measured against a
+    whole-history baseline would be compared with a population it is not part of -- the
+    fabricated-baseline defect this module already refuses when a caller scopes a scan
+    without freezing a cohort. So the window gets its own cohort, computed over the window.
+
+    A source with too few articles IN THE WINDOW is reported as such rather than judged:
+    `windowed: null` with the count that was available, which is the 2026-07-23 zero-evidence
+    rule applied to a smaller population. Read-only; no verdict is written anywhere.
+    """
+    if source_ids is not None:
+        # Refused rather than ignored: each verdict is judged against a cohort computed over
+        # its own whole population, and a scoped scan would judge a handful of sources
+        # against a baseline made of themselves -- the fabricated-baseline defect this
+        # module refuses everywhere else.
+        raise ValueError(
+            "paired_verdicts judges against whole-population cohorts and cannot be scoped; "
+            "filter the returned `sources` list instead"
+        )
+    ref = now or datetime.now(UTC)
+    since = recency_window_start(ref, days=days)
+
+    # BOTH sides go through `frozen_cohort`, not `per_source_metrics` alone: that is where
+    # `furniture_share` is computed, and a windowed verdict missing a criterion the
+    # whole-history one has would be a different KIND of verdict wearing the same name.
+    whole_cut = frozen_cohort(session, min_articles=min_articles)
+    whole = whole_cut["per_source"]
+    whole_fails = flag_criteria(
+        whole, min_articles=min_articles, cohort_cut=whole_cut["cohort_cut"]
+    )
+
+    window_cut = frozen_cohort(session, min_articles=min_articles, since=since)
+    windowed = window_cut["per_source"]
+    window_fails = flag_criteria(
+        windowed, min_articles=min_articles, cohort_cut=window_cut["cohort_cut"]
+    )
+
+    rows: list[dict] = []
+    for sid, m in sorted(whole.items()):
+        w = windowed.get(sid)
+        whole_status = derive_status(whole_fails.get(sid, []))
+        w_articles = int(w["article_count"]) if w else 0
+        judgeable = w is not None and w_articles >= min_articles
+        w_status = derive_status(window_fails.get(sid, [])) if judgeable else None
+        rows.append({
+            "source_id": sid,
+            "domain": m.get("domain"),
+            "whole_history": {
+                "status": whole_status,
+                "n": int(m["article_count"]),
+                "criteria": [f["criterion"] for f in whole_fails.get(sid, [])],
+            },
+            "window": {
+                "status": w_status,
+                "n": w_articles,
+                "criteria": (
+                    [f["criterion"] for f in window_fails.get(sid, [])] if judgeable else []
+                ),
+                # Said rather than implied: a null verdict because the window is too thin is
+                # a different fact from a null verdict because the source is fine.
+                "not_judged_reason": (
+                    None if judgeable else
+                    f"only {w_articles} article(s) ingested in the window; "
+                    f"{min_articles} are needed to judge"
+                ),
+            },
+            # The disagreement, which is the whole point of publishing two.
+            "changed": bool(w_status is not None and w_status != whole_status),
+        })
+
+    judged = [r for r in rows if r["window"]["status"] is not None]
+    return {
+        "window_days": int(days),
+        "window_start": since.isoformat(),
+        "as_of": ref.isoformat(),
+        "sources": rows,
+        "counts": {
+            "audited": len(rows),
+            "window_judgeable": len(judged),
+            "window_too_thin": len(rows) - len(judged),
+            "disagreeing": sum(1 for r in rows if r["changed"]),
+        },
+        "method": (
+            "Two independent verdicts per source: one over the whole stored history, one "
+            "over articles ingested in the last "
+            f"{int(days)} days, each judged against a cohort computed over ITS OWN "
+            "population. The window reads Article.created_at -- when this install fetched "
+            "and parsed the page -- because the question is whether the extraction still "
+            "works here, not when the publisher dated the article."
+        ),
+        "caveat": (
+            "Neither verdict replaces the other and neither is a score. A source broken for "
+            "years and fixed last month, and one that worked for years and broke last month, "
+            "have the same whole-history rate and opposite futures -- so both are shown with "
+            "their own n, and where they disagree that disagreement is the finding. A window "
+            "holding too few articles is reported as unjudged rather than judged on thin "
+            "evidence."
+        ),
+        "assumption": (
+            "The 90-day window is a LABELLED ASSUMPTION (RC06, blank answer taking the "
+            "register's stated default), published beside the whole-history verdict rather "
+            "than replacing it. The answer sheet's Q1108 proposes six months over the whole "
+            "history instead; both answers stand and the conflict is recorded, not resolved."
+        ),
     }

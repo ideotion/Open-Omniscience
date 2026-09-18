@@ -78,6 +78,7 @@ def source_quality(
 def source_audit(
     download: bool = Query(False),
     with_furniture: bool = Query(True),
+    recency_window: bool = Query(True),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """Part-1 Phase-1 STANDING source auditor (FLAG-ONLY this session, ruling Q2a). Per-source
@@ -96,11 +97,29 @@ def source_audit(
     only on the extraction-failure signature, never on structural style, never on an allowlisted
     source. A per-region flag-distribution self-audit rides along (the de-US-centring guardrail).
     ``OO_SOURCE_AUDIT_ALLOWLIST`` (comma-separated domains) caps a trusted atypical source at 'watch'.
-    ``download=1`` returns a dated attachment."""
-    from src.analytics.source_audit import audit_sources
+    ``download=1`` returns a dated attachment.
+
+    ``recency_window`` (RC06, 2026-09-15; default on) adds a SECOND verdict per source over
+    the last 90 days BESIDE the whole-history one above -- never replacing it, each with its
+    own n and its own cohort. The 90 days are a LABELLED ASSUMPTION: RC06 came back blank and
+    takes its register default, while the answer sheet's Q1108 proposes six months over the
+    whole history; both answers stand and the payload says so."""
+    from src.analytics.source_audit import audit_sources, paired_verdicts
 
     allow = {d.strip() for d in os.getenv("OO_SOURCE_AUDIT_ALLOWLIST", "").split(",") if d.strip()}
     report = audit_sources(db, allowlist=allow, with_furniture=with_furniture)
+    if recency_window:
+        # RC06 = a (2026-09-15): BESIDE, never replacing. It is its own key, carrying its own
+        # window, its own n per source and its own caveat -- merging it into the rows above
+        # would make one verdict look like a correction of the other, and neither corrects
+        # anything: a source broken for years and fixed last month, and one that worked for
+        # years and broke last month, need both numbers to be told apart.
+        #
+        # Opt-OUT rather than opt-in, and it costs a second whole-corpus pass: the report is
+        # an on-demand diagnostic, and a recency verdict nobody asked for by name is a
+        # recency verdict nobody reads. `recency_window=0` turns it off for a caller that
+        # only wants the historical rollup.
+        report["recency_window"] = paired_verdicts(db)
     headers = {}
     if download:
         fname = f"oo-source-audit-{datetime.now().strftime('%Y%m%d-%H%M')}.json"

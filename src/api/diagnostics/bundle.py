@@ -731,7 +731,14 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # exclusions are now DOCUMENTED in the manifest's "excluded" block instead of
         # silent, and test_repo_invariants ratchets every future GET endpoint into
         # either the bundle or that block.
-        ("source-audit.json", lambda: source_audit(download=False, with_furniture=True, db=db)),
+        # `recency_window=False` is PASSED, not defaulted: this call site bypasses FastAPI,
+        # so an unpassed Query default arrives as a sentinel object rather than its apparent
+        # value. It is False because the windowed verdict (RC06) costs a SECOND whole-corpus
+        # pass on top of what is already the most expensive member in a bundle that runs
+        # under a per-member deadline -- doubling it here to ship a figure nobody asked for
+        # by name is how a bundle starts timing out. It is one request away on the endpoint.
+        ("source-audit.json",
+         lambda: source_audit(download=False, with_furniture=True, recency_window=False, db=db)),
         ("non-article-scan.json", lambda: non_article_scan(download=False, db=db)),
         # S3.1 (2026-07-23 field-feedback workflow): the TEMPORARY criteria-calibration
         # report. A smaller prose_gate_limit than the endpoint's own default (500 vs 2000)
