@@ -410,3 +410,77 @@ def test_the_top_up_runs_AFTER_the_drain(lane):
     runner._pageviews = lambda: (order.append("pageviews") or "en")
     runner.run_until_stopped()
     assert order == ["drain", "pageviews"]
+
+
+# --------------------------------------------------------------------------- #
+# A drain loop that lets ONE failure end the thread stops collecting for the rest of
+# the process with no record anywhere. Measured: an absent lane file killed the thread
+# while the stream kept filling a buffer nobody was draining.
+# --------------------------------------------------------------------------- #
+def test_ONE_failed_drain_does_not_end_the_loop(lane):
+    state = {"value": "running"}
+    runner = _runner(_filled_adapter(), state)
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("the lane file was briefly locked")
+        state["value"] = "halted"
+        return DrainReport()
+
+    runner.drain = flaky  # type: ignore[method-assign]
+    assert runner.run_until_stopped() == 1, "the second drain happened and counted"
+    assert calls["n"] == 2
+    assert runner.consecutive_failures == 0, "a success clears the streak"
+
+
+def test_the_failures_REASON_lives_on_the_runner_and_not_only_in_the_log(lane):
+    """A status surface cannot read a log."""
+    state = {"value": "running"}
+    runner = _runner(_filled_adapter(), state)
+
+    def always_fail():
+        raise RuntimeError("the disk is gone")
+
+    runner.drain = always_fail  # type: ignore[method-assign]
+    runner.run_until_stopped()
+    assert runner.last_error is not None
+    assert "the disk is gone" in runner.last_error
+    assert "RuntimeError" in runner.last_error
+
+
+def test_a_loop_that_CANNOT_succeed_gives_up_rather_than_spinning_forever(lane):
+    """The same failure wearing the opposite face: burning a core on an error that is
+    not going to clear, and burying the one log line that said why."""
+    from src.wiki.runner import MAX_CONSECUTIVE_FAILURES
+
+    state = {"value": "running"}
+    runner = _runner(_filled_adapter(), state)
+    calls = {"n": 0}
+
+    def always_fail():
+        calls["n"] += 1
+        raise RuntimeError("permanently broken")
+
+    runner.drain = always_fail  # type: ignore[method-assign]
+    assert runner.run_until_stopped() == 0
+    assert calls["n"] == MAX_CONSECUTIVE_FAILURES, calls
+    assert runner._should_stop() is True, "it stopped itself rather than being stopped"
+
+
+def test_the_production_service_creates_the_lane_FILE_rather_than_raising_into_the_thread(
+    tmp_path, monkeypatch
+):
+    """The measured defect: ``_hot_sets`` opened the lane without ``create=True``, so
+    the first drain on a fresh install raised LaneAbsentError inside the drain thread,
+    where nothing was catching it."""
+    import inspect
+
+    from src.wiki import service
+
+    source = inspect.getsource(service._hot_sets)
+    assert 'lane_session("wiki", create=True)' in source, (
+        "every lane_session in the service creates; this one did not, and the lane "
+        "stopped collecting for the rest of the process with no record anywhere"
+    )

@@ -75,12 +75,20 @@
     // is absent on most installs. A lane that has never run renders NOTHING here rather
     // than a zero -- an operator who has not turned it on is not owed a figure saying
     // their Wikipedia is empty, and a zero beside real counts reads as a measurement.
-    async function renderHomeWikiFigure() {
+    //: The last reading, so a LANGUAGE SWITCH repaints from it instead of spending a
+    //: request. Null until the first read; `false` is never stored, because a failed
+    //: read leaves the previous figure standing rather than blanking it.
+    let _homeWikiLane = null;
+
+    async function renderHomeWikiFigure(cached) {
       const el = $("home-stats");
       if (!el) return;
-      let lane = null;
-      try { lane = await api("/api/wiki/lane/status"); } catch (_e) { return; }
+      let lane = cached ? _homeWikiLane : null;
+      if (!lane) {
+        try { lane = await api("/api/wiki/lane/status"); } catch (_e) { return; }
+      }
       if (!lane || lane.measured !== true) return;
+      _homeWikiLane = lane;
       const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
       const F = (i18n && i18n.tf)
         ? i18n.tf

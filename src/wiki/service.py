@@ -86,7 +86,12 @@ def _hot_sets():
         titles = blob.get("titles")
         if isinstance(titles, list):
             tops[edition] = {str(t) for t in titles if t}
-    with SessionLocal() as corpus, lane_session("wiki") as lane:
+    # ``create=True``, like every other lane_session in this module. Without it the
+    # FIRST drain on a fresh install raised LaneAbsentError -- inside the drain thread,
+    # where nothing was catching it, so the lane stopped collecting for the rest of the
+    # process with no record anywhere. Found by an existing test's unhandled-thread
+    # warning, not by reading.
+    with SessionLocal() as corpus, lane_session("wiki", create=True) as lane:
         sets, _report = build_hot_sets(
             corpus=corpus, lane=lane, editions=editions, pageview_tops=tops
         )

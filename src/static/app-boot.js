@@ -51,6 +51,13 @@
       // frozen-locale class -- nothing in the walker can repaint a sentence it never
       // saw in English. Registered in THIS listener for the reason stated above.
       try { if (typeof _wizShare === "function") _wizShare(); } catch (_e) {}
+      // The Home strip's own Wikipedia figure is built from a tf() frame AND carries
+      // `data-i18n-dyn`, so BOTH repaint paths skip it -- the walker because the node
+      // opts out, and this listener because it was not listed. Measured by the Chromium
+      // walk: the figure rendered English in ar, zh and de while every other string on
+      // the strip was translated. Repaints from the CACHED reading, so a language
+      // switch costs no request.
+      try { if (typeof renderHomeWikiFigure === "function") renderHomeWikiFigure(true); } catch (_e) {}
       try { if (typeof loadWikiLaneSummary === "function") loadWikiLaneSummary(); } catch (_e) {}
       // S04-07: the analysis window's cross-language rail is the same frozen-locale
       // class -- its sentences are built at render time from a tf() frame plus server

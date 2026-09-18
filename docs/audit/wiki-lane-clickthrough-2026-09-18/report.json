@@ -1,0 +1,142 @@
+{
+ "url": "http://127.0.0.1:8099",
+ "locales": {
+  "en": {
+   "home_figure": {
+    "text": "Wikipedia: 6 pages · 6 changes today",
+    "title_len": 193
+   },
+   "wizard": {
+    "editions": 12,
+    "checked": 12,
+    "hosts": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org",
+    "share": "About 1.7 GB for each of 12 editions — the total divided by the editions you follow.",
+    "budget": "20"
+   },
+   "map": {
+    "markers": 6,
+    "filled": 5
+   },
+   "reader": {
+    "links": [
+     {
+      "href": "https://en.wikipedia.org/wiki/Rome",
+      "cls": "ext"
+     },
+     {
+      "href": "https://en.wikipedia.org/w/index.php?title=Rome&action=history",
+      "cls": "ext"
+     },
+     {
+      "href": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "cls": "ext"
+     }
+    ],
+    "chars": 294
+   }
+  },
+  "ar": {
+   "home_figure": {
+    "text": "ويكيبيديا: 6 صفحة · 6 تغيير اليوم",
+    "title_len": 174
+   },
+   "wizard": {
+    "editions": 12,
+    "checked": 12,
+    "hosts": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org",
+    "share": "نحو 1.7 غيغابايت لكل واحدة من 12 نسخة — الإجمالي مقسومًا على النسخ التي تتابعها.",
+    "budget": "20"
+   },
+   "map": {
+    "markers": 6,
+    "filled": 5
+   },
+   "reader": {
+    "links": [
+     {
+      "href": "https://en.wikipedia.org/wiki/Rome",
+      "cls": "ext"
+     },
+     {
+      "href": "https://en.wikipedia.org/w/index.php?title=Rome&action=history",
+      "cls": "ext"
+     },
+     {
+      "href": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "cls": "ext"
+     }
+    ],
+    "chars": 255
+   }
+  },
+  "zh": {
+   "home_figure": {
+    "text": "维基百科：6 个页面 · 今天 6 项变更",
+    "title_len": 69
+   },
+   "wizard": {
+    "editions": 12,
+    "checked": 12,
+    "hosts": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org",
+    "share": "12 个版本，每个约 1.7 GB——总量除以你关注的版本数。",
+    "budget": "20"
+   },
+   "map": {
+    "markers": 6,
+    "filled": 5
+   },
+   "reader": {
+    "links": [
+     {
+      "href": "https://en.wikipedia.org/wiki/Rome",
+      "cls": "ext"
+     },
+     {
+      "href": "https://en.wikipedia.org/w/index.php?title=Rome&action=history",
+      "cls": "ext"
+     },
+     {
+      "href": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "cls": "ext"
+     }
+    ],
+    "chars": 123
+   }
+  },
+  "de": {
+   "home_figure": {
+    "text": "Wikipedia: 6 Seiten · 6 Änderungen heute",
+    "title_len": 224
+   },
+   "wizard": {
+    "editions": 12,
+    "checked": 12,
+    "hosts": "*.wikipedia.org · stream.wikimedia.org · wikimedia.org · ores.wikimedia.org · dumps.wikimedia.org",
+    "share": "Etwa 1.7 GB für jede der 12 Ausgaben — die Gesamtmenge geteilt durch die Ausgaben, denen Sie folgen.",
+    "budget": "20"
+   },
+   "map": {
+    "markers": 6,
+    "filled": 5
+   },
+   "reader": {
+    "links": [
+     {
+      "href": "https://en.wikipedia.org/wiki/Rome",
+      "cls": "ext"
+     },
+     {
+      "href": "https://en.wikipedia.org/w/index.php?title=Rome&action=history",
+      "cls": "ext"
+     },
+     {
+      "href": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "cls": "ext"
+     }
+    ],
+    "chars": 353
+   }
+  }
+ },
+ "findings": []
+}

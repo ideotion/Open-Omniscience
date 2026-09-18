@@ -65,6 +65,13 @@ BUDGET_FULL: str = "storage_budget_spent"
 #: arbitrary amount of work, and the operator's Stop would wait for it.
 DRAIN_LIMIT: int = 2000
 
+#: How many drains may fail in a row before the loop gives up. Not a tuning number: a
+#: loop that retries forever burns a core on an error that is not going to clear and
+#: buries the one log line that said why, and a loop that stops on the first failure
+#: loses the lane to a moment's contention. Three is enough to ride out a lock and few
+#: enough that a real breakage is reported while anyone is still watching.
+MAX_CONSECUTIVE_FAILURES: int = 3
+
 #: Seconds between drains when the runner drives its own loop. The stream keeps
 #: buffering in between, so this is a latency-versus-transaction-size choice and not
 #: a rate: nothing about the network depends on it.
@@ -287,6 +294,10 @@ class WikiLaneRunner:
         #: first drain — which is an ABSENCE and never a report of zero.
         self.last_drain: dict | None = None
         self.drains = 0
+        #: Consecutive failed drains, and the last one's reason. Both live on the runner
+        #: rather than only in the log, because a status surface cannot read a log.
+        self.consecutive_failures = 0
+        self.last_error: str | None = None
 
     # -- the stream half ---------------------------------------------------- #
     def _should_stop(self) -> bool:
@@ -405,7 +416,33 @@ class WikiLaneRunner:
         while not self._should_stop():
             if max_drains is not None and done >= max_drains:
                 break
-            self.drain()
+            try:
+                self.drain()
+                self.consecutive_failures = 0
+            except Exception as exc:  # noqa: BLE001 - one bad drain must not end the lane
+                # A LOOP THAT LETS ONE FAILURE END THE THREAD stops collecting for the
+                # rest of the process with no record anywhere -- measured: an absent
+                # lane file killed this thread and the stream kept filling a buffer
+                # nobody was draining. Named, counted, and retried.
+                self.consecutive_failures += 1
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                _LOG.warning(
+                    "the wiki lane drain failed (%d in a row): %s",
+                    self.consecutive_failures, exc, exc_info=True,
+                )
+                if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    # AND A LOOP THAT RETRIES FOREVER is the same failure wearing the
+                    # opposite face: it burns a core on an error that is not going to
+                    # clear and buries the one log line that said why. Stopping with the
+                    # reason on the runner is what a status surface can show.
+                    _LOG.error(
+                        "the wiki lane stopped after %d consecutive failed drains: %s",
+                        self.consecutive_failures, self.last_error,
+                    )
+                    self._stop.set()
+                    break
+                self._sleep(self._interval)
+                continue
             # AFTER the drain, deliberately. The drain is the lane's job; the attention
             # signal is a top-up for the NEXT one, and running it first would delay
             # storing what the stream already handed us in order to fetch something
