@@ -890,13 +890,45 @@ def admission_undo_refusal(
         return UNDO_ALREADY_UNDONE
     if source is None:
         return UNDO_SOURCE_GONE
-    # ORDER MATTERS, and an adversarial pass live-reproduced why. A source can be admitted
-    # more than once (admit, the operator disables it, a later pass admits it again), and
-    # each event stores the state IT replaced. Undoing the OLDER one writes a prior state
-    # that the newer admission has since superseded -- so the source silently takes a
-    # value from two decisions ago, while the newer event still renders as live and
-    # reversible, inviting a second click that would revive a status the operator had
-    # deliberately cleared.
+    # THE ORDER OF THESE TWO REFUSALS IS LOAD-BEARING, and an adversarial pass
+    # live-reproduced why it has to be THIS one: a refusal that gives ADVICE must give
+    # advice that works. `later-admission-in-effect` tells the operator "undo that one
+    # first" -- and when a later verdict has taken the source out of `qualified`, the
+    # event it points AT is refused too, for this very reason, so the operator follows a
+    # refusal into a second refusal and no row for that source can be reversed at all.
+    # Reading the source's CURRENT state first makes the advice true by construction: a
+    # row is only ever told to defer to a newer admission while the source is still
+    # qualified, which is exactly when that newer admission is itself reversible. Put the
+    # cheaper query first and that property is lost, for no gain a caller can see.
+    #
+    # A LATER VERDICT IS THE SAME CLASS OF EVENT AS A LATER ADMISSION, and it was not
+    # guarded at all until this pass. Found by the skeptic pass Q1101's own acceptance
+    # asks for, and REPRODUCED live before it was believed: admit -> a later pass
+    # DISQUALIFIES -> the operator undoes the original admission. The disqualification
+    # writes no admission row, so the admission guard below is structurally blind to it;
+    # the undo then restored `prior_status = "unqualified"` over a `disqualified` the
+    # engine had reached on its own evidence.
+    #
+    # MEASURED, on the real selectors: a disqualified source waits out its backoff ladder
+    # (`select_due_disqualified`, 1 -> 2 -> 4 -> 6 months; not due at +0d or +20d, due at
+    # +40d), and after the undo it is in `select_unqualified` THE SAME DAY with no ladder
+    # at all. So the undo did not merely rewrite a column: it returned a source the engine
+    # had judged and refused to the un-laddered trial queue -- the recorded laundering
+    # direction ("known-bad sources back into the trial queue with their backoff ladder
+    # reset"), reached through a path that lesson never touched.
+    #
+    # By this point the admission is not in effect ANYWAY -- the source is not collecting,
+    # so there is nothing left for an undo to take back. Refusing therefore costs the
+    # operator nothing real and cannot erase a verdict; the token names the later one so
+    # the panel can say which decision is standing.
+    if source.status != STATUS_QUALIFIED:
+        return UNDO_LATER_VERDICT
+    # A source can be admitted more than once (admit, the operator disables it, a later
+    # pass admits it again), and each event stores the state IT replaced. Undoing the
+    # OLDER one writes a prior state that the newer admission has since superseded -- so
+    # the source silently takes a value from two decisions ago, while the newer event
+    # still renders as live and reversible, inviting a second click that would revive a
+    # status the operator had deliberately cleared.
     #
     # Refuse, rather than silently reordering: which admission an operator meant to
     # reverse is their decision, and the honest move is to tell them a later one is in
@@ -914,27 +946,6 @@ def admission_undo_refusal(
     )
     if newer is not None and (newer.occurred_at, newer.id) > (ev.occurred_at, ev.id):
         return UNDO_LATER_ADMISSION
-    # A LATER VERDICT IS THE SAME CLASS OF EVENT AS A LATER ADMISSION, and it was not
-    # guarded. Found by the skeptic pass Q1101's own acceptance asks for, and REPRODUCED
-    # live before it was believed: admit -> a later pass DISQUALIFIES -> the operator
-    # undoes the original admission. The disqualification writes no admission row, so the
-    # guard above sees nothing; the undo then restored `prior_status = "unqualified"` over
-    # a `disqualified` the engine had reached on its own evidence.
-    #
-    # MEASURED, on the real selectors: a disqualified source waits out its backoff ladder
-    # (`select_due_disqualified`, 1 -> 2 -> 4 -> 6 months; not due at +0d or +20d, due at
-    # +40d), and after the undo it is in `select_unqualified` THE SAME DAY with no ladder
-    # at all. So the undo did not merely rewrite a column: it returned a source the engine
-    # had judged and refused to the un-laddered trial queue -- the recorded laundering
-    # direction ("known-bad sources back into the trial queue with their backoff ladder
-    # reset"), reached through a path that lesson never touched.
-    #
-    # By this point the admission is not in effect ANYWAY -- the source is not collecting,
-    # so there is nothing left for an undo to take back. Refusing therefore costs the
-    # operator nothing real and cannot erase a verdict; the token names the later one so
-    # the panel can say which decision is standing.
-    if source.status != STATUS_QUALIFIED:
-        return UNDO_LATER_VERDICT
     return None
 
 

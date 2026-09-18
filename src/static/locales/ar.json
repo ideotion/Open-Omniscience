@@ -3781,7 +3781,7 @@
   "not yet judged": "لم يُحكم عليها بعد",
   "no absolute floor": "بلا عتبة مطلقة",
   "sources per collection pass": "مصدرًا في كل جولة جمع",
-  "What the source gate looks at": "ما الذي يفحصه ضبط المصادر",
+  "What the source gate looks at": "ما الذي تفحصه بوابة المصادر",
   "can disqualify": "قد يُسقط الأهلية",
   "This will scrape {n} sources (of {total} enabled).": "سيجري جمع {n} مصدرًا (من أصل {total} مُفعّلة).",
   "absolute floor": "عتبة مطلقة",

@@ -36,6 +36,7 @@ from src.catalog.qualification import (  # noqa: E402
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
     UNDO_ALREADY_UNDONE,
+    UNDO_LATER_ADMISSION,
     UNDO_LATER_VERDICT,
     AdmissionUndoRefused,
     admission_audit,
@@ -549,6 +550,87 @@ def test_the_later_verdict_refusal_does_NOT_fire_while_the_ADMISSION_STILL_STAND
     assert src.status == STATUS_UNQUALIFIED
     assert src.enabled is False
     assert _events(s)[0].undone_at is not None
+
+
+def test_a_refusal_that_says_UNDO_THAT_ONE_FIRST_always_points_at_a_REVERSIBLE_row(
+    tmp_path,
+) -> None:
+    """THE ORDER of the two refusals, pinned -- found by the skeptic pass and reproduced
+    before it was believed.
+
+    ``later-admission-in-effect`` does not merely refuse, it gives ADVICE: *undo that one
+    first*. Advice that leads to a second refusal is a dead end wearing the costume of a
+    way out. With the guards in the other order, a source carrying TWO standing admissions
+    AND a later disqualification answered ``later-admission-in-effect`` on the older row
+    and ``later-verdict-in-effect`` on the row it pointed at -- so an operator following
+    the instruction hit a second refusal and NO row for that source could be reversed at
+    all, while the panel drew both as merely "blocked, see the other one".
+
+    Reading the source's CURRENT state first makes the advice true by construction, and
+    that is the property this test exists to keep: a row is only ever told to defer to a
+    newer admission while the source is still qualified, which is exactly when that newer
+    admission is itself reversible.
+    """
+    s = _session(tmp_path)
+    # TWO standing admissions (admit, the operator disables it, a later pass admits it
+    # again) -- the shape the older-admission guard was written for...
+    doomed = _src(s, "advice-dead-end.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [doomed], {}, now=NOW)
+    s.commit()
+    doomed.enabled = False
+    s.commit()
+    evaluate_and_stamp(s, [doomed], {}, now=NOW + timedelta(days=1))
+    s.commit()
+    # ...and THEN the later verdict, which writes no admission row of its own.
+    evaluate_and_stamp(s, [doomed], {doomed.id: _EXTRACTION_FAIL}, now=NOW + timedelta(days=2))
+    s.commit()
+    assert doomed.status == STATUS_DISQUALIFIED
+    assert len(_events(s)) == 2, "the fixture needs both admissions standing"
+
+    # A second source, still qualified, carrying the same two-admission shape: the case
+    # the older-admission refusal is FOR, so this test cannot pass by never firing it.
+    ok = _src(s, "advice-works.example", status=STATUS_UNQUALIFIED, enabled=False)
+    evaluate_and_stamp(s, [ok], {}, now=NOW)
+    s.commit()
+    ok.enabled = False
+    s.commit()
+    evaluate_and_stamp(s, [ok], {}, now=NOW + timedelta(days=1))
+    s.commit()
+
+    rows = admission_audit(s, limit=25)["events"]
+    by_source: dict[int, list[dict]] = {}
+    for row in rows:
+        by_source.setdefault(int(row["source_id"]), []).append(row)
+
+    # THE INVARIANT, stated over every source in the audit rather than over this fixture:
+    # if any row is told to defer to a newer admission, SOME row for that source must
+    # actually be reversible, or the advice cannot be followed.
+    deferring = [r for r in rows if r["blocked_by"] == UNDO_LATER_ADMISSION]
+    assert deferring, "anti-vacuity: no row deferred, so the invariant was never tested"
+    for row in deferring:
+        siblings = by_source[int(row["source_id"])]
+        assert any(sib["reversible"] for sib in siblings), (
+            f"{row['domain']} was told to undo a later admission first, but no admission "
+            f"of it is reversible: {[(x['id'], x['blocked_by']) for x in siblings]}"
+        )
+
+    # And the two fixtures say the two different things, so the invariant above is holding
+    # because of the ORDER and not because one branch stopped happening.
+    doomed_rows = by_source[int(doomed.id)]
+    assert {r["blocked_by"] for r in doomed_rows} == {UNDO_LATER_VERDICT}, (
+        "a disqualified source's rows must ALL name the verdict -- naming each other "
+        "sends the operator in a circle"
+    )
+    ok_rows = sorted(by_source[int(ok.id)], key=lambda r: r["id"])
+    assert [r["blocked_by"] for r in ok_rows] == [UNDO_LATER_ADMISSION, None]
+
+    # The advice, followed for real: the row it names really does undo, and then the older
+    # one does too. (The doomed source's rows stay refused, which is the point -- there is
+    # nothing left for an undo to take back once the engine has refused the source.)
+    undo_admission(s, ok_rows[1]["id"], now=NOW + timedelta(days=3))
+    undo_admission(s, ok_rows[0]["id"], now=NOW + timedelta(days=4))
+    with pytest.raises(AdmissionUndoRefused, match="later verdict"):
+        undo_admission(s, doomed_rows[0]["id"], now=NOW + timedelta(days=3))
 
 
 def test_the_audit_says_which_rows_the_ENDPOINT_WOULD_REFUSE(tmp_path) -> None:
