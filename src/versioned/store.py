@@ -290,6 +290,82 @@ def create_lane(kind: str) -> Path:
     return path
 
 
+class LaneSchemaError(RuntimeError):
+    """A lane file whose schema this build cannot reconcile without a real migration."""
+
+
+def add_missing_columns(engine: Engine) -> list[str]:
+    """ADD the columns a newer build declared and an older lane file does not have.
+
+    WHY THIS EXISTS, AND WHY IT IS NOT A MIGRATION FRAMEWORK. ``create_all`` creates
+    missing TABLES and never touches an existing one's columns — that is
+    SQLAlchemy's documented behaviour, not a surprise — so a column added to
+    ``models.py`` reaches a FRESH lane file and no other. ``models.py`` says there is
+    "deliberately NO alembic history for lane files in 0.4: these tables are born
+    here, so there is nothing to migrate", which was true for exactly as long as one
+    build had declared them. S04-09 added ``VersionedEntity.deleted_at`` (Q713's
+    mark) and a facts table, so a lane file created by S04-08's build and opened by
+    this one would raise ``no such column`` on its first read. The table arrives
+    through ``create_all``; the column had nowhere to arrive from until here.
+
+    WHAT IT HANDLES AND WHAT IT REFUSES. It adds NULLABLE columns, and columns with a
+    scalar server-side default, because those are the additions whose meaning for
+    existing rows is unambiguous: every old row gets NULL (or the default), which is
+    exactly what "this build did not know about it" means. It REFUSES — by name,
+    loudly, without touching the file — a declared column that is NOT NULL with no
+    default, because filling one for existing rows is a decision about their contents
+    that only a real migration can make. It never drops, renames or retypes anything:
+    a column present in the file and absent from the model is LEFT ALONE, since the
+    file may have been written by a build newer than this one and destroying its data
+    to match an older model is the worst thing this function could do.
+
+    Returns the ``table.column`` names it added, so a caller can log what changed
+    rather than discovering it later. Empty on an up-to-date file, which is the
+    ordinary case and costs one ``PRAGMA`` per table.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    from src.versioned.models import LaneBase
+
+    # PLAN FIRST, APPLY SECOND, and that order is the whole difference between a
+    # refusal and a half-applied schema. Applying as it went would add every column
+    # BEFORE the one it refuses, leaving a file that is neither the old shape nor the
+    # new one — and nothing on disk would say which. Planning first means a refusal
+    # touches nothing at all.
+    plan: list[tuple[str, str, str]] = []  # (table, column, DDL clause)
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table in LaneBase.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue  # create_all just made it, with every column.
+        have = {c["name"] for c in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in have:
+                continue
+            if not column.nullable and column.server_default is None:
+                raise LaneSchemaError(
+                    f"{table.name}.{column.name} is NOT NULL with no server default; "
+                    "an existing lane file cannot be given one without deciding what "
+                    "its existing rows should say. This needs a real migration. "
+                    "Nothing was changed."
+                )
+            ddl = column.type.compile(engine.dialect)
+            clause = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}'
+            if column.server_default is not None:
+                clause += f" DEFAULT {column.server_default.arg}"  # type: ignore[union-attr]
+            plan.append((table.name, column.name, clause))
+
+    added: list[str] = []
+    for table_name, column_name, clause in plan:
+        with engine.begin() as conn:
+            conn.execute(sa_text(clause))
+        added.append(f"{table_name}.{column_name}")
+    if added:
+        _LOG.info("lane schema: added %s", ", ".join(added))
+    return added
+
+
 def create_schema(kind: str, engine: Engine | None = None) -> None:
     """Materialise the lane tables and stamp ``lane_meta``. Idempotent.
 
@@ -301,6 +377,7 @@ def create_schema(kind: str, engine: Engine | None = None) -> None:
 
     eng = engine if engine is not None else lane_engine(kind, create=True)
     LaneBase.metadata.create_all(eng)
+    add_missing_columns(eng)
     factory = _factories[(kind, str(lane_path(kind)))]
     with factory() as session:
         row = session.query(LaneMeta).first()

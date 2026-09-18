@@ -22,6 +22,13 @@ what happened and did not keep the text". Merging them would let a lane under a
 tight budget report itself as having holes in its knowledge when it has holes only
 in its storage — and, worse, would let a real retention gap hide among them.
 
+* A **withheld text** (added for S04-09) is the THIRD member of that family and
+  gets its own counter and its own reason string: the caller's ``text_policy`` said
+  not to fetch this one, and said WHY. A storage budget that is full and a tier this
+  release does not ingest are both legitimate answers and they are not the same
+  answer — folding either into ``text_deferred`` would report a lane working exactly
+  as ruled as a lane that ran out of room.
+
 NOTHING HERE REACHES THE NETWORK. Every outbound call belongs to the adapter's
 client, which the caller supplies. That is what lets the whole pass run in CI with
 the airplane socket guard armed, and it is the property
@@ -32,6 +39,7 @@ requests — a DNS lookup is itself egress.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
@@ -40,6 +48,7 @@ from sqlalchemy.orm import Session
 from src.versioned import feed as feedmod
 from src.versioned import revisions as revmod
 from src.versioned.adapters.base import FetchedVersion, ReadBudget, VersionedAdapter
+from src.versioned.feed import FeedChange
 from src.versioned.models import VersionedChange, VersionedEntity, _utcnow
 
 _LOG = logging.getLogger("versioned.pipeline")
@@ -61,6 +70,18 @@ class PassResult:
     #: Changes recorded whose text this pass did not fetch, because the budget ran
     #: out. NOT a gap — see the module docstring.
     text_deferred: int = 0
+    #: Entities this pass STARTED following because ``admit`` said to. Its own
+    #: counter because "the lane grew" is a fact an operator is owed: a rule that
+    #: admits pages is still the operator's choice, but it is a choice they made
+    #: once and this is where its consequences become visible.
+    entities_admitted: int = 0
+    #: Entities whose text ``text_policy`` withheld, and the tally by REASON. Two
+    #: fields rather than one because the total is what a status line shows and the
+    #: breakdown is what makes it actionable — a lane withholding 100,000 texts
+    #: because a tier is not built yet and one withholding them because the disk is
+    #: full need opposite responses from the operator.
+    text_withheld: int = 0
+    text_withheld_reasons: dict[str, int] = field(default_factory=dict)
     #: Entities the source reported as GONE this pass. Its own counter and NOT an
     #: error: a deletion is a fact about the source, and filing it under errors
     #: would make a lane that is working correctly look like one that is failing —
@@ -83,9 +104,39 @@ class PassResult:
             "revisions_unchanged": self.revisions_unchanged,
             "articles_indexed": self.articles_indexed,
             "text_deferred": self.text_deferred,
+            "entities_admitted": self.entities_admitted,
+            "text_withheld": self.text_withheld,
+            "text_withheld_reasons": dict(self.text_withheld_reasons),
             "deleted_reported": self.deleted_reported,
             "errors": list(self.errors),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class Admission:
+    """What an ``admit`` callback returns when a lane should START following a thing.
+
+    A dataclass rather than a bare ``True`` because the moment of admission is the
+    only moment the caller has the source's own words for this entity in hand — the
+    title it was changed under, its language, a QID if the change carried one. Losing
+    them here costs a second request later, per entity, to learn what we were already
+    told.
+
+    ``None`` from the callback means "do not follow this", which stays the default
+    for every lane that passes no callback at all.
+    """
+
+    title: str | None = None
+    qid: str | None = None
+    language: str | None = None
+    country_alpha3: str | None = None
+    #: Whether the operator asked for this page BY HAND (Q716's pin). Never set by a
+    #: rule: a rule that could pin would make the operator's own mark unreadable.
+    pinned: bool = False
+    #: The token naming WHY the lane is admitting this. Stored on the entity, so a
+    #: surface listing 40,000 followed pages can say which rule brought each one in
+    #: rather than asking the operator to take the count on faith.
+    reason: str | None = None
 
 
 def ensure_entity(
@@ -97,6 +148,7 @@ def ensure_entity(
     language: str | None = None,
     country_alpha3: str | None = None,
     pinned: bool = False,
+    admitted_reason: str | None = None,
 ) -> VersionedEntity:
     """Get or create the tracked entity for ``external_id``.
 
@@ -117,6 +169,7 @@ def ensure_entity(
             language=language,
             country_alpha3=country_alpha3,
             pinned=pinned,
+            admitted_reason=admitted_reason,
         )
         lane.add(row)
         lane.flush()
@@ -131,6 +184,11 @@ def ensure_entity(
         row.country_alpha3 = country_alpha3
     if pinned:
         row.pinned = True
+    if admitted_reason and not row.admitted_reason:
+        # FILLS A NULL, never overwrites. A page admitted for one reason and later
+        # matching another was admitted ONCE, and rewriting the record of that to
+        # the newest matching rule would erase the history the column exists to keep.
+        row.admitted_reason = admitted_reason
     return row
 
 
@@ -219,6 +277,8 @@ def run_feed_once(
     *,
     corpus: Session | None = None,
     budget: ReadBudget | None = None,
+    admit: Callable[[FeedChange], Admission | None] | None = None,
+    text_policy: Callable[[VersionedEntity], tuple[bool, str | None]] | None = None,
 ) -> PassResult:
     """One pass: read the feed, record every change, fetch what the budget allows.
 
@@ -227,6 +287,22 @@ def run_feed_once(
     complete record of what it was told, and the next pass can tell which of those
     it has not yet stored. Fetching first and recording after would lose exactly the
     changes a crash interrupted, with nothing anywhere to say they existed.
+
+    ``admit`` lets a lane start following something it was merely TOLD about. It runs
+    BEFORE the batch is recorded, so a page admitted on the edit that first mentions
+    it has that very change linked to it — running it afterwards would leave the
+    admitting change orphaned and the page would wait for its NEXT edit before any
+    text arrived. It exists because S04-09's HOT tier (Q707) is a rule the operator
+    set once — "follow the pages my corpus mentions" — and the default without it is
+    unchanged: no callback, no lane ever grows by itself.
+
+    ``text_policy`` answers "fetch this entity's text?" and, when the answer is no,
+    says WHY in a word the caller chose. It runs INSIDE the per-entity loop, after
+    the budget allowance, because the two refusals are different and both belong on
+    the record. An adapter must never express either of them by returning ``None``
+    from ``fetch_version``: that value means the source says the thing is GONE, and
+    a lane that said "gone" when it meant "not this tier" would mark live pages
+    deleted.
     """
     budget = budget or ReadBudget()
     result = PassResult(feed=feed)
@@ -250,6 +326,31 @@ def run_feed_once(
             select(VersionedEntity).where(VersionedEntity.external_id.in_(list(wanted)))
         ).scalars():
             entity_ids[row.external_id] = row.id
+
+    # ADMISSION, before the batch is recorded. See the docstring for why the order
+    # matters: a page admitted here has its admitting change linked to it, and one
+    # admitted after ``record_batch`` would not.
+    if admit is not None:
+        for change in batch.changes:
+            eid = change.external_id
+            if not eid or eid in entity_ids:
+                continue
+            decision = admit(change)
+            if decision is None:
+                continue
+            row = ensure_entity(
+                lane,
+                eid,
+                title=decision.title,
+                qid=decision.qid,
+                language=decision.language,
+                country_alpha3=decision.country_alpha3,
+                pinned=decision.pinned,
+                admitted_reason=decision.reason,
+            )
+            lane.flush()
+            entity_ids[eid] = row.id
+            result.entities_admitted += 1
 
     ingest = feedmod.record_batch(lane, batch, entity_ids=entity_ids)
     result.changes_recorded = ingest.recorded
@@ -279,6 +380,18 @@ def run_feed_once(
         entity = lane.get(VersionedEntity, entity_ids[external_id])
         if entity is None or not entity.watching:
             continue
+        if text_policy is not None:
+            fetch, why = text_policy(entity)
+            if not fetch:
+                # WITHHELD, not deferred and not a gap. The reason is the caller's
+                # own word and is counted under it; an empty reason is stored as
+                # ``"unstated"`` rather than dropped, because a withheld text with
+                # no reason anywhere is the shape this whole family of counters
+                # exists to prevent.
+                result.text_withheld += 1
+                key = why or "unstated"
+                result.text_withheld_reasons[key] = result.text_withheld_reasons.get(key, 0) + 1
+                continue
         try:
             version = adapter.fetch_version(external_id)
         except Exception as exc:  # noqa: BLE001 - one entity must not end the pass

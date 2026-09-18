@@ -227,6 +227,20 @@ class VersionedEntity(LaneBase):
     #: An entity the operator stopped following. Kept, not deleted: its revisions are
     #: evidence, and deleting them to express "stop watching" destroys the record.
     watching: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: WHY this lane started following the entity — the ``admit`` callback's own
+    #: token (S04-09 uses Q707's HOT reasons: ``pinned``, ``tracked``,
+    #: ``corpus_mention``, ``pageview_top``). ``None`` for an entity created before
+    #: this column existed or by a caller that named no reason, which is an ABSENCE
+    #: and never "no reason" — the two read differently on a surface that asks the
+    #: operator to trust why their lane is following 40,000 pages.
+    #:
+    #: A TOKEN, not a sentence, for the reason ``lanes.py`` gives for its transport
+    #: field: the words the operator reads are composed by the UI and ship ×12.
+    #:
+    #: It is NOT a tier. What tier an entity is in is a question about the lane's
+    #: CURRENT rules, and rules change; this records the one-off fact of why it was
+    #: admitted, which does not.
+    admitted_reason: Mapped[str | None] = mapped_column(String(64))
     first_seen_at: Mapped[datetime] = mapped_column(
         LaneUTCDateTime, nullable=False, default=_utcnow
     )
