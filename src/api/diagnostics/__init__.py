@@ -205,6 +205,7 @@ from .bundle import (
     _corpus_counters_safe,
     _country_code_scan,
     _release_run_last,
+    _chronology_member,
     _cpu_model_safe,
     _debug_bundle_member_budget_s,
     _diagnostics_coverage_report,
@@ -348,6 +349,9 @@ from .release_run import (
     release_run_last,
     release_run_start,
     release_run_status,
+    release_run_resume,
+    chronology_report,
+    ResumeBody,
 )
 
 __all__ = [
@@ -589,6 +593,7 @@ __all__ = [
     "ReleaseRunBody",
     "_RELEASE_RUN_JOB",
     "_release_run_last",
+    "_chronology_member",
     "_release_run_worker",
     "_status_payload",
     "release_run_cancel",
@@ -597,4 +602,7 @@ __all__ = [
     "release_run_last",
     "release_run_start",
     "release_run_status",
+    "release_run_resume",
+    "chronology_report",
+    "ResumeBody",
 ]

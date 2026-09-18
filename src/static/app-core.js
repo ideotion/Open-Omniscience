@@ -1643,8 +1643,39 @@
         row("Memory", _fmtBytes(p.rss_bytes)) +
         row("Scraping ↓", (dl == null ? "—" : _fmtBytes(dl) + "/s") +
             ` <span class="muted">· total ${_fmtBytes(sc.bytes_total)} · ${sc.fetches_total||0}×</span>`);
-      $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml;
+      $("vitals-body").innerHTML = nowHtml + planHtml + _budgetHtml(a) + rateHtml + sysHtml + _sessionHtml(v.session);
       $("vitals-note").innerHTML = "";
+    }
+    // The session line (2026-09-18, maintainer-asked with the chronology): the three
+    // numbers a returning operator wants beside the vitals -- up since the last
+    // restart, restarts since the ledger began, how the previous session ended --
+    // read from /api/system/vitals' `session` block (the session ledger, cached
+    // server-side). Absent when the ledger has nothing; never a fabricated count.
+    // The full picture (the timeline, the stretches, the 72 h bar) lives in
+    // Settings -> Advanced -> Diagnostics -> Chronology.
+    function _sessionHtml(s) {
+      if (!s) return "";
+      const t9 = (window.OOI18N && window.OOI18N.t) ? window.OOI18N.t : (x => x);
+      const tf = (window.OOI18N && window.OOI18N.tf)
+        ? window.OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const dur = (sec) => (window.ooTimeline ? window.ooTimeline.fmtDur(sec) : (sec == null ? "—" : String(Math.round(sec)) + " s"));
+      const row = (k, val, title) =>
+        `<div class="vr"><span>${esc(k)}</span><b${title ? ` title="${esc(title)}"` : ""}>${esc(val)}</b></div>`;
+      const rows = [];
+      rows.push(row(t9("Up since the last restart"), dur(s.since_last_restart_s)));
+      if (s.restarts_since_ledger_start != null) {
+        rows.push(row(t9("Restarts"),
+          tf("{n} since {when}", { n: s.restarts_since_ledger_start, when: s.ledger_since ? fmtDateTime(s.ledger_since) : "—" }),
+          t9("Boots recorded by the session ledger after its first line; sessions before the ledger existed are unknown.")));
+      }
+      const prev = s.previous_session_end;
+      if (prev) {
+        const how = prev.clean === true ? t9("clean shutdown") : (prev.clean === false ? t9("unclean end") : t9("end with no time"));
+        rows.push(row(t9("Previous session"), `${how} · ${prev.at ? fmtDateTime(prev.at) : "—"}`, prev.basis || ""));
+      }
+      if (s.longest_stretch_s != null) rows.push(row(t9("Longest continuous stretch"), dur(s.longest_stretch_s)));
+      return `<div class="vsect">${esc(t9("Sessions"))}</div>` + rows.join("") +
+        `<div class="vnote">${esc(t9("From the session ledger. The timeline, the stretches and the 72 h bar are under Settings → Advanced → Diagnostics → Chronology."))}</div>`;
     }
     // S04-13 S1 (Q1012 = a). The per-PROCESS bandwidth budget, drawn where the
     // question is asked. The figures are composed server-side by ONE module

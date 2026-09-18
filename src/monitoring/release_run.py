@@ -185,6 +185,12 @@ class _Run:
         self.outcome: str | None = None
         self.report_path: str | None = None
         self._current: dict[str, Any] | None = None
+        # Resume support (2026-09-18, maintainer-asked): the processes this run lived in,
+        # and the soak stretches a restart split it into. A restart never redoes a
+        # measured phase; it does restart the soak stretch, because the bar is continuous.
+        self.sessions: list[dict[str, Any]] = [{"pid": os.getpid(), "started_at": self.started_at, "kind": "start"}]
+        self.soak_stretches: list[dict[str, Any]] = []
+        self.resumed = 0
 
     # -- persistence ------------------------------------------------------ #
     def snapshot(self) -> dict[str, Any]:
@@ -209,6 +215,9 @@ class _Run:
             "phase": (self._current or {}).get("name"),
             "phases": list(self.phases),
             "soak": dict(self.soak),
+            "soak_stretches": list(self.soak_stretches),
+            "sessions": list(self.sessions),
+            "resumed": self.resumed,
             "heartbeats": list(self.heartbeats),
             "heartbeats_cap": HEARTBEAT_CAP,
             "heartbeats_dropped": self.heartbeats_dropped,
@@ -243,6 +252,116 @@ class _Run:
             del self.heartbeats[:drop]
             self.heartbeats_dropped += drop
         self.persist()
+
+    # -- resume ----------------------------------------------------------- #
+    @classmethod
+    def from_state(cls, state: dict[str, Any], passphrase: str) -> _Run:
+        """Rebuild an INTERRUPTED run from its state file so it can be resumed: the same
+        run id and start; every phase that reached a terminal status kept as it is; the
+        phases a restart invalidates (the arming, the soak, the collect, the bundle, and
+        anything that ended in ``error``/``cancelled``) dropped so they run again; the
+        soak the restart cut short closed as a stretch ``ended_by: restart``, dated from
+        its last heartbeat. The passphrase is never in the state, so the caller supplies
+        it -- or "" when no remaining phase needs one."""
+        prm = dict(state.get("params") or {})
+        params = RunParams(
+            dest_dir=str(prm.get("dest_dir") or ""), passphrase=passphrase,
+            profile=str(state.get("profile") or "release-scale"),
+            soak_hours=float(prm.get("soak_hours") or SOAK_BAR_HOURS),
+            include_newsletters=bool(prm.get("include_newsletters", True)),
+            online_probes=bool(prm.get("online_probes", True)),
+            run_row5_quarantine=bool(prm.get("run_row5_quarantine", False)),
+            legacy_backup_path=str(prm.get("legacy_backup_path") or ""),
+            keep_fresh_install=bool(prm.get("keep_fresh_install", False)),
+            note=str(prm.get("note") or ""),
+        )
+        run = cls(params)
+        run.run_id = str(state.get("run_id"))
+        run.started_at = str(state.get("started_at") or run.started_at)
+        kept, dropped = [], []
+        for ph in state.get("phases") or []:
+            if not isinstance(ph, dict):
+                continue
+            if ph.get("status") in _TERMINAL_OK and ph.get("name") not in _REDONE_ON_RESUME:
+                kept.append(dict(ph))
+            else:
+                dropped.append(f"{ph.get('name')}:{ph.get('status')}")
+        run.phases = kept
+        run.heartbeats = [dict(h) for h in (state.get("heartbeats") or []) if isinstance(h, dict)]
+        run.heartbeats_dropped = int(state.get("heartbeats_dropped") or 0)
+        run.artifacts = dict(state.get("artifacts") or {})
+        run.warnings = list(state.get("warnings") or [])
+        run.soak_stretches = [dict(s) for s in (state.get("soak_stretches") or []) if isinstance(s, dict)]
+        run.sessions = [dict(s) for s in (state.get("sessions") or []) if isinstance(s, dict)] or run.sessions
+        run.resumed = int(state.get("resumed") or 0) + 1
+        prev_soak = dict(state.get("soak") or {})
+        if prev_soak.get("started_at") and not prev_soak.get("ended_at"):
+            last_beat = run.heartbeats[-1] if run.heartbeats else {}
+            prev_soak["ended_by"] = "restart"
+            prev_soak["ended_at"] = last_beat.get("at") or state.get("updated_at")
+            if last_beat.get("elapsed_h") is not None:
+                prev_soak["elapsed_hours"] = last_beat.get("elapsed_h")
+            prev_soak["end_basis"] = (
+                "the last heartbeat before the restart (to the hour); the state file's "
+                "updated_at when no heartbeat was kept"
+            )
+            run.soak_stretches.append(prev_soak)
+        run.soak = {}
+        run.sessions.append({
+            "pid": os.getpid(), "started_at": _now_iso(), "kind": "resume",
+            "interrupted_phase": state.get("phase"), "previous_pid": state.get("pid"),
+            "previous_updated_at": state.get("updated_at"), "phases_rerun": dropped,
+        })
+        run.warnings.append(
+            f"resumed after a restart (resume #{run.resumed}): the measured phases were kept, "
+            "the soak stretch started over because the bar is continuous"
+        )
+        return run
+
+
+#: A phase with one of these statuses is DONE for a resume -- it is never run twice.
+_TERMINAL_OK = ("measured", "skipped", "refused", "not-measurable-here")
+#: Phases a restart invalidates whatever their status: the process that armed the soak
+#: is gone, the soak is a new stretch, and collect/bundle read the end of the window.
+_REDONE_ON_RESUME = ("arm_soak", "soak", "collect", "bundle")
+
+
+def _ledger_event(event: str, **fields: Any) -> None:
+    """A line on the session ledger's timeline; best-effort, never in the run's way."""
+    with contextlib.suppress(Exception):
+        from src.monitoring.session_history import record_event
+
+        record_event(event, **fields)
+
+
+def resume_preflight(passphrase: str = "", *, check_passphrase: bool = True) -> dict[str, Any]:
+    """What a resume would do, or why it cannot -- the route's 400 text and the panel's
+    hint both come from here, and the worker re-checks the same thing before it starts.
+    Only an INTERRUPTED run resumes: a state file with no outcome, written by another
+    process. A finished run is finished; a run in flight belongs to its own job."""
+    state = read_state()
+    if not state.get("run_id"):
+        raise ValueError("no release run has been recorded on this instance")
+    if state.get("outcome") is not None:
+        raise ValueError(f"the last run finished ({state.get('outcome')}); nothing to resume -- start a new run")
+    if state.get("pid") == os.getpid():
+        raise ValueError("that run belongs to this process and is still in flight")
+    done = {ph.get("name") for ph in (state.get("phases") or [])
+            if isinstance(ph, dict) and ph.get("status") in _TERMINAL_OK}
+    needs = not ({"p0_validation", "fresh_install_restore"} <= done)
+    if check_passphrase and needs and not passphrase:
+        raise ValueError(
+            "the run was interrupted before the backup and the fresh-install restore had "
+            "finished; enter the backup passphrase to resume them"
+        )
+    return {
+        "run_id": state.get("run_id"), "profile": state.get("profile"),
+        "interrupted_phase": state.get("phase"), "phases_done": sorted(str(d) for d in done),
+        # "unlock_needed", not "needs_passphrase": the endpoint scrubber redacts any KEY
+        # that contains the word, and a redacted boolean cannot drive a button.
+        "unlock_needed": needs, "resumed_before": int(state.get("resumed") or 0),
+        "soak_stretches_so_far": len(state.get("soak_stretches") or []) + (1 if (state.get("soak") or {}).get("started_at") else 0),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -922,8 +1041,12 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
          "heartbeats": len(hb), "heartbeats_dropped": run.heartbeats_dropped,
          "max_gap_between_heartbeats_s": max(gaps) if gaps else None,
          "process_restart_seen_in_heartbeats": restarted,
-         "memory_guard_last": (hb[-1].get("memory_guard") if hb else None)},
-        "read P0.3 and the soak window together; a restart ends the window and is visible here",
+         "memory_guard_last": (hb[-1].get("memory_guard") if hb else None),
+         "stretches": len(run.soak_stretches),
+         "longest_stretch_hours": max([float(s.get("elapsed_hours") or 0.0) for s in run.soak_stretches] or [0.0]),
+         "resumed": run.resumed},
+        "read P0.3 and the soak window together; a restart ends the stretch and is visible here -- "
+        "the bar is continuous, so only the longest stretch can reach it, never the sum",
     ))
 
     # C -- the bundle on the ~1M instance
@@ -1065,6 +1188,9 @@ def _write_report(run: _Run, *, interim: bool) -> Path:
         "phases": [{k: v for k, v in ph.items() if k != "result"} for ph in run.phases],
         "phase_results": {ph["name"]: ph.get("result") for ph in run.phases if "result" in ph},
         "soak": dict(run.soak),
+        "soak_stretches": list(run.soak_stretches),
+        "sessions": list(run.sessions),
+        "resumed": run.resumed,
         "heartbeats": list(run.heartbeats),
         "heartbeats_dropped": run.heartbeats_dropped,
         "artifacts": dict(run.artifacts),
@@ -1179,21 +1305,36 @@ def _run_phase(run: _Run, ctx: Any, name: str, fn: Any, *, refusals: tuple[type[
 def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequence IS the module
     """BackgroundJob worker. Returns ``{path, filename, report}``; the passphrase never
     lands in the returned dict."""
-    params = RunParams(**kwargs)
-    params.validate()
+    resume = bool(kwargs.pop("resume", False))
     _COLLECT_NOW.clear()
-    run = _Run(params)
+    if resume:
+        plan = resume_preflight(str(kwargs.get("passphrase") or ""))  # ValueError -> the job records it
+        run = _Run.from_state(read_state(), str(kwargs.get("passphrase") or ""))
+        _ledger_event("release-run", action="resume", run_id=run.run_id, profile=run.params.profile,
+                      interrupted_phase=plan.get("interrupted_phase"))
+    else:
+        params = RunParams(**kwargs)
+        params.validate()
+        run = _Run(params)
+        _ledger_event("release-run", action="start", run_id=run.run_id, profile=params.profile)
+    params = run.params
     run.persist()
     total_phases = 8
     done = 0
+
+    def _kept(name: str) -> bool:
+        """True when a resume already holds a terminal record for this phase."""
+        return _phase(run, name).get("status") in _TERMINAL_OK
 
     def step(detail: str) -> None:
         nonlocal done
         done += 1
         ctx.set_progress(done=done, total=total_phases, detail=detail)
 
-    # 0 -- preflight (a refusal here ends the run before anything is written)
-    pre = _run_phase(run, ctx, "preflight", lambda: _preflight(run), refusals=(ValueError,))
+    # 0 -- preflight (a refusal here ends the run before anything is written). On a
+    # resume the measured preflight stands: the backup it sized is already on the drive.
+    pre = _phase(run, "preflight") if _kept("preflight") else \
+        _run_phase(run, ctx, "preflight", lambda: _preflight(run), refusals=(ValueError,))
     step("preflight")
     if pre.get("status") != "measured":
         run.outcome = "refused"
@@ -1201,15 +1342,17 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         return {"path": str(path), "filename": path.name, "report": json.loads(path.read_text(encoding="utf-8"))}
 
     # 1 -- 0.3 row 5 (opt-in only)
-    if params.run_row5_quarantine and not ctx.stopping:
+    if _kept("row5_quarantine"):
+        pass
+    elif params.run_row5_quarantine and not ctx.stopping:
         _run_phase(run, ctx, "row5_quarantine", lambda: _row5_quarantine(ctx, run), refusals=(RuntimeError,))
     else:
         run.begin("row5_quarantine")
         run.end("skipped", "not requested (deferred by ruling A1; the operator did not tick it)")
     step("row 5")
 
-    # 2 -- the P0 trio into the dated folder
-    if not ctx.stopping:
+    # 2 -- the P0 trio into the dated folder (kept on a resume: the folder exists)
+    if not ctx.stopping and not _kept("p0_validation"):
         from src.backup.export_folder import ExportFolderError
 
         _run_phase(run, ctx, "p0_validation", lambda: _p0_into_dated_folder(ctx, run),
@@ -1220,7 +1363,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
     p0res = _phase(run, "p0_validation").get("result") or {}
     backup_ok = ((p0res.get("checks") or {}).get("p0_1_verify") or {}).get("verdict") == "pass"
     fits = (_phase(run, "preflight").get("result") or {}).get("fresh_install_fits")
-    if ctx.stopping:
+    if ctx.stopping or _kept("fresh_install_restore"):
         pass
     elif not backup_ok:
         run.begin("fresh_install_restore")
@@ -1232,7 +1375,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         folder = Path(run.artifacts["backup_folder"])
         _run_phase(run, ctx, "fresh_install_restore",
                    lambda: _fresh_install_restore(ctx, run, folder, label="own-backup"))
-    if params.legacy_backup_path and not ctx.stopping:
+    if params.legacy_backup_path and not ctx.stopping and not _kept("legacy_restore"):
         legacy = Path(params.legacy_backup_path).expanduser()
         if legacy.exists():
             _run_phase(run, ctx, "legacy_restore",
@@ -1245,7 +1388,9 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
     # 4 -- arm the soak, then the online probes while the collector warms up
     if not ctx.stopping:
         _run_phase(run, ctx, "arm_soak", lambda: _arm_soak(run))
-        if params.online_probes:
+        if _kept("online_probes"):
+            pass
+        elif params.online_probes:
             def _probes() -> dict[str, Any]:
                 out: dict[str, Any] = {}
                 try:
@@ -1268,7 +1413,8 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         run.begin("soak")
         started = time.time()
         run.soak = {"started_at": _now_iso(), "started_epoch": started, "hours_requested": params.soak_hours,
-                    "elapsed_hours": 0.0, "ended_by": None}
+                    "elapsed_hours": 0.0, "ended_by": None, "stretch": len(run.soak_stretches) + 1,
+                    "pid": os.getpid()}
         run.heartbeat(_heartbeat_sample(run))
         next_beat = started + HEARTBEAT_INTERVAL_S
         next_interim = started + INTERIM_REPORT_INTERVAL_S
@@ -1291,6 +1437,7 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
             if now >= next_interim:
                 with contextlib.suppress(Exception):
                     _write_report(run, interim=True)
+                _ledger_event("release-run", action="interim-report", run_id=run.run_id)
                 next_interim += INTERIM_REPORT_INTERVAL_S
             ctx.set_progress(
                 detail=f"soak: {run.soak['elapsed_hours']} / {params.soak_hours} h · rss {_rss_mb()} MB"
@@ -1299,9 +1446,11 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
         run.soak["elapsed_hours"] = round((time.time() - started) / 3600.0, 2)
         run.soak["ended_by"] = ended_by
         run.soak["ended_at"] = _now_iso()
+        run.soak_stretches.append(dict(run.soak))
         run.heartbeat(_heartbeat_sample(run))
         run.end("measured" if ended_by != "cancelled" else "cancelled",
-                f"{run.soak['elapsed_hours']} h of {params.soak_hours} h, ended by {ended_by}")
+                f"{run.soak['elapsed_hours']} h of {params.soak_hours} h, ended by {ended_by}"
+                + (f" (stretch {run.soak.get('stretch')} of this run)" if run.resumed else ""))
     else:
         run.begin("soak")
         run.end("skipped", "the soak was not armed")
@@ -1315,5 +1464,6 @@ def run_release_run(ctx: Any, **kwargs: Any) -> dict:  # noqa: C901 - the sequen
 
     run.outcome = "cancelled" if ctx.stopping else "done"
     path = _write_report(run, interim=False)
+    _ledger_event("release-run", action="finished", run_id=run.run_id, outcome=run.outcome)
     report = json.loads(path.read_text(encoding="utf-8"))
     return {"path": str(path), "filename": path.name, "report": report}

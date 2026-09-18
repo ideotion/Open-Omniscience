@@ -14,7 +14,12 @@ WHAT IS BEING CHECKED, and why each one needs a browser:
     in the reader's own language;
   * the RUN button refuses BEFORE the consent popup when the fields are empty, so an
     accidental press never flips the network state;
-  * RTL: `dir="rtl"` on the Arabic render, and zero page / console errors throughout.
+  * RTL: `dir="rtl"` on the Arabic render, and zero page / console errors throughout;
+  * (added the same day) the CHRONOLOGY box above it: "Show chronology" reads the
+    session ledger and draws the summary strip and the SVG timeline (one session,
+    zero restarts on a fresh instance, the "since the last restart" counter
+    ticking client-side), and the "Resume run" button stays HIDDEN with no run
+    to resume.
 
 The run itself (hours of backup, a subprocess restore, a >= 72 h soak) is NOT driven
 here: it is the operator's, on their machine, and the report it writes is the record.
@@ -126,6 +131,27 @@ with sync_playwright() as p:
 
         page.locator("#release-run-box").screenshot(path=str(OUT / f"release-run-box-after-checks-{lang}.png"))
 
+        # --- the chronology box: one press reads the ledger and draws ------------- #
+        page.click("#chronology-box button[onclick='loadChronology(this)']")
+        page.wait_for_selector("#chrono-svg", state="attached", timeout=15000)
+        page.wait_for_timeout(1500)  # let the client-side counter tick once
+        chrono = page.evaluate("""() => {
+          const svg = document.getElementById('chrono-svg');
+          const since = document.getElementById('chrono-since-restart');
+          return {
+            summary_rows: document.querySelectorAll('#chrono-summary b').length,
+            summary_text: (document.getElementById('chrono-summary').innerText || '').replace(/\\s+/g, ' ').slice(0, 400),
+            svg_present: !!svg, svg_width: svg ? Math.round(svg.getBoundingClientRect().width) : null,
+            svg_rects: svg ? svg.querySelectorAll('rect').length : 0,
+            svg_titled: svg ? svg.querySelectorAll('[title]').length : 0,
+            since_restart: since ? since.textContent : null,
+            legend: (document.getElementById('chrono-legend').textContent || '').slice(0, 120),
+            status: (document.getElementById('chrono-status').textContent || '').slice(0, 120),
+            resume_btn_hidden: getComputedStyle(document.getElementById('rr-resume-btn')).display === 'none',
+          };
+        }""")
+        page.locator("#chronology-box").screenshot(path=str(OUT / f"chronology-box-{lang}.png"))
+
         report["locales"][lang] = {
             "first_run_wizard_dismissed": rec_wizard,
             "expand": expand,
@@ -141,6 +167,7 @@ with sync_playwright() as p:
                                  " lang: document.documentElement.lang,"
                                  " computed: getComputedStyle(document.body).direction })"),
             "ui_lang": page.evaluate("() => window.OOI18N.current()"),
+            "chronology": chrono,
         }
         ctx.close()
     browser.close()
@@ -156,3 +183,7 @@ for lang, rec in report["locales"].items():
     for cb in ("rr-newsletters", "rr-probes", "rr-row5"):
         c = rec["controls"][cb]
         print("   ", cb, "width", c["width"], "checked", c["checked"])
+    ch = rec["chronology"]
+    print("    chronology: rows", ch["summary_rows"], "| svg", ch["svg_present"], ch["svg_width"], "px,", ch["svg_rects"], "rects,",
+          ch["svg_titled"], "titled | since restart:", ch["since_restart"], "| resume hidden:", ch["resume_btn_hidden"],
+          "| status:", ch["status"])

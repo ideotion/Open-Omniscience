@@ -2727,6 +2727,30 @@
            sits behind an opt-in that defaults off. Going online passes the ONE consent
            popup (invariant #14) at the press. Strings keyed x12 like the rest of the panel;
            no _ADV_LOADERS entry (this section fetches nothing on open). -->
+      <!-- THE CHRONOLOGY (2026-09-18, maintainer-asked with the release-run button):
+           "what if I don't know when the machine stopped?" The session ledger
+           (data/session_history.jsonl) answers it: process sessions as bars, the
+           stretches a suspend split them into, the gaps between an end and the next
+           boot, the release run's phases, the events. The summary strip carries the
+           numbers asked for (uptime since an anchor, restarts, since the last restart,
+           the longest continuous stretch, the 72 h bar on ONE stretch). Read on a
+           press, never on open (this section fetches nothing on expand); the
+           "since the last restart" counter then ticks client-side from the fetched
+           reading, no poll. The geometry is src/static/ootimeline.js (pure, node-tested);
+           not an ooChart series, because a chronology is intervals and instants, not a
+           measured curve -- the file's header says why. -->
+      <div id="chronology-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Chronology (this install's process sessions)</div>
+        <div class="hint">How long the app has been running, how many times it restarted, how long since the last restart, and the longest uninterrupted stretch — read from the session ledger, with the release run's phases beside it. A gap is a gap: the app cannot know what happened while it was not running. The 72 h bar is CONTINUOUS (one stretch); the sum of stretches is shown beside it and is not the bar.</div>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" onclick="loadChronology(this)" title="Read the session ledger and the release run's state — a plain file read, no network.">Show chronology</button>
+          <label class="small"><span>since</span> <select id="chrono-anchor" style="width:auto"><option value="run">the release run's start</option><option value="install">the ledger's first boot</option></select></label>
+          <span id="chrono-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="chrono-summary" class="small" style="margin-top:6px"></div>
+        <div id="chrono-timeline" style="margin-top:6px"></div>
+        <div id="chrono-legend" class="hint"></div>
+      </div>
       <div id="release-run-box" style="margin-top:10px">
         <div class="small" style="font-weight:600">0.4 release run (the board's operator rows)</div>
         <div class="hint">One press before a multi-day absence. In order: the P0 data-safety trio into a dated backup folder on the destination; that backup restored COMMITTED into a throwaway fresh install (encrypted, removed afterwards) and its qualification integrity read; then the app goes online and the ≥ 72 h collection soak runs with an hourly heartbeat; at the end the soak window, the live qualification integrity, the Wikipedia lane counters and the all-diagnostics bundle are read into ONE report — a status per board row, never a score. Your live corpus is only ever read. Choose a SEPARATE directory with room for about three copies of your corpus (ideally an external drive).</div>
@@ -2747,6 +2771,7 @@
           <button class="secondary" onclick="releaseRunCollect(this)" title="End the soak window now and take the end-of-window readings; the report states the window it actually got.">Collect now</button>
           <button class="secondary" onclick="releaseRunStatus(this)" title="Read the run's live state and its persisted record — a plain file read, safe mid-run; after a restart it says which phase the run was in when the process died.">Check now</button>
           <button class="secondary" onclick="releaseRunCancel()" title="Stop at the next safe point; whatever the window gave is still collected and reported.">Cancel</button>
+          <button id="rr-resume-btn" class="secondary" onclick="releaseRunResume(this)" style="display:none" title="Resume the run the app restarted out of: every measured phase is kept, the backup and the restore are never redone, and the soak starts a NEW stretch because the bar is continuous. Needs the passphrase only when the backup or the restore is still owed.">Resume run</button>
           <span id="rr-status" class="small" style="margin-left:6px"></span>
         </div>
         <div id="rr-result" class="small" style="margin-top:6px"></div>
@@ -3564,6 +3589,7 @@
   <!-- ooViz: zero-dependency honest-chart primitives (loaded before app.js as window.ooViz) -->
   <script src="/static/ooviz.js"></script>
   <script src="/static/oosky.js"></script>
+  <script src="/static/ootimeline.js"></script>
   <script src="/static/app-core.js"></script>
   <script src="/static/app-shell.js"></script>
   <script src="/static/app-home.js"></script>

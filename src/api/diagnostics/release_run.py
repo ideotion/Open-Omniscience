@@ -30,6 +30,13 @@ from ._base import router
 from .p0 import _p0_scrub
 
 
+class ResumeBody(BaseModel):
+    """The resume needs the passphrase ONLY when the backup or the fresh-install restore
+    is still owed; ``resume_preflight`` says which, and the panel asks for it then."""
+
+    passphrase: str = ""
+
+
 class ReleaseRunBody(BaseModel):
     dest_dir: str = Field(..., description="a separate directory with room for about three corpus copies")
     passphrase: str = Field(..., description="the backup passphrase (never stored/logged)")
@@ -107,6 +114,18 @@ def _status_payload() -> dict:
         state and state.get("outcome") is None and not st.get("running")
         and state.get("pid") != os.getpid()
     )
+    # Resume (2026-09-18): an interrupted run says what a resume would keep, what it
+    # would redo, and whether the passphrase is needed for it -- so the panel can
+    # offer the button with the right ask, and never a second backup for nothing.
+    st["resumable"] = False
+    if st["interrupted"]:
+        from src.monitoring.release_run import resume_preflight
+
+        try:
+            st["resume"] = resume_preflight("", check_passphrase=False)
+            st["resumable"] = True
+        except ValueError as exc:
+            st["resume"] = {"reason": str(exc)}
     return _p0_scrub(st)
 
 
@@ -137,6 +156,41 @@ def release_run_collect_now() -> JSONResponse:
         return JSONResponse({"requested": False, "reason": "no run is in progress", **_status_payload()})
     request_collect_now()
     return JSONResponse({"requested": True, **_status_payload()})
+
+
+@router.post("/release-run/resume")
+def release_run_resume(body: ResumeBody | None = None) -> JSONResponse:
+    """Resume an INTERRUPTED run (the app restarted mid-run): the same run id, every
+    measured phase kept, the backup and the restore never redone, the soak started as
+    a NEW stretch because the bar is continuous. 400 when there is nothing to resume or
+    the passphrase is still needed (the detail says which); 409-free like start."""
+    from src.monitoring.release_run import resume_preflight
+
+    st = _RELEASE_RUN_JOB.status()
+    if st.get("state") == "running":
+        return JSONResponse({"started": False, "reason": "a run is in progress", "job": _p0_scrub(st)})
+    passphrase = (body.passphrase if body else "") or ""
+    try:
+        plan = resume_preflight(passphrase)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        job = _RELEASE_RUN_JOB.start(resume=True, passphrase=passphrase)
+        return JSONResponse({"started": True, "resume": _p0_scrub(plan), "job": _p0_scrub(job)})
+    except RuntimeError:
+        return JSONResponse({"started": False, "job": _p0_scrub(_RELEASE_RUN_JOB.status())})
+
+
+@router.get("/chronology")
+def chronology_report(anchor: str = Query("run")) -> JSONResponse:
+    """The install's chronology: process sessions, gaps, suspends, the release run's
+    phases and stretches, and the summary a returning operator asked for (uptime since
+    the anchor, restarts, time since the last restart, the longest continuous stretch,
+    whether the 72 h bar was reached). Read-only: the session ledger and the run's
+    state file. ``anchor`` = ``run`` (the release run's start) or ``install``."""
+    from src.monitoring.chronology import chronology
+
+    return JSONResponse(_p0_scrub(chronology(anchor=anchor)))
 
 
 @router.get("/release-run/last")

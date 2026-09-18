@@ -59,8 +59,9 @@ ANSWER PF02:
 - **b** — 96 (or any number above 72): the same bar with a day's margin; *"more than 72 hours"* in your own
   words reads as this.
 Default if blank: **b** (enter 96). Either way *Collect now* ends the window early and the report says how long
-it really was; a process restart mid-window is reported INTERRUPTED and the run has to be pressed again — the
-state file survives a restart, the soak does not.
+it really was; a process restart mid-window is reported INTERRUPTED and the run is RESUMED with the *Resume run*
+button (the backup and the restore are not redone; the soak starts a new stretch, because the bar is continuous)
+— the Chronology box above the run shows every stretch and how much of the 72 h the current one still needs.
 ANSWER PF03:
 
 #### PF04 · How the artifacts reach the Prompt 17 session

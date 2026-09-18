@@ -1,11 +1,11 @@
 {
-  "base": "http://127.0.0.1:8231",
+  "base": "http://127.0.0.1:8234",
   "locales": {
     "en": {
       "first_run_wizard_dismissed": true,
       "expand": {
-        "resource_requests_before_expand": 75,
-        "resource_requests_after_expand": 75
+        "resource_requests_before_expand": 76,
+        "resource_requests_after_expand": 76
       },
       "controls": {
         "rr-dest": {
@@ -91,7 +91,8 @@
           "Run as the ~1M-article instance",
           "Collect now",
           "Check now",
-          "Cancel"
+          "Cancel",
+          "Resume run"
         ]
       },
       "status_after_check_now": "Not running.",
@@ -105,13 +106,25 @@
         "lang": "en",
         "computed": "ltr"
       },
-      "ui_lang": "en"
+      "ui_lang": "en",
+      "chronology": {
+        "summary_rows": 8,
+        "summary_text": "Since September 18, 2026 at 10:11 PM the ledger's first boot; sessions before the ledger existed are unknown (no release run has started, so the run anchor fell back to it) Wall clock 8 s Running (all stretches added up) 8 s · 100% Not running 0 s Restarts 0 Since the last restart 9 s Longest continuous stretch 8 s · September 18, 2026 at 10:11 PM → now 72 h continuous bar not yet — 72 h more on t",
+        "svg_present": true,
+        "svg_width": 1120,
+        "svg_rects": 2,
+        "svg_titled": 4,
+        "since_restart": "9 s",
+        "legend": "Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = s",
+        "status": "Read from the session ledger · September 18, 2026 at 10:11 PM",
+        "resume_btn_hidden": true
+      }
     },
     "ar": {
       "first_run_wizard_dismissed": true,
       "expand": {
-        "resource_requests_before_expand": 76,
-        "resource_requests_after_expand": 76
+        "resource_requests_before_expand": 77,
+        "resource_requests_after_expand": 77
       },
       "controls": {
         "rr-dest": {
@@ -197,7 +210,8 @@
           "التشغيل كنسخة ~1 مليون مقالة",
           "اجمع الآن",
           "تحقق الآن",
-          "إلغاء"
+          "إلغاء",
+          "استئناف التشغيل"
         ]
       },
       "status_after_check_now": "غير جارٍ.",
@@ -211,7 +225,19 @@
         "lang": "ar",
         "computed": "rtl"
       },
-      "ui_lang": "ar"
+      "ui_lang": "ar",
+      "chronology": {
+        "summary_rows": 8,
+        "summary_text": "منذ 18 سبتمبر 2026 في 10:11 م the ledger's first boot; sessions before the ledger existed are unknown (no release run has started, so the run anchor fell back to it) ساعة الحائط 14 s قيد التشغيل (مجموع كل الفترات) 14 s · 100% متوقف 0 s إعادات التشغيل 0 منذ آخر إعادة تشغيل 15 s أطول فترة متواصلة 14 s · 18 سبتمبر 2026 في 10:11 م → الآن حدّ متواصل 72 ساعة ليس بعد — تبقى 72 ساعة على الفترة الحالية (إع",
+        "svg_present": true,
+        "svg_width": 1120,
+        "svg_rects": 2,
+        "svg_titled": 4,
+        "since_restart": "15 s",
+        "legend": "العجلة = تكبير عند المؤشر · السحب = تحريك · النقر المزدوج = المدى كله · مرّر فوق شريط للقراءة الدقيقة. المخطط = تعليق؛ ا",
+        "status": "مقروء من سجل الجلسات · 18 سبتمبر 2026 في 10:11 م",
+        "resume_btn_hidden": true
+      }
     }
   },
   "console_errors": [],

@@ -68,6 +68,42 @@
   evidence beside it and a tally, never a score; `measured` means the clause has a number a
   reader can re-open, not that the row is closed — closing is the maintainer's reading, exactly
   as the soak window's `reaches_bar` is a fact about length and not a verdict.
+  **(6) THE CHRONOLOGY AND THE RESUME (same day, maintainer-asked after the button shipped —
+  ruling R20).** The maintainer's question — *"what if I don't know when the machine stopped? how
+  will I know when it will have been 72 hours?"* — had an honest answer of "within an hour, from the
+  run's last heartbeat, and nobody shows it": `forensics.py` keeps ONE sentinel (this session and the
+  previous one's verdict), the soak clock is this process's uptime, and nothing counted restarts or
+  stretches across sessions. Built: `src/monitoring/session_history.py`, an append-only
+  `data/session_history.jsonl` (boot / end / suspend / event lines) with a once-a-minute
+  `session_liveness.json` so a session that dies has a last-seen time to the minute, and a suspend
+  inferred from the wall clock running ahead of the monotonic clock between two ticks (the record
+  names the three things it cannot tell apart: a sleep, a hibernation, a clock change); hooked from
+  `forensics.record_session_start` / `record_clean_shutdown` and the network seam; compacted at boot
+  to the newest 4,000 lines. `src/monitoring/chronology.py` reads it beside the release run's state:
+  sessions, gaps ("no record between an end and the next boot", bounds and no cause), stretches (a
+  session split at its suspends), the summary (wall clock since an anchor, running time, restarts,
+  since the last restart, the longest CONTINUOUS stretch, `bar_reached_at` on ONE stretch, the
+  discontinuous total labelled as not the bar), `GET /api/diagnostics/chronology?anchor=run|install`,
+  `chronology.json` in the bundle, a cached `session` block in `/api/system/vitals`. The box in
+  Settings → Advanced → Diagnostics reads on a press (the section still fetches nothing on open),
+  ticks "since the last restart" client-side, and draws `src/static/ootimeline.js`'s geometry as an
+  SVG with the ooChart interaction grammar (wheel/drag/double-click/hover). **The release run is
+  RESUMABLE:** `POST /release-run/resume` continues an INTERRUPTED run under the same run id — every
+  phase with a terminal status kept, the arming/soak/collect/bundle redone, an `error`/`cancelled`
+  phase retried, the cut soak closed as a stretch `ended_by: restart` dated from its last heartbeat,
+  the new stretch counted from zero because row B's bar is continuous; the passphrase is asked for
+  only when the backup or the restore is still owed (`unlock_needed`, named so because the endpoint
+  scrubber redacts any KEY containing "passphrase" — a redacted boolean cannot drive a button, which
+  a first pass found the hard way). **DELIBERATELY NOT DONE, each with its reason:** sessions before
+  this build's first boot are not back-filled (unknowable; the summary says the ledger's start);
+  the suspend inference has no OS hook (the clocks are the only source every platform offers); a run
+  interrupted DURING the P0 backup redoes the whole backup phase (the P0 kit has no partial-backup
+  resume, and a half-written folder must never be trusted); the timeline is not an ooChart series
+  (a chronology is intervals and instants, not a measured curve — nothing to interpolate or thin,
+  which is the property invariant #16 protects; the file's header says so); `uptime_share` is capped
+  at 1.0 because stretches are rounded to the second and the wall clock is not. Mutation-checked:
+  nine mutants over the resume guards, the suspend threshold, the double-close guard and the
+  bar-on-a-sum, nine killed. Chromium-walked in en/ar (second pass in the same audit record).
 
 
 - **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,

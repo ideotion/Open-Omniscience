@@ -578,9 +578,9 @@ def test_the_routes_sit_last_so_the_split_snapshot_is_undisturbed():
     import src.api.diagnostics as pkg
 
     paths = [r.path for r in pkg.router.routes]
-    mine = [p for p in paths if "/release-run" in p]
-    assert len(mine) == 6
-    assert paths[-6:] == mine, "the release-run routes must be the LAST six the package registers"
+    mine = [p for p in paths if "/release-run" in p or p.endswith("/chronology")]
+    assert len(mine) == 8, mine
+    assert paths[-8:] == mine, "the release-run + chronology routes must be the LAST eight the package registers"
 
 
 # --------------------------------------------------------------------------- #
@@ -665,3 +665,232 @@ def test_release_run_panel_node_suite() -> None:
                           capture_output=True, text=True, cwd=_ROOT, timeout=60)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "6 checks passed" in proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+#  Resume after a restart (2026-09-18, maintainer-asked with the chronology)
+# --------------------------------------------------------------------------- #
+def _interrupt_mid_soak(fast, monkeypatch, *, phases_done=("preflight", "row5_quarantine", "p0_validation",
+                                                             "fresh_install_restore", "arm_soak", "online_probes")):
+    """Write the state file a process that died mid-soak would leave: every phase up to
+    the soak measured, the soak open with two heartbeats, another pid, no outcome."""
+    from src.monitoring.release_run import _write_state
+
+    run = rr._Run(rr.RunParams(**_params(fast["dest"], soak_hours=0.0001)))
+    run.artifacts["backup_folder"] = str(fast["dest"] / "202609181200_OpenOmniscience_Backup")
+    for name in phases_done:
+        run.begin(name)
+        if name == "p0_validation":
+            run.end("measured", "ok", result={"checks": {"p0_1_verify": {"verdict": "pass"}}, "summary": {"fail": 0},
+                                              "backup_folder": run.artifacts["backup_folder"]})
+        elif name == "row5_quarantine":
+            run.end("skipped", "not requested")
+        elif name == "preflight":
+            run.end("measured", "ok", result={"fresh_install_fits": True, "articles": 412, "statement_deadline_fix_present": True})
+        elif name == "fresh_install_restore":
+            run.end("measured", "ok", result={"child": {"restore": {"committed": True}, "integrity": {"verdict": "consistent"}}})
+        else:
+            run.end("measured", "ok", result={"ok": True})
+    run.begin("soak")
+    run.soak = {"started_at": "2026-09-18T10:00:00Z", "started_epoch": time.time() - 7200, "hours_requested": 72.0,
+                "elapsed_hours": 1.9, "ended_by": None, "stretch": 1, "pid": os.getpid() + 100000}
+    run.heartbeats = [{"at": "2026-09-18T10:00:00Z", "elapsed_h": 0.0, "rss_mb": 300.0},
+                      {"at": "2026-09-18T11:58:00Z", "elapsed_h": 1.97, "rss_mb": 305.0}]
+    state = run.snapshot()
+    state["pid"] = os.getpid() + 100000
+    state["phase"] = "soak"
+    _write_state(state)
+    return state
+
+
+def test_a_resume_keeps_the_measured_phases_and_starts_a_new_stretch(fast, monkeypatch):
+    state = _interrupt_mid_soak(fast, monkeypatch)
+    ctx = FakeCtx()
+    out = rr.run_release_run(ctx, resume=True, passphrase="")
+    rep = out["report"]
+    calls = fast["calls"]
+    # never again: the backup, the restore, the probes; again: the arming, the soak, the collect, the bundle
+    assert "p0" not in calls and not any(c.startswith("fresh") for c in calls)
+    assert "law" not in calls and "weights" not in calls
+    assert calls == ["arm", "collect", "bundle"], calls
+    assert rep["run_id"] == state["run_id"] and rep["started_at"] == state["started_at"]
+    assert rep["resumed"] == 1 and rep["outcome"] == "done"
+    kinds = [s["kind"] for s in rep["sessions"]]
+    assert kinds == ["start", "resume"] and rep["sessions"][1]["interrupted_phase"] == "soak"
+    stretches = rep["soak_stretches"]
+    assert len(stretches) == 2, stretches
+    assert stretches[0]["ended_by"] == "restart" and stretches[0]["ended_at"] == "2026-09-18T11:58:00Z"
+    assert stretches[0]["elapsed_hours"] == 1.97, "the cut stretch is dated from its last heartbeat"
+    assert stretches[1]["ended_by"] == "window-complete" and stretches[1]["stretch"] == 2
+    # the phases already measured are still there, once each; the soak's record is the new one
+    names = [p["name"] for p in rep["phases"]]
+    assert names.count("p0_validation") == 1 and names.count("fresh_install_restore") == 1
+    assert names.count("arm_soak") == 1 and names.count("soak") == 1
+    row_b = next(r for r in rep["board_rows"] if r["row"] == "B")
+    assert row_b["evidence"]["stretches"] == 2 and row_b["evidence"]["resumed"] == 1
+    assert "continuous" in row_b["note"]
+    assert any("resumed after a restart" in w for w in rep["warnings"])
+    assert SECRET not in json.dumps(rep)
+
+
+def test_a_resume_reruns_a_phase_that_ended_in_error_and_keeps_a_refused_one(fast, monkeypatch):
+    from src.monitoring.release_run import _write_state, read_state
+
+    _interrupt_mid_soak(fast, monkeypatch, phases_done=("preflight", "row5_quarantine", "p0_validation",
+                                                        "fresh_install_restore", "arm_soak"))
+    st = read_state()
+    st["phases"].append({"name": "online_probes", "started_at": "x", "ended_at": "y", "status": "error", "detail": "boom"})
+    st["phases"].append({"name": "legacy_restore", "started_at": "x", "ended_at": "y", "status": "refused", "detail": "no such path"})
+    st["params"]["legacy_backup_path"] = "/nowhere"
+    _write_state(st)
+    out = rr.run_release_run(FakeCtx(), resume=True, passphrase="")
+    calls = fast["calls"]
+    assert "law" in calls and "weights" in calls, "an errored phase is run again"
+    assert not any(c.startswith("fresh:pre-migration") for c in calls), "a refused phase is kept as refused"
+    names = [p["name"] for p in out["report"]["phases"]]
+    assert names.count("online_probes") == 1 and names.count("legacy_restore") == 1
+    assert out["report"]["sessions"][-1]["phases_rerun"] == ["arm_soak:measured", "online_probes:error"], \
+        "the arming is always redone (the process that armed the soak is gone); the errored probe is retried"
+
+
+def test_resume_preflight_refuses_when_nothing_is_interrupted_or_the_passphrase_is_owed(fast, monkeypatch):
+    from src.monitoring.release_run import _write_state, resume_preflight
+
+    with pytest.raises(ValueError, match="no release run"):
+        resume_preflight("")
+    _write_state({"schema": rr.RELEASE_RUN_SCHEMA, "run_id": "r", "outcome": "done", "pid": os.getpid() + 5, "phases": []})
+    with pytest.raises(ValueError, match="finished"):
+        resume_preflight("")
+    _write_state({"schema": rr.RELEASE_RUN_SCHEMA, "run_id": "r", "outcome": None, "pid": os.getpid(), "phases": []})
+    with pytest.raises(ValueError, match="this process"):
+        resume_preflight("")
+    # interrupted during the backup: the passphrase is owed, and the plan says so
+    _write_state({"schema": rr.RELEASE_RUN_SCHEMA, "run_id": "r", "outcome": None, "pid": os.getpid() + 5,
+                  "phase": "p0_validation", "phases": [{"name": "preflight", "status": "measured"}],
+                  "params": {"dest_dir": str(fast["dest"])}})
+    with pytest.raises(ValueError, match="passphrase"):
+        resume_preflight("")
+    plan = resume_preflight("", check_passphrase=False)
+    assert plan["unlock_needed"] is True and plan["interrupted_phase"] == "p0_validation"
+    assert resume_preflight(SECRET)["unlock_needed"] is True
+    # interrupted after the restore: no passphrase needed
+    _interrupt_mid_soak(fast, monkeypatch)
+    plan = resume_preflight("")
+    assert plan["unlock_needed"] is False and plan["soak_stretches_so_far"] == 1
+    assert set(plan["phases_done"]) >= {"p0_validation", "fresh_install_restore"}
+
+
+def test_the_resume_route_and_the_status_offer_it_only_when_it_is_honest(client, tmp_path, monkeypatch):
+    from src.monitoring.release_run import _write_state
+
+    r = client.post("/api/diagnostics/release-run/resume", json={})
+    assert r.status_code == 400 and "no release run" in r.json()["detail"]
+    _write_state({"schema": rr.RELEASE_RUN_SCHEMA, "run_id": "r", "profile": "million", "outcome": None,
+                  "pid": os.getpid() + 100000, "phase": "p0_validation",
+                  "phases": [{"name": "preflight", "status": "measured"}], "params": {"dest_dir": str(tmp_path / "d")},
+                  "heartbeats": []})
+    st = client.get("/api/diagnostics/release-run/status").json()
+    assert st["interrupted"] is True and st["resumable"] is True
+    assert st["resume"]["unlock_needed"] is True and st["resume"]["interrupted_phase"] == "p0_validation"
+    r = client.post("/api/diagnostics/release-run/resume", json={"passphrase": ""})
+    assert r.status_code == 400 and "passphrase" in r.json()["detail"]
+    import src.monitoring.release_run as mod
+
+    ran: dict = {}
+
+    def _stub(ctx, **kwargs):
+        ran.update(kwargs)
+        return {"path": None, "filename": None, "report": {"ok": True}}
+    monkeypatch.setattr(mod, "run_release_run", _stub)
+    r = client.post("/api/diagnostics/release-run/resume", json={"passphrase": SECRET})
+    assert r.status_code == 200 and r.json()["started"] is True and SECRET not in r.text
+    deadline = time.time() + 10
+    while time.time() < deadline and not ran:
+        time.sleep(0.05)
+    assert ran.get("resume") is True and ran.get("passphrase") == SECRET
+
+
+# --------------------------------------------------------------------------- #
+#  The chronology box and the resume button (2026-09-18)
+# --------------------------------------------------------------------------- #
+def test_the_chronology_box_sits_above_the_run_box_with_its_controls_and_the_module_loaded():
+    html = _html()
+    box = html.index('id="chronology-box"')
+    assert box < html.index('id="release-run-box"'), "the chronology reads first: it is what a returning operator opens"
+    assert html.index('data-adv="diagnostics"') < box
+    for needle in ('onclick="loadChronology(this)"', 'id="chrono-anchor"', '<option value="run">', '<option value="install">',
+                   'id="chrono-summary"', 'id="chrono-timeline"', 'id="chrono-legend"', 'id="chrono-status"'):
+        assert needle in html, needle
+    assert '<script src="/static/ootimeline.js"></script>' in html, "the layout module must be loaded"
+    assert html.index('/static/ootimeline.js') < html.index('/static/app-diagnostics.js'), "geometry before its wiring"
+    # the resume button: hidden until a status says the run is resumable
+    seg = html[html.index('id="rr-resume-btn"'):]
+    seg = seg[:seg.index(">")]
+    assert 'onclick="releaseRunResume(this)"' in seg and 'display:none' in seg
+
+
+def test_the_resume_handler_gates_on_consent_and_asks_for_the_passphrase_only_when_owed():
+    from tests.js_source_helper import function_source
+
+    js = _diag_js()
+    src = function_source(js, "releaseRunResume")
+    assert re.search(r'if \(typeof ensureOnline === "function"\s*&& !await ensureOnline\(', src), \
+        "the resume goes online again, so it passes the ONE consent popup on the CONDITION line"
+    assert 'plan.unlock_needed && !pass' in src, "the passphrase is demanded only when the plan says the backup/restore is owed"
+    assert '"/api/diagnostics/release-run/resume"' in src
+    assert '$("rr-pass").value = ""' in src, "the secret leaves the DOM after the hand-off"
+    poll = function_source(js, "_rrPoll")
+    assert "s.resumable" in poll and 'rr-resume-btn' in poll, "the interrupted branch offers the resume"
+
+
+def test_the_chronology_wiring_reads_on_a_press_never_on_open_and_binds_the_drag_once():
+    from tests.js_source_helper import function_source, object_literal
+
+    js = _diag_js()
+    load = function_source(js, "loadChronology")
+    assert '"/api/diagnostics/chronology?anchor="' in load
+    draw = function_source(js, "_chronoDraw")
+    assert "ooTimeline.layout(" in draw and "ooTimeline.zoomAround(" in draw and "ooTimeline.pan(" in draw
+    assert draw.count('window.addEventListener("mousemove"') == 1 and "_chronoWindowBound" in draw, \
+        "the SVG is re-created per render; the window listeners must be bound once"
+    assert 'chrono-hatch' in draw and 'stroke-dasharray' in draw, "suspends hatched, no-record gaps dotted"
+    from tests.js_source_helper import app_js
+
+    loaders = object_literal(app_js(), "_ADV_LOADERS")
+    assert "diagnostics:" not in loaders, "the section still fetches nothing on open"
+    summary = function_source(js, "_chronoSummaryHtml")
+    assert "not the bar" in summary and "chrono-since-restart" in summary
+
+
+def test_the_vitals_session_line_is_drawn_from_the_ledger_block_and_never_fabricates_a_count():
+    from tests.js_source_helper import function_source, read_static
+
+    core = read_static("app-core.js")
+    src = function_source(core, "_sessionHtml")
+    assert 'if (!s) return "";' in src, "no ledger block, no line -- never a zero"
+    assert "restarts_since_ledger_start" in src and "since_last_restart_s" in src and "previous_session_end" in src
+    assert "_sessionHtml(v.session)" in function_source(core, "_renderVitals")
+
+
+def test_every_chronology_string_is_keyed_in_all_twelve_locales():
+    import json as _json
+
+    keys = ["Chronology (this install's process sessions)", "Show chronology", "Resume run", "Since the last restart",
+            "Longest continuous stretch", "{h} h continuous bar", "{n} suspend(s)", "clean shutdown", "unclean end",
+            "Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.",
+            "Up since the last restart", "{n} since {when}"]
+    for loc in ("en", "fr", "de", "es", "pt", "ru", "ar", "bn", "hi", "id", "ja", "zh"):
+        data = _json.loads((_ROOT / "src" / "static" / "locales" / f"{loc}.json").read_text(encoding="utf-8"))
+        for k in keys:
+            assert k in data and data[k], (loc, k)
+
+
+def test_ootimeline_node_suite() -> None:
+    import shutil
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    proc = subprocess.run([node, str(_ROOT / "tests" / "ootimeline_node_test.js")], capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ootimeline checks passed" in proc.stdout

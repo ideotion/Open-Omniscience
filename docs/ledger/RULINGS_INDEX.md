@@ -6,7 +6,7 @@ the maintainer anything, grep here (and `OPEN_QUEUE.md`, and `shipped.csv`) — 
 whether a ruling exists. Maintained under THE PROTOCOL (`CLAUDE.md`, amended 2026-09-15): every new ruling gets a
 line here in the turn it is given, beside its `OPEN_QUEUE.md` entry.
 
-**Sources.** `R1`–`R19` are the maintainer's two messages of 2026-09-12; `A1`–`L10` (the second table) are the
+**Sources.** `R1`–`R19` are the maintainer's two messages of 2026-09-12 (later chat rulings continue the series, dated in their row — `R20` is 2026-09-18); `A1`–`L10` (the second table) are the
 65 answers of the 2026-09-06 register (`docs/plans/2026-09-06-repo-analysis/QUESTIONS_FOR_THE_MAINTAINER.md`)
 given through the rulings artifact on 2026-09-15 15:02–16:00Z — each reconciled with the `Q11xx` row that re-asked
 it (a CONFLICT is listed on both rows, never resolved here; `RCnn` points at the confirmation round
@@ -47,6 +47,7 @@ maintainer's note overrides the option label (the note is the ruling).
 | R17 | 2026-09-12 | Every address and GPS (or equivalent) datum found on Wikipedia, and in any other indexed and analysed content, is linked onto the map | maintainer msg 2 | 0.4/0.5 S04-09 · 0.5 S05-04 · 0.6 S06-03 (Q819, Q820) |
 | R18 | 2026-09-12 | 0.9 can be the beta (original intent: v1 = Beta 1) — FINAL through Q101 = a | maintainer msg 2; final 2026-09-15 (Q101) | 0.9 S09-01 |
 | R19 | 2026-09-12 | The answer-sheet process: one extensive markdown, answered in place, returned into a compressed session; everything decided now counts and is never restated | maintainer msg 2 | this PR (Q1201–Q1207) |
+| R20 | 2026-09-18 | **The chronology and the resume (chat, after the release-run button shipped):** «would it be possible to add a timer in the diagnostics subtab telling the user how long has the app been running, and how many restarts, and how long since the last restart … in the form of a chronology timeline … what do you think?» → the session's proposal (a session ledger + a chronology box in Settings → Advanced → Diagnostics + a session line in the task-manager System tab + a Resume for an interrupted release run) answered «yes, good news, proceed before I do the PR merging». The 72 h bar stays CONTINUOUS (gate row B's clause unchanged; the discontinuous sum is shown beside it and is not the bar — the recommendation the maintainer proceeded on); both anchors shown (the run's start, the ledger's first boot). | chat 2026-09-18 | PR #1162 · `src/monitoring/session_history.py`, `chronology.py`, `src/static/ootimeline.js` · `tests/test_session_history.py`, `tests/ootimeline_node_test.js`, the resume + panel pins in `tests/test_release_run.py` · `docs/audit/release-run-clickthrough-2026-09-18/` |
 | Q001 | 2026-09-15 | (a) All nineteen are correctly recorded. | sheet default (ASSUMPTION) | this PR (docs) — ASSUMPTION (blank, default a) |
 | Q101 ⛔ | 2026-09-15 | (a) 0.9.0 = Beta 1, 0.9.x = later betas, 1.0.0 = general availability ("the gift"). | sheet answered | 0.9 · S09-01 `beta-freeze-hardening-and-post-1-0-backlog` · `RELEASE_0.9_GATE.md` |
 | Q102 | 2026-09-15 | (a) Features + schema (only additive migrations after 0.9.0) + backup format (every backup made since 0.9.0 restores forever) + the consent model. | sheet answered | 0.9 · S09-01 `beta-freeze-hardening-and-post-1-0-backlog` · `RELEASE_0.9_GATE.md` |

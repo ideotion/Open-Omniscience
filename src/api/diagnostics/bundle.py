@@ -693,6 +693,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # The 0.4 release acceptance run's last report (2026-09-18; read-only, never runs
         # one) -- so the bundle taken at the end of the run carries the run's own record.
         ("release-run.json", lambda: _release_run_last()),
+        ("chronology.json", lambda: _chronology_member()),
         # §6 recursive-improvement loop instruments: the two cheap, decrypt-light DATA reports
         # that were missing from the bundle, plus the loop SELF-INVENTORY (are the loop's own
         # mechanism-proof gates green?). Kept last so a heavy corpus never delays them.
@@ -1106,6 +1107,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
     "/release-run/last": "release-run.json",  # the 0.4 release acceptance run (2026-09-18)
+    "/chronology": "chronology.json",  # sessions, gaps, stretches, the run's phases (2026-09-18)
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
     "/law-ingest": "law-ingest.json",  # ruling 34c (field feedback 2026-08-07)
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
@@ -1235,6 +1237,17 @@ def _diagnostics_coverage_report() -> dict:
         }
     except Exception as exc:  # noqa: BLE001 - a coverage-recompute glitch must not sink the run
         return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+def _chronology_member() -> dict:
+    """The install's chronology as a bundle member (read-only): the session ledger's
+    sessions, gaps and suspends, the release run's phases and stretches, the summary."""
+    try:
+        from src.monitoring.chronology import chronology
+
+        return chronology(anchor="run")
+    except Exception as exc:  # noqa: BLE001 - a member that fails says so, never blanks
+        return {"available": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
 def _release_run_last() -> dict:

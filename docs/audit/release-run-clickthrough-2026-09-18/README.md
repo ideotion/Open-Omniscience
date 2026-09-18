@@ -62,3 +62,27 @@ kill "$(cat /tmp/ct-rr.pid)"     # by PID; never `pkill -f`, which matches your 
 
 Playwright installs from PyPI (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`); the browser is the pinned
 one under `/opt/pw-browsers` and needs no download.
+
+---
+
+## Added the same day: the chronology box and the Resume button
+
+**Re-run 2026-09-18 (second pass, `main`@`7ec4bfe` plus this branch), Chromium 141, en / ar.** The
+maintainer's question after the first record — *"what if I don't know when the machine stopped?"* —
+added a **Chronology** box above the release-run box (the session ledger drawn as a timeline, with the
+summary strip: wall clock since the anchor, running time, restarts, since the last restart, the longest
+continuous stretch, the 72 h bar on ONE stretch) and a **Resume run** button that continues an
+interrupted run without redoing the backup and the restore.
+
+| Check | en | ar |
+|---|---|---|
+| **Show chronology** reads the ledger and draws the summary strip (8 rows) and the SVG timeline | ✅ 1120 px, 2 rects (one session, one stretch), 4 titled elements | ✅ |
+| The "since the last restart" figure ticks CLIENT-SIDE after the one read (no poll) | 34 s → 39 s between the two locales' reads | ✅ |
+| The fresh instance reads honestly: 1 session, 0 restarts, "not yet — 71.99 h more on the current stretch" | ✅ | ✅ |
+| **Resume run** stays HIDDEN with no run to resume | ✅ (`display:none`) | ✅ |
+| Zero page / console errors, the section still fetches nothing on expand (76 → 76 / 77 → 77) | ✅ | ✅ |
+
+`chronology-box-{en,ar}.png` are the box after the press; `report.json` carries the `chronology` block
+per locale. What the sandbox cannot show: a second session (the walk boots one process), a suspend, a
+gap, a resumable run — `tests/test_session_history.py`, `tests/ootimeline_node_test.js` and the resume
+tests in `tests/test_release_run.py` drive those on injected clocks and a written state file.

@@ -55,6 +55,11 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "release_run_status",
     "release_run_cancel",
     "release_run_collect_now",
+    # 2026-09-18, maintainer-asked the same day: the resume after a restart, and the
+    # chronology (sessions, gaps, stretches) the returning operator reads -- registered
+    # before the two read-only routes so the reads stay the package's last words.
+    "release_run_resume",
+    "chronology_report",
     "release_run_last",
     "release_run_download",
 )
