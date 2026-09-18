@@ -8,8 +8,9 @@ Chromium in the session sandbox, 1440×900, against a seeded 24-article corpus o
 The language is changed by **clicking the real top-bar switcher** (`#lang-switch`, then the
 row in `#lang-menu`), never by calling `OOI18N.setLang` — a scripted state change is not the
 control, and a harness that sets the language itself cannot see invariant #15's switcher fail.
-The law panel is likewise reached by clicking its `ooSubtabs` button rather than calling
-`showGovView`.
+The law panel is reached by clicking its `ooSubtabs` button rather than calling `showGovView`,
+and the Patterns-gate panel by pressing its own **Check now** button, because that panel is
+deliberately button-driven (expanding Advanced must fetch nothing — see below).
 
 ## The harness was wrong first, and the run says so
 
@@ -27,7 +28,11 @@ the element's visibility **measured and reported beside the text** (a `[hidden]`
 than conflated with it. An empty string and a hidden element are different facts and only one
 of them is a finding.
 
-## What the corrected run then caught
+A fourth harness error came later and is worth the same note: after the gate panel was made
+button-driven, reading it without pressing the button would have recorded an empty box and
+called it a translation defect. The walk presses the control the operator presses.
+
+## What the corrected run caught
 
 1. **The Patterns-lens gate panel froze in the boot locale.** `Corpus size: 24 / 100 000`
    stayed English under `fr` while the pills beside it translated — a render-once panel whose
@@ -39,6 +44,16 @@ of them is a finding.
    figure three lines up reads `100 000`. The three sites in code this PR already changed now go
    through `fmtNum`, the ruled app-wide formatter (U+202F grouping, the SI convention); the
    other 60 are recorded in `OPEN_QUEUE.md` as a deliberate omission.
+
+## Why the gate panel has a button rather than a section loader
+
+The panel first filled from an `_ADV_LOADERS.diagnostics` entry, and the full suite refused it:
+`test_opening_advanced_still_fetches_nothing_for_diagnostics` pins that expanding Advanced →
+Diagnostics fetches nothing, and says in its own words that adding a loader "means something now
+fetches on expand, which is a decision, not a refactor". The decision was made against the
+loader. The gate reads a COUNT over every article — a table scan on the ~1M-article instance row
+C of the 0.4 gate targets — and every other report in that section is button-driven. The button
+reuses the already-keyed `Check now` label, so it cost no new string in any locale.
 
 ## The run
 

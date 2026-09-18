@@ -9103,3 +9103,16 @@ every one of them `tf("…", { n })`, which IS `{n: n}`: ES6 shorthand is a prop
 that cannot read the language's own sugar reports correct code as broken, which is how a guard
 gets deleted instead of fixed. The real answer, after teaching it shorthand, was zero across 141
 frame sites.
+
+**ADDENDUM (same PR, found by the full suite after the first push).** The Q1124 panel was
+wired with an `_ADV_LOADERS.diagnostics` entry — the obvious way to make a panel fill — and
+every targeted test around it was green. The full suite was not:
+`test_opening_advanced_still_fetches_nothing_for_diagnostics` exists for exactly that edit and
+says so in its own words. The property it protects, "expanding Advanced fetches nothing", was
+satisfied **by construction** (every report in that section is button-driven), which is the kind
+of invariant nothing in the surrounding code announces. The decision was made against the
+loader: this gate reads a COUNT over every article, a table scan on the ~1M-article instance row
+C targets, paid on an accidental expand. The panel now has a **Check now** button reusing an
+already-keyed label, so it cost no new string in any of the twelve locales, and the panel's own
+guard was re-anchored to pin both halves — the control exists AND no loader entry does — so a
+mutation putting the loader back reddens both tests by name rather than letting them take turns.

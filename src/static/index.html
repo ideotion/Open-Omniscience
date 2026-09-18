@@ -2790,6 +2790,13 @@
           <input type="checkbox" id="patterns-lens" style="width:auto" disabled>
           <span>Patterns lens</span>
         </label>
+        <!-- BUTTON-DRIVEN, like every other report in this section, and that is the
+             section's standing property rather than a style: expanding Advanced must
+             fetch nothing. The gate reads a COUNT over every article, which is a table
+             scan on the ~1M-article instance row C of the 0.4 gate targets -- paying it
+             on an accidental expand is exactly what "folded must not mean fetched"
+             exists to prevent. -->
+        <button class="tiny secondary" onclick="loadPatternsGate()">Check now</button>
         <span id="patterns-gate-state" class="muted" style="font-size:12px"></span>
       </div>
       <div id="patterns-gate" class="hint" style="margin-top:4px"></div>

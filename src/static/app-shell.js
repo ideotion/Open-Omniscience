@@ -496,7 +496,6 @@
       // (Q1124) that lives in it had nothing to fill it -- a panel whose loader stayed
       // behind is the recorded "can't find your keyword triage button" shape. One
       // loopback read of a COUNT, on expand only: folded must not mean fetched.
-      diagnostics: () => { loadPatternsGate(); },
       // The Bulletin (§16): last section, folded, and its availability check +
       // edition list run on EXPAND like the rest. Both are loopback.
       bulletin: () => { loadBulletin(); },

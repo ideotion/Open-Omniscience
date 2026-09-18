@@ -84,6 +84,13 @@ def run():
                             const d = document.querySelector('#set-advanced details.adv-sec[data-adv="{key}"]');
                             if (d && !d.open) {{ d.open = true; d.dispatchEvent(new Event('toggle')); }}
                         }}""")
+                    # The gate panel is BUTTON-DRIVEN on purpose (expanding Advanced must
+                    # fetch nothing), so the walk has to press the control the operator
+                    # presses. Reading the panel without clicking would record an empty
+                    # box and call it a translation finding.
+                    if name == "patterns-gate":
+                        pg.click("#set-advanced button[onclick='loadPatternsGate()']", timeout=15000)
+                        pg.wait_for_timeout(600)
                     pg.wait_for_timeout(700)
                     # textContent, NOT innerText: innerText is EMPTY for a hidden element,
                     # so the dry run reported three surfaces as empty when they were merely

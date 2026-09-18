@@ -15,6 +15,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -74,20 +75,41 @@ def test_the_panel_distinguishes_absent_from_zero():
     assert "unmeasured" in body and "labelled sample" in body
 
 
-def test_the_panel_has_a_loader_on_the_section_that_contains_it():
-    """A moved or new panel whose loader stays behind never fills. The gate panel
-    lives in Advanced -> Diagnostics, so that section owns its load."""
+def test_the_panel_is_filled_by_a_CONTROL_and_never_by_expanding_the_section():
+    """A panel nothing fills never fills -- but the fix is NOT a section loader.
+
+    This guard first asserted an ``_ADV_LOADERS.diagnostics`` entry, and the full suite
+    said why that was wrong: ``test_opening_advanced_still_fetches_nothing_for_diagnostics``
+    pins that Advanced -> Diagnostics fetches NOTHING on expand, and its own words are
+    "adding one means something now fetches on expand, which is a decision, not a
+    refactor". The decision was made deliberately and against the loader: this gate reads
+    a COUNT over every article, a table scan on the ~1M-article instance row C of the 0.4
+    gate targets, and the section's whole grammar is button-driven reports. So the panel
+    has a CONTROL, the loader entry is absent, and this test pins BOTH halves so the two
+    guards agree with each other rather than taking turns being red.
+    """
     shell = (_ROOT / "src" / "static" / "app-shell.js").read_text(encoding="utf-8")
     loaders = object_literal(shell, "_ADV_LOADERS")
-    assert re.search(r"diagnostics:\s*\(\)\s*=>\s*\{[^}]*loadPatternsGate\(\)", loaders), (
-        "the diagnostics section must load the Patterns gate panel it contains"
+    assert "diagnostics:" not in loaders, (
+        "expanding Advanced must fetch nothing -- the gate panel is button-driven"
     )
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
     at = html.index('id="patterns-gate"')
     section = html.rfind('data-adv="', 0, at)
     assert html[section:section + 30].startswith('data-adv="diagnostics"'), (
-        "the panel must sit in the section whose loader was wired for it"
+        "the panel must sit in the Diagnostics section"
     )
+    # the control that fills it lives in the SAME section, above the panel
+    control = html.rfind("loadPatternsGate()", 0, at)
+    assert control > section, (
+        "nothing in the Diagnostics section calls loadPatternsGate() -- the panel would "
+        "render empty forever, which is the failure the loader was reached for"
+    )
+    tag = html[html.rfind("<button", 0, control):html.index("</button>", control) + 9]
+    assert 'onclick="loadPatternsGate()"' in tag, f"the control must be a button: {tag[:90]!r}"
+    label = tag[tag.index(">") + 1:tag.index("</button>")].strip()
+    en = json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert label in en, f"the button label {label!r} must be keyed, or it is English x12"
 
 
 def test_the_toggle_cannot_be_flipped_on_in_0_4():

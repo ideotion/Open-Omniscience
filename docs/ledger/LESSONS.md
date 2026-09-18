@@ -11373,3 +11373,31 @@ assertion would have been indistinguishable from deleting it; re-anchoring onto 
 PLUS its `en.json` key is strictly stronger, and doing that is what surfaced that
 `t("of")` had never had a key in the first place. The old guard had been calling a control
 present while a word inside it was permanently English.
+
+**A SECTION'S STANDING PROPERTY CAN BE "NOTHING HAPPENS WHEN YOU OPEN IT", AND A NEW PANEL'S
+LOADER IS HOW THAT PROPERTY DIES QUIETLY.** A gate panel added to Settings → Advanced →
+Diagnostics was wired the obvious way — an `_ADV_LOADERS` entry, so the panel fills when the
+section expands — and the targeted tests around the panel were all green. The FULL suite was
+not: `test_opening_advanced_still_fetches_nothing_for_diagnostics` exists precisely for that
+edit, and its docstring is the whole lesson — *"the diagnostics section needs no loader; adding
+one means something now fetches on expand, which is a decision, not a refactor."* The property
+was satisfied **by construction** (every report in that section is button-driven), which is
+exactly the kind of invariant a newcomer cannot infer from the code around them, because
+nothing in the section says "we do not do this here" — the test does. Measured cost of the
+loader had it shipped: this panel reads a COUNT over every article, a table scan on the
+~1M-article instance the release gate targets, paid on an accidental expand.
+**GENERAL FORM: when a guard reddens on a plainly reasonable change, read what it is protecting
+before deciding which of the two is wrong** — here the guard was right and the reasonable change
+was the mistake, and the fix (a button, reusing the already-keyed `Check now` label, so it cost
+no new string in any locale) is better than what it replaced. The panel's own guard was then
+re-anchored to pin BOTH halves — the control exists AND no loader entry does — so the two tests
+agree with each other instead of taking turns being red. A mutation that puts the loader back
+now reddens both, by name.
+
+**AND THE TARGETED TEST RUN IS NOT THE SUITE.** Everything about this panel was covered:
+endpoint, wire format, absence-versus-zero, the language repaint, the toggle's disabled state,
+a ten-test file with a mutation matrix behind it. All of it green, all of it about the panel,
+and none of it about the SECTION the panel was put in. The failure lived in a file whose name
+has nothing to do with the feature. That is the ordinary shape of a cross-surface regression,
+and it is the argument for running the whole suite before calling a slice done rather than the
+files the diff touches.

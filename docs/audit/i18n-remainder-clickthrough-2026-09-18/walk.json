@@ -17,7 +17,7 @@
   "selected": "fr",
   "dir": "ltr",
   "surfaces": {
-   "collection-hint": "Le scraping, l'agrégation des sources et l'exploration s'exécutent en continu et automatiquement dès que la collecte est active et que vous êtes en ligne. Cela couvre les flux RSS, l'exploration récursive, les marchés, les lois et Wikipédia— toutes les sources. Il n'y a rien à planifier ni à programmer ; il suffit de l'activer. (Elle se met en pause d'elle-même si la machine manque de mémoire, et ",
+   "collection-hint": "Le scraping, l'agrégation des sources et l'exploration s'exécutent en continu et automatiquement dès que la collecte est active et que vous êtes en ligne. Cela couvre les flux RSS, l'exploration récursive, les marchés, les lois et Wikipédia — toutes les sources. Il n'y a rien à planifier ni à programmer ; il suffit de l'activer. (Elle se met en pause d'elle-même si la machine manque de mémoire, et",
    "speed-value": "Maximum",
    "csv-columns": "Colonnes : name, domain, rss_url, source_type, country, language, region, tags, priority, rate_limit_ms, enabled, reliability_score. Le nom et le domaine sont requis. Le pays est un code à 2 lettres. Les étiquettes sont séparées par des virgules, donc mettez la cellule entre guillemets. La priorité va de 1 à 3 et reliability_score va de 1 à 10. reliability_score est définie par l'opérateur, jamais",
    "patterns-gate": "Taille du corpus: 24 / 100 000 non atteintTaux de faux positifs: non mesuré nécessite un échantillon étiqueté jugé par une personneLa loupe des schémas reste désactivée tant que les DEUX chiffres ne sont pas mesurés et atteints. Un taux de faux positifs non mesuré est affiché comme non mesuré, jamais comme zéro.",
@@ -31,7 +31,7 @@
   "selected": "ar",
   "dir": "rtl",
   "surfaces": {
-   "collection-hint": "الاستخراج وتجميع المصادر والزحف تعمل باستمرار وتلقائيًا كلما كان الجمع مُفعَّلًا وأنت متصل. يشمل ذلك تغذيات RSS، والزحف التكراري، والأسواق، والقوانين، وويكيبيديا— كل مصدر. لا حاجة لجدولة أو برمجة أي شيء؛ فقط شغّلها. (تتوقف مؤقتًا من تلقاء نفسها إذا انخفضت ذاكرة الجهاز، وتستأنف من تلقاء نفسها.)",
+   "collection-hint": "الاستخراج وتجميع المصادر والزحف تعمل باستمرار وتلقائيًا كلما كان الجمع مُفعَّلًا وأنت متصل. يشمل ذلك تغذيات RSS، والزحف التكراري، والأسواق، والقوانين، وويكيبيديا — كل مصدر. لا حاجة لجدولة أو برمجة أي شيء؛ فقط شغّلها. (تتوقف مؤقتًا من تلقاء نفسها إذا انخفضت ذاكرة الجهاز، وتستأنف من تلقاء نفسها.)",
    "speed-value": "الحد الأقصى",
    "csv-columns": "الأعمدة: name, domain, rss_url, source_type, country, language, region, tags, priority, rate_limit_ms, enabled, reliability_score. الاسم والنطاق مطلوبان. البلد رمز من حرفين. الوسوم مفصولة بفواصل، لذا ضع الخلية بين علامتي اقتباس. الأولوية تتراوح بين ⁨1–3⁩، و⁨reliability_score⁩ يتراوح بين ⁨1–10⁩. ⁨reliability_score⁩ يُحدِّده المُشغِّل، وليس محسوبًا. يُدرِج الاستيراد بأسلوب upsert حسب النطاق (يُنشئ ا",
    "patterns-gate": "حجم المتن: 24 / 100 000 غير مُستوفىمعدل الإيجابيات الخاطئة: غير مُقاس يتطلب عيّنة موسومة يحكم عليها شخصتبقى عدسة الأنماط مُعطَّلة حتى يُقاس الرقمان كلاهما ويُستوفَيا. ويُعرض معدل الإيجابيات الخاطئة غير المُقاس على أنه غير مُقاس، لا على أنه صفر أبدًا.",
@@ -59,7 +59,7 @@
   "selected": "hi",
   "dir": "ltr",
   "surfaces": {
-   "collection-hint": "स्क्रैपिंग, स्रोत एकत्रीकरण और क्रॉलिंग निरंतर और स्वचालित रूप से चलते रहते हैं, जब संग्रह चालू हो और आप ऑनलाइन हों। इसमें शामिल हैं RSS फ़ीड, पुनरावर्ती क्रॉल, बाज़ार, क़ानून और विकिपीडिया— हर स्रोत। शेड्यूल या प्रोग्राम करने को कुछ नहीं है; बस इसे चालू करें। (मशीन में मेमोरी कम पड़ने पर यह स्वयं रुक जाता है और स्वयं ही फिर शुरू हो जाता है।)",
+   "collection-hint": "स्क्रैपिंग, स्रोत एकत्रीकरण और क्रॉलिंग निरंतर और स्वचालित रूप से चलते रहते हैं, जब संग्रह चालू हो और आप ऑनलाइन हों। इसमें शामिल हैं RSS फ़ीड, पुनरावर्ती क्रॉल, बाज़ार, क़ानून और विकिपीडिया — हर स्रोत। शेड्यूल या प्रोग्राम करने को कुछ नहीं है; बस इसे चालू करें। (मशीन में मेमोरी कम पड़ने पर यह स्वयं रुक जाता है और स्वयं ही फिर शुरू हो जाता है।)",
    "speed-value": "अधिकतम",
    "csv-columns": "कॉलम: name, domain, rss_url, source_type, country, language, region, tags, priority, rate_limit_ms, enabled, reliability_score. नाम और डोमेन आवश्यक हैं। देश एक 2-अक्षर कोड है। टैग अल्पविराम से अलग होते हैं, इसलिए सेल को उद्धरण चिह्नों में रखें। प्राथमिकता 1–3 तक होती है और reliability_score 1–10 तक। reliability_score ऑपरेटर द्वारा तय किया जाता है, गणना नहीं की जाती। आयात डोमेन के आधार पर upsert कर",
    "patterns-gate": "कॉर्पस का आकार: 24 / 100 000 पूरा नहींमिथ्या-धनात्मक दर: अमापित किसी व्यक्ति द्वारा आँके गए लेबल किए नमूने की आवश्यकता हैजब तक दोनों संख्याएँ मापी और पूरी नहीं हो जातीं, पैटर्न लेंस बंद रहता है। अमापित मिथ्या-धनात्मक दर को अमापित दिखाया जाता है, कभी शून्य नहीं।",
