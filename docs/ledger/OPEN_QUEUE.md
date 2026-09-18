@@ -69,6 +69,20 @@
   reader can re-open, not that the row is closed — closing is the maintainer's reading, exactly
   as the soak window's `reaches_bar` is a fact about length and not a verdict.
 
+
+- **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,
+  PF01–PF14) — UNANSWERED at recording; nothing here is resolved.** Asked in the same PR as the 0.4
+  release-run button, because the maintainer said *"If you have any questions, ask them now before I launch
+  these sessions."* Five are operational (PF01 the row-5 opt-in and on which instance, PF02 the two instances
+  and their drives, PF03 the soak length, PF04 how the artifacts reach the session, PF05 a pre-migration
+  backup for row K); nine are rulings the last sessions asked for and no default can safely take (PF06 row R
+  and Q803's default, PF07 where the ride-along opt-out fix lands, PF08 the collection-speed unit and invariant
+  #4's wording, PF09 the reader page's i18n binding, PF10 the in-map controls at phone width, PF11 ⛔ rule (1)'s
+  achievability now that `LESSONS.md` is 985,788 bytes, PF12 the Japanese segmenter, PF13 the twelve
+  click-throughs, PF14 the `guarded_session` SSRF gap before or beside the soak). The sheet's §0 says how a
+  blank is read (⛔ → PENDING; otherwise the stated default as a labelled ASSUMPTION); the receiving session
+  records one `RULINGS_INDEX.md` row per PFnn. The RC blanks that the same pre-flight depends on (`RC01`,
+  `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked.
 - **`tests/test_import_lifecycle_stages.py` IS ORDER- OR ENVIRONMENT-DEPENDENT ON CI, PROVEN BY
   SAME-COMMIT DIVERGENCE — found while driving `S04-05` (PR #1147) to green, NOT fixed there
   (S04-02's code, gate row I; fixing it inside a display PR would widen it into a slice it does
