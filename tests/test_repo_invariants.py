@@ -5999,11 +5999,36 @@ def test_no_app_function_calls_i18n_t_without_binding_it():
     `const t = …`, so it throws "t is not defined" at runtime. There is no module-level
     `t` — every function must alias it. Scan app.js for the pattern and fail on any
     function that calls t("…") without binding t (as a const/let/var or a parameter),
-    excluding the legitimate `terms.map(t => …)` loop-variable use."""
+    excluding the legitimate `terms.map(t => …)` loop-variable use.
+
+    COMMENT-STRIPPED, and that is load-bearing in the direction that gets guards deleted.
+    This scanned raw source, so a comment explaining a `t()` call that was REMOVED counted
+    as the call: S04-12's scope-count sentence was rewritten from four welded fragments
+    into one `tf()` frame, its comment quoted the old `t("This will scrape")` to say what
+    was replaced and why, and this guard duly accused correct code of a runtime
+    `ReferenceError`. That is the recorded trap ("a source guard -- in either direction --
+    must read comment-stripped source"), and the repair is never to reword the comment:
+    the comment is exactly what a future session reads before deciding the rewrite was a
+    mistake.
+
+    STRIPPED LINE BY LINE rather than through `js_source_helper.strip_comments`, and the
+    reason is a measurement: that helper's `^\\s*//.*$` runs under `re.MULTILINE`, where
+    `\\s` matches a NEWLINE, so a comment preceded by blank lines consumes them -- over
+    this engine it drops 459 of 31,552 newlines. Harmless for the substring assertions it
+    was written for, and wrong for any guard that REPORTS a line number, which this one
+    does. Blanking each comment line in place keeps the numbering exact by construction."""
     import re
 
-    src = app_js()
-    lines = src.split("\n")
+    raw = app_js()
+    lines = [("" if re.match(r"^\s*//", ln) else ln) for ln in raw.split("\n")]
+    # ANTI-VACUITY: a stripper that returned nothing, or one pointed at the wrong file,
+    # would make every assertion below pass for free -- the failure this file exists to
+    # catch, one level down in the instrument rather than in the code.
+    assert len(lines) == len(raw.split("\n")), "the strip moved the line numbering"
+    assert sum(ln.count("function ") for ln in lines) > 500, (
+        "the scan is not reading the engine: "
+        f"{sum(ln.count('function ') for ln in lines)} functions seen"
+    )
     func_re = re.compile(r"^\s*(async\s+)?function\s+(\w+)\s*\(([^)]*)\)")
     offenders: list[str] = []
     i = 0

@@ -175,7 +175,7 @@
     // The live count for the current 2x2, so the toggles are concrete without a paragraph
     // of explanation. Loopback only.
     async function _qualScopeCount() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = _qualTf;
       const out = $("qual-scope-count");
       if (!out) return;
       try {
@@ -183,8 +183,14 @@
         // it runs select_sources, so it already reflects both scope toggles.
         const r = await api("/api/scheduler/targets");
         const n = r && r.matched;
+        // ONE KEYABLE FRAME, not four fragments welded to two numbers. The old form was
+        // `t("This will scrape") + n + t("sources") + "(" + t("of") + total + ...`, which
+        // no locale can reorder and whose first and third pieces had no key at all -- a
+        // Chromium walk in fr is what showed it, because both i18n ratchets were green
+        // over it. `tf()` translates the FRAME and interpolates the DATA afterwards.
         out.textContent = (n === undefined || n === null)
-          ? "" : `${t("This will scrape")} ${n} ${t("sources")} (${t("of")} ${r.total_enabled} ${t("enabled")}).`;
+          ? "" : tf("This will scrape {n} sources (of {total} enabled).",
+                    {n: n, total: r.total_enabled});
       } catch (e) { out.textContent = ""; }
     }
 
@@ -206,6 +212,15 @@
       });
     }
 
+    // `OOI18N.tf` with an interpolating FALLBACK, mirroring `_govTf`. The identity
+    // fallback this replaces (`((x) => x)`) returns the template unchanged, so a surface
+    // rendered before i18n loads shows the reader a literal `{n}` -- a broken frame, which
+    // is the one thing the composite-string discipline exists to prevent.
+    function _qualTf(str, vars) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(str, vars)
+        : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
+    }
+
     // THE ADMISSION AUDIT (ruling Q1101). Judging now enables a source by itself, so this
     // is the surface that makes each such decision visible and reversible. Loopback only
     // -- it reads this machine's own record and writes two columns of it, so there is no
@@ -218,10 +233,24 @@
         ? t("never set")
         : (e.prior_enabled ? t("on") : t("off"));
       const when = e.occurred_at ? `<span dir="ltr">⁨${esc(e.occurred_at)}⁩</span>` : "";
+      // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY. The endpoint refuses an undo whose
+      // admission is no longer the decision in effect -- a later admission, or a later
+      // verdict that replaced this one -- so drawing the button there would be the surface
+      // lying twice: once by offering it, once in a refusal written for another entry
+      // point. The server decides (`reversible`) and names the reason as a TOKEN, which is
+      // keyed here rather than passed through, because a reason is prose for a reader.
+      const blocked = {
+        "already-undone": t("Already undone"),
+        "later-admission-in-effect": t("A later admission of this source is in effect"),
+        "later-verdict-in-effect": t("A later verdict replaced this one"),
+        "source-no-longer-exists": t("This source no longer exists"),
+      };
       const undone = e.undone
         ? `<span class="muted">${t("Undone")}${e.undone_at
             ? ` ⁨${esc(e.undone_at)}⁩` : ""}</span>`
-        : `<button class="secondary" data-undo="${esc(String(e.id))}">${t("Undo")}</button>`;
+        : (e.reversible === false
+          ? `<span class="muted">${esc(blocked[e.blocked_by] || t("Cannot be undone"))}</span>`
+          : `<button class="secondary" data-undo="${esc(String(e.id))}">${t("Undo")}</button>`);
       // The three statuses are a CLOSED app vocabulary, not data, and the app already
       // keys `qualified`/`disqualified` -- so they go through t() like every other
       // vocabulary word. A Chromium walk in ar is what caught this: the raw English token
@@ -242,7 +271,7 @@
 
     async function loadAdmissionAudit() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const tf = _qualTf;
       const host = $("qual-admission");
       if (!host) return;
       try {
@@ -301,7 +330,7 @@
     // diagnostics": the same core the command line runs, reachable without a shell.
     async function loadOverlayEditor() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const tf = _qualTf;
       const host = $("qual-overlay");
       if (!host) return;
       try {
@@ -364,7 +393,7 @@
 
     async function overlayAdopt(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const tf = _qualTf;
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/sources/overlay/adopt", {method: "POST"});
@@ -381,7 +410,7 @@
 
     async function overlayRevert(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const tf = _qualTf;
       if (!confirm(t("Put back every source the shipped verdicts stamped here, and stop adopting them at startup? Sources you have judged on this install are left exactly as they are, and the shipped file is not edited."))) return;
       if (btn) btn.disabled = true;
       try {
@@ -418,7 +447,7 @@
 
     async function overlayMerge(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x);
+      const tf = _qualTf;
       const out = $("qual-ov-merge-out");
       const picker = $("qual-ov-files");
       const body = new FormData();

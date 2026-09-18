@@ -60,7 +60,7 @@ from src.database.models import Article
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from src.database.models import Source
+    from src.database.models import Source, SourceAdmissionEvent
     from src.ingest import EthicalFetcher
 
 _LOG = logging.getLogger("catalog.qualification")
@@ -748,17 +748,27 @@ def admission_audit(
     ).all()
 
     names: dict[int, tuple[str, str]] = {}
+    # The ROW ITSELF, not only its name, because reversibility is a question about the
+    # source's CURRENT state and `admission_undo_refusal` is what answers it.
+    srcs: dict[int, Source] = {}
     if rows:
-        for sid, domain, name in (
-            session.query(Source.id, Source.domain, Source.name)
+        for src_row in (
+            session.query(Source)
             .filter(Source.id.in_([r.source_id for r in rows]))
             .all()
         ):
-            names[int(sid)] = (str(domain or ""), str(name or ""))
+            srcs[int(src_row.id)] = src_row
+            names[int(src_row.id)] = (str(src_row.domain or ""), str(src_row.name or ""))
 
     events = []
     for r in rows:
         domain, name = names.get(int(r.source_id), ("", ""))
+        # WHY THE PANEL ASKS AT ALL: an Undo button that renders unconditionally claims a
+        # capability, and this endpoint would have refused it for two whole classes of row
+        # (a later admission standing, a later verdict replacing this one). Reading the
+        # refusal HERE, through the same function the undo raises from, is what keeps the
+        # button and the handler from disagreeing about one row.
+        refusal = admission_undo_refusal(session, r, srcs.get(int(r.source_id)))
         events.append({
             "id": int(r.id),
             "source_id": int(r.source_id),
@@ -771,6 +781,11 @@ def admission_audit(
             "prior_status": r.prior_status,
             "undone_at": r.undone_at.isoformat() if r.undone_at else None,
             "undone": r.undone_at is not None,
+            # Two fields, never one: `reversible` is the decision the panel acts on and
+            # `blocked_by` is WHY, as a token the client keys ×12. `blocked_by` is None
+            # exactly when `reversible` is True, so neither has to stand in for the other.
+            "reversible": refusal is None,
+            "blocked_by": refusal,
         })
     # WHAT THIS AUDIT DOES NOT COVER, counted rather than described.
     #
@@ -834,28 +849,47 @@ class AdmissionUndoRefused(Exception):
     """A named refusal, so a caller can tell 'we declined' from 'we crashed'."""
 
 
-def undo_admission(session: Session, event_id: int, *, now: datetime) -> dict:
-    """Reverse ONE automatic admission, restoring BOTH halves of the prior state.
+# The closed vocabulary of reasons an admission cannot be reversed. Tokens, never prose:
+# the UI translates them (a reason string is documentation for a reader, so it is subject
+# to i18n), and a token is what a closed vocabulary must be so the renderer can key it.
+UNDO_ALREADY_UNDONE = "already-undone"
+UNDO_LATER_ADMISSION = "later-admission-in-effect"
+UNDO_LATER_VERDICT = "later-verdict-in-effect"
+UNDO_SOURCE_GONE = "source-no-longer-exists"
 
-    Restoring only ``enabled`` would leave a source stamped ``qualified`` and disabled --
-    a state the next pass has no reason to re-examine and no surface reports as reversed,
-    so the undo would look like it worked and quietly strand the row. The stamp columns
-    (``qualified_at`` / ``qualification_criteria_version``) follow the status for the same
-    reason: a cleared status beside a live ``qualified_at`` is two answers to one question.
+# The English sentence each token raises to a DIRECT API caller. The rendered panel does
+# not read these -- it keys the token ×12 -- so they are the backstop for someone driving
+# the endpoint, and they say what is standing rather than only that the undo was refused.
+UNDO_REFUSAL_MESSAGES = {
+    UNDO_ALREADY_UNDONE: "this admission was already undone",
+    UNDO_SOURCE_GONE: "the source this admission refers to no longer exists",
+    UNDO_LATER_ADMISSION: (
+        "a later admission of this source is still in effect; undo that one first"
+    ),
+    UNDO_LATER_VERDICT: (
+        "a later verdict replaced this one, so this admission is no longer in effect "
+        "and collection already cannot reach the source"
+    ),
+}
 
-    Append-only: the event is STAMPED, never deleted. Refuses an already-undone event by
-    name rather than writing a second reversal over the first.
+
+def admission_undo_refusal(
+    session: Session, ev: SourceAdmissionEvent, source: Source | None
+) -> str | None:
+    """THE ONE AUTHORITY on whether an admission can still be reversed.
+
+    Returns a token from the closed vocabulary above, or ``None`` when the undo may run.
+    Both the undo itself and the AUDIT VIEW call this, because a panel that draws an Undo
+    button the endpoint will always refuse is the surface claiming a capability it does
+    not have -- and two separate readings of "is this reversible" is how a button and a
+    handler come to disagree about one row.
     """
-    from src.database.models import Source, SourceAdmissionEvent
+    from src.database.models import SourceAdmissionEvent  # module convention: lazy import
 
-    ev = session.get(SourceAdmissionEvent, int(event_id))
-    if ev is None:
-        raise AdmissionUndoRefused("no such admission event")
     if ev.undone_at is not None:
-        raise AdmissionUndoRefused("this admission was already undone")
-    source = session.get(Source, int(ev.source_id))
+        return UNDO_ALREADY_UNDONE
     if source is None:
-        raise AdmissionUndoRefused("the source this admission refers to no longer exists")
+        return UNDO_SOURCE_GONE
     # ORDER MATTERS, and an adversarial pass live-reproduced why. A source can be admitted
     # more than once (admit, the operator disables it, a later pass admits it again), and
     # each event stores the state IT replaced. Undoing the OLDER one writes a prior state
@@ -879,9 +913,54 @@ def undo_admission(session: Session, event_id: int, *, now: datetime) -> dict:
         .first()
     )
     if newer is not None and (newer.occurred_at, newer.id) > (ev.occurred_at, ev.id):
-        raise AdmissionUndoRefused(
-            "a later admission of this source is still in effect; undo that one first"
-        )
+        return UNDO_LATER_ADMISSION
+    # A LATER VERDICT IS THE SAME CLASS OF EVENT AS A LATER ADMISSION, and it was not
+    # guarded. Found by the skeptic pass Q1101's own acceptance asks for, and REPRODUCED
+    # live before it was believed: admit -> a later pass DISQUALIFIES -> the operator
+    # undoes the original admission. The disqualification writes no admission row, so the
+    # guard above sees nothing; the undo then restored `prior_status = "unqualified"` over
+    # a `disqualified` the engine had reached on its own evidence.
+    #
+    # MEASURED, on the real selectors: a disqualified source waits out its backoff ladder
+    # (`select_due_disqualified`, 1 -> 2 -> 4 -> 6 months; not due at +0d or +20d, due at
+    # +40d), and after the undo it is in `select_unqualified` THE SAME DAY with no ladder
+    # at all. So the undo did not merely rewrite a column: it returned a source the engine
+    # had judged and refused to the un-laddered trial queue -- the recorded laundering
+    # direction ("known-bad sources back into the trial queue with their backoff ladder
+    # reset"), reached through a path that lesson never touched.
+    #
+    # By this point the admission is not in effect ANYWAY -- the source is not collecting,
+    # so there is nothing left for an undo to take back. Refusing therefore costs the
+    # operator nothing real and cannot erase a verdict; the token names the later one so
+    # the panel can say which decision is standing.
+    if source.status != STATUS_QUALIFIED:
+        return UNDO_LATER_VERDICT
+    return None
+
+
+def undo_admission(session: Session, event_id: int, *, now: datetime) -> dict:
+    """Reverse ONE automatic admission, restoring BOTH halves of the prior state.
+
+    Restoring only ``enabled`` would leave a source stamped ``qualified`` and disabled --
+    a state the next pass has no reason to re-examine and no surface reports as reversed,
+    so the undo would look like it worked and quietly strand the row. The stamp columns
+    (``qualified_at`` / ``qualification_criteria_version``) follow the status for the same
+    reason: a cleared status beside a live ``qualified_at`` is two answers to one question.
+
+    Append-only: the event is STAMPED, never deleted. Every refusal is by NAME, and every
+    one of them comes from :func:`admission_undo_refusal` -- the same predicate the audit
+    view reads to decide whether to offer the button at all.
+    """
+    from src.database.models import Source, SourceAdmissionEvent
+
+    ev = session.get(SourceAdmissionEvent, int(event_id))
+    if ev is None:
+        raise AdmissionUndoRefused("no such admission event")
+    source = session.get(Source, int(ev.source_id))
+    refusal = admission_undo_refusal(session, ev, source)
+    if refusal is not None:
+        raise AdmissionUndoRefused(UNDO_REFUSAL_MESSAGES[refusal])
+    assert source is not None  # nosec B101 - admission_undo_refusal returns a token first
 
     source.enabled = ev.prior_enabled
     # NARROWED, not cast. `Source.status` is NOT NULL with `server_default="unqualified"`,
