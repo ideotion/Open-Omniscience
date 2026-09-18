@@ -1119,6 +1119,7 @@
         const sizeById = {};
         for (const c of clusters) for (const id of (c.article_ids || [])) sizeById[id] = c.size;
         let flagged = 0;
+        const badges = [];
         host.querySelectorAll("a[href]").forEach((a) => {
           const m = (a.getAttribute("href") || "").match(/\/api\/articles\/(\d+)\/view/);
           if (!m || a.dataset.dupBadged) return;
@@ -1128,16 +1129,25 @@
           const b = document.createElement("span");
           b.className = "pill"; b.style.marginInlineStart = "6px"; b.style.cursor = "default";
           b.textContent = "≈" + sz;
-          b.title = t("One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.").replace("{n}", sz);
+          b.title = t(_AN_DUP_PILL).replace("{n}", sz);
           a.after(b);
+          badges.push({ el: b, size: sz });
           flagged++;
         });
+        let note = null;
         if (flagged) {
-          const note = document.createElement("div");
+          note = document.createElement("div");
           note.className = "card-caveat"; note.style.marginTop = "6px";
-          note.textContent = t("{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).").replace("{n}", flagged);
+          note.textContent = t(_AN_DUP_NOTE).replace("{n}", flagged);
           host.appendChild(note);
         }
+        // Retained so a language switch can repaint these IN PLACE. Both strings are
+        // composed (a keyed frame plus a measured count), which is a text node the i18n
+        // DOM walker can never match against its English key -- so without this the
+        // CAVEAT stays in the boot language even though every locale already carries a
+        // translation for it. Measured in the Chromium walk (S04-14 session 2): in `ar`
+        // it kept reading "21 of these are near-identical copies …" in English.
+        _anDupBadges = { note, flagged, badges };
       } catch (e) { /* annotation is best-effort, never breaks the list */ }
     }
     // The Articles subtab is PAGINATED (maintainer 2026-06-20): a 1000-result search is
@@ -1395,6 +1405,28 @@
     let _anGroupByLang = false;
     // The last payload the expansion rail was drawn from — see `_anRepaintXLang`.
     let _anLastCross = null;
+    // The two near-duplicate strings, named ONCE so the render and the repaint below
+    // cannot drift into being two different keys (which is how a repaint silently stops
+    // matching what it is meant to repaint).
+    const _AN_DUP_PILL = "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.";
+    const _AN_DUP_NOTE = "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).";
+    // The last near-duplicate annotation drawn — see `_anRepaintDupNote`.
+    let _anDupBadges = null;
+    // Registered in app-boot's ONE `oo:langchange` listener, for the same reason as
+    // `_anRepaintXLang` below. Repaints only text, from values it already holds: no
+    // fetch, no re-annotation, and a node that has since been replaced is skipped
+    // (`isConnected`) rather than resurrected.
+    function _anRepaintDupNote() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_anDupBadges) return;
+      (_anDupBadges.badges || []).forEach(({ el, size }) => {
+        if (el && el.isConnected) el.title = t(_AN_DUP_PILL).replace("{n}", size);
+      });
+      const note = _anDupBadges.note;
+      if (note && note.isConnected && _anDupBadges.flagged) {
+        note.textContent = t(_AN_DUP_NOTE).replace("{n}", _anDupBadges.flagged);
+      }
+    }
     // Registered in app-boot's ONE `oo:langchange` listener (never a second listener:
     // a second enumerator is a second thing to forget). Redraws the rail IN PLACE from
     // the retained payload — no fetch, and nothing else on the page moves.
