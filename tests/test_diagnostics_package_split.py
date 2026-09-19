@@ -49,6 +49,19 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     # 2026-09-18, gate row S / B5: the qualification-merge action, the run that used to
     # mean `python scripts/merge_source_qualification.py` on the maintainer's machine.
     "source_qualification_merge",
+    # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,
+    # six routes, imported last -- the button the maintainer asked for.
+    "release_run_start",
+    "release_run_status",
+    "release_run_cancel",
+    "release_run_collect_now",
+    # 2026-09-18, maintainer-asked the same day: the resume after a restart, and the
+    # chronology (sessions, gaps, stretches) the returning operator reads -- registered
+    # before the two read-only routes so the reads stay the package's last words.
+    "release_run_resume",
+    "chronology_report",
+    "release_run_last",
+    "release_run_download",
 )
 
 

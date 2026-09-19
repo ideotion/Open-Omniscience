@@ -22,6 +22,103 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE 0.4 RELEASE RUN BUTTON (2026-09-18): what it composes, what it deliberately does not
+  automate, and one invariant #14 gap it found in a shipped control.** The maintainer asked for
+  "a one time single (fully automated) button in the advanced settings in the diagnostics tab"
+  to run in dedicated parallel sessions for more than 72 h, plus a second one for the
+  ~1M-article instance. It exists: Settings → Advanced → Diagnostics → *0.4 release run*
+  (`src/monitoring/release_run.py`, `src/api/diagnostics/release_run.py`, the 0.4 gate §3
+  entry of the same date). Nothing below is a ruling; each is a record so the next reader does
+  not mistake a choice for an oversight.
+  **(1) DELIBERATE OMISSIONS, each with its reason.** *Q410's ring ritual* (top 2,000 keywords
+  per language, ~24,000 lookups at the polite rate) is NOT a phase: `scripts/generate_wikidata_rings.py`'s
+  `--top` reads the ENGLISH head of a keyword log (`main()` line 419), so the ruled per-language
+  shape has no runner in the tree yet, and the output is a repository artifact the maintainer
+  commits — automating half of it would produce a file that looks like the ritual's and is not.
+  *Q1118's shortlist (3,031) run* is not a phase: it is a candidate-kit pipeline of scripts with
+  no in-app job to start, and the politeness budget it spends is the operator's. *`BACKUP_SUMMARY.md`*
+  is not written by the run: `export_facts` needs the volume job manager's own status for the
+  folder it describes, and the run's backup goes through the P0 kit (which is the ruled "P0 trio
+  re-run on the new format" of row K) rather than the dialog's job; the folder IS verified — by
+  `verify_stream_backup` — and the report says which verifier. Row J's dialog export on the
+  reference VM stays the operator's. *K = 3 checkpointing* is not exercised: one backup is
+  restored, and a three-backup group needs three sets the operator holds. *The child's
+  `reindex_imported=False`*: the merge and the stamps are the claim; stage 4 at 1M scale is hours
+  and says nothing about either. *The incremental-refresh pass* of the P0 kit is skipped
+  (`measure_incremental=False`) so a 1M backup is written once; the P0 box measures it.
+  **(2) THE 0.3 ROW-5 PASS IS AN OPT-IN THAT DEFAULTS OFF.** Ruling A1 (register, 2026-09-15)
+  deferred the Tier-A quarantine run with no date; a button that ran it unasked would be a
+  session deciding an operator step. The checkbox says so on its label, defaults unchecked, and
+  `test_row5_runs_ONLY_when_ticked` is mutation-checked in both directions. Ticking it runs
+  §7.1's four commands in order and reads the mode back (`dry_run: false`,
+  `include_prose_gate: false`) before trusting the tally — the caution that section states.
+  **(3) FOUND AND FIXED IN THE SAME PR — the unattended "Start unattended run" button went ONLINE
+  with no consent popup.** `POST /api/system/unattended/start` clears the kill switch and starts
+  the collector server-side (correctly, through the ruled path), and the button called it
+  directly, so the ONE offline→online consent popup of invariant #14 never opened. Both that
+  button and the new one now pass `ensureOnline` first; pinned by
+  `test_the_handlers_exist_gate_on_consent_and_drop_the_secret_from_the_dom` on the CONDITION
+  line, after a first pin on the call text survived a mutant that disabled the branch and kept
+  the call (the recorded needle-in-the-dead-branch class). Lesson recorded in `LESSONS.md`.
+  **(4) A HARNESS FACT, not an app fact:** an instance booted with `OO_NO_SCHEDULER=1` is ONLINE
+  from boot, because the boot-time airplane engagement lives inside that same block. The
+  click-through record says so and compares before/after rather than asserting offline.
+  **(5) WHAT THE REPORT IS AND IS NOT.** A status per board row from a closed vocabulary
+  (`measured` · `not-measurable-here` · `refused` · `skipped` · `error` · `cancelled`) with the
+  evidence beside it and a tally, never a score; `measured` means the clause has a number a
+  reader can re-open, not that the row is closed — closing is the maintainer's reading, exactly
+  as the soak window's `reaches_bar` is a fact about length and not a verdict.
+  **(6) THE CHRONOLOGY AND THE RESUME (same day, maintainer-asked after the button shipped —
+  ruling R20).** The maintainer's question — *"what if I don't know when the machine stopped? how
+  will I know when it will have been 72 hours?"* — had an honest answer of "within an hour, from the
+  run's last heartbeat, and nobody shows it": `forensics.py` keeps ONE sentinel (this session and the
+  previous one's verdict), the soak clock is this process's uptime, and nothing counted restarts or
+  stretches across sessions. Built: `src/monitoring/session_history.py`, an append-only
+  `data/session_history.jsonl` (boot / end / suspend / event lines) with a once-a-minute
+  `session_liveness.json` so a session that dies has a last-seen time to the minute, and a suspend
+  inferred from the wall clock running ahead of the monotonic clock between two ticks (the record
+  names the three things it cannot tell apart: a sleep, a hibernation, a clock change); hooked from
+  `forensics.record_session_start` / `record_clean_shutdown` and the network seam; compacted at boot
+  to the newest 4,000 lines. `src/monitoring/chronology.py` reads it beside the release run's state:
+  sessions, gaps ("no record between an end and the next boot", bounds and no cause), stretches (a
+  session split at its suspends), the summary (wall clock since an anchor, running time, restarts,
+  since the last restart, the longest CONTINUOUS stretch, `bar_reached_at` on ONE stretch, the
+  discontinuous total labelled as not the bar), `GET /api/diagnostics/chronology?anchor=run|install`,
+  `chronology.json` in the bundle, a cached `session` block in `/api/system/vitals`. The box in
+  Settings → Advanced → Diagnostics reads on a press (the section still fetches nothing on open),
+  ticks "since the last restart" client-side, and draws `src/static/ootimeline.js`'s geometry as an
+  SVG with the ooChart interaction grammar (wheel/drag/double-click/hover). **The release run is
+  RESUMABLE:** `POST /release-run/resume` continues an INTERRUPTED run under the same run id — every
+  phase with a terminal status kept, the arming/soak/collect/bundle redone, an `error`/`cancelled`
+  phase retried, the cut soak closed as a stretch `ended_by: restart` dated from its last heartbeat,
+  the new stretch counted from zero because row B's bar is continuous; the passphrase is asked for
+  only when the backup or the restore is still owed (`unlock_needed`, named so because the endpoint
+  scrubber redacts any KEY containing "passphrase" — a redacted boolean cannot drive a button, which
+  a first pass found the hard way). **DELIBERATELY NOT DONE, each with its reason:** sessions before
+  this build's first boot are not back-filled (unknowable; the summary says the ledger's start);
+  the suspend inference has no OS hook (the clocks are the only source every platform offers); a run
+  interrupted DURING the P0 backup redoes the whole backup phase (the P0 kit has no partial-backup
+  resume, and a half-written folder must never be trusted); the timeline is not an ooChart series
+  (a chronology is intervals and instants, not a measured curve — nothing to interpolate or thin,
+  which is the property invariant #16 protects; the file's header says so); `uptime_share` is capped
+  at 1.0 because stretches are rounded to the second and the wall clock is not. Mutation-checked:
+  nine mutants over the resume guards, the suspend threshold, the double-close guard and the
+  bar-on-a-sum, nine killed. Chromium-walked in en/ar (second pass in the same audit record).
+
+
+- **THE PRE-FLIGHT QUESTION ROUND (2026-09-18, `docs/design/PREFLIGHT_QUESTIONS_2026-09-18_RELEASE_RUN.md`,
+  PF01–PF14) — UNANSWERED at recording; nothing here is resolved.** Asked in the same PR as the 0.4
+  release-run button, because the maintainer said *"If you have any questions, ask them now before I launch
+  these sessions."* Five are operational (PF01 the row-5 opt-in and on which instance, PF02 the two instances
+  and their drives, PF03 the soak length, PF04 how the artifacts reach the session, PF05 a pre-migration
+  backup for row K); nine are rulings the last sessions asked for and no default can safely take (PF06 row R
+  and Q803's default, PF07 where the ride-along opt-out fix lands, PF08 the collection-speed unit and invariant
+  #4's wording, PF09 the reader page's i18n binding, PF10 the in-map controls at phone width, PF11 ⛔ rule (1)'s
+  achievability now that `LESSONS.md` is 985,788 bytes, PF12 the Japanese segmenter, PF13 the twelve
+  click-throughs, PF14 the `guarded_session` SSRF gap before or beside the soak). The sheet's §0 says how a
+  blank is read (⛔ → PENDING; otherwise the stated default as a labelled ASSUMPTION); the receiving session
+  records one `RULINGS_INDEX.md` row per PFnn. The RC blanks that the same pre-flight depends on (`RC01`,
+  `RC10` ⛔, `RC13`'s eclipse suffix) are pointed at, not re-asked.
 - **`tests/test_import_lifecycle_stages.py` IS ORDER- OR ENVIRONMENT-DEPENDENT ON CI, PROVEN BY
   SAME-COMMIT DIVERGENCE — found while driving `S04-05` (PR #1147) to green, NOT fixed there
   (S04-02's code, gate row I; fixing it inside a display PR would widen it into a slice it does

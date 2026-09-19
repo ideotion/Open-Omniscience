@@ -132,7 +132,7 @@ def system_vitals() -> dict:
     rates by diffing successive snapshots. ``scraping.current_fetch`` is the URL
     being fetched *right now* (or null when idle).
     """
-    return {
+    out = {
         "at": time.time(),
         "uptime_s": round(time.time() - _BOOT_TS, 1),
         "process": _process_vitals(),
@@ -140,6 +140,16 @@ def system_vitals() -> dict:
         # System-wide (not this process) -- labelled so the UI never misattributes it.
         "network_system_wide": _system_net(),
     }
+    # The chronology's three numbers (2026-09-18): restarts since the ledger began,
+    # time since the last restart, the previous session's end. A cached file read,
+    # never a fabricated count -- absent when the ledger has nothing.
+    try:
+        from src.monitoring.chronology import for_vitals
+
+        out["session"] = for_vitals()
+    except Exception:  # noqa: BLE001 - the vitals never fail on a ledger read
+        _LOG.debug("vitals: chronology summary unavailable", exc_info=True)
+    return out
 
 
 @router.get("/network")
@@ -256,6 +266,14 @@ def set_network_mode(payload: dict) -> dict:
             _LOG.warning(
                 "network toggle: wiki lane %s failed", "start" if online else "stop", exc_info=True
             )
+    # The chronology (2026-09-18): every online/offline crossing is a timeline event,
+    # recorded by the seam that does it. Best-effort; the ledger never fails a toggle.
+    try:
+        from src.monitoring.session_history import record_event
+
+        record_event("network", online=not kill_switch_active())
+    except Exception:  # noqa: BLE001
+        _LOG.debug("session ledger: network event failed", exc_info=True)
     return {"online": not kill_switch_active()}
 
 

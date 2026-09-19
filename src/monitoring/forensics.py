@@ -304,6 +304,16 @@ def record_session_start() -> dict[str, Any] | None:
             "last_unlock": (prev or {}).get("last_unlock"),
         }
     )
+    # The session LEDGER (2026-09-18, maintainer-asked): the chronology across MANY
+    # sessions that this one-sentinel file cannot hold -- restarts, stretches, the
+    # last minute a dead session was seen. Best-effort, after the sentinel is written,
+    # and it reads the sentinel's verdict rather than re-deriving one.
+    try:
+        from src.monitoring.session_history import record_boot
+
+        record_boot(prev)
+    except Exception:  # noqa: BLE001 - the ledger never breaks a boot
+        _LOG.debug("session ledger: boot record failed", exc_info=True)
     return prev
 
 
@@ -387,6 +397,14 @@ def record_clean_shutdown() -> None:
     if _STOP_SIGNAL and not state.get("stop_signal"):
         state["stop_signal"] = _STOP_SIGNAL
     _write_state(state)
+    # The ledger's own end line for this session (2026-09-18); the sentinel above is
+    # still the verdict the next boot reads.
+    try:
+        from src.monitoring.session_history import record_end
+
+        record_end(clean=True, reason=state.get("shutdown_reason") or _STOP_SIGNAL)
+    except Exception:  # noqa: BLE001 - never in the way of a shutdown
+        _LOG.debug("session ledger: end record failed", exc_info=True)
 
 
 def _last_collect_perf_sample() -> dict[str, Any] | None:

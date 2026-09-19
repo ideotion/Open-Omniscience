@@ -728,6 +728,11 @@
       const el = $("unatt-status");
       const set = (m) => { if (el) el.textContent = m; };
       const note = (($("unatt-note") && $("unatt-note").value) || "").trim();
+      // Invariant #14: the arming goes ONLINE (the server clears the kill switch), so the
+      // press passes the ONE consent popup like every other offline->online transition.
+      // Found while composing this button into the 0.4 release run (2026-09-18).
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Start the unattended run (goes online: continuous collection and the qualification drain)"))) return;
       if (btn) btn.disabled = true;
       set(t("Arming…"));
       try {
@@ -879,6 +884,411 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/p0-validation/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
       const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
+    // ---- The 0.4 release run (2026-09-18) --------------------------------------------
+    // ONE press that sequences the board's operator rows (src/monitoring/release_run.py):
+    // the P0 trio into a dated backup folder, the committed fresh-install restore, the
+    // >= 72 h soak, the end-of-window readings, one report with a status per row.
+    // Mirrors runP0Validation: start (the passphrase leaves the DOM the moment it is
+    // handed over), poll with the same honesty latch, render the rows + download links.
+    // The run goes ONLINE for the soak, so the press passes the ONE consent popup
+    // (invariant #14) BEFORE anything starts -- a job that flips the kill switch on the
+    // server is still an offline->online transition the operator must consent to.
+    function _rrParams(profile) {
+      const dest = (($("rr-dest") && $("rr-dest").value) || "").trim();
+      const pass = ($("rr-pass") && $("rr-pass").value) || "";
+      const legacy = (($("rr-legacy") && $("rr-legacy").value) || "").trim();
+      const hoursRaw = parseFloat(($("rr-hours") && $("rr-hours").value) || "72");
+      const hours = (isFinite(hoursRaw) && hoursRaw > 0) ? hoursRaw : 72;
+      return {
+        dest_dir: dest, passphrase: pass, profile: profile,
+        soak_hours: hours,
+        include_newsletters: !!($("rr-newsletters") && $("rr-newsletters").checked),
+        online_probes: !!($("rr-probes") && $("rr-probes").checked),
+        run_row5_quarantine: !!($("rr-row5") && $("rr-row5").checked),
+        legacy_backup_path: legacy,
+      };
+    }
+
+    function _rrRenderReport(out, rep) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const rows = (rep && rep.board_rows) || [];
+      let html = "";
+      rows.forEach((r) => {
+        const v = String(r.status || "?");
+        const color = v === "measured" ? "var(--ok)" : (v === "error" || v === "refused" ? "var(--err)" : "var(--caveat)");
+        html += '<div><span style="color:' + color + ';font-weight:600">[' + esc(v.toUpperCase())
+          + ']</span> ' + esc(r.row) + ' — ' + esc(r.clause || "")
+          + (r.note ? '<div class="hint" style="margin-left:14px">' + esc(r.note) + '</div>' : '') + '</div>';
+      });
+      const sum = (rep && rep.summary) || {};
+      const tally = sum.rows_by_status || {};
+      const tallyTxt = Object.keys(tally).map((k) => esc(k) + " " + esc(tally[k])).join(" · ");
+      const warns = ((rep && rep.warnings) || []).map((w) => '<div class="hint">' + esc(w) + '</div>').join("");
+      const soak = (rep && rep.soak) || {};
+      const soakTxt = soak.hours_requested != null
+        ? ('<div>' + esc(soak.elapsed_hours) + ' / ' + esc(soak.hours_requested) + ' h · ' + esc(soak.ended_by || "") + '</div>') : "";
+      out.innerHTML = html + soakTxt
+        + '<div style="margin-top:4px">' + tallyTxt + (rep && rep.interim ? ' · INTERIM' : '') + '</div>'
+        + warns
+        + '<div class="hint">' + esc(sum.note || "") + '</div>'
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/release-run/download?format=json" target="_blank">'
+        + t("Download report (.json)") + '</a> · <a href="/api/diagnostics/release-run/download?format=txt" target="_blank">'
+        + t("readable (.txt)") + '</a></div>';
+    }
+
+    // The poll, shared by the start button and "Check now". Returns when the run reaches
+    // a terminal state, the poll ceiling passes, or the status says the run is not live.
+    async function _rrPoll(set, out, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const once = !!(opts && opts.once);
+      let miss = 0;
+      let settled = false;
+      // A soak is days long; the panel poll is not the record (the state file is), so
+      // the ceiling is short and the line says where to look afterwards.
+      const deadline = Date.now() + (once ? 0 : 10 * 60 * 1000);
+      do {
+        let s;
+        try { s = await api("/api/diagnostics/release-run/status"); miss = 0; }
+        catch (e) {
+          miss++;
+          set(t("Connection hiccup — retrying…"));
+          await sleep(Math.min(2000 * miss, 10000));
+          if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+          continue;
+        }
+        const state = s && s.state;
+        const p = (s && s.persisted) || {};
+        if (s && s.interrupted) {
+          settled = true;
+          _rrResumePlan = s.resumable ? (s.resume || {}) : null;
+          const rb = $("rr-resume-btn");
+          if (rb) rb.style.display = s.resumable ? "" : "none";
+          set(t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
+            + (s.resumable
+                ? (_rrResumePlan.unlock_needed
+                    ? t("press Resume run with the backup passphrase — the backup or the restore is still owed; the measured phases are kept.")
+                    : t("press Resume run — the measured phases are kept and the soak starts a new stretch (the bar is continuous)."))
+                : t("the soak window ended there; press the button again for a new window.")));
+          break;
+        }
+        if (state === "done" && s.ready) { settled = true; set(t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
+        if (state === "error") { settled = true; set(t("Failed:") + " " + (s.error || t("unknown error"))); break; }
+        if (state === "cancelled") {
+          settled = true; set(t("Cancelled."));
+          if (s.result && s.result.report) _rrRenderReport(out, s.result.report);
+          break;
+        }
+        if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+        if (state !== "running") {
+          settled = true;
+          set(p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
+          break;
+        }
+        const member = s.detail ? " · " + s.detail : "";
+        set(t("Running in the background…") + member);
+        if (once) { settled = true; break; }
+        await sleep(5000);
+      } while (Date.now() < deadline);
+      if (!settled) set(t("Still running — check the task manager."));
+    }
+
+    async function releaseRunStart(btn, profile) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("rr-status"); const out = $("rr-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const params = _rrParams(profile || "release-scale");
+      if (!params.dest_dir || !params.passphrase) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      // The consent, at the press: the run goes online for the soak.
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
+      if (btn) btn.disabled = true;
+      if (out) out.innerHTML = "";
+      set(t("Starting…"));
+      try {
+        try {
+          await api("/api/diagnostics/release-run", { method: "POST", body: JSON.stringify(params) });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          return;
+        }
+        // Hand-off done: the passphrase leaves the DOM now.
+        if ($("rr-pass")) $("rr-pass").value = "";
+        await _rrPoll(set, out, {});
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function releaseRunStatus(btn) {
+      const el = $("rr-status"); const out = $("rr-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      if (btn) btn.disabled = true;
+      try {
+        await _rrPoll(set, out, { once: true });
+        // Whatever the live state, the newest saved report (final or interim) is worth
+        // showing on a check -- it is the thing a returning operator came for.
+        try {
+          const last = await api("/api/diagnostics/release-run/last");
+          if (last && last.available) _rrRenderReport(out, last);
+        } catch (_e) { /* the status line already says what is known */ }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function releaseRunCollect(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("rr-status");
+      const set = (m) => { if (el) el.textContent = m; };
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/diagnostics/release-run/collect", { method: "POST" });
+        set(r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
+      } catch (e) {
+        set(t("Failed:") + " " + ((e && e.message) || ""));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function releaseRunCancel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/diagnostics/release-run/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+      const el = $("rr-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
+    // The resume (2026-09-18): the run the app restarted out of continues under the
+    // same run id -- every measured phase kept, the backup and the restore never
+    // redone, the soak a NEW stretch (the bar is continuous). The passphrase is asked
+    // for only when the status said the backup or the restore is still owed.
+    let _rrResumePlan = null;
+    async function releaseRunResume(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("rr-status"); const out = $("rr-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const plan = _rrResumePlan || {};
+      const pass = ($("rr-pass") && $("rr-pass").value) || "";
+      if (plan.unlock_needed && !pass) { set(t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
+      // The consent, at the press: a resume goes online again for the soak.
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Resume the 0.4 release run (goes online again for the collection soak, the Wikipedia lane and the probes)"))) return;
+      if (btn) btn.disabled = true;
+      set(t("Resuming…"));
+      try {
+        try {
+          await api("/api/diagnostics/release-run/resume", { method: "POST", body: JSON.stringify({ passphrase: pass }) });
+        } catch (e) {
+          set(t("Could not resume:") + " " + ((e && e.message) || ""));
+          return;
+        }
+        if ($("rr-pass")) $("rr-pass").value = "";
+        if (btn) btn.style.display = "none";
+        await _rrPoll(set, out, {});
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ---- The chronology (2026-09-18, maintainer-asked) ---------------------- //
+    // Read on a press (this section fetches nothing on open); the "since the last
+    // restart" figure then ticks client-side from the reading, no poll. The
+    // geometry is ooTimeline (src/static/ootimeline.js, pure); this is the wiring:
+    // fetch, the summary strip, the SVG, wheel/drag/double-click on the time axis.
+    let _chronoData = null, _chronoSpan = null, _chronoTimer = null, _chronoReadAt = 0;
+    let _chronoDrag = null, _chronoWindowBound = false;
+    const _chronoDur = (s) => (window.ooTimeline ? ooTimeline.fmtDur(s) : String(s));
+    const _chronoWhen = (iso) => (iso ? ((typeof fmtDateTime === "function") ? fmtDateTime(iso) : String(iso)) : "—");
+
+    async function loadChronology(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const st = $("chrono-status");
+      const set = (m) => { if (st) st.textContent = m; };
+      const anchor = ($("chrono-anchor") && $("chrono-anchor").value) || "run";
+      if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/chronology?anchor=" + encodeURIComponent(anchor));
+        _chronoData = d; _chronoSpan = null; _chronoReadAt = Date.now();
+        _chronoRender(d);
+        set(t("Read from the session ledger") + " · " + _chronoWhen(d.generated_at));
+      } catch (e) {
+        set(t("Failed:") + " " + ((e && e.message) || ""));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function _chronoSummaryHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const s = d.summary || {};
+      // Laid out inline: the `.vr` row styling belongs to the task-manager window and
+      // does not reach this panel, and a label glued to its value is unreadable.
+      const row = (k, v, title) => '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><span class="muted" style="min-width:230px">'
+        + esc(k) + '</span><b' + (title ? ' title="' + esc(title) + '"' : '') + '>' + v + '</b></div>';
+      const rows = [];
+      if (!s.anchor_at) return '<div class="muted">' + esc(t("No session has been recorded yet — the ledger begins with this build's first boot.")) + '</div>';
+      rows.push(row(t("Since"), esc(_chronoWhen(s.anchor_at))));
+      if (s.anchor_basis) rows.push('<div class="hint">' + esc(s.anchor_basis) + '</div>');
+      rows.push(row(t("Wall clock"), esc(_chronoDur(s.wall_clock_s))));
+      rows.push(row(t("Running (all stretches added up)"), esc(_chronoDur(s.uptime_total_s))
+        + (s.uptime_share != null ? ' <span class="muted">· ' + Math.round(s.uptime_share * 100) + '%</span>' : ''),
+        t("The sum of every stretch — reported beside the bar, and not the bar.")));
+      rows.push(row(t("Not running"), s.downtime_s == null
+        ? esc(t("unknown — a session's end has no time")) : esc(_chronoDur(s.downtime_s))));
+      rows.push(row(t("Restarts"), esc(String(s.restarts != null ? s.restarts : "—"))
+        + (s.unclean_ends ? ' <span class="muted">· ' + esc(tf("{n} unclean end(s)", { n: s.unclean_ends })) + '</span>' : '')
+        + (s.suspends ? ' <span class="muted">· ' + esc(tf("{n} suspend(s)", { n: s.suspends })) + '</span>' : '')));
+      rows.push(row(t("Since the last restart"), '<span id="chrono-since-restart">' + esc(_chronoDur(s.since_last_restart_s)) + '</span>'));
+      if (s.longest_stretch) {
+        rows.push(row(t("Longest continuous stretch"), esc(_chronoDur(s.longest_stretch.seconds))
+          + ' <span class="muted">· ' + esc(_chronoWhen(s.longest_stretch.started_at)) + ' → '
+          + (s.longest_stretch.current ? esc(t("now")) : esc(_chronoWhen(s.longest_stretch.ended_at))) + '</span>'));
+      }
+      const bar = s.bar_reached
+        ? tf("reached at {when}", { when: _chronoWhen(s.bar_reached_at) })
+        : (s.hours_remaining_on_current_stretch != null
+            ? tf("not yet — {h} h more on the current stretch (a restart or a suspend starts it over)", { h: s.hours_remaining_on_current_stretch })
+            : t("not yet — no stretch is running"));
+      rows.push(row(tf("{h} h continuous bar", { h: s.bar_hours }), esc(bar), s.method || ""));
+      const cav = (s.caveats || []).map((c) => '<div class="hint">' + esc(c) + '</div>').join("");
+      return rows.join("") + cav;
+    }
+
+    function _chronoRender(d) {
+      const sum = $("chrono-summary");
+      if (sum) sum.innerHTML = _chronoSummaryHtml(d);
+      _chronoDraw(d);
+      // The live counter: the fetched figure plus the seconds since it was read.
+      if (_chronoTimer) clearInterval(_chronoTimer);
+      const base = (d.summary || {}).since_last_restart_s;
+      if (base != null) {
+        _chronoTimer = setInterval(() => {
+          const el = $("chrono-since-restart");
+          if (!el) { clearInterval(_chronoTimer); _chronoTimer = null; return; }
+          el.textContent = _chronoDur(base + (Date.now() - _chronoReadAt) / 1000);
+        }, 1000);
+      }
+    }
+
+    function _chronoDraw(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const host = $("chrono-timeline");
+      if (!host || !window.ooTimeline) return;
+      const width = Math.max(320, host.clientWidth || (host.parentElement ? host.parentElement.clientWidth : 0) || 800);
+      const now = Date.now();
+      const L = ooTimeline.layout(d, { width: width, now: now, padL: 76, padR: 10,
+                                       t0: _chronoSpan ? _chronoSpan.t0 : undefined, t1: _chronoSpan ? _chronoSpan.t1 : undefined });
+      if (!_chronoSpan) _chronoSpan = { t0: L.t0, t1: L.t1 };
+      const H = L.height;
+      const parts = [];
+      parts.push('<svg id="chrono-svg" width="' + width + '" height="' + H + '" viewBox="0 0 ' + width + ' ' + H + '" role="img" '
+        + 'aria-label="' + esc(t("Chronology timeline: sessions, the release run, events")) + '" '
+        + 'style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:crosshair;font-size:10px;user-select:none">');
+      parts.push('<defs><pattern id="chrono-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+        + '<line x1="0" y1="0" x2="0" y2="6" stroke="var(--caveat)" stroke-width="2"/></pattern></defs>');
+      const rowLabel = (y, h, label) => '<text x="4" y="' + (y + h - 5) + '" fill="var(--muted)">' + esc(label) + '</text>';
+      parts.push(rowLabel(L.rows.sessions.y + 2, L.rows.sessions.h, t("sessions")));
+      parts.push(rowLabel(L.rows.run.y + 2, L.rows.run.h, t("release run")));
+      parts.push(rowLabel(L.rows.events.y + 2, L.rows.events.h, t("events")));
+      // ticks
+      L.ticks.forEach((k) => {
+        parts.push('<line x1="' + k.x + '" y1="0" x2="' + k.x + '" y2="' + (H - 16) + '" stroke="var(--border)" stroke-width="1"/>');
+        parts.push('<text x="' + (k.x + 2) + '" y="' + (H - 4) + '" fill="var(--muted)">' + esc(k.label) + '</text>');
+      });
+      // gaps (drawn first: an outline behind the bars)
+      L.gaps.forEach((g) => {
+        const title = g.unknown
+          ? tf("No record until the boot at {to}; the previous end has no time.", { to: _chronoWhen(g.to) })
+          : tf("No record for {dur}: {from} → {to}. The app cannot know what happened while it was not running.", { dur: _chronoDur(g.seconds), from: _chronoWhen(g.from), to: _chronoWhen(g.to) });
+        parts.push('<rect x="' + g.x + '" y="' + (g.y + 3) + '" width="' + g.w + '" height="' + (g.h - 4) + '" fill="none" stroke="var(--muted)" '
+          + 'stroke-dasharray="3 3" title="' + esc(title) + '"/>');
+      });
+      // sessions: the base bar, then each stretch
+      L.sessions.forEach((s) => {
+        if (s.x == null) return;
+        const kind = s.current ? t("running now") : (s.unknown ? t("end unknown") : (s.clean ? t("clean shutdown") : t("unclean end")));
+        const title = tf("Session {id}: {from} → {to} · {kind} · up {dur}", {
+          id: String(s.session_id || "").slice(0, 16), from: _chronoWhen(s.started_at),
+          to: s.ended_at ? _chronoWhen(s.ended_at) : (s.current ? t("now") : t("unknown")),
+          kind: kind, dur: s.uptime_s != null ? _chronoDur(s.uptime_s) : "—" }) + (s.end_basis ? " · " + s.end_basis : "");
+        parts.push('<rect x="' + s.x + '" y="' + (s.y + 3) + '" width="' + s.w + '" height="' + (s.h - 4) + '" fill="var(--panel)" '
+          + (s.unknown ? 'stroke="var(--caveat)" stroke-dasharray="2 2" ' : 'stroke="var(--border)" ') + 'title="' + esc(title) + '"/>');
+        s.stretches.forEach((st) => {
+          const col = st.unknown ? "none" : (st.current ? "var(--accent)" : (st.ended_by === "clean shutdown" ? "var(--ok)" : "var(--caveat)"));
+          const stTitle = tf("Stretch: {from} → {to} · {dur} · ended by {by}", {
+            from: _chronoWhen(st.started_at), to: st.ended_at ? _chronoWhen(st.ended_at) : (st.current ? t("now") : t("unknown")),
+            dur: st.seconds != null ? _chronoDur(st.seconds) : t("unknown"), by: st.ended_by || "—" });
+          parts.push('<rect x="' + st.x + '" y="' + (s.y + 5) + '" width="' + st.w + '" height="' + (s.h - 8) + '" fill="' + col + '" '
+            + (st.unknown ? 'stroke="var(--caveat)" stroke-dasharray="2 2" ' : '') + 'opacity="0.85" title="' + esc(stTitle) + '"/>');
+        });
+      });
+      L.suspends.forEach((sp) => {
+        const title = tf("Suspend (clock jump): {from} → {to}. The wall clock ran ahead of the monotonic clock; a sleep, a hibernation and a clock change leave the same record.", { from: _chronoWhen(sp.from), to: _chronoWhen(sp.to) });
+        parts.push('<rect x="' + sp.x + '" y="' + (sp.y + 5) + '" width="' + sp.w + '" height="' + (sp.h - 8) + '" fill="url(#chrono-hatch)" title="' + esc(title) + '"/>');
+      });
+      // the release run's phases
+      L.phases.forEach((ph) => {
+        const col = ph.inflight ? "var(--accent)" : (ph.status === "measured" ? "var(--ok)" : (ph.status === "error" || ph.status === "refused" ? "var(--err)" : "var(--muted)"));
+        const title = tf("Phase {name}: {status} · {from} → {to}", { name: ph.name, status: ph.status || "?",
+          from: _chronoWhen(ph.started_at), to: ph.ended_at ? _chronoWhen(ph.ended_at) : t("in flight") });
+        parts.push('<rect x="' + ph.x + '" y="' + (ph.y + 4) + '" width="' + ph.w + '" height="' + (ph.h - 6) + '" fill="' + col + '" opacity="0.8" '
+          + (ph.inflight ? 'stroke="var(--accent)" stroke-dasharray="3 2" ' : '') + 'title="' + esc(title) + '"/>');
+      });
+      // events
+      L.events.forEach((e) => {
+        const labels = e.items.map((i) => i.label + " " + _chronoWhen(i.at)).join(" · ");
+        const cy = e.y + e.h / 2 + 1;
+        const fill = e.kind === "boot" ? "var(--ok)" : (e.kind.indexOf("end") === 0 ? "var(--caveat)" : "var(--accent)");
+        parts.push('<circle cx="' + e.x + '" cy="' + cy + '" r="' + (e.count > 1 ? 5 : 3.5) + '" fill="' + fill + '" title="' + esc(labels) + '"/>');
+        if (e.count > 1) parts.push('<text x="' + (e.x + 6) + '" y="' + (cy + 3) + '" fill="var(--muted)">' + e.count + '</text>');
+      });
+      // the bar, and now
+      if (L.bar && L.bar.visible) {
+        const label = L.bar.reached ? tf("{h} h reached", { h: L.bar.hours }) : tf("{h} h if this stretch holds", { h: L.bar.hours });
+        parts.push('<line x1="' + L.bar.x + '" y1="0" x2="' + L.bar.x + '" y2="' + (H - 16) + '" stroke="var(--ok)" stroke-width="1.5" '
+          + (L.bar.reached ? '' : 'stroke-dasharray="4 3" ') + 'title="' + esc(label) + '"/>');
+        parts.push('<text x="' + (L.bar.x + 3) + '" y="10" fill="var(--ok)">' + esc(label) + '</text>');
+      }
+      if (L.nowVisible) parts.push('<line x1="' + L.nowX + '" y1="0" x2="' + L.nowX + '" y2="' + (H - 16) + '" stroke="var(--accent)" stroke-width="1" title="' + esc(t("now")) + '"/>');
+      parts.push('</svg>');
+      host.innerHTML = parts.join("");
+      const legend = $("chrono-legend");
+      if (legend) legend.textContent = t("Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.");
+      const svg = $("chrono-svg");
+      if (!svg) return;
+      const full = L.full;
+      const tAt = (clientX) => {
+        const r = svg.getBoundingClientRect();
+        const x = clientX - r.left;
+        return L.t0 + (x - L.padL) / Math.max(1, L.plotW) * (L.t1 - L.t0);
+      };
+      svg.addEventListener("wheel", (ev) => {
+        ev.preventDefault();
+        _chronoSpan = ooTimeline.zoomAround(_chronoSpan, tAt(ev.clientX), ev.deltaY > 0 ? 1.25 : 0.8, full);
+        _chronoDraw(d);
+      }, { passive: false });
+      // The drag: ONE pair of window listeners for the life of the page (the SVG is
+      // re-created on every zoom or pan, so binding them per render would stack).
+      svg.addEventListener("mousedown", (ev) => {
+        _chronoDrag = { x: ev.clientX, t0: _chronoSpan.t0, t1: _chronoSpan.t1, plotW: L.plotW, full: full, data: d };
+      });
+      if (!_chronoWindowBound) {
+        _chronoWindowBound = true;
+        window.addEventListener("mousemove", (ev) => {
+          const g = _chronoDrag;
+          if (!g) return;
+          const dt = -(ev.clientX - g.x) / Math.max(1, g.plotW) * (g.t1 - g.t0);
+          _chronoSpan = ooTimeline.pan({ t0: g.t0, t1: g.t1 }, dt, g.full);
+          _chronoDraw(g.data);
+        });
+        window.addEventListener("mouseup", () => { _chronoDrag = null; });
+      }
+      svg.addEventListener("dblclick", () => { _chronoSpan = { t0: full.t0, t1: full.t1 }; _chronoDraw(d); });
     }
 
 

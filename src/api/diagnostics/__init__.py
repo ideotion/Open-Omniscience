@@ -204,6 +204,8 @@ from .bundle import (
     _bundle_exclusive_window,
     _corpus_counters_safe,
     _country_code_scan,
+    _release_run_last,
+    _chronology_member,
     _cpu_model_safe,
     _debug_bundle_member_budget_s,
     _diagnostics_coverage_report,
@@ -333,6 +335,23 @@ from .country_codes import (
 from .qualification_merge import (
     _MAX_MERGE_UPLOADS,
     source_qualification_merge,
+)
+# The 0.4 release acceptance run (2026-09-18) -- last, for the same reason the merge
+# action is second-to-last: the split guard pins every earlier route's position.
+from .release_run import (
+    _RELEASE_RUN_JOB,
+    ReleaseRunBody,
+    _release_run_worker,
+    _status_payload,
+    release_run_cancel,
+    release_run_collect_now,
+    release_run_download,
+    release_run_last,
+    release_run_start,
+    release_run_status,
+    release_run_resume,
+    chronology_report,
+    ResumeBody,
 )
 
 __all__ = [
@@ -571,4 +590,19 @@ __all__ = [
     "storage_footprint_report",
     "windows_locks_report",
     "write_gate_report",
+    "ReleaseRunBody",
+    "_RELEASE_RUN_JOB",
+    "_release_run_last",
+    "_chronology_member",
+    "_release_run_worker",
+    "_status_payload",
+    "release_run_cancel",
+    "release_run_collect_now",
+    "release_run_download",
+    "release_run_last",
+    "release_run_start",
+    "release_run_status",
+    "release_run_resume",
+    "chronology_report",
+    "ResumeBody",
 ]
