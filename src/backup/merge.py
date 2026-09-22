@@ -4930,6 +4930,7 @@ def reindex_imported_articles(
     progress_cb: Callable[[int, int], None] | None = None,
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
+    bump_epoch: bool = True,
 ) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
@@ -4948,7 +4949,12 @@ def reindex_imported_articles(
     threaded straight through to :func:`src.analytics.store.reindex_articles` -- see
     there for the batching/parallel-precompute contract. ``commit_batch=None``
     (default) reads the env var above; ``workers=None`` uses
-    :func:`src.analytics.reindex_parallel.worker_count`'s own default."""
+    :func:`src.analytics.reindex_parallel.worker_count`'s own default.
+
+    ``bump_epoch`` (2026-09-21) is passed straight through to
+    :func:`~src.analytics.store.reindex_articles`. A caller that drains SEVERAL import
+    batches in one run passes False and takes the two bumps itself -- see there for why
+    a start bump alone is not enough."""
     from sqlalchemy import text
 
     from src.analytics.extract import get_extractor
@@ -5026,6 +5032,7 @@ def reindex_imported_articles(
             progress_cb=_tracked,
             stats=stats,
             should_stop=should_stop,
+            bump_epoch=bump_epoch,
         )
         # Only a batch that reached the end is stamped done. Anything short of that
         # deliberately stays 'merged', so the backlog survives the interruption -- the

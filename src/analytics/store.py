@@ -653,6 +653,7 @@ def reindex_articles(
     progress_cb: Callable[[int, int], None] | None = None,
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
+    bump_epoch: bool = True,
 ) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
@@ -703,7 +704,20 @@ def reindex_articles(
     achieved so far rather than raising -- a stopped re-index is not a failure, and
     every article it DID finish is committed and correct. The caller distinguishes
     "stopped early" from "finished" by comparing the returned total against the
-    ids it asked for."""
+    ids it asked for.
+
+    ``bump_epoch`` (default True = the original behaviour, byte-identical) lets a
+    caller that LOOPS over this function take the corpus-epoch bump itself, ONCE per
+    run, instead of paying it once per call. The bump takes the single-writer gate and
+    commits, and :class:`~src.analytics.reindex_job.ReindexJobManager` calls this once
+    per 300-article page -- so a 1.28 M-article re-index bought ~4,270 gate
+    acquisitions for one logical mutation, against the bump's own documented contract
+    ("invoke it ONCE per logical mutation ... never in a per-row loop"). A caller that
+    passes False MUST bump at the START of its run AND again at the END: a start-only
+    bump would leave a rollup snapshot taken mid-run at a constant epoch, and an
+    incremental merge against a delete-then-reinsert is exactly the double-count the
+    epoch exists to prevent. Per-batch bumping closed that window by accident; the end
+    bump closes it on purpose."""
     total = len(article_ids)
     reindexed = 0
     failed = 0
@@ -725,7 +739,7 @@ def reindex_articles(
     # rather than incrementally merge (the D3 double-count guard). This is ALSO the
     # restore-merge path: reindex_imported_articles re-indexes the merged articles against
     # the live DB after the atomic swap, so bumping here covers restore too. Best-effort.
-    if article_ids:
+    if article_ids and bump_epoch:
         from src.analytics.corpus_epoch import bump_corpus_epoch
 
         bump_corpus_epoch(session, reason="reindex_articles")
@@ -1029,6 +1043,7 @@ def reindex_all_batch(
     commit_batch: int = 1,
     workers: int | None = None,
     stats: dict | None = None,
+    bump_epoch: bool = True,
 ) -> dict:
     """FORCE-re-index a batch of ALL articles (id > ``after_id``), oldest first.
 
@@ -1049,7 +1064,11 @@ def reindex_all_batch(
     committed, a bad/locked one isolated) — the proven ``ingest_emails`` fallback;
     re-index is idempotent, so the redo reproduces the full result. The single-writer
     gate is HELD across a batch, so keep ``commit_batch`` modest for a background re-index
-    that must interleave with a live scrape."""
+    that must interleave with a live scrape.
+
+    ``bump_epoch`` is passed straight through to :func:`reindex_articles` -- see there.
+    This function is PAGED, so its caller is a loop and is the one that knows where the
+    run begins and ends; the job manager passes False and takes the two bumps itself."""
     rows = (
         session.query(Article.id)
         .filter(Article.id > after_id)
@@ -1086,6 +1105,7 @@ def reindex_all_batch(
             workers=workers,
             scope=scope,
             stats=stats,
+            bump_epoch=bump_epoch,
         )
         reindexed = int(res.get("reindexed", 0))
         failed = int(res.get("failed", 0))

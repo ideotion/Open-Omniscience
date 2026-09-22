@@ -773,6 +773,77 @@ def reindex_backlog_status() -> dict:
     return reindex_backlog()
 
 
+def _accumulate(run: dict, st: dict, *, commit_batch: int | None, idle: bool) -> None:
+    """Fold ONE batch's ``reindex_articles`` stats into the run-level accumulator.
+
+    FULL PRECISION IN, ROUNDING ONLY ON THE WAY OUT (:func:`_drain_metrics`) -- the
+    lesson ``ReindexJobManager`` already carries: rounding each batch and summing those
+    floors every sub-second batch to zero, and over the thousands of batches a
+    million-article drain walks, a real cost reports as none at all.
+
+    Tolerates an EMPTY ``st``: a batch whose articles were all already re-indexed
+    returns before ``reindex_articles`` runs, so it genuinely has nothing to report,
+    and inventing zeros for it would put a fabricated sample in the mean.
+    """
+    if not st:
+        return
+    for k in ("wall_s", "load_s", "precompute_s", "apply_s", "apply_index_s", "apply_commit_s"):
+        v = st.get(k)
+        if v is not None:
+            run[k] = float(run.get(k, 0.0)) + float(v)
+    for k in ("articles", "mentions_written"):
+        run[k] = int(run.get(k, 0)) + int(st.get(k, 0) or 0)
+    # WHICH SETTINGS PRODUCED THESE SECONDS. Without this the split is uninterpretable
+    # across a run that went online half-way through: the same apply_s means different
+    # things at commit batch 1 and at 200, and that comparison is the whole point of
+    # letting the drain use the import's settings at all.
+    run["exclusive_articles" if idle else "shared_articles"] = int(
+        run.get("exclusive_articles" if idle else "shared_articles", 0)
+    ) + int(st.get("articles", 0) or 0)
+    widths = set(run.get("commit_batch_seen") or ())
+    widths.add(int(commit_batch) if commit_batch else 1)
+    run["commit_batch_seen"] = sorted(widths)
+    # WHICH precompute path ran, summed across batches. "pool" versus "serial" is the
+    # difference between every core and one, and a pool that quietly fell back is the
+    # exact degradation the split exists to expose rather than average away.
+    pre = st.get("precompute")
+    by_path = (pre or {}).get("by_path") if isinstance(pre, dict) else None
+    if isinstance(by_path, dict):
+        acc = dict(run.get("precompute_by_path") or {})
+        for path, n in by_path.items():
+            acc[str(path)] = int(acc.get(str(path), 0)) + int(n or 0)
+        run["precompute_by_path"] = acc
+
+
+def _drain_metrics(run: dict) -> dict | None:
+    """The published, rounded view of the drain's accumulated split; None when empty.
+
+    ``None`` rather than a dict of zeros: a drain that has not yet finished a batch has
+    measured nothing, and a zeroed split reads as "instant", which is a different
+    claim. Same rule for the rate -- it is reported only when both sides of the
+    division are real, never fabricated and never infinite.
+    """
+    if not run.get("articles"):
+        return None
+    out = {
+        k: round(float(run[k]), 3)
+        for k in ("wall_s", "load_s", "precompute_s", "apply_s", "apply_index_s", "apply_commit_s")
+        if run.get(k) is not None
+    }
+    out["articles"] = int(run.get("articles", 0))
+    out["mentions_written"] = int(run.get("mentions_written", 0))
+    out["exclusive_articles"] = int(run.get("exclusive_articles", 0))
+    out["shared_articles"] = int(run.get("shared_articles", 0))
+    out["commit_batch_seen"] = list(run.get("commit_batch_seen") or [])
+    if run.get("precompute_by_path"):
+        out["precompute_by_path"] = dict(run["precompute_by_path"])
+    wall = float(run.get("wall_s") or 0.0)
+    out["articles_per_second"] = (
+        round(out["articles"] / wall, 2) if out["articles"] and wall > 0 else None
+    )
+    return out
+
+
 def _reindex_resume_worker(ctx, **_kw) -> dict:
     """Finish the re-index for every batch still stamped ``merged``.
 
@@ -787,8 +858,14 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     Cooperative: it stops at the next BATCH boundary, and the watermark inside the batch
     means a stop mid-batch is resumed exactly, never redone from the top.
     """
-    from src.backup.merge import reindex_backlog, reindex_imported_articles
+    from src.analytics.corpus_epoch import bump_corpus_epoch
+    from src.backup.merge import (
+        import_reindex_commit_batch,
+        reindex_backlog,
+        reindex_imported_articles,
+    )
     from src.database.corpus_lease import corpus_lease
+    from src.database.session import session_scope
 
     bk = reindex_backlog()
     if not bk.get("available"):
@@ -799,6 +876,13 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0), detail="starting")
     out: dict = {"batches": [], "articles_reindexed": 0, "articles_failed": 0, "stopped": False}
     walked = 0
+    # The measured split, accumulated ACROSS batches and republished after each one, so a
+    # drain that runs for days says what it is spending the time on WHILE it runs rather
+    # than only in the result nobody waits for (F3, 2026-09-21 audit docs/audit/15). The
+    # numbers are reindex_articles' own out-parameter -- load / precompute / apply, and
+    # apply split into staging versus commit -- which this entry point simply never asked
+    # for, so the one job that most needed them was the one job running blind.
+    run: dict[str, float] = {}
 
     # YIELD TO AN IMPORT (field report 2026-08-11). An import run claims the machine --
     # all cores, an enlarged page cache, collection paused -- and this drain is the one
@@ -815,28 +899,97 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     def _yield_to_import() -> bool:
         return exclusive_window_open()
 
-    for b in batches:
-        # Read `stopping` ONCE: re-reading it for the reason would let a cancel that
-        # landed in between relabel a yield as a cancel, or the reverse.
-        stopping = ctx.stopping
-        if stopping or _yield_to_import():
-            out["stopped"] = True
-            out["paused_for_import"] = not stopping
-            break
-        bid = int(b["batch_id"])
-        ctx.set_progress(detail=f"import {bid} ({b['articles']} article(s))")
+    # THE DRAIN MAY RUN LIKE THE IMPORT WHEN NOTHING IS COLLECTING (R21, maintainer
+    # 2026-09-22, default accepted; F3 in docs/audit/15). Identical work -- the same
+    # index_article over the same articles -- ran at ONE COMMIT PER ARTICLE here and at
+    # 200 inside an import, for no reason but the entry point. OO_REINDEX_COMMIT_BATCH's
+    # default of 1 is the right conservative answer only while a live scrape needs the
+    # single-writer gate back between articles; with the collector stopped, nothing is
+    # waiting on that gate and every fsync through the SQLCipher codec is pure cost.
+    #
+    # "IDLE" IS DELIBERATELY THE STRICT READING: the scheduler LOOP is not alive. Not
+    # "no pass is active this instant" -- a live loop can start a pass between two
+    # articles, and a wide batch holds the gate across its whole commit, so the moment
+    # the collector woke it would wait on us. Airplane mode stops the loop
+    # (src/api/system.py), which makes this exactly the operator step the audit asks
+    # for: collection off, then drain. Unknown is never idle: any failure to read the
+    # scheduler answers False and the conservative default applies.
+    #
+    # Workers are LEFT ALONE on purpose (audit §9.1 step 3). This machine is write-bound,
+    # not CPU-bound; adding cores to the precompute would only fill the apply queue
+    # faster, and the worker count is the knob whose effect the A/B still has to measure.
+    def _collector_idle() -> bool:
+        try:
+            from src.scheduler.runner import get_scheduler
 
-        def _progress(done: int, _total: int, _base: int = walked) -> None:
-            ctx.set_progress(done=_base + done)
+            if get_scheduler().is_running():
+                return False
+        except Exception:  # noqa: BLE001 - an unreadable scheduler is never "idle"
+            return False
+        return not exclusive_window_open()
 
-        with corpus_lease("reindex-resume"):
-            res = reindex_imported_articles(
-                bid, progress_cb=_progress, should_stop=lambda: ctx.stopping or _yield_to_import()
-            )
-        walked += int(b["articles"])
-        out["batches"].append({"batch_id": bid, **res})
-        out["articles_reindexed"] += int(res.get("reindexed") or 0)
-        out["articles_failed"] += int(res.get("failed") or 0)
+    # ONE corpus-epoch bump per RUN, at the START and again at the END (F3). Every
+    # article this drain touches is delete-then-reinserted, so a rollup built before
+    # the run must be invalidated (the start bump) and so must one snapshotted while
+    # it ran (the end bump) -- the second is not a nicety: bumping per batch used to
+    # close that window by accident, and a start-only bump would silently stop
+    # closing it. Best-effort by bump_corpus_epoch's own contract, and each in its own
+    # short session because this worker holds none (reindex_imported_articles opens
+    # its own) -- a cache-coordination write may never break, or mask, the drain.
+    def _bump(reason: str) -> None:
+        try:
+            with session_scope() as _s:
+                bump_corpus_epoch(_s, reason=reason)
+        except Exception:  # noqa: BLE001 - never let the epoch bump break the drain
+            _LOG.warning("corpus-epoch bump failed (%s)", reason, exc_info=True)
+
+    if batches:
+        _bump("reindex-resume:start")
+    try:
+        for b in batches:
+            # Read `stopping` ONCE: re-reading it for the reason would let a cancel that
+            # landed in between relabel a yield as a cancel, or the reverse.
+            stopping = ctx.stopping
+            if stopping or _yield_to_import():
+                out["stopped"] = True
+                out["paused_for_import"] = not stopping
+                break
+            bid = int(b["batch_id"])
+            ctx.set_progress(detail=f"import {bid} ({b['articles']} article(s))")
+
+            def _progress(done: int, _total: int, _base: int = walked) -> None:
+                ctx.set_progress(done=_base + done)
+
+            # Re-read per batch, never once at the top: a drain measured in days must follow
+            # the machine it is actually on, and the operator may go online mid-run. The
+            # value used is PUBLISHED beside the numbers it produced, so a slow batch can be
+            # read against the settings it ran under instead of guessed at.
+            idle = _collector_idle()
+            commit_batch = import_reindex_commit_batch() if idle else None
+            st: dict = {}
+            with corpus_lease("reindex-resume"):
+                res = reindex_imported_articles(
+                    bid,
+                    commit_batch=commit_batch,
+                    stats=st,
+                    # ONE epoch bump per RUN (below), not one per batch: the bump takes the
+                    # single-writer gate and commits, and a backlog of many imports is ONE
+                    # logical mutation of the derived rows.
+                    bump_epoch=False,
+                    progress_cb=_progress,
+                    should_stop=lambda: ctx.stopping or _yield_to_import(),
+                )
+            walked += int(b["articles"])
+            out["batches"].append({"batch_id": bid, "exclusive_settings": idle, **res})
+            out["articles_reindexed"] += int(res.get("reindexed") or 0)
+            out["articles_failed"] += int(res.get("failed") or 0)
+            _accumulate(run, st, commit_batch=commit_batch, idle=idle)
+            ctx.set_metrics(_drain_metrics(run))
+    finally:
+        # In a finally so a cancel, an import yield and a crash all land it: whatever
+        # ended the run, the articles it DID re-index are committed and rewritten.
+        if out["articles_reindexed"]:
+            _bump("reindex-resume:end")
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
     # never sees it -- without this, a partial run would report stopped:false and read as
     # a completed drain. reindex_imported_articles takes should_stop, so it genuinely can
@@ -853,6 +1006,9 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     after = reindex_backlog()
     out["remaining"] = after.get("articles_pending") if after.get("available") else None
     out["remaining_unreadable_reason"] = None if after.get("available") else after.get("reason")
+    # The same split the job published live, banked in the result so a finished run is
+    # still readable after the live channel is cleared by the next start.
+    out["stats"] = _drain_metrics(run)
     return out
 
 

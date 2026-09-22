@@ -422,3 +422,99 @@ def test_the_speed_is_reported_in_both_units_and_never_fabricated(env, tmp_path)
     assert abs(ratio - expect) < 0.05, (
         f"keywords/h is not the measured mentions over the same window: {ratio} vs {expect}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The corpus epoch: once per RUN, not once per 300-article page (F3)          #
+# --------------------------------------------------------------------------- #
+
+
+class _PausesAfter:
+    """An extractor that pauses the job after N articles (the local one in the
+    pause/resume test is defined inside it and cannot be reused)."""
+
+    def __init__(self, inner, pause_at, mgr):
+        self.inner, self.pause_at, self.mgr, self.n = inner, pause_at, mgr, 0
+        self.name = inner.name
+
+    def extract(self, *a, **k):
+        self.n += 1
+        if self.n == self.pause_at:
+            self.mgr.pause()
+        return self.inner.extract(*a, **k)
+
+
+def _epoch_bumps(monkeypatch) -> list[str]:
+    """Record every ``bump_corpus_epoch`` reason, keeping the real bump's effect."""
+    from src.analytics import corpus_epoch as ce
+
+    reasons: list[str] = []
+    real = ce.bump_corpus_epoch
+
+    def _spy(session, *, reason: str = ""):
+        reasons.append(reason)
+        return real(session, reason=reason)
+
+    monkeypatch.setattr(ce, "bump_corpus_epoch", _spy)
+    return reasons
+
+
+def test_the_epoch_is_bumped_twice_per_run_not_once_per_page(env, monkeypatch):
+    """Each bump takes the single-writer gate and commits its own row. At the paged
+    loop's 300 articles a page, the field's 1.28 M-article backlog bought ~4,270 gate
+    acquisitions for what ``bump_corpus_epoch`` itself calls ONE logical mutation.
+
+    TWO, not one. The start bump invalidates a rollup built before the run; the END
+    bump invalidates one snapshotted WHILE it ran -- which per-page bumping used to do
+    by accident, and which a start-only bump would silently stop doing. An incremental
+    merge across a delete-then-reinsert is the double-count the epoch exists for.
+    """
+    Session, tmp = env
+    _seed(Session, 7)
+    reasons = _epoch_bumps(monkeypatch)
+
+    mgr = _new_mgr(tmp)
+    monkeypatch.setattr("src.analytics.reindex_job._BATCH", 2)  # 4 pages over 7 articles
+    mgr.start(_session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+
+    assert mgr.status()["state"] == "done"
+    assert reasons == ["reindex_job:start", "reindex_job:end"], (
+        f"expected one bump at each end of the run, got {reasons}"
+    )
+
+
+def test_the_epoch_still_advances_across_a_run(env, monkeypatch):
+    """The point of the bump is that the number CHANGES, so the disposable rollup
+    full-rebuilds instead of merging. Fewer bumps may never mean no bump."""
+    from src.analytics.corpus_epoch import get_corpus_epoch
+
+    Session, tmp = env
+    _seed(Session, 4)
+    with Session() as s:
+        before = get_corpus_epoch(s)
+
+    mgr = _new_mgr(tmp)
+    mgr.start(_session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+
+    with Session() as s:
+        assert get_corpus_epoch(s) > before
+
+
+def test_a_paused_run_still_bumps_at_the_end(env, monkeypatch):
+    """Every article a paused run DID re-index is committed and rewritten, so a rollup
+    snapshotted mid-run must be invalidated whatever ended the run."""
+    Session, tmp = env
+    _seed(Session, 6)
+    reasons = _epoch_bumps(monkeypatch)
+
+    mgr = _new_mgr(tmp)
+    monkeypatch.setattr("src.analytics.reindex_job._BATCH", 1)
+    mgr.start(_session_factory=Session, _extractor=_PausesAfter(BaselineExtractor(), 2, mgr))
+    _join(mgr)
+
+    assert mgr.status()["state"] in ("paused", "cancelled", "done")
+    assert reasons[0] == "reindex_job:start"
+    assert reasons[-1] == "reindex_job:end"
+    assert len(reasons) == 2

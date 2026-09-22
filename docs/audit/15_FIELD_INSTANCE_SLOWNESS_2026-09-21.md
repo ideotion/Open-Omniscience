@@ -489,15 +489,35 @@ whole-corpus scans below the floor; this member is not covered by it.
 7. **Design for 0.5.** The segmented derived index for the 1 TB target, and carrying mention rows
    from same-engine backups instead of re-extracting them.
 
-### 9.3 Rulings needed
+### 9.3 Rulings — DECIDED 2026-09-22, every default accepted
 
-- **R1** the drain may use the exclusive settings whenever the collector is idle [default: yes]
-- **R2** counters deferred and reconciled at the end of an exclusive drain, disclosed as estimated meanwhile [yes]
-- **R3** bulk build on the live store with surfaces disclosing "rebuilding, N of M", or on a working copy with a swap at twice the disk [live store]
-- **R4** same-engine backups carry their mention rows in sorted bulk instead of re-extraction; revisits the 2026-07-29 option (a) [yes]
-- **R5** which import stages may be scoped to the batch: quick_check, keyword counter reconcile, event-mirror refresh, source counters [all four]
-- **R6** the pool-versus-workers invariant on the small and medium tiers: raise the pool, or lower the worker cap [raise the pool; 8 MB × 4 more connections is 32 MB]
-- **R7** diagnostics members that need more than half the machine's RAM decline below the floor, like the whole-corpus scans already do [yes]
+The maintainer answered this section on 2026-09-22: "I agree with all your 7 rulings
+defaults. Mark them as decided." Each is now recorded in
+[`docs/ledger/RULINGS_INDEX.md`](../ledger/RULINGS_INDEX.md) under the id in the last
+column, with the round's own entry in
+[`docs/ledger/OPEN_QUEUE.md`](../ledger/OPEN_QUEUE.md). **Decided is not built:** the
+`state` column says which of the §9.2 PRs carries each, and only R1 has one.
+
+| # | ruling, as decided at its default | index | state |
+|---|---|---|---|
+| R1 | the drain may use the exclusive settings whenever the collector is idle | R21 | **BUILT** — PR 1 |
+| R2 | counters deferred and reconciled at the end of an exclusive drain, disclosed as estimated meanwhile | R22 | decided, unbuilt — PR 4 |
+| R3 | bulk build on the live store, with surfaces disclosing "rebuilding, N of M" | R23 | decided, unbuilt — PR 5 |
+| R4 | same-engine backups carry their mention rows in sorted bulk instead of re-extraction; revisits the 2026-07-29 option (a) | R24 | decided, unbuilt — PR 7 |
+| R5 | all four import stages may be scoped to the batch: quick_check, keyword counter reconcile, event-mirror refresh, source counters | R25 | decided, unbuilt — PR 6 |
+| R6 | raise the pool rather than lower the worker cap on the small and medium tiers (8 MB × 4 more connections is 32 MB) | R26 | decided, unbuilt — PR 2 |
+| R7 | diagnostics members that need more than half the machine's RAM decline below the floor, like the whole-corpus scans already do | R27 | decided, unbuilt — PR 2 |
+
+**What PR 1 changed, and what is still unmeasured.** It carries R21 plus the three items
+of §9.2 item 1 that needed no ruling: the drain publishes the load/precompute/apply split
+it had always computed and no caller asked for, the corpus epoch is bumped once per run
+instead of once per batch, and the FTS update trigger is scoped to `title, content` with a
+boot self-heal for stores that already carry the unscoped one. **No speed-up figure is
+claimed for any of the four.** Each removes a cost that this report measured or read in
+the code; what they are worth together on a 27.7 GB encrypted corpus is what §8's A/B
+exists to find out, and that has to run on the operator's instance — a sandbox where the
+collector is CPU-bound would produce a number that transfers to nothing. The worker count
+is deliberately untouched (§9.1 step 3), so the A/B measures one change at a time.
 
 ---
 

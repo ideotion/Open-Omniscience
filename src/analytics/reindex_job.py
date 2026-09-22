@@ -230,6 +230,7 @@ class ReindexJobManager:
 
     def _run(self) -> None:
         try:
+            from src.analytics.corpus_epoch import bump_corpus_epoch
             from src.analytics.store import (
                 prune_orphan_keywords,
                 reconcile_article_language,
@@ -262,6 +263,18 @@ class ReindexJobManager:
                     k: float(self._tally.get(k, 0))
                     for k in ("seconds_loading", "seconds_extracting", "seconds_writing")
                 }
+                # ONE corpus-epoch bump per RUN, not one per 300-article page (PERF/F3,
+                # 2026-09-21 audit docs/audit/15). Each bump takes the single-writer gate
+                # and commits its own row, so on the field's 1.28 M-article backlog the
+                # paged loop bought ~4,270 gate acquisitions for what
+                # ``bump_corpus_epoch`` itself documents as ONE logical mutation ("never
+                # in a per-row loop"). TWO bumps, not one: the START bump invalidates any
+                # rollup built before this run, and the END bump (in the `finally` below)
+                # invalidates a rollup snapshot taken WHILE the run was in flight -- which
+                # the per-page bumping used to do by accident and a start-only bump would
+                # silently stop doing. Both are best-effort by the bump's own contract: a
+                # failure to coordinate a cache must never break a re-index.
+                bump_corpus_epoch(session, reason="reindex_job:start")
                 while True:
                     if self._stop.is_set():
                         break
@@ -288,6 +301,7 @@ class ReindexJobManager:
                             scope=self._scope,
                             commit_batch=commit_batch,
                             stats=st,
+                            bump_epoch=False,
                         )
                     after = int(r["last_id"])
                     with self._lock:
@@ -377,6 +391,17 @@ class ReindexJobManager:
                     if self._state in ("done", "cancelled"):
                         self._clear_state()
             finally:
+                # THE CLOSING HALF of the once-per-run bump above. In the `finally` so a
+                # pause, a cancel and a crash all land it: every article this run DID
+                # re-index is committed and delete-then-reinserted, so a rollup that
+                # snapshotted mid-run must be invalidated whatever ended the run. Its own
+                # try/except because a `finally` may run on an already-broken session and
+                # a cache-coordination write must never replace the real error.
+                try:
+                    if self._done > self._done_at_start:
+                        bump_corpus_epoch(session, reason="reindex_job:end")
+                except Exception:  # noqa: BLE001 - never let the epoch bump mask a failure
+                    pass
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             with self._lock:

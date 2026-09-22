@@ -11513,3 +11513,51 @@ mutant reddens by name. (2) An instance booted with `OO_NO_SCHEDULER=1` is ONLIN
 because the boot-time airplane engagement lives inside that same block; a click-through that
 "proves the press did not go online" against such an instance proves nothing unless it compares
 before and after — which is what the record now does, and says.
+## 2026-09-22 — A DDL FIX THAT USES `IF NOT EXISTS` REACHES NEW INSTALLS ONLY (the FTS update trigger, PR 1 of the field-slowness plan)
+
+`CREATE TRIGGER IF NOT EXISTS` can never REPLACE a trigger that is already there. So
+editing a trigger in the DDL list that `ensure_fts` runs on every unlock changes the
+behaviour of stores created AFTER the edit and of nothing else — and the store the cost was
+measured on is, by definition, an old one. The same holds for every `CREATE … IF NOT
+EXISTS` object the boot path "ensures": indexes, views, triggers. **An edit to one of them
+is not a fix until something drops the old shape.**
+
+**The self-heal that is allowed here, and the constraint it must respect.** The P0.4
+unlock-at-scale fix exists because a boot used to pay a corpus-scaled cost (a measured
+981 s → 1,645 s on a 130 GB field corpus), so a heal may not reintroduce one. Reading one
+row of `sqlite_master` for the object's stored SQL and comparing its SHAPE is O(1): no
+article count, no content through the codec, no rebuild. Drop-then-create belongs in the
+SAME transaction as the DDL that re-creates it, so no window exists where the object is
+missing. Dropping and re-creating a trigger does not touch the index it maintains, and a
+test should pin that the heal provokes no rebuild — otherwise the heal quietly becomes the
+cost it was written to remove.
+
+**`UPDATE OF col` fires on MENTION, not on change.** SQLite fires a column-scoped update
+trigger when the statement's SET list names one of the columns, whether or not the value
+differs. That is the direction to fail in: a same-value write still re-indexes (wasteful,
+never stale), and a column can only be written by a statement that names it, so nothing can
+change behind a scoped trigger. Both halves are worth their own test, because the useful
+one (the unrelated column does NOT fire) and the safe one (the same-value write DOES) can
+regress independently.
+
+**And a trigger test must be behavioural.** Grepping the DDL for `UPDATE OF` passes on a
+trigger that has stopped keeping the index correct. Drive real UPDATEs and fingerprint
+FTS5's own `article_fts_data` b-tree: that answers "did it fire?" without trusting the
+thing under test.
+
+## 2026-09-22 — "ONCE PER RUN" IS TWO BUMPS, NOT ONE, WHEN THE PER-BATCH CALL WAS CLOSING A WINDOW BY ACCIDENT
+
+`bump_corpus_epoch`'s own docstring says to call it once per logical mutation, "never in a
+per-row loop" — and the paged re-index job called it once per 300-article page, ~4,270 gate
+acquisitions and commits for one logical mutation of a 1.28 M-article backlog. Collapsing
+that to a single bump at the START of the run looks like the obvious fix and is **wrong**: a
+rollup snapshotted WHILE the run is in flight would then never be invalidated, and an
+incremental merge across a delete-then-reinsert is exactly the double-count the epoch
+exists to prevent. Per-batch bumping was closing that window incidentally, so removing it
+without a closing bump trades a wasteful correctness property for a cheap bug.
+
+**The general form:** before thinning a repeated call, ask what its REPETITION was doing,
+not just what one call does. A frequent call has two effects — the one in its docstring and
+the coverage its frequency happens to provide — and only the first is written down. Here the
+answer was a bump at each END of the run, with the closing one in a `finally` so a cancel, a
+yield and a crash all land it.
