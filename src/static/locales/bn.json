@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "নজরদারি একটি সংরক্ষিত অনুসন্ধান যা পর্যাপ্ত নতুন নিবন্ধ আপনার সীমায় পৌঁছালে সক্রিয় হয় — পড়ার আমন্ত্রণ, কখনও রায় বা স্কোর নয়। শুধু স্থানীয়: কোনো বিজ্ঞপ্তি নেই, কোনো নেটওয়ার্ক নেই।",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "শাখাগুলো ওভারল্যাপ করে: ধারণার দুটি ভাষার রূপ বহনকারী কোনো নিবন্ধ উভয় শাখাতেই এবং কেন্দ্রে একবার গণনা করা হয়, তাই শাখাগুলোর সংখ্যা যোগ করলে তা ওই মোটের সমান হয় না। যেখানে একাধিক ভাষা একই বানান ভাগ করে নেয়, সেখানে শাখাগুলো একই নিবন্ধ বহন করে এবং তা জানিয়ে দেয়। শুধু গণনা, কখনো স্কোর নয়।",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "যে প্রতিটি ভাষায় কর্পাস ধারণার কোনো রূপ সূচিভুক্ত করেছে, তার জন্য একটি করে শাখা; প্রতিটি শাখার সংযোগ হলো ওই একই ভাষার নিজস্ব নিবন্ধের ওপর ভিত্তি করে সহ-উপস্থিতির গণনা, যেখানে ধারণার নিজস্ব রূপগুলো বাদ দেওয়া হয়েছে",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "ব্যান্ড হলো প্রতিটি ভাষায় উল্লেখের গণনা এবং সেগুলি ওভারল্যাপ করে: ধারণার দুটি ভাষার রূপ বহনকারী কোনো নিবন্ধ উভয়েই গণনা করা হয়, তাই স্তূপের উচ্চতা পাশে দেখানো নিবন্ধের মোটের সমান নয়।",
   "These series could not be stacked, so they are drawn as lines.": "এই সিরিজগুলিকে স্তূপ করা যায়নি, তাই সেগুলি রেখা হিসেবে আঁকা হয়েছে।",
   "One of these series has a published gap, and a gap is not a zero.": "এই সিরিজগুলির একটিতে একটি প্রকাশিত ফাঁক আছে, এবং ফাঁক শূন্য নয়।",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "{h} ঘণ্টা পৌঁছেছে",
   "{n} suspend(s)": "{n}টি সাসপেন্ড",
   "{n} unclean end(s)": "{n}টি অপরিচ্ছন্ন শেষ",
-  "{n} since {when}": "{when} থেকে {n}"
+  "{n} since {when}": "{when} থেকে {n}",
+  "Light bundle": "হালকা বান্ডিল",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "সম্পূর্ণ প্রতিটি সদস্য সংগ্রহ করে এবং এটিই ডিফল্ট। হালকা সেই চারটি সদস্য বাদ দেয় যেগুলি আপনার ডেটা জানানোর বদলে যন্ত্রটি মাপে বা পুরো সংগ্রহ আবার পড়ে। বাদ দেওয়া প্রতিটি সদস্য তবুও আর্কাইভে একটি ফাইল হিসেবে থাকে যা কারণ জানায়, তাই হালকা বান্ডিলকে কখনও সম্পূর্ণ বলে ভুল করা যায় না। কেবল এই বারের জন্য প্রযোজ্য এবং কখনও মনে রাখা হয় না।"
 }

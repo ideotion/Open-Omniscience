@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "المراقبة بحث محفوظ يتفعّل عندما تبلغ المقالات الجديدة المطابقة عتبتك — دعوة للقراءة، لا حكمًا ولا درجة. محليًا فقط: دون إشعارات ودون شبكة.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "تتداخل الفروع: المقال الذي يحمل صيغتَي المفهوم بلغتين يُحسب على كلا الفرعين ومرةً واحدة في المركز، لذلك لا يساوي مجموع الفروع هذا الإجمالي. وحين تتشارك عدة لغات الإملاء نفسه، تحمل الفروع المقالات نفسها وتوضّح ذلك. عدّ فقط، ولا درجة أبدًا.",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "فرع واحد لكل لغة فهرست المجموعة فيها صيغة من صيغ المفهوم؛ ارتباطات كل فرع هي أعداد تزامن الورود عبر مقالات تلك اللغة نفسها، مع استبعاد صيغ المفهوم نفسه",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "النطاقات هي أعداد الإشارات لكل لغة وهي متداخلة: المقال الذي يحمل صيغتين من صيغ المفهوم يُحسب في كلا النطاقين، لذلك ارتفاع التكديس ليس إجمالي المقالات المعروض إلى جانبه.",
   "These series could not be stacked, so they are drawn as lines.": "تعذّر تكديس هذه السلاسل، فتُرسم كخطوط.",
   "One of these series has a published gap, and a gap is not a zero.": "إحدى هذه السلاسل بها فجوة منشورة، والفجوة ليست صفرًا.",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "بلغت {h} ساعة",
   "{n} suspend(s)": "{n} تعليق",
   "{n} unclean end(s)": "{n} نهاية غير نظيفة",
-  "{n} since {when}": "{n} منذ {when}"
+  "{n} since {when}": "{n} منذ {when}",
+  "Light bundle": "حزمة مخففة",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "الوضع الكامل يجمع كل العناصر وهو الخيار الافتراضي. الوضع المخفف يتخطى أربعة عناصر تقيس الجهاز أو تعيد قراءة المجموعة بأكملها بدل أن تُبلغ عن بياناتك. كل عنصر متخطى يظل موجودًا في الأرشيف كملف يذكر السبب، لذا لا يمكن أبدًا الخلط بين حزمة مخففة وحزمة كاملة. ينطبق على هذا التشغيل فقط ولا يُحفظ أبدًا."
 }

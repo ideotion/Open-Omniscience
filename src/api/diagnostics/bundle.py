@@ -20,7 +20,7 @@ import pathlib
 import threading
 from datetime import datetime
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -594,6 +594,76 @@ def _fixity_bundle_member(db: Session) -> dict:
         return get_fixity(limit=500, db=db)
     except Exception as exc:  # noqa: BLE001 - one member's failure must not sink the bundle
         return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+#: THE LIGHT PROFILE (maintainer 2026-09-22, ruling R28 -- the reconciliation of two
+#: standing rulings): which members a LIGHT bundle declines, and the MEASURED reason for
+#: each. The 2026-09-02 crash brief, its own §3 ruling 4 (docs/design/
+#: AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md -- NOT `R4` of
+#: docs/ledger/RULINGS_INDEX.md, which is an unrelated ruling about export messages), says
+#: the bundle "still runs EVERY member -- the bundle is the maintainer's only evidence
+#: channel"; ruling R27 (2026-09-22) says members needing more than half the machine's RAM
+#: decline below the floor. Both stand. THE TOGGLE IS THE RECONCILIATION: EVERY MEMBER
+#: remains the DEFAULT and the only automatic behaviour, and a decline happens solely
+#: because the operator asked for one. Nothing declines itself.
+#:
+#: THE RULE THE SET FOLLOWS, so the next member is classified rather than argued about:
+#: light drops what MEASURES THE MACHINE or RE-READS THE WHOLE CORPUS; it keeps everything
+#: that REPORTS THE DATA. An operator running light is asking "what is in my corpus and
+#: what went wrong", not "how fast is this disk".
+#:
+#: EVERY REASON IS A READING FROM THE OPERATOR'S OWN 2026-09-11 BUNDLE (72 members), not an
+#: estimate -- see docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md §3.7 and F12.
+_LIGHT_DECLINED: dict[str, str] = {
+    "keyword-log-digest.json": (
+        "measured a 3,322.8 MB peak RSS rise on the operator's 4 GB instance -- the ONLY "
+        "member in that 72-member run with a peak rise above 0.0 MB, so on a small machine "
+        "this one member forces swapping by itself (finding F12)"
+    ),
+    "source-audit.json": (
+        "measured 297.9 s on the operator's instance, and the ledger already records it as "
+        "categorically unable to finish inside its 300 s deadline at that source count "
+        "(OPEN_QUEUE.md, the 2 uncompletable members)"
+    ),
+    "benchmark.json": (
+        "it RUNS a benchmark rather than reporting a reading: ~50 MB written to a temp dir "
+        "and 305.3 s measured on the operator's instance, where it still ended "
+        "partial-deadline. A bundle taken to diagnose a slow machine should not spend its "
+        "wall clock timing that machine"
+    ),
+    "fixity.json": (
+        "re-hashes stored article bodies through the SQLCipher codec -- its own docstring "
+        "calls it one of the heaviest reads, and it scales with the corpus rather than with "
+        "the question being asked"
+    ),
+}
+
+#: The profiles a caller may ask for. ``full`` is the default everywhere and is byte-identical
+#: to the behaviour before the toggle existed.
+_BUNDLE_PROFILES = ("full", "light")
+
+
+def resolve_bundle_profile(requested: str | None) -> str:
+    """Normalise a requested bundle profile; anything unrecognised is FULL.
+
+    FULL ON ANYTHING UNRECOGNISED, deliberately and in that direction: a typo, a stale
+    client or a future profile name must never silently produce a SMALLER bundle than the
+    operator believes they asked for. An unexpectedly complete bundle costs time; an
+    unexpectedly incomplete one costs the evidence the 2026-09-02 brief calls the
+    maintainer's only channel.
+    """
+    # A NON-STRING IS THE COMMON CASE, NOT AN EDGE CASE. Called directly rather than
+    # through FastAPI -- which is how the sync `/all` route is driven by its own tests and
+    # by the bundle's internal callers -- a ``Query("full")`` default arrives as the Query
+    # SENTINEL OBJECT, not as text. This module already carries that lesson three times
+    # about ``Query(False)`` being truthy; this is the same trap one type over, and it was
+    # live-reproduced here (`AttributeError: 'Query' object has no attribute 'strip'`)
+    # before this line existed. Resolving it to FULL is also the right answer: an
+    # unrecognised request must never shrink the bundle.
+    if not isinstance(requested, str):
+        return "full"
+    v = requested.strip().lower()
+    return v if v in _BUNDLE_PROFILES else "full"
 
 
 def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
@@ -1432,6 +1502,7 @@ def _all_diagnostics_manifest(
     run_started_at: float | None = None,
     run_ended_at: float | None = None,
     exclusive: dict | None = None,
+    profile: str = "full",
 ) -> dict:
     import platform
     import sys as _sys
@@ -1487,6 +1558,28 @@ def _all_diagnostics_manifest(
             else {"held": False, "reason": "not requested by this caller"},
         },
         "members": results,
+        # THE PROFILE THIS RUN USED, and what it cost (the light/full toggle, 2026-09-22).
+        # AT THE TOP LEVEL, not inside "run": a reader deciding whether this archive can
+        # answer their question asks it before anything else, and gate row C's bar ("every
+        # member non-zero") is only meaningful against a FULL run. `complete_profile` is
+        # the one boolean a gate check should read -- never the member count, which a light
+        # run keeps intact by design because the declined members are still listed.
+        "profile": {
+            "name": profile,
+            "complete_profile": profile == "full",
+            "declined": [
+                {"file": r["file"], "reason": r.get("declined_reason")}
+                for r in results if r.get("outcome") == "declined-light"
+            ],
+            "note": (
+                "Every member ran; nothing was declined."
+                if profile == "full"
+                else "The operator chose the LIGHT profile. The members listed in "
+                "'declined' were NOT collected, each for the stated reason, and their "
+                "absence is a choice rather than a failure. Re-run under the FULL "
+                "profile to collect them."
+            ),
+        },
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
         # so "all diagnostics" states its own boundary instead of implying totality.
         "excluded": [
@@ -1547,7 +1640,7 @@ def _all_diagnostics_manifest(
 
 def _write_all_diagnostics_zip(
     members, zf, *, progress=None, should_stop=None, journal_path=None, db=None,
-    exclusive=None,
+    exclusive=None, profile="full",
 ) -> list[dict]:
     """Write every member (+ manifest) into the open ZipFile ``zf``; return the per-member
     results. Shared by the sync endpoint (an in-memory BytesIO) and the job (a file on disk).
@@ -1577,6 +1670,15 @@ def _write_all_diagnostics_zip(
     so a DB worker could never be cleanly abandoned mid-query. A non-DB member runs on a
     daemon wall-clock-bounded thread. Either way a timeout records outcome
     ``skipped-deadline`` honestly and the bundle CONTINUES to the next member (never aborts).
+
+    PROFILE (the light/full toggle, 2026-09-22): ``"light"`` DECLINES the members named in
+    ``_LIGHT_DECLINED`` before they run, recording outcome ``declined-light`` and writing a
+    ``<name>.declined.txt`` carrying that member's measured reason and the one sentence that
+    undoes it. A decline is never a blank and never a zero standing on its own: the outcome
+    names it, the marker file explains it, and the manifest lists it beside the profile that
+    caused it, so a light bundle can never be read as a full one that came back empty.
+    ``"full"`` (the default) declines nothing and is byte-identical to the behaviour before
+    this parameter existed.
 
     JOURNAL: when ``journal_path`` is given (the background job path only — the sync route's
     in-memory BytesIO build has no durable file to journal against), a begin/end JSON line is
@@ -1634,8 +1736,25 @@ def _write_all_diagnostics_zip(
             outcome = "ok"
             err: str | None = None
             nbytes = 0
+            declined_reason = _LIGHT_DECLINED.get(name) if profile == "light" else None
             try:
-                if db is not None and _member_touches_db(fn):
+                if declined_reason is not None:
+                    # DECLINED BEFORE IT RUNS, which is the whole point: the cost this
+                    # avoids is paid at the first byte, so a deadline or a byte cap would
+                    # arrive far too late to keep a 4 GB machine out of swap.
+                    outcome = "declined-light"
+                    zf.writestr(
+                        name + ".declined.txt",
+                        (
+                            f"{name} was NOT collected: this bundle ran under the LIGHT "
+                            f"profile.\n\nWhy this member is in the light profile's "
+                            f"declined set:\n  {declined_reason}\n\n"
+                            "This is a choice the operator made, not a failure and not a "
+                            "limit the app hit. Run the bundle again under the FULL "
+                            "profile to collect it.\n"
+                        ).encode(),
+                    )
+                elif db is not None and _member_touches_db(fn):
                     with statement_deadline(db, _all_diag_db_member_deadline_s()):
                         value = fn()
                         # S2.2: a member that STOPPED at the deadline and returned
@@ -1657,7 +1776,13 @@ def _write_all_diagnostics_zip(
                     # _write_member for why the old `writestr(_member_bytes(...))`
                     # cost three copies of the largest member.
                     nbytes = _write_member(zf, name, value)
-                else:
+                elif outcome == "skipped-deadline":
+                    # NAMED, not an `else`. This branch used to be the catch-all, which
+                    # made it a deadline marker for any outcome that was not ok -- so the
+                    # declined-light member above would have shipped a file saying it
+                    # "exceeded its wall-clock deadline and was abandoned", a fabricated
+                    # cause for something the operator chose. An outcome that writes its
+                    # own marker must name itself here.
                     marker = (
                         f"member exceeded its {_all_diag_nondb_member_deadline_s():.0f}s "
                         "wall-clock deadline and was abandoned (non-DB member)"
@@ -1684,6 +1809,11 @@ def _write_all_diagnostics_zip(
             }
             if err is not None:
                 entry["error"] = err
+            if declined_reason is not None:
+                # The reason travels IN the manifest, not only in the marker file: a reader
+                # parsing manifest.json must be able to say why a member is absent without
+                # opening a sidecar .txt, or the absence reads as a gap in the run.
+                entry["declined_reason"] = declined_reason
             # S6.2: the delta is now CURRENT RSS, which rises and falls, so it measures
             # THIS member. ``rss_basis`` names the instrument, and the high-water rise
             # keeps its own name rather than being published as the same number under a
@@ -1727,7 +1857,7 @@ def _write_all_diagnostics_zip(
     run_ended_at = _time.time()
     manifest = _all_diagnostics_manifest(
         results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
-        exclusive=exclusive,
+        exclusive=exclusive, profile=profile,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
@@ -1744,7 +1874,10 @@ def _write_all_diagnostics_zip(
 
 
 @router.get("/all")
-def all_diagnostics(db: Session = Depends(get_db)) -> Response:
+def all_diagnostics(
+    profile: str = Query("full", description="full | light"),
+    db: Session = Depends(get_db),
+) -> Response:
     """EVERY diagnostics log in ONE archive (maintainer field report 2026-06-22:
     "there should be the option to download all diagnostics logs at once").
 
@@ -1767,7 +1900,10 @@ def all_diagnostics(db: Session = Depends(get_db)) -> Response:
     # gate-every-entry-point defect, and this route can run for 36+ minutes.
     with _bundle_exclusive_window() as excl, \
             zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        _write_all_diagnostics_zip(_all_diagnostics_members(db), z, db=db, exclusive=excl)
+        _write_all_diagnostics_zip(
+            _all_diagnostics_members(db), z, db=db, exclusive=excl,
+            profile=resolve_bundle_profile(profile),
+        )
     fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
     return Response(
         content=buf.getvalue(),
@@ -1838,7 +1974,7 @@ def _all_diagnostics_dir():
     return d
 
 
-def _all_diagnostics_worker(ctx) -> dict:
+def _all_diagnostics_worker(ctx, profile: str = "full") -> dict:
     """Build the all-diagnostics archive to a server-side file (D2). Read-only; opens its own
     session so it never borrows the request's. Writes to a ``.part`` file and atomically
     renames on success, so a cancelled/failed run never leaves a half-written archive that
@@ -1869,6 +2005,7 @@ def _all_diagnostics_worker(ctx) -> dict:
             results = _write_all_diagnostics_zip(
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
                 journal_path=journal_path, db=db, exclusive=excl,
+                profile=resolve_bundle_profile(profile),
             )
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
@@ -1910,13 +2047,23 @@ _ALL_DIAG_JOB = register_job(
 
 
 @router.post("/all-job")
-def all_diagnostics_job_start() -> JSONResponse:
+def all_diagnostics_job_start(
+    profile: str = Query("full", description="full | light"),
+) -> JSONResponse:
     """Start the all-diagnostics archive build as a BACKGROUND job (D2). Returns immediately;
     poll ``/all-job/status`` (or the task manager) for per-member progress, then GET
     ``/all-job/download`` for the finished file. 409-free: if one is already running, the
-    current status is returned with ``started:false``."""
+    current status is returned with ``started:false``.
+
+    ``profile`` is PER RUN and defaults to ``full``; it is deliberately NOT a stored setting.
+    A remembered "light" would quietly make a LATER bundle light too -- including the one
+    taken to close a release gate whose bar is every member non-zero -- and the operator
+    would have no reason to suspect it. Asking once per run costs a click; a sticky choice
+    costs the evidence."""
     try:
-        return JSONResponse({"started": True, "job": _ALL_DIAG_JOB.start()})
+        return JSONResponse(
+            {"started": True, "job": _ALL_DIAG_JOB.start(profile=resolve_bundle_profile(profile))}
+        )
     except RuntimeError:
         return JSONResponse({"started": False, "job": _ALL_DIAG_JOB.status()})
 

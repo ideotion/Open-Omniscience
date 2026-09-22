@@ -894,3 +894,84 @@ def test_ootimeline_node_suite() -> None:
     proc = subprocess.run([node, str(_ROOT / "tests" / "ootimeline_node_test.js")], capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "ootimeline checks passed" in proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+#  Row C and the light bundle (ruling R28, 2026-09-22)
+# --------------------------------------------------------------------------- #
+def _bundle_result(**kw):
+    base = {"measured": True, "path": "/tmp/x.zip", "bytes": 10, "members_total": 74,
+            "zero_byte_members": [], "coverage_complete": True, "job_state": "done"}
+    base.update(kw)
+    return base
+
+
+def _row_c(fast, monkeypatch, result):
+    monkeypatch.setattr(rr, "_bundle", lambda ctx: result)
+    res = rr.run_release_run(FakeCtx(), **_params(fast["dest"]))
+    return next(r for r in res["report"]["board_rows"] if r["row"] == "C")
+
+
+def test_a_LIGHT_bundle_cannot_satisfy_row_C(fast, monkeypatch):
+    """THE HOLE THE TOGGLE OPENED, closed in the same PR. Row C's clause is "every member
+    non-zero", and a member a light bundle declined is ABSENT rather than zero-byte -- so
+    the two checks the row already made (`coverage_complete`, `zero_byte_members`) would
+    both pass on a bundle carrying four fewer members. The run ASKS for a full bundle, but
+    when one is already building it rides that one, and an operator may have started a
+    light build a minute earlier."""
+    row = _row_c(fast, monkeypatch, _bundle_result(
+        profile="light", complete_profile=False,
+        declined_members=["benchmark.json", "fixity.json"]))
+
+    assert row["evidence"]["bar_satisfied_by_this_bundle"] is False
+    assert row["evidence"]["bundle_profile"] == "light"
+    assert "benchmark.json" in row["note"] and "R28" in row["note"]
+    # ...and the row is still MEASURED: the bundle exists and is reported, it just does
+    # not close the clause. Dropping it would lose evidence the operator did collect.
+    assert row["status"] == "measured"
+
+
+def test_a_FULL_bundle_still_satisfies_row_C(fast, monkeypatch):
+    row = _row_c(fast, monkeypatch, _bundle_result(profile="full", complete_profile=True))
+    assert row["evidence"]["bar_satisfied_by_this_bundle"] is True
+    assert "R28" not in row["note"]
+
+
+def test_a_bundle_TAKEN_BEFORE_THE_TOGGLE_EXISTED_still_satisfies_row_C(fast, monkeypatch):
+    """Only an explicit `false` may block the row. An archive with no profile block was
+    built when every bundle ran every member, so reading its silence as "light" would
+    retroactively invalidate every bundle the operator has already taken."""
+    row = _row_c(fast, monkeypatch, _bundle_result())
+    assert row["evidence"]["complete_profile"] is None
+    assert row["evidence"]["bar_satisfied_by_this_bundle"] is True
+
+
+def test_the_bundle_phase_READS_the_profile_out_of_the_real_archive(tmp_path, monkeypatch):
+    """The reader itself, against a real zip -- so the row-C tests above are not asserting
+    against a dict no code path produces. Stubbing only the JOB, never the archive."""
+    import zipfile
+
+    from src.api.diagnostics import bundle as bundle_mod
+
+    path = tmp_path / "oo-all-diagnostics-test.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("debug-bundle.json", json.dumps({"runtime_coverage": {"complete": True}}))
+        z.writestr("manifest.json", json.dumps({
+            "profile": {"name": "light", "complete_profile": False,
+                        "declined": [{"file": "fixity.json", "reason": "heavy"}]}}))
+        z.writestr("ordinary.json", json.dumps({"ran": True}))
+
+    class _Job:
+        def start(self, **kw):
+            return {"started": True}
+
+        def status(self):
+            return {"state": "done", "result": {"path": str(path), "bytes": path.stat().st_size}}
+
+    monkeypatch.setattr(bundle_mod, "_ALL_DIAG_JOB", _Job())
+    out = rr._bundle(FakeCtx())
+
+    assert out["measured"] is True
+    assert out["profile"] == "light"
+    assert out["complete_profile"] is False
+    assert out["declined_members"] == ["fixity.json"]

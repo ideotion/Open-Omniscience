@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Una vigilancia es una búsqueda guardada que se activa cuando suficientes artículos nuevos alcanzan su umbral — una invitación a leer, nunca un veredicto ni una puntuación. Solo local: sin notificaciones, sin red.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Las ramas se superponen: un artículo que lleva formas del concepto en dos idiomas se cuenta en ambas ramas y una sola vez en el centro, de modo que las ramas no suman ese total. Donde varios idiomas comparten una misma ortografía, las ramas llevan los mismos artículos y lo indican. Solo recuentos, nunca una puntuación.",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "una rama por idioma en la que el corpus ha indexado una forma del concepto; las asociaciones de cada rama son recuentos de co-ocurrencia sobre los propios artículos de ESE idioma, con las propias formas del concepto excluidas",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Las bandas son recuentos de menciones por idioma y se superponen: un artículo que contiene formas del concepto en dos idiomas se cuenta en ambas, así que la altura de la pila no es el total de artículos que aparece al lado.",
   "These series could not be stacked, so they are drawn as lines.": "Estas series no se pudieron apilar, así que se dibujan como líneas.",
   "One of these series has a published gap, and a gap is not a zero.": "Una de estas series tiene un vacío publicado, y un vacío no es un cero.",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "{h} h alcanzadas",
   "{n} suspend(s)": "{n} suspensión(es)",
   "{n} unclean end(s)": "{n} final(es) abrupto(s)",
-  "{n} since {when}": "{n} desde {when}"
+  "{n} since {when}": "{n} desde {when}",
+  "Light bundle": "Paquete ligero",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "COMPLETO recopila todos los elementos y es la opción predeterminada. LIGERO omite cuatro elementos que miden la máquina o releen todo el corpus en lugar de informar de sus datos. Cada elemento omitido sigue apareciendo en el archivo como un fichero que indica el motivo, de modo que un paquete ligero nunca puede confundirse con uno completo. Se aplica solo a esta ejecución y nunca se recuerda."
 }

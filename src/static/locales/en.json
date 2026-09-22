@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.",
   "These series could not be stacked, so they are drawn as lines.": "These series could not be stacked, so they are drawn as lines.",
   "One of these series has a published gap, and a gap is not a zero.": "One of these series has a published gap, and a gap is not a zero.",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "{h} h reached",
   "{n} suspend(s)": "{n} suspend(s)",
   "{n} unclean end(s)": "{n} unclean end(s)",
-  "{n} since {when}": "{n} since {when}"
+  "{n} since {when}": "{n} since {when}",
+  "Light bundle": "Light bundle",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered."
 }
