@@ -22,6 +22,43 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **THE FIELD-SLOWNESS ROUND IS DECIDED, AND SIX OF ITS SEVEN RULINGS ARE STILL UNBUILT
+  (2026-09-22).** The seven rulings the 2026-09-21 report
+  ([`docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md`](../audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md)
+  §9.3) put to the maintainer came back as «I agree with all your 7 rulings defaults. Mark
+  them as decided.» — every stated default accepted verbatim, none amended. They are
+  `R21`–`R27` in [`RULINGS_INDEX.md`](RULINGS_INDEX.md) (the report's own local labels R1–R7
+  map onto them in order), and they are recorded HERE because deciding a ruling is not
+  building it: **PR 1 of the audit's §9.2 carries R21 and nothing else.** R22–R27 are
+  decided, unbuilt, and belong to PRs 2 and 4–7 of that plan.
+
+  **What PR 1 does build, and what it deliberately leaves alone.** The drain inherits the
+  import's commit batch when the scheduler loop is not alive (R21), publishes the
+  load/precompute/apply split it had always computed and never asked for, bumps the corpus
+  epoch once per run instead of once per batch, and scopes the FTS update trigger to
+  `title, content` with a boot self-heal. **No speed-up figure is claimed for any of it.**
+  The audit's §8 A/B is what would measure them, and it has not been run: the operator's
+  instance is the only machine where the write-bound behaviour reproduces, and a sandbox
+  where the collector is CPU-bound would produce a number that transfers to nothing. The
+  honest statement is that four per-pass costs are removed and their size on that corpus is
+  unknown.
+
+  **THE WORKER COUNT IS AN OPEN QUESTION THIS PR REFUSES TO SETTLE.** §9.1 step 3 says
+  leave it alone, and PR 1 does — it passes no `workers` at all, so the drain keeps
+  `worker_count`'s own default rather than the import's all-cores setting. The reason is
+  stated rather than assumed: the instance is write-bound, so more precompute cores would
+  fill the apply queue faster and change nothing an operator would notice, and adding them
+  in the same PR as the commit-batch change would make the A/B unable to say which of the
+  two moved the number. Whoever runs that A/B decides it.
+
+  **F4, F5 AND F10 ARE STILL UNEXPLAINED AND ARE NOT IN ANY PR.** A read transaction held
+  open on an API worker thread for 17 hours (F4); three SAVEPOINT statements timed at 510,
+  660 and 664 s, where a SAVEPOINT does no I/O (F5); and a pass that ran 5.9 hours against
+  a 60-minute budget with no recycle recorded (F10). The plan's PR 3 carries the
+  *instrumentation* that would name F4's handler and attribute F5's time, not a fix for
+  either — there is nothing yet to fix, only something to find out. They are listed here so
+  the round's closure is not read as covering them.
+
 - **THE 0.4 RELEASE RUN BUTTON (2026-09-18): what it composes, what it deliberately does not
   automate, and one invariant #14 gap it found in a shipped control.** The maintainer asked for
   "a one time single (fully automated) button in the advanced settings in the diagnostics tab"

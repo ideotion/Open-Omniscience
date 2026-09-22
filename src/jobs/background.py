@@ -59,6 +59,23 @@ class JobContext:
             if detail is not None:
                 self._job._detail = str(detail)
 
+    def set_metrics(self, metrics: dict | None) -> None:
+        """Publish the worker's own MEASUREMENTS into the live status (2026-09-21, F3).
+
+        ``done``/``total``/``detail`` answer *how far*; this answers *what it is
+        spending the time on* -- the phase split a long writer job already computes
+        internally and, until now, could only report in its final ``result``. A drain
+        that runs for days is exactly the job whose measurements are worthless at the
+        end and decisive while it runs.
+
+        REPORT-ONLY, and never load-bearing: a replaced dict (not merged), copied on
+        the way in so a worker that keeps mutating its own accumulator cannot publish a
+        half-updated read, and ``None`` clears it. Nothing here may change the worker's
+        control flow.
+        """
+        with self._job._lock:
+            self._job._metrics = dict(metrics) if metrics else None
+
 
 class BackgroundJob:
     """One named background job kind (a process-lifetime singleton per kind)."""
@@ -91,6 +108,7 @@ class BackgroundJob:
         self._done = 0
         self._total = 0
         self._detail = ""
+        self._metrics: dict | None = None
         self._started_at: float | None = None
         self._ended_at: float | None = None
 
@@ -112,6 +130,7 @@ class BackgroundJob:
             self._done = 0
             self._total = 0
             self._detail = ""
+            self._metrics = None
             self._started_at = time.time()
             self._ended_at = None
             ctx = JobContext(self)
@@ -168,6 +187,10 @@ class BackgroundJob:
                 "done": done,
                 "total": total,
                 "detail": self._detail or None,
+                # ADDITIVE (2026-09-21): the worker's own live measurements, or None.
+                # Every key above and below is unchanged, so an existing reader of this
+                # payload sees exactly what it saw before.
+                "metrics": dict(self._metrics) if self._metrics else None,
                 "progress": prog,
                 "error": self._error,
                 "result": self._result,

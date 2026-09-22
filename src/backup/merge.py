@@ -4608,14 +4608,25 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
     return removed
 
 
-def _default_reindex_commit_batch() -> int:
+def default_reindex_commit_batch() -> int:
     """``OO_REINDEX_COMMIT_BATCH`` -- the SAME env var the standalone "re-index the
     whole corpus" job already reads (src/analytics/reindex_job.py), so one knob tunes
-    fsync batching for both the background job AND a restore's post-merge re-index."""
+    fsync batching for both the background job AND a restore's post-merge re-index.
+
+    PUBLIC since 2026-09-21, for one reason: a caller that REPORTS the width it ran at
+    must be able to resolve ``commit_batch=None`` to the number that will actually be
+    used. The audit's own operator step sets ``OO_REINDEX_COMMIT_BATCH=200``, so a
+    reporter that assumed the default's default would publish "1" for a run that
+    committed in batches of 200 -- a fabricated figure in a measurement, which is the
+    one thing a measurement may never contain."""
     try:
         return max(1, int(os.getenv("OO_REINDEX_COMMIT_BATCH", "1") or "1"))
     except ValueError:
         return 1
+
+
+#: Back-compat alias -- the private name this had for a year.
+_default_reindex_commit_batch = default_reindex_commit_batch
 
 
 def _corpus_snapshot(session) -> dict:
@@ -4930,6 +4941,7 @@ def reindex_imported_articles(
     progress_cb: Callable[[int, int], None] | None = None,
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
+    bump_epoch: bool = True,
 ) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
@@ -4948,7 +4960,12 @@ def reindex_imported_articles(
     threaded straight through to :func:`src.analytics.store.reindex_articles` -- see
     there for the batching/parallel-precompute contract. ``commit_batch=None``
     (default) reads the env var above; ``workers=None`` uses
-    :func:`src.analytics.reindex_parallel.worker_count`'s own default."""
+    :func:`src.analytics.reindex_parallel.worker_count`'s own default.
+
+    ``bump_epoch`` (2026-09-21) is passed straight through to
+    :func:`~src.analytics.store.reindex_articles`. A caller that drains SEVERAL import
+    batches in one run passes False and takes the two bumps itself -- see there for why
+    a start bump alone is not enough."""
     from sqlalchemy import text
 
     from src.analytics.extract import get_extractor
@@ -5026,6 +5043,7 @@ def reindex_imported_articles(
             progress_cb=_tracked,
             stats=stats,
             should_stop=should_stop,
+            bump_epoch=bump_epoch,
         )
         # Only a batch that reached the end is stamped done. Anything short of that
         # deliberately stays 'merged', so the backlog survives the interruption -- the

@@ -267,8 +267,24 @@ _FTS_DDL = [
         VALUES ('delete', old.id, old.title, old.content);
     END
     """,
+    # COLUMN-SCOPED ON PURPOSE -- `OF title, content` (PERF/F2, 2026-09-21 audit
+    # docs/audit/15). An UPDATE that touches neither indexed column cannot change
+    # what this index holds, so re-indexing the document for one is pure waste. It
+    # became the common case on 2026-09-07 (PRH-01): `index_article` stamps
+    # `keyword_indexed_at` on EVERY pass, so every re-indexed article UPDATEs its
+    # row, and an unscoped trigger answered that by deleting and re-inserting the
+    # document in a 1.34 M-document FTS5 index -- measured at 3.3-4.6 ms an article
+    # in memory by the 2026-08-03 throughput analysis, which recorded it as a
+    # ONE-TIME ingest cost. It has been a PER-PASS cost since, on the encrypted
+    # store, for a column the pass never wrote.
+    #
+    # WHY THIS CANNOT GO STALE: SQLite fires an `UPDATE OF` trigger when a
+    # statement's SET list MENTIONS one of the named columns -- not when the value
+    # changes. A column can only be written by a statement that names it, so every
+    # write to `title`/`content` still re-indexes, and a SET that writes the same
+    # value re-indexes too (wasteful, never stale). That is the safe direction.
     """
-    CREATE TRIGGER IF NOT EXISTS article_fts_au AFTER UPDATE ON articles BEGIN
+    CREATE TRIGGER IF NOT EXISTS article_fts_au AFTER UPDATE OF title, content ON articles BEGIN
         INSERT INTO article_fts(article_fts, rowid, title, content)
         VALUES ('delete', old.id, old.title, old.content);
         INSERT INTO article_fts(rowid, title, content)
@@ -276,6 +292,43 @@ _FTS_DDL = [
     END
     """,
 ]
+
+#: Name of the update trigger, so the self-heal below and the DDL above cannot drift apart.
+_FTS_UPDATE_TRIGGER = "article_fts_au"
+
+
+def _heal_unscoped_update_trigger(conn) -> bool:
+    """Replace a legacy UNSCOPED ``article_fts_au`` with the column-scoped one.
+
+    ``CREATE TRIGGER IF NOT EXISTS`` can never REPLACE a trigger that is already
+    there, so without this every store created before the scoping shipped would keep
+    the unscoped trigger for the life of the file -- the fix would reach new installs
+    only, which is the opposite of where the cost was measured (a 1.34 M-article field
+    corpus).
+
+    O(1) AND CORPUS-BLIND, which is the constraint the P0.4 boot fix left behind: one
+    ``sqlite_master`` read of one row's stored SQL. It never counts articles, never
+    reads content through the codec, and never triggers a rebuild -- dropping and
+    re-creating a trigger does not touch the index, so the documents already indexed
+    stay indexed.
+
+    Returns True when a legacy trigger was dropped (the caller's DDL then re-creates
+    it scoped, inside the same transaction, so no window exists where an UPDATE to
+    `title`/`content` could slip past untriggered).
+    """
+    row = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=:n"),
+        {"n": _FTS_UPDATE_TRIGGER},
+    ).fetchone()
+    sql = (row[0] if row else None) or ""
+    if not sql:
+        return False  # absent -> the DDL below creates the scoped one; nothing to heal
+    # Whitespace-insensitive and case-insensitive: the stored SQL is whatever the
+    # creating version wrote, and only the SHAPE (is it scoped?) decides.
+    if "AFTER UPDATE OF" in " ".join(sql.split()).upper():
+        return False  # already scoped
+    conn.execute(text(f"DROP TRIGGER {_FTS_UPDATE_TRIGGER}"))
+    return True
 
 
 def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
@@ -299,7 +352,11 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
       * ``"always"`` — force a full rebuild (the explicit re-index / index-repair path).
       * ``"never"`` — ensure only the DDL, never rebuild.
 
-    Returns the action taken: ``"rebuilt"`` | ``"skipped"`` | ``"skipped-non-sqlite"``.
+    Returns the action taken: ``"rebuilt"`` | ``"skipped"`` | ``"skipped-non-sqlite"``. The
+    return names the REBUILD only; the DDL self-heal below
+    (:func:`_heal_unscoped_update_trigger`) is orthogonal, costs one ``sqlite_master`` read,
+    and is reported in the log rather than in this value so every existing caller and
+    assertion on it keeps reading the same three words.
 
     SCOPE OF THE BOOT SELF-HEAL (measured, deliberate): the boot path self-heals only a
     fully-EMPTY index (docsize == 0 while articles exist) — an O(1) probe. It does NOT try to
@@ -331,6 +388,10 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
             ).fetchone()
             is not None
         )
+        # Heal a legacy unscoped update trigger BEFORE the DDL, so the create below
+        # re-makes it scoped in the same transaction (see _heal_unscoped_update_trigger).
+        if _heal_unscoped_update_trigger(conn):
+            _LOG.info("FTS: replaced the unscoped article_fts_au trigger with the scoped one")
         for ddl in _FTS_DDL:
             conn.execute(text(ddl))
         action = _decide_fts_rebuild(conn, rebuild, existed)

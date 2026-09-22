@@ -224,12 +224,19 @@ class _Ctx:
     def __init__(self, stop_after: int | None = None) -> None:
         self.stopping = False
         self.progress: list[dict] = []
+        self.metrics: dict | None = None
         self._stop_after = stop_after
 
     def set_progress(self, *, done=None, total=None, detail=None) -> None:
         self.progress.append({"done": done, "total": total, "detail": detail})
         if self._stop_after is not None and len(self.progress) > self._stop_after:
             self.stopping = True
+
+    def set_metrics(self, metrics) -> None:
+        # 2026-09-21: the worker publishes its measured load/precompute/apply split
+        # live (finding F3). Part of the JobContext surface this stub stands in for;
+        # the split itself is pinned in tests/test_reindex_drain_settings.py.
+        self.metrics = metrics
 
 
 def test_the_resume_worker_finishes_every_pending_batch(monkeypatch):

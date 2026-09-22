@@ -141,3 +141,74 @@ def test_registry_enumerates_registered_jobs():
     kinds = {s["kind"] for s in all_job_statuses()}
     assert "test-registry" in kinds
     assert get_job("nope-not-registered") is None
+
+
+# --------------------------------------------------------------------------- #
+# Live metrics (2026-09-21, audit docs/audit/15 finding F3)                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_metrics_default_to_none_and_are_published_live():
+    """``done``/``total``/``detail`` say HOW FAR; metrics say what the time is going
+    ON. The backlog drain runs for days, so a split that only lands in the final
+    ``result`` arrives long after the operator needed it."""
+    seen: list = []
+
+    def worker(ctx):
+        seen.append(job.status()["metrics"])  # before anything is published
+        ctx.set_metrics({"apply_s": 1.5})
+        seen.append(job.status()["metrics"])
+        ctx.set_metrics({"apply_s": 3.0})
+        return "ok"
+
+    job = BackgroundJob("test-metrics", "M", worker)
+    job.start()
+    job._thread.join(3)
+    assert seen == [None, {"apply_s": 1.5}]
+    assert job.status()["metrics"] == {"apply_s": 3.0}
+
+
+def test_metrics_are_copied_so_a_worker_cannot_publish_a_half_updated_read():
+    """A worker that keeps mutating its own accumulator must not be able to change
+    what a poll already read."""
+    acc = {"articles": 1}
+
+    def worker(ctx):
+        ctx.set_metrics(acc)
+        acc["articles"] = 999  # the worker keeps accumulating after publishing
+
+    job = BackgroundJob("test-metrics-copy", "M", worker)
+    job.start()
+    job._thread.join(3)
+    assert job.status()["metrics"] == {"articles": 1}
+    # ...and the read is a copy too: mutating it cannot reach back into the job.
+    st = job.status()
+    st["metrics"]["articles"] = -1
+    assert job.status()["metrics"] == {"articles": 1}
+
+
+def test_metrics_are_cleared_by_the_next_start():
+    def worker(ctx):
+        ctx.set_metrics({"articles": 7})
+
+    job = BackgroundJob("test-metrics-reset", "M", worker)
+    job.start()
+    job._thread.join(3)
+    assert job.status()["metrics"] == {"articles": 7}
+
+    seen: list = []
+    job._worker = lambda ctx: seen.append(job.status()["metrics"])
+    job.start()
+    job._thread.join(3)
+    assert seen == [None], "a new run must not show the previous run's measurements"
+
+
+def test_set_metrics_none_clears_them():
+    def worker(ctx):
+        ctx.set_metrics({"articles": 2})
+        ctx.set_metrics(None)
+
+    job = BackgroundJob("test-metrics-clear", "M", worker)
+    job.start()
+    job._thread.join(3)
+    assert job.status()["metrics"] is None

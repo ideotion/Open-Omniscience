@@ -11513,3 +11513,107 @@ mutant reddens by name. (2) An instance booted with `OO_NO_SCHEDULER=1` is ONLIN
 because the boot-time airplane engagement lives inside that same block; a click-through that
 "proves the press did not go online" against such an instance proves nothing unless it compares
 before and after — which is what the record now does, and says.
+## 2026-09-22 — A DDL FIX THAT USES `IF NOT EXISTS` REACHES NEW INSTALLS ONLY (the FTS update trigger, PR 1 of the field-slowness plan)
+
+`CREATE TRIGGER IF NOT EXISTS` can never REPLACE a trigger that is already there. So
+editing a trigger in the DDL list that `ensure_fts` runs on every unlock changes the
+behaviour of stores created AFTER the edit and of nothing else — and the store the cost was
+measured on is, by definition, an old one. The same holds for every `CREATE … IF NOT
+EXISTS` object the boot path "ensures": indexes, views, triggers. **An edit to one of them
+is not a fix until something drops the old shape.**
+
+**The self-heal that is allowed here, and the constraint it must respect.** The P0.4
+unlock-at-scale fix exists because a boot used to pay a corpus-scaled cost (a measured
+981 s → 1,645 s on a 130 GB field corpus), so a heal may not reintroduce one. Reading one
+row of `sqlite_master` for the object's stored SQL and comparing its SHAPE is O(1): no
+article count, no content through the codec, no rebuild. Drop-then-create belongs in the
+SAME transaction as the DDL that re-creates it, so no window exists where the object is
+missing. Dropping and re-creating a trigger does not touch the index it maintains, and a
+test should pin that the heal provokes no rebuild — otherwise the heal quietly becomes the
+cost it was written to remove.
+
+**`UPDATE OF col` fires on MENTION, not on change.** SQLite fires a column-scoped update
+trigger when the statement's SET list names one of the columns, whether or not the value
+differs. That is the direction to fail in: a same-value write still re-indexes (wasteful,
+never stale), and a column can only be written by a statement that names it, so nothing can
+change behind a scoped trigger. Both halves are worth their own test, because the useful
+one (the unrelated column does NOT fire) and the safe one (the same-value write DOES) can
+regress independently.
+
+**And a trigger test must be behavioural.** Grepping the DDL for `UPDATE OF` passes on a
+trigger that has stopped keeping the index correct. Drive real UPDATEs and fingerprint
+FTS5's own `article_fts_data` b-tree: that answers "did it fire?" without trusting the
+thing under test.
+
+## 2026-09-22 — "ONCE PER RUN" IS TWO BUMPS, NOT ONE, WHEN THE PER-BATCH CALL WAS CLOSING A WINDOW BY ACCIDENT
+
+`bump_corpus_epoch`'s own docstring says to call it once per logical mutation, "never in a
+per-row loop" — and the paged re-index job called it once per 300-article page, ~4,270 gate
+acquisitions and commits for one logical mutation of a 1.28 M-article backlog. Collapsing
+that to a single bump at the START of the run looks like the obvious fix and is **wrong**: a
+rollup snapshotted WHILE the run is in flight would then never be invalidated, and an
+incremental merge across a delete-then-reinsert is exactly the double-count the epoch
+exists to prevent. Per-batch bumping was closing that window incidentally, so removing it
+without a closing bump trades a wasteful correctness property for a cheap bug.
+
+**The general form:** before thinning a repeated call, ask what its REPETITION was doing,
+not just what one call does. A frequent call has two effects — the one in its docstring and
+the coverage its frequency happens to provide — and only the first is written down. Here the
+answer was a bump at each END of the run, with the closing one in a `finally` so a cancel, a
+yield and a crash all land it.
+## 2026-09-22 — A DRIFT GUARD THAT CHECKS ONE DIRECTION REPORTS THE DRIFT IT CANNOT HAVE (the `_Ctx` double, caught by a red CI lane on the PR that caused it)
+
+`tests/test_import_tail_phase.py` carries a hand-written `JobContext` double and, beside
+it, `test_the_ctx_double_matches_the_real_job_context` — a guard whose own docstring
+records the right lesson ("a hand-written double that has drifted produces the same green
+as correct code"). It compared the SIGNATURE SHAPE of `set_progress`, the one method the
+double already had. So it was blind in the only direction that actually breaks a caller:
+**the real class GAINING a method the double lacks.**
+
+`JobContext` gained `set_metrics`. The guard stayed green. Two tests in the same file died
+on `AttributeError: '_Ctx' object has no attribute 'set_metrics'` — not where the drift
+was, and not with the drift named. Worse, the same widening had already broken a second
+double in `tests/test_reindex_backlog.py`, whose failure I saw and fixed without asking
+how many other stand-ins existed: fixing the instance the failure showed me is not fixing
+the class of failure, and the second one cost a red blocking lane on CI.
+
+**The shape of a guard that works.** Completeness FIRST, then shape:
+
+    real = {n for n in dir(JobContext) if not n.startswith("_")}
+    missing = sorted(n for n in real if not hasattr(_Ctx, n))
+    assert not missing, f"the double has drifted behind JobContext: {missing}"
+    for name in sorted(real):
+        ...compare signature shapes...
+
+Verified by deleting `set_metrics` from the double and watching the guard redden BY NAME,
+which is the only way to know a guard guards.
+
+**Two general forms.** (1) Any assertion of the form "A matches B" must enumerate from the
+side that GROWS — the real class, the schema, the locale file — never from the copy, or it
+can only ever catch the copy getting ahead. (2) When a contract widens, grep for every
+stand-in before pushing: `grep -rl "set_progress" tests/` takes a second, and the two
+callers it finds are cheaper than the CI round trip that finds them for you.
+## 2026-09-22 — TICKING "make check is green" FOR THE HALF OF IT YOU RAN (two CI rounds on one PR)
+
+The PR checklist line reads "`make check` is green (ruff + pytest) on Python 3.13". I ran
+ruff and pytest, ticked it, and pushed. The blocking `test` lane runs **eleven** steps, and
+`python -m mypy src/` is one of them: it went red on three `[assignment]` errors in the
+function I had just written, where a dict comprehension fixed the value type at `float`
+and every later assignment of a list, a dict or a `None` contradicted it. mypy is pinned in
+`pyproject` precisely so this is reproducible locally; I simply never ran it.
+
+**The gap was the checklist's own parenthesis.** "(ruff + pytest)" is a description of what
+somebody once ran, and it has been carried forward ever since — so the box gets ticked
+against the two commands it names rather than against the lane it claims. A checklist item
+that names a subset of the gate it asserts will be honoured as the subset.
+
+**Read the lane, then run the lane.** `sed -n '/^  test:/,/^  [a-z]/p' .github/workflows/ci.yml`
+lists every step in one command. For this repo that is: ruff correctness, ruff style, the
+ruff non-growth ratchet, four i18n gates, Alembic migration drift, pytest, mypy, bandit and
+pip-audit. Running all of them takes minutes; discovering them one CI round at a time cost
+two rounds on this PR, after the double-drift round before it.
+
+**And measure the ratchets like-for-like.** A count-over-a-tool gate (ruff's 440, mypy's
+zero) means nothing from one side alone: `git worktree add /tmp/base origin/main` and run
+the same command there. Main measured zero mypy errors and 440 ruff findings, so both of
+mine are genuinely unchanged rather than assumed unchanged.
