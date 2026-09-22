@@ -826,7 +826,11 @@ def _drain_metrics(run: dict) -> dict | None:
     """
     if not run.get("articles"):
         return None
-    out = {
+    # Annotated because the values are deliberately HETEROGENEOUS -- rounded seconds,
+    # counts, a list of widths, a path histogram, and a rate that may be None. Without
+    # it the comprehension below fixes the value type at float and every later
+    # assignment is a type error.
+    out: dict[str, object] = {
         k: round(float(run[k]), 3)
         for k in ("wall_s", "load_s", "precompute_s", "apply_s", "apply_index_s", "apply_commit_s")
         if run.get(k) is not None
@@ -839,9 +843,8 @@ def _drain_metrics(run: dict) -> dict | None:
     if run.get("precompute_by_path"):
         out["precompute_by_path"] = dict(run["precompute_by_path"])
     wall = float(run.get("wall_s") or 0.0)
-    out["articles_per_second"] = (
-        round(out["articles"] / wall, 2) if out["articles"] and wall > 0 else None
-    )
+    articles = int(run.get("articles", 0))
+    out["articles_per_second"] = round(articles / wall, 2) if articles and wall > 0 else None
     return out
 
 

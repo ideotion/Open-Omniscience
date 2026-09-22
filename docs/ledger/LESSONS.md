@@ -11593,3 +11593,27 @@ side that GROWS — the real class, the schema, the locale file — never from t
 can only ever catch the copy getting ahead. (2) When a contract widens, grep for every
 stand-in before pushing: `grep -rl "set_progress" tests/` takes a second, and the two
 callers it finds are cheaper than the CI round trip that finds them for you.
+## 2026-09-22 — TICKING "make check is green" FOR THE HALF OF IT YOU RAN (two CI rounds on one PR)
+
+The PR checklist line reads "`make check` is green (ruff + pytest) on Python 3.13". I ran
+ruff and pytest, ticked it, and pushed. The blocking `test` lane runs **eleven** steps, and
+`python -m mypy src/` is one of them: it went red on three `[assignment]` errors in the
+function I had just written, where a dict comprehension fixed the value type at `float`
+and every later assignment of a list, a dict or a `None` contradicted it. mypy is pinned in
+`pyproject` precisely so this is reproducible locally; I simply never ran it.
+
+**The gap was the checklist's own parenthesis.** "(ruff + pytest)" is a description of what
+somebody once ran, and it has been carried forward ever since — so the box gets ticked
+against the two commands it names rather than against the lane it claims. A checklist item
+that names a subset of the gate it asserts will be honoured as the subset.
+
+**Read the lane, then run the lane.** `sed -n '/^  test:/,/^  [a-z]/p' .github/workflows/ci.yml`
+lists every step in one command. For this repo that is: ruff correctness, ruff style, the
+ruff non-growth ratchet, four i18n gates, Alembic migration drift, pytest, mypy, bandit and
+pip-audit. Running all of them takes minutes; discovering them one CI round at a time cost
+two rounds on this PR, after the double-drift round before it.
+
+**And measure the ratchets like-for-like.** A count-over-a-tool gate (ruff's 440, mypy's
+zero) means nothing from one side alone: `git worktree add /tmp/base origin/main` and run
+the same command there. Main measured zero mypy errors and 440 ruff findings, so both of
+mine are genuinely unchanged rather than assumed unchanged.
