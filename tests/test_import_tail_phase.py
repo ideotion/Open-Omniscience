@@ -182,6 +182,10 @@ class _Ctx:
     def set_progress(self, *, done=None, total=None, detail=None) -> None:
         self.progress.append({"done": done, "total": total, "detail": detail})
 
+    def set_metrics(self, metrics) -> None:
+        # The worker's live measurement channel (2026-09-21, audit docs/audit/15 F3).
+        self.metrics = metrics
+
 
 def test_the_ctx_double_matches_the_real_job_context() -> None:
     from src.jobs.background import JobContext
@@ -191,7 +195,23 @@ def test_the_ctx_double_matches_the_real_job_context() -> None:
         # and never will, and an annotation drift is not what silently breaks a caller.
         return [(p.name, p.kind) for p in inspect.signature(fn).parameters.values()]
 
-    assert shape(_Ctx.set_progress) == shape(JobContext.set_progress)
+    # COMPLETENESS FIRST, then shape. This guard used to compare only the methods the
+    # double ALREADY had, so it was blind in the one direction that actually breaks a
+    # caller: JobContext GAINING a method the double lacks. It did, on 2026-09-21
+    # (`set_metrics`), and this test stayed green while every test that drives the
+    # drain died on AttributeError somewhere else entirely. A drift guard that checks
+    # one direction reports the drift it cannot have.
+    real = {n for n in dir(JobContext) if not n.startswith("_")}
+    missing = sorted(n for n in real if not hasattr(_Ctx, n))
+    assert not missing, (
+        f"the double has drifted behind JobContext: {missing}. Add them here, or every "
+        f"test that drives a worker with this double fails somewhere unrelated."
+    )
+
+    for name in sorted(real):
+        r = getattr(JobContext, name)
+        if callable(r) and not isinstance(r, property):
+            assert shape(getattr(_Ctx, name)) == shape(r), f"{name} drifted in shape"
     assert isinstance(JobContext.stopping, property), "stopping must stay a property"
 
 

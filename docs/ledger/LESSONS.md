@@ -11561,3 +11561,35 @@ not just what one call does. A frequent call has two effects — the one in its 
 the coverage its frequency happens to provide — and only the first is written down. Here the
 answer was a bump at each END of the run, with the closing one in a `finally` so a cancel, a
 yield and a crash all land it.
+## 2026-09-22 — A DRIFT GUARD THAT CHECKS ONE DIRECTION REPORTS THE DRIFT IT CANNOT HAVE (the `_Ctx` double, caught by a red CI lane on the PR that caused it)
+
+`tests/test_import_tail_phase.py` carries a hand-written `JobContext` double and, beside
+it, `test_the_ctx_double_matches_the_real_job_context` — a guard whose own docstring
+records the right lesson ("a hand-written double that has drifted produces the same green
+as correct code"). It compared the SIGNATURE SHAPE of `set_progress`, the one method the
+double already had. So it was blind in the only direction that actually breaks a caller:
+**the real class GAINING a method the double lacks.**
+
+`JobContext` gained `set_metrics`. The guard stayed green. Two tests in the same file died
+on `AttributeError: '_Ctx' object has no attribute 'set_metrics'` — not where the drift
+was, and not with the drift named. Worse, the same widening had already broken a second
+double in `tests/test_reindex_backlog.py`, whose failure I saw and fixed without asking
+how many other stand-ins existed: fixing the instance the failure showed me is not fixing
+the class of failure, and the second one cost a red blocking lane on CI.
+
+**The shape of a guard that works.** Completeness FIRST, then shape:
+
+    real = {n for n in dir(JobContext) if not n.startswith("_")}
+    missing = sorted(n for n in real if not hasattr(_Ctx, n))
+    assert not missing, f"the double has drifted behind JobContext: {missing}"
+    for name in sorted(real):
+        ...compare signature shapes...
+
+Verified by deleting `set_metrics` from the double and watching the guard redden BY NAME,
+which is the only way to know a guard guards.
+
+**Two general forms.** (1) Any assertion of the form "A matches B" must enumerate from the
+side that GROWS — the real class, the schema, the locale file — never from the copy, or it
+can only ever catch the copy getting ahead. (2) When a contract widens, grep for every
+stand-in before pushing: `grep -rl "set_progress" tests/` takes a second, and the two
+callers it finds are cheaper than the CI round trip that finds them for you.
