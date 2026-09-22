@@ -149,9 +149,30 @@ def pending_ruling_ids() -> set[str]:
         if len(cells) < 5:
             continue
         m = _RULING_ID.match(cells[0].replace("⛔", "").replace("🔒", "").strip())
-        if m and ("PENDING" in cells[3] or "PENDING" in cells[4]):
+        if m and _row_is_pending(cells):
             out.add(m.group(1))
     return out
+
+
+def _row_is_pending(cells: list[str]) -> bool:
+    """Is THIS ruling unanswered? Read the row's own SOURCE and verdict, never its marker.
+
+    ⛔ MARKS A CLASS OF QUESTION, NOT A STATE. It means "never taken autonomously" -- and
+    most ⛔ questions have been ANSWERED. Testing `"⛔" in cells[0]` called `Q1101` pending
+    when its own row reads «sheet answered» and its S1 shipped on 2026-09-18, which in turn
+    put `tests/test_repo_invariants.py` -- a file nearly every PR touches, named there only
+    because it ENFORCES the ruling -- under a hard CI failure. That is the same over-match
+    the `src/static/index.html` regression was, one table over: an enforcement SITE is not
+    a forbidden path.
+
+    The authoritative signals, validated against twelve known-truth rows (six pending:
+    Q823, Q925, Q1009, Q1113, RC02, RC10; six not: Q301, Q1101, Q1103, L5, R26, R28):
+    the SOURCE column says pending («sheet pending», «RC round (blank…)» whose verdict
+    opens PENDING), or the verdict itself opens with PENDING / reads «→ PENDING»."""
+    source, verdict = cells[3], cells[2]
+    if "pending" in source.lower():
+        return True
+    return verdict.lstrip("*").upper().startswith("PENDING") or "→ PENDING" in verdict
 
 
 def _header_block(text: str) -> str:
@@ -241,7 +262,7 @@ def from_rulings() -> list[Entry]:
         # path and is itself unanswered. A SLICE being blocked means that slice cannot
         # start -- it never means the file is untouchable, and conflating the two made the
         # strict check fire on `src/static/index.html`, which nearly every PR edits.
-        blocked = "⛔" in cells[0] or "PENDING" in cells[3] or "PENDING" in cells[4]
+        blocked = _row_is_pending(cells)
         title = cells[2][:160]
         for p in _paths_in(cells[4]):
             out.append(Entry(p, rid, "ruling", "pending-ruling" if blocked else "ruled",
@@ -263,7 +284,18 @@ def from_queue() -> list[Entry]:
         head = " ".join(lines[i : i + 3])
         open_markers = ("⛔", "PENDING", "NEEDS A RULING", "RULING NEEDED", "STILL OPEN",
                         "UNSTATED", "NOT BUILT", "OPEN QUESTION")
-        if not any(m in body[:1200] for m in open_markers):
+        # THE WHOLE BODY, not a window at the top. The first cut read only the leading
+        # 1,200 characters, on the theory that an entry announces its own state -- and
+        # this ledger's entries do not: they are multi-part, and the one recording that
+        # NOTHING VERIFIES `main`'s MERGE COMMIT carries its "NEEDS A RULING" in item (8),
+        # thousands of characters down. MEASURED, in the session that shipped this tool:
+        # `planned.py .github/workflows/ci.yml` returned one unrelated slice and missed
+        # that entry entirely -- while that same session was writing a recommendation
+        # about it from a subagent's one-line summary, which is the exact "redoing
+        # thinking already done" this tool exists to prevent. Over-matching here is cheap
+        # (a queue row is informational, capped at three per path, never strict-blocking);
+        # under-matching is what a silent tool looks like.
+        if not any(m in body for m in open_markers):
             continue
         title = re.sub(r"\*\*", "", lines[i].lstrip("- ").strip())[:160]
         rid = (_RULING_ID.search(head) or [None, f"queue:{i + 1}"])[1] if _RULING_ID.search(head) else f"queue:{i + 1}"

@@ -11660,6 +11660,43 @@ generating is what decides it: 4.9 s while it resolved bare filenames by walking
 **per token**, 0.26 s for an identical 689 rows once the listing was walked **once**. At five
 seconds a session stops reaching for it; at a quarter of a second it does not.
 
+**THEN THE TOOL FOUND TWO MORE OF ITS OWN, BY BEING RUN ON A FILE THIS PR HAD JUST
+EDITED — and one of them had already cost this same session.** `planned.py
+.github/workflows/ci.yml` returned one unrelated slice and missed the queue entry
+recording that *nothing verifies `main`'s merge commit*, although that entry names
+`ci.yml:22-24` outright.
+
+1. **The queue scan read only an entry's first 1,200 characters.** This ledger's entries
+   are multi-part; that one carries its "NEEDS A RULING" in item (8), thousands of
+   characters down. Meanwhile I was writing a recommendation about that very decision from
+   a subagent's one-line summary — which dropped the cost argument (a per-SHA group runs a
+   full macOS + Windows + Ubuntu matrix at roughly one merge every four minutes), the
+   measured 34 cancelled · 2 failure · 4 success where **all four successes are the
+   `schedule` cron**, the deliberate "UNMEASURED" restraint about the mechanism, and a
+   fourth option another PR had already named. **That is the exact failure the tool exists
+   to prevent, committed by the session building the prevention**, and what caught it was
+   the older ledger rule: *agent findings get hand-re-verified before shipping.*
+2. **`⛔` marks a CLASS of question, not a STATE.** It means "never taken autonomously",
+   and most ⛔ questions have been answered. Testing `"⛔" in cells[0]` called `Q1101`
+   pending although its own row reads «sheet answered» and its S1 shipped — which put
+   `tests/test_repo_invariants.py` under a hard CI failure, a file nearly every PR touches,
+   named by that ruling only because it **enforces** it. Same over-match as the
+   `index.html` regression, one table over: **an enforcement site is not a forbidden path.**
+   The replacement reads the row's own source and verdict, validated against twelve
+   hand-checked rows (six pending, six not) so a later simplification has to disagree with
+   the ledger out loud.
+
+**The general shape, and the reason both got through the first time: a predicate that
+reads a MARKER is reading how something is labelled, not what it is.** Both defects were
+the same mistake at different tables, and I had already fixed it once — for the briefs —
+and left the raw marker test standing in the rulings parser. **Fixing an over-match in one
+parser is not fixing it in the others.**
+
+**Run a new gate against the branch that adds it, as the gate will run in CI.** The strict
+step was green when I wrote it and red by the time I pushed, because a later commit in the
+same PR touched `test_repo_invariants.py`. One `--diff --strict` against `origin/main`
+predicted the failure exactly, before CI reached that step.
+
 **And the rule had to live in `CLAUDE.md`, not in `docs/ledger/`.** Rules (5)/(5a) would
 normally route it out — but the whole finding is that `CLAUDE.md` named none of the plan
 surfaces, so a rule telling sessions to consult them is worthless anywhere a session is not

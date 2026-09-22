@@ -184,3 +184,54 @@ def test_strict_PASSES_on_a_ledger_file_every_session_is_required_to_edit():
 def test_strict_PASSES_on_a_file_merely_claimed_by_a_held_slice():
     out = _run("--strict", "src/static/index.html")
     assert out.returncode == 0, out.stdout
+
+
+# --------------------------------------------------------------------------- #
+# The two defects the tool found in ITSELF, when run against its own repo      #
+# --------------------------------------------------------------------------- #
+
+
+def test_an_ANSWERED_ruling_is_never_marked_pending_however_its_row_is_MARKED(entries):
+    """DEFECT 1, found by running `planned.py` on a file this PR had just edited.
+
+    ⛔ MARKS A CLASS OF QUESTION, NOT A STATE -- it means "never taken autonomously", and
+    most ⛔ questions have been answered. The first cut tested `"⛔" in cells[0]`, so
+    `Q1101` came back `pending-ruling` although its own row reads «sheet answered» and its
+    S1 shipped on 2026-09-18. That in turn put `tests/test_repo_invariants.py` under a hard
+    CI failure -- a file nearly every PR touches, named by that ruling only because it
+    ENFORCES it. Same over-match as the `index.html` regression, one table over: **an
+    enforcement site is not a forbidden path.**"""
+    for e in entries:
+        if e.id in {"Q1101", "Q301", "Q1103", "L5"}:
+            assert e.status != "pending-ruling", f"{e.id} is answered but reads pending"
+
+
+def test_the_pending_rule_agrees_with_twelve_KNOWN_TRUTH_rows():
+    """The rule reads the row's own SOURCE and verdict, never its marker. Pinned against
+    hand-checked rows rather than against itself, so a future 'simplification' of the
+    predicate has to disagree with the ledger out loud."""
+    pending = planned_index.pending_ruling_ids()
+
+    for rid in ("Q823", "Q925", "Q1009", "Q1113", "RC02", "RC10"):
+        assert rid in pending, f"{rid} is unanswered and must read pending"
+    for rid in ("Q301", "Q1101", "Q1103", "L5", "R26", "R28"):
+        assert rid not in pending, f"{rid} is answered and must not read pending"
+
+
+def test_a_queue_entrys_marker_is_found_DEEP_IN_ITS_BODY_not_only_at_the_top(entries):
+    """DEFECT 2, and the one that cost this session something.
+
+    The first cut scanned only an entry's leading 1,200 characters. This ledger's entries
+    are multi-part: the one recording that NOTHING VERIFIES `main`'s MERGE COMMIT carries
+    its "NEEDS A RULING" in item (8), thousands of characters down -- so
+    `planned.py .github/workflows/ci.yml` returned one unrelated slice and missed it, in
+    the very session that was writing a recommendation about that decision from a
+    subagent's one-line summary instead of the entry. That is the "redoing thinking
+    already done" this whole tool exists to prevent."""
+    hits = [e for e in _by_path(entries, ".github/workflows/ci.yml") if e.kind == "queue"]
+    assert hits, "the CI-policy queue entry is not indexed against the file it names"
+
+
+def test_strict_PASSES_on_a_file_a_ruling_merely_names_as_its_ENFORCEMENT_SITE():
+    out = _run("--strict", "tests/test_repo_invariants.py")
+    assert out.returncode == 0, out.stdout

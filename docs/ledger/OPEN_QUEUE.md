@@ -115,6 +115,21 @@
   answers none of them** — and it is why the blocking half fires only on a brief's own *Must NOT
   touch* clause and on a ruling that names a path and is itself unanswered.
 
+  **(6) THE TOOL WAS RUN ON ITS OWN REPO AND FOUND TWO MORE DEFECTS IN ITSELF, both fixed
+  in the same PR.** The queue scan read only an entry's first 1,200 characters, so
+  `planned.py .github/workflows/ci.yml` missed the entry recording that nothing verifies
+  `main`'s merge commit — while this session was writing `D21` about that decision from a
+  subagent summary rather than the entry. And `⛔` was read as a STATE when it marks a
+  CLASS: `Q1101` reads «sheet answered» with its S1 shipped, yet came back `pending-ruling`
+  and put `tests/test_repo_invariants.py` under a hard CI failure. The pending predicate
+  now reads the row's own source and verdict, validated against twelve hand-checked rows.
+  **`D21` IS CORRECTED IN THE SHEET** and its recommendation changed: PR #1040's option —
+  rule that the nightly cron IS the referee for `main` — is now the recommended one,
+  because the cron referee already exists in fact (of the 40 most recent completed runs,
+  the only four successes are the `schedule` cron) and it spends nothing. The mechanism
+  behind the cancellations stays **UNMEASURED**, deliberately, exactly as the primary entry
+  and PR #1040 both insist.
+
 - **THE DIAGNOSTICS FULL/LIGHT TOGGLE SHIPPED, AND IT IS NOT `R27` (2026-09-22, ruling
   `R28`).** The maintainer asked, later the same day as the seven-ruling round: «For the
   diagnostics, create a simple toggle to enable full or light diagnostics (PR2), start
