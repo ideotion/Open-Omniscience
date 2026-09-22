@@ -11617,3 +11617,51 @@ two rounds on this PR, after the double-drift round before it.
 zero) means nothing from one side alone: `git worktree add /tmp/base origin/main` and run
 the same command there. Main measured zero mypy errors and 440 ruff findings, so both of
 mine are genuinely unchanged rather than assumed unchanged.
+
+---
+
+### A TOOL THAT ANSWERS EVERY QUESTION THE SAME WAY ANSWERS NONE OF THEM (2026-09-22, the planned-work reverse index, `R29`)
+
+The index exists because the ledger could say which files *were* touched (`shipped.csv`'s
+`key_paths`) and never which files a *planned* decision **owns** — and because `CLAUDE.md`,
+the one file every session must read in full, named none of the plan surfaces at all. Its
+only grep instruction said *"before asking the maintainer anything"*, never *"before editing
+a file"*. That gap has already cost one maintainer decision: the entry above at
+`LESSONS.md:7476` records a session that trusted a stale code comment and re-ratified a
+setting the ledger had already ruled.
+
+**The two ways a prose-parsing index dies are both silent, and the loud one is the one that
+looks like success.** The first cut found *too much*, twice:
+
+1. A brief whose scope says it adds *"new modules under `src/`"* — true, and useless.
+   Accepted as a directory key, it matched **every source file in the tree**, so two 0.7/0.8
+   briefs appeared on every lookup any session would ever run.
+2. A **blocked slice** was treated as an **untouchable file**. They are different facts: a
+   held slice cannot *start*; that never means its files may not be edited. Conflating them
+   put `src/static/index.html` — which nearly every PR touches — under a hard CI failure.
+
+Either one alone would have trained the next session to scroll past the tool, which is
+indistinguishable from never having built it. **A gate that fires on everything is a gate
+nobody reads**, and that is the same shape as the recorded `--no-verify` reflex: the fix is
+not a louder warning, it is a *narrower* one. The blocking half now fires only on a brief's
+own *Must NOT touch* clause and on a ruling that names a path and is itself unanswered.
+
+**The quiet death needs its own guard, because it reads as good news.** The generator parses
+each brief's blockquote header; if that format drifts it returns *fewer* rows with no error,
+and "nothing planned for this file" is exactly what a session wants to hear. The guard is
+that **every one of the 38 briefs must contribute at least one entry** — a brief that goes
+silent is the alarm. And the no-hit message says in as many words that **absence is weaker
+evidence than presence**, because a confident silence is the expensive failure here.
+
+**A generated index beats a committed one wherever the sources change faster than the
+discipline to regenerate.** A checked-in copy would be stale most of the time in a repo whose
+ledger changes every session, and a stale answer here reads as authoritative. The cost of
+generating is what decides it: 4.9 s while it resolved bare filenames by walking the tree
+**per token**, 0.26 s for an identical 689 rows once the listing was walked **once**. At five
+seconds a session stops reaching for it; at a quarter of a second it does not.
+
+**And the rule had to live in `CLAUDE.md`, not in `docs/ledger/`.** Rules (5)/(5a) would
+normally route it out — but the whole finding is that `CLAUDE.md` named none of the plan
+surfaces, so a rule telling sessions to consult them is worthless anywhere a session is not
+required to read. Twenty-one lines; ratchet 740 → 761. **Where a rule lives is part of
+whether the rule works.**

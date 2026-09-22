@@ -62,6 +62,59 @@
   either — there is nothing yet to fix, only something to find out. They are listed here so
   the round's closure is not read as covering them.
 
+- **THE PLANNED-WORK REVERSE INDEX, AND THE DECISIONS ROUND IT CAME WITH (2026-09-22, rulings
+  `R29` and `R30`).** The maintainer asked for two things in one turn: a numbered decisions list
+  integrating PR #1131's plans, and *«a way so that future bug discovery would not contradict what
+  has been planned … to help future unaware sessions to become aware of the changes, and to avoid
+  redoing some thinking that has already been done»*. Both are built. What belongs HERE is the
+  part that is open, and the part a future reader would otherwise mis-read.
+
+  **(1) THE DECISIONS SHEET IS UNANSWERED.**
+  [`docs/design/DECISIONS_2026-09-22_BETA_PATHWAY.md`](../design/DECISIONS_2026-09-22_BETA_PATHWAY.md)
+  carries `D01`–`D43` with a recommendation each; **nothing in it is resolved by the recording
+  session**, and its own `ANSWER Dnn:` lines are the primary record. Part A is a POINTER round —
+  it re-asks nothing, it gives one line and a recommendation for each of the 41 decisions already
+  recorded as open (the six ⛔ blockers, `PF01`–`PF14`, the ten CONFLICTs, the RC assumptions, and
+  twelve queue items that never entered the rulings pipeline at all). Part B is the new material.
+
+  **(2) SIX COLLISIONS NO DOCUMENT RECORDED, now `D33`–`D38`.** The 2026-09-21 field-slowness
+  report's seven PRs and PR #1131's 38 slices were written three days apart by sessions that could
+  not see each other. They overlap on: three corpus-sized rewrites all wanting `keyword_mentions`
+  (PR 5, 0.5 row B's alpha-3 migration, the C5 pragma rebuild); the LANE databases being invisible
+  to the memory budget while `R26` raises the other half (`src/versioned/store.py:178` hardcodes
+  `pool_size=2, max_overflow=4` and a **16 MB** cache per lane — twice the whole small tier's
+  corpus cache, additive and unbudgeted); PR 7 wanting the backup format that `Q102` freezes at
+  0.9 with **one** bump allowed; an Alembic batch rebuild silently dropping all three FTS triggers
+  while `merge.py` knows only `article_fts_ai`; no admission control between whole-corpus jobs;
+  and one premise in the report's own §9.1.
+
+  **(3) THE REPORT'S OWN §9.1 STEP 3 IS THE PREMISE TO WATCH (`D38`).** It tells the operator to
+  set `OO_SQLITE_CACHE_MB=64`, and justifies the RAM with *"the OS page cache is what makes random
+  writes survivable"*. **Those are two different caches.** The 2026-08-03 import-cache regression
+  measured SQLite's own `cache_size` directly and found it a **residency dial, not a throughput
+  lever** — dirty pages spill to the file DURING the open transaction, and the rule it replaced
+  *"turned it UP on exactly the machines least able to pay"*. The write-bound chain does not depend
+  on this and step 1's OS-page-cache reasoning is sound and separate, but step 3's expected benefit
+  is UNMEASURED and it is advice aimed at a 4-to-7 GB VM. Recorded rather than silently fixed,
+  because the report is a dated record of what was thought that day.
+
+  **(4) WHAT THE MECHANISM DELIBERATELY REFUSES TO DO.** It never judges whether a change
+  CONTRADICTS a plan — it says what the plan is and where to read it. A generator that guessed
+  would be a composite verdict over prose, and its false negatives ("nothing is planned here")
+  would be the expensive ones, which is why the no-hit message says in as many words that
+  **absence is weaker evidence than presence**. The index is GENERATED on every run and never
+  committed: a checked-in copy would be stale most of the time in a repo whose ledger changes
+  every session, and a stale answer here reads as authoritative.
+
+  **(5) TWO REGRESSIONS ARE PINNED BECAUSE BOTH WERE LIVE AND BOTH WOULD HAVE DISCREDITED IT ON
+  FIRST USE.** S08-01's scope says it adds *"new modules under `src/`"* — true, and useless: taken
+  as a directory key it matched every source file in the tree, so two 0.7/0.8 briefs appeared on
+  every lookup any session would ever run. And a blocked SLICE is not an untouchable FILE:
+  conflating them put `src/static/index.html`, which nearly every PR edits, under a hard CI
+  failure. The lesson under both is one thing — **a tool that answers every question the same way
+  answers none of them** — and it is why the blocking half fires only on a brief's own *Must NOT
+  touch* clause and on a ruling that names a path and is itself unanswered.
+
 - **THE DIAGNOSTICS FULL/LIGHT TOGGLE SHIPPED, AND IT IS NOT `R27` (2026-09-22, ruling
   `R28`).** The maintainer asked, later the same day as the seven-ruling round: «For the
   diagnostics, create a simple toggle to enable full or light diagnostics (PR2), start
