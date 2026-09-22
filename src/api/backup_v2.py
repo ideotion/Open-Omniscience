@@ -801,7 +801,8 @@ def _accumulate(run: dict, st: dict, *, commit_batch: int | None, idle: bool) ->
         run.get("exclusive_articles" if idle else "shared_articles", 0)
     ) + int(st.get("articles", 0) or 0)
     widths = set(run.get("commit_batch_seen") or ())
-    widths.add(int(commit_batch) if commit_batch else 1)
+    if commit_batch:
+        widths.add(int(commit_batch))
     run["commit_batch_seen"] = sorted(widths)
     # WHICH precompute path ran, summed across batches. "pool" versus "serial" is the
     # difference between every core and one, and a pool that quietly fell back is the
@@ -860,6 +861,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     """
     from src.analytics.corpus_epoch import bump_corpus_epoch
     from src.backup.merge import (
+        default_reindex_commit_batch,
         import_reindex_commit_batch,
         reindex_backlog,
         reindex_imported_articles,
@@ -965,7 +967,14 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # value used is PUBLISHED beside the numbers it produced, so a slow batch can be
             # read against the settings it ran under instead of guessed at.
             idle = _collector_idle()
-            commit_batch = import_reindex_commit_batch() if idle else None
+            # RESOLVED, never left as None. Passing None would behave identically
+            # (reindex_imported_articles reads the same env var), but the width is
+            # PUBLISHED beside the seconds it produced, and the audit's own operator
+            # step sets OO_REINDEX_COMMIT_BATCH=200 -- so a reporter that assumed the
+            # default's default would print "1" for a run committing in 200s.
+            commit_batch = (
+                import_reindex_commit_batch() if idle else default_reindex_commit_batch()
+            )
             st: dict = {}
             with corpus_lease("reindex-resume"):
                 res = reindex_imported_articles(

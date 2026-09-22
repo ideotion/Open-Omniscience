@@ -62,6 +62,8 @@ def drain(monkeypatch):
         "batches": [{"batch_id": 7, "articles": 4}, {"batch_id": 9, "articles": 6}],
         "scheduler_running": False,
         "exclusive": False,
+        # What OO_REINDEX_COMMIT_BATCH resolves to -- 1 unless the operator set it.
+        "env_commit_batch": 1,
         "stats": {
             "articles": 2,
             "wall_s": 10.0,
@@ -110,6 +112,10 @@ def drain(monkeypatch):
     monkeypatch.setattr("src.backup.merge.reindex_backlog", _backlog)
     monkeypatch.setattr("src.backup.merge.reindex_imported_articles", _reindex)
     monkeypatch.setattr("src.backup.merge.import_reindex_commit_batch", lambda: 200)
+    monkeypatch.setattr(
+        "src.backup.merge.default_reindex_commit_batch",
+        lambda: int(state["env_commit_batch"]),
+    )
     monkeypatch.setattr("src.scheduler.runner.get_scheduler", lambda: _Sched())
     monkeypatch.setattr(bv2, "exclusive_window_open", lambda: state["exclusive"])
     monkeypatch.setattr(
@@ -141,15 +147,34 @@ def test_an_idle_collector_gets_the_imports_wide_commit_batch(drain):
 
 
 def test_a_live_collector_keeps_the_conservative_default(drain):
-    """``None`` means "read OO_REINDEX_COMMIT_BATCH", whose default is 1 -- the right
-    answer while a scrape needs the writer gate back between articles."""
+    """``OO_REINDEX_COMMIT_BATCH``, whose default is 1 -- the right answer while a
+    scrape needs the writer gate back between articles."""
     state, rec = drain
     state["scheduler_running"] = True
 
     out = bv2._reindex_resume_worker(_Ctx())
 
-    assert [c["commit_batch"] for c in rec["calls"]] == [None, None]
+    assert [c["commit_batch"] for c in rec["calls"]] == [1, 1]
     assert [b["exclusive_settings"] for b in out["batches"]] == [False, False]
+
+
+def test_the_reported_width_is_the_env_var_not_an_assumed_default(drain):
+    """THE FABRICATION THIS AVOIDS: the audit's own operator step sets
+    ``OO_REINDEX_COMMIT_BATCH=200``, so a reporter that assumed the default's default
+    would publish "1" for a run that committed in batches of 200 -- a made-up number
+    inside a measurement. The width is RESOLVED and passed explicitly."""
+    state, rec = drain
+    state["scheduler_running"] = True
+    state["env_commit_batch"] = 200
+
+    ctx = _Ctx()
+    bv2._reindex_resume_worker(ctx)
+
+    assert [c["commit_batch"] for c in rec["calls"]] == [200, 200]
+    assert ctx.metrics["commit_batch_seen"] == [200]
+    # ...and it is still the SHARED path: the settings are the operator's, not ours.
+    assert ctx.metrics["shared_articles"] == 4
+    assert ctx.metrics["exclusive_articles"] == 0
 
 
 def _goes_online_after_the_first_read(monkeypatch) -> None:
@@ -170,7 +195,7 @@ def test_the_settings_are_re_read_per_batch(drain, monkeypatch):
     state, rec = drain
     _goes_online_after_the_first_read(monkeypatch)
     bv2._reindex_resume_worker(_Ctx())
-    assert [c["commit_batch"] for c in rec["calls"]] == [200, None]
+    assert [c["commit_batch"] for c in rec["calls"]] == [200, 1]
 
 
 def test_an_unreadable_scheduler_is_never_idle(drain, monkeypatch):
@@ -183,7 +208,7 @@ def test_an_unreadable_scheduler_is_never_idle(drain, monkeypatch):
 
     monkeypatch.setattr("src.scheduler.runner.get_scheduler", _boom)
     bv2._reindex_resume_worker(_Ctx())
-    assert [c["commit_batch"] for c in rec["calls"]] == [None, None]
+    assert [c["commit_batch"] for c in rec["calls"]] == [1, 1]
 
 
 def test_workers_are_left_alone(drain):
