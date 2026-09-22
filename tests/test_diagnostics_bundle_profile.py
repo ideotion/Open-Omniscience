@@ -217,11 +217,19 @@ def test_the_light_note_says_it_was_a_choice_rather_than_a_failure():
 def test_every_declined_name_is_an_actual_bundle_member():
     """A declined-set entry naming a member that does not exist is silently dead: the
     operator asks for light, the cost is still paid, and nothing says so. Read against the
-    real member list's source rather than a copy of it."""
+    real member list's source rather than a copy of it.
+
+    THE SLICE COMES FROM THE PARSER, not from a guessed delimiter. The first cut did
+    ``split("def _all_diagnostics_members", 1)[1].split("\\ndef ", 1)[0]`` -- the exact
+    shape `tests/js_source_helper` exists to retire, where a delimiter that does not occur
+    silently makes the "body" the whole rest of the module and the assertion is satisfied
+    by some other function."""
     import pathlib
 
+    from tests.js_source_helper import python_function_source
+
     src = pathlib.Path("src/api/diagnostics/bundle.py").read_text(encoding="utf-8")
-    block = src.split("def _all_diagnostics_members", 1)[1].split("\ndef ", 1)[0]
+    block = python_function_source(src, "_all_diagnostics_members")
 
     missing = [name for name in _LIGHT_DECLINED if f'("{name}"' not in block]
     assert not missing, f"declined names that are not members: {missing}"

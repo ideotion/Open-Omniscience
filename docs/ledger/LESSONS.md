@@ -11692,6 +11692,29 @@ the same mistake at different tables, and I had already fixed it once — for th
 and left the raw marker test standing in the rulings parser. **Fixing an over-match in one
 parser is not fixing it in the others.**
 
+**AND THE TOOL SURFACED A THIRD FAILURE THAT I THEN WALKED INTO ANYWAY — which is the
+most useful thing it did all session.** `planned.py src/api/diagnostics/bundle.py` printed
+`Q1139 — (a) Authorise the mechanical split into a package, routes unchanged` before the
+toggle was written. I read it as provenance and moved on. What that ruling actually carries
+is a mechanical consequence: **the package re-exports every name its submodules define**,
+enforced by `test_the_package_reexports_every_name_its_submodules_define`. Adding
+`_LIGHT_DECLINED`, `_BUNDLE_PROFILES` and `resolve_bundle_profile` to `bundle.py` without
+adding them to `src/api/diagnostics/__init__.py` reddened it, and the failure travelled two
+pushes before a macOS lane reported it.
+
+**A surfacing tool is not an enforcing one, and the gap between them is a person reading.**
+The row was correct, it was printed, and it still cost a CI round — so the lesson is not
+"build a better index", it is that a ruling ID in a lookup means *go read the ruling*, not
+*note that one exists*. The corollary that would have caught it without reading anything:
+**when a change adds a name to a package's submodule, the package's own guard is the first
+test to run** — the same one-line reflex as "grep before declaring a top-level JS function".
+
+**The same round also re-proved a rule this file already carries**, since the third failure
+was `test_adhoc_slicers_do_not_multiply` at 232 against a budget of 230: a new test sliced
+`bundle.py` with `split("def _all_diagnostics_members", 1)[1].split("\ndef ", 1)[0]`, the
+exact guessed-delimiter shape `tests/js_source_helper` exists to retire. Writing a test
+does not exempt the test from the discipline the tests enforce.
+
 **Run a new gate against the branch that adds it, as the gate will run in CI.** The strict
 step was green when I wrote it and red by the time I pushed, because a later commit in the
 same PR touched `test_repo_invariants.py`. One `--diff --strict` against `origin/main`
