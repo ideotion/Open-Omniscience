@@ -42,7 +42,18 @@
   - **NOT BUILT — the article-row rewrite. See `D45` ⛔.** The cost is real but it is a
     **cliff, not a slope**, and below the cliff the obvious fix buys nothing. Recorded with
     the measurement and an operator query rather than built on a guess about article
-    lengths this session cannot see.
+    lengths this session cannot see. **AND THE AUDIT UNDERCOUNTS IT:** §4.1 says "an UPDATE
+    of the article row", SINGULAR, and the row is rewritten **twice** per apply — once for
+    `sentiment_*`, once for `top_keyword_*` + `keyword_indexed_at` — because a query between
+    the two assignments autoflushes the first. Above the cliff the cost is therefore double
+    what the audit states. **Pre-existing, not introduced by PR 4** (verified in a
+    `git worktree` at its base), and counter deferral does NOT coalesce them, because the
+    batched prefetch and the self-name read still autoflush in between. `D45` option **(d)**
+    would halve it with no schema change and is the recommendation there; it is not done
+    here because it moves an assignment relative to the when/where/who `SAVEPOINT`, beside
+    the comment explaining why `keyword_indexed_at` is assigned BEFORE `begin_nested()` so a
+    WWW rollback cannot undo a completed keyword pass. That ordering is a data-correctness
+    question, not a performance one.
   - **STILL OPEN from item 4:** the COLD path still flushes once per NEW keyword to assign
     the mention FK id — **80 separate `INSERT INTO keywords`** on a first-sight vocabulary,
     where a two-pass create could make it one executemany. Deliberately omitted: it
