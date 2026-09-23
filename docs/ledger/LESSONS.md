@@ -11617,3 +11617,111 @@ two rounds on this PR, after the double-drift round before it.
 zero) means nothing from one side alone: `git worktree add /tmp/base origin/main` and run
 the same command there. Main measured zero mypy errors and 440 ruff findings, so both of
 mine are genuinely unchanged rather than assumed unchanged.
+
+---
+
+### A TOOL THAT ANSWERS EVERY QUESTION THE SAME WAY ANSWERS NONE OF THEM (2026-09-22, the planned-work reverse index, `R29`)
+
+The index exists because the ledger could say which files *were* touched (`shipped.csv`'s
+`key_paths`) and never which files a *planned* decision **owns** — and because `CLAUDE.md`,
+the one file every session must read in full, named none of the plan surfaces at all. Its
+only grep instruction said *"before asking the maintainer anything"*, never *"before editing
+a file"*. That gap has already cost one maintainer decision: the entry above at
+`LESSONS.md:7476` records a session that trusted a stale code comment and re-ratified a
+setting the ledger had already ruled.
+
+**The two ways a prose-parsing index dies are both silent, and the loud one is the one that
+looks like success.** The first cut found *too much*, twice:
+
+1. A brief whose scope says it adds *"new modules under `src/`"* — true, and useless.
+   Accepted as a directory key, it matched **every source file in the tree**, so two 0.7/0.8
+   briefs appeared on every lookup any session would ever run.
+2. A **blocked slice** was treated as an **untouchable file**. They are different facts: a
+   held slice cannot *start*; that never means its files may not be edited. Conflating them
+   put `src/static/index.html` — which nearly every PR touches — under a hard CI failure.
+
+Either one alone would have trained the next session to scroll past the tool, which is
+indistinguishable from never having built it. **A gate that fires on everything is a gate
+nobody reads**, and that is the same shape as the recorded `--no-verify` reflex: the fix is
+not a louder warning, it is a *narrower* one. The blocking half now fires only on a brief's
+own *Must NOT touch* clause and on a ruling that names a path and is itself unanswered.
+
+**The quiet death needs its own guard, because it reads as good news.** The generator parses
+each brief's blockquote header; if that format drifts it returns *fewer* rows with no error,
+and "nothing planned for this file" is exactly what a session wants to hear. The guard is
+that **every one of the 38 briefs must contribute at least one entry** — a brief that goes
+silent is the alarm. And the no-hit message says in as many words that **absence is weaker
+evidence than presence**, because a confident silence is the expensive failure here.
+
+**A generated index beats a committed one wherever the sources change faster than the
+discipline to regenerate.** A checked-in copy would be stale most of the time in a repo whose
+ledger changes every session, and a stale answer here reads as authoritative. The cost of
+generating is what decides it: 4.9 s while it resolved bare filenames by walking the tree
+**per token**, 0.26 s for an identical 689 rows once the listing was walked **once**. At five
+seconds a session stops reaching for it; at a quarter of a second it does not.
+
+**THEN THE TOOL FOUND TWO MORE OF ITS OWN, BY BEING RUN ON A FILE THIS PR HAD JUST
+EDITED — and one of them had already cost this same session.** `planned.py
+.github/workflows/ci.yml` returned one unrelated slice and missed the queue entry
+recording that *nothing verifies `main`'s merge commit*, although that entry names
+`ci.yml:22-24` outright.
+
+1. **The queue scan read only an entry's first 1,200 characters.** This ledger's entries
+   are multi-part; that one carries its "NEEDS A RULING" in item (8), thousands of
+   characters down. Meanwhile I was writing a recommendation about that very decision from
+   a subagent's one-line summary — which dropped the cost argument (a per-SHA group runs a
+   full macOS + Windows + Ubuntu matrix at roughly one merge every four minutes), the
+   measured 34 cancelled · 2 failure · 4 success where **all four successes are the
+   `schedule` cron**, the deliberate "UNMEASURED" restraint about the mechanism, and a
+   fourth option another PR had already named. **That is the exact failure the tool exists
+   to prevent, committed by the session building the prevention**, and what caught it was
+   the older ledger rule: *agent findings get hand-re-verified before shipping.*
+2. **`⛔` marks a CLASS of question, not a STATE.** It means "never taken autonomously",
+   and most ⛔ questions have been answered. Testing `"⛔" in cells[0]` called `Q1101`
+   pending although its own row reads «sheet answered» and its S1 shipped — which put
+   `tests/test_repo_invariants.py` under a hard CI failure, a file nearly every PR touches,
+   named by that ruling only because it **enforces** it. Same over-match as the
+   `index.html` regression, one table over: **an enforcement site is not a forbidden path.**
+   The replacement reads the row's own source and verdict, validated against twelve
+   hand-checked rows (six pending, six not) so a later simplification has to disagree with
+   the ledger out loud.
+
+**The general shape, and the reason both got through the first time: a predicate that
+reads a MARKER is reading how something is labelled, not what it is.** Both defects were
+the same mistake at different tables, and I had already fixed it once — for the briefs —
+and left the raw marker test standing in the rulings parser. **Fixing an over-match in one
+parser is not fixing it in the others.**
+
+**AND THE TOOL SURFACED A THIRD FAILURE THAT I THEN WALKED INTO ANYWAY — which is the
+most useful thing it did all session.** `planned.py src/api/diagnostics/bundle.py` printed
+`Q1139 — (a) Authorise the mechanical split into a package, routes unchanged` before the
+toggle was written. I read it as provenance and moved on. What that ruling actually carries
+is a mechanical consequence: **the package re-exports every name its submodules define**,
+enforced by `test_the_package_reexports_every_name_its_submodules_define`. Adding
+`_LIGHT_DECLINED`, `_BUNDLE_PROFILES` and `resolve_bundle_profile` to `bundle.py` without
+adding them to `src/api/diagnostics/__init__.py` reddened it, and the failure travelled two
+pushes before a macOS lane reported it.
+
+**A surfacing tool is not an enforcing one, and the gap between them is a person reading.**
+The row was correct, it was printed, and it still cost a CI round — so the lesson is not
+"build a better index", it is that a ruling ID in a lookup means *go read the ruling*, not
+*note that one exists*. The corollary that would have caught it without reading anything:
+**when a change adds a name to a package's submodule, the package's own guard is the first
+test to run** — the same one-line reflex as "grep before declaring a top-level JS function".
+
+**The same round also re-proved a rule this file already carries**, since the third failure
+was `test_adhoc_slicers_do_not_multiply` at 232 against a budget of 230: a new test sliced
+`bundle.py` with `split("def _all_diagnostics_members", 1)[1].split("\ndef ", 1)[0]`, the
+exact guessed-delimiter shape `tests/js_source_helper` exists to retire. Writing a test
+does not exempt the test from the discipline the tests enforce.
+
+**Run a new gate against the branch that adds it, as the gate will run in CI.** The strict
+step was green when I wrote it and red by the time I pushed, because a later commit in the
+same PR touched `test_repo_invariants.py`. One `--diff --strict` against `origin/main`
+predicted the failure exactly, before CI reached that step.
+
+**And the rule had to live in `CLAUDE.md`, not in `docs/ledger/`.** Rules (5)/(5a) would
+normally route it out — but the whole finding is that `CLAUDE.md` named none of the plan
+surfaces, so a rule telling sessions to consult them is worthless anywhere a session is not
+required to read. Twenty-one lines; ratchet 740 → 761. **Where a rule lives is part of
+whether the rule works.**

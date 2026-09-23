@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "ウォッチは、十分な数の新しい記事がしきい値に達すると発火する保存済みの検索です——読むためのきっかけであり、判定やスコアではありません。ローカルのみ: 通知なし、ネットワークなし。",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "枝は重複します：概念の2つの言語の語形を含む記事は、両方の枝の下で数えられますが、中心では一度だけ数えられます。そのため、枝ごとの数字を足しても、その合計にはなりません。複数の言語が同じ綴りを共有する場合、それらの枝は同じ記事を持ち、その旨が示されます。件数の集計のみで、スコアではありません。",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "コーパスがその概念の語形を索引した言語ごとに1本の枝があり、各枝の関連語はその言語自身の記事における共起数であり、概念自身の語形は除外されます",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "帯は言語ごとの言及件数であり、重複します。この概念の2つの言語形式を含む記事は両方の帯で数えられるため、積み上げの高さは横に表示される記事の合計とは一致しません。",
   "These series could not be stacked, so they are drawn as lines.": "これらの系列は積み上げできなかったため、折れ線として描画されます。",
   "One of these series has a published gap, and a gap is not a zero.": "これらの系列の一つに公表されたギャップがあり、ギャップはゼロではありません。",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "{h}時間に到達",
   "{n} suspend(s)": "サスペンド {n} 回",
   "{n} unclean end(s)": "異常終了 {n} 回",
-  "{n} since {when}": "{when} 以降 {n} 回"
+  "{n} since {when}": "{when} 以降 {n} 回",
+  "Light bundle": "軽量アーカイブ",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "フルはすべての項目を収集し、既定の設定です。軽量は、データを報告するのではなく本機を計測したりコーパス全体を読み直したりする四つの項目を省略します。省略された項目も、理由を記したファイルとしてアーカイブに残るため、軽量アーカイブがフルと取り違えられることはありません。今回の実行にのみ適用され、記憶されることはありません。"
 }

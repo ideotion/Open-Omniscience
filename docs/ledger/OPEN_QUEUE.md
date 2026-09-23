@@ -30,7 +30,10 @@
   `R21`–`R27` in [`RULINGS_INDEX.md`](RULINGS_INDEX.md) (the report's own local labels R1–R7
   map onto them in order), and they are recorded HERE because deciding a ruling is not
   building it: **PR 1 of the audit's §9.2 carries R21 and nothing else.** R22–R27 are
-  decided, unbuilt, and belong to PRs 2 and 4–7 of that plan.
+  decided, unbuilt, and belong to PRs 2 and 4–7 of that plan. **AMENDED 2026-09-22 (same
+  day, later):** `R28` — the FULL/LIGHT diagnostics toggle — shipped as the first half of
+  PR 2 and is a SEPARATE instruction, not one of the seven; `R27` itself is still unbuilt
+  (see its own entry below).
 
   **What PR 1 does build, and what it deliberately leaves alone.** The drain inherits the
   import's commit batch when the scheduler loop is not alive (R21), publishes the
@@ -58,6 +61,118 @@
   *instrumentation* that would name F4's handler and attribute F5's time, not a fix for
   either — there is nothing yet to fix, only something to find out. They are listed here so
   the round's closure is not read as covering them.
+
+- **THE PLANNED-WORK REVERSE INDEX, AND THE DECISIONS ROUND IT CAME WITH (2026-09-22, rulings
+  `R29` and `R30`).** The maintainer asked for two things in one turn: a numbered decisions list
+  integrating PR #1131's plans, and *«a way so that future bug discovery would not contradict what
+  has been planned … to help future unaware sessions to become aware of the changes, and to avoid
+  redoing some thinking that has already been done»*. Both are built. What belongs HERE is the
+  part that is open, and the part a future reader would otherwise mis-read.
+
+  **(1) THE DECISIONS SHEET IS UNANSWERED.**
+  [`docs/design/DECISIONS_2026-09-22_BETA_PATHWAY.md`](../design/DECISIONS_2026-09-22_BETA_PATHWAY.md)
+  carries `D01`–`D43` with a recommendation each; **nothing in it is resolved by the recording
+  session**, and its own `ANSWER Dnn:` lines are the primary record. Part A is a POINTER round —
+  it re-asks nothing, it gives one line and a recommendation for each of the 41 decisions already
+  recorded as open (the six ⛔ blockers, `PF01`–`PF14`, the ten CONFLICTs, the RC assumptions, and
+  twelve queue items that never entered the rulings pipeline at all). Part B is the new material.
+
+  **(2) SIX COLLISIONS NO DOCUMENT RECORDED, now `D33`–`D38`.** The 2026-09-21 field-slowness
+  report's seven PRs and PR #1131's 38 slices were written three days apart by sessions that could
+  not see each other. They overlap on: three corpus-sized rewrites all wanting `keyword_mentions`
+  (PR 5, 0.5 row B's alpha-3 migration, the C5 pragma rebuild); the LANE databases being invisible
+  to the memory budget while `R26` raises the other half (`src/versioned/store.py:178` hardcodes
+  `pool_size=2, max_overflow=4` and a **16 MB** cache per lane — twice the whole small tier's
+  corpus cache, additive and unbudgeted); PR 7 wanting the backup format that `Q102` freezes at
+  0.9 with **one** bump allowed; an Alembic batch rebuild silently dropping all three FTS triggers
+  while `merge.py` knows only `article_fts_ai`; no admission control between whole-corpus jobs;
+  and one premise in the report's own §9.1.
+
+  **(3) THE REPORT'S OWN §9.1 STEP 3 IS THE PREMISE TO WATCH (`D38`).** It tells the operator to
+  set `OO_SQLITE_CACHE_MB=64`, and justifies the RAM with *"the OS page cache is what makes random
+  writes survivable"*. **Those are two different caches.** The 2026-08-03 import-cache regression
+  measured SQLite's own `cache_size` directly and found it a **residency dial, not a throughput
+  lever** — dirty pages spill to the file DURING the open transaction, and the rule it replaced
+  *"turned it UP on exactly the machines least able to pay"*. The write-bound chain does not depend
+  on this and step 1's OS-page-cache reasoning is sound and separate, but step 3's expected benefit
+  is UNMEASURED and it is advice aimed at a 4-to-7 GB VM. Recorded rather than silently fixed,
+  because the report is a dated record of what was thought that day.
+
+  **(4) WHAT THE MECHANISM DELIBERATELY REFUSES TO DO.** It never judges whether a change
+  CONTRADICTS a plan — it says what the plan is and where to read it. A generator that guessed
+  would be a composite verdict over prose, and its false negatives ("nothing is planned here")
+  would be the expensive ones, which is why the no-hit message says in as many words that
+  **absence is weaker evidence than presence**. The index is GENERATED on every run and never
+  committed: a checked-in copy would be stale most of the time in a repo whose ledger changes
+  every session, and a stale answer here reads as authoritative.
+
+  **(5) TWO REGRESSIONS ARE PINNED BECAUSE BOTH WERE LIVE AND BOTH WOULD HAVE DISCREDITED IT ON
+  FIRST USE.** S08-01's scope says it adds *"new modules under `src/`"* — true, and useless: taken
+  as a directory key it matched every source file in the tree, so two 0.7/0.8 briefs appeared on
+  every lookup any session would ever run. And a blocked SLICE is not an untouchable FILE:
+  conflating them put `src/static/index.html`, which nearly every PR edits, under a hard CI
+  failure. The lesson under both is one thing — **a tool that answers every question the same way
+  answers none of them** — and it is why the blocking half fires only on a brief's own *Must NOT
+  touch* clause and on a ruling that names a path and is itself unanswered.
+
+  **(6) THE TOOL WAS RUN ON ITS OWN REPO AND FOUND TWO MORE DEFECTS IN ITSELF, both fixed
+  in the same PR.** The queue scan read only an entry's first 1,200 characters, so
+  `planned.py .github/workflows/ci.yml` missed the entry recording that nothing verifies
+  `main`'s merge commit — while this session was writing `D21` about that decision from a
+  subagent summary rather than the entry. And `⛔` was read as a STATE when it marks a
+  CLASS: `Q1101` reads «sheet answered» with its S1 shipped, yet came back `pending-ruling`
+  and put `tests/test_repo_invariants.py` under a hard CI failure. The pending predicate
+  now reads the row's own source and verdict, validated against twelve hand-checked rows.
+  **`D21` IS CORRECTED IN THE SHEET** and its recommendation changed: PR #1040's option —
+  rule that the nightly cron IS the referee for `main` — is now the recommended one,
+  because the cron referee already exists in fact (of the 40 most recent completed runs,
+  the only four successes are the `schedule` cron) and it spends nothing. The mechanism
+  behind the cancellations stays **UNMEASURED**, deliberately, exactly as the primary entry
+  and PR #1040 both insist.
+
+- **THE DIAGNOSTICS FULL/LIGHT TOGGLE SHIPPED, AND IT IS NOT `R27` (2026-09-22, ruling
+  `R28`).** The maintainer asked, later the same day as the seven-ruling round: «For the
+  diagnostics, create a simple toggle to enable full or light diagnostics (PR2), start
+  working on that.» It is built — `src/api/diagnostics/bundle.py` (`_LIGHT_DECLINED`,
+  `resolve_bundle_profile`, the manifest's `profile` block), `#all-diag-light` beside the
+  bundle button, `tests/test_diagnostics_bundle_profile.py`. Recorded here because three
+  things about it are open or easy to misread, and none of them is a to-do the code can
+  settle for itself.
+
+  **(1) IT DOES NOT IMPLEMENT `R27`, and must not be read as having done so.** `R27` is an
+  AUTOMATIC decline: a member needing more than half the machine's RAM refuses below the
+  floor, from a machine reading, like the whole-corpus scans under S1.3. The toggle declines
+  only because the OPERATOR asked. Three of the four names overlap, which is exactly what
+  makes the confusion available: a future session reading `_LIGHT_DECLINED` and finding
+  `keyword-log-digest.json` in it could close `R27` on work that never reads a RAM figure.
+  Nothing in the tree reads the floor for a bundle member yet. `R27` stays open.
+
+  **(2) WHY A TOGGLE AT ALL — a tension that had stood unnoticed since 2026-09-02.** The
+  crash brief of that date ruled, in its own §3 item 4, that the bundle «still runs **every**
+  member — the bundle is the maintainer's only evidence channel». `R27` rules the opposite
+  for heavy members on small machines. Both were recorded, three weeks apart, and neither
+  round saw the other. The toggle keeps both by removing the automatic part: **nothing
+  declines itself.** Note for anyone citing it: that 09-02 ruling is NOT `R4` of
+  `RULINGS_INDEX.md` (an unrelated export-message ruling) — the brief numbers its own list,
+  and an earlier draft of this very work mis-cited it in both the source and its test.
+
+  **(3) THE CLASSIFICATION RULE, so the next heavy member is classified rather than
+  argued about.** Light drops what MEASURES THE MACHINE or RE-READS THE WHOLE CORPUS; it
+  keeps everything that REPORTS THE DATA. Every reason in `_LIGHT_DECLINED` is a reading
+  from the operator's own 2026-09-11 bundle, never an estimate. A member added later whose
+  cost is unmeasured belongs in FULL until someone measures it.
+
+  **ONE DEFECT THIS OPENED AND CLOSED IN THE SAME PR, worth keeping because the shape
+  recurs.** Release gate row C closes on a bundle with «every member non-zero» — and a
+  DECLINED member is ABSENT, not zero-byte, so neither of row C's two checks would have
+  noticed a light bundle. The release run asks for a full bundle but RIDES one already
+  building, so an operator who started a light build a minute earlier would have closed row
+  C on four members less evidence. `_bundle` now reads `manifest.json`'s `complete_profile`
+  and row C refuses an explicit `false` (an archive with NO profile block predates the
+  toggle and is full by construction, so only an explicit false blocks — reading silence as
+  "light" would retroactively invalidate every bundle already taken). The general shape: a
+  new way for a member to be absent needs every ABSENCE CHECK re-read, not only the one the
+  new path writes.
 
 - **THE 0.4 RELEASE RUN BUTTON (2026-09-18): what it composes, what it deliberately does not
   automate, and one invariant #14 gap it found in a shipped control.** The maintainer asked for

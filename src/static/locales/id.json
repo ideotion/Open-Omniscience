@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Pemantauan adalah pencarian tersimpan yang terpicu ketika cukup banyak artikel baru mencapai ambang batas Anda — ajakan untuk membaca, bukan vonis atau skor. Hanya lokal: tanpa notifikasi, tanpa jaringan.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Cabang-cabang ini tumpang tindih: artikel yang membawa bentuk konsep dari dua bahasa dihitung pada kedua cabang dan sekali di pusat, sehingga cabang-cabang tidak berjumlah sama dengan total tersebut. Ketika beberapa bahasa berbagi satu ejaan yang sama, cabang-cabang tersebut membawa artikel yang sama dan menyatakannya. Sekadar hitungan, bukan skor.",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "satu cabang untuk setiap bahasa tempat korpus telah mengindeks satu bentuk konsep tersebut; asosiasi tiap cabang adalah hitungan kemunculan bersama atas artikel milik bahasa ITU sendiri, dengan bentuk konsep itu sendiri dikecualikan",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Pita adalah jumlah penyebutan per bahasa dan saling tumpang tindih: artikel yang memuat bentuk konsep dalam dua bahasa dihitung pada keduanya, sehingga tinggi tumpukan bukan total artikel yang ditampilkan di sampingnya.",
   "These series could not be stacked, so they are drawn as lines.": "Seri-seri ini tidak dapat ditumpuk, sehingga digambar sebagai garis.",
   "One of these series has a published gap, and a gap is not a zero.": "Salah satu dari seri-seri ini memiliki celah terbit, dan celah bukan berarti nol.",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "{h} jam tercapai",
   "{n} suspend(s)": "{n} suspensi",
   "{n} unclean end(s)": "{n} akhir tidak bersih",
-  "{n} since {when}": "{n} sejak {when}"
+  "{n} since {when}": "{n} sejak {when}",
+  "Light bundle": "Paket ringan",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "PENUH mengumpulkan setiap anggota dan merupakan pilihan bawaan. RINGAN melewati empat anggota yang mengukur mesin atau membaca ulang seluruh korpus alih-alih melaporkan data Anda. Setiap anggota yang dilewati tetap muncul dalam arsip sebagai berkas yang menyebutkan alasannya, sehingga paket ringan tidak pernah dapat dikira paket penuh. Berlaku hanya untuk proses ini dan tidak pernah diingat."
 }

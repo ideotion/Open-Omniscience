@@ -3575,7 +3575,6 @@
   "A watch is a saved search that fires when enough new articles match your threshold — a prompt to read, never a verdict or score. Local-only: no notifications, no network.": "Une veille est une recherche enregistrée qui se déclenche quand assez de nouveaux articles atteignent votre seuil — une invitation à lire, jamais un verdict ni un score. Uniquement en local : sans notifications, sans réseau.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "Les branches se chevauchent : un article portant les formes du concept dans deux langues est compté sur les deux branches et une seule fois au centre, si bien que la somme des branches ne correspond pas à ce total. Là où plusieurs langues partagent une même orthographe, les branches portent les mêmes articles et le signalent. Uniquement des décomptes, jamais un score.",
   "one arm per language the corpus has indexed a form of the concept in; each arm's associations are co-occurrence counts over THAT language's own articles, with the concept's own forms excluded": "une branche par langue dans laquelle le corpus a indexé une forme du concept ; les associations de chaque branche sont des décomptes de co-occurrence sur les articles propres à cette langue, à l’exclusion des formes du concept elles-mêmes",
-
   "Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it.": "Les bandes comptent les mentions par langue et elles se chevauchent : un article portant les formes du concept dans deux langues est compté dans les deux, donc la hauteur de l'empilement n'est pas le total d'articles affiché à côté.",
   "These series could not be stacked, so they are drawn as lines.": "Ces séries n'ont pas pu être empilées, elles sont donc tracées en lignes.",
   "One of these series has a published gap, and a gap is not a zero.": "Une de ces séries a une lacune publiée, et une lacune n'est pas un zéro.",
@@ -4447,5 +4446,7 @@
   "{h} h reached": "{h} h atteintes",
   "{n} suspend(s)": "{n} mise(s) en veille",
   "{n} unclean end(s)": "{n} fin(s) brutale(s)",
-  "{n} since {when}": "{n} depuis {when}"
+  "{n} since {when}": "{n} depuis {when}",
+  "Light bundle": "Archive allégée",
+  "FULL collects every member and is the default. LIGHT skips four members that measure the machine or re-read the whole corpus instead of reporting your data. Each skipped member still appears in the archive as a file naming why, so a light bundle can never be mistaken for a full one. Applies to this run only and is never remembered.": "COMPLET collecte tous les éléments et reste le réglage par défaut. ALLÉGÉ ignore quatre éléments qui mesurent la machine ou relisent tout le corpus au lieu de rapporter vos données. Chaque élément ignoré figure quand même dans l'archive sous la forme d'un fichier en indiquant la raison, si bien qu'une archive allégée ne peut jamais être prise pour une archive complète. Ne vaut que pour cette exécution et n'est jamais mémorisé."
 }

@@ -176,6 +176,37 @@ jobs:
         # fixed -- only the base measurement (445) ever said which findings were its own.
         run: python scripts/ruff_ratchet.py --max 440
 
+      # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
+      # future bug discovery would not contradict what has been planned ... to help future
+      # unaware sessions to become aware of the changes, and to avoid redoing some thinking
+      # that has already been done."
+      #
+      # `shipped.csv` answers which files WERE touched. Nothing answered which files a
+      # PLANNED decision already owns, and CLAUDE.md names none of the plan files at all --
+      # so a session fixing an unrelated bug had nothing pointing at the thirty-eight slice
+      # briefs that may already have decided the question it is about to answer for itself.
+      # The cost is recorded: LESSONS.md holds a session that trusted a stale code comment
+      # and spent one of the maintainer's decisions re-ratifying a setting already ruled.
+      #
+      # ADVISORY, DELIBERATELY, EXCEPT ON TWO THINGS. The informational half prints and
+      # never fails -- a lint that fires on every planned file is one every session learns
+      # to pass with --no-verify. `--strict` fails ONLY on a code path a brief forbids or an
+      # UNANSWERED ruling names, and an `ACK <id>` line in a commit message clears it: the
+      # acknowledgement is not permission, it is the author saying in the permanent record
+      # that they read the blocked decision before touching its file.
+      - name: Planned-work index (advisory — what is already decided about these files)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}" || true
+          python scripts/planned.py --diff "origin/${{ github.base_ref }}"
+
+      - name: Planned-work index — blocked or forbidden paths (BLOCKING)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}" || true
+          python scripts/planned.py --diff "origin/${{ github.base_ref }}" --strict
+
       # Locale-completeness gate (OO-D15-001): the informed-consent mandate ships
       # every chrome/consent/caveat string x12 locales. This was a per-session
       # manual ritual; gate it so a locale that declares status:complete but drops

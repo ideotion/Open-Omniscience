@@ -962,6 +962,21 @@ def _bundle(ctx: Any) -> dict[str, Any]:
                 coverage = dbg.get("runtime_coverage")
             out["runtime_coverage"] = coverage
             out["coverage_complete"] = bool((coverage or {}).get("complete")) if coverage else None
+            # WHICH PROFILE THIS ARCHIVE IS (ruling R28, 2026-09-22). The run ASKS for a
+            # full bundle, but when one is already building it RIDES that one -- and an
+            # operator may have started a LIGHT bundle a minute earlier. A declined member
+            # is ABSENT, not zero-byte, so neither check above would notice, and row C
+            # would close on less evidence than its clause names. Read instead of assumed.
+            # `None` means the archive predates the toggle, which is a FULL bundle by
+            # construction -- only an explicit `false` may block the row.
+            with contextlib.suppress(KeyError, ValueError):
+                man = json.loads(z.read("manifest.json").decode("utf-8"))
+                prof = man.get("profile") or {}
+                out["profile"] = prof.get("name")
+                out["complete_profile"] = prof.get("complete_profile")
+                out["declined_members"] = sorted(
+                    d.get("file") for d in (prof.get("declined") or []) if d.get("file")
+                )
         out["measured"] = True
     except Exception as exc:  # noqa: BLE001
         out["measured"] = False
@@ -1052,15 +1067,21 @@ def board_rows(run: _Run) -> list[dict[str, Any]]:  # noqa: C901 - one branch pe
     # C -- the bundle on the ~1M instance
     if bundle.get("measured"):
         zero = bundle.get("zero_byte_members") or []
-        ok = bool(bundle.get("coverage_complete")) and not zero
+        declined = bundle.get("declined_members") or []
+        light = bundle.get("complete_profile") is False
+        ok = bool(bundle.get("coverage_complete")) and not zero and not light
         rows.append(_row(
             "C", "one bundle whose coverage block reads complete: true, on a build carrying the statement_deadline fix, every member non-zero",
             "measured",
             {"path": bundle.get("path"), "bytes": bundle.get("bytes"), "members_total": bundle.get("members_total"),
              "coverage_complete": bundle.get("coverage_complete"), "zero_byte_members": zero,
+             "bundle_profile": bundle.get("profile"), "complete_profile": bundle.get("complete_profile"),
+             "declined_members": declined,
              "statement_deadline_fix_present": (_phase(run, "preflight").get("result") or {}).get("statement_deadline_fix_present"),
              "bar_satisfied_by_this_bundle": ok, "required_on_this_profile": million},
-            "the bar names the ~1M instance" + ("" if million else "; on the release-scale profile this bundle is evidence at this scale only"),
+            "the bar names the ~1M instance"
+            + ("" if million else "; on the release-scale profile this bundle is evidence at this scale only")
+            + ("; THIS BUNDLE IS LIGHT -- " + ", ".join(declined) + " declined at the operator's request, so it cannot satisfy the clause's every member (R28)" if light else ""),
         ))
     else:
         rows.append(_row("C", "one bundle from the ~1M instance", bundle.get("job_state") and "error" or "skipped",

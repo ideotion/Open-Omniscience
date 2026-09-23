@@ -8132,7 +8132,14 @@ def test_docs_index_covers_live_docs():
 #: culled to >= 10, Q1123) and UI invariant #20's recorded bandwidth-cap omission resolved
 #: (Q1012, Q222). Measured on this branch's own tree; a docs-only PR, so re-measure at the merge
 #: point if main grows CLAUDE.md first (the recorded 2026-09-08 precedent).
-_CLAUDE_MD_LINE_CEILING = 740
+#: RAISED 2026-09-22 (the planned-work reverse index, ruling R29): 740 -> 761, twenty-one lines
+#: for protocol rule (7). This is precisely the growth the clause above calls normal -- an
+#: amendment to the protocol block itself -- and it is the one that had to live HERE rather than
+#: in docs/ledger/: the whole finding behind it is that CLAUDE.md named NONE of the plan surfaces,
+#: so a rule telling sessions to consult them is worthless anywhere a session is not required to
+#: read. Measured on this branch's own tree; re-measure at the merge point if main grows
+#: CLAUDE.md first (the recorded 2026-09-08 precedent).
+_CLAUDE_MD_LINE_CEILING = 761
 
 
 def _claude_md_lines() -> int:

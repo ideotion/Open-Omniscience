@@ -658,7 +658,12 @@
       try {
         // Start (idempotent: if one is already running the backend returns started:false and
         // we simply poll the in-flight build).
-        try { await api("/api/diagnostics/all-job", { method: "POST" }); }
+        // The profile rides the START call only, and is read at press time rather than
+        // stored: the backend refuses to remember it for the same reason (a remembered
+        // "light" would quietly make a later gate-closing bundle light too).
+        const lightEl = $("all-diag-light");
+        const profile = (lightEl && lightEl.checked) ? "light" : "full";
+        try { await api("/api/diagnostics/all-job?profile=" + profile, { method: "POST" }); }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }
         let miss = 0;
         // `settled` is the honesty latch: it is set by EVERY terminal branch, and whatever

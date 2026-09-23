@@ -76,6 +76,27 @@ protocol for the session that receives the file back) — the 2026-09-12 sheet i
 reference; a blank non-⛔ question takes its default as an ASSUMPTION, a blank ⛔ stays
 pending, contradictions are listed and never resolved by the recording session.
 
+(7) **BEFORE EDITING A FILE, ASK WHAT HAS ALREADY BEEN DECIDED ABOUT IT (ruled 2026-09-22,
+maintainer-asked: «find a way so that future bug discovery would not contradict what has been
+planned … to help future unaware sessions to become aware of the changes, and to avoid redoing
+some thinking that has already been done»):** run `python scripts/planned.py <path>` — or
+`--diff` for a whole branch. It answers from a reverse index built on the spot out of the 38
+slice briefs in [`docs/plans/2026-09-12-beta-pathway/`](docs/plans/2026-09-12-beta-pathway/), the
+seven gate files `docs/product/RELEASE_0.*_GATE.md`, `RULINGS_INDEX.md`'s *where enforced* column
+and every open entry in `OPEN_QUEUE.md` — **the plan surfaces THIS FILE HAD NEVER NAMED**, which
+is exactly why a session fixing an unrelated bug had nothing pointing at them. (The other two are
+[`docs/FUTURE_DEVELOPMENTS.md`](docs/FUTURE_DEVELOPMENTS.md) and
+[`docs/ROADMAP.md`](docs/ROADMAP.md); like the queue, they are consulted, not memorised.) The
+index is GENERATED, never committed: a checked-in copy would be stale most of the time in a repo
+whose ledger changes every session, and a stale answer here reads as authoritative. CI prints the
+hits on every PR and FAILS only on a code path a brief forbids or an UNANSWERED ruling names; an
+`ACK <id>` line in a commit message clears that — **the acknowledgement is not permission**, it is
+the author saying in the permanent record that they read the blocked decision before touching its
+file. **ABSENCE IS WEAKER EVIDENCE THAN PRESENCE** — it parses prose, so "nothing planned" means
+grep the ledger yourself when the change is load-bearing. Enforced by
+`tests/test_planned_index.py`; the two regressions it pins are the ways the tool dies (it stops
+finding things, or it finds so much that every answer is the same answer).
+
 ## Non-negotiables (project §0.5 + maintainer rulings)
 - Local-first, loopback-only; every external call is consented, disclosed, and
   socket-level kill-switch-gated (exceptions enumerated in `docs/SECURITY.md`,
