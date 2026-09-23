@@ -447,6 +447,12 @@ def test_a_run_that_goes_busy_keeps_the_disclosure_until_its_own_reconcile(drain
     assert [c["extra"]["defer_counters"] for c in rec["calls"]] == [True, False]
     assert rec["deferrals"] == ["reindex-resume"], "still only opened once"
     assert rec["finishes"] == [True], "and still reconciled once, at the end of the run"
+    assert [b["counters_deferred"] for b in out["batches"]] == [True, False], (
+        "each batch publishes the regime that produced its numbers"
+    )
+    assert out["counter_reconcile"]["closed"] is True, (
+        "and the run's OWN reconcile is what lifts the disclosure, at the end"
+    )
 
 
 def test_a_marker_that_cannot_open_declines_the_deferral_rather_than_hiding_it(drain):
