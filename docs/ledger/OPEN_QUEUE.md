@@ -22,6 +22,45 @@
 
 ## Open queue (when maintainer says proceed)
 
+- **PR 5 SLICE 1 OF THE AUDIT'S §9.2 IS BUILT: THE INDEX WINDOW, ITS CRASH HEAL AND THE
+  DISCLOSURE. THE SPAN IS `D46` ⛔ AND THE SORTED-RUNS HALF IS NOT BUILT (2026-09-23).**
+  §9.2 item 5 is the step the audit says "changes the order of magnitude on this class of
+  machine", and `R23` puts it on the LIVE store with the surfaces disclosing
+  "rebuilding, N of M". Two measured corrections to the item as written:
+  - **14 DROPPABLE, NOT 17.** The item says to drop "the ten secondary mention indexes and
+    the seven when/where/who indexes". Both counts are RIGHT — `keyword_mentions` has
+    exactly ten `Index()` objects and the three when/where/who tables have exactly seven —
+    but **three of the seventeen are UNIQUE**: `ix_mention_keyword_article`,
+    `ix_amp_article_place`, `ix_ae_article_name_class`. Those are not performance indexes,
+    they are the constraints that make "one mention row per (keyword, article)" true, and
+    the bulk-insert path *relies* on the collision they raise (pinned in
+    `tests/test_bulk_mention_insert.py`). Dropping them would let a load insert duplicates
+    that nothing reports and that the counters would then faithfully double.
+  - **A CRASH WOULD HAVE COST TEN INDEXES PERMANENTLY.** Of the 14 droppable,
+    only **4** are in `maintenance.HOT_INDEXES`, the boot self-heal. The other ten exist
+    only because `create_all`/alembic built them once, and neither adds an index to an
+    EXISTING table — so a process dying between the DROP and the rebuild would leave them
+    gone for good, turning every query that used them into a full scan over 27.7 GB,
+    silently and forever. `bulk_build.heal_bulk_build` closes that and is wired into the
+    boot path; **it is live and load-bearing from the first boot**, independent of whether
+    any window is ever opened. The heal asks `sqlite_master` what is ABSENT rather than
+    replaying a tally, which is correct after a crash at any point — including between a
+    DROP and its record, which a tally is not.
+  - **NO CALLER YET, and that is `D46`.** Every candidate span encodes a policy with a
+    failure mode worse than the cost it removes: per import batch repeats `R22`'s measured
+    per-batch pessimisation; over a whole drain leaves the live store without 13 indexes
+    for DAYS; and the break-even needs the operator's backlog fraction, which this session
+    does not have. Recommendation there is **b** (full re-index only) now, **a** (exclusive
+    drain above a measured backlog fraction) once `D43` returns a number.
+  - **STILL OPEN from item 5:** the sorted-runs extraction and load-in-key-order half.
+    Note that two of item 5's seven parts are already delivered elsewhere — "counters by
+    one GROUP BY" is `backfill_keyword_counters` plus `R22`'s `finish_deferral` (PR 4), and
+    "resolve the dictionary once" is PR 4's batched prefetch at article scope.
+    `ARTICLE_DELETE_INDEX` records the constraint any future caller must respect: a path
+    that DELETEs per article MUST keep `ix_mention_article`, or each delete becomes a full
+    scan of the mention table.
+
+
 - **PR 4 OF THE AUDIT'S §9.2 IS BUILT AS TWO OF ITS THREE ITEMS, AND THE THIRD IS DECLINED
   WITH NUMBERS (2026-09-23).** §9.2 item 4 is "the constant factors in apply" and names
   three: batched keyword lookups, counters as one statement or deferred (`R22`), and the
