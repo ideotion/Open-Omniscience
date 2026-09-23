@@ -36,13 +36,23 @@ def test_the_field_machine_is_narrowed_and_the_numbers_are_stated():
     # Shaped for SLOTS (S1.0's measured churn: opens track pool_size, not the
     # total bound), with half the cache so the worst case still HALVES.
     assert got["db_pool_size"] == 6
-    assert got["db_max_overflow"] == 2
+    # R26/F1 (2026-09-23): 2 -> 6. The collector's cap is 8 and the pool WAS 8, so it
+    # could hold every connection and an API handler timed out at 30 s. The four added
+    # slots are OVERFLOW on purpose -- see the floor assertion below.
+    assert got["db_max_overflow"] == 6
+    assert got["pool_total"] == 12
     assert got["sqlite_cache_mb"] <= 16
     assert got["columnar_serve_default"] is False
     # the worst case the file's own comment names: cache_mb x (pool + overflow)
-    assert got["worst_case_pool_cache_mb"] == 8 * got["sqlite_cache_mb"]
-    assert got["worst_case_pool_cache_mb"] == 64
+    assert got["worst_case_pool_cache_mb"] == 12 * got["sqlite_cache_mb"]
+    assert got["worst_case_pool_cache_mb"] == 96
     assert got["worst_case_pool_cache_mb"] < 200
+    # THE TRADE, PINNED: the RESIDENT floor did not move. Overflow connections close on
+    # return, so pool_size x cache is what this machine pays all the time -- 48 MiB
+    # before R26 and 48 MiB after. Had the four slots gone into pool_size instead, this
+    # line would read 80 and the fix would have cost 32 MiB to the machines least able
+    # to pay it.
+    assert got["db_pool_size"] * got["sqlite_cache_mb"] == 48
     # the caveat must carry the real numbers, not an adjective
     assert "3,296" in got["reason"] and "4,096" in got["reason"]
 
@@ -101,7 +111,7 @@ def test_an_operator_value_wins_and_is_reported_as_an_override(monkeypatch):
     assert got["db_pool_size"] == 12
     assert got["overrides"] == {"sqlite_cache_mb": 128, "db_pool_size": 12}
     # ... and the machine's own overflow default still applies where nothing was set
-    assert got["db_max_overflow"] == 2
+    assert got["db_max_overflow"] == 6
 
 
 def test_the_engine_reads_the_budget_rather_than_a_constant():
@@ -298,10 +308,10 @@ def test_the_page_cache_ceiling_is_bounded_by_the_pool_not_only_the_worker_count
     responsible, which is the harder kind to notice.
     """
     monkeypatch.setattr(mb, "total_ram_mb", lambda: 3296.0)
-    mb.reset_for_tests()  # small: pool 2 + overflow 6 = 8
+    mb.reset_for_tests()  # small: pool 6 + overflow 6 = 12 (R26 raised the overflow)
     b = mb.budget()
     pool_bound = b["db_pool_size"] + b["db_max_overflow"]
-    assert pool_bound == 8
+    assert pool_bound == 12 == b["pool_total"]
     naive = 50 * b["sqlite_cache_mb"]
     assert mb.worker_cache_ceiling_mb(50) == pool_bound * b["sqlite_cache_mb"]
     assert mb.worker_cache_ceiling_mb(50) < naive, "the pool must bind before the worker count"
@@ -330,7 +340,7 @@ def test_the_db_memory_block_is_computed_from_the_budget_and_the_governor(monkey
     m = CollectionMonitor(governor=_Gov(), pass_id="p", mode="rss")
     block = m._db_memory()
     assert block["tier"] == "small"
-    assert block["pool_bound"] == 8
+    assert block["pool_bound"] == 12  # R26: 8 -> 12
     assert block["w_max"] == 50
     assert block["page_cache_ceiling_mb"] == mb.worker_cache_ceiling_mb(50)
 
@@ -483,7 +493,7 @@ def test_the_smaller_field_machines_are_unmoved_by_the_tolerance():
     for total in (3296, 3924, 2048):
         got = mb.resolve_for(total)
         assert got["tier"] == "small", f"{total} MiB should still be the small tier"
-        assert got["db_pool_size"] == 6 and got["db_max_overflow"] == 2
+        assert got["db_pool_size"] == 6 and got["db_max_overflow"] == 6
 
 
 def test_machine_floor_shares_the_same_tolerance():

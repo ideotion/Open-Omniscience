@@ -238,3 +238,141 @@ def test_every_declined_name_is_an_actual_bundle_member():
 def test_every_declined_member_states_a_reason():
     for name, reason in _LIGHT_DECLINED.items():
         assert reason and len(reason) > 40, f"{name} has no stated reason"
+
+
+# --------------------------------------------------------------------------- #
+# R27: the MACHINE declines a member, on the full profile too (finding F12)    #
+# --------------------------------------------------------------------------- #
+
+
+def _ram(monkeypatch, mb_total):
+    """Pin the machine's RAM for one test, and clear the big-scan override."""
+    monkeypatch.delenv("OO_ALLOW_BIG_SCANS", raising=False)
+    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: mb_total)
+
+
+_HEAVY = "keyword-log-digest.json"
+
+
+def test_a_measured_member_declines_when_it_needs_more_than_half_the_RAM(monkeypatch):
+    """F12: this member raised peak RSS by 3,322.8 MiB on a 4,029 MiB VM -- the only
+    member of that 72-member run above 0.0 MiB. One member, by itself, putting a machine
+    into swap. S1.3 declines whole-corpus SCANS below the floor and a bundle member is
+    not a scan, which is the gap R27 closes."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _ram(monkeypatch, 4029.0)
+    reason = ram_declined_reason(_HEAVY)
+    assert reason and "3,322.8" in reason and "4,029" in reason
+    assert "F12" in reason
+
+
+def test_the_same_member_RUNS_on_a_machine_that_can_hold_it(monkeypatch):
+    """Self-limiting by construction: half of 8,192 is 4,096, and the member needs
+    3,322.8. No second threshold to keep in step with the first."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _ram(monkeypatch, 8192.0)
+    assert ram_declined_reason(_HEAVY) is None
+
+
+def test_an_UNMEASURED_MACHINE_never_declines(monkeypatch):
+    """The inference-hardware-gate lesson, in its mirror form: refusing capability for
+    want of a measurement is the opposite error to over-claiming it."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _ram(monkeypatch, None)
+    assert ram_declined_reason(_HEAVY) is None
+
+
+def test_an_UNMEASURED_MEMBER_never_declines(monkeypatch):
+    """Absence of a reading is not a reading. The map grows when a run MEASURES
+    something -- every bundle records `rss_peak_rise_kb` per member -- never when
+    somebody estimates."""
+    from src.api.diagnostics.bundle import _MEMBER_RSS_NEED_MB, ram_declined_reason
+
+    _ram(monkeypatch, 512.0)  # absurdly small; still runs an unmeasured member
+    assert ram_declined_reason("card-audit.json") is None
+    assert "card-audit.json" not in _MEMBER_RSS_NEED_MB
+
+
+def test_the_EXISTING_override_lifts_it_rather_than_a_second_switch(monkeypatch):
+    """S1.3 already has `OO_ALLOW_BIG_SCANS`. A second key for the same idea is how two
+    surfaces come to disagree about one setting."""
+    from src.api.diagnostics.bundle import ram_declined_reason
+
+    _ram(monkeypatch, 4029.0)
+    monkeypatch.setenv("OO_ALLOW_BIG_SCANS", "1")
+    assert ram_declined_reason(_HEAVY) is None
+
+
+def test_a_FULL_bundle_that_declined_for_RAM_is_NOT_complete(monkeypatch):
+    """THE ROW-C HOLE THIS RULING RE-OPENS, closed in the same change.
+
+    `complete_profile` was `profile == "full"` -- true for one PR, because until R27 only
+    the operator could decline. Now the MACHINE can decline on a FULL run, so that
+    shortcut would report a bundle missing its heaviest member as complete and close
+    release gate row C ("every member non-zero") on less evidence than the clause names.
+    The boolean now means what its name says."""
+    from src.api.diagnostics.bundle import _profile_block
+
+    results = [
+        {"file": "ordinary.json", "outcome": "ok"},
+        {"file": _HEAVY, "outcome": "declined-ram", "declined_reason": "needs 3,322.8 MiB"},
+    ]
+    block = _profile_block("full", results)
+
+    assert block["name"] == "full"
+    assert block["complete_profile"] is False
+    assert "INCOMPLETE" in block["note"] and _HEAVY in block["note"]
+    assert [d["declined_by"] for d in block["declined"]] == ["machine"]
+
+
+def test_a_full_run_that_declined_NOTHING_is_still_complete():
+    from src.api.diagnostics.bundle import _profile_block
+
+    block = _profile_block("full", [{"file": "a.json", "outcome": "ok"}])
+    assert block["complete_profile"] is True
+    assert block["declined"] == []
+
+
+def test_the_manifest_says_WHO_declined_each_member():
+    """Two different facts to an operator: one is a choice they can unmake by re-running,
+    the other is this machine refusing on their behalf."""
+    from src.api.diagnostics.bundle import _profile_block
+
+    block = _profile_block(
+        "light",
+        [
+            {"file": _HEAVY, "outcome": "declined-ram", "declined_reason": "ram"},
+            {"file": "fixity.json", "outcome": "declined-light", "declined_reason": "heavy"},
+        ],
+    )
+    by = {d["file"]: d["declined_by"] for d in block["declined"]}
+    assert by == {_HEAVY: "machine", "fixity.json": "operator"}
+    # ...and the note warns that FULL would not have collected the machine-declined one.
+    assert "would not have run under FULL" in block["note"]
+
+
+def test_a_RAM_decline_is_never_reported_as_a_light_profile_CHOICE(monkeypatch):
+    """The order of the two checks carries meaning. Telling an operator they skipped
+    something they were never going to be allowed to run on this box sends them to
+    re-run under FULL for a member that would decline again."""
+    import io
+    import zipfile
+
+    from src.api.diagnostics.bundle import _write_all_diagnostics_zip
+
+    _ram(monkeypatch, 4029.0)
+    members = [(_HEAVY, lambda: {"ran": True}), ("ordinary.json", lambda: {"ran": True})]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        results = _write_all_diagnostics_zip(members, z, profile="light")
+    buf.seek(0)
+    marker = zipfile.ZipFile(buf).read(_HEAVY + ".declined.txt").decode()
+
+    assert {r["file"]: r["outcome"] for r in results}[_HEAVY] == "declined-ram"
+    assert "does not have the memory" in marker
+    assert "OO_ALLOW_BIG_SCANS" in marker
+    assert "choice you made" not in marker.replace("not a choice you made", "")

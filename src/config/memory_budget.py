@@ -66,7 +66,13 @@ _TIER_TOLERANCE = 0.03
 # Today's shipped values — the "large machine" tier is byte-identical to them, so a
 # machine with headroom is untouched by this module.
 _LARGE = {"db_pool_size": 8, "db_max_overflow": 64, "sqlite_cache_mb": 64}
-_MEDIUM = {"db_pool_size": 4, "db_max_overflow": 16, "sqlite_cache_mb": 16}
+# MEDIUM gains the same four overflow slots (R26 names both tiers). Its floor is
+# likewise untouched at 4 x 16 = 64 MiB; the worst case rises 320 -> 384 MiB. This tier
+# is NOT made safe by the margin alone and the arithmetic says so out loud:
+# `collect_parallelism` ships at 50 and the floor's worker cap applies only BELOW the
+# floor, so 50 workers can still outrun 24 connections. `api_headroom_for` is what makes
+# that visible instead of silent; closing it needs a ruling (see the module docstring).
+_MEDIUM = {"db_pool_size": 4, "db_max_overflow": 20, "sqlite_cache_mb": 16}
 # The small tier is shaped for SLOTS, not for the smallest possible floor. S1.0
 # stops a worker holding a connection across its fetch, so a re-acquire the pool
 # cannot satisfy opens a physical connection -- and on the encrypted store that
@@ -79,7 +85,32 @@ _MEDIUM = {"db_pool_size": 4, "db_max_overflow": 16, "sqlite_cache_mb": 16}
 # 48), which is the trade, stated. The same reshape was MEASURED for the medium
 # tier and REJECTED: 4+16 -> 8+12 bought only 4.7x -> 3.4x while DOUBLING that
 # tier's floor (64 -> 128 MB).
-_SMALL = {"db_pool_size": 6, "db_max_overflow": 2, "sqlite_cache_mb": 8}
+_SMALL = {"db_pool_size": 6, "db_max_overflow": 6, "sqlite_cache_mb": 8}
+
+#: Connections that remain when the collector's whole fan-out is committed (F1, R26).
+#:
+#: THE INVARIANT THAT WAS MISSING, and the measurement that found it. On the small tier
+#: the pool held 6 + 2 = 8 connections and ``machine_floor.FLOOR_MAX_WORKERS`` allowed 8
+#: collector workers -- *exactly* the pool. A collector thread takes the single-writer
+#: gate INSIDE ``before_flush``, on a session that ALREADY holds a pooled connection
+#: (`src/database/writer.py`), so threads queued on a gate held for up to 1,329 s each
+#: pin a connection for that whole wait. An API handler then waited the 30 s
+#: ``pool_timeout`` and returned 500: 153 stalls at exactly 30.0 s were measured on the
+#: task-manager poll, 160 of 332 calls failed, and three diagnostics-bundle members died
+#: on the same error (findings F1 and F9).
+#:
+#: RAISE THE POOL, NEVER LOWER THE WORKER CAP (ruling R26, 2026-09-22). The four added
+#: slots go to OVERFLOW rather than to ``pool_size``, which is the whole of the trade:
+#: overflow connections are CLOSED when returned, so the resident floor
+#: (``pool_size x sqlite_cache_mb``) does not move at all -- 48 MiB on the small tier
+#: before and after -- while the worst case rises by exactly the 32 MiB the ruling's own
+#: rationale names (4 x 8 MiB). Putting them in ``pool_size`` would have bought a faster
+#: re-acquire and cost 32 MiB of floor on the machines least able to pay it, and the
+#: medium tier's twin reshape was already MEASURED AND REJECTED for that reason (see the
+#: comment above). The price of an overflow slot is one physical open, which re-derives
+#: the SQLCipher key at ~160-173 ms -- paid only under the contention where the
+#: alternative was a 30 s timeout and a 500.
+_API_MARGIN = 4
 
 # DuckDB's own default is 80% of system RAM, which on a laptop is a promise the machine
 # cannot keep while the app, the browser and the desktop are also resident. Capped as a
@@ -218,6 +249,12 @@ def resolve_for(total_mb: float | None) -> dict[str, Any]:
         # both field machines with the biggest corpora at export time.
         "columnar_serve_default": tier not in ("small",),
         "worst_case_pool_cache_mb": worst_case_cache_mb,
+        # F1/R26: the pool's TOTAL and the margin it is sized to keep. Published rather
+        # than left implicit because the defect was that nobody compared the pool
+        # against the collector's fan-out -- two numbers in two modules that had quietly
+        # converged on 8.
+        "pool_total": connections,
+        "api_margin": _API_MARGIN,
         "overrides": overrides,
         "method": (
             "Hardware-aware DEFAULTS for knobs that already exist, resolved once from "
@@ -291,6 +328,46 @@ def resident_pool_cache_mb() -> int:
     """
     b = budget()
     return int(b["db_pool_size"]) * int(b["sqlite_cache_mb"])
+
+
+def api_headroom_for(
+    workers: int, *, pool_total: int | None = None, pool_bound: int | None = None
+) -> dict[str, Any]:
+    """How many connections survive ``workers`` collectors, and whether that is enough.
+
+    THE FAN-OUT IS A PARAMETER, NOT A CONSTANT READ FROM HERE, and deliberately so. The
+    defect this exists to prevent was two numbers in two modules converging without
+    either knowing: ``FLOOR_MAX_WORKERS`` was 8 *because* the small pool was 6 + 2, and
+    the small pool was 6 + 2 for reasons of its own. Reading the live worker cap into
+    this module would re-create that coupling in the other direction; the caller that
+    knows the fan-out passes it.
+
+    ``sufficient`` is false when the collector can take every connection down to fewer
+    than the margin -- which on the medium tier it still can, because
+    ``collect_parallelism`` ships at 50 and the floor's cap applies only below the
+    floor. Reporting that is the point: R26 raised the pool and forbade lowering the
+    worker cap, and those two together cannot bound 50 workers on a machine that can
+    afford 24 connections. Nothing here decides it.
+    """
+    # `pool_bound` is the pass summary's own name for the same number; accepting both
+    # keeps that caller from having to rename a published field to ask this question.
+    given = pool_total if pool_total is not None else pool_bound
+    total = int(given) if given is not None else int(budget()["pool_total"])
+    w = max(0, int(workers))
+    headroom = total - w
+    return {
+        "workers": w,
+        "pool_total": total,
+        "api_margin": _API_MARGIN,
+        "headroom": headroom,
+        "sufficient": headroom >= _API_MARGIN,
+        "method": (
+            f"pool_total ({total}) - workers ({w}); sufficient when at least "
+            f"{_API_MARGIN} connections remain for everything that is not the "
+            "collector. A collector thread holds its pooled connection while it queues "
+            "on the single-writer gate, so a slow gate pins one per waiting thread."
+        ),
+    }
 
 
 def worker_cache_ceiling_mb(workers: int) -> int:

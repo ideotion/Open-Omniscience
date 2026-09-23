@@ -614,6 +614,62 @@ def _fixity_bundle_member(db: Session) -> dict:
 #:
 #: EVERY REASON IS A READING FROM THE OPERATOR'S OWN 2026-09-11 BUNDLE (72 members), not an
 #: estimate -- see docs/audit/15_FIELD_INSTANCE_SLOWNESS_2026-09-21.md §3.7 and F12.
+#: WHAT A MEMBER COSTS IN RSS, from the operator's own 2026-09-11 run (ruling R27, F12).
+#:
+#: THE RULE, and why it needed one. S1.3 already declines whole-corpus SCANS below the
+#: floor; a bundle MEMBER is not a scan and was not covered, so `keyword-log-digest.json`
+#: ran on a 4,029 MiB VM and raised peak RSS by 3,322.8 MiB -- the only member in that
+#: 72-member run above 0.0 MiB. One member, by itself, forcing a machine into swap.
+#:
+#: ONLY MEASURED MEMBERS ARE HERE, and that is the invariant. A member absent from this
+#: map NEVER declines: an unmeasured cost is not a small one and not a large one, and
+#: guessing in either direction is worse than running it. This map grows when a run
+#: measures something, never when someone estimates it -- every bundle already records
+#: `rss_peak_rise_kb` per member, so the evidence arrives on its own.
+_MEMBER_RSS_NEED_MB: dict[str, float] = {
+    "keyword-log-digest.json": 3322.8,
+}
+
+#: A member declines when its measured need exceeds this share of TOTAL RAM.
+#: Half, per R27's own words. It is self-limiting by construction: the one measured
+#: member needs 3,322.8 MiB, so it declines on a 4 GB machine and runs from ~6.6 GB up,
+#: which is the "below the floor" shape the ruling asks for without a second threshold
+#: to keep in step with the first.
+_MEMBER_RAM_SHARE = 0.5
+
+
+def ram_declined_reason(name: str, *, total_mb: float | None = None) -> str | None:
+    """Why this member must not run on THIS machine, or ``None`` to run it.
+
+    THREE REFUSALS TO REFUSE, each the mirror of a recorded defect:
+    an UNMEASURED machine never declines (the inference-hardware-gate lesson -- refusing
+    capability for want of a measurement is the opposite error); an UNMEASURED MEMBER
+    never declines (absence of a reading is not a reading); and the operator's existing
+    override lifts it, because S1.3's does and a second override key for the same idea
+    is how two surfaces come to disagree.
+    """
+    need = _MEMBER_RSS_NEED_MB.get(name)
+    if need is None:
+        return None
+    from src.config.machine_floor import _override_requested
+    from src.config.memory_budget import total_ram_mb
+
+    if _override_requested():
+        return None
+    total = total_ram_mb() if total_mb is None else total_mb
+    if total is None or total <= 0:
+        return None
+    ceiling = total * _MEMBER_RAM_SHARE
+    if need <= ceiling:
+        return None
+    return (
+        f"it measured a {need:,.1f} MiB peak RSS rise on the operator's instance, and "
+        f"this machine has {total:,.0f} MiB of RAM -- more than the {ceiling:,.0f} MiB "
+        f"({_MEMBER_RAM_SHARE:.0%} of total) a single bundle member may ask for. Running "
+        "it would put this machine into swap on its own (finding F12)"
+    )
+
+
 _LIGHT_DECLINED: dict[str, str] = {
     "keyword-log-digest.json": (
         "measured a 3,322.8 MB peak RSS rise on the operator's 4 GB instance -- the ONLY "
@@ -1495,6 +1551,60 @@ def _hardware_profile() -> dict:
     return profile
 
 
+def _profile_block(profile: str, results: list[dict]) -> dict:
+    """The manifest's `profile` block: what was declined, by whom, and whether the
+    bundle is COMPLETE.
+
+    `complete_profile` IS NOT `profile == "full"`, and that shortcut was live for one
+    PR. Release gate row C closes on "every member non-zero", and R27 gave the MACHINE a
+    way to decline a member on a FULL run -- so a full bundle missing its heaviest member
+    would have reported itself complete and closed the row on less evidence than the
+    clause names. The boolean now means what its name says: nothing was declined, by
+    anyone, for any reason.
+    """
+    declined = [
+        {
+            "file": r["file"],
+            "reason": r.get("declined_reason"),
+            # WHO declined it, because the two are different facts to an operator: one
+            # is a choice they made and can unmake by re-running, the other is this
+            # machine refusing on their behalf and needs a bigger box or the override.
+            "declined_by": "machine" if r.get("outcome") == "declined-ram" else "operator",
+        }
+        for r in results
+        if r.get("outcome") in ("declined-light", "declined-ram")
+    ]
+    by_machine = [d["file"] for d in declined if d["declined_by"] == "machine"]
+    if not declined:
+        note = "Every member ran; nothing was declined."
+    elif profile == "full":
+        note = (
+            "This is a FULL bundle, and it is still INCOMPLETE: "
+            + ", ".join(by_machine)
+            + " could not run on this machine's memory (R27). Nothing was skipped by "
+            "choice. Re-run on a larger machine, or with OO_ALLOW_BIG_SCANS=1, to "
+            "collect them."
+        )
+    else:
+        note = (
+            "The operator chose the LIGHT profile. The members listed in 'declined' "
+            "were NOT collected, each for the stated reason, and their absence is a "
+            "choice rather than a failure. Re-run under the FULL profile to collect "
+            "them."
+        )
+        if by_machine:
+            note += (
+                " Note that " + ", ".join(by_machine) + " was declined by the MACHINE "
+                "(R27), not by the profile, and would not have run under FULL either."
+            )
+    return {
+        "name": profile,
+        "complete_profile": not declined,
+        "declined": declined,
+        "note": note,
+    }
+
+
 def _all_diagnostics_manifest(
     results: list[dict],
     *,
@@ -1564,22 +1674,7 @@ def _all_diagnostics_manifest(
         # member non-zero") is only meaningful against a FULL run. `complete_profile` is
         # the one boolean a gate check should read -- never the member count, which a light
         # run keeps intact by design because the declined members are still listed.
-        "profile": {
-            "name": profile,
-            "complete_profile": profile == "full",
-            "declined": [
-                {"file": r["file"], "reason": r.get("declined_reason")}
-                for r in results if r.get("outcome") == "declined-light"
-            ],
-            "note": (
-                "Every member ran; nothing was declined."
-                if profile == "full"
-                else "The operator chose the LIGHT profile. The members listed in "
-                "'declined' were NOT collected, each for the stated reason, and their "
-                "absence is a choice rather than a failure. Re-run under the FULL "
-                "profile to collect them."
-            ),
-        },
+        "profile": _profile_block(profile, results),
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
         # so "all diagnostics" states its own boundary instead of implying totality.
         "excluded": [
@@ -1736,24 +1831,40 @@ def _write_all_diagnostics_zip(
             outcome = "ok"
             err: str | None = None
             nbytes = 0
-            declined_reason = _LIGHT_DECLINED.get(name) if profile == "light" else None
+            # THE MACHINE'S REFUSAL IS READ FIRST, and the order carries meaning (R27).
+            # A RAM decline would happen on the FULL profile too, so reporting it as a
+            # light-profile choice would tell the operator they skipped something they
+            # were never going to be allowed to run on this box.
+            ram_reason = ram_declined_reason(name)
+            declined_reason = ram_reason or (
+                _LIGHT_DECLINED.get(name) if profile == "light" else None
+            )
             try:
                 if declined_reason is not None:
                     # DECLINED BEFORE IT RUNS, which is the whole point: the cost this
                     # avoids is paid at the first byte, so a deadline or a byte cap would
                     # arrive far too late to keep a 4 GB machine out of swap.
-                    outcome = "declined-light"
-                    zf.writestr(
-                        name + ".declined.txt",
+                    outcome = "declined-ram" if ram_reason else "declined-light"
+                    body = (
                         (
+                            f"{name} was NOT collected: this machine does not have the "
+                            f"memory for it.\n\nWhy:\n  {declined_reason}\n\n"
+                            "This is the app declining on your behalf, not a failure and "
+                            "not a choice you made. It applies on the FULL profile too. "
+                            "Override with OO_ALLOW_BIG_SCANS=1 -- the same switch that "
+                            "lifts the whole-corpus scan floor -- if you want it anyway.\n"
+                        )
+                        if ram_reason
+                        else (
                             f"{name} was NOT collected: this bundle ran under the LIGHT "
                             f"profile.\n\nWhy this member is in the light profile's "
                             f"declined set:\n  {declined_reason}\n\n"
                             "This is a choice the operator made, not a failure and not a "
                             "limit the app hit. Run the bundle again under the FULL "
                             "profile to collect it.\n"
-                        ).encode(),
+                        )
                     )
+                    zf.writestr(name + ".declined.txt", body.encode())
                 elif db is not None and _member_touches_db(fn):
                     with statement_deadline(db, _all_diag_db_member_deadline_s()):
                         value = fn()

@@ -198,10 +198,20 @@ the worker count, and ``memory_budget`` bounds the pool independently. What stil
 scales with the worker count is the number of DOCUMENTS in flight — each worker
 holds a fetched body and its parse tree — and that is what this bounds.
 
-The value is 8 because it is the small tier's own pool bound (6 + 2): more
-workers than connections queue on the DB anyway, so it is the largest fan-out
-that buys anything on such a box. It is written out rather than derived from the
-tier so that changing a pool size can never silently move a throughput cap.
+The value is 8. It WAS chosen as the small tier's own pool bound (6 + 2), and
+that sentence stood here until 2026-09-23 -- when the coupling it describes turned
+out to be the defect. Two numbers in two modules had converged on 8, so the
+collector was allowed to hold EVERY pooled connection and an API handler waited the
+30 s ``pool_timeout`` and returned 500 (finding F1: 153 stalls measured at exactly
+30.0 s). Ruling R26 raised the pool instead of lowering this cap: the small tier is
+now 6 + 6 = 12, so eight workers leave the four-connection margin
+``memory_budget._API_MARGIN`` names.
+
+SO THIS IS NO LONGER DERIVED FROM ANYTHING, and the reason it stays 8 is its own:
+it is the fan-out at which more workers only queue on the DB. Ask
+``memory_budget.api_headroom_for(FLOOR_MAX_WORKERS)`` whether a tier's pool still
+covers it -- never re-derive one of these two numbers from the other, which is how
+they met in the first place.
 """
 
 

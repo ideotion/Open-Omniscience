@@ -986,6 +986,7 @@ class CollectionMonitor:
         """
         try:
             from src.config.memory_budget import (
+                api_headroom_for,
                 budget,
                 resident_pool_cache_mb,
                 worker_cache_ceiling_mb,
@@ -1003,6 +1004,14 @@ class CollectionMonitor:
             if w_max:
                 out["w_max"] = w_max
                 out["page_cache_ceiling_mb"] = worker_cache_ceiling_mb(w_max)
+                # F1/R26: THIS IS THE COMPARISON NOBODY WAS MAKING. The pool bound and
+                # the fan-out were both already in this block, side by side, and nothing
+                # subtracted one from the other -- so a collector that could hold every
+                # connection looked exactly like one that could not. `sufficient` is
+                # false on the medium tier as shipped (50 workers, 24 connections), and
+                # saying so every pass is the point: R26 raised the pool and forbade
+                # lowering the cap, and those two cannot bound 50 workers together.
+                out["api_headroom"] = api_headroom_for(w_max, pool_bound=out["pool_bound"])
             else:
                 out["page_cache_ceiling_mb_unavailable"] = "no governor w_max"
             if self._pool_peak is not None:

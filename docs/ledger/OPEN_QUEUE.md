@@ -62,6 +62,59 @@
   either — there is nothing yet to fix, only something to find out. They are listed here so
   the round's closure is not read as covering them.
 
+- **PR 2 OF THE FIELD-SLOWNESS PLAN IS BUILT, AND IT COULD NOT FINISH ITS OWN JOB
+  (2026-09-23; `R26`, `R27` built; `D44` ⛔ opened).** F1's invariant — *the collector
+  may never hold every connection* — is now true on the small tier and provably false on
+  the medium one. Both halves are recorded because the second is the useful one.
+
+  **(1) WHAT F1 WAS MADE OF: two correct numbers that had quietly met.**
+  `memory_budget._SMALL` gave the small tier 6 + 2 = 8 connections.
+  `machine_floor.FLOOR_MAX_WORKERS` allowed 8 collector workers, and its docstring said 8
+  *because* the pool was 6 + 2. Each was defensible alone. Together they meant the
+  collector could hold the entire pool — and a collector thread takes the single-writer
+  gate INSIDE `before_flush`, on a session that already holds its connection, so every
+  thread queued on a gate held up to 1,329 s pinned one. **153 stalls at exactly 30.0 s**,
+  160 of 332 calls failed, three bundle members dead on the same error (F1, F9).
+
+  **(2) THE SLOTS WENT TO OVERFLOW, AND THAT IS THE WHOLE TRADE.** Overflow connections
+  are CLOSED when returned, so `pool_size × sqlite_cache_mb` — what the machine pays all
+  the time — did not move: **48 MiB on small before and after**, 64 on medium. The worst
+  case rose by exactly the 32 MiB `R26`'s own rationale names. Putting them in
+  `pool_size` would have bought a faster re-acquire and charged 32 MiB of permanent floor
+  to the machines least able to pay it, and the medium tier's twin reshape was **already
+  measured and rejected** for that reason in 2026-09. The price of an overflow slot is
+  one physical open (~160–173 ms of SQLCipher key derivation), paid only under the
+  contention where the alternative was a 30 s timeout and a 500.
+
+  **(3) `D44` ⛔ — THE MEDIUM TIER IS STILL EXHAUSTIBLE AND `R26` CANNOT FIX IT.**
+  `collect_parallelism` ships at **50**; the floor's worker cap applies only BELOW the
+  floor. Sizing a pool to 54 connections at 16 MiB each is 864 MiB of worst-case page
+  cache on an 8 GB box, which is not a fix. The two ways out are a RESERVATION at
+  checkout (the collector may not take the last `_API_MARGIN` connections — that bounds
+  concurrent DB checkouts, not fetch fan-out, so arguably not the "worker cap" R26
+  forbids lowering) or a CAP derived from the pool, which R26 does forbid. **Nothing here
+  decides it.** What the build did instead is make it impossible to miss: every pass
+  summary's `_db_memory` block now carries `api_headroom.sufficient`, and it reads
+  `false` on that tier. `tests/test_pool_api_margin.py::test_the_medium_tier_is_still_exhaustible_and_says_so`
+  asserts the honest answer, so a green suite can never imply a fix that is not there.
+
+  **(4) `R27` RE-OPENED `R28`'s ROW-C HOLE ONE WEEK AFTER IT WAS CLOSED, and the shape is
+  worth keeping.** `complete_profile` was `profile == "full"` — correct while only the
+  OPERATOR could decline a member. `R27` gave the MACHINE that power on a FULL run, so a
+  bundle missing its heaviest member would have reported itself complete and closed
+  release gate row C («every member non-zero») on less evidence than the clause names.
+  The boolean now means what its name says: nothing was declined, by anyone, for any
+  reason. **A new actor gaining an existing capability re-opens every hole that was
+  closed by assuming only the old actor had it** — the same lesson as the absence checks
+  a week earlier, one actor over.
+
+  **(5) THE `R27` SET ONLY EVER HOLDS MEASURED MEMBERS.** `_MEMBER_RSS_NEED_MB` carries
+  one entry, because one member was measured: `keyword-log-digest.json` at 3,322.8 MiB,
+  the only member of that 72-member run above 0.0 MiB. A member absent from the map NEVER
+  declines — an unmeasured cost is neither small nor large, and guessing either way is
+  worse than running it. Every bundle already records `rss_peak_rise_kb` per member, so
+  the evidence arrives on its own; the map grows from runs, never from estimates.
+
 - **THE PLANNED-WORK REVERSE INDEX, AND THE DECISIONS ROUND IT CAME WITH (2026-09-22, rulings
   `R29` and `R30`).** The maintainer asked for two things in one turn: a numbered decisions list
   integrating PR #1131's plans, and *«a way so that future bug discovery would not contradict what
