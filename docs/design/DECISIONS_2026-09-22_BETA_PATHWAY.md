@@ -339,11 +339,28 @@ at 40 KB and 10 at 80 KB.
 - **c** — **move the COLD content blob out instead**, leaving `articles` as narrow hot
   metadata. The only option that makes every future hot-metadata write cheap rather than
   this one; much larger, and it overlaps §9.2 item 7's segmented derived index for 0.5.
-Default if blank: **⛔ none — this stays PENDING.** → **Recommendation: a now, and c is the
-one worth designing if the distribution says it matters** — b optimises the tail at the
-price of the common path's read simplicity. *Shipped state meanwhile:* **nothing built for
-this item**, and PR 4 says so rather than letting "the constant factors in apply" read as
-all three.
+- **d** — **coalesce the TWO article-row writes into one**, which is new information: §4.1
+  describes *"an UPDATE of the article row"*, **singular**, and the row is in fact rewritten
+  **twice** per apply — once for `sentiment_*`, once for `top_keyword_*` +
+  `keyword_indexed_at` — because a query between the two assignments autoflushes the first.
+  Two flushes of one object are two UPDATEs, so **above the cliff the cost is double what
+  the audit states**. Pre-existing rather than introduced by PR 4 (verified in a `git
+  worktree` at its base: two there as well), and counter deferral does **not** coalesce
+  them, because the batched keyword prefetch and the source-self-name read still autoflush
+  between the two. Assigning the sentiment adjacent to the stamp would halve it **with no
+  schema change and no migration** — the cheapest option on this list by a wide margin. The
+  reason it is not simply done: it moves an assignment relative to the when/where/who
+  `SAVEPOINT`, immediately beside a comment explaining why `keyword_indexed_at` is
+  deliberately assigned *before* `begin_nested()` so that a WWW-pass rollback cannot undo
+  the record of a keyword pass that did complete. Getting that ordering wrong is a
+  data-correctness bug in the delete-then-reinsert path, not a slow query.
+Default if blank: **⛔ none — this stays PENDING.** → **Recommendation: d first, then a.**
+`d` is cheap, needs no migration, and pays on **every** article above the cliff rather than
+on a tail; `a` then decides whether anything further is worth doing. `c` is the one worth
+designing if the distribution says it matters, and `b` optimises the tail at the price of
+the common path's read simplicity. *Shipped state meanwhile:* **nothing built for this
+item**, and PR 4 says so rather than letting "the constant factors in apply" read as all
+three.
 `ANSWER D45:`
 
 ## §B2 — The awareness mechanism you asked for
