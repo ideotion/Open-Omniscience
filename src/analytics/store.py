@@ -110,10 +110,63 @@ def _self_name_forms(source) -> set[str]:
     return {f for f in forms if len(f) >= 3}
 
 
+# One article yields ~100 distinct terms (measured; the audit reads ~92), so a single
+# IN (...) covers a whole article comfortably. The chunk exists only so the query can
+# never outgrow SQLite's bound-parameter limit if a caller ever passes a larger set.
+_KEYWORD_PREFETCH_CHUNK = 500
+
+
+def _prefetch_keywords(session: Session, normalized: Iterable[str]) -> dict[str, Keyword]:
+    """Resolve many normalized terms to their ``Keyword`` rows in ONE query.
+
+    THE COST THIS REMOVES IS MEASURED, not read: a warm apply (the field shape --
+    the vocabulary already stored) emitted **98 statements for one article, 81 of
+    them this lookup**, one per kept term, each a separate round trip into
+    ``idx_keyword_normalized_term`` on an 11 M-row table. Batching them is the whole
+    of the audit's "batched keyword lookups per article" (§9.2 item 4).
+
+    Returns ``{normalized_term: Keyword}`` for the terms that EXIST. A term absent
+    from the mapping is absent from the store, and :func:`_get_or_create_keyword`
+    creates it and writes it back into the same mapping -- so two ExtractedTerm
+    objects sharing a normalized form still resolve to ONE keyword, exactly as the
+    per-term lookup did. (They still produce two mention rows and still collide on
+    the unique ``(keyword_id, article_id)`` index; that contract is pinned by
+    tests/test_bulk_mention_insert.py and deliberately unchanged here.)
+    """
+    out: dict[str, Keyword] = {}
+    uniq = list(dict.fromkeys(n for n in normalized if n))
+    for i in range(0, len(uniq), _KEYWORD_PREFETCH_CHUNK):
+        chunk = uniq[i : i + _KEYWORD_PREFETCH_CHUNK]
+        for kw in session.query(Keyword).filter(Keyword.normalized_term.in_(chunk)).all():
+            out[kw.normalized_term] = kw
+    return out
+
+
 def _get_or_create_keyword(
-    session: Session, t: ExtractedTerm, *, language: str | None, extractor: str
+    session: Session,
+    t: ExtractedTerm,
+    *,
+    language: str | None,
+    extractor: str,
+    prefetched: dict[str, Keyword] | None = None,
 ) -> Keyword:
-    kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
+    """Get-or-create ONE keyword. ``prefetched`` is the only thing that changed.
+
+    ``prefetched=None`` (the default) keeps the original per-term query verbatim, so
+    every caller that does not pass it is byte-identical. When a caller HAS already
+    resolved the article's terms in one query (:func:`_prefetch_keywords`), the map is
+    consulted instead of the database, and a keyword created here is written BACK into
+    it -- the map is the authority for the rest of that article, which is what makes a
+    repeated normalized form resolve to one row without a second query.
+
+    A keyword cannot exist in the store but be missing from a map built earlier in the
+    same transaction: the only writer between the prefetch and here is this loop, and
+    it writes back. The entity upgrade and the baseline tagging below are untouched.
+    """
+    if prefetched is None:
+        kw = session.query(Keyword).filter_by(normalized_term=t.normalized).first()
+    else:
+        kw = prefetched.get(t.normalized)
     is_entity = t.kind != "term"
     if kw is None:
         kw = Keyword(
@@ -134,6 +187,8 @@ def _get_or_create_keyword(
         # Each tag is a labelled assertion carrying its source provenance.
         for axis, tag in baseline_tags(language, t.normalized):
             session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
+        if prefetched is not None:
+            prefetched[t.normalized] = kw
     elif is_entity and not kw.is_entity:
         # A term first seen lowercase, later recognised as an entity -> upgrade.
         kw.is_entity = True
@@ -366,6 +421,17 @@ def index_article(
     new_contrib: dict[int, int] = {}
     mention_rows: list[dict] = []
     mentions_created_at = datetime.now(UTC)
+    # PR 4 (audit §9.2 item 4, "batched keyword lookups per article"): resolve every
+    # kept term in ONE query instead of one round trip per term. Measured before the
+    # change: 81 of the 98 statements a warm apply emitted for a single article were
+    # this lookup. The suppression filter is applied HERE as well as in the loop so a
+    # self-name never reaches the IN (...) -- the prefetch must ask for exactly the
+    # terms the loop will keep, or it would both widen the query and warm rows the
+    # article has no business touching.
+    prefetched = _prefetch_keywords(
+        session,
+        (t.normalized for t in terms if t.normalized.casefold() not in self_forms),
+    )
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
         # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
@@ -376,7 +442,7 @@ def index_article(
             self_suppressed += 1
             continue
         kw = _get_or_create_keyword(
-            session, t, language=known_lang, extractor=extractor.name
+            session, t, language=known_lang, extractor=extractor.name, prefetched=prefetched
         )
         mention_rows.append(
             {
